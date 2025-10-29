@@ -40,6 +40,7 @@ import { ReleaseBadge } from '../auth/release-badge';
 // import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
+import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -76,22 +77,21 @@ export function DashboardContent() {
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
-  const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
-  const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   
-  // Reset data selections when mode changes
-  React.useEffect(() => {
-    if (selectedMode !== 'data') {
-      setSelectedCharts([]);
-      setSelectedOutputFormat(null);
-    }
-    if (selectedMode !== 'slides') {
-      setSelectedTemplate(null);
-    }
-  }, [selectedMode]);
+  // Use centralized Suna modes persistence hook
+  const {
+    selectedMode,
+    selectedCharts,
+    selectedOutputFormat,
+    selectedTemplate,
+    setSelectedMode,
+    setSelectedCharts,
+    setSelectedOutputFormat,
+    setSelectedTemplate,
+  } = useSunaModePersistence();
+  
+  const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
+  
   const {
     selectedAgentId,
     setSelectedAgent,
@@ -458,7 +458,7 @@ export function DashboardContent() {
                   </div>
 
                   {/* Modes Panel - Below chat input, doesn't affect its position */}
-                  {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+                  {isSunaAgent && (
                     <div className="px-4 pb-8">
                       <div className="max-w-3xl mx-auto">
                         <SunaModesPanel

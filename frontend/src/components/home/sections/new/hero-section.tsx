@@ -40,6 +40,7 @@ import { getAgents } from '@/hooks/react-query/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { Examples } from '@/components/dashboard/examples';
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
+import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -57,9 +58,18 @@ export function HeroSection() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
-    const [selectedMode, setSelectedMode] = useState<string | null>(null);
-    const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
-    const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
+    
+    // Use centralized Suna modes persistence hook
+    const {
+        selectedMode,
+        selectedCharts,
+        selectedOutputFormat,
+        selectedTemplate,
+        setSelectedMode,
+        setSelectedCharts,
+        setSelectedOutputFormat,
+        setSelectedTemplate,
+    } = useSunaModePersistence();
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const { billingError, handleBillingError, clearBillingError } =
@@ -106,14 +116,6 @@ export function HeroSection() {
 
     // Auth dialog state
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
-
-    // Reset data selections when mode changes
-    useEffect(() => {
-        if (selectedMode !== 'data') {
-            setSelectedCharts([]);
-            setSelectedOutputFormat(null);
-        }
-    }, [selectedMode]);
 
     useEffect(() => {
         if (authDialogOpen && inputValue.trim()) {
@@ -260,21 +262,19 @@ export function HeroSection() {
                         </div>
                     </div>
 
-                    {/* Modes Panel - Below chat input, only show when user is logged in */}
-                    {(isStagingMode() || isLocalMode()) && (isSunaAgent || !user) && (
-                        <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
-                            <SunaModesPanel
-                                selectedMode={selectedMode}
-                                onModeSelect={setSelectedMode}
-                                onSelectPrompt={setInputValue}
-                                isMobile={isMobile}
-                                selectedCharts={selectedCharts}
-                                onChartsChange={setSelectedCharts}
-                                selectedOutputFormat={selectedOutputFormat}
-                                onOutputFormatChange={setSelectedOutputFormat}
-                            />
-                        </div>
-                    )}
+                    {/* Modes Panel - Below chat input, always visible */}
+                    <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
+                        <SunaModesPanel
+                            selectedMode={selectedMode}
+                            onModeSelect={setSelectedMode}
+                            onSelectPrompt={setInputValue}
+                            isMobile={isMobile}
+                            selectedCharts={selectedCharts}
+                            onChartsChange={setSelectedCharts}
+                            selectedOutputFormat={selectedOutputFormat}
+                            onOutputFormatChange={setSelectedOutputFormat}
+                        />
+                    </div>
 
 
                 </div>
@@ -284,49 +284,39 @@ export function HeroSection() {
             {/* Auth Dialog */}
             <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
                 <BlurredDialogOverlay />
-                <DialogContent className="sm:max-w-md rounded-xl bg-background border border-border">
-                    <DialogHeader>
-                        <div className="flex items-center justify-between">
-                            <DialogTitle className="text-xl font-medium">
-                                Sign in to continue
-                            </DialogTitle>
-                            {/* <button 
-                onClick={() => setAuthDialogOpen(false)}
-                className="rounded-full p-1 hover:bg-muted transition-colors"
-              >
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button> */}
-                        </div>
-                        <DialogDescription className="text-muted-foreground">
+                <DialogContent className="sm:max-w-md rounded-2xl bg-background border border-border p-8">
+                    <DialogHeader className="space-y-3">
+                        <DialogTitle className="text-2xl font-semibold tracking-tight">
+                            Sign in to continue
+                        </DialogTitle>
+                        <DialogDescription className="text-[15px] text-muted-foreground">
                             Sign in or create an account to talk with Suna
                         </DialogDescription>
                     </DialogHeader>
 
-
-
                     {/* OAuth Sign In */}
-                    <div className="w-full">
+                    <div className="w-full space-y-3 mt-8">
                         <GoogleSignIn returnUrl="/dashboard" />
                         <GitHubSignIn returnUrl="/dashboard" />
                     </div>
 
                     {/* Divider */}
-                    <div className="relative my-6">
+                    <div className="relative my-2">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-border"></div>
                         </div>
                         <div className="relative flex justify-center text-sm">
-                            <span className="px-2 bg-[#F3F4F6] dark:bg-[#F9FAFB]/[0.02] text-muted-foreground">
+                            <span className="px-3 bg-background text-muted-foreground font-medium">
                                 or continue with email
                             </span>
                         </div>
                     </div>
 
                     {/* Sign in options */}
-                    <div className="space-y-4 pt-4">
+                    <div className="space-y-3">
                         <Link
                             href={`/auth?returnUrl=${encodeURIComponent('/dashboard')}`}
-                            className="flex h-12 items-center justify-center w-full text-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-md"
+                            className="flex h-12 items-center justify-center w-full text-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-sm font-medium"
                             onClick={() => setAuthDialogOpen(false)}
                         >
                             Sign in with email
@@ -334,20 +324,20 @@ export function HeroSection() {
 
                         <Link
                             href={`/auth?mode=signup&returnUrl=${encodeURIComponent('/dashboard')}`}
-                            className="flex h-12 items-center justify-center w-full text-center rounded-full border border-border bg-background hover:bg-accent/20 transition-all"
+                            className="flex h-12 items-center justify-center w-full text-center rounded-full border border-border bg-background hover:bg-accent/50 transition-all font-medium"
                             onClick={() => setAuthDialogOpen(false)}
                         >
                             Create new account
                         </Link>
                     </div>
 
-                    <div className="mt-4 text-center text-xs text-muted-foreground">
+                    <div className="mt-8 text-center text-[13px] text-muted-foreground leading-relaxed">
                         By continuing, you agree to our{' '}
-                        <Link href="/terms" className="text-primary hover:underline">
+                        <Link href="/terms" className="text-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors">
                             Terms of Service
                         </Link>{' '}
                         and{' '}
-                        <Link href="/privacy" className="text-primary hover:underline">
+                        <Link href="/privacy" className="text-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors">
                             Privacy Policy
                         </Link>
                     </div>
