@@ -83,6 +83,7 @@ const ThreadItem: React.FC<{
   pathname: string | null;
   isMobile: boolean;
   isAgentRunning?: boolean;
+  isMultiSelectMode?: boolean;
   handleThreadClick: (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => void;
   toggleThreadSelection: (threadId: string, e?: React.MouseEvent) => void;
   handleDeleteThread: (threadId: string, threadName: string) => void;
@@ -94,6 +95,7 @@ const ThreadItem: React.FC<{
   isThreadLoading,
   isSelected,
   isAgentRunning,
+  isMultiSelectMode,
   handleThreadClick,
   toggleThreadSelection,
   handleDeleteThread,
@@ -101,6 +103,9 @@ const ThreadItem: React.FC<{
   setShowShareModal,
   isMobile
 }) => {
+    const [isHoveringIcon, setIsHoveringIcon] = useState(false);
+    const [isHoveringCard, setIsHoveringCard] = useState(false);
+
     return (
       <SpotlightCard
         className={cn(
@@ -114,25 +119,111 @@ const ThreadItem: React.FC<{
           prefetch={false}
           className="block"
         >
-          <div className="flex items-center gap-3 p-2.5 text-sm">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+          <div
+            className="flex items-center gap-3 p-2.5 text-sm"
+            onMouseEnter={() => setIsHoveringCard(true)}
+            onMouseLeave={() => setIsHoveringCard(false)}
+          >
+            <div
+              className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0 group/icon"
+              onMouseEnter={() => setIsHoveringIcon(true)}
+              onMouseLeave={() => setIsHoveringIcon(false)}
+            >
               {isThreadLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               ) : (
-                <ThreadIcon
-                  iconName={thread.iconName}
-                  className="text-muted-foreground"
-                  size={14}
-                />
+                <>
+                  <ThreadIcon
+                    iconName={thread.iconName}
+                    className={cn(
+                      "text-muted-foreground transition-opacity",
+                      (isHoveringIcon || isMultiSelectMode) ? "opacity-0" : "opacity-100"
+                    )}
+                    size={14}
+                  />
+                  <div
+                    className={cn(
+                      "absolute inset-0 flex items-center justify-center transition-opacity",
+                      (isHoveringIcon || isMultiSelectMode) ? "opacity-100" : "opacity-0"
+                    )}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleThreadSelection(thread.threadId);
+                    }}
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      className="h-4 w-4"
+                    />
+                  </div>
+                </>
               )}
               {isAgentRunning && (
                 <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-background animate-pulse" />
               )}
             </div>
             <span className="flex-1 truncate">{thread.projectName}</span>
-            <span className="text-xs text-muted-foreground flex-shrink-0">
-              {formatDateForList(thread.updatedAt)}
-            </span>
+            <div className="flex-shrink-0 relative">
+              <span
+                className={cn(
+                  "text-xs text-muted-foreground transition-opacity",
+                  isHoveringCard ? "opacity-0" : "opacity-100"
+                )}
+              >
+                {formatDateForList(thread.updatedAt)}
+              </span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      "absolute top-1/2 right-0 -translate-y-1/2 p-1 rounded-md hover:bg-accent transition-all text-muted-foreground",
+                      isHoveringCard ? "opacity-100" : "opacity-0 pointer-events-none"
+                    )}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                  >
+                    <MoreHorizontal className="h-4 w-4 rotate-90" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSelectedItem({ threadId: thread.threadId, projectId: thread.projectId });
+                      setShowShareModal(true);
+                    }}
+                  >
+                    <LinkIcon className="mr-2 h-4 w-4" />
+                    Share
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      window.open(thread.url, '_blank');
+                    }}
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open in new tab
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteThread(thread.threadId, thread.projectName);
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </Link>
       </SpotlightCard>
@@ -156,6 +247,7 @@ export function NavAgents() {
   const [selectedThreads, setSelectedThreads] = useState<Set<string>>(new Set());
   const [deleteProgress, setDeleteProgress] = useState(0);
   const [totalToDelete, setTotalToDelete] = useState(0);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
 
   const {
     data: projects = [],
@@ -272,6 +364,14 @@ export function NavAgents() {
       } else {
         newSelection.add(threadId);
       }
+
+      // Enter multi-select mode when first item is selected
+      if (newSelection.size > 0) {
+        setIsMultiSelectMode(true);
+      } else {
+        setIsMultiSelectMode(false);
+      }
+
       return newSelection;
     });
   };
@@ -280,11 +380,19 @@ export function NavAgents() {
   const selectAllThreads = () => {
     const allThreadIds = combinedThreads.map(thread => thread.threadId);
     setSelectedThreads(new Set(allThreadIds));
+    setIsMultiSelectMode(true);
   };
 
   // Deselect all threads
   const deselectAllThreads = () => {
     setSelectedThreads(new Set());
+    setIsMultiSelectMode(false);
+  };
+
+  // Exit multi-select mode
+  const exitMultiSelectMode = () => {
+    setSelectedThreads(new Set());
+    setIsMultiSelectMode(false);
   };
 
   // Function to handle thread deletion
@@ -450,15 +558,67 @@ export function NavAgents() {
 
   return (
     <div>
-      {/* Search hint */}
+      {/* Search hint or Multi-select header */}
       {(state !== 'collapsed' || isMobile) && (
-        <div className="px-2.5 py-3 mb-1 flex items-center justify-between text-xs text-muted-foreground">
-          <span>Search</span>
-          <div className="flex items-center gap-1">
-            <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
-            <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
-          </div>
-        </div>
+        <>
+          {isMultiSelectMode ? (
+            <div className="px-2.5 py-3 mb-1 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={exitMultiSelectMode}
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Cancel
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {selectedThreads.size} selected
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  onClick={selectedThreads.size === combinedThreads.length ? deselectAllThreads : selectAllThreads}
+                >
+                  {selectedThreads.size === combinedThreads.length ? (
+                    <>
+                      <X className="h-4 w-4 mr-1" />
+                      Deselect All
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4 mr-1" />
+                      Select All
+                    </>
+                  )}
+                </Button>
+                {selectedThreads.size > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-xs text-destructive hover:text-destructive"
+                    onClick={handleMultiDelete}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Delete ({selectedThreads.size})
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="px-2.5 py-3 mb-1 flex items-center justify-between text-xs text-muted-foreground">
+              <span>Search</span>
+              <div className="flex items-center gap-1">
+                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
+                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-10">
@@ -499,6 +659,7 @@ export function NavAgents() {
                           pathname={pathname}
                           isMobile={isMobile}
                           isAgentRunning={isAgentRunning}
+                          isMultiSelectMode={isMultiSelectMode}
                           handleThreadClick={handleThreadClick}
                           toggleThreadSelection={toggleThreadSelection}
                           handleDeleteThread={handleDeleteThread}
