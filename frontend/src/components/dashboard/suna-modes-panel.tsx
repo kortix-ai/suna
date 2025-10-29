@@ -16,10 +16,14 @@ import {
   Table,
   LayoutDashboard,
   FileBarChart,
+  X,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getPdfUrl } from '@/components/thread/tool-views/utils/presentation-utils';
 
 interface SunaModesPanelProps {
   selectedMode: string | null;
@@ -136,6 +140,8 @@ const modes: Mode[] = [
         { id: 'professor_gray', name: 'Professor Gray', description: 'Academic and scholarly', image: '/images/presentation-templates/professor_gray-min.png' },
         { id: 'gamer_gray', name: 'Gamer Gray', description: 'Gaming-inspired design', image: '/images/presentation-templates/gamer_gray-min.png' },
         { id: 'competitor_analysis_blue', name: 'Analysis Blue', description: 'Business analysis focused', image: '/images/presentation-templates/competitor_analysis_blue-min.png' },
+        { id: 'numbers_clean', name: 'Numbers Clean', description: 'Clean data visualization', image: '/images/presentation-templates/numbers_clean-min.png' },
+        { id: 'numbers_colorful', name: 'Numbers Colorful', description: 'Vibrant data presentation', image: '/images/presentation-templates/numbers_colorful-min.png' },
       ],
     },
   },
@@ -1100,6 +1106,10 @@ export function SunaModesPanel({
   const [randomizedPrompts, setRandomizedPrompts] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
+  // State for PDF preview modal
+  const [selectedTemplate, setSelectedTemplate] = useState<{id: string, name: string} | null>(null);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  
   // State for multi-select charts (use controlled state if provided)
   const [uncontrolledSelectedCharts, setUncontrolledSelectedCharts] = useState<string[]>([]);
   const selectedCharts = controlledSelectedCharts ?? uncontrolledSelectedCharts;
@@ -1149,6 +1159,19 @@ export function SunaModesPanel({
   // Handler for prompt selection - just pass through without modification
   const handlePromptSelect = (prompt: string) => {
     onSelectPrompt(prompt);
+  };
+
+  // Handler for template selection (only sends prompt)
+  const handleTemplateSelect = (templateName: string, description: string) => {
+    handlePromptSelect(
+      `Create a presentation using the ${templateName} template about ${description}`
+    );
+  };
+
+  // Handler for PDF preview
+  const handlePdfPreview = (templateId: string, templateName: string) => {
+    setSelectedTemplate({id: templateId, name: templateName});
+    setIsPdfModalOpen(true);
   };
 
   const displayedPrompts = randomizedPrompts;
@@ -1309,12 +1332,8 @@ export function SunaModesPanel({
                 {currentMode.options.items.map((item) => (
                   <Card
                     key={item.id}
-                    className="flex flex-col gap-2 cursor-pointer group p-3 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl"
-                    onClick={() =>
-                      handlePromptSelect(
-                        `Create a presentation using the ${item.name} template about ${item.description}`
-                      )
-                    }
+                    className="flex flex-col gap-2 cursor-pointer group p-3 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl relative"
+                    onClick={() => handleTemplateSelect(item.name, item.description)}
                   >
                     <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative">
                       {item.image ? (
@@ -1329,6 +1348,18 @@ export function SunaModesPanel({
                           className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
                         />
                       )}
+                      {/* Preview button overlay */}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 hover:bg-white dark:bg-zinc-800/90 dark:hover:bg-zinc-800 shadow-md"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePdfPreview(item.id, item.name);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
@@ -1523,6 +1554,26 @@ export function SunaModesPanel({
           </ScrollArea>
         </div>
       )}
+
+      {/* PDF Preview Modal */}
+      <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle>
+              Template Preview: {selectedTemplate?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-6 pt-0">
+            {selectedTemplate && (
+              <iframe
+                src={getPdfUrl(selectedTemplate.id)}
+                className="w-full h-[70vh] border rounded-lg"
+                title={`${selectedTemplate.name} template preview`}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

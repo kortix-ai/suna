@@ -13,6 +13,27 @@ export enum DownloadFormat {
  */
 
 /**
+ * Gets the PDF URL for a presentation template
+ * @param templateId - The template ID
+ * @returns The full PDF URL with parameters
+ */
+export const getPdfUrl = (templateId: string): string => {
+  const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+  return `${API_URL}/presentation-templates/${templateId}/pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+};
+
+/**
+ * Gets the image URL for a presentation template
+ * @param templateId - The template ID
+ * @param hasImage - Whether the template has an image
+ * @returns The full image URL
+ */
+export const getImageUrl = (templateId: string, hasImage: boolean): string => {
+  const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+  return `${API_URL}/presentation-templates/${templateId}/image.png`;
+};
+
+/**
  * Validates and extracts presentation info from a file path in a single operation
  * @param filePath - The file path to validate and extract information from
  * @returns Object containing validation result and extracted data
