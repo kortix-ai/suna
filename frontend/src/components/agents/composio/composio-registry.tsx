@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,6 +49,7 @@ interface ComposioRegistryProps {
   showAgentSelector?: boolean;
   selectedAgentId?: string;
   onAgentChange?: (agentId: string | undefined) => void;
+  initialSelectedApp?: string | null;
 }
 
 const getAgentConnectedApps = (
@@ -151,7 +152,7 @@ const ConnectedAppCard = ({
     >
       <div className="flex items-start gap-3 mb-3">
         {toolkit.logo ? (
-          <img src={toolkit.logo} alt={toolkit.name} className="w-10 h-10 rounded-lg object-cover p-2 bg-muted rounded-xl border" />
+          <img src={toolkit.logo} alt={toolkit.name} className="w-10 h-10 rounded-xl object-cover p-2 bg-muted border" />
         ) : (
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
             <span className="text-primary text-sm font-medium">{toolkit.name.charAt(0)}</span>
@@ -262,6 +263,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
   showAgentSelector = false,
   selectedAgentId,
   onAgentChange,
+  initialSelectedApp,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -327,6 +329,20 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
     if (!allToolkits) return [];
     return allToolkits;
   }, [allToolkits]);
+
+  // Handle initial app selection
+  useEffect(() => {
+    if (initialSelectedApp && allToolkits.length > 0 && !selectedApp) {
+      const appToSelect = allToolkits.find(
+        toolkit => toolkit.slug?.toLowerCase() === initialSelectedApp.toLowerCase()
+      );
+      if (appToSelect) {
+        setSelectedApp(appToSelect);
+        setShowConnector(true);
+        setShowConnectedApps(false);
+      }
+    }
+  }, [initialSelectedApp, allToolkits, selectedApp]);
 
   const handleConnect = (app: ComposioToolkit) => {
     if (mode !== 'profile-only' && !currentAgentId && showAgentSelector) {

@@ -194,15 +194,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
     const [registryDialogOpen, setRegistryDialogOpen] = useState(false);
+    const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
     const [showSnackbar, setShowSnackbar] = useState(defaultShowSnackbar);
     const [userDismissedUsage, setUserDismissedUsage] = useState(false);
     const [billingModalOpen, setBillingModalOpen] = useState(false);
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
     const [mounted, setMounted] = useState(false);
     const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
-    const [isModeDismissing, setIsModeDismissing] = useState(false);
-
-    // Suna Agent Modes feature flag
+    const [isModeDismissing, setIsModeDismissing] = useState(false);    // Suna Agent Modes feature flag
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
@@ -220,12 +219,24 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const deleteFileMutation = useFileDelete();
     const queryClient = useQueryClient();
 
+    // Define quick integrations
+    const quickIntegrations = useMemo(() => [
+      { id: 'googledrive', name: 'Google Drive', slug: 'googledrive' },
+      { id: 'slack', name: 'Slack', slug: 'slack' },
+      { id: 'notion', name: 'Notion', slug: 'notion' },
+    ], []);
+
     // Fetch integration icons when logged in
     const { data: googleDriveIcon } = useComposioToolkitIcon('googledrive', { enabled: isLoggedIn });
     const { data: slackIcon } = useComposioToolkitIcon('slack', { enabled: isLoggedIn });
     const { data: notionIcon } = useComposioToolkitIcon('notion', { enabled: isLoggedIn });
 
-    // Show usage preview logic:
+    // Map icons to integrations
+    const integrationIcons = useMemo(() => ({
+      'googledrive': googleDriveIcon?.icon_url,
+      'slack': slackIcon?.icon_url,
+      'notion': notionIcon?.icon_url,
+    }), [googleDriveIcon, slackIcon, notionIcon]);    // Show usage preview logic:
     // - Always show to free users when showToLowCreditUsers is true
     // - For paid users, only show when they're at 70% or more of their cost limit (30% or below remaining)
     const shouldShowUsage = useMemo(() => {
@@ -608,49 +619,38 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                         <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
                       </div>
                       <div className="space-y-0.5 px-2">
-                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                          <div className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1">
-                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                              {googleDriveIcon?.icon_url ? (
-                                <img src={googleDriveIcon.icon_url} alt="Google Drive" className="h-4 w-4" />
-                              ) : (
-                                <div className="h-4 w-4 bg-muted rounded" />
-                              )}
+                        {quickIntegrations.map((integration) => (
+                          <SpotlightCard key={integration.id} className="transition-colors cursor-pointer bg-transparent">
+                            <div
+                              className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                              onClick={() => {
+                                setSelectedIntegration(integration.slug);
+                                setRegistryDialogOpen(true);
+                              }}
+                            >
+                              <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                {integrationIcons[integration.id as keyof typeof integrationIcons] ? (
+                                  <img
+                                    src={integrationIcons[integration.id as keyof typeof integrationIcons]}
+                                    alt={integration.name}
+                                    className="h-4 w-4"
+                                  />
+                                ) : (
+                                  <div className="h-4 w-4 bg-muted rounded" />
+                                )}
+                              </div>
+                              <span className="flex-1 truncate font-medium">{integration.name}</span>
+                              <span className="text-xs text-muted-foreground">Connect</span>
                             </div>
-                            <span className="flex-1 truncate font-medium">Google Drive</span>
-                            <span className="text-xs text-muted-foreground">Connect</span>
-                          </div>
-                        </SpotlightCard>
-                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                          <div className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1">
-                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                              {slackIcon?.icon_url ? (
-                                <img src={slackIcon.icon_url} alt="Slack" className="h-4 w-4" />
-                              ) : (
-                                <div className="h-4 w-4 bg-muted rounded" />
-                              )}
-                            </div>
-                            <span className="flex-1 truncate font-medium">Slack</span>
-                            <span className="text-xs text-muted-foreground">Connect</span>
-                          </div>
-                        </SpotlightCard>
-                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                          <div className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1">
-                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                              {notionIcon?.icon_url ? (
-                                <img src={notionIcon.icon_url} alt="Notion" className="h-4 w-4" />
-                              ) : (
-                                <div className="h-4 w-4 bg-muted rounded" />
-                              )}
-                            </div>
-                            <span className="flex-1 truncate font-medium">Notion</span>
-                            <span className="text-xs text-muted-foreground">Connect</span>
-                          </div>
-                        </SpotlightCard>
+                          </SpotlightCard>
+                        ))}
                         <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
                           <div
                             className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px]"
-                            onClick={() => setRegistryDialogOpen(true)}
+                            onClick={() => {
+                              setSelectedIntegration(null);
+                              setRegistryDialogOpen(true);
+                            }}
                           >
                             <span className="text-muted-foreground font-medium">+ See all integrations</span>
                           </div>
@@ -912,32 +912,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                     className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <div className="flex items-center -space-x-0.5">
-                      {googleDriveIcon?.icon_url && slackIcon?.icon_url && notionIcon?.icon_url ? (
+                      {quickIntegrations.every(int => integrationIcons[int.id as keyof typeof integrationIcons]) ? (
                         <>
-                          <div className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={googleDriveIcon.icon_url} className="w-2.5 h-2.5" alt="Google Drive" />
-                          </div>
-                          <div className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={slackIcon.icon_url} className="w-2.5 h-2.5" alt="Slack" />
-                          </div>
-                          <div className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={notionIcon.icon_url} className="w-2.5 h-2.5" alt="Notion" />
-                          </div>
+                          {quickIntegrations.map((integration) => (
+                            <div key={integration.id} className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={integrationIcons[integration.id as keyof typeof integrationIcons]}
+                                className="w-2.5 h-2.5"
+                                alt={integration.name}
+                              />
+                            </div>
+                          ))}
                         </>
                       ) : (
                         <>
-                          <div className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                            <Skeleton className="w-2.5 h-2.5 rounded" />
-                          </div>
-                          <div className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                            <Skeleton className="w-2.5 h-2.5 rounded" />
-                          </div>
-                          <div className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                            <Skeleton className="w-2.5 h-2.5 rounded" />
-                          </div>
+                          {quickIntegrations.map((integration) => (
+                            <div key={integration.id} className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
+                              <Skeleton className="w-2.5 h-2.5 rounded" />
+                            </div>
+                          ))}
                         </>
                       )}
                     </div>
@@ -977,7 +971,12 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             </div>
           )}
 
-          <Dialog open={registryDialogOpen} onOpenChange={setRegistryDialogOpen}>
+          <Dialog open={registryDialogOpen} onOpenChange={(open) => {
+            setRegistryDialogOpen(open);
+            if (!open) {
+              setSelectedIntegration(null);
+            }
+          }}>
             <DialogContent className="p-0 max-w-6xl h-[90vh] overflow-hidden">
               <DialogHeader className="sr-only">
                 <DialogTitle>Integrations</DialogTitle>
@@ -988,6 +987,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 onAgentChange={onAgentSelect}
                 onToolsSelected={(profileId, selectedTools, appName, appSlug) => {
                 }}
+                initialSelectedApp={selectedIntegration}
               />
             </DialogContent>
           </Dialog>
