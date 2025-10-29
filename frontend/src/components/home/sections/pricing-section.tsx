@@ -561,7 +561,6 @@ function PricingTier({
               </div>
               <div className="flex items-center gap-1 mt-1">
                 <span className="text-xs text-muted-foreground">/month</span>
-                <span className="text-xs text-muted-foreground">for one year</span>
               </div>
             </div>
           ) : billingPeriod === 'yearly' && tier.yearlyPrice && displayPrice !== '$0' ? (
@@ -583,9 +582,12 @@ function PricingTier({
             <div className="flex flex-col">
               <div className="flex items-baseline">
                 <PriceDisplay price={displayPrice} isCompact={insideDialog} />
-                <span className="ml-2">{displayPrice !== '$0' ? '/month' : ''}</span>
               </div>
-              <div className="h-[20px]" />
+              <div className="flex items-center gap-1 mt-1">
+                {displayPrice !== '$0' && (
+                  <span className="text-xs text-muted-foreground">/month</span>
+                )}
+              </div>
             </div>
           )}
         </div>
