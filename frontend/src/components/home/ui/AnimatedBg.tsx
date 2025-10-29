@@ -1,11 +1,10 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform } from 'framer-motion';
 import type { TargetAndTransition } from 'framer-motion';
-import { useEffect, useState, useId } from 'react';
+import { useEffect, useState, useId, useMemo } from 'react';
 
 type Tone = 'light' | 'medium' | 'dark';
-type CSSVar = React.CSSProperties & { ['--blur']?: string };
 
 const LeftArc = ({
     size,
@@ -13,17 +12,18 @@ const LeftArc = ({
     opacity,
     style,
     className,
+    blurAmount,
 }: {
     size: number;
     tone: Tone;
     opacity: number; // 0.22–0.38
-    style?: CSSVar;
+    style?: React.CSSProperties;
     className?: string;
+    blurAmount?: number;
 }) => {
     const uid = useId();
     const sw = 542;
     const sh = 520;
-    const isSmallShape = size <= 400;
 
     const { c1, c2, c3 } =
         {
@@ -42,7 +42,12 @@ const LeftArc = ({
             viewBox="-50 -50 642 620"
             fill="none"
             className={className}
-            style={{ overflow: 'visible', ...style }} // prevent blur cut-off
+            style={{
+                overflow: 'visible',
+                willChange: 'transform',
+                transform: 'translate3d(0, 0, 0)',
+                ...style
+            }}
         >
             <defs>
                 <linearGradient id={`L0_${tone}_${uid}`} x1="201.497" y1="0.0386" x2="201.497" y2="680.043" gradientUnits="userSpaceOnUse">
@@ -58,13 +63,6 @@ const LeftArc = ({
                     <feGaussianBlur stdDeviation="3" />
                 </filter>
 
-                {/* Enhanced blur filter for small shapes */}
-                {isSmallShape && (
-                    <filter id={`LenhancedBlur_${uid}`} x="-100%" y="-100%" width="300%" height="300%">
-                        <feGaussianBlur stdDeviation="15" />
-                    </filter>
-                )}
-
                 <mask id={`Lmask_${uid}`} maskUnits="userSpaceOnUse">
                     <g filter={`url(#Ledge_${uid})`}>
                         <path d={d} fill="#fff" />
@@ -77,7 +75,7 @@ const LeftArc = ({
             </defs>
 
             <g opacity={opacity}>
-                <g style={{ filter: `blur(var(--blur, 0px))${isSmallShape ? ` url(#LenhancedBlur_${uid})` : ''}` } as CSSVar}>
+                <g style={{ filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined }}>
                     <path d={d} fill={`url(#L0_${tone}_${uid})`} />
                     <path d={d} fill={`url(#L1_${tone}_${uid})`} />
                 </g>
@@ -96,17 +94,18 @@ const RightArc = ({
     opacity,
     style,
     className,
+    blurAmount,
 }: {
     size: number;
     tone: Tone;
     opacity: number; // 0.22–0.38
-    style?: CSSVar;
+    style?: React.CSSProperties;
     className?: string;
+    blurAmount?: number;
 }) => {
     const uid = useId();
     const sw = 532;
     const sh = 657;
-    const isSmallShape = size <= 400;
     const c = { light: '#D9D9D9', medium: '#C9C9C9', dark: '#B9B9B9' }[tone];
 
     const d =
@@ -119,7 +118,12 @@ const RightArc = ({
             viewBox="-50 -50 632 757"
             fill="none"
             className={className}
-            style={{ overflow: 'visible', ...style }} // prevent blur cut-off
+            style={{
+                overflow: 'visible',
+                willChange: 'transform',
+                transform: 'translate3d(0, 0, 0)',
+                ...style
+            }}
         >
             <defs>
                 <linearGradient id={`R0_${tone}_${uid}`} x1="419.217" y1="3.89844" x2="419.217" y2="835.331" gradientUnits="userSpaceOnUse">
@@ -130,13 +134,6 @@ const RightArc = ({
                 <filter id={`Redge_${uid}`} x="-50%" y="-50%" width="200%" height="200%">
                     <feGaussianBlur stdDeviation="3" />
                 </filter>
-
-                {/* Enhanced blur filter for small shapes */}
-                {isSmallShape && (
-                    <filter id={`RenhancedBlur_${uid}`} x="-100%" y="-100%" width="300%" height="300%">
-                        <feGaussianBlur stdDeviation="15" />
-                    </filter>
-                )}
 
                 <mask id={`Rmask_${uid}`} maskUnits="userSpaceOnUse">
                     <g filter={`url(#Redge_${uid})`}>
@@ -150,7 +147,7 @@ const RightArc = ({
             </defs>
 
             <g opacity={opacity}>
-                <g style={{ filter: `blur(var(--blur, 0px))${isSmallShape ? ` url(#LenhancedBlur_${uid})` : ''}` } as CSSVar}>
+                <g style={{ filter: blurAmount && blurAmount > 0 ? `blur(${blurAmount}px)` : undefined }}>
                     <path d={d} fill={`url(#R0_${tone}_${uid})`} />
                 </g>
 
@@ -179,35 +176,70 @@ const Arc = ({ left, cfg }: { left?: boolean; cfg: ArcCfg }) => {
         left: cfg.pos.left,
         right: cfg.pos.right,
         top: cfg.pos.top,
+        willChange: 'transform',
+        transform: 'translate3d(0, 0, 0)',
+        backfaceVisibility: 'hidden',
+        WebkitBackfaceVisibility: 'hidden',
     };
 
-    // FIX TS2590: precompute initial/animate and cast to TargetAndTransition (Framer's accepted type)
-    const initialKV = {
-        x: 0,
-        y: 0,
-        scale: cfg.scale[0],
-        ['--blur']: cfg.blur[0],
-    } as unknown as TargetAndTransition;
+    // Convert blur strings to numbers for Safari compatibility
+    const blurValues = useMemo(() => cfg.blur.map(b => parseFloat(b)), [cfg.blur]);
 
-    const animateKV = {
-        x: cfg.x,
-        y: cfg.y,
-        scale: cfg.scale,
-        ['--blur']: cfg.blur,
-    } as unknown as TargetAndTransition;
+    // Use motion value for better performance (no re-renders)
+    const animationProgress = useMotionValue(0);
+
+    // Transform animation progress to blur value
+    const blurAmount = useTransform(animationProgress, [0, 0.33, 0.66, 1], [
+        blurValues[0],
+        blurValues[1],
+        blurValues[2],
+        blurValues[0]
+    ]);
+
+    const [currentBlur, setCurrentBlur] = useState(blurValues[0]);
+
+    useEffect(() => {
+        // Only update blur at most 30 times per second (throttled) for better performance
+        let lastUpdate = 0;
+        const unsubscribe = blurAmount.on('change', (latest) => {
+            const now = Date.now();
+            if (now - lastUpdate > 33) { // ~30fps max
+                setCurrentBlur(latest);
+                lastUpdate = now;
+            }
+        });
+        return unsubscribe;
+    }, [blurAmount]);
 
     return (
         <motion.div
             className="absolute"
             style={stylePos}
-            initial={initialKV}
-            animate={animateKV}
-            transition={{ duration: 4.6, delay: cfg.delay, ease: [0.85, 0, 0.06, 1.01], repeat: Infinity, repeatType: 'loop', times: [0, 0.33, 0.66, 1] }}
+            initial={{ x: 0, y: 0, scale: cfg.scale[0] }}
+            animate={{
+                x: cfg.x,
+                y: cfg.y,
+                scale: cfg.scale
+            }}
+            transition={{
+                duration: 4.6,
+                delay: cfg.delay,
+                ease: [0.85, 0, 0.06, 1.01],
+                repeat: Infinity,
+                repeatType: 'loop',
+                times: [0, 0.33, 0.66, 1]
+            }}
+            onUpdate={(latest) => {
+                // Update animation progress for blur interpolation
+                const startTime = cfg.delay * 1000;
+                const elapsed = (Date.now() - startTime) % 4600;
+                animationProgress.set(elapsed / 4600);
+            }}
         >
             {left ? (
-                <LeftArc size={cfg.size} tone={cfg.tone} opacity={cfg.opacity} />
+                <LeftArc size={cfg.size} tone={cfg.tone} opacity={cfg.opacity} blurAmount={currentBlur} />
             ) : (
-                <RightArc size={cfg.size} tone={cfg.tone} opacity={cfg.opacity} />
+                <RightArc size={cfg.size} tone={cfg.tone} opacity={cfg.opacity} blurAmount={currentBlur} />
             )}
         </motion.div>
     );
@@ -370,7 +402,13 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
     const right = customArcs?.right ? mergeArcs(baseRight, customArcs.right) : baseRight;
 
     return (
-        <div className={`absolute inset-0 overflow-hidden pointer-events-none ${variant === 'header' ? 'z-0' : '-z-10'}`}>
+        <div
+            className={`absolute inset-0 overflow-hidden pointer-events-none ${variant === 'header' ? 'z-0' : '-z-10'}`}
+            style={{
+                transform: 'translateZ(0)',
+                WebkitTransform: 'translateZ(0)',
+            }}
+        >
             <div className="absolute inset-0">
                 {left.map((cfg, i) => (
                     <Arc key={`L${i}`} left cfg={cfg} />

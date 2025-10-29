@@ -242,7 +242,39 @@ export function HeroSection() {
             />
             <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
                 {/* Animated background */}
-                <AnimatedBg variant="hero" />
+                <AnimatedBg
+                    variant="hero"
+                    sizeMultiplier={isMobile ? 0.7 : 1}
+                    blurMultiplier={isMobile ? 0.6 : 1}
+                    customArcs={isMobile ? {
+                        left: [
+                            {
+                                pos: { left: -150, top: 30 },
+                                size: 380,
+                                tone: 'medium' as const,
+                                opacity: 0.15,
+                                delay: 0.5,
+                                x: [0, 15, -8, 0],
+                                y: [0, 12, -6, 0],
+                                scale: [0.82, 1.08, 0.94, 0.82],
+                                blur: ['12px', '20px', '16px', '12px'],
+                            },
+                        ],
+                        right: [
+                            {
+                                pos: { right: -120, top: 140 },
+                                size: 300,
+                                tone: 'dark' as const,
+                                opacity: 0.2,
+                                delay: 1.0,
+                                x: [0, -18, 10, 0],
+                                y: [0, 14, -8, 0],
+                                scale: [0.86, 1.14, 1.0, 0.86],
+                                blur: ['10px', '6px', '8px', '10px'],
+                            },
+                        ],
+                    } : undefined}
+                />
 
                 <div className="relative z-10 pt-16 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center">
 
