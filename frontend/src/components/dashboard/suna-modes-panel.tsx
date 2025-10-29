@@ -120,22 +120,22 @@ const modes: Mode[] = [
     options: {
       title: 'Choose a template',
       items: [
-        { id: 'modern', name: 'Modern', description: 'Clean and professional' },
-        { id: 'bold', name: 'Bold', description: 'High impact design' },
-        { id: 'elegant', name: 'Elegant', description: 'Sophisticated style' },
-        { id: 'tech', name: 'Tech', description: 'Technology focused' },
-        { id: 'creative', name: 'Creative', description: 'Artistic and unique' },
-        { id: 'minimal', name: 'Minimal', description: 'Simple and clear' },
-        { id: 'corporate', name: 'Corporate', description: 'Business standard' },
-        { id: 'vibrant', name: 'Vibrant', description: 'Colorful and energetic' },
-        { id: 'startup', name: 'Startup', description: 'Dynamic and innovative' },
-        { id: 'professional', name: 'Professional', description: 'Polished and refined' },
-        { id: 'dark', name: 'Dark', description: 'Dark mode aesthetic' },
-        { id: 'playful', name: 'Playful', description: 'Fun and engaging' },
-        { id: 'sophisticated', name: 'Sophisticated', description: 'Premium luxury feel' },
-        { id: 'gradient', name: 'Gradient', description: 'Modern gradients' },
-        { id: 'monochrome', name: 'Monochrome', description: 'Black and white' },
-        { id: 'futuristic', name: 'Futuristic', description: 'Cutting-edge design' },
+        { id: 'minimalist', name: 'Minimalist', description: 'Clean and simple design', image: '/images/presentation-templates/minimalist-min.png' },
+        { id: 'minimalist_2', name: 'Minimalist 2', description: 'Alternative minimal style', image: '/images/presentation-templates/minimalist_2-min.png' },
+        { id: 'black_and_white_clean', name: 'Black & White', description: 'Classic monochrome', image: '/images/presentation-templates/black_and_white_clean-min.png' },
+        { id: 'colorful', name: 'Colorful', description: 'Vibrant and energetic', image: '/images/presentation-templates/colorful-min.png' },
+        { id: 'startup', name: 'Startup', description: 'Dynamic and innovative', image: '/images/presentation-templates/startup-min.png' },
+        { id: 'elevator_pitch', name: 'Elevator Pitch', description: 'Quick and impactful', image: '/images/presentation-templates/elevator_pitch-min.png' },
+        { id: 'portfolio', name: 'Portfolio', description: 'Showcase your work', image: '/images/presentation-templates/portfolio-min.png' },
+        { id: 'textbook', name: 'Textbook', description: 'Educational and structured', image: '/images/presentation-templates/textbook-min.png' },
+        { id: 'architect', name: 'Architect', description: 'Professional and precise', image: '/images/presentation-templates/architect-min.png' },
+        { id: 'hipster', name: 'Hipster', description: 'Modern and trendy', image: '/images/presentation-templates/hipster-min.png' },
+        { id: 'green', name: 'Green', description: 'Nature-inspired design', image: '/images/presentation-templates/green-min.png' },
+        { id: 'premium_black', name: 'Premium Black', description: 'Luxury dark theme', image: '/images/presentation-templates/premium_black-min.png' },
+        { id: 'premium_green', name: 'Premium Green', description: 'Sophisticated green', image: '/images/presentation-templates/premium_green-min.png' },
+        { id: 'professor_gray', name: 'Professor Gray', description: 'Academic and scholarly', image: '/images/presentation-templates/professor_gray-min.png' },
+        { id: 'gamer_gray', name: 'Gamer Gray', description: 'Gaming-inspired design', image: '/images/presentation-templates/gamer_gray-min.png' },
+        { id: 'competitor_analysis_blue', name: 'Analysis Blue', description: 'Business analysis focused', image: '/images/presentation-templates/competitor_analysis_blue-min.png' },
       ],
     },
   },
@@ -1316,11 +1316,19 @@ export function SunaModesPanel({
                       )
                     }
                   >
-                    <div className="w-full aspect-[4/3] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center p-3">
-                      <SlideTemplateIcon 
-                        type={item.id} 
-                        className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
-                      />
+                    <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative">
+                      {item.image ? (
+                        <img 
+                          src={item.image} 
+                          alt={item.name}
+                          className="w-full h-auto"
+                        />
+                      ) : (
+                        <SlideTemplateIcon 
+                          type={item.id} 
+                          className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                        />
+                      )}
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
