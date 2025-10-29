@@ -1,7 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import { BlurView } from 'expo-blur';
 import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Square, Loader2 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -318,20 +317,13 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       ]}
       {...props}
     >
-      {/* Blur Background */}
-      <BlurView
-        intensity={80}
-        tint={colorScheme === 'dark' ? 'dark' : 'light'}
-        className="absolute inset-0"
-      />
-      
-      {/* Semi-transparent background overlay */}
+      {/* Solid background */}
       <View 
         className="absolute inset-0"
         style={{ 
           backgroundColor: colorScheme === 'dark' 
-            ? 'rgba(22, 22, 24, 0.7)' 
-            : 'rgba(255, 255, 255, 0.7)' 
+            ? '#161618' 
+            : '#FFFFFF' 
         }}
       />
 

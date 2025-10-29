@@ -266,11 +266,9 @@ export function ThreadPage({
     return {
       transform: [
         {
-          translateY: withSpring(-keyboard.height.value, {
-            damping: 25,
-            stiffness: 300,
-            mass: 0.8,
-            overshootClamping: false,
+          translateY: withTiming(-keyboard.height.value, {
+            duration: 250,               // Match iOS keyboard animation duration
+            easing: Easing.out(Easing.cubic),  // iOS-like easing curve
           }),
         },
       ],

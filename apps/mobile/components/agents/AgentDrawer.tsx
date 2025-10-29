@@ -1,10 +1,11 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { BlurBackdrop } from '@/components/ui/BlurBackdrop';
 import { useLanguage } from '@/contexts';
 import { useAgent } from '@/contexts/AgentContext';
-import BottomSheet, { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
+import { useAdvancedFeatures } from '@/hooks';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { 
   Plus, 
@@ -82,6 +83,7 @@ export function AgentDrawer({
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
+  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   
   // Get agents and models from context/API
   const { agents, selectedAgentId, selectAgent, isLoading } = useAgent();
@@ -151,6 +153,19 @@ export function AgentDrawer({
       console.error('Failed to update model:', error);
     }
   }, [selectedAgentId, updateAgentMutation, navigateToView]);
+
+  const renderBackdrop = React.useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
 
   // Render main view content
   const renderMainView = () => (
@@ -236,81 +251,84 @@ export function AgentDrawer({
         )}
       </View>
 
-      {/* Divider */}
-      <View 
-        style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-        className="h-px w-full my-3" 
-      />
+      {/* Divider & Worker Settings Section - Only show when advanced features enabled */}
+      {advancedFeaturesEnabled && (
+        <>
+          <View 
+            style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
+            className="h-px w-full my-3" 
+          />
+          
+          <View className="pb-2">
+            <View className="flex-row items-center justify-between mb-2.5">
+              <Text 
+                style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+                className="text-sm font-roobert-medium"
+              >
+                Worker Settings
+              </Text>
+            </View>
 
-      {/* Worker Settings Section */}
-      <View className="pb-2">
-        <View className="flex-row items-center justify-between mb-2.5">
-          <Text 
-            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
-            className="text-sm font-roobert-medium"
-          >
-            Worker Settings
-          </Text>
-        </View>
-
-        {/* Settings Icons Row */}
-        <View className="flex-row gap-1.5 opacity-75">
-          <Pressable 
-            style={{ 
-              borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-              borderWidth: 1.5,
-            }}
-            className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          >
-            <Briefcase size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-          
-          <Pressable 
-            style={{ 
-              borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-              borderWidth: 1.5,
-            }}
-            className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          >
-            <FileText size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-          
-          <Pressable 
-            style={{ 
-              borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-              borderWidth: 1.5,
-            }}
-            className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          >
-            <BookOpen size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-          
-          <Pressable 
-            style={{ 
-              borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-              borderWidth: 1.5,
-            }}
-            className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          >
-            <Zap size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-          
-          <Pressable 
-            style={{ 
-              borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-              borderWidth: 1.5,
-            }}
-            className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-            onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-          >
-            <Layers size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-        </View>
-      </View>
+            {/* Settings Icons Row */}
+            <View className="flex-row gap-1.5 opacity-75">
+              <Pressable 
+                style={{ 
+                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
+                  borderWidth: 1.5,
+                }}
+                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
+                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              >
+                <Briefcase size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              </Pressable>
+              
+              <Pressable 
+                style={{ 
+                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
+                  borderWidth: 1.5,
+                }}
+                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
+                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              >
+                <FileText size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              </Pressable>
+              
+              <Pressable 
+                style={{ 
+                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
+                  borderWidth: 1.5,
+                }}
+                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
+                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              >
+                <BookOpen size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              </Pressable>
+              
+              <Pressable 
+                style={{ 
+                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
+                  borderWidth: 1.5,
+                }}
+                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
+                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              >
+                <Zap size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              </Pressable>
+              
+              <Pressable 
+                style={{ 
+                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
+                  borderWidth: 1.5,
+                }}
+                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
+                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              >
+                <Layers size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+              </Pressable>
+            </View>
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 
@@ -439,11 +457,11 @@ export function AgentDrawer({
       snapPoints={['95%']}
       enablePanDownToClose
       onChange={(index) => index === -1 && onClose()}
-      backdropComponent={BlurBackdrop}
+      backdropComponent={renderBackdrop}
       backgroundStyle={{ 
         backgroundColor: colorScheme === 'dark' 
-          ? 'rgba(22, 22, 24, 0.8)' 
-          : 'rgba(255, 255, 255, 0.95)',
+          ? '#161618' 
+          : '#FFFFFF',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

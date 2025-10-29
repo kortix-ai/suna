@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { BlurBackdrop } from '@/components/ui/BlurBackdrop';
-import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { Share, FolderOpen, Trash2, ChevronRight } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -150,6 +150,19 @@ export function ThreadActionsDrawer({
     onClose();
   };
 
+  const renderBackdrop = React.useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
   return (
     <BottomSheet
       ref={bottomSheetRef}
@@ -157,11 +170,11 @@ export function ThreadActionsDrawer({
       snapPoints={snapPoints}
       enablePanDownToClose
       onChange={handleSheetChange}
-      backdropComponent={BlurBackdrop}
+      backdropComponent={renderBackdrop}
       backgroundStyle={{
         backgroundColor: colorScheme === 'dark' 
-          ? 'rgba(22, 22, 24, 0.8)' 
-          : 'rgba(255, 255, 255, 0.95)',
+          ? '#161618' 
+          : '#FFFFFF',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

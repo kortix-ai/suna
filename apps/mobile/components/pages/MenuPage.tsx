@@ -11,6 +11,7 @@ import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { Search, Plus, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
@@ -211,6 +212,35 @@ function BackButton({ onPress }: BackButtonProps) {
   );
 }
 
+
+/**
+ * BigNewChatButton Component - Uses the standard Button component with Figma design
+ */
+interface BigNewChatButtonProps {
+  onPress?: () => void;
+}
+
+function BigNewChatButton({ onPress }: BigNewChatButtonProps) {
+  const { t } = useLanguage();
+  
+  return (
+    <Button
+      onPress={onPress}
+      variant="outline"
+      size="figma"
+      className="w-full"
+    >
+      <Icon 
+        as={Plus}
+        size={20}
+        strokeWidth={2}
+      />
+      <Text>
+        {t('menu.newChat')}
+      </Text>
+    </Button>
+  );
+}
 
 /**
  * FloatingActionButton Component
@@ -506,7 +536,7 @@ export function MenuPage({
         {/* Main Content Container */}
         <View className="flex-1 px-6 pt-2">
           {/* Header: Profile (80%) + Back Button (20%) */}
-          <View className="flex-row items-center justify-between mb-6">
+          <View className="flex-row items-center justify-between mb-4">
             <View className="flex-1 mr-4">
               <ProfileSection
                 profile={profile}
@@ -514,6 +544,34 @@ export function MenuPage({
               />
             </View>
             <BackButton onPress={onClose} />
+          </View>
+          
+          {/* Search Bar - Sticky below header */}
+          <View className="mb-4">
+            {activeTab === 'chats' && (
+              <SearchBar
+                value={chatsSearch.query}
+                onChangeText={chatsSearch.updateQuery}
+                placeholder={t('menu.searchConversations') || 'Search chats...'}
+                onClear={chatsSearch.clearSearch}
+              />
+            )}
+            {activeTab === 'workers' && (
+              <SearchBar
+                value={workersSearch.query}
+                onChangeText={workersSearch.updateQuery}
+                placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
+                onClear={workersSearch.clearSearch}
+              />
+            )}
+            {activeTab === 'triggers' && (
+              <SearchBar
+                value={triggersSearch.query}
+                onChangeText={triggersSearch.updateQuery}
+                placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
+                onClear={triggersSearch.clearSearch}
+              />
+            )}
           </View>
           
           {/* Scrollable Content Area with Bottom Blur */}
@@ -528,16 +586,6 @@ export function MenuPage({
             >
               {activeTab === 'chats' && (
                 <>
-                  {/* Chats Search Bar */}
-                  <View className="mb-4">
-                    <SearchBar
-                      value={chatsSearch.query}
-                      onChangeText={chatsSearch.updateQuery}
-                      placeholder={t('menu.searchConversations') || 'Search chats...'}
-                      onClear={chatsSearch.clearSearch}
-                    />
-                  </View>
-                  
                   {isLoadingThreads ? (
                     <EmptyState
                       type="loading"
@@ -609,16 +657,6 @@ export function MenuPage({
               
               {activeTab === 'workers' && (
                 <>
-                  {/* Workers Search Bar */}
-                  <View className="mb-4">
-                    <SearchBar
-                      value={workersSearch.query}
-                      onChangeText={workersSearch.updateQuery}
-                      placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
-                      onClear={workersSearch.clearSearch}
-                    />
-                  </View>
-                  
                   {agentResults.length === 0 && !workersSearch.isSearching ? (
                     <EmptyState
                       type="empty"
@@ -649,16 +687,6 @@ export function MenuPage({
               
               {activeTab === 'triggers' && (
                 <>
-                  {/* Triggers Search Bar */}
-                  <View className="mb-4">
-                    <SearchBar
-                      value={triggersSearch.query}
-                      onChangeText={triggersSearch.updateQuery}
-                      placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
-                      onClear={triggersSearch.clearSearch}
-                    />
-                  </View>
-                  
                   {triggersLoading ? (
                     <EmptyState
                       type="loading"
@@ -734,17 +762,19 @@ export function MenuPage({
           </View>
         </View>
         
-        {/* Bottom Section: Navigation (Elegant Layout) */}
-        {advancedFeaturesEnabled && (
-          <View className="px-6 pb-4">
+        {/* Bottom Section: Navigation or New Chat Button */}
+        <View className="px-6 pb-4">
+          {advancedFeaturesEnabled ? (
             <BottomNav
               activeTab={activeTab}
               onChatsPress={onChatsPress}
               onWorkersPress={onWorkersPress}
               onTriggersPress={onTriggersPress}
             />
-          </View>
-        )}
+          ) : (
+            <BigNewChatButton onPress={onNewChat} />
+          )}
+        </View>
       </SafeAreaView>
       
       {/* Settings Drawer */}
@@ -755,12 +785,14 @@ export function MenuPage({
       />
       
       {/* Floating Action Button */}
-      <FloatingActionButton
-        activeTab={activeTab}
-        onChatPress={onNewChat}
-        onWorkerPress={onNewWorker}
-        onTriggerPress={handleTriggerCreate}
-      />
+      {advancedFeaturesEnabled && (
+        <FloatingActionButton
+          activeTab={activeTab}
+          onChatPress={onNewChat}
+          onWorkerPress={onNewWorker}
+          onTriggerPress={handleTriggerCreate}
+        />
+      )}
 
       {/* Trigger Creation Drawer */}
       <TriggerCreationDrawer

@@ -12,7 +12,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
-import { BlurView } from 'expo-blur';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -125,22 +124,15 @@ export function ThreadHeader({
       }}
       pointerEvents="box-none" // Allow touches to pass through empty areas
     >
-      {/* Floating blur card - Sleek minimal design */}
+      {/* Floating card with solid background - Sleek minimal design */}
       <View className="relative rounded-2xl pt-12 border border-border/30 overflow-hidden">
-        {/* Blur Background */}
-        <BlurView
-          intensity={100}
-          tint={colorScheme === 'dark' ? 'dark' : 'light'}
-          className="absolute inset-0"
-        />
-        
-        {/* Semi-transparent background overlay */}
+        {/* Solid Background */}
         <View 
           className="absolute inset-0"
           style={{ 
             backgroundColor: colorScheme === 'dark' 
-              ? 'rgba(22, 22, 24, 0.5)' 
-              : 'rgba(255, 255, 255, 0.5)' 
+              ? '#161618' 
+              : '#FFFFFF' 
           }}
         />
 

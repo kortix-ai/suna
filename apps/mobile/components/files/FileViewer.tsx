@@ -9,7 +9,6 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { X, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import { BlurView } from 'expo-blur';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -187,11 +186,16 @@ export function FileViewer({
       statusBarTranslucent
     >
       <View className="flex-1">
-        {/* Blur Background */}
-        <BlurView
-          intensity={isDark ? 80 : 60}
-          tint={isDark ? 'dark' : 'light'}
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+        {/* Solid Background */}
+        <View
+          style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0,
+            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.9)'
+          }}
         />
 
         {/* Header */}

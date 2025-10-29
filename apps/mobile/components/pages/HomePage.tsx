@@ -4,8 +4,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import Animated, { 
   useAnimatedStyle, 
-  withSpring,
+  withTiming,
   useAnimatedKeyboard,
+  Easing,
 } from 'react-native-reanimated';
 import { AgentDrawer } from '@/components/agents';
 import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
@@ -70,18 +71,16 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     },
   }), []);
 
-  // Snappy keyboard animation - instant response
+  // Instant keyboard animation - synchronized with native keyboard
   const keyboard = useAnimatedKeyboard();
   
   const animatedBottomStyle = useAnimatedStyle(() => {
     return {
       transform: [
         {
-          translateY: withSpring(-keyboard.height.value, {
-            damping: 20,               // Low damping = very fast
-            stiffness: 500,            // Very high stiffness = instant snap
-            mass: 0.5,                 // Very light = instant response
-            overshootClamping: true,   // No overshoot = direct movement
+          translateY: withTiming(-keyboard.height.value, {
+            duration: 250,               // Match iOS keyboard animation duration
+            easing: Easing.out(Easing.cubic),  // iOS-like easing curve
           }),
         },
       ],
