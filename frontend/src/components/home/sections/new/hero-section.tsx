@@ -41,6 +41,7 @@ import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog'
 import { Examples } from '@/components/dashboard/examples';
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
 import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
+import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -57,7 +58,14 @@ export function HeroSection() {
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
-    const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
+    
+    // Use centralized agent selection hook with persistence
+    const {
+        selectedAgentId,
+        setSelectedAgent,
+        initializeFromAgents,
+        getCurrentAgent
+    } = useAgentSelection();
     
     // Use centralized Suna modes persistence hook
     const {
@@ -107,6 +115,13 @@ export function HeroSection() {
     )();
 
     const agents = agentsResponse?.agents || [];
+
+    // Initialize agent selection from agents list
+    useEffect(() => {
+        if (agents.length > 0) {
+            initializeFromAgents(agents, undefined, setSelectedAgent);
+        }
+    }, [agents, initializeFromAgents, setSelectedAgent]);
 
     // Determine if selected agent is Suna default
     const selectedAgent = selectedAgentId
@@ -250,7 +265,7 @@ export function HeroSection() {
                                     onChange={setInputValue}
                                     isLoggedIn={!!user}
                                     selectedAgentId={selectedAgentId}
-                                    onAgentSelect={setSelectedAgentId}
+                                    onAgentSelect={setSelectedAgent}
                                     autoFocus={false}
                                     enableAdvancedConfig={false}
                                     selectedMode={selectedMode}

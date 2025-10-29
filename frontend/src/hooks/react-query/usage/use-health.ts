@@ -12,5 +12,7 @@ export const useApiHealth = createQueryHook(
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
     retry: 3,
+    // Add placeholder data to prevent maintenance page flash on navigation
+    placeholderData: { status: 'ok', timestamp: '', instance_id: '' },
   }
 ); 

@@ -21,5 +21,7 @@ export const useMaintenanceNoticeQuery = createQueryHook(
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
     retry: 3,
+    // Add placeholder data to prevent loading flash on navigation
+    placeholderData: { enabled: false },
   },
 );
