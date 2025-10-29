@@ -38,7 +38,6 @@ import { createQueryHook } from '@/hooks/use-query';
 import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { getAgents } from '@/hooks/react-query/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
-import { Examples } from '@/components/dashboard/examples';
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
 import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
@@ -124,10 +123,11 @@ export function HeroSection() {
     }, [agents, initializeFromAgents, setSelectedAgent]);
 
     // Determine if selected agent is Suna default
+    // For unauthenticated users, assume Suna is the default
     const selectedAgent = selectedAgentId
         ? agents.find(agent => agent.agent_id === selectedAgentId)
         : null;
-    const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
+    const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
 
     // Auth dialog state
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -272,12 +272,13 @@ export function HeroSection() {
                                     onModeDeselect={() => setSelectedMode(null)}
                                     selectedCharts={selectedCharts}
                                     selectedOutputFormat={selectedOutputFormat}
+                                    selectedTemplate={selectedTemplate}
                                 />
                             </div>
                         </div>
                     </div>
 
-                    {/* Modes Panel - Below chat input, only visible when Suna agent is selected */}
+                    {/* Modes Panel - Below chat input, visible for Suna agent */}
                     {isSunaAgent && (
                         <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
                             <SunaModesPanel
@@ -289,6 +290,8 @@ export function HeroSection() {
                                 onChartsChange={setSelectedCharts}
                                 selectedOutputFormat={selectedOutputFormat}
                                 onOutputFormatChange={setSelectedOutputFormat}
+                                selectedTemplate={selectedTemplate}
+                                onTemplateChange={setSelectedTemplate}
                             />
                         </div>
                     )}
