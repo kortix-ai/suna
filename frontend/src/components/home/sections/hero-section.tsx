@@ -9,11 +9,7 @@ import { useScroll } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import {
-  BillingError,
-  AgentRunLimitError,
-  ProjectLimitError,
-} from '@/lib/api';
+import { BillingError, AgentRunLimitError, ProjectLimitError } from '@/lib/api';
 import { useInitiateAgentMutation } from '@/hooks/react-query/dashboard/use-initiate-agent';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { generateThreadName } from '@/lib/actions/threads';
@@ -34,7 +30,10 @@ import { isLocalMode, config } from '@/lib/config';
 import { toast } from 'sonner';
 import { BillingModal } from '@/components/billing/billing-modal';
 import GitHubSignIn from '@/components/GithubSignIn';
-import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
+import {
+  ChatInput,
+  ChatInputHandles,
+} from '@/components/thread/chat-input/chat-input';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { createQueryHook } from '@/hooks/use-query';
 import { agentKeys } from '@/hooks/react-query/agents/keys';
@@ -48,12 +47,12 @@ const BlurredDialogOverlay = () => (
 );
 
 // Rotating text component for job types
-const RotatingText = ({ 
-  texts, 
-  className = "" 
-}: { 
-  texts: string[]; 
-  className?: string; 
+const RotatingText = ({
+  texts,
+  className = '',
+}: {
+  texts: string[];
+  className?: string;
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
@@ -61,7 +60,7 @@ const RotatingText = ({
   useEffect(() => {
     const interval = setInterval(() => {
       setIsVisible(false);
-      
+
       setTimeout(() => {
         setCurrentIndex((prev) => (prev + 1) % texts.length);
         setIsVisible(true);
@@ -73,7 +72,7 @@ const RotatingText = ({
 
   return (
     <span className={`inline-block transition-all duration-300 ${className}`}>
-      <span 
+      <span
         className={`inline-block transition-opacity duration-300 ${
           isVisible ? 'opacity-100' : 'opacity-0'
         }`}
@@ -97,21 +96,20 @@ export function HeroSection() {
   const { scrollY } = useScroll();
   const [inputValue, setInputValue] = useState('');
   const router = useRouter();
-  
+
   // Use the agent selection store for localStorage persistence
-  const { 
-    selectedAgentId, 
-    setSelectedAgent, 
-    initializeFromAgents 
-  } = useAgentSelection();
+  const { selectedAgentId, setSelectedAgent, initializeFromAgents } =
+    useAgentSelection();
   const { user, isLoading } = useAuth();
   const { billingError, handleBillingError, clearBillingError } =
     useBillingError();
-  const { data: accounts } = useAccounts({ enabled: !!user });
+  const { data: accounts } = useAccounts({ enabled: !!user && !isLoading });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const initiateAgentMutation = useInitiateAgentMutation();
-  const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
+  const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(
+    null,
+  );
   const threadQuery = useThreadQuery(initiatedThreadId || '');
   const chatInputRef = useRef<ChatInputHandles>(null);
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
@@ -125,18 +123,19 @@ export function HeroSection() {
     agentKeys.list({
       limit: 100,
       sort_by: 'name',
-      sort_order: 'asc'
+      sort_order: 'asc',
     }),
-    () => getAgents({
-      limit: 100,
-      sort_by: 'name',
-      sort_order: 'asc'
-    }),
+    () =>
+      getAgents({
+        limit: 100,
+        sort_by: 'name',
+        sort_order: 'asc',
+      }),
     {
       enabled: !!user && !isLoading,
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
-    }
+    },
   )();
 
   const agents = agentsResponse?.agents || [];
@@ -196,7 +195,9 @@ export function HeroSection() {
     if (threadQuery.data && initiatedThreadId) {
       const thread = threadQuery.data;
       if (thread.project_id) {
-        router.push(`/projects/${thread.project_id}/thread/${initiatedThreadId}`);
+        router.push(
+          `/projects/${thread.project_id}/thread/${initiatedThreadId}`,
+        );
       } else {
         router.push(`/agents/${initiatedThreadId}`);
       }
@@ -207,9 +208,13 @@ export function HeroSection() {
   // Handle ChatInput submission
   const handleChatInputSubmit = async (
     message: string,
-    options?: { model_name?: string }
+    options?: { model_name?: string },
   ) => {
-    if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting) return;
+    if (
+      (!message.trim() && !chatInputRef.current?.getPendingFiles().length) ||
+      isSubmitting
+    )
+      return;
 
     // If user is not logged in, save prompt and show auth dialog
     if (!user && !isLoading) {
@@ -238,7 +243,8 @@ export function HeroSection() {
         formData.append('files', file, normalizedName);
       });
 
-      if (options?.model_name) formData.append('model_name', options.model_name);
+      if (options?.model_name)
+        formData.append('model_name', options.model_name);
       formData.append('stream', 'true'); // Always stream for better UX
       formData.append('enable_context_manager', 'false');
 
@@ -257,7 +263,7 @@ export function HeroSection() {
         setShowPaymentModal(true);
       } else if (error instanceof AgentRunLimitError) {
         const { running_thread_ids, running_count } = error.detail;
-        
+
         setAgentLimitData({
           runningCount: running_count,
           runningThreadIds: running_thread_ids,
@@ -282,8 +288,8 @@ export function HeroSection() {
 
   return (
     <section id="hero" className="w-full relative overflow-hidden">
-      <BillingModal 
-        open={showPaymentModal} 
+      <BillingModal
+        open={showPaymentModal}
         onOpenChange={setShowPaymentModal}
         showUsageLimitAlert={true}
       />
@@ -306,7 +312,7 @@ export function HeroSection() {
               gridGap={tablet ? 2 : 2.5}
               color="var(--secondary)"
               maxOpacity={tablet ? 0.2 : 0.4}
-              flickerChance={isScrolling ? 0.005 : (tablet ? 0.015 : 0.03)} // Lower performance impact on mobile
+              flickerChance={isScrolling ? 0.005 : tablet ? 0.015 : 0.03} // Lower performance impact on mobile
             />
           )}
         </div>
@@ -329,7 +335,7 @@ export function HeroSection() {
               gridGap={tablet ? 2 : 2.5}
               color="var(--secondary)"
               maxOpacity={tablet ? 0.2 : 0.4}
-              flickerChance={isScrolling ? 0.005 : (tablet ? 0.015 : 0.03)} // Lower performance impact on mobile
+              flickerChance={isScrolling ? 0.005 : tablet ? 0.015 : 0.03} // Lower performance impact on mobile
             />
           )}
         </div>
@@ -375,13 +381,30 @@ export function HeroSection() {
           <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-12 max-w-4xl mx-auto">
             <h1 className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-medium tracking-tighter text-balance text-center px-2">
               <span className="text-primary">Hire Kortix for </span>
-              <RotatingText 
-                texts={['Research', 'Presentations', 'Docs', 'Spreadsheets', 'Design', 'Data Analysis', 'Email Management', 'Social Media', 'SEO', 'Lead Generation', 'Customer Support', 'Content Creation', 'Project Management', 'Sales', 'Marketing', 'Analytics']}
+              <RotatingText
+                texts={[
+                  'Research',
+                  'Presentations',
+                  'Docs',
+                  'Spreadsheets',
+                  'Design',
+                  'Data Analysis',
+                  'Email Management',
+                  'Social Media',
+                  'SEO',
+                  'Lead Generation',
+                  'Customer Support',
+                  'Content Creation',
+                  'Project Management',
+                  'Sales',
+                  'Marketing',
+                  'Analytics',
+                ]}
                 className="text-secondary"
               />
             </h1>
             <p className="text-base md:text-lg text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight max-w-2xl px-2">
-            Deploy AI Workers that run your business autonomously.
+              Deploy AI Workers that run your business autonomously.
             </p>
           </div>
 
@@ -407,13 +430,10 @@ export function HeroSection() {
               {/* Subtle glow effect */}
               <div className="absolute -bottom-4 inset-x-0 h-6 bg-secondary/20 blur-xl rounded-full -z-10 opacity-70"></div>
             </div>
-            
           </div>
-
         </div>
-
       </div>
-        <div className="mb-8 sm:mb-16 sm:mt-32 mx-auto"></div>
+      <div className="mb-8 sm:mb-16 sm:mt-32 mx-auto"></div>
 
       {/* Auth Dialog */}
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
@@ -435,8 +455,6 @@ export function HeroSection() {
               Sign in or create an account to talk with Suna
             </DialogDescription>
           </DialogHeader>
-
-
 
           {/* OAuth Sign In */}
           <div className="w-full">

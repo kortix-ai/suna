@@ -34,14 +34,8 @@ const getEnvironmentConfig = () => {
     typeof window !== 'undefined' &&
     window.location.hostname.includes('local.enso.bot');
 
-  console.log('🔐 [Auth Config] Building configuration:', {
-    environment,
-    isLocal,
-  });
-
-  // LOCAL DEVELOPMENT CONFIGURATION
   if (isLocal) {
-    const config = {
+    return {
       environment: 'local',
       userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID || 'MISSING',
       userPoolClientId:
@@ -54,17 +48,14 @@ const getEnvironmentConfig = () => {
       baseDomain: 'local.enso.bot:5173',
       superDomain: 'super.local.enso.bot:3000',
     };
-    console.log('🔐 [Auth Config] Local config created:', config);
-    return config;
   }
 
-  // Base domains based on environment
   const baseDomain =
     environment === 'prod' ? 'enso.bot' : `${environment}.enso.bot`;
   const superDomain =
     environment === 'prod' ? 'super.enso.bot' : `super.${environment}.enso.bot`;
 
-  const config = {
+  return {
     environment,
     userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID || '',
     userPoolClientId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID || '',
@@ -76,9 +67,6 @@ const getEnvironmentConfig = () => {
     baseDomain,
     superDomain,
   };
-
-  console.log('🔐 [Auth Config] Production/Staging config created:', config);
-  return config;
 };
 
 export class CognitoAuthService {
@@ -88,7 +76,6 @@ export class CognitoAuthService {
 
   static getInstance(): CognitoAuthService {
     if (!CognitoAuthService.instance) {
-      console.log('🔐 [Auth Service] Creating new instance');
       CognitoAuthService.instance = new CognitoAuthService();
     }
     return CognitoAuthService.instance;
@@ -96,38 +83,22 @@ export class CognitoAuthService {
 
   initialize() {
     if (this.isInitialized) {
-      console.log('🔐 [Auth Service] Already initialized, skipping');
       return;
     }
 
-    console.log('🔐 [Auth Service] Starting initialization...');
-
-    // Validate required config
     if (
       !this.config.userPoolId ||
       !this.config.userPoolClientId ||
       !this.config.domain
     ) {
-      console.error(
-        '❌ [Auth Service] Missing required environment variables:',
-        {
-          hasUserPoolId: !!this.config.userPoolId,
-          hasUserPoolClientId: !!this.config.userPoolClientId,
-          hasDomain: !!this.config.domain,
-        },
-      );
+      console.error('[CognitoAuth] Missing required configuration:', {
+        hasUserPoolId: !!this.config.userPoolId,
+        hasUserPoolClientId: !!this.config.userPoolClientId,
+        hasDomain: !!this.config.domain,
+      });
       throw new Error('Missing required Cognito configuration');
     }
 
-    console.log('🔐 [Auth Service] Configuration validated:', {
-      userPoolId: this.config.userPoolId,
-      clientId: this.config.userPoolClientId?.substring(0, 8) + '...',
-      domain: this.config.domain,
-      redirectSignIn: this.config.redirectSignIn,
-      redirectSignOut: this.config.redirectSignOut,
-    });
-
-    // Configure Amplify with environment-specific settings
     Amplify.configure({
       Auth: {
         Cognito: {
@@ -151,9 +122,6 @@ export class CognitoAuthService {
       },
     });
 
-    console.log('✅ [Auth Service] Amplify configured');
-
-    // Configure CookieStorage for cross-domain token sharing
     cognitoUserPoolsTokenProvider.setKeyValueStorage(
       new CookieStorage({
         domain: this.config.cookieDomain,
@@ -163,90 +131,71 @@ export class CognitoAuthService {
       }),
     );
 
-    console.log(
-      '✅ [Auth Service] Cookie storage configured for domain:',
-      this.config.cookieDomain,
-    );
-
     this.isInitialized = true;
-    console.log('✅ [Auth Service] Initialization complete');
   }
 
   async isAuthenticated(): Promise<boolean> {
     try {
-      console.log('🔐 [Auth Service] Checking authentication status...');
       const session = await fetchAuthSession();
-      const isAuth = !!session.tokens?.accessToken;
-      console.log('🔐 [Auth Service] Authentication status:', isAuth);
-      return isAuth;
+      return !!session.tokens?.accessToken;
     } catch (error) {
-      console.error('❌ [Auth Service] Error checking authentication:', error);
+      console.error('[CognitoAuth] Error checking authentication:', error);
       return false;
     }
   }
 
   async getAccessToken(): Promise<string | null> {
     try {
-      console.log('🔐 [Auth Service] Fetching access token...');
       const session = await fetchAuthSession();
-      const token = session.tokens?.accessToken?.toString() || null;
-      console.log('🔐 [Auth Service] Access token retrieved:', !!token);
-      return token;
+      return session.tokens?.accessToken?.toString() || null;
     } catch (error) {
-      console.error('❌ [Auth Service] Error getting access token:', error);
+      console.error('[CognitoAuth] Error getting access token:', error);
+      return null;
+    }
+  }
+
+  async getIdToken(): Promise<string | null> {
+    try {
+      const session = await fetchAuthSession();
+      return session.tokens?.idToken?.toString() || null;
+    } catch (error) {
+      console.error('[CognitoAuth] Error getting ID token:', error);
       return null;
     }
   }
 
   async getCurrentUser(): Promise<CognitoUser | null> {
     try {
-      console.log('🔐 [Auth Service] Getting current user...');
       const user = await getCurrentUser();
       const session = await fetchAuthSession();
 
-      const userData = {
+      return {
         userId: user.userId,
         username: user.username,
         email: session.tokens?.idToken?.payload?.email as string,
       };
-
-      console.log('✅ [Auth Service] User data retrieved:', {
-        userId: userData.userId,
-        username: userData.username,
-        email: userData.email,
-      });
-
-      return userData;
     } catch (error) {
-      console.error('❌ [Auth Service] Error getting current user:', error);
+      console.error('[CognitoAuth] Error getting current user:', error);
       return null;
     }
   }
 
   /**
    * Perform internal authentication after Cognito auth succeeds.
-   * This sends the Cognito token to our backend, which verifies it
+   * This sends the Cognito ID token to our backend, which verifies it
    * and creates/returns our internal JWT.
    */
   async performInternalAuth(): Promise<InternalAuthResponse | null> {
     try {
-      console.log('🔐 [Internal Auth] Starting internal authentication...');
-
-      const cognitoToken = await this.getAccessToken();
+      const cognitoToken = await this.getIdToken();
 
       if (!cognitoToken) {
-        console.error('❌ [Internal Auth] No Cognito token available');
+        console.error('[CognitoAuth] No Cognito ID token available');
         return null;
       }
 
-      console.log(
-        '🔐 [Internal Auth] Cognito token obtained, calling backend...',
-      );
-
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
       const apiUrl = `${backendUrl}/auth/cognito-verify`;
-
-      console.log('🔐 [Internal Auth] Calling:', apiUrl);
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -258,56 +207,39 @@ export class CognitoAuthService {
         }),
       });
 
-      console.log(
-        '🔐 [Internal Auth] Backend response status:',
-        response.status,
-      );
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('❌ [Internal Auth] Backend returned error:', errorData);
+        console.error(
+          '[CognitoAuth] Backend authentication failed:',
+          errorData,
+        );
         throw new Error(errorData.detail || 'Internal authentication failed');
       }
 
       const authData: InternalAuthResponse = await response.json();
 
-      console.log('✅ [Internal Auth] Authentication successful:', {
-        userId: authData.user_id,
-        email: authData.email,
-        isNewUser: authData.is_new_user,
-        message: authData.message,
-      });
-
       if (authData.is_new_user) {
-        console.log('🎉 [Internal Auth] NEW USER CREATED!');
+        console.log('[CognitoAuth] New user created:', authData.user_id);
       }
 
       return authData;
     } catch (error) {
-      console.error(
-        '❌ [Internal Auth] Error during internal authentication:',
-        error,
-      );
+      console.error('[CognitoAuth] Internal authentication error:', error);
       return null;
     }
   }
 
   async signInWithGoogle() {
-    console.log('🔐 [Auth Service] Initiating Google sign-in redirect...');
     await signInWithRedirect({ provider: 'Google' });
   }
 
   async signOut() {
-    console.log('🔐 [Auth Service] Signing out...');
     await amplifySignOut();
-    console.log('✅ [Auth Service] Sign out complete');
   }
 
-  // Method to redirect to main app for authentication
   redirectToMainAppAuth() {
     const currentUrl = encodeURIComponent(window.location.href);
     const redirectUrl = `https://${this.config.baseDomain}/app/auth/signin?redirect=${currentUrl}`;
-    console.log('🔐 [Auth Service] Redirecting to main app auth:', redirectUrl);
     window.location.href = redirectUrl;
   }
 

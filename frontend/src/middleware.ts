@@ -20,22 +20,14 @@ const PUBLIC_ROUTES = [
 ];
 
 // Routes that require authentication but are related to billing/trials
-const BILLING_ROUTES = [
-  '/activate-trial',
-  '/subscription',
-];
+const BILLING_ROUTES = ['/activate-trial', '/subscription'];
 
 // Routes that require authentication and active subscription
-const PROTECTED_ROUTES = [
-  '/dashboard',
-  '/agents',
-  '/projects',
-  '/settings',
-];
+const PROTECTED_ROUTES = ['/dashboard', '/agents', '/projects', '/settings'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
+
   // Skip middleware for static files and API routes
   if (
     pathname.startsWith('/_next') ||
@@ -47,10 +39,26 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow all public routes without any checks
-  if (PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'))) {
+  if (
+    PUBLIC_ROUTES.some(
+      (route) => pathname === route || pathname.startsWith(route + '/'),
+    )
+  ) {
     return NextResponse.next();
   }
 
+  // Check for Cognito JWT cookie first
+  const cognitoJwt = request.cookies.get('super_enso_jwt')?.value;
+
+  if (!cognitoJwt) {
+    // No Cognito JWT, redirect to auth
+    const url = request.nextUrl.clone();
+    url.pathname = '/auth';
+    url.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // If we have a Cognito JWT, allow access and continue with billing checks
   // Everything else requires authentication
   let supabaseResponse = NextResponse.next({
     request,
@@ -65,42 +73,49 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          );
           supabaseResponse = NextResponse.next({
             request,
           });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, options),
           );
         },
       },
-    }
+    },
   );
 
   try {
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
-    // Redirect to auth if not authenticated
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    // If no Supabase user but we have Cognito JWT, allow access
+    // (Cognito JWT is the source of truth for authentication)
     if (authError || !user) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/auth';
-      url.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(url);
+      console.log(
+        'Middleware: No Supabase user but Cognito JWT present, allowing access',
+      );
+      return supabaseResponse;
     }
 
     // Skip billing checks in local mode
-    const isLocalMode = process.env.NEXT_PUBLIC_ENV_MODE?.toLowerCase() === 'local'
+    const isLocalMode =
+      process.env.NEXT_PUBLIC_ENV_MODE?.toLowerCase() === 'local';
     if (isLocalMode) {
       return supabaseResponse;
     }
 
     // Skip billing checks for billing-related routes
-    if (BILLING_ROUTES.some(route => pathname.startsWith(route))) {
+    if (BILLING_ROUTES.some((route) => pathname.startsWith(route))) {
       return supabaseResponse;
     }
 
     // Only check billing for protected routes that require active subscription
-    if (PROTECTED_ROUTES.some(route => pathname.startsWith(route))) {
+    if (PROTECTED_ROUTES.some((route) => pathname.startsWith(route))) {
       const { data: accounts } = await supabase
         .schema('basejump')
         .from('accounts')
@@ -142,17 +157,26 @@ export async function middleware(request: NextRequest) {
         }
       }
 
-      const hasTier = creditAccount.tier && creditAccount.tier !== 'none' && creditAccount.tier !== 'free';
+      const hasTier =
+        creditAccount.tier &&
+        creditAccount.tier !== 'none' &&
+        creditAccount.tier !== 'free';
       const hasActiveTrial = creditAccount.trial_status === 'active';
-      const trialExpired = creditAccount.trial_status === 'expired' || creditAccount.trial_status === 'cancelled';
+      const trialExpired =
+        creditAccount.trial_status === 'expired' ||
+        creditAccount.trial_status === 'cancelled';
       const trialConverted = creditAccount.trial_status === 'converted';
-      
+
       if (hasTier && (trialConverted || !trialExpired)) {
         return supabaseResponse;
       }
 
       if (!hasTier && !hasActiveTrial && !trialConverted) {
-        if (hasUsedTrial || trialExpired || creditAccount.trial_status === 'cancelled') {
+        if (
+          hasUsedTrial ||
+          trialExpired ||
+          creditAccount.trial_status === 'cancelled'
+        ) {
           const url = request.nextUrl.clone();
           url.pathname = '/subscription';
           return NextResponse.redirect(url);
@@ -187,4 +211,4 @@ export const config = {
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
-}; 
+};

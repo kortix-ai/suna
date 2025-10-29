@@ -7,11 +7,7 @@ import {
   ChatInput,
   ChatInputHandles,
 } from '@/components/thread/chat-input/chat-input';
-import {
-  BillingError,
-  AgentRunLimitError,
-  ProjectLimitError,
-} from '@/lib/api';
+import { BillingError, AgentRunLimitError, ProjectLimitError } from '@/lib/api';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useBillingError } from '@/hooks/useBillingError';
 import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
@@ -46,10 +42,14 @@ export function DashboardContent() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [selectedMode, setSelectedMode] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
+  const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>(
+    'super-worker',
+  );
   const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
-  const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
-  
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState<
+    string | null
+  >(null);
+
   // Reset data selections when mode changes
   React.useEffect(() => {
     if (selectedMode !== 'data') {
@@ -61,9 +61,11 @@ export function DashboardContent() {
     selectedAgentId,
     setSelectedAgent,
     initializeFromAgents,
-    getCurrentAgent
+    getCurrentAgent,
   } = useAgentSelection();
-  const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
+  const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(
+    null,
+  );
   const { billingError, handleBillingError, clearBillingError } =
     useBillingError();
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
@@ -74,23 +76,26 @@ export function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isMobile = useIsMobile();
-  const { user } = useAuth();
-  const { data: accounts } = useAccounts({ enabled: !!user });
+  const { user, isLoading } = useAuth();
+  const { data: accounts } = useAccounts({ enabled: !!user && !isLoading });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Fetch agents to get the selected agent's name
-  const { data: agentsResponse } = useAgents({
-    limit: 100,
-    sort_by: 'name',
-    sort_order: 'asc'
-  });
+  const { data: agentsResponse } = useAgents(
+    {
+      limit: 100,
+      sort_by: 'name',
+      sort_order: 'asc',
+    },
+    { enabled: !!user && !isLoading },
+  );
 
   const agents = agentsResponse?.agents || [];
   const selectedAgent = selectedAgentId
-    ? agents.find(agent => agent.agent_id === selectedAgentId)
+    ? agents.find((agent) => agent.agent_id === selectedAgentId)
     : null;
   const displayName = selectedAgent?.name || 'Suna';
   const agentAvatar = undefined;
@@ -128,7 +133,9 @@ export function DashboardContent() {
       const thread = threadQuery.data;
       setIsRedirecting(true);
       if (thread.project_id) {
-        router.push(`/projects/${thread.project_id}/thread/${initiatedThreadId}`);
+        router.push(
+          `/projects/${thread.project_id}/thread/${initiatedThreadId}`,
+        );
       } else {
         router.push(`/agents/${initiatedThreadId}`);
       }
@@ -169,9 +176,13 @@ export function DashboardContent() {
         formData.append('files', file, normalizedName);
       });
 
-      if (options?.model_name) formData.append('model_name', options.model_name);
+      if (options?.model_name)
+        formData.append('model_name', options.model_name);
       formData.append('stream', 'true'); // Always stream for better UX
-      formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
+      formData.append(
+        'enable_context_manager',
+        String(options?.enable_context_manager ?? false),
+      );
 
       const result = await initiateAgentMutation.mutateAsync(formData);
 
@@ -196,7 +207,8 @@ export function DashboardContent() {
       } else if (error instanceof ProjectLimitError) {
         setShowPaymentModal(true);
       } else {
-        const errorMessage = error instanceof Error ? error.message : 'Operation failed';
+        const errorMessage =
+          error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
       }
       // Only reset loading state if there was an error or no thread_id was returned
@@ -237,9 +249,6 @@ export function DashboardContent() {
       />
 
       <div className="flex flex-col h-screen w-full overflow-hidden">
-
-
-
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
             {/* Tabs at the top */}
@@ -253,10 +262,10 @@ export function DashboardContent() {
                       router.push('/dashboard');
                     }}
                     className={cn(
-                      "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      'px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200',
                       viewMode === 'super-worker'
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
                     Kortix Super Worker
@@ -268,10 +277,10 @@ export function DashboardContent() {
                       router.push('/dashboard?tab=worker-templates');
                     }}
                     className={cn(
-                      "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      'px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200',
                       viewMode === 'worker-templates'
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
                     )}
                   >
                     Worker Templates
@@ -289,9 +298,7 @@ export function DashboardContent() {
                   <div className="px-4 py-8">
                     <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-4 md:space-y-6">
                       <div className="flex flex-col items-center text-center w-full">
-                        <p
-                          className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
-                        >
+                        <p className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90">
                           What should Kortix Super Worker do for you today?
                         </p>
                       </div>
@@ -307,7 +314,9 @@ export function DashboardContent() {
                           hideAttachments={false}
                           selectedAgentId={selectedAgentId}
                           onAgentSelect={setSelectedAgent}
-                          enableAdvancedConfig={!isStagingMode() && !isLocalMode()}
+                          enableAdvancedConfig={
+                            !isStagingMode() && !isLocalMode()
+                          }
                           onConfigureAgent={(agentId) => {
                             setConfigAgentId(agentId);
                             setShowConfigDialog(true);
@@ -341,14 +350,12 @@ export function DashboardContent() {
                   )}
                 </div>
               )}
-              {(viewMode === 'worker-templates') && (
+              {viewMode === 'worker-templates' && (
                 <div className="w-full animate-in fade-in-0 duration-300">
                   {(isStagingMode() || isLocalMode()) && (
                     <div className="w-full px-4 pb-8">
                       <div className="max-w-5xl mx-auto">
-                        <CustomAgentsSection
-                          onAgentSelect={setSelectedAgent}
-                        />
+                        <CustomAgentsSection onAgentSelect={setSelectedAgent} />
                       </div>
                     </div>
                   )}

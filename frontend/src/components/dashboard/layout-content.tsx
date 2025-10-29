@@ -1,7 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
-import { SidebarLeft, FloatingMobileMenuButton } from '@/components/sidebar/sidebar-left';
+import {
+  SidebarLeft,
+  FloatingMobileMenuButton,
+} from '@/components/sidebar/sidebar-left';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useAuth } from '@/components/AuthProvider';
@@ -13,7 +16,10 @@ import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { DeleteOperationProvider } from '@/contexts/DeleteOperationContext';
 import { StatusOverlay } from '@/components/ui/status-overlay';
 
-import { useProjects, useThreads } from '@/hooks/react-query/sidebar/use-sidebar';
+import {
+  useProjects,
+  useThreads,
+} from '@/hooks/react-query/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
@@ -28,11 +34,12 @@ export default function DashboardLayoutContent({
   children,
 }: DashboardLayoutContentProps) {
   const { user, isLoading } = useAuth();
-  const { data: accounts } = useAccounts({ enabled: !!user });
+  const { data: accounts } = useAccounts({ enabled: !!user && !isLoading });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
+  const { data: maintenanceNotice, isLoading: maintenanceLoading } =
+    useMaintenanceNoticeQuery();
   const {
     data: healthData,
     isLoading: isCheckingHealth,
@@ -41,11 +48,14 @@ export default function DashboardLayoutContent({
 
   const { data: projects } = useProjects();
   const { data: threads } = useThreads();
-  const { data: agentsResponse } = useAgents({
-    limit: 100,
-    sort_by: 'name',
-    sort_order: 'asc'
-  });
+  const { data: agentsResponse } = useAgents(
+    {
+      limit: 100,
+      sort_by: 'name',
+      sort_order: 'asc',
+    },
+    { enabled: !!user && !isLoading },
+  );
 
   useEffect(() => {
     if (maintenanceNotice?.enabled) {
@@ -63,7 +73,7 @@ export default function DashboardLayoutContent({
         threads: threads?.length || 0,
         agents: agentsResponse?.agents?.length || 0,
         accounts: accounts?.length || 0,
-        user: !!user
+        user: !!user,
       });
     }
   }, [isMobile, projects, threads, agentsResponse, accounts, user]);
@@ -96,7 +106,9 @@ export default function DashboardLayoutContent({
 
   // Show maintenance page if maintenance mode is enabled
   if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+    return (
+      <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />
+    );
   }
 
   // Show maintenance page if API is not healthy (but not during initial loading)
@@ -130,7 +142,7 @@ export default function DashboardLayoutContent({
 
             {/* Status overlay for deletion operations */}
             <StatusOverlay />
-            
+
             {/* Floating mobile menu button */}
             <FloatingMobileMenuButton />
           </SidebarProvider>

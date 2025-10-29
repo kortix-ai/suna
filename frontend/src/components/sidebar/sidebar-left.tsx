@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+import { useCognitoAuth } from '@/components/CognitoAuthProvider';
 
 function FloatingMobileMenuButton() {
   const { setOpenMobile, openMobile } = useSidebar();
@@ -63,9 +64,7 @@ function FloatingMobileMenuButton() {
             <Menu className="h-5 w-5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Open menu
-        </TooltipContent>
+        <TooltipContent side="bottom">Open menu</TooltipContent>
       </Tooltip>
     </div>
   );
@@ -76,6 +75,8 @@ export function SidebarLeft({
 }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
+  const { user: cognitoUser, isLoading: isAuthLoading } = useCognitoAuth();
+
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -99,33 +100,61 @@ export function SidebarLeft({
     }
   }, [pathname, searchParams, isMobile, setOpenMobile]);
 
-
   useEffect(() => {
     const fetchUserData = async () => {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
+      // If still loading auth, don't fetch yet
+      if (isAuthLoading || !cognitoUser) {
+        return;
+      }
+
+      try {
+        const supabase = createClient();
+
+        // Fetch user data from Supabase auth to get user_metadata
+        const { data: authData } = await supabase.auth.getUser();
+
+        // Check if user has admin role
         const { data: roleData } = await supabase
           .from('user_roles')
           .select('role')
-          .eq('user_id', data.user.id)
+          .eq('user_id', cognitoUser.userId)
           .in('role', ['admin', 'super_admin']);
         const isAdmin = roleData && roleData.length > 0;
 
+        // Use username from Supabase user_metadata (set by backend during user creation)
+        // Fall back to email prefix if not available
+        const username =
+          authData?.user?.user_metadata?.username ||
+          cognitoUser.email?.split('@')[0] ||
+          'User';
+
+        console.log('👤 [Sidebar] User data:', {
+          userId: cognitoUser.userId,
+          email: cognitoUser.email,
+          username: username,
+          metadata: authData?.user?.user_metadata,
+        });
+
         setUser({
-          name:
-            data.user.user_metadata?.name ||
-            data.user.email?.split('@')[0] ||
-            'User',
-          email: data.user.email || '',
-          avatar: data.user.user_metadata?.avatar_url || '', // User avatar (different from agent avatar)
+          name: username,
+          email: cognitoUser.email || '',
+          avatar: authData?.user?.user_metadata?.avatar_url || '',
           isAdmin: isAdmin,
+        });
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        // Still set basic user info from Cognito even if metadata fetch fails
+        setUser({
+          name: cognitoUser.email?.split('@')[0] || 'User',
+          email: cognitoUser.email || '',
+          avatar: '',
+          isAdmin: false,
         });
       }
     };
 
     fetchUserData();
-  }, []);
+  }, [cognitoUser, isAuthLoading]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -146,9 +175,6 @@ export function SidebarLeft({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [state, setOpen, isDocumentModalOpen]);
 
-
-
-
   return (
     <Sidebar
       collapsible="icon"
@@ -157,12 +183,15 @@ export function SidebarLeft({
     >
       <SidebarHeader className="px-2 py-2">
         <div className="flex h-[40px] items-center px-1 relative">
-          <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
+          <Link
+            href="/dashboard"
+            className="flex-shrink-0"
+            onClick={() => isMobile && setOpenMobile(false)}
+          >
             <KortixLogo size={24} />
           </Link>
           {state !== 'collapsed' && (
-            <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap">
-            </div>
+            <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap"></div>
           )}
           <div className="ml-auto flex items-center gap-2">
             {state !== 'collapsed' && !isMobile && (
@@ -181,7 +210,8 @@ export function SidebarLeft({
           <Link href="/dashboard">
             <SidebarMenuButton
               className={cn('touch-manipulation', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/dashboard',
+                'bg-accent text-accent-foreground font-medium':
+                  pathname === '/dashboard',
               })}
               onClick={() => {
                 posthog.capture('new_task_clicked');
@@ -197,7 +227,8 @@ export function SidebarLeft({
           <Link href="/triggers">
             <SidebarMenuButton
               className={cn('touch-manipulation mt-1', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/triggers',
+                'bg-accent text-accent-foreground font-medium':
+                  pathname === '/triggers',
               })}
               onClick={() => {
                 if (isMobile) setOpenMobile(false);
@@ -212,7 +243,8 @@ export function SidebarLeft({
           <Link href="/knowledge">
             <SidebarMenuButton
               className={cn('touch-manipulation mt-1', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/knowledge',
+                'bg-accent text-accent-foreground font-medium':
+                  pathname === '/knowledge',
               })}
               onClick={() => {
                 if (isMobile) setOpenMobile(false);
@@ -224,12 +256,9 @@ export function SidebarLeft({
               </span>
             </SidebarMenuButton>
           </Link>
-          {(
+          {
             <SidebarMenu>
-              <Collapsible
-                defaultOpen={true}
-                className="group/collapsible"
-              >
+              <Collapsible defaultOpen={true} className="group/collapsible">
                 <SidebarMenuItem>
                   <CollapsibleTrigger asChild>
                     <SidebarMenuButton
@@ -257,10 +286,19 @@ export function SidebarLeft({
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem> */}
                       <SidebarMenuSubItem>
-                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
-                          'bg-accent text-accent-foreground font-medium': pathname === '/agents' && (searchParams.get('tab') === 'my-agents' || searchParams.get('tab') === null),
-                        })} asChild>
-                          <Link href="/agents?tab=my-agents" onClick={() => isMobile && setOpenMobile(false)}>
+                        <SidebarMenuSubButton
+                          className={cn('pl-3 touch-manipulation', {
+                            'bg-accent text-accent-foreground font-medium':
+                              pathname === '/agents' &&
+                              (searchParams.get('tab') === 'my-agents' ||
+                                searchParams.get('tab') === null),
+                          })}
+                          asChild
+                        >
+                          <Link
+                            href="/agents?tab=my-agents"
+                            onClick={() => isMobile && setOpenMobile(false)}
+                          >
                             <span>My Agents</span>
                           </Link>
                         </SidebarMenuSubButton>
@@ -281,7 +319,7 @@ export function SidebarLeft({
                 </SidebarMenuItem>
               </Collapsible>
             </SidebarMenu>
-          )}
+          }
         </SidebarGroup>
         <NavAgents />
       </SidebarContent>
