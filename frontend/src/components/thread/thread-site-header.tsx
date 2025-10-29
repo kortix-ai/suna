@@ -4,12 +4,6 @@ import { Button } from "@/components/ui/button"
 import { FolderOpen, ExternalLink, Monitor, Copy, Check } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { useState, useRef, KeyboardEvent } from "react"
 import { Input } from "@/components/ui/input"
 import { useUpdateProject } from "@/hooks/react-query"
@@ -183,68 +177,47 @@ export function SiteHeader({
           )}
 
           {/* Show all buttons on both mobile and desktop - responsive tooltips */}
-          <TooltipProvider>
-            {variant === 'shared' ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    onClick={copyShareLink}
-                    className="h-9 px-3 cursor-pointer gap-2"
-                  >
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                  <p>Copy share link</p>
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Button
-                variant="ghost"
-                onClick={openShareModal}
-                className="h-9 px-3 cursor-pointer gap-2"
-              >
-                <ExternalLink className="h-4 w-4" />
-                <span>Share</span>
-              </Button>
-            )}
+          {variant === 'shared' ? (
+            <Button
+              variant="ghost"
+              onClick={copyShareLink}
+              className="h-9 px-3 cursor-pointer gap-2"
+              title="Copy share link"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              onClick={openShareModal}
+              className="h-9 px-3 cursor-pointer gap-2"
+              title="Share"
+            >
+              <ExternalLink className="h-4 w-4" />
+              <span>Share</span>
+            </Button>
+          )}
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onViewFiles}
-                  className="h-9 w-9 cursor-pointer"
-                >
-                  <FolderOpen className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                <p>View Files in Task</p>
-              </TooltipContent>
-            </Tooltip>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onViewFiles}
+            className="h-9 w-9 cursor-pointer"
+            title="View Files in Task"
+          >
+            <FolderOpen className="h-4 w-4" />
+          </Button>
 
-
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onToggleSidePanel}
-                  className="h-9 w-9 cursor-pointer"
-                >
-                  <Monitor className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                <p>Toggle Computer Preview (CMD+I)</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidePanel}
+            className="h-9 w-9 cursor-pointer"
+            title="Toggle Computer Preview (CMD+I)"
+          >
+            <Monitor className="h-4 w-4" />
+          </Button>
         </div>
       </header>
       {variant === 'default' && threadId && projectId && (

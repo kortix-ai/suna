@@ -675,3 +675,4 @@ class ThreadManager:
     async def _create_single_error_generator(self, error_dict: Dict[str, Any]):
         """Create an async generator that yields a single error message."""
         yield error_dict
+

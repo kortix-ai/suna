@@ -469,11 +469,68 @@ When using the tools:
 - Include all required parameters as specified in the schema
 - Format complex data (objects, arrays) as JSON strings within the parameter tags
 - Boolean values should be "true" or "false" (lowercase)
-- FLOW PARAMETER: Always include the "flow" parameter with one of these values:
-  * "CONTINUE": Use for tools that should continue processing (default, most common)
-  * "STOP": Use for tools that should halt execution after completing
-  Choose "CONTINUE" for operations that should continue processing like file operations, data analysis, or any long-running tasks.
-  Choose "STOP" when you want to halt execution after this specific tool completes, such as for critical operations or when stopping after a confirmation step.
+
+## 🎯 FLOW PARAMETER GUIDE 
+
+### `flow=STOP` - Halt Execution
+
+**Use when you need to pause and wait:**
+
+1. **User Confirmation** - Destructive operations, critical decisions
+2. **Task Complete** - All work finished, terminate execution
+3. **Blocking Errors** - Cannot proceed without user input
+4. **User Choice** - Next steps depend on user decision
+5. **Resource Approval** - Financial/resource implications
+
+**Result:** Returns `"status": "Awaiting user response..."` or `"status": "complete"` and halts.
+
+---
+
+### `flow=CONTINUE` - Keep Processing (DEFAULT)
+
+**Use for ongoing workflows:**
+
+1. **File Operations** - Creating, editing, deleting files in a workflow
+2. **Commands** - Running scripts, background processes
+3. **Data Processing** - Web searches, API calls, data analysis
+4. **Task Updates** - Marking progress while more work remains
+5. **Error Handling** - Continue execution even if step fails
+
+**Result:** Execution proceeds to next operation regardless of success/failure.
+
+---
+
+## STOP Example
+
+I found that this operation will delete 500 files permanently. This cannot be undone. Are you absolutely sure you want to proceed?</parameter>
+<parameter name="flow">STOP
+
+All tasks completed successfully! I've created your presentation with 15 slides, uploaded it to cloud storage, and generated the PDF version. Everything is ready for your review.</parameter>
+<parameter name="flow">STOP
+
+
+## CONTINUE Example
+
+I’m starting your workflow now. I’ll execute each step in sequence and continue even if a non-critical step fails. You’ll get progress updates as I go.</parameter> <parameter name="flow">CONTINUE
+
+<invoke name="search_dataset"> <parameter name="query">"customer_churn_data 2023"</parameter> <parameter name="flow">CONTINUE</parameter> </invoke>
+
+Found multiple candidates. Proceeding to fetch the top match.</parameter> <parameter name="flow">CONTINUE
+
+<invoke name="download_asset"> <parameter name="url">https://example.org/data/churn_v3.csv</parameter> <parameter name="destination">/workspace/input/churn_v3.csv</parameter> <parameter name="flow">CONTINUE</parameter> </invoke>
+
+Checksum verification failed for churn_v3.csv, switching to fallback source and continuing.</parameter> <parameter name="flow">CONTINUE
+
+
+🎯 Decision Tree
+Is this operation...
+├─ Using 'ask' tool for user input? → STOP
+├─ Using 'complete' to signal finish? → STOP
+├─ Encountering blocking error needing approval? → STOP
+├─ Requiring critical user decision? → STOP
+├─ Involving financial/resource approval? → STOP
+└─ Part of ongoing workflow? → CONTINUE
+
 """
                 
                 system_content += examples_content

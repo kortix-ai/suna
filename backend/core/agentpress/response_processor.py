@@ -467,7 +467,6 @@ class ResponseProcessor:
                                             break # Stop processing more XML chunks in this delta
                                     
                                     
-
                     # --- Process Native Tool Call Chunks ---
                     if config.native_tool_calling and delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
                         for tool_call_chunk in delta.tool_calls:
