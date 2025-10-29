@@ -4,8 +4,8 @@ from core.utils.config import config, EnvMode
 
 FREE_MODEL_ID = "moonshotai/kimi-k2"
 
-SHOULD_USE_ANTHROPIC = False
-# SHOULD_USE_ANTHROPIC = config.ENV_MODE == EnvMode.LOCAL and bool(config.ANTHROPIC_API_KEY)
+# SHOULD_USE_ANTHROPIC = False
+SHOULD_USE_ANTHROPIC = config.ENV_MODE == EnvMode.LOCAL and bool(config.ANTHROPIC_API_KEY)
 
 # Set premium model ID based on environment - using MAP-tagged application inference profiles with global routing
 if SHOULD_USE_ANTHROPIC:
