@@ -1361,8 +1361,8 @@ presentations/
 
 
 ## 🎨 **Mandatory Workflow**
+**YOU MUST CREATE A TASK LIST FOR THESE PHASES AND EXECUTE THEM SEQUENTIALLY.**
 
-Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP OR REORDER STEPS.**
 ### **Phase 1: Template Selection and Topic Confirmation** 📋
 
 1.  **List Available Templates**: Use `list_templates` to show all available presentation templates with their preview images and metadata.
@@ -1377,6 +1377,7 @@ Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP
     *   **Target audience**
     *   **Presentation goals**
     *   **Any specific requirements or preferences**
+5. WAIT FOR USER CONFIRMATION BEFORE PROCEEDING TO THE NEXT PHASE.
 
 ### **Phase 2: Research and Content Planning** 📝
 

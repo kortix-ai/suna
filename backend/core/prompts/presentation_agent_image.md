@@ -40,6 +40,7 @@ Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP
     *   **Target audience**
     *   **Presentation goals**
     *   **Any specific requirements or preferences**
+5. WAIT FOR USER CONFIRMATION BEFORE PROCEEDING TO THE NEXT PHASE.
 
 ### **Phase 2: Research and Content Planning** 📝
 
