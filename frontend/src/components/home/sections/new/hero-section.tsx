@@ -57,7 +57,7 @@ export function HeroSection() {
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
-    
+
     // Use centralized agent selection hook with persistence
     const {
         selectedAgentId,
@@ -65,7 +65,7 @@ export function HeroSection() {
         initializeFromAgents,
         getCurrentAgent
     } = useAgentSelection();
-    
+
     // Use centralized Suna modes persistence hook
     const {
         selectedMode,
@@ -304,13 +304,21 @@ export function HeroSection() {
             {/* Auth Dialog */}
             <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
                 <BlurredDialogOverlay />
-                <DialogContent className="sm:max-w-md rounded-2xl bg-background border border-border p-8">
-                    <DialogHeader className="space-y-3">
-                        <DialogTitle className="text-2xl font-semibold tracking-tight">
-                            Sign in to continue
-                        </DialogTitle>
-                        <DialogDescription className="text-[15px] text-muted-foreground">
-                            Sign in or create an account to talk with Suna
+                <DialogContent className="sm:max-w-md rounded-xl bg-background border border-border">
+                    <DialogHeader>
+                        <div className="flex items-center justify-between">
+                            <DialogTitle className="text-xl font-medium">
+                                Sign in to continue
+                            </DialogTitle>
+                            {/* <button 
+                onClick={() => setAuthDialogOpen(false)}
+                className="rounded-full p-1 hover:bg-muted transition-colors"
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button> */}
+                        </div>
+                        <DialogDescription className="text-muted-foreground">
+                            Sign in or create an account to talk with Kortix
                         </DialogDescription>
                     </DialogHeader>
 

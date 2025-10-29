@@ -14,14 +14,14 @@ export default function DocsLayout({
 }) {
   return (
     <div style={{ scrollBehavior: 'smooth' }} className="min-h-screen">
-     <div className="hidden dark:block fixed rotate-180 opacity-15 inset-0 -z-10 h-full w-full items-center px-5 py-24 bg-white dark:bg-black"></div>
+      <div className="hidden dark:block fixed rotate-180 opacity-15 inset-0 -z-10 h-full w-full items-center px-5 py-24 bg-white dark:bg-black"></div>
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset className="flex-1">
           <div className="lg:hidden bg-white dark:bg-black fixed top-0 left-0 right-0 z-50 backdrop-blur-sm h-16">
             <div className="flex items-center justify-between px-4 h-full">
               <SidebarTrigger className="-ml-1" />
-              <h1 className="font-semibold truncate">Suna Docs</h1>
+              <h1 className="font-semibold truncate">Kortix Docs</h1>
             </div>
           </div>
           <div className="flex h-full">

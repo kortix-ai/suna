@@ -56,7 +56,7 @@ export const DocsSidebar = () => {
         <div className="p-6">
           <div className="mb-8">
             <h1 className="text-2xl font-medium bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-              Suna Docs
+              Kortix Docs
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Build powerful AI agents

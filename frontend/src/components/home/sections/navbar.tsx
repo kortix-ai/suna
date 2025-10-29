@@ -212,9 +212,6 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                 <div className="flex items-center justify-between">
                   <Link href="/" className="flex items-center gap-3">
                     <KortixLogo size={120} />
-                    <span className="font-medium text-primary text-sm">
-                      / Suna
-                    </span>
                   </Link>
                   <button
                     onClick={toggleDrawer}

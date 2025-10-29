@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { 
+import {
   DocsHeader,
   DocsCard,
   DocsBody,
@@ -44,7 +44,7 @@ export default function QuickStartPage() {
           <li><strong>Git</strong> - To clone the repository</li>
           <li><strong>Node.js 18+</strong> - Only needed if you choose manual setup</li>
         </ul>
-        
+
         <Alert className="mb-6">
           <Info className="h-4 w-4" />
           <AlertDescription>
@@ -57,7 +57,7 @@ export default function QuickStartPage() {
         <h2 id="step-1-clone">Step 1: Clone and Enter</h2>
         <p className="mb-4">Get the code and navigate to the project directory:</p>
         <div className="mb-6">
-          <CodeBlock 
+          <CodeBlock
             data={[{
               language: "bash",
               filename: "terminal",
@@ -83,10 +83,10 @@ cd suna`
         <h2 id="step-2-run-wizard">Step 2: Run the Setup Wizard</h2>
         <p className="mb-4">Start the interactive setup wizard:</p>
         <div className="mb-6">
-          <CodeBlock 
+          <CodeBlock
             data={[{
               language: "bash",
-              filename: "terminal", 
+              filename: "terminal",
               code: "python setup.py"
             }]}
             defaultValue="bash"
@@ -102,7 +102,7 @@ cd suna`
             </CodeBlockBody>
           </CodeBlock>
         </div>
-        
+
         <p className="mb-4">The wizard will ask you to choose between two setup methods:</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
           <DocsCard
@@ -188,7 +188,7 @@ cd suna`
       <DocsBody className="mb-8">
         <h2 id="step-4-database-setup">Step 4: Database Setup</h2>
         <p className="mb-4">The wizard will offer to set up your Supabase database automatically. This requires the Supabase CLI:</p>
-        
+
         <Alert className="mb-4">
           <Info className="h-4 w-4" />
           <AlertDescription>
@@ -213,11 +213,11 @@ cd suna`
 
       <DocsBody className="mb-8">
         <h2 id="step-5-start">Step 5: Start Kortix</h2>
-        
+
         <h3 className="mb-4">If you chose Docker setup:</h3>
         <p className="mb-4">The wizard automatically starts everything for you! After setup completes:</p>
         <div className="mb-6">
-          <CodeBlock 
+          <CodeBlock
             data={[{
               language: "bash",
               filename: "docker-commands",
@@ -246,11 +246,11 @@ docker compose down`
 
         <h3 className="mb-4">If you chose manual setup:</h3>
         <p className="mb-4">You'll need to start each service in separate terminals:</p>
-        
+
         <div className="space-y-4 mb-6">
           <div>
             <h4 className="font-medium mb-2">Terminal 1 - Infrastructure:</h4>
-            <CodeBlock 
+            <CodeBlock
               data={[{
                 language: "bash",
                 filename: "terminal-1",
@@ -271,9 +271,9 @@ docker compose down`
           </div>
           <div>
             <h4 className="font-medium mb-2">Terminal 2 - Frontend:</h4>
-            <CodeBlock 
+            <CodeBlock
               data={[{
-                language: "bash", 
+                language: "bash",
                 filename: "terminal-2",
                 code: "cd frontend && npm run dev"
               }]}
@@ -293,10 +293,10 @@ docker compose down`
 
           <div>
             <h4 className="font-medium mb-2">Terminal 3 - Backend API:</h4>
-            <CodeBlock 
+            <CodeBlock
               data={[{
                 language: "bash",
-                filename: "terminal-3", 
+                filename: "terminal-3",
                 code: "cd backend && uv run api.py"
               }]}
               defaultValue="bash"
@@ -315,11 +315,11 @@ docker compose down`
 
           <div>
             <h4 className="font-medium mb-2">Terminal 4 - Background Worker:</h4>
-            <CodeBlock 
+            <CodeBlock
               data={[{
                 language: "bash",
                 filename: "terminal-4",
-                code: "cd backend && uv run dramatiq run_agent_background" 
+                code: "cd backend && uv run dramatiq run_agent_background"
               }]}
               defaultValue="bash"
             >
@@ -348,7 +348,7 @@ docker compose down`
           </p>
         </div>
 
-        <p className="mb-4">You should see the Kortix dashboard where you can start chatting with Suna or create your own agents.</p>
+        <p className="mb-4">You should see the Kortix dashboard where you can start chatting with Kortix or create your own agents.</p>
 
         <Alert className="mb-6">
           <CheckCircle2 className="h-4 w-4" />
@@ -357,7 +357,7 @@ docker compose down`
           </AlertDescription>
         </Alert>
       </DocsBody>
-      
+
       <Separator className="my-6 w-full" />
       <div className='w-full items-center justify-end flex pb-8'>
         <Card onClick={() => window.location.href = '/docs/quick-start'} className="p-2 group rounded-xl w-full lg:w-[400px] hover:opacity-80 transition-opacity">
