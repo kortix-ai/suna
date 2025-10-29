@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marketing Strategy Presentation - Slide 9</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Gupter:wght@400;500;700&family=Libre+Baskerville:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        background: #F5F3EE;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 80px 100px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .header {
+        font-family: 'Gupter', 'Libre Baskerville', serif;
+        font-size: 32px;
+        font-weight: 400;
+        color: #9B9886;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        margin-bottom: 40px;
+    }
+    
+    .content-area {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 0;
+        align-items: center;
+        position: relative;
+    }
+    
+    .funnel-container {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        position: relative;
+    }
+    
+    .funnel-section {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        clip-path: polygon(15% 0%, 85% 0%, 100% 100%, 0% 100%);
+        position: relative;
+    }
+    
+    .funnel-section.top {
+        background: #E8E6E1;
+        height: 250px;
+        clip-path: polygon(10% 0%, 90% 0%, 85% 100%, 15% 100%);
+    }
+    
+    .funnel-section.middle {
+        background: #B8B3A6;
+        height: 250px;
+        clip-path: polygon(15% 0%, 85% 0%, 75% 100%, 25% 100%);
+    }
+    
+    .funnel-section.bottom {
+        background: #D0FFCD;
+        height: 250px;
+        clip-path: polygon(25% 0%, 75% 0%, 65% 100%, 35% 100%);
+    }
+    
+    .funnel-label {
+        font-family: 'Gupter', 'Libre Baskerville', serif;
+        font-size: 56px;
+        font-weight: 400;
+        color: #9B9886;
+        letter-spacing: -0.02em;
+        z-index: 1;
+    }
+    
+    .tactics-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+        height: 100%;
+        padding-left: 80px;
+        position: relative;
+    }
+    
+    .tactic-group {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        position: relative;
+    }
+    
+    .tactic-item {
+        font-family: 'Inter', sans-serif;
+        font-size: 28px;
+        font-weight: 400;
+        color: #9B9886;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .tactic-item::before {
+        content: '▶';
+        font-size: 20px;
+    }
+    
+    /* Horizontal lines between tactic groups */
+    .separator-line {
+        position: absolute;
+        height: 1px;
+        background: #9B9886;
+        opacity: 0.4;
+        left: -900px;
+        right: -100px;
+    }
+    
+    .separator-line.line1 {
+        top: 33.33%;
+    }
+    
+    .separator-line.line2 {
+        top: 66.66%;
+    }
+    
+    .footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: 'Inter', sans-serif;
+        font-size: 28px;
+        font-weight: 400;
+        color: #9B9886;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        padding-top: 40px;
+    }
+</style>
+
+<div class="slide-container">
+    <div class="header">CAMPAIGN FUNNEL</div>
+    
+    <div class="content-area">
+        <div class="funnel-container">
+            <div class="funnel-section top">
+                <div class="funnel-label">Top of Funnel</div>
+            </div>
+            <div class="funnel-section middle">
+                <div class="funnel-label">Middle of Funnel</div>
+            </div>
+            <div class="funnel-section bottom">
+                <div class="funnel-label">Bottom of Funnel</div>
+            </div>
+        </div>
+        
+        <div class="tactics-container">
+            <div class="separator-line line1"></div>
+            <div class="separator-line line2"></div>
+            
+            <div class="tactic-group">
+                <div class="tactic-item">TACTIC ONE</div>
+                <div class="tactic-item">TACTIC TWO</div>
+                <div class="tactic-item">TACTIC THREE</div>
+            </div>
+            
+            <div class="tactic-group">
+                <div class="tactic-item">TACTIC ONE</div>
+                <div class="tactic-item">TACTIC TWO</div>
+                <div class="tactic-item">TACTIC THREE</div>
+            </div>
+            
+            <div class="tactic-group">
+                <div class="tactic-item">TACTIC ONE</div>
+                <div class="tactic-item">TACTIC TWO</div>
+                <div class="tactic-item">TACTIC THREE</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <div>QX MARKETING STRATEGY</div>
+        <div>COMPANY NAME</div>
+    </div>
+</div>
+</body>
+</html>

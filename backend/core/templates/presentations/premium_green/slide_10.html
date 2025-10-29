@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marketing Strategy Presentation - Slide 10</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Gupter:wght@400;500;700&family=Gupter:ital,wght@1,400&family=Libre+Baskerville:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        background: #9B9886;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 80px 100px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    /* Subtle texture overlay */
+    .slide-container::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: 
+            radial-gradient(circle at 20% 30%, rgba(255,255,255,0.02) 0%, transparent 50%),
+            radial-gradient(circle at 80% 70%, rgba(0,0,0,0.015) 0%, transparent 50%);
+        pointer-events: none;
+    }
+    
+    .main-title {
+        font-family: 'Gupter', 'Libre Baskerville', serif;
+        font-size: 300px;
+        font-weight: 400;
+        color: #D0FFCD;
+        line-height: 220px;
+        letter-spacing: -0.05em;
+        text-transform: uppercase;
+        margin-top: 60px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .main-title .line1 {
+        display: block;
+    }
+    
+    .main-title .line2 {
+        display: block;
+    }
+    
+    .bottom-section {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        position: relative;
+        z-index: 1;
+    }
+    
+    .company-info {
+        font-family: 'Inter', sans-serif;
+        color: #D0FFCD;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .company-info .arrow {
+        font-size: 32px;
+        font-weight: 300;
+    }
+    
+    .company-info .text-block {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .company-info .company-name {
+        font-size: 36px;
+        font-weight: 400;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+    
+    .company-info .date {
+        font-size: 32px;
+        font-weight: 300;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+    }
+    
+    .quarter-info {
+        font-family: 'Gupter', 'Libre Baskerville', serif;
+        font-size: 140px;
+        font-weight: 400;
+        color: #D0FFCD;
+        letter-spacing: 8px;
+        text-transform: uppercase;
+    }
+</style>
+
+<div class="slide-container">
+    <div class="main-title">
+        <span class="line1">THANK</span>
+        <span class="line2">YOU</span>
+    </div>
+    
+    <div class="bottom-section">
+        <div class="company-info">
+            <span class="arrow">▶</span>
+            <div class="text-block">
+                <div class="company-name">COMPANY NAME</div>
+                <div class="date">TODAY'S DATE</div>
+            </div>
+        </div>
+        
+        <div class="quarter-info">QX 20XX</div>
+    </div>
+</div>
+</body>
+</html>

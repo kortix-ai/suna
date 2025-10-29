@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syllabus Presentation - Slide 1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    background: #383838;
+    font-family: 'Playfair Display', serif;
+    color: #ffffff;
+    overflow: hidden;
+    position: relative;
+}
+
+.slide-container {
+    width: 100%;
+    height: 100%;
+    padding: 80px 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.instructor-name {
+    font-size: 48px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+}
+
+.date {
+    font-size: 48px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+}
+
+.content-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: relative;
+    padding-bottom: 80px;
+}
+
+.university-course {
+    font-size: 42px;
+    font-weight: 400;
+    margin-bottom: 20px;
+    letter-spacing: 0.5px;
+}
+
+.main-title {
+    font-size: 280px;
+    font-weight: 400;
+    line-height: 100%;
+    letter-spacing: -2px;
+    position: relative;
+}
+
+.shapes-image {
+    position: absolute;
+    bottom: 100px;
+    right: 0;
+    height: 180px;
+    width: auto;
+}
+</style>
+
+<div class="slide-container">
+    <div class="header">
+        <div class="instructor-name">Instructor Name</div>
+        <div class="date">September 2025</div>
+    </div>
+    
+    <div class="content-area">
+        <div class="university-course">University / Course</div>
+        <div class="main-title">Syllabus</div>
+        <img src="shapes.png" alt="Colorful shapes" class="shapes-image">
+    </div>
+</div>
+</body>
+</html>

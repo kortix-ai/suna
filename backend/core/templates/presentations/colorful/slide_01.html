@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casual Yet Professional Presentation - Slide 1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #ffffff;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+.slide-container {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 150px;
+    z-index: 1;
+}
+
+/* Pattern image in bottom right - 50% larger */
+.pattern-image {
+    position: absolute;
+    bottom: 40px;
+    right: 40px;
+    width: auto;
+    height: auto;
+    max-width: 900px;
+    max-height: 900px;
+    z-index: 0;
+}
+
+.eyebrow {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #2d2d2d;
+    margin-bottom: 40px;
+    opacity: 0.8;
+}
+
+.main-heading {
+    font-family: 'DM Serif Display', serif;
+    font-size: 140px;
+    line-height: 1.1;
+    color: #1a1a1a;
+    margin-bottom: 80px;
+    font-weight: 400;
+    max-width: 1200px;
+}
+
+.author-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.author-name {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+.date {
+    font-size: 24px;
+    font-weight: 400;
+    color: #666;
+}
+
+.separator {
+    color: #999;
+}
+
+.subtitle {
+    font-size: 22px;
+    font-weight: 400;
+    color: #666;
+    line-height: 1.6;
+}
+</style>
+
+<img src="../../uploads/PATTERN.png" alt="" class="pattern-image">
+
+<div class="slide-container">
+    <div class="eyebrow">Casual Yet Professional</div>
+    
+    <h1 class="main-heading">Welcome to this presentation!</h1>
+    
+    <div class="author-info">
+        <span class="author-name">Izzy Stevenson</span>
+        <span class="separator">·</span>
+        <span class="date">June 22nd 2024</span>
+    </div>
+    
+    <p class="subtitle">Buckle up — we've got a lot to show you today</p>
+</div>
+</body>
+</html>

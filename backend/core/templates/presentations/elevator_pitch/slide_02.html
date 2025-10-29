@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevator Pitch Presentation - Slide 2</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #FAFAFA;
+        overflow: hidden;
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+        background: #FAFAFA;
+        padding: 0;
+    }
+    
+    /* Main Title */
+    .main-title {
+        position: absolute;
+        top: 140px;
+        left: 120px;
+        font-size: 90px;
+        font-weight: 900;
+        line-height: 1.1;
+        color: #000000;
+        letter-spacing: -2px;
+        z-index: 10;
+    }
+    
+    .company-name {
+        color: #7C3AED;
+        display: block;
+    }
+    
+    /* Section Heading */
+    .section-heading {
+        position: absolute;
+        top: 460px;
+        left: 120px;
+        font-size: 36px;
+        font-weight: 700;
+        color: #000000;
+        z-index: 10;
+    }
+    
+    /* Description Text */
+    .description-text {
+        position: absolute;
+        top: 530px;
+        left: 120px;
+        font-size: 22px;
+        font-weight: 400;
+        color: #000000;
+        line-height: 1.6;
+        max-width: 520px;
+        z-index: 10;
+    }
+    
+    /* Photos - 150px from right edge */
+    .photo {
+        position: absolute;
+        border-radius: 40px;
+        object-fit: cover;
+        right: 150px;
+    }
+    
+    .photo-1 {
+        width: 580px;
+        height: 260px;
+        top: 0;
+        border-radius: 0 0 0 40px;
+    }
+    
+    .photo-2 {
+        width: 580px;
+        height: 360px;
+        top: 290px;
+        border-radius: 40px;
+    }
+    
+    /* Green Box - Moved up 60px */
+    .green-box {
+        position: absolute;
+        bottom: 260px;
+        right: 470px;
+        width: 400px;
+        padding: 45px 50px;
+        background: #6EE7B7;
+        border-radius: 50px;
+        z-index: 20;
+        box-shadow: 0 15px 50px rgba(0, 0, 0, 0.12);
+    }
+    
+    .green-box-text {
+        font-size: 22px;
+        font-weight: 400;
+        color: #000000;
+        line-height: 1.6;
+    }
+    
+    /* Website URL */
+    .website {
+        position: absolute;
+        bottom: 80px;
+        left: 120px;
+        font-size: 24px;
+        font-weight: 400;
+        color: #000000;
+        z-index: 10;
+    }
+    
+    /* Slide Number */
+    .slide-number {
+        position: absolute;
+        bottom: 60px;
+        right: 100px;
+        width: 90px;
+        height: 90px;
+        background: #7C3AED;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 44px;
+        font-weight: 700;
+        color: #FFFFFF;
+        z-index: 30;
+    }
+</style>
+
+<div class="slide-container">
+    <!-- Main Title -->
+    <div class="main-title">
+        Welcome to<br>
+        <span class="company-name">Brightpath</span>
+    </div>
+    
+    <!-- Section Heading -->
+    <div class="section-heading">
+        Who And What We Are
+    </div>
+    
+    <!-- Description Text -->
+    <div class="description-text">
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+    </div>
+    
+    <!-- Photos - 150px from right edge -->
+    <img src="slide2_photo1.jpg" alt="Business Meeting" class="photo photo-1">
+    <img src="slide2_photo2.jpg" alt="Team Presentation" class="photo photo-2">
+    
+    <!-- Green Box - Moved up 60px -->
+    <div class="green-box">
+        <div class="green-box-text">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+        </div>
+    </div>
+    
+    <!-- Website -->
+    <div class="website">
+        www.yourwebsite.org
+    </div>
+    
+    <!-- Slide Number -->
+    <div class="slide-number">
+        2
+    </div>
+</div>
+</body>
+</html>

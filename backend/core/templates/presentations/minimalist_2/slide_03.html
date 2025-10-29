@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calmness Presentation - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f5f5;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .slide-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    padding: 80px 80px 60px 80px;
+    position: relative;
+  }
+  
+  .background-box {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 27.5%;
+    height: 100%;
+    background: #e8e8e8;
+    z-index: 1;
+  }
+  
+  .left-content {
+    flex: 0 0 45%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-right: 80px;
+    z-index: 5;
+    position: relative;
+  }
+  
+  .main-heading {
+    font-size: 80px;
+    font-weight: 500;
+    color: #000000;
+    line-height: 1.15;
+    letter-spacing: -1.5px;
+    margin-bottom: 60px;
+  }
+  
+  .body-text {
+    font-size: 17px;
+    font-weight: 300;
+    color: #666666;
+    line-height: 1.8;
+    letter-spacing: 0.3px;
+    margin-bottom: 40px;
+  }
+  
+  .italic-text {
+    font-size: 17px;
+    font-weight: 300;
+    font-style: italic;
+    color: #666666;
+    line-height: 1.8;
+    letter-spacing: 0.3px;
+  }
+  
+  .right-content {
+    flex: 0 0 55%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 0;
+    z-index: 10;
+    position: relative;
+  }
+  
+  .image-container {
+    width: 100%;
+    height: 100%;
+    max-height: 820px;
+    overflow: hidden;
+    border-radius: 0;
+    background: 
+      radial-gradient(circle, #a8b8d8 1px, transparent 1px),
+      linear-gradient(135deg, #a8b8d8 0%, #8fa5c7 100%);
+    background-size: 4px 4px, 100% 100%;
+    background-position: 0 0, 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .placeholder-text {
+    font-size: 24px;
+    font-weight: 400;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  .bottom-label {
+    position: absolute;
+    bottom: 60px;
+    left: 80px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    z-index: 15;
+  }
+  
+  .label-line {
+    width: 80px;
+    height: 2px;
+    background: #000000;
+  }
+  
+  .label-text {
+    font-size: 18px;
+    font-weight: 400;
+    color: #000000;
+    letter-spacing: 0.5px;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="background-box"></div>
+  
+  <div class="left-content">
+    <h1 class="main-heading">Our Serene<br>Beginnings</h1>
+    
+    <p class="body-text">
+      Duis tincidunt mollis nisl non congue lorem congue non In placerat velit quis ismod semper ivamus tempor commodo odio nec velit quis ismod semper ivamus odio tincidunt
+    </p>
+    
+    <p class="italic-text">
+      Duis tincidunt mollis nisl non congue lorem congue non In placerat velit quis ismod
+    </p>
+  </div>
+  
+  <div class="right-content">
+    <div class="image-container">
+      <div class="placeholder-text">placeholder image</div>
+    </div>
+  </div>
+  
+  <div class="bottom-label">
+    <div class="label-line"></div>
+    <div class="label-text">Text Title</div>
+  </div>
+</div>
+</body>
+</html>

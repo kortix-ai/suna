@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My UX Design Portfolio - Slide 1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Rubik', sans-serif;
+  background-color: #813648;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  position: relative;
+}
+
+.slide-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  padding: 80px 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.content-wrapper {
+  position: relative;
+  z-index: 2;
+  max-width: 900px;
+}
+
+h1 {
+  font-size: 120px;
+  font-weight: 600;
+  color: #FFFFFF;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 40px;
+}
+
+.subtitle {
+  font-size: 42px;
+  font-weight: 400;
+  color: #FFFFFF;
+  line-height: 1.4;
+  margin-bottom: 120px;
+  opacity: 0.95;
+}
+
+.cta {
+  font-size: 32px;
+  font-weight: 600;
+  color: #FFFFFF;
+  opacity: 0.95;
+}
+
+.coworkers-image {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: auto;
+  height: 1050px;
+  z-index: 1;
+}
+</style>
+
+<div class="slide-container">
+  <div class="content-wrapper">
+    <h1>My UX Design<br>Portfolio</h1>
+    <div class="subtitle">
+      Solving Real Problems with<br>
+      Human-Centered Design
+    </div>
+    <div class="cta">
+      Let's Make Great Products Together
+    </div>
+  </div>
+  
+  <img src="coworkers.png" alt="Coworkers collaborating" class="coworkers-image">
+</div>
+</body>
+</html>

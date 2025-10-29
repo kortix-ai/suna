@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 8</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  .slide-container {
+    width: 1920px;
+    height: 1080px;
+    background: #f5f5f5;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .header {
+    position: absolute;
+    top: 40px;
+    left: 40px;
+    font-size: 32px;
+    font-weight: 400;
+    color: #cccccc;
+    letter-spacing: 0.5px;
+  }
+  
+  .footer {
+    position: absolute;
+    bottom: 40px;
+    left: 40px;
+    right: 40px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 18px;
+    font-weight: 400;
+    color: #cccccc;
+    letter-spacing: 0.5px;
+  }
+  
+  .sliders-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 1800px;
+  }
+  
+  .slider-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 35px;
+    position: relative;
+  }
+  
+  .slider-label-left {
+    width: 220px;
+    font-size: 18px;
+    font-weight: 500;
+    color: #1a1a1a;
+    text-align: left;
+  }
+  
+  .slider-track {
+    flex: 1;
+    height: 50px;
+    background: linear-gradient(90deg, #a8f5d9 0%, #6ee7b7 100%);
+    border-radius: 25px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    margin: 0 30px;
+  }
+  
+  .slider-dots {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0 10px;
+  }
+  
+  .dot {
+    width: 18px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+  }
+  
+  .dot.active {
+    width: 28px;
+    height: 28px;
+    background: #1a1a1a;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  .slider-label-right {
+    width: 220px;
+    font-size: 18px;
+    font-weight: 500;
+    color: #1a1a1a;
+    text-align: right;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="header">Personality Sliders</div>
+  
+  <div class="sliders-container">
+    <div class="slider-row">
+      <div class="slider-label-left">Playful</div>
+      <div class="slider-track">
+        <div class="slider-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot active"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+      <div class="slider-label-right">Serious</div>
+    </div>
+    
+    <div class="slider-row">
+      <div class="slider-label-left">Friendly Consultant</div>
+      <div class="slider-track">
+        <div class="slider-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot active"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+      <div class="slider-label-right">Authority</div>
+    </div>
+    
+    <div class="slider-row">
+      <div class="slider-label-left">Young and Innovative</div>
+      <div class="slider-track">
+        <div class="slider-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot active"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+      <div class="slider-label-right">Mature & Classic</div>
+    </div>
+    
+    <div class="slider-row">
+      <div class="slider-label-left">Mass Apealing</div>
+      <div class="slider-track">
+        <div class="slider-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot active"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+      <div class="slider-label-right">Elite</div>
+    </div>
+    
+    <div class="slider-row">
+      <div class="slider-label-left">Rebel</div>
+      <div class="slider-track">
+        <div class="slider-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot active"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+      <div class="slider-label-right">Conventional</div>
+    </div>
+    
+    <div class="slider-row">
+      <div class="slider-label-left">Expressive</div>
+      <div class="slider-track">
+        <div class="slider-dots">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot active"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+      <div class="slider-label-right">Reserved</div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <div>[Company Name]</div>
+    <div>[Presentation Title]</div>
+  </div>
+</div>
+</body>
+</html>

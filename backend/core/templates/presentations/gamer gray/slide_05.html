@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 5</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    background: #CFCFCF;
+    padding: 70px 100px;
+    overflow: hidden;
+}
+
+.main-heading {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 90px;
+    font-weight: 800;
+    color: #000000;
+    letter-spacing: -0.04em;
+    margin-bottom: 15px;
+    line-height: 1.1;
+}
+
+.subheading {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 40px;
+    font-weight: 700;
+    color: #000000;
+    letter-spacing: 0.02em;
+    margin-bottom: 25px;
+    text-transform: uppercase;
+}
+
+.description {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 40px;
+    font-weight: 300;
+    color: #000000;
+    line-height: 1.3;
+    margin-bottom: 50px;
+    max-width: 1700px;
+    text-transform: uppercase;
+}
+
+.key-points-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 50px;
+    font-weight: 900;
+    color: #000000;
+    letter-spacing: 0.02em;
+    margin-bottom: 45px;
+    text-transform: uppercase;
+    text-align: left;
+}
+
+.content-wrapper {
+    display: flex;
+    gap: 120px;
+    align-items: flex-start;
+}
+
+.key-points-section {
+    flex: 1;
+}
+
+.key-point {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    margin-bottom: 30px;
+    padding-bottom: 30px;
+    border-bottom: 2px dashed #666666;
+}
+
+.key-point:last-child {
+    border-bottom: none;
+}
+
+.bullet {
+    width: 40px;
+    height: 40px;
+    background: #000000;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.key-point-text {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 40px;
+    font-weight: 300;
+    color: #000000;
+    line-height: 1.2;
+}
+
+.tip-card {
+    width: 380px;
+    background: #FFFFFF;
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    flex-shrink: 0;
+}
+
+.tip-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.lightbulb-icon {
+    font-size: 32px;
+}
+
+.tip-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: #2D7A6E;
+}
+
+.tip-text {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 22px;
+    font-weight: 300;
+    color: #4A5568;
+    line-height: 1.5;
+    font-style: italic;
+}
+</style>
+
+<div>
+    <h1 class="main-heading">Understand your model</h1>
+    <h2 class="subheading">KNOW YOUR AI PARTNER</h2>
+    <p class="description">DIFFERENT AI MODELS VARYING STRENGTHS, CONTEXT LIMITS, AND RESPONSE PATTERNS. UNDERSTANDING THESE HELPS YOU CRAFT BETTER STRENGTHS.</p>
+    
+    <h3 class="key-points-title">KEY POINTS</h3>
+    
+    <div class="content-wrapper">
+        <div class="key-points-section">
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">Model capabilities and limitations</div>
+            </div>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">Context window size</div>
+            </div>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">Preferred formatting styles</div>
+            </div>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">Specific instruction patterns that work well</div>
+            </div>
+        </div>
+        
+        <div class="tip-card">
+            <div class="tip-header">
+                <span class="lightbulb-icon">💡</span>
+                <div class="tip-title">Quick Tip</div>
+            </div>
+            <p class="tip-text">Test your prompts with different models to understand their unique strengths.</p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

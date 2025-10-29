@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 10</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #0a0a0a;
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+  }
+  
+  /* Main heading */
+  .main-heading {
+    text-align: center;
+    font-size: 82px;
+    font-weight: 400;
+    color: #ffffff;
+    margin-top: 140px;
+    margin-bottom: 80px;
+    letter-spacing: -1px;
+  }
+  
+  .main-heading .bold {
+    font-weight: 700;
+  }
+  
+  /* Content container */
+  .content-container {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 120px;
+    padding: 0 80px;
+  }
+  
+  /* Calendar */
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 72px);
+    grid-template-rows: repeat(6, 95px);
+    border: 2px solid #ffffff;
+  }
+  
+  .calendar-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 600;
+    color: #ffffff;
+    border: 1px solid #ffffff;
+  }
+  
+  .calendar-header {
+    background: linear-gradient(135deg, #3d85ff 0%, #5da3ff 50%, #7db8ff 100%);
+    font-size: 32px;
+    font-weight: 700;
+  }
+  
+  .calendar-date {
+    background: transparent;
+  }
+  
+  .calendar-highlight {
+    background: linear-gradient(135deg, #3d85ff 0%, #5da3ff 100%);
+  }
+  
+  .calendar-empty {
+    background: transparent;
+  }
+  
+  /* Right content */
+  .right-content {
+    flex: 1;
+    max-width: 700px;
+  }
+  
+  .option-section {
+    margin-bottom: 80px;
+  }
+  
+  .option-heading {
+    font-size: 48px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 30px;
+    letter-spacing: -0.5px;
+  }
+  
+  .option-description {
+    font-size: 18px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.8;
+    letter-spacing: 0.3px;
+    text-align: justify;
+  }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  .main-heading {
+    animation: slideInUp 0.8s ease-out 0.2s both;
+  }
+  
+  .calendar {
+    animation: slideInLeft 0.8s ease-out 0.4s both;
+  }
+  
+  .option-section:nth-child(1) {
+    animation: slideInRight 0.8s ease-out 0.6s both;
+  }
+  
+  .option-section:nth-child(2) {
+    animation: slideInRight 0.8s ease-out 0.8s both;
+  }
+</style>
+
+<h1 class="main-heading">Infographic <span class="bold">Section</span></h1>
+
+<div class="content-container">
+  <div class="calendar">
+    <!-- Header row -->
+    <div class="calendar-cell calendar-header">S</div>
+    <div class="calendar-cell calendar-header">M</div>
+    <div class="calendar-cell calendar-header">T</div>
+    <div class="calendar-cell calendar-header">W</div>
+    <div class="calendar-cell calendar-header">T</div>
+    <div class="calendar-cell calendar-header">F</div>
+    <div class="calendar-cell calendar-header">S</div>
+    
+    <!-- Week 1 -->
+    <div class="calendar-cell calendar-empty"></div>
+    <div class="calendar-cell calendar-empty"></div>
+    <div class="calendar-cell calendar-date">1</div>
+    <div class="calendar-cell calendar-date">2</div>
+    <div class="calendar-cell calendar-date">3</div>
+    <div class="calendar-cell calendar-date">4</div>
+    <div class="calendar-cell calendar-date">5</div>
+    
+    <!-- Week 2 -->
+    <div class="calendar-cell calendar-date">6</div>
+    <div class="calendar-cell calendar-date">7</div>
+    <div class="calendar-cell calendar-date">8</div>
+    <div class="calendar-cell calendar-date">9</div>
+    <div class="calendar-cell calendar-date">10</div>
+    <div class="calendar-cell calendar-date">11</div>
+    <div class="calendar-cell calendar-highlight">12</div>
+    
+    <!-- Week 3 -->
+    <div class="calendar-cell calendar-date">13</div>
+    <div class="calendar-cell calendar-date">14</div>
+    <div class="calendar-cell calendar-date">15</div>
+    <div class="calendar-cell calendar-date">16</div>
+    <div class="calendar-cell calendar-date">17</div>
+    <div class="calendar-cell calendar-date">18</div>
+    <div class="calendar-cell calendar-date">19</div>
+    
+    <!-- Week 4 -->
+    <div class="calendar-cell calendar-date">20</div>
+    <div class="calendar-cell calendar-date">21</div>
+    <div class="calendar-cell calendar-highlight">22</div>
+    <div class="calendar-cell calendar-date">23</div>
+    <div class="calendar-cell calendar-date">24</div>
+    <div class="calendar-cell calendar-date">25</div>
+    <div class="calendar-cell calendar-date">26</div>
+    
+    <!-- Week 5 -->
+    <div class="calendar-cell calendar-date">27</div>
+    <div class="calendar-cell calendar-date">28</div>
+    <div class="calendar-cell calendar-date">29</div>
+    <div class="calendar-cell calendar-date">30</div>
+    <div class="calendar-cell calendar-date">31</div>
+    <div class="calendar-cell calendar-empty"></div>
+    <div class="calendar-cell calendar-empty"></div>
+  </div>
+  
+  <div class="right-content">
+    <div class="option-section">
+      <h2 class="option-heading">Option Here</h2>
+      <p class="option-description">
+        Strategic planning and execution frameworks enable organizations to achieve measurable outcomes through systematic approaches. Comprehensive methodologies ensure sustainable growth and competitive advantage in dynamic market environments.
+      </p>
+    </div>
+    
+    <div class="option-section">
+      <h2 class="option-heading">Option Here</h2>
+      <p class="option-description">
+        Innovative solutions drive operational excellence and enhance organizational capabilities. Data-driven insights inform strategic decisions, enabling businesses to adapt and thrive in evolving landscapes while maintaining focus on core objectives.
+      </p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

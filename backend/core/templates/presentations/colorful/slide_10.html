@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casual Yet Professional Presentation - Slide 10</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #ffffff;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+.slide-container {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    padding: 100px 150px;
+    display: flex;
+    flex-direction: column;
+    z-index: 1;
+}
+
+.header {
+    margin-bottom: 80px;
+}
+
+.eyebrow {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #2d2d2d;
+    margin-bottom: 30px;
+    opacity: 0.8;
+}
+
+.main-heading {
+    font-family: 'DM Serif Display', serif;
+    font-size: 90px;
+    line-height: 1.1;
+    color: #1a1a1a;
+    font-weight: 400;
+}
+
+.main-heading .highlight {
+    color: #8B5CF6;
+}
+
+.reasons-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 120px;
+    flex: 1;
+}
+
+.reason-card {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+}
+
+.number-circle {
+    width: 60px;
+    height: 60px;
+    border: 3px solid #1a1a1a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.reason-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 60px;
+    line-height: 1.2;
+    color: #1a1a1a;
+    font-weight: 400;
+}
+
+.reason-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 32px;
+    line-height: 1.6;
+    color: #1a1a1a;
+    font-weight: 400;
+}
+</style>
+
+<div class="slide-container">
+    <div class="header">
+        <div class="eyebrow">Lessons Learned</div>
+        <h1 class="main-heading">Maybe you have <span class="highlight">two things</span><br>to say instead of three?</h1>
+    </div>
+    
+    <div class="reasons-grid">
+        <div class="reason-card">
+            <div class="number-circle">1</div>
+            <h2 class="reason-title">First is the worst</h2>
+            <p class="reason-text">Just remember perfection in text doesn't really matter here, and headlines are more important</p>
+        </div>
+        
+        <div class="reason-card">
+            <div class="number-circle">2</div>
+            <h2 class="reason-title">Second is the best</h2>
+            <p class="reason-text">Sometimes you won't have even similar amounts of text on each side — I think that's ok as long as it still feels balanced?</p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

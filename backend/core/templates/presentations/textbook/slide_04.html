@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pitch Deck Template - Slide 4</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Stardos+Stencil:wght@400;700&family=Zilla+Slab:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: 'Zilla Slab', serif;
+    background: #0A0A0A;
+}
+
+/* Main Container */
+.main-container {
+    width: 100%;
+    height: 100%;
+    padding: 80px;
+}
+
+/* Title */
+.slide-title {
+    font-family: 'Stardos Stencil', cursive;
+    font-size: 72px;
+    color: #FFFFFF;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 100px;
+}
+
+/* Shapes Grid */
+.shapes-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 40px;
+    height: calc(100% - 200px);
+    align-items: center;
+}
+
+/* Shape Container */
+.shape-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shape-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 380px;
+    height: 100%;
+    max-height: 650px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.shape-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Text Overlay */
+.shape-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 50px 40px;
+    padding-bottom: 110px;
+    z-index: 2;
+}
+
+.shape-number {
+    font-family: 'Zilla Slab', serif;
+    font-size: 42px;
+    font-weight: 600;
+    color: #000000;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.shape-label {
+    font-family: 'Staatliches', cursive;
+    font-size: 36px;
+    color: #000000;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-align: center;
+    line-height: 1.1;
+}
+</style>
+
+<div class="main-container">
+    <h1 class="slide-title">AGENDA</h1>
+    
+    <div class="shapes-grid">
+        <!-- Shape 1 -->
+        <div class="shape-container">
+            <div class="shape-wrapper">
+                <img src="../../uploads/shape1.png" alt="Shape 1" class="shape-image">
+                <div class="shape-content">
+                    <div class="shape-number">01</div>
+                    <div class="shape-label">AGENDA<br>ITEM</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Shape 2 -->
+        <div class="shape-container">
+            <div class="shape-wrapper">
+                <img src="../../uploads/shape2.png" alt="Shape 2" class="shape-image">
+                <div class="shape-content">
+                    <div class="shape-number">02</div>
+                    <div class="shape-label">AGENDA<br>ITEM</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Shape 3 -->
+        <div class="shape-container">
+            <div class="shape-wrapper">
+                <img src="../../uploads/shape3.png" alt="Shape 3" class="shape-image">
+                <div class="shape-content">
+                    <div class="shape-number">03</div>
+                    <div class="shape-label">AGENDA<br>ITEM</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Shape 4 -->
+        <div class="shape-container">
+            <div class="shape-wrapper">
+                <img src="../../uploads/shape4.png" alt="Shape 4" class="shape-image">
+                <div class="shape-content">
+                    <div class="shape-number">04</div>
+                    <div class="shape-label">AGENDA<br>ITEM</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

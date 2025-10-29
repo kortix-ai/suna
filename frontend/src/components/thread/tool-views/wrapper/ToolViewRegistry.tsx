@@ -146,7 +146,8 @@ const defaultRegistry: ToolViewRegistryType = {
 
 
   'create-presentation-outline': PresentationOutlineToolView,
-  'list-presentation-templates': ListPresentationTemplatesToolView,
+  'list-templates': ListPresentationTemplatesToolView,
+  'load-template-design': ListPresentationTemplatesToolView,
 
   // New per-slide presentation tools
   'create-slide': PresentationViewer,

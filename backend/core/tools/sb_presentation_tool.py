@@ -26,6 +26,8 @@ class SandboxPresentationTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.presentations_dir = "presentations"
+        # Path to built-in templates (on the backend filesystem, not in sandbox)
+        self.templates_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates", "presentations")
 
 
     async def _ensure_presentations_dir(self):
@@ -101,7 +103,213 @@ class SandboxPresentationTool(SandboxToolsBase):
         metadata_path = f"{presentation_path}/metadata.json"
         await self.sandbox.fs.upload_file(json.dumps(metadata, indent=2).encode(), metadata_path)
 
+    def _load_template_metadata(self, template_name: str) -> Dict:
+        """Load metadata from a template on the backend filesystem"""
+        metadata_path = os.path.join(self.templates_dir, template_name, "metadata.json")
+        try:
+            with open(metadata_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            return {}
 
+    def _read_template_slide(self, template_name: str, slide_filename: str) -> str:
+        """Read a slide HTML file from a template"""
+        slide_path = os.path.join(self.templates_dir, template_name, slide_filename)
+        try:
+            with open(slide_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            return ""
+
+    def _extract_style_from_html(self, html_content: str) -> Dict:
+        """Extract CSS styles and design patterns from HTML content"""
+        style_info = {
+            "fonts": [],
+            "colors": [],
+            "layout_patterns": [],
+            "key_css_classes": []
+        }
+        
+        # Extract font imports
+        font_imports = re.findall(r'@import url\([\'"]([^\'"]+)[\'"]', html_content)
+        font_families = re.findall(r'font-family:\s*[\'"]?([^;\'"]+)[\'"]?', html_content)
+        style_info["fonts"] = list(set(font_imports + font_families))
+        
+        # Extract color values (hex, rgb, rgba)
+        hex_colors = re.findall(r'#[0-9A-Fa-f]{3,6}', html_content)
+        rgb_colors = re.findall(r'rgba?\([^)]+\)', html_content)
+        style_info["colors"] = list(set(hex_colors + rgb_colors))[:20]  # Limit to top 20
+        
+        # Extract class names
+        class_names = re.findall(r'class=[\'"]([^\'"]+)[\'"]', html_content)
+        style_info["key_css_classes"] = list(set(class_names))[:30]
+        
+        # Identify layout patterns
+        if 'display: flex' in html_content or 'display:flex' in html_content:
+            style_info["layout_patterns"].append("flexbox")
+        if 'display: grid' in html_content or 'display:grid' in html_content:
+            style_info["layout_patterns"].append("grid")
+        if 'position: absolute' in html_content:
+            style_info["layout_patterns"].append("absolute positioning")
+        
+        return style_info
+
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "list_templates",
+            "description": "List all available presentation template names with their metadata and preview images. Use this to see what template styles are available, then use load_template_design to get the full design reference for a specific template.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    })
+    async def list_templates(self) -> ToolResult:
+        """List all available presentation templates with metadata and images"""
+        try:
+            templates = []
+            
+            # Check if templates directory exists
+            if not os.path.exists(self.templates_dir):
+                return self.success_response({
+                    "message": "No templates directory found",
+                    "templates": []
+                })
+            
+            # List all subdirectories in templates folder
+            for item in os.listdir(self.templates_dir):
+                template_path = os.path.join(self.templates_dir, item)
+                if os.path.isdir(template_path) and not item.startswith('.'):
+                    # Load metadata for this template
+                    metadata = self._load_template_metadata(item)
+                    
+                    # Check if image.png exists
+                    image_path = os.path.join(template_path, "image.png")
+                    has_image = os.path.exists(image_path)
+                    
+                    template_info = {
+                        "id": item,
+                        "name": item,  # Use folder name directly
+                        "has_image": has_image
+                    }
+                    templates.append(template_info)
+            
+            if not templates:
+                return self.success_response({
+                    "message": "No templates found",
+                    "templates": []
+                })
+            
+            # Sort templates by name
+            templates.sort(key=lambda x: x["name"])
+            
+            return self.success_response({
+                "message": f"Found {len(templates)} template(s)",
+                "templates": templates,
+                "note": "Use load_template_design with a template id to get the complete design reference"
+            })
+            
+        except Exception as e:
+            return self.fail_response(f"Failed to list templates: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "load_template_design",
+            "description": "Load complete design reference from a presentation template including all slide HTML and extracted style patterns (colors, fonts, layouts). Use this template as DESIGN INSPIRATION ONLY - study the visual styling, CSS patterns, and layout structure to create your own original slides with similar aesthetics but completely different content. CRITICAL: Templates are for design reference only, never copy content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template_name": {
+                        "type": "string",
+                        "description": "Name of the template to load (e.g., 'textbook')"
+                    }
+                },
+                "required": ["template_name"]
+            }
+        }
+    })
+    async def load_template_design(self, template_name: str) -> ToolResult:
+        """Load complete template design including all slides HTML and extracted style patterns"""
+        try:
+            template_path = os.path.join(self.templates_dir, template_name)
+            
+            if not os.path.exists(template_path):
+                return self.fail_response(f"Template '{template_name}' not found")
+            
+            # Load template metadata
+            metadata = self._load_template_metadata(template_name)
+            
+            if not metadata or "slides" not in metadata:
+                return self.fail_response(f"Template '{template_name}' has no metadata or slides")
+            
+            # Extract all slides HTML
+            slides = []
+            all_fonts = set()
+            all_colors = set()
+            all_layout_patterns = set()
+            all_css_classes = set()
+            
+            for slide_num, slide_data in sorted(metadata["slides"].items(), key=lambda x: int(x[0])):
+                slide_filename = slide_data.get("filename", f"slide_{int(slide_num):02d}.html")
+                html_content = self._read_template_slide(template_name, slide_filename)
+                
+                if html_content:
+                    # Add slide info
+                    slides.append({
+                        "slide_number": int(slide_num),
+                        "title": slide_data.get("title", f"Slide {slide_num}"),
+                        "filename": slide_filename,
+                        "html_content": html_content,
+                        "html_length": len(html_content)
+                    })
+                    
+                    # Extract style information from this slide
+                    style_info = self._extract_style_from_html(html_content)
+                    all_fonts.update(style_info["fonts"])
+                    all_colors.update(style_info["colors"])
+                    all_layout_patterns.update(style_info["layout_patterns"])
+                    all_css_classes.update(style_info["key_css_classes"])
+            
+            if not slides:
+                return self.fail_response(f"Could not load any slides from template '{template_name}'")
+            
+            return self.success_response({
+                "template_name": template_name,
+                "template_title": metadata.get("title", template_name),
+                "description": metadata.get("description", ""),
+                "total_slides": len(slides),
+                "slides": slides,
+                "design_system": {
+                    "fonts": list(all_fonts)[:10],  # Top 10 fonts
+                    "color_palette": list(all_colors)[:20],  # Top 20 colors
+                    "layout_patterns": list(all_layout_patterns),
+                    "common_css_classes": list(all_css_classes)[:30]  # Top 30 classes
+                },
+                "usage_instructions": {
+                    "purpose": "DESIGN REFERENCE ONLY - Use for visual inspiration",
+                    "do": [
+                        "Study the HTML structure and CSS styling patterns",
+                        "Learn the layout techniques and visual hierarchy",
+                        "Understand the color scheme and typography usage",
+                        "Analyze how elements are positioned and styled",
+                        "Create NEW slides with similar design but ORIGINAL content"
+                    ],
+                    "dont": [
+                        "Copy template content directly",
+                        "Use template text, data, or information",
+                        "Duplicate slides without modification",
+                        "Treat templates as final deliverables"
+                    ]
+                },
+                "note": "This template provides ALL slides and extracted design patterns in one response. Study the HTML and CSS to understand the design system, then create your own original slides with similar visual styling."
+            })
+            
+        except Exception as e:
+            return self.fail_response(f"Failed to load template design: {str(e)}")
 
 
     @openapi_schema({

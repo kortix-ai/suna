@@ -1,0 +1,86 @@
+{
+  "presentation_name": "brand_report_presentation",
+  "title": "Brand Report Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Cover Slide - Brand Report Template",
+      "filename": "slide_01.html",
+      "file_path": "presentations/brand_report_presentation/slide_01.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_01.html",
+      "created_at": "2025-10-12T06:08:30.393483"
+    },
+    "2": {
+      "title": "Project Kick-off",
+      "filename": "slide_02.html",
+      "file_path": "presentations/brand_report_presentation/slide_02.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_02.html",
+      "created_at": "2025-10-12T06:19:00.012698"
+    },
+    "3": {
+      "title": "Table of Contents",
+      "filename": "slide_03.html",
+      "file_path": "presentations/brand_report_presentation/slide_03.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_03.html",
+      "created_at": "2025-10-12T06:24:34.413414"
+    },
+    "4": {
+      "title": "Introduction",
+      "filename": "slide_04.html",
+      "file_path": "presentations/brand_report_presentation/slide_04.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_04.html",
+      "created_at": "2025-10-12T06:56:08.386330"
+    },
+    "5": {
+      "title": "Brand Role and Core Offering",
+      "filename": "slide_05.html",
+      "file_path": "presentations/brand_report_presentation/slide_05.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_05.html",
+      "created_at": "2025-10-12T06:57:02.794556"
+    },
+    "6": {
+      "title": "What",
+      "filename": "slide_06.html",
+      "file_path": "presentations/brand_report_presentation/slide_06.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_06.html",
+      "created_at": "2025-10-12T06:59:02.144188"
+    },
+    "7": {
+      "title": "Brand Keywords",
+      "filename": "slide_07.html",
+      "file_path": "presentations/brand_report_presentation/slide_07.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_07.html",
+      "created_at": "2025-10-12T07:01:15.634611"
+    },
+    "8": {
+      "title": "Personality Sliders",
+      "filename": "slide_08.html",
+      "file_path": "presentations/brand_report_presentation/slide_08.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_08.html",
+      "created_at": "2025-10-12T07:03:14.024627"
+    },
+    "9": {
+      "title": "Target Audience",
+      "filename": "slide_09.html",
+      "file_path": "presentations/brand_report_presentation/slide_09.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_09.html",
+      "created_at": "2025-10-12T07:05:19.924827"
+    },
+    "10": {
+      "title": "Target Audience 1",
+      "filename": "slide_10.html",
+      "file_path": "presentations/brand_report_presentation/slide_10.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_10.html",
+      "created_at": "2025-10-12T07:06:47.556862"
+    },
+    "11": {
+      "title": "Closing - Contact",
+      "filename": "slide_11.html",
+      "file_path": "presentations/brand_report_presentation/slide_11.html",
+      "preview_url": "/workspace/presentations/brand_report_presentation/slide_11.html",
+      "created_at": "2025-10-12T07:18:49.708572"
+    }
+  },
+  "created_at": "2025-10-12T06:08:30.275738",
+  "updated_at": "2025-10-12T07:18:49.708594"
+}

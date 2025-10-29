@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minim - Minimalist Presentation Template - Slide 12</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lora:wght@400;500;600&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  .slide-container {
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Lora', Georgia, serif;
+  }
+  
+  .top-section {
+    background: #f5f1ed;
+    padding: 70px 100px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 40px;
+  }
+  
+  .image-box {
+    width: 100%;
+    height: 420px;
+    overflow: hidden;
+  }
+  
+  .image-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  .bottom-section {
+    flex: 1;
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    padding: 80px 100px 40px 100px;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .content-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 60px;
+    flex: 1;
+    align-items: center;
+  }
+  
+  .content-item {
+    text-align: center;
+  }
+  
+  .item-heading {
+    font-size: 36px;
+    font-weight: 400;
+    color: #ffffff;
+    margin-bottom: 25px;
+    font-family: 'Lora', Georgia, serif;
+  }
+  
+  .item-text {
+    font-size: 20px;
+    font-weight: 400;
+    color: #bdc3c7;
+    line-height: 1.7;
+  }
+  
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 30px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .footer-text {
+    font-size: 20px;
+    font-weight: 400;
+    color: #7f8c8d;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  
+  .page-number {
+    font-size: 32px;
+    font-weight: 400;
+    color: #7f8c8d;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="top-section">
+    <div class="image-box">
+      <img src="https://images.stockcake.com/public/a/f/0/af03f36f-88a9-4e45-aec0-8c3ca639716a_large/team-collaboration-meeting-stockcake.jpg" alt="Team collaboration">
+    </div>
+    <div class="image-box">
+      <img src="https://images.stockcake.com/public/9/3/c/93cbde95-791c-46db-8a96-04d3e0c640b5_large/team-collaboration-meeting-stockcake.jpg" alt="Team meeting">
+    </div>
+    <div class="image-box">
+      <img src="https://images.stockcake.com/public/8/e/5/8e5c5ad4-2bea-4774-b89b-667fb6fac740_large/corporate-team-meeting-stockcake.jpg" alt="Corporate meeting">
+    </div>
+  </div>
+  
+  <div class="bottom-section">
+    <div class="content-grid">
+      <div class="content-item">
+        <div class="item-heading">Weekly Planner</div>
+        <div class="item-text">
+          Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium
+        </div>
+      </div>
+      
+      <div class="content-item">
+        <div class="item-heading">Daily Standup</div>
+        <div class="item-text">
+          Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium
+        </div>
+      </div>
+      
+      <div class="content-item">
+        <div class="item-heading">Sharing Session</div>
+        <div class="item-text">
+          Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium
+        </div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <div class="footer-text">Minim Company</div>
+      <div class="page-number">24</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

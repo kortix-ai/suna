@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pitch Deck Template - Slide 9</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Stardos+Stencil:wght@400;700&family=Inter:wght@400;500;600&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    background: #DED8CB;
+}
+
+/* Main Container */
+.main-container {
+    width: 100%;
+    height: 100%;
+    padding: 80px;
+}
+
+/* Header Section */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 120px;
+}
+
+.slide-title {
+    font-family: 'Stardos Stencil', cursive;
+    font-size: 72px;
+    color: #000000;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.header-info {
+    display: flex;
+    gap: 100px;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    color: #000000;
+    padding-top: 20px;
+}
+
+/* Logo Grid */
+.logo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 80px 100px;
+    padding: 0 100px;
+    height: calc(100% - 220px);
+    align-items: center;
+}
+
+/* Logo Card */
+.logo-card {
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 80px;
+    min-height: 200px;
+}
+
+.logo-card-1 {
+    background: #FF6A3B;
+}
+
+.logo-card-2 {
+    background: #15857A;
+}
+
+.logo-card-3 {
+    background: #C04277;
+}
+
+.logo-card-4 {
+    background: #5B7FB5;
+}
+
+.logo-card-5 {
+    background: #5B7FB5;
+}
+
+.logo-card-6 {
+    background: #FF6A3B;
+}
+
+.logo-card-7 {
+    background: #15857A;
+}
+
+/* Logo Text */
+.logo-text {
+    font-family: 'Stardos Stencil', cursive;
+    font-size: 64px;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+}
+
+/* Grid positioning - staggered layout */
+.logo-grid .logo-card:nth-child(1) {
+    grid-column: 1;
+}
+
+.logo-grid .logo-card:nth-child(2) {
+    grid-column: 2;
+}
+
+.logo-grid .logo-card:nth-child(3) {
+    grid-column: 3;
+}
+
+.logo-grid .logo-card:nth-child(4) {
+    grid-column: 4;
+}
+
+.logo-grid .logo-card:nth-child(5) {
+    grid-column: 2;
+}
+
+.logo-grid .logo-card:nth-child(6) {
+    grid-column: 3;
+}
+
+.logo-grid .logo-card:nth-child(7) {
+    grid-column: 4;
+}
+</style>
+
+<div class="main-container">
+    <div class="header">
+        <h1 class="slide-title">OUR CLIENTS</h1>
+        <div class="header-info">
+            <span>Agency Name x Partner Name</span>
+            <span>Phase X</span>
+        </div>
+    </div>
+    
+    <div class="logo-grid">
+        <div class="logo-card logo-card-1">
+            <div class="logo-text">LOGO</div>
+        </div>
+        
+        <div class="logo-card logo-card-2">
+            <div class="logo-text">LOGO</div>
+        </div>
+        
+        <div class="logo-card logo-card-3">
+            <div class="logo-text">LOGO</div>
+        </div>
+        
+        <div class="logo-card logo-card-4">
+            <div class="logo-text">LOGO</div>
+        </div>
+        
+        <div class="logo-card logo-card-5">
+            <div class="logo-text">LOGO</div>
+        </div>
+        
+        <div class="logo-card logo-card-6">
+            <div class="logo-text">LOGO</div>
+        </div>
+        
+        <div class="logo-card logo-card-7">
+            <div class="logo-text">LOGO</div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

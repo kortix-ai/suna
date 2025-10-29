@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 4</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Rubik', sans-serif;
+  background-color: #FFFFFF;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  position: relative;
+}
+
+.slide-container {
+  width: 100%;
+  height: 100%;
+  padding: 80px 100px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+}
+
+.content-section {
+  padding-right: 40px;
+}
+
+h1 {
+  font-size: 120px;
+  font-weight: 600;
+  color: #000000;
+  margin-bottom: 40px;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.intro {
+  font-size: 32px;
+  font-weight: 400;
+  color: #333333;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  margin-bottom: 50px;
+}
+
+.bullet-list {
+  list-style: none;
+  margin-bottom: 60px;
+}
+
+.bullet-list li {
+  font-size: 32px;
+  font-weight: 400;
+  color: #333333;
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+  margin-bottom: 24px;
+  padding-left: 40px;
+  position: relative;
+}
+
+.bullet-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: #000000;
+  font-weight: 700;
+  font-size: 36px;
+}
+
+.tools-icons {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.tool-icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tool-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.image-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.person-image {
+  width: 100%;
+  max-width: 700px;
+  height: auto;
+  border-radius: 30px;
+  object-fit: cover;
+}
+</style>
+
+<div class="slide-container">
+  <div class="content-section">
+    <h1>About Me</h1>
+    
+    <p class="intro">
+      Hi, I'm [Designer Name]. A UX designer who blends empathy, strategy, and systems thinking
+    </p>
+    
+    <ul class="bullet-list">
+      <li>5+ years of experience designing for B2C and SaaS products</li>
+      <li>Former frontend developer turned UX designer</li>
+      <li>Specialized in design systems, mobile-first design, and user flows</li>
+      <li>Passionate about accessible and inclusive design</li>
+      <li>Tools: Figma, FigJam, Notion, Jira, Maze, Zeplin</li>
+    </ul>
+    
+    <div class="tools-icons">
+      <div class="tool-icon">
+        <img src="logo1.png" alt="Tool 1">
+      </div>
+      <div class="tool-icon">
+        <img src="figma.png" alt="Figma">
+      </div>
+      <div class="tool-icon">
+        <img src="notion.png" alt="Notion">
+      </div>
+      <div class="tool-icon">
+        <img src="webflow.png" alt="Webflow">
+      </div>
+      <div class="tool-icon">
+        <img src="framer.png" alt="Framer">
+      </div>
+      <div class="tool-icon">
+        <img src="zeplin.png" alt="Zeplin">
+      </div>
+    </div>
+  </div>
+  
+  <div class="image-section">
+    <img src="person.png" alt="Designer at work" class="person-image">
+  </div>
+</div>
+</body>
+</html>
