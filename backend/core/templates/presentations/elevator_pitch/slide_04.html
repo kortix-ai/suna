@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevator Pitch Presentation - Slide 4</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #FFFFFF;
+        overflow: hidden;
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+        background: #FFFFFF;
+        padding: 0;
+    }
+    
+    /* Main Title - Bold Weight */
+    .main-title {
+        position: absolute;
+        top: 100px;
+        left: 120px;
+        font-size: 90px;
+        font-weight: 700;
+        line-height: 1.1;
+        color: #000000;
+        letter-spacing: -2px;
+        z-index: 10;
+    }
+    
+    .title-purple {
+        color: #7C3AED;
+        font-weight: 700;
+    }
+    
+    /* Large Light Gray Box - 50% width, touching right and bottom edges */
+    .gray-background {
+        position: absolute;
+        top: 40px;
+        right: 0;
+        bottom: 0;
+        width: 50%;
+        background: #E8E8E8;
+        border-radius: 260px 0 0 0;
+        z-index: 1;
+    }
+    
+    /* Top Right Text Box */
+    .top-text-box {
+        position: absolute;
+        top: 120px;
+        right: 120px;
+        width: 380px;
+        font-size: 20px;
+        font-weight: 400;
+        color: #000000;
+        line-height: 1.6;
+        text-align: center;
+        z-index: 10;
+    }
+    
+    /* Cards Container */
+    .cards-container {
+        position: absolute;
+        top: 280px;
+        left: 120px;
+        right: 120px;
+        display: flex;
+        gap: 40px;
+        z-index: 5;
+    }
+    
+    .card {
+        flex: 1;
+        padding: 70px 50px;
+        border-radius: 50px;
+        min-height: 450px;
+    }
+    
+    .card-green {
+        background: #6EE7B7;
+    }
+    
+    .card-purple {
+        background: #7C3AED;
+    }
+    
+    .card-white {
+        background: #FFFFFF;
+    }
+    
+    /* Card Icons */
+    .card-icon {
+        font-size: 60px;
+        margin-bottom: 50px;
+        display: block;
+    }
+    
+    .icon-black {
+        color: #000000;
+    }
+    
+    .icon-white {
+        color: #FFFFFF;
+    }
+    
+    /* Card Title */
+    .card-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 30px;
+        line-height: 1.3;
+    }
+    
+    .title-black {
+        color: #000000;
+    }
+    
+    .title-white {
+        color: #FFFFFF;
+    }
+    
+    /* Card Text */
+    .card-text {
+        font-size: 18px;
+        font-weight: 400;
+        line-height: 1.7;
+    }
+    
+    .text-black {
+        color: #000000;
+    }
+    
+    .text-white {
+        color: #FFFFFF;
+    }
+    
+    /* Website URL */
+    .website {
+        position: absolute;
+        bottom: 80px;
+        left: 120px;
+        font-size: 24px;
+        font-weight: 400;
+        color: #000000;
+        z-index: 10;
+    }
+    
+    /* Slide Number */
+    .slide-number {
+        position: absolute;
+        bottom: 60px;
+        right: 100px;
+        width: 90px;
+        height: 90px;
+        background: #7C3AED;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 44px;
+        font-weight: 700;
+        color: #FFFFFF;
+        z-index: 30;
+    }
+</style>
+
+<div class="slide-container">
+    <!-- Large Light Gray Box Behind Cards -->
+    <div class="gray-background"></div>
+    
+    <!-- Main Title - Bold Weight -->
+    <div class="main-title">
+        <span class="title-purple">Our</span> Core Values
+    </div>
+    
+    <!-- Top Right Text Box -->
+    <div class="top-text-box">
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+    </div>
+    
+    <!-- Cards Container -->
+    <div class="cards-container">
+        <!-- Card 1 - Green -->
+        <div class="card card-green">
+            <span class="card-icon icon-black">📊</span>
+            <div class="card-title title-black">Who And What We Are</div>
+            <div class="card-text text-black">
+                Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+            </div>
+        </div>
+        
+        <!-- Card 2 - Purple -->
+        <div class="card card-purple">
+            <span class="card-icon icon-white">💼</span>
+            <div class="card-title title-white">Who And What We Are</div>
+            <div class="card-text text-white">
+                Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+            </div>
+        </div>
+        
+        <!-- Card 3 - White -->
+        <div class="card card-white">
+            <span class="card-icon icon-black">₿</span>
+            <div class="card-title title-black">Who And What We Are</div>
+            <div class="card-text text-black">
+                Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+            </div>
+        </div>
+    </div>
+    
+    <!-- Website -->
+    <div class="website">
+        www.yourwebsite.org
+    </div>
+    
+    <!-- Slide Number -->
+    <div class="slide-number">
+        4
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 4</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #DFDFDF;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+}
+
+.slide-container {
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    flex-direction: column;
+}
+
+.section {
+    width: 100%;
+    padding: 0 70px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.section-header {
+    background-color: #A391FF;
+    height: 200px;
+    padding-top: 70px;
+}
+
+.section-top {
+    background-color: #A391FF;
+    height: 293px;
+}
+
+.section-middle {
+    background-color: #C7BDFF;
+    height: 293px;
+    justify-content: flex-end;
+}
+
+.section-bottom {
+    background-color: #ECE9FE;
+    height: 294px;
+}
+
+.left-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.title {
+    font-size: 72px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.description {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.4;
+}
+
+.percentage-large {
+    font-size: 140px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.percentage-medium {
+    font-size: 110px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.percentage-small {
+    font-size: 80px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.label {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.4;
+}
+
+.right-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 20px;
+    text-align: right;
+}
+</style>
+
+<div class="slide-container">
+    <div class="section section-header">
+        <div class="left-content">
+            <h1 class="title">Review and Results</h1>
+            <p class="description">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt.</p>
+        </div>
+    </div>
+    
+    <div class="section section-top">
+        <div class="left-content">
+            <div class="percentage-large">80%</div>
+            <p class="label">Lorem ipsum dolor sit amet.</p>
+        </div>
+    </div>
+    
+    <div class="section section-middle">
+        <div class="right-content">
+            <div class="percentage-medium">50%</div>
+            <p class="label">Lorem ipsum dolor sit amet.</p>
+        </div>
+    </div>
+    
+    <div class="section section-bottom">
+        <div class="left-content">
+            <div class="percentage-small">30%</div>
+            <p class="label">Lorem ipsum dolor sit amet.</p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

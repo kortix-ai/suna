@@ -33,8 +33,8 @@ interface ProfileSectionProps {
  * 
  * Features:
  * - Shows "Sign in" for guests, name for authenticated users
- * - Opens auth drawer for guests
- * - Opens settings drawer for authenticated users
+ * - Opens auth page for guests
+ * - Opens settings page for authenticated users
  * - Authenticated user data from Supabase
  * - Press animation with haptic feedback
  * - Guest mode support with clear call-to-action

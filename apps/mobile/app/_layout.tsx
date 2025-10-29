@@ -125,7 +125,6 @@ export default function RootLayout() {
                           <Stack.Screen name="onboarding" />
                           <Stack.Screen name="home" />
                           <Stack.Screen name="auth" />
-                          <Stack.Screen name="billing" />
                           <Stack.Screen name="trigger-detail" />
                           <Stack.Screen 
                             name="tool-modal" 

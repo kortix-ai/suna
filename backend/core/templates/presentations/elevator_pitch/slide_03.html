@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevator Pitch Presentation - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #FAFAFA;
+        overflow: hidden;
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+        background: #FAFAFA;
+        padding: 0;
+    }
+    
+    /* Green Box - Bottom Only, Reduced Height (lowest layer) */
+    .green-box-bottom {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 320px;
+        height: 580px;
+        background: #6EE7B7;
+        z-index: 1;
+    }
+    
+    /* Large Photo with Blue Border - 25% larger, positioned lower (middle layer) */
+    .photo-container {
+        position: absolute;
+        left: 140px;
+        top: 180px;
+        width: 700px;
+        height: 763px;
+        border: 4px solid #60A5FA;
+        border-radius: 50px;
+        overflow: hidden;
+        z-index: 2;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+    }
+    
+    .photo-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    /* Purple Box - 25% larger, positioned lower (top layer) */
+    .purple-box {
+        position: absolute;
+        left: 640px;
+        top: 520px;
+        width: 475px;
+        padding: 62px;
+        background: #7C3AED;
+        border-radius: 50px;
+        z-index: 3;
+        box-shadow: 0 15px 50px rgba(0, 0, 0, 0.15);
+    }
+    
+    .purple-box-title {
+        font-size: 52px;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin-bottom: 25px;
+    }
+    
+    .purple-box-text {
+        font-size: 25px;
+        font-weight: 400;
+        color: #FFFFFF;
+        line-height: 1.6;
+    }
+    
+    /* Right Side Content - LEFT ALIGNED, 200px from photo section */
+    .right-content {
+        position: absolute;
+        left: 1040px;
+        top: 100px;
+        width: 600px;
+    }
+    
+    .main-title {
+        font-size: 90px;
+        font-weight: 900;
+        line-height: 1.1;
+        color: #000000;
+        letter-spacing: -2px;
+        text-align: left;
+        margin-bottom: 80px;
+    }
+    
+    .title-purple {
+        color: #7C3AED;
+    }
+    
+    /* Text Content */
+    .text-paragraph {
+        font-size: 22px;
+        font-weight: 400;
+        color: #000000;
+        line-height: 1.6;
+        margin-bottom: 40px;
+        text-align: left;
+    }
+    
+    /* Website URL */
+    .website {
+        position: absolute;
+        bottom: 80px;
+        left: 140px;
+        font-size: 24px;
+        font-weight: 400;
+        color: #000000;
+        z-index: 10;
+    }
+    
+    /* Slide Number */
+    .slide-number {
+        position: absolute;
+        bottom: 60px;
+        right: 100px;
+        width: 90px;
+        height: 90px;
+        background: #7C3AED;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 44px;
+        font-weight: 700;
+        color: #FFFFFF;
+        z-index: 30;
+    }
+</style>
+
+<div class="slide-container">
+    <!-- Green Box - Bottom Only, Reduced Height (lowest layer) -->
+    <div class="green-box-bottom"></div>
+    
+    <!-- Large Photo with Blue Border - 25% larger, lower (middle layer) -->
+    <div class="photo-container">
+        <img src="slide3_photo.jpg" alt="Team Meeting">
+    </div>
+    
+    <!-- Purple Box - 25% larger, lower (top layer) -->
+    <div class="purple-box">
+        <div class="purple-box-title">2024 -2030</div>
+        <div class="purple-box-text">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit
+        </div>
+    </div>
+    
+    <!-- Right Content - LEFT ALIGNED -->
+    <div class="right-content">
+        <div class="main-title">
+            Who are <span class="title-purple">We?</span>
+        </div>
+        
+        <div class="text-paragraph">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+        </div>
+        <div class="text-paragraph">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit
+        </div>
+    </div>
+    
+    <!-- Website -->
+    <div class="website">
+        www.yourwebsite.org
+    </div>
+    
+    <!-- Slide Number -->
+    <div class="slide-number">
+        3
+    </div>
+</div>
+</body>
+</html>

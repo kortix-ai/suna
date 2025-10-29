@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 11</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #0a0a0a;
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+  }
+  
+  /* Main heading */
+  .main-heading {
+    text-align: center;
+    font-size: 82px;
+    font-weight: 400;
+    color: #ffffff;
+    margin-top: 140px;
+    margin-bottom: 100px;
+    letter-spacing: -1px;
+  }
+  
+  .main-heading .bold {
+    font-weight: 700;
+  }
+  
+  /* Pricing cards container */
+  .pricing-container {
+    display: flex;
+    justify-content: center;
+    align-items: stretch;
+    gap: 40px;
+    padding: 0 80px;
+  }
+  
+  .pricing-card {
+    flex: 1;
+    max-width: 380px;
+    border: 2px solid #ffffff;
+    display: flex;
+    flex-direction: column;
+    background: transparent;
+  }
+  
+  .card-header {
+    background: linear-gradient(135deg, #3d85ff 0%, #5da3ff 100%);
+    padding: 40px;
+    text-align: center;
+  }
+  
+  .price {
+    font-size: 64px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -2px;
+  }
+  
+  .card-content {
+    flex: 1;
+    padding: 50px 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  
+  .features-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .features-list li {
+    font-size: 17px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.8;
+    margin-bottom: 15px;
+    padding-left: 20px;
+    position: relative;
+  }
+  
+  .features-list li::before {
+    content: '•';
+    position: absolute;
+    left: 0;
+    color: #a3a3a3;
+    font-size: 20px;
+  }
+  
+  .card-footer {
+    padding: 0 40px 40px 40px;
+  }
+  
+  .plan-button {
+    width: 100%;
+    padding: 18px;
+    background: linear-gradient(135deg, #3d85ff 0%, #5da3ff 100%);
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  
+  .plan-button:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 30px rgba(61, 133, 255, 0.4);
+  }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  .main-heading {
+    animation: slideInUp 0.8s ease-out 0.2s both;
+  }
+  
+  .pricing-card:nth-child(1) {
+    animation: scaleIn 0.6s ease-out 0.4s both;
+  }
+  
+  .pricing-card:nth-child(2) {
+    animation: scaleIn 0.6s ease-out 0.5s both;
+  }
+  
+  .pricing-card:nth-child(3) {
+    animation: scaleIn 0.6s ease-out 0.6s both;
+  }
+  
+  .pricing-card:nth-child(4) {
+    animation: scaleIn 0.6s ease-out 0.7s both;
+  }
+</style>
+
+<h1 class="main-heading">Infographic <span class="bold">Section</span></h1>
+
+<div class="pricing-container">
+  <div class="pricing-card">
+    <div class="card-header">
+      <div class="price">$3000</div>
+    </div>
+    <div class="card-content">
+      <ul class="features-list">
+        <li>Lorem dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et</li>
+      </ul>
+    </div>
+    <div class="card-footer">
+      <button class="plan-button">BASIC</button>
+    </div>
+  </div>
+  
+  <div class="pricing-card">
+    <div class="card-header">
+      <div class="price">$6000</div>
+    </div>
+    <div class="card-content">
+      <ul class="features-list">
+        <li>Lorem dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ipsu</li>
+      </ul>
+    </div>
+    <div class="card-footer">
+      <button class="plan-button">MODERATE</button>
+    </div>
+  </div>
+  
+  <div class="pricing-card">
+    <div class="card-header">
+      <div class="price">$8000</div>
+    </div>
+    <div class="card-content">
+      <ul class="features-list">
+        <li>Lorem dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ipsum</li>
+      </ul>
+    </div>
+    <div class="card-footer">
+      <button class="plan-button">PRO</button>
+    </div>
+  </div>
+  
+  <div class="pricing-card">
+    <div class="card-header">
+      <div class="price">$10000</div>
+    </div>
+    <div class="card-content">
+      <ul class="features-list">
+        <li>Lorem dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ipsum</li>
+      </ul>
+    </div>
+    <div class="card-footer">
+      <button class="plan-button">EXTREME</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 7</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #DFDFDF;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+}
+
+.slide-container {
+    width: 1920px;
+    height: 1080px;
+    background-color: #DFDFDF;
+    padding: 70px;
+    display: flex;
+    gap: 80px;
+}
+
+.left-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.bar-row {
+    flex: 1;
+    display: flex;
+    gap: 0;
+}
+
+.bar-dark {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 40px;
+}
+
+.bar-light {
+    flex: 1;
+}
+
+.bar-green-dark {
+    background-color: #13EA94;
+    width: 40%;
+}
+
+.bar-green-light {
+    background-color: #CDFBE9;
+}
+
+.bar-purple-dark {
+    background-color: #A391FF;
+    width: 56%;
+}
+
+.bar-purple-light {
+    background-color: #ECE9FE;
+}
+
+.bar-yellow-dark {
+    background-color: #FFCD6C;
+    width: 70%;
+}
+
+.bar-yellow-light {
+    background-color: #FEF4E1;
+}
+
+.percentage {
+    font-size: 96px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.year {
+    font-size: 48px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+}
+
+.right-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.title-area {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.title {
+    font-size: 72px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.description {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.4;
+}
+
+.large-number {
+    font-size: 340px;
+    font-weight: 400;
+    color: #000;
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+}
+</style>
+
+<div class="slide-container">
+    <div class="left-section">
+        <div class="bar-row">
+            <div class="bar-dark bar-green-dark">
+                <div class="percentage">40%</div>
+                <div class="year">2024</div>
+            </div>
+            <div class="bar-light bar-green-light"></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-dark bar-purple-dark">
+                <div class="percentage">56%</div>
+                <div class="year">2025</div>
+            </div>
+            <div class="bar-light bar-purple-light"></div>
+        </div>
+        
+        <div class="bar-row">
+            <div class="bar-dark bar-yellow-dark">
+                <div class="percentage">70%</div>
+                <div class="year">2026</div>
+            </div>
+            <div class="bar-light bar-yellow-light"></div>
+        </div>
+    </div>
+    
+    <div class="right-section">
+        <div class="title-area">
+            <h1 class="title">Sales Performance:<br>Yearly Comparison</h1>
+            <p class="description">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt.</p>
+        </div>
+        <div class="large-number">521M</div>
+    </div>
+</div>
+</body>
+</html>

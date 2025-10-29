@@ -1,0 +1,86 @@
+{
+  "presentation_name": "yearly_achievements",
+  "title": "Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Overview of Key Yearly Achievements",
+      "filename": "slide_01.html",
+      "file_path": "presentations/yearly_achievements/slide_01.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_01.html",
+      "created_at": "2025-10-12T18:52:45.268499"
+    },
+    "2": {
+      "title": "Business Growth and Expansion Highlights",
+      "filename": "slide_02.html",
+      "file_path": "presentations/yearly_achievements/slide_02.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_02.html",
+      "created_at": "2025-10-12T18:55:20.574105"
+    },
+    "3": {
+      "title": "Sales Target Achieved Detail Review",
+      "filename": "slide_03.html",
+      "file_path": "presentations/yearly_achievements/slide_03.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_03.html",
+      "created_at": "2025-10-12T18:57:10.850319"
+    },
+    "4": {
+      "title": "Review and Results",
+      "filename": "slide_04.html",
+      "file_path": "presentations/yearly_achievements/slide_04.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_04.html",
+      "created_at": "2025-10-12T19:01:21.273795"
+    },
+    "5": {
+      "title": "Key Market Trends Affecting Our Business",
+      "filename": "slide_05.html",
+      "file_path": "presentations/yearly_achievements/slide_05.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_05.html",
+      "created_at": "2025-10-12T19:01:57.813022"
+    },
+    "6": {
+      "title": "Product Launch Impact",
+      "filename": "slide_06.html",
+      "file_path": "presentations/yearly_achievements/slide_06.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_06.html",
+      "created_at": "2025-10-12T19:03:56.314801"
+    },
+    "7": {
+      "title": "Sales Performance: Yearly Comparison",
+      "filename": "slide_07.html",
+      "file_path": "presentations/yearly_achievements/slide_07.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_07.html",
+      "created_at": "2025-10-12T19:04:36.832219"
+    },
+    "8": {
+      "title": "Recognition: Awards and Accolades Won",
+      "filename": "slide_08.html",
+      "file_path": "presentations/yearly_achievements/slide_08.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_08.html",
+      "created_at": "2025-10-12T19:07:32.407726"
+    },
+    "9": {
+      "title": "Digital Transformation: Advancements and Future",
+      "filename": "slide_09.html",
+      "file_path": "presentations/yearly_achievements/slide_09.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_09.html",
+      "created_at": "2025-10-12T19:08:12.977890"
+    },
+    "10": {
+      "title": "Overview of Key Yearly goal",
+      "filename": "slide_10.html",
+      "file_path": "presentations/yearly_achievements/slide_10.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_10.html",
+      "created_at": "2025-10-12T19:12:23.987212"
+    },
+    "11": {
+      "title": "Closing Remarks: Looking Forward Together",
+      "filename": "slide_11.html",
+      "file_path": "presentations/yearly_achievements/slide_11.html",
+      "preview_url": "/workspace/presentations/yearly_achievements/slide_11.html",
+      "created_at": "2025-10-12T19:13:11.902663"
+    }
+  },
+  "created_at": "2025-10-12T18:50:47.638265",
+  "updated_at": "2025-10-12T19:13:11.902678"
+}

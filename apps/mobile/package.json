@@ -67,6 +67,7 @@
     "expo-web-browser": "^15.0.8",
     "fuse.js": "^7.1.0",
     "i18next": "^25.6.0",
+    "lottie-react-native": "^7.3.4",
     "lucide-react-native": "^0.545.0",
     "nativewind": "^4.2.1",
     "react": "19.1.0",

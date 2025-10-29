@@ -10,6 +10,7 @@ import type { Agent } from '@/api/types';
 interface AgentContextType {
   // State
   selectedAgentId: string | undefined;
+  selectedModelId: string | undefined;
   agents: Agent[];
   isLoading: boolean;
   error: Error | null;
@@ -17,6 +18,7 @@ interface AgentContextType {
   
   // Methods
   selectAgent: (agentId: string) => Promise<void>;
+  selectModel: (modelId: string) => Promise<void>;
   loadAgents: () => Promise<void>;
   getDefaultAgent: () => Agent | null;
   getCurrentAgent: () => Agent | null;
@@ -43,6 +45,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   
   // State
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | undefined>(undefined);
+  const [selectedModelId, setSelectedModelId] = React.useState<string | undefined>(undefined);
   const [hasInitialized, setHasInitialized] = React.useState(false);
   
   // API hooks - only fetch when user is authenticated
@@ -69,28 +72,37 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       error: error?.message,
       agentsCount: agents.length,
       selectedAgentId,
+      selectedModelId,
       hasInitialized,
       agentsResponse: agentsResponse ? 'present' : 'null'
     });
-  }, [session, isLoading, error, agents.length, selectedAgentId, hasInitialized, agentsResponse]);
+  }, [session, isLoading, error, agents.length, selectedAgentId, selectedModelId, hasInitialized, agentsResponse]);
   
-  // AsyncStorage key
-  const STORAGE_KEY = '@selected_agent_id';
+  // AsyncStorage keys
+  const AGENT_STORAGE_KEY = '@selected_agent_id';
+  const MODEL_STORAGE_KEY = '@selected_model_id';
   
-  // Load selected agent from AsyncStorage on mount
+  // Load selected agent and model from AsyncStorage on mount
   React.useEffect(() => {
-    const loadStoredAgent = async () => {
+    const loadStoredSelections = async () => {
       try {
-        const storedAgentId = await AsyncStorage.getItem(STORAGE_KEY);
+        const [storedAgentId, storedModelId] = await Promise.all([
+          AsyncStorage.getItem(AGENT_STORAGE_KEY),
+          AsyncStorage.getItem(MODEL_STORAGE_KEY),
+        ]);
+        
         if (storedAgentId) {
           setSelectedAgentId(storedAgentId);
         }
+        if (storedModelId) {
+          setSelectedModelId(storedModelId);
+        }
       } catch (error) {
-        console.error('Failed to load stored agent:', error);
+        console.error('Failed to load stored selections:', error);
       }
     };
     
-    loadStoredAgent();
+    loadStoredSelections();
   }, []);
   
   // Auto-select default agent when agents are loaded
@@ -110,7 +122,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         if (defaultAgent) {
           setSelectedAgentId(defaultAgent.agent_id);
           // Store the default selection
-          AsyncStorage.setItem(STORAGE_KEY, defaultAgent.agent_id).catch(console.error);
+          AsyncStorage.setItem(AGENT_STORAGE_KEY, defaultAgent.agent_id).catch(console.error);
         }
         
         setHasInitialized(true);
@@ -124,10 +136,20 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const selectAgent = React.useCallback(async (agentId: string) => {
     try {
       setSelectedAgentId(agentId);
-      await AsyncStorage.setItem(STORAGE_KEY, agentId);
+      await AsyncStorage.setItem(AGENT_STORAGE_KEY, agentId);
       console.log('🤖 Agent selected:', agentId);
     } catch (error) {
       console.error('Failed to store selected agent:', error);
+    }
+  }, []);
+  
+  const selectModel = React.useCallback(async (modelId: string) => {
+    try {
+      setSelectedModelId(modelId);
+      await AsyncStorage.setItem(MODEL_STORAGE_KEY, modelId);
+      console.log('🎯 Model selected:', modelId);
+    } catch (error) {
+      console.error('Failed to store selected model:', error);
     }
   }, []);
   
@@ -157,20 +179,26 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const clearSelection = React.useCallback(async () => {
     try {
       setSelectedAgentId(undefined);
+      setSelectedModelId(undefined);
       setHasInitialized(false);
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      await Promise.all([
+        AsyncStorage.removeItem(AGENT_STORAGE_KEY),
+        AsyncStorage.removeItem(MODEL_STORAGE_KEY),
+      ]);
     } catch (error) {
-      console.error('Failed to clear agent selection:', error);
+      console.error('Failed to clear selections:', error);
     }
   }, []);
   
   const value: AgentContextType = {
     selectedAgentId,
+    selectedModelId,
     agents,
     isLoading,
     error,
     hasInitialized,
     selectAgent,
+    selectModel,
     loadAgents,
     getDefaultAgent,
     getCurrentAgent,

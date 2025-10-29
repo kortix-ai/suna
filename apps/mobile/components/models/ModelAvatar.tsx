@@ -1,6 +1,8 @@
 import * as React from 'react';
-import { type ViewProps } from 'react-native';
-import { Avatar } from '@/components/ui/Avatar';
+import { View, type ViewProps } from 'react-native';
+import { Cpu } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
+import { getModelProviderIcon } from '@/lib/utils/model-provider';
 
 interface ModelAvatarProps extends ViewProps {
   model?: any;
@@ -8,23 +10,65 @@ interface ModelAvatarProps extends ViewProps {
 }
 
 /**
- * ModelAvatar Component - Model-specific wrapper around unified Avatar
+ * ModelAvatar Component - Model-specific avatar with provider icons
  * 
- * Uses the unified Avatar component with model-specific configuration.
- * Always uses the Layers icon for visual consistency.
+ * Displays the appropriate icon for each model provider (Anthropic, OpenAI, Google, etc.)
  * 
  * @example
  * <ModelAvatar model={model} size={48} />
  */
 export function ModelAvatar({ model, size = 48, style, ...props }: ModelAvatarProps) {
+  const { colorScheme } = useColorScheme();
+  const modelId = model?.id || model?.model_id || '';
+  
+  // Get the icon component for this model
+  const IconComponent = React.useMemo(() => {
+    try {
+      return getModelProviderIcon(modelId);
+    } catch (error) {
+      console.error('Error loading model icon:', error);
+      return null;
+    }
+  }, [modelId]);
+  
+  // Calculate border radius (25% of size, max 16px)
+  const borderRadius = Math.min(size * 0.25, 16);
+  const iconSize = size * 0.6;
+  
+  // Icon fill color - white in dark mode, black in light mode
+  const iconColor = colorScheme === 'dark' ? '#ffffff' : '#000000';
+  
   return (
-    <Avatar
-      variant="model"
-      size={size}
-      fallbackText={model?.display_name || model?.name}
-      style={style}
+    <View
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius,
+          backgroundColor: colorScheme === 'dark' ? '#27272a' : '#f4f4f5',
+          borderWidth: 1,
+          borderColor: colorScheme === 'dark' ? '#3f3f46' : '#e4e4e7',
+          alignItems: 'center',
+          justifyContent: 'center',
+        },
+        style,
+      ]}
       {...props}
-    />
+    >
+      {IconComponent ? (
+        <IconComponent 
+          width={iconSize} 
+          height={iconSize}
+          fill={iconColor}
+          color={iconColor}
+        />
+      ) : (
+        <Cpu 
+          size={iconSize} 
+          color={colorScheme === 'dark' ? '#e4e4e7' : '#71717a'} 
+        />
+      )}
+    </View>
   );
 }
 

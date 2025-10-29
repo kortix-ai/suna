@@ -1,23 +1,27 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import Animated, { 
   useAnimatedStyle, 
   withSpring,
   useAnimatedKeyboard,
+  FadeIn,
+  withRepeat,
+  withTiming,
+  useSharedValue,
+  withDelay,
+  Easing,
 } from 'react-native-reanimated';
-import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from '@/components/chat';
+import LottieView from 'lottie-react-native';
+import { MessageRenderer, ToolCallPanel, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
-import { AgentDrawer } from '@/components/agents';
-import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
 import { FileManagerScreen } from '@/components/files';
-import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
+import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle, X, RefreshCw } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -29,37 +33,207 @@ interface ThreadPageProps {
   onOpenAuthDrawer: () => void;
 }
 
-/**
- * ThreadPage Component
- * 
- * Dedicated page for displaying and interacting with an active chat thread.
- * Handles all thread-related UI including header, messages, and input.
- * 
- * Features:
- * - Thread header with title editing and actions
- * - Scrollable message view with streaming support
- * - Thread-specific actions (share, files, delete)
- * - Chat input with agent selection
- * - Tool call drawer with navigation
- * - Keyboard-aware layout
- */
+const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({ 
+  isRefreshing,
+  insets
+}: { 
+  isRefreshing: boolean;
+  insets: { top: number };
+}) {
+  const width = useSharedValue(126);
+  const height = useSharedValue(37);
+  const borderTopRadius = useSharedValue(20);
+  const borderBottomRadius = useSharedValue(20);
+  const opacity = useSharedValue(0);
+  const contentOpacity = useSharedValue(0);
+  const contentTranslateY = useSharedValue(0);
+  const lottieRef = React.useRef<LottieView>(null);
+  
+  React.useEffect(() => {
+    if (isRefreshing) {
+      opacity.value = 1;
+      contentOpacity.value = 0;
+      width.value = 126;
+      height.value = 37;
+      borderTopRadius.value = 20;
+      borderBottomRadius.value = 20;
+      contentTranslateY.value = -20;
+      
+      // Start Lottie animation
+      lottieRef.current?.play();
+      
+      width.value = withTiming(160, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      height.value = withTiming(90, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      borderTopRadius.value = withTiming(30, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      borderBottomRadius.value = withTiming(24, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      contentTranslateY.value = withDelay(100, withTiming(20, {
+        duration: 350,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      }));
+      
+      contentOpacity.value = withDelay(200, withTiming(1, { duration: 200 }));
+      
+    } else if (opacity.value === 1) {
+      // Stop Lottie animation
+      lottieRef.current?.pause();
+      
+      contentOpacity.value = withTiming(0, { duration: 150 });
+      contentTranslateY.value = withTiming(-20, {
+        duration: 250,
+        easing: Easing.bezier(0.5, 0, 0.75, 0)
+      });
+      
+      setTimeout(() => {
+        width.value = withTiming(126, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        borderTopRadius.value = withTiming(20, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        borderBottomRadius.value = withTiming(20, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        height.value = withTiming(37, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        setTimeout(() => {
+          opacity.value = withTiming(0, { 
+            duration: 300,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1)
+          });
+        }, 350);
+      }, 150);
+    }
+  }, [isRefreshing]);
+  
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    width: width.value,
+    height: height.value,
+    borderTopLeftRadius: borderTopRadius.value,
+    borderTopRightRadius: borderTopRadius.value,
+    borderBottomLeftRadius: borderBottomRadius.value,
+    borderBottomRightRadius: borderBottomRadius.value,
+    opacity: opacity.value,
+  }));
+  
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslateY.value }],
+  }));
+  
+  return (
+    <>
+      {Platform.OS === 'ios' && (
+        <View 
+          className="absolute w-full items-center"
+          style={{ 
+            top: 11,
+            zIndex: 9999,
+            elevation: 999,
+          }}
+          pointerEvents="none"
+        >
+          <Animated.View
+            style={[
+              animatedContainerStyle,
+              {
+                backgroundColor: 'black',
+                overflow: 'hidden',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Animated.View style={contentStyle} className="flex-row items-center gap-2">
+              <LottieView
+                ref={lottieRef}
+                source={require('@/components/animations/loading.json')}
+                style={{ width: 20, height: 20 }}
+                autoPlay={false}
+                loop
+                speed={1.5}
+              />
+              <Text style={{ color: 'white', fontSize: 13, fontFamily: 'Roobert-Medium' }}>
+                Refreshing
+              </Text>
+            </Animated.View>
+          </Animated.View>
+        </View>
+      )}
+      
+      {Platform.OS === 'android' && (
+        <View 
+          className="absolute w-full items-center"
+          style={{ 
+            top: insets.top + 10,
+            zIndex: 9999,
+            elevation: 999,
+          }}
+          pointerEvents="none"
+        >
+          <Animated.View 
+            style={[
+              animatedContainerStyle,
+              {
+                width: 150,
+                backgroundColor: '#000000',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Animated.View style={contentStyle} className="flex-row items-center gap-2">
+              <LottieView
+                ref={lottieRef}
+                source={require('@/components/animations/loading.json')}
+                style={{ width: 20, height: 20 }}
+                autoPlay={false}
+                loop
+                speed={1.5}
+              />
+              <Text style={{ color: 'white', fontSize: 13, fontFamily: 'Roobert-Medium' }}>
+                Refreshing
+              </Text>
+            </Animated.View>
+          </Animated.View>
+        </View>
+      )}
+    </>
+  );
+});
+
 export function ThreadPage({
   onMenuPress,
   chat,
   isAuthenticated,
   onOpenAuthDrawer,
 }: ThreadPageProps) {
-  // Custom hooks - Clean separation of concerns
-  const agentManager = useAgentManager();
-  const audioRecorder = useAudioRecorder();
-  const audioHandlers = useAudioRecordingHandlers(
-    audioRecorder, 
-    agentManager, 
-    chat.transcribeAndAddToInput
-  );
-  
-  // Combined transcription state (from either chat or audio handlers)
-  const isTranscribing = chat.isTranscribing || audioHandlers.isTranscribing;
+  // Use shared chat commons hook
+  const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -74,23 +248,6 @@ export function ThreadPage({
   // Get full thread data with sandbox info
   const { data: fullThreadData } = useThread(chat.activeThread?.id);
   
-  const keyboard = useAnimatedKeyboard();
-  
-  const animatedBottomStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        {
-          translateY: withSpring(-keyboard.height.value, {
-            damping: 25,
-            stiffness: 300,
-            mass: 0.8,
-            overshootClamping: false,
-          }),
-        },
-      ],
-    };
-  });
-
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
   const streamingToolCall = chat.streamingToolCall || null;
@@ -99,33 +256,46 @@ export function ThreadPage({
   const scrollViewRef = React.useRef<ScrollView>(null);
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const lastMessageCountRef = React.useRef(messages.length);
+  const lastStreamingLengthRef = React.useRef(0);
+  const scrollAnimationRef = React.useRef<number | null>(null);
   
   React.useEffect(() => {
     const hasNewMessages = messages.length > lastMessageCountRef.current;
-    const hasStreamingContent = streamingContent.length > 0;
+    const hasStreamingContent = streamingContent !== '';
     
     if ((hasNewMessages || hasStreamingContent) && scrollViewRef.current && !isUserScrolling) {
-      // Use requestAnimationFrame for smoother scrolling
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      });
+      scrollViewRef.current?.scrollToEnd({ animated: false });
     }
     
     lastMessageCountRef.current = messages.length;
+    lastStreamingLengthRef.current = streamingContent.length;
   }, [messages.length, streamingContent, isUserScrolling]);
   
-  // Handle scroll events to detect user interaction
+  React.useEffect(() => {
+    return () => {
+      if (scrollAnimationRef.current) {
+        cancelAnimationFrame(scrollAnimationRef.current);
+      }
+    };
+  }, []);
+  
+  const lastScrollYRef = React.useRef(0);
+  
   const handleScroll = React.useCallback((event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const isAtBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 50;
+    const currentScrollY = contentOffset.y;
+    const maxScrollY = contentSize.height - layoutMeasurement.height;
+    const isAtBottom = currentScrollY >= maxScrollY - 100;
+    const isScrollingUp = currentScrollY < lastScrollYRef.current;
     
-    // If user scrolls away from bottom, mark as user scrolling
-    if (!isAtBottom) {
+    lastScrollYRef.current = currentScrollY;
+    
+    if (isScrollingUp && !isAtBottom) {
       setIsUserScrolling(true);
       setShowScrollToBottom(true);
-    } else {
-      // If user scrolls back to bottom, allow auto-scroll again
+    } else if (isAtBottom) {
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
@@ -137,8 +307,63 @@ export function ThreadPage({
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
   }, []);
+  
+  // Pull to refresh handler
+  const handleRefresh = React.useCallback(async () => {
+    if (chat.isStreaming || chat.isAgentRunning) {
+      console.log('⚠️ Cannot refresh while streaming');
+      return;
+    }
+    
+    console.log('🔄 Pull to refresh triggered');
+    setIsRefreshing(true);
+    
+    try {
+      await chat.refreshMessages();
+      console.log('✅ Messages refreshed');
+    } catch (error) {
+      console.error('❌ Failed to refresh:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [chat]);
 
-  // Log when loading state changes
+  // Ensure thread content is loaded when ThreadPage mounts or thread changes
+  const hasInitializedRef = React.useRef(false);
+  const lastThreadIdRef = React.useRef<string | undefined>(undefined);
+  
+  React.useEffect(() => {
+    const currentThreadId = chat.activeThread?.id;
+    if (!currentThreadId) {
+      console.log('📱 [ThreadPage] No active thread');
+      return;
+    }
+
+    const isInitialMount = !hasInitializedRef.current;
+    const isThreadChanged = lastThreadIdRef.current !== currentThreadId;
+    
+    if (isInitialMount || isThreadChanged) {
+      console.log('🔄 [ThreadPage] Thread mount/change detected:', {
+        threadId: currentThreadId,
+        isInitialMount,
+        isThreadChanged,
+        hasMessages: messages.length > 0,
+        isLoading
+      });
+      
+      hasInitializedRef.current = true;
+      lastThreadIdRef.current = currentThreadId;
+      
+      if (messages.length === 0 && !isLoading && !chat.isStreaming) {
+        console.log('📡 [ThreadPage] No messages found, fetching from backend');
+        chat.refreshMessages().catch(error => {
+          console.error('❌ [ThreadPage] Failed to load thread messages:', error);
+          Alert.alert('Error', 'Failed to load thread messages. Please try again.');
+        });
+      }
+    }
+  }, [chat.activeThread?.id, messages.length, isLoading, chat.isStreaming, chat.refreshMessages]);
+
   React.useEffect(() => {
     console.log('🔄 [ThreadPage] Loading state changed:', {
       isLoading,
@@ -154,18 +379,47 @@ export function ThreadPage({
 
   return (
     <View className="flex-1" style={{ backgroundColor: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}>
-
-
-      <View className="flex-1">
-        {isLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator 
-              size="large" 
-              color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} 
-            />
-          </View>
-        ) : !hasMessages ? (
-          <View className="flex-1 items-center justify-center px-8">
+        <View className="flex-1">
+          {isLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <View className="w-20 h-20 rounded-full items-center justify-center">
+                <LottieView
+                  source={require('@/components/animations/loading.json')}
+                  style={{ width: 40, height: 40 }}
+                  autoPlay
+                  loop
+                  speed={1.2}
+                  colorFilters={[
+                    {
+                      keypath: '*',
+                      color: isDark ? '#ffffff' : '#121215',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          ) : !hasMessages ? (
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ 
+              flex: 1,
+              justifyContent: 'center',
+              alignItems: 'center',
+              paddingHorizontal: 32,
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                tintColor="#000000"
+                titleColor={colorScheme === 'dark' ? '#666666' : '#999999'}
+                title=""
+                progressBackgroundColor={colorScheme === 'dark' ? '#1a1a1c' : '#ffffff'}
+                colors={['#000000']}
+                progressViewOffset={20}
+              />
+            }
+          >
             <View className="w-20 h-20 rounded-full bg-secondary items-center justify-center mb-4">
               <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
             </View>
@@ -175,23 +429,41 @@ export function ThreadPage({
             <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
               No messages yet. Start the conversation!
             </Text>
-          </View>
+          </ScrollView>
         ) : (
           <ScrollView
             ref={scrollViewRef}
             className="flex-1"
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={false}
             contentContainerStyle={{ 
               flexGrow: 1,
               paddingTop: insets.top + 60, 
               paddingBottom: 200,
-              paddingHorizontal: 16, // Comfortable side margins
+              paddingHorizontal: 16,
             }}
             keyboardShouldPersistTaps="handled"
             scrollEventThrottle={16}
             bounces={true}
-            alwaysBounceVertical={false}
+            alwaysBounceVertical={true}
             onScroll={handleScroll}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 100,
+            }}
+            removeClippedSubviews={false}
+            scrollsToTop={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                tintColor="#000000"
+                titleColor={colorScheme === 'dark' ? '#666666' : '#999999'}
+                title=""
+                progressBackgroundColor={colorScheme === 'dark' ? '#1a1a1c' : '#ffffff'}
+                colors={['#000000']}
+                progressViewOffset={20}
+              />
+            }
           >
             <MessageRenderer
               messages={messages}
@@ -235,82 +507,44 @@ export function ThreadPage({
         />
     </View>        
 
-      {/* Bottom Section with Gradient and Chat Input - Smooth keyboard animation */}
-      <Animated.View 
-        className="absolute bottom-0 left-0 right-0" 
-        pointerEvents="box-none"
-        style={animatedBottomStyle}
-      >
-        {/* Gradient fade from transparent to background */}
-        <LinearGradient
-          colors={
-            colorScheme === 'dark'
-              ? ['rgba(18, 18, 21, 0)', 'rgba(18, 18, 21, 0.85)', 'rgba(18, 18, 21, 1)']
-              : ['rgba(248, 248, 248, 0)', 'rgba(248, 248, 248, 0.85)', 'rgba(248, 248, 248, 1)']
-          }
-          locations={[0, 0.4, 1]}
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 250,
-          }}
-          pointerEvents="none"
-        />
-        
-        {/* Attachment Bar - Above Input */}
-        <AttachmentBar 
-          attachments={chat.attachments}
-          onRemove={chat.removeAttachment}
-        />
-        
-        
-        {/* Chat Input */}
-        <Pressable 
-          onPress={Keyboard.dismiss}
-          accessible={false}
-          className="mx-3 mb-8"
-        >
-          <ChatInput
-            value={chat.inputValue}
-            onChangeText={chat.setInputValue}
-            onSendMessage={(content, agentId, agentName) => chat.sendMessage(content, agentId, agentName)}
-            onSendAudio={audioHandlers.handleSendAudio}
-            onAttachPress={chat.openAttachmentDrawer}
-            onAgentPress={agentManager.openDrawer}
-            onAudioRecord={audioHandlers.handleStartRecording}
-            onCancelRecording={audioHandlers.handleCancelRecording}
-            onStopAgentRun={chat.stopAgent}
-            placeholder={chat.getPlaceholder()}
-            agent={agentManager.selectedAgent || undefined}
-            isRecording={audioRecorder.isRecording}
-            recordingDuration={audioRecorder.recordingDuration}
-            audioLevel={audioRecorder.audioLevel}
-            audioLevels={audioRecorder.audioLevels}
-            attachments={chat.attachments}
-            onRemoveAttachment={chat.removeAttachment}
-            selectedQuickAction={chat.selectedQuickAction}
-            onClearQuickAction={chat.clearQuickAction}
-            isAuthenticated={isAuthenticated}
-            onOpenAuthDrawer={onOpenAuthDrawer}
-            isAgentRunning={chat.isAgentRunning}
-            isSendingMessage={chat.isSendingMessage}
-            isTranscribing={isTranscribing}
-          />
-        </Pressable>
-      </Animated.View>
-
-      {/* Agent Drawer */}
-      <AgentDrawer
-        visible={agentManager.isDrawerVisible}
-        onClose={agentManager.closeDrawer}
+      {/* Chat Input Section with Gradient */}
+      <ChatInputSection
+        value={chat.inputValue}
+        onChangeText={chat.setInputValue}
+        onSendMessage={(content, agentId, agentName) => {
+          // Both ChatInputSection and sendMessage expect non-null strings
+          // This should never receive empty strings from ChatInput
+          chat.sendMessage(content, agentId, agentName);
+        }}
+        onSendAudio={audioHandlers.handleSendAudio}
+        onAttachPress={chat.openAttachmentDrawer}
+        onAgentPress={agentManager.openDrawer}
+        onAudioRecord={audioHandlers.handleStartRecording}
+        onCancelRecording={audioHandlers.handleCancelRecording}
+        onStopAgentRun={chat.stopAgent}
+        placeholder={chat.getPlaceholder()}
+        agent={agentManager.selectedAgent || undefined}
+        isRecording={audioRecorder.isRecording}
+        recordingDuration={audioRecorder.recordingDuration}
+        audioLevel={audioRecorder.audioLevel}
+        audioLevels={audioRecorder.audioLevels}
+        attachments={chat.attachments}
+        onRemoveAttachment={chat.removeAttachment}
+        selectedQuickAction={chat.selectedQuickAction}
+        onClearQuickAction={chat.clearQuickAction}
+        isAuthenticated={isAuthenticated}
+        onOpenAuthDrawer={onOpenAuthDrawer}
+        isAgentRunning={chat.isAgentRunning}
+        isSendingMessage={chat.isSendingMessage}
+        isTranscribing={isTranscribing}
       />
 
-      {/* Attachment Drawer */}
-      <AttachmentDrawer
-        visible={chat.isAttachmentDrawerVisible}
-        onClose={chat.closeAttachmentDrawer}
+      {/* Shared Drawers */}
+      <ChatDrawers
+        isAgentDrawerVisible={agentManager.isDrawerVisible}
+        onCloseAgentDrawer={agentManager.closeDrawer}
+        isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
+        onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
         onTakePicture={chat.handleTakePicture}
         onChooseImages={chat.handleChooseImages}
         onChooseFiles={chat.handleChooseFiles}
@@ -435,6 +669,9 @@ export function ThreadPage({
           </View>
         )}
       </Modal>
+      
+      {/* Dynamic Island Pull Refresh Animation - Rendered last to be on top of everything */}
+      <DynamicIslandRefresh isRefreshing={isRefreshing} insets={insets} />
     </View>
   );
 }

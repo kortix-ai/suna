@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 9</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+  }
+  
+  /* Split layout */
+  .left-side {
+    width: 37.5%;
+    background: linear-gradient(135deg, #1a5fff 0%, #3d85ff 30%, #5da3ff 60%, #7db8ff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 100px;
+  }
+  
+  .right-side {
+    width: 62.5%;
+    background: #0a0a0a;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 100px 120px;
+  }
+  
+  /* iPhone mockup */
+  .iphone-mockup {
+    width: 400px;
+    height: auto;
+    position: relative;
+  }
+  
+  .iphone-mockup img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  
+  /* Right side content */
+  .main-heading {
+    font-size: 72px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 1.2;
+    margin-bottom: 40px;
+    letter-spacing: -1px;
+  }
+  
+  .main-heading .bold {
+    font-weight: 700;
+  }
+  
+  .description {
+    font-size: 18px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.8;
+    margin-bottom: 60px;
+    letter-spacing: 0.3px;
+  }
+  
+  .statistic {
+    font-size: 96px;
+    font-weight: 700;
+    color: #6db3ff;
+    line-height: 1;
+    margin-bottom: 30px;
+    letter-spacing: -3px;
+  }
+  
+  .stat-label {
+    font-size: 28px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 25px;
+    letter-spacing: -0.5px;
+  }
+  
+  .stat-description {
+    font-size: 18px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.8;
+    letter-spacing: 0.3px;
+  }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  @keyframes floatPhone {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+  
+  .left-side {
+    animation: fadeIn 0.8s ease-out;
+  }
+  
+  .iphone-mockup {
+    animation: slideInLeft 0.8s ease-out 0.2s both, floatPhone 3s ease-in-out 1s infinite;
+  }
+  
+  .main-heading {
+    animation: slideInRight 0.8s ease-out 0.4s both;
+  }
+  
+  .description {
+    animation: slideInRight 0.8s ease-out 0.6s both;
+  }
+  
+  .statistic {
+    animation: slideInRight 0.8s ease-out 0.8s both;
+  }
+  
+  .stat-label {
+    animation: slideInRight 0.8s ease-out 1s both;
+  }
+  
+  .stat-description {
+    animation: slideInRight 0.8s ease-out 1.2s both;
+  }
+</style>
+
+<div class="left-side">
+  <div class="iphone-mockup">
+    <img src="./iPhone 12 Pro mockup (2).png" alt="iPhone Mockup">
+  </div>
+</div>
+
+<div class="right-side">
+  <h1 class="main-heading"><span class="bold">Business</span> Enterprise<br>Mockup Design</h1>
+  
+  <p class="description">
+    Showcasing innovative mobile solutions that transform business operations and enhance customer engagement through intuitive design and seamless functionality across all platforms.
+  </p>
+  
+  <div class="statistic">987,9++</div>
+  <h2 class="stat-label">B2B (Business to Business)</h2>
+  <p class="stat-description">
+    Delivering comprehensive enterprise solutions that streamline operations, enhance collaboration, and drive measurable business growth through strategic partnerships.
+  </p>
+</div>
+</body>
+</html>

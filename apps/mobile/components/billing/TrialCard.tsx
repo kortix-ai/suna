@@ -10,6 +10,7 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Sparkles, CheckCircle } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 
 interface TrialCardProps {
   onPress: () => void;
@@ -18,11 +19,18 @@ interface TrialCardProps {
 }
 
 export function TrialCard({ onPress, disabled = false, t }: TrialCardProps) {
+  const handlePress = () => {
+    if (disabled) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress();
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
-      className={`p-6 bg-primary rounded-2xl mb-4 ${disabled ? 'opacity-50' : ''}`}
+      className="p-6 bg-primary rounded-2xl mb-4"
+      style={{ opacity: disabled ? 0.5 : 1 }}
     >
       {/* Header */}
       <View className="flex-row items-center justify-between mb-3">

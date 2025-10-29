@@ -27,15 +27,6 @@ export interface AuthInputProps {
 }
 
 /**
- * OAuth button props
- */
-export interface OAuthButtonProps {
-  provider: OAuthProviderConfig;
-  onPress: () => void;
-  isLoading?: boolean;
-}
-
-/**
  * Auth form validation errors
  */
 export interface AuthFormErrors {

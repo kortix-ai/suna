@@ -11,9 +11,8 @@ export { ConversationItem } from './ConversationItem';
 export { ConversationSection } from './ConversationSection';
 export { BottomNav } from './BottomNav';
 export { ProfileSection } from './ProfileSection';
-export { SettingsDrawer } from './SettingsDrawer';
+export { SettingsPage } from '../settings/SettingsPage';
 export { TierBadge } from './TierBadge';
-export { LanguageDrawer } from './LanguageDrawer';
 
 export type {
   Conversation,

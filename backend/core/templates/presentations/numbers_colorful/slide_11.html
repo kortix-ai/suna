@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 11</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #DFDFDF;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+}
+
+.slide-container {
+    width: 1920px;
+    height: 1080px;
+    background-color: #DFDFDF;
+    padding: 70px;
+    display: flex;
+    gap: 80px;
+}
+
+.left-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 60px;
+}
+
+.title {
+    font-size: 72px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.description {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.5;
+}
+
+.button {
+    background-color: #13EA94;
+    color: #000;
+    font-size: 32px;
+    font-weight: 400;
+    padding: 24px 48px;
+    border-radius: 50px;
+    display: inline-block;
+    width: fit-content;
+    text-align: center;
+}
+
+.right-section {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 20px;
+}
+
+.card {
+    padding: 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.card-purple {
+    background-color: #A391FF;
+    grid-column: 1;
+    grid-row: 1 / 3;
+}
+
+.card-green {
+    background-color: #13EA94;
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.card-white {
+    background-color: #FFFFFF;
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.card-number {
+    font-size: 140px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.card-text {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.4;
+}
+</style>
+
+<div class="slide-container">
+    <div class="left-section">
+        <div>
+            <h1 class="title">Closing Remarks:<br>Looking Forward<br>Together</h1>
+        </div>
+        <p class="description">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt  ut labore et dolore magna.</p>
+        <div class="button">View More</div>
+    </div>
+    
+    <div class="right-section">
+        <div class="card card-purple">
+            <div class="card-number">2025</div>
+            <p class="card-text">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor -</p>
+        </div>
+        
+        <div class="card card-green">
+            <div class="card-number">70%</div>
+            <p class="card-text">Lorem ipsum dolor sit amet, consectetur</p>
+        </div>
+        
+        <div class="card card-white">
+            <div class="card-number">2000</div>
+            <p class="card-text">Lorem ipsum dolor sit amet, consectetur</p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

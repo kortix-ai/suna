@@ -20,17 +20,17 @@ interface AdvancedFeaturesProviderProps {
  * AdvancedFeaturesProvider
  * 
  * Provides shared state for Advanced Features across the entire app.
- * This ensures that when the toggle is changed in SettingsDrawer,
+ * This ensures that when the toggle is changed in SettingsPage,
  * all other components immediately reflect the change.
  * 
  * Features:
  * - Shared state across all components
  * - AsyncStorage persistence
- * - Defaults to true (enabled) for better UX
+ * - Defaults to false (disabled) - users must opt-in to beta features
  * - Loading state management
  */
 export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderProps) {
-  const [isEnabled, setIsEnabled] = useState<boolean>(true); // Default to enabled
+  const [isEnabled, setIsEnabled] = useState<boolean>(false); // Default to disabled
   const [isLoading, setIsLoading] = useState(true);
 
   // Check advanced features status on mount
@@ -41,12 +41,12 @@ export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderP
   const checkAdvancedFeaturesStatus = async () => {
     try {
       const enabled = await AsyncStorage.getItem(ADVANCED_FEATURES_KEY);
-      // Default to true (enabled) if not set
-      setIsEnabled(enabled === null ? true : enabled === 'true');
+      // Default to false (disabled) if not set
+      setIsEnabled(enabled === null ? false : enabled === 'true');
     } catch (error) {
       console.error('Failed to check advanced features status:', error);
-      // Default to enabled if we can't read the value
-      setIsEnabled(true);
+      // Default to disabled if we can't read the value
+      setIsEnabled(false);
     } finally {
       setIsLoading(false);
     }

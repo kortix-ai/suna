@@ -1,0 +1,107 @@
+{
+  "presentation_name": "ux-portfolio-presentation",
+  "title": "My UX Design Portfolio",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide - My UX Design Portfolio",
+      "filename": "slide_01.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_01.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_01.html",
+      "created_at": "2025-10-12T16:56:32.679444"
+    },
+    "2": {
+      "title": "Index",
+      "filename": "slide_02.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_02.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_02.html",
+      "created_at": "2025-10-12T16:56:56.571460"
+    },
+    "3": {
+      "title": "Design That Connects",
+      "filename": "slide_03.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_03.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_03.html",
+      "created_at": "2025-10-12T16:58:05.642243"
+    },
+    "4": {
+      "title": "About Me",
+      "filename": "slide_04.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_04.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_04.html",
+      "created_at": "2025-10-12T17:03:19.492949"
+    },
+    "5": {
+      "title": "My Design Philosophy",
+      "filename": "slide_05.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_05.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_05.html",
+      "created_at": "2025-10-12T17:04:22.710288"
+    },
+    "6": {
+      "title": "From Discovery to Delivery",
+      "filename": "slide_06.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_06.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_06.html",
+      "created_at": "2025-10-12T17:05:50.558187"
+    },
+    "7": {
+      "title": "My UX Process",
+      "filename": "slide_07.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_07.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_07.html",
+      "created_at": "2025-10-12T17:07:57.141758"
+    },
+    "8": {
+      "title": "Case Study 1 - Onboarding Redesign for FlexBank",
+      "filename": "slide_08.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_08.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_08.html",
+      "created_at": "2025-10-12T18:14:15.462845"
+    },
+    "9": {
+      "title": "Case Study 2 - Product Discovery UX for Shopora",
+      "filename": "slide_09.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_09.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_09.html",
+      "created_at": "2025-10-12T18:14:37.825636"
+    },
+    "10": {
+      "title": "Design System & Visual Language",
+      "filename": "slide_10.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_10.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_10.html",
+      "created_at": "2025-10-12T18:15:51.315292"
+    },
+    "11": {
+      "title": "Collaboration & Delivery",
+      "filename": "slide_11.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_11.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_11.html",
+      "created_at": "2025-10-12T18:19:55.504798"
+    },
+    "12": {
+      "title": "Feedback & Impact",
+      "filename": "slide_12.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_12.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_12.html",
+      "created_at": "2025-10-12T18:24:01.084403"
+    },
+    "13": {
+      "title": "What I'm Looking For",
+      "filename": "slide_13.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_13.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_13.html",
+      "created_at": "2025-10-12T18:27:56.859121"
+    },
+    "14": {
+      "title": "Thank You",
+      "filename": "slide_14.html",
+      "file_path": "presentations/ux-portfolio-presentation/slide_14.html",
+      "preview_url": "/workspace/presentations/ux-portfolio-presentation/slide_14.html",
+      "created_at": "2025-10-12T18:28:54.546944"
+    }
+  },
+  "created_at": "2025-10-12T16:53:02.787973",
+  "updated_at": "2025-10-12T18:28:54.546961"
+}

@@ -23,6 +23,7 @@ export * from './tool-display';
 // Domain-specific utilities
 export * from './thread-utils';
 export * from './trigger-utils';
+export * from './model-provider';
 
 // Type definitions
 export * from './auth-types';

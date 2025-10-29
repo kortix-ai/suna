@@ -16,10 +16,14 @@ import {
   Table,
   LayoutDashboard,
   FileBarChart,
+  X,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getPdfUrl } from '@/components/thread/tool-views/utils/presentation-utils';
 
 interface SunaModesPanelProps {
   selectedMode: string | null;
@@ -120,22 +124,24 @@ const modes: Mode[] = [
     options: {
       title: 'Choose a template',
       items: [
-        { id: 'modern', name: 'Modern', description: 'Clean and professional' },
-        { id: 'bold', name: 'Bold', description: 'High impact design' },
-        { id: 'elegant', name: 'Elegant', description: 'Sophisticated style' },
-        { id: 'tech', name: 'Tech', description: 'Technology focused' },
-        { id: 'creative', name: 'Creative', description: 'Artistic and unique' },
-        { id: 'minimal', name: 'Minimal', description: 'Simple and clear' },
-        { id: 'corporate', name: 'Corporate', description: 'Business standard' },
-        { id: 'vibrant', name: 'Vibrant', description: 'Colorful and energetic' },
-        { id: 'startup', name: 'Startup', description: 'Dynamic and innovative' },
-        { id: 'professional', name: 'Professional', description: 'Polished and refined' },
-        { id: 'dark', name: 'Dark', description: 'Dark mode aesthetic' },
-        { id: 'playful', name: 'Playful', description: 'Fun and engaging' },
-        { id: 'sophisticated', name: 'Sophisticated', description: 'Premium luxury feel' },
-        { id: 'gradient', name: 'Gradient', description: 'Modern gradients' },
-        { id: 'monochrome', name: 'Monochrome', description: 'Black and white' },
-        { id: 'futuristic', name: 'Futuristic', description: 'Cutting-edge design' },
+        { id: 'minimalist', name: 'Minimalist', description: 'Clean and simple design', image: '/images/presentation-templates/minimalist-min.png' },
+        { id: 'minimalist_2', name: 'Minimalist 2', description: 'Alternative minimal style', image: '/images/presentation-templates/minimalist_2-min.png' },
+        { id: 'black_and_white_clean', name: 'Black & White', description: 'Classic monochrome', image: '/images/presentation-templates/black_and_white_clean-min.png' },
+        { id: 'colorful', name: 'Colorful', description: 'Vibrant and energetic', image: '/images/presentation-templates/colorful-min.png' },
+        { id: 'startup', name: 'Startup', description: 'Dynamic and innovative', image: '/images/presentation-templates/startup-min.png' },
+        { id: 'elevator_pitch', name: 'Elevator Pitch', description: 'Quick and impactful', image: '/images/presentation-templates/elevator_pitch-min.png' },
+        { id: 'portfolio', name: 'Portfolio', description: 'Showcase your work', image: '/images/presentation-templates/portfolio-min.png' },
+        { id: 'textbook', name: 'Textbook', description: 'Educational and structured', image: '/images/presentation-templates/textbook-min.png' },
+        { id: 'architect', name: 'Architect', description: 'Professional and precise', image: '/images/presentation-templates/architect-min.png' },
+        { id: 'hipster', name: 'Hipster', description: 'Modern and trendy', image: '/images/presentation-templates/hipster-min.png' },
+        { id: 'green', name: 'Green', description: 'Nature-inspired design', image: '/images/presentation-templates/green-min.png' },
+        { id: 'premium_black', name: 'Premium Black', description: 'Luxury dark theme', image: '/images/presentation-templates/premium_black-min.png' },
+        { id: 'premium_green', name: 'Premium Green', description: 'Sophisticated green', image: '/images/presentation-templates/premium_green-min.png' },
+        { id: 'professor_gray', name: 'Professor Gray', description: 'Academic and scholarly', image: '/images/presentation-templates/professor_gray-min.png' },
+        { id: 'gamer_gray', name: 'Gamer Gray', description: 'Gaming-inspired design', image: '/images/presentation-templates/gamer_gray-min.png' },
+        { id: 'competitor_analysis_blue', name: 'Analysis Blue', description: 'Business analysis focused', image: '/images/presentation-templates/competitor_analysis_blue-min.png' },
+        { id: 'numbers_clean', name: 'Numbers Clean', description: 'Clean data visualization', image: '/images/presentation-templates/numbers_clean-min.png' },
+        { id: 'numbers_colorful', name: 'Numbers Colorful', description: 'Vibrant data presentation', image: '/images/presentation-templates/numbers_colorful-min.png' },
       ],
     },
   },
@@ -1100,6 +1106,10 @@ export function SunaModesPanel({
   const [randomizedPrompts, setRandomizedPrompts] = useState<string[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
+  // State for PDF preview modal
+  const [selectedTemplate, setSelectedTemplate] = useState<{id: string, name: string} | null>(null);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  
   // State for multi-select charts (use controlled state if provided)
   const [uncontrolledSelectedCharts, setUncontrolledSelectedCharts] = useState<string[]>([]);
   const selectedCharts = controlledSelectedCharts ?? uncontrolledSelectedCharts;
@@ -1149,6 +1159,19 @@ export function SunaModesPanel({
   // Handler for prompt selection - just pass through without modification
   const handlePromptSelect = (prompt: string) => {
     onSelectPrompt(prompt);
+  };
+
+  // Handler for template selection (only sends prompt)
+  const handleTemplateSelect = (templateName: string, description: string) => {
+    handlePromptSelect(
+      `Create a presentation using the ${templateName} template about ${description}`
+    );
+  };
+
+  // Handler for PDF preview
+  const handlePdfPreview = (templateId: string, templateName: string) => {
+    setSelectedTemplate({id: templateId, name: templateName});
+    setIsPdfModalOpen(true);
   };
 
   const displayedPrompts = randomizedPrompts;
@@ -1309,18 +1332,34 @@ export function SunaModesPanel({
                 {currentMode.options.items.map((item) => (
                   <Card
                     key={item.id}
-                    className="flex flex-col gap-2 cursor-pointer group p-3 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl"
-                    onClick={() =>
-                      handlePromptSelect(
-                        `Create a presentation using the ${item.name} template about ${item.description}`
-                      )
-                    }
+                    className="flex flex-col gap-2 cursor-pointer group p-2 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl relative"
+                    onClick={() => handleTemplateSelect(item.name, item.description)}
                   >
-                    <div className="w-full aspect-[4/3] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center p-3">
-                      <SlideTemplateIcon 
-                        type={item.id} 
-                        className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
-                      />
+                    <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative">
+                      {item.image ? (
+                        <img 
+                          src={item.image} 
+                          alt={item.name}
+                          className="w-full h-auto"
+                        />
+                      ) : (
+                        <SlideTemplateIcon 
+                          type={item.id} 
+                          className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                        />
+                      )}
+                      {/* Preview button overlay */}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 hover:bg-white dark:bg-zinc-800/90 dark:hover:bg-zinc-800 shadow-md"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePdfPreview(item.id, item.name);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
@@ -1515,6 +1554,26 @@ export function SunaModesPanel({
           </ScrollArea>
         </div>
       )}
+
+      {/* PDF Preview Modal */}
+      <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle>
+              Template Preview: {selectedTemplate?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-6 pt-0">
+            {selectedTemplate && (
+              <iframe
+                src={getPdfUrl(selectedTemplate.id)}
+                className="w-full h-[70vh] border rounded-lg"
+                title={`${selectedTemplate.name} template preview`}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

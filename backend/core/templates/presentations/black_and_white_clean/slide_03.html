@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  .slide-container {
+    width: 1920px;
+    height: 1080px;
+    background: #020202;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .header {
+    position: absolute;
+    top: 40px;
+    left: 40px;
+    font-size: 28px;
+    font-weight: 400;
+    color: #ffffff;
+    letter-spacing: 0.5px;
+  }
+  
+  .footer {
+    position: absolute;
+    bottom: 40px;
+    left: 40px;
+    right: 40px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 18px;
+    font-weight: 400;
+    color: #666666;
+    letter-spacing: 0.5px;
+  }
+  
+  .content-area {
+    position: absolute;
+    top: 50%;
+    right: 80px;
+    transform: translateY(-50%);
+    width: 900px;
+  }
+  
+  .chapter-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 28px 0;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 32px;
+    font-weight: 400;
+    color: #999999;
+    letter-spacing: 0.5px;
+  }
+  
+  .chapter-item:first-child {
+    border-top: 1px solid #2a2a2a;
+  }
+  
+  .chapter-name {
+    flex: 1;
+  }
+  
+  .chapter-page {
+    font-size: 32px;
+    font-weight: 300;
+    color: #666666;
+    min-width: 60px;
+    text-align: right;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="header">Table of contents</div>
+  
+  <div class="content-area">
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 1</div>
+      <div class="chapter-page">03</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 2</div>
+      <div class="chapter-page">08</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 3</div>
+      <div class="chapter-page">17</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 4</div>
+      <div class="chapter-page">26</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 5</div>
+      <div class="chapter-page">39</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 6</div>
+      <div class="chapter-page">46</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 7</div>
+      <div class="chapter-page">56</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 8</div>
+      <div class="chapter-page">65</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 9</div>
+      <div class="chapter-page">70</div>
+    </div>
+    
+    <div class="chapter-item">
+      <div class="chapter-name">Chapter 10</div>
+      <div class="chapter-page">89</div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <div>[Company Name]</div>
+    <div>[Presentation Title]</div>
+  </div>
+</div>
+</body>
+</html>

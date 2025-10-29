@@ -1,0 +1,100 @@
+{
+  "presentation_name": "minim_presentation",
+  "title": "Minim - Minimalist Presentation Template",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide",
+      "filename": "slide_01.html",
+      "file_path": "presentations/minim_presentation/slide_01.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_01.html",
+      "created_at": "2025-10-10T18:26:13.999493"
+    },
+    "2": {
+      "title": "About Our Company",
+      "filename": "slide_02.html",
+      "file_path": "presentations/minim_presentation/slide_02.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_02.html",
+      "created_at": "2025-10-10T19:01:50.304117"
+    },
+    "3": {
+      "title": "Our Company History",
+      "filename": "slide_03.html",
+      "file_path": "presentations/minim_presentation/slide_03.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_03.html",
+      "created_at": "2025-10-10T18:29:17.223673"
+    },
+    "4": {
+      "title": "Our Mission",
+      "filename": "slide_04.html",
+      "file_path": "presentations/minim_presentation/slide_04.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_04.html",
+      "created_at": "2025-10-10T18:31:49.652146"
+    },
+    "5": {
+      "title": "Minimalism Concept",
+      "filename": "slide_05.html",
+      "file_path": "presentations/minim_presentation/slide_05.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_05.html",
+      "created_at": "2025-10-10T18:53:16.750290"
+    },
+    "6": {
+      "title": "Team Section",
+      "filename": "slide_06.html",
+      "file_path": "presentations/minim_presentation/slide_06.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_06.html",
+      "created_at": "2025-10-10T18:48:29.437911"
+    },
+    "7": {
+      "title": "Meet the Founders",
+      "filename": "slide_07.html",
+      "file_path": "presentations/minim_presentation/slide_07.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_07.html",
+      "created_at": "2025-10-10T18:52:17.650453"
+    },
+    "8": {
+      "title": "Core Team",
+      "filename": "slide_08.html",
+      "file_path": "presentations/minim_presentation/slide_08.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_08.html",
+      "created_at": "2025-10-10T18:55:44.874208"
+    },
+    "9": {
+      "title": "Jason Blue Profile",
+      "filename": "slide_09.html",
+      "file_path": "presentations/minim_presentation/slide_09.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_09.html",
+      "created_at": "2025-10-10T18:57:11.010634"
+    },
+    "10": {
+      "title": "Services Section",
+      "filename": "slide_10.html",
+      "file_path": "presentations/minim_presentation/slide_10.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_10.html",
+      "created_at": "2025-10-10T18:57:43.006554"
+    },
+    "11": {
+      "title": "Interior Design Service",
+      "filename": "slide_11.html",
+      "file_path": "presentations/minim_presentation/slide_11.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_11.html",
+      "created_at": "2025-10-10T19:01:22.200640"
+    },
+    "12": {
+      "title": "Services Overview",
+      "filename": "slide_12.html",
+      "file_path": "presentations/minim_presentation/slide_12.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_12.html",
+      "created_at": "2025-10-10T19:02:58.559103"
+    },
+    "13": {
+      "title": "Contact Us",
+      "filename": "slide_13.html",
+      "file_path": "presentations/minim_presentation/slide_13.html",
+      "preview_url": "/workspace/presentations/minim_presentation/slide_13.html",
+      "created_at": "2025-10-10T19:04:03.172743"
+    }
+  },
+  "created_at": "2025-10-10T18:24:04.570157",
+  "updated_at": "2025-10-10T19:04:03.172759"
+}

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Syllabus Presentation - Slide 6</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    background: #383838;
+    font-family: 'Playfair Display', serif;
+    color: #ffffff;
+    overflow: hidden;
+    position: relative;
+}
+
+.slide-container {
+    width: 100%;
+    height: 100%;
+    padding: 80px 120px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.slide-title {
+    font-size: 120px;
+    font-weight: 400;
+    line-height: 144px;
+    letter-spacing: -0.01em;
+    margin-bottom: 80px;
+}
+
+.columns-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 60px;
+    flex: 1;
+}
+
+.column {
+    display: flex;
+    flex-direction: column;
+}
+
+.column-number {
+    font-size: 72px;
+    font-weight: 400;
+    line-height: 86px;
+    letter-spacing: 0.5px;
+    margin-bottom: 20px;
+}
+
+.column-title {
+    font-size: 48px;
+    font-weight: 400;
+    line-height: 62px;
+    letter-spacing: 0.5px;
+    margin-bottom: 30px;
+}
+
+.column-text {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 34px;
+    letter-spacing: 0.3px;
+}
+
+.pink-circle {
+    position: absolute;
+    top: 90px;
+    right: 120px;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: #F38BE9;
+}
+
+.footer {
+    position: absolute;
+    bottom: 60px;
+    right: 120px;
+    font-size: 24px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.footer-divider {
+    color: #ffffff;
+}
+</style>
+
+<div class="slide-container">
+    <div class="pink-circle"></div>
+    
+    <div class="slide-title">Academic Policies</div>
+    
+    <div class="columns-container">
+        <div class="column">
+            <div class="column-number">01</div>
+            <div class="column-title">Policy title introduction</div>
+            <div class="column-text">Paragraphs help organize thoughts and information, guiding readers through the text and facilitating comprehension.</div>
+        </div>
+        
+        <div class="column">
+            <div class="column-number">02</div>
+            <div class="column-title">Policy title introduction</div>
+            <div class="column-text">Paragraphs help organize thoughts and information, guiding readers through the text and facilitating comprehension.</div>
+        </div>
+        
+        <div class="column">
+            <div class="column-number">03</div>
+            <div class="column-title">Policy title introduction</div>
+            <div class="column-text">Paragraphs help organize thoughts and information, guiding readers through the text and facilitating comprehension.</div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <span>Course Name</span>
+        <span class="footer-divider">|</span>
+        <span>Syllabus</span>
+        <span class="footer-divider">|</span>
+        <span>Instructor</span>
+        <span style="margin-left: 40px;">7</span>
+    </div>
+</div>
+</body>
+</html>

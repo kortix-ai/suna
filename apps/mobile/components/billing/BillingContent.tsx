@@ -43,7 +43,7 @@ export function BillingContent({
   const [selectedPlan, setSelectedPlan] = React.useState<string | null>(null);
 
   const handleStartTrial = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedPlan('trial');
     
     try {
@@ -66,7 +66,7 @@ export function BillingContent({
   };
 
   const handleSelectPlan = async (tier: typeof PRICING_TIERS[0]) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedPlan(tier.name);
 
     const priceId = getPriceId(tier, billingPeriod);
@@ -147,7 +147,7 @@ export function BillingContent({
 
       {/* Pricing Tiers */}
       {!canStartTrial && (
-        <View className="space-y-3">
+        <View>
           {tiersToShow.map((tier) => {
             const displayPrice = getDisplayPrice(tier, billingPeriod);
             const isSelected = selectedPlan === tier.name;

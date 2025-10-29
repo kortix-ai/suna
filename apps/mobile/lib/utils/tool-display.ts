@@ -24,6 +24,8 @@ import {
   Clock,
   type LucideIcon,
   Presentation,
+  ImageIcon,
+  Pencil,
 } from 'lucide-react-native';
 
 export const getToolIcon = (toolName: string): LucideIcon => {
@@ -38,21 +40,31 @@ export const getToolIcon = (toolName: string): LucideIcon => {
     case 'browser_screenshot':
       return Globe;
 
+    case 'create-tasks':
+        return ListTodo;
+
+    case 'web-search':
+    case 'web_search':
+        return Globe;
+    case 'image-search':
+    case 'image_search':
+      return ImageIcon;
+
     case 'create-file':
-    case 'create_file':
       return FileEdit;
     case 'str-replace':
-    case 'str_replace':
       return FileSearch;
     case 'full-file-rewrite':
-    case 'full_file_rewrite':
       return FilePlus;
     case 'read-file':
-    case 'read_file':
       return FileText;
     case 'edit-file':
-    case 'edit_file':
       return FileEdit;
+
+    case 'designer-create-or-edit':
+      return Pencil;
+    case 'image-edit-or-generate':
+      return Pencil;
 
     case 'parse-document':
     case 'parse_document':
@@ -153,8 +165,23 @@ export const getToolIcon = (toolName: string): LucideIcon => {
     case 'create-presentation-outline':
     case 'create_presentation_outline':
       return Presentation;
+    
+    case 'get-paper-details':
+        return BookOpen;
+    case 'search-authors':
+        return Search;
+    case 'get-author-details':
+        return BookOpen;
+    case 'get-author-papers':
+        return BookOpen;
+    case 'get-paper-citations':
+        return BookOpen;
+    case 'get-paper-references':
+        return BookOpen;
+    case 'paper-search':
+        return Search;
+    
     case 'create-slide':
-    case 'create_slide':
       return Presentation;
 
 

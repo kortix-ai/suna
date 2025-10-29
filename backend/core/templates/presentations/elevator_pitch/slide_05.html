@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevator Pitch Presentation - Slide 5</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #FFFFFF;
+        overflow: hidden;
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+        background: #FFFFFF;
+        padding: 80px 120px;
+    }
+    
+    /* Main Title - Bold Weight */
+    .main-title {
+        position: absolute;
+        top: 80px;
+        left: 120px;
+        font-size: 90px;
+        font-weight: 700;
+        line-height: 1.1;
+        color: #000000;
+        letter-spacing: -2px;
+    }
+    
+    .title-purple {
+        color: #7C3AED;
+    }
+    
+    /* Photo on Left */
+    .photo-left {
+        position: absolute;
+        left: 0;
+        top: 240px;
+        width: 460px;
+        height: 840px;
+        object-fit: cover;
+    }
+    
+    /* Solutions Grid - Two Columns */
+    .solutions-grid {
+        position: absolute;
+        left: 520px;
+        top: 260px;
+        right: 120px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 50px 80px;
+    }
+    
+    .solution-item {
+        display: flex;
+        gap: 30px;
+        align-items: flex-start;
+    }
+    
+    /* Number Circles - Regular Weight, Bigger Font */
+    .number-circle {
+        flex-shrink: 0;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 38px;
+        font-weight: 400;
+        color: #FFFFFF;
+    }
+    
+    .circle-purple {
+        background: #7C3AED;
+    }
+    
+    .circle-green {
+        background: #6EE7B7;
+        color: #000000;
+    }
+    
+    /* Solution Content */
+    .solution-content {
+        flex: 1;
+    }
+    
+    .solution-title {
+        font-size: 28px;
+        font-weight: 700;
+        color: #000000;
+        margin-bottom: 15px;
+        line-height: 1.2;
+    }
+    
+    .solution-text {
+        font-size: 18px;
+        font-weight: 400;
+        color: #000000;
+        line-height: 1.6;
+    }
+    
+    /* Slide Number */
+    .slide-number {
+        position: absolute;
+        bottom: 60px;
+        right: 100px;
+        width: 90px;
+        height: 90px;
+        background: #7C3AED;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 44px;
+        font-weight: 700;
+        color: #FFFFFF;
+    }
+</style>
+
+<div class="slide-container">
+    <!-- Main Title - Bold Weight -->
+    <div class="main-title">
+        Proposed <span class="title-purple">Solutions</span>
+    </div>
+    
+    <!-- Photo on Left -->
+    <img src="slide3_photo.jpg" alt="Business Meeting" class="photo-left">
+    
+    <!-- Solutions Grid -->
+    <div class="solutions-grid">
+        <!-- Item 01 -->
+        <div class="solution-item">
+            <div class="number-circle circle-purple">01</div>
+            <div class="solution-content">
+                <div class="solution-title">Keyword Research</div>
+                <div class="solution-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                </div>
+            </div>
+        </div>
+        
+        <!-- Item 04 -->
+        <div class="solution-item">
+            <div class="number-circle circle-green">04</div>
+            <div class="solution-content">
+                <div class="solution-title">Content Creation</div>
+                <div class="solution-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                </div>
+            </div>
+        </div>
+        
+        <!-- Item 02 -->
+        <div class="solution-item">
+            <div class="number-circle circle-purple">02</div>
+            <div class="solution-content">
+                <div class="solution-title">Page Optimization</div>
+                <div class="solution-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                </div>
+            </div>
+        </div>
+        
+        <!-- Item 05 -->
+        <div class="solution-item">
+            <div class="number-circle circle-green">05</div>
+            <div class="solution-content">
+                <div class="solution-title">Link Building</div>
+                <div class="solution-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                </div>
+            </div>
+        </div>
+        
+        <!-- Item 03 -->
+        <div class="solution-item">
+            <div class="number-circle circle-purple">03</div>
+            <div class="solution-content">
+                <div class="solution-title">Technical SEO</div>
+                <div class="solution-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                </div>
+            </div>
+        </div>
+        
+        <!-- Item 06 -->
+        <div class="solution-item">
+            <div class="number-circle circle-green">06</div>
+            <div class="solution-content">
+                <div class="solution-title">User Experience</div>
+                <div class="solution-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Slide Number -->
+    <div class="slide-number">
+        5
+    </div>
+</div>
+</body>
+</html>

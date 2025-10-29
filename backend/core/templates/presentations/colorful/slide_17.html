@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casual Yet Professional Presentation - Slide 17</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #ffffff;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+.slide-container {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    padding: 0 150px;
+    gap: 120px;
+    z-index: 1;
+}
+
+.left-section {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: calc(100% - 50px);
+}
+
+.eyebrow {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #2d2d2d;
+    margin-bottom: 30px;
+    opacity: 0.8;
+}
+
+.main-heading {
+    font-family: 'DM Serif Display', serif;
+    font-size: 90px;
+    line-height: 1.1;
+    color: #1a1a1a;
+    font-weight: 400;
+}
+
+.right-section {
+    display: flex;
+    flex-direction: column;
+    gap: 60px;
+}
+
+.list-item {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.item-header {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+
+.number-circle {
+    width: 60px;
+    height: 60px;
+    border: 3px solid #1a1a1a;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 600;
+    color: #1a1a1a;
+    flex-shrink: 0;
+}
+
+.item-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 60px;
+    line-height: 1.2;
+    color: #1a1a1a;
+    font-weight: 400;
+}
+
+.item-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 24px;
+    line-height: 1.6;
+    color: #1a1a1a;
+    font-weight: 400;
+    padding-left: 85px;
+}
+</style>
+
+<div class="slide-container">
+    <div class="left-section">
+        <div class="eyebrow">Optional Heading</div>
+        <h1 class="main-heading">Three reasons or something</h1>
+    </div>
+    
+    <div class="right-section">
+        <div class="list-item">
+            <div class="item-header">
+                <div class="number-circle">1</div>
+                <h2 class="item-title">First is the worst</h2>
+            </div>
+            <p class="item-text">This could be useful for simpler points to make...</p>
+        </div>
+        
+        <div class="list-item">
+            <div class="item-header">
+                <div class="number-circle">2</div>
+                <h2 class="item-title">Second is the best</h2>
+            </div>
+            <p class="item-text">Sometimes you won't have even text — I think that's ok as long as it still feels balanced in the end?</p>
+        </div>
+        
+        <div class="list-item">
+            <div class="item-header">
+                <div class="number-circle">3</div>
+                <h2 class="item-title">Third is just ok I guess</h2>
+            </div>
+            <p class="item-text">You could have a bunch of points here if you want</p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

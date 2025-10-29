@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Casual Yet Professional Presentation - Slide 18</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background: #FFF9E6;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+
+.slide-container {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 150px;
+    z-index: 1;
+}
+
+.images-container {
+    display: flex;
+    gap: 40px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 80px;
+}
+
+.image-card {
+    width: 500px;
+    height: 350px;
+    background: repeating-conic-gradient(#e5e5e5 0% 25%, #f5f5f5 0% 50%) 50% / 40px 40px;
+    border-radius: 20px;
+}
+
+.image-card:nth-child(1) {
+    transform: rotate(-8deg);
+}
+
+.image-card:nth-child(2) {
+    transform: rotate(3deg);
+}
+
+.image-card:nth-child(3) {
+    transform: rotate(-5deg);
+}
+
+.text-content {
+    text-align: center;
+}
+
+.main-heading {
+    font-family: 'DM Serif Display', serif;
+    font-size: 90px;
+    line-height: 1.2;
+    color: #1a1a1a;
+    margin-bottom: 20px;
+    font-weight: 400;
+}
+
+.subtext {
+    font-family: 'Inter', sans-serif;
+    font-size: 32px;
+    line-height: 1.5;
+    color: #999;
+    font-weight: 400;
+}
+</style>
+
+<div class="slide-container">
+    <div class="images-container">
+        <div class="image-card"></div>
+        <div class="image-card"></div>
+        <div class="image-card"></div>
+    </div>
+    
+    <div class="text-content">
+        <h1 class="main-heading">Nothing wrong with simple stuff here and there</h1>
+        <p class="subtext">Text doesn't have to do the heavy lifting</p>
+    </div>
+</div>
+</body>
+</html>

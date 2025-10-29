@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elevator Pitch Presentation - Slide 6</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #FFFFFF;
+        overflow: hidden;
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+    }
+    
+    .slide-container {
+        width: 1920px;
+        height: 1080px;
+        position: relative;
+        background: #FFFFFF;
+        padding: 80px 120px;
+    }
+    
+    /* Main Title - Bold Weight */
+    .main-title {
+        position: absolute;
+        top: 100px;
+        left: 120px;
+        font-size: 90px;
+        font-weight: 700;
+        line-height: 1.1;
+        color: #000000;
+        letter-spacing: -2px;
+    }
+    
+    .title-purple {
+        color: #7C3AED;
+        display: block;
+    }
+    
+    /* Purple Info Box - Top Right */
+    .info-box {
+        position: absolute;
+        top: 100px;
+        right: 120px;
+        width: 480px;
+        padding: 50px 60px;
+        background: #7C3AED;
+        border-radius: 50px;
+    }
+    
+    .info-title {
+        font-size: 32px;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin-bottom: 25px;
+    }
+    
+    .info-text {
+        font-size: 20px;
+        font-weight: 400;
+        color: #FFFFFF;
+        line-height: 1.6;
+    }
+    
+    /* Timeline Container */
+    .timeline-container {
+        position: absolute;
+        top: 480px;
+        left: 120px;
+        right: 120px;
+    }
+    
+    /* Timeline Line */
+    .timeline-line {
+        position: relative;
+        height: 4px;
+        background: #E5E5E5;
+        margin-bottom: 60px;
+    }
+    
+    /* Timeline Dots - Custom positioning */
+    .timeline-dots {
+        position: absolute;
+        top: -18px;
+        left: 0;
+        right: 0;
+    }
+    
+    .timeline-dot {
+        position: absolute;
+        width: 40px;
+        height: 40px;
+        background: #6EE7B7;
+        border-radius: 50%;
+    }
+    
+    /* Position each dot individually */
+    .dot-1 {
+        left: 0;
+    }
+    
+    /* Dot 2 (above 2023) */
+    .dot-2 {
+        left: calc(33.33% - 120px);
+    }
+    
+    /* Dot 3 (above 2024) */
+    .dot-3 {
+        left: calc(66.66% - 120px);
+    }
+    
+    .dot-4 {
+        right: 0;
+    }
+    
+    /* Milestones Grid */
+    .milestones-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 60px;
+        margin-top: 20px;
+    }
+    
+    .milestone {
+        text-align: left;
+    }
+    
+    .milestone-year {
+        font-size: 48px;
+        font-weight: 700;
+        color: #000000;
+        margin-bottom: 25px;
+    }
+    
+    .milestone-text {
+        font-size: 18px;
+        font-weight: 400;
+        color: #000000;
+        line-height: 1.6;
+    }
+    
+    /* Website URL */
+    .website {
+        position: absolute;
+        bottom: 80px;
+        left: 120px;
+        font-size: 24px;
+        font-weight: 400;
+        color: #000000;
+    }
+    
+    /* Slide Number */
+    .slide-number {
+        position: absolute;
+        bottom: 60px;
+        right: 100px;
+        width: 90px;
+        height: 90px;
+        background: #7C3AED;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 44px;
+        font-weight: 700;
+        color: #FFFFFF;
+    }
+</style>
+
+<div class="slide-container">
+    <!-- Main Title - Bold Weight -->
+    <div class="main-title">
+        Timeline &<br>
+        <span class="title-purple">Milestones</span>
+    </div>
+    
+    <!-- Purple Info Box -->
+    <div class="info-box">
+        <div class="info-title">What We Do</div>
+        <div class="info-text">
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut
+        </div>
+    </div>
+    
+    <!-- Timeline Container -->
+    <div class="timeline-container">
+        <!-- Timeline Line with Dots -->
+        <div class="timeline-line">
+            <div class="timeline-dots">
+                <div class="timeline-dot dot-1"></div>
+                <div class="timeline-dot dot-2"></div>
+                <div class="timeline-dot dot-3"></div>
+                <div class="timeline-dot dot-4"></div>
+            </div>
+        </div>
+        
+        <!-- Milestones Grid -->
+        <div class="milestones-grid">
+            <!-- 2022 -->
+            <div class="milestone">
+                <div class="milestone-year">2022</div>
+                <div class="milestone-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                </div>
+            </div>
+            
+            <!-- 2023 -->
+            <div class="milestone">
+                <div class="milestone-year">2023</div>
+                <div class="milestone-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                </div>
+            </div>
+            
+            <!-- 2024 -->
+            <div class="milestone">
+                <div class="milestone-year">2024</div>
+                <div class="milestone-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                </div>
+            </div>
+            
+            <!-- 2025 -->
+            <div class="milestone">
+                <div class="milestone-year">2025</div>
+                <div class="milestone-text">
+                    Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut. Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Website -->
+    <div class="website">
+        www.yourwebsite.org
+    </div>
+    
+    <!-- Slide Number -->
+    <div class="slide-number">
+        6
+    </div>
+</div>
+</body>
+</html>

@@ -12,8 +12,9 @@
  */
 
 import React, { ReactNode } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/ui';
 import { useColorScheme } from 'nativewind';
 
 export interface EntityListProps<T> {
@@ -72,10 +73,7 @@ export function EntityList<T>({
   if (isLoading) {
     return (
       <View className="py-8 items-center">
-        <ActivityIndicator 
-          size="small" 
-          color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} 
-        />
+        <KortixLoader size="small" />
         <Text 
           style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
           className="text-sm font-roobert mt-2"

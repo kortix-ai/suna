@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 6</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+  }
+  
+  /* Logo section */
+  .logo-section {
+    position: absolute;
+    top: 60px;
+    left: 60px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    z-index: 10;
+  }
+  
+  .logo-circle {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #0066ff, #0052cc);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .logo-circle::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.1) 3px,
+      rgba(255, 255, 255, 0.1) 6px
+    );
+  }
+  
+  .logo-text {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.5px;
+  }
+  
+  /* Main grid layout */
+  .grid-container {
+    display: grid;
+    grid-template-columns: 280px 460px 1fr;
+    grid-template-rows: 350px 370px 360px;
+    width: 100%;
+    height: 100%;
+  }
+  
+  /* Top left - Main heading */
+  .top-left {
+    grid-column: 1 / 3;
+    grid-row: 1;
+    background: #0a0a0a;
+    padding: 140px 60px 60px 60px;
+    display: flex;
+    align-items: flex-start;
+  }
+  
+  .main-heading {
+    font-size: 58px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 1.15;
+    letter-spacing: -1px;
+  }
+  
+  .main-heading .bold {
+    font-weight: 700;
+  }
+  
+  /* Top right - Blue section */
+  .top-right {
+    grid-column: 3;
+    grid-row: 1;
+    background: linear-gradient(135deg, #5da3ff 0%, #4d94ff 50%, #3d85ff 100%);
+    padding: 80px 70px;
+  }
+  
+  .section-heading {
+    font-size: 26px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 25px;
+    line-height: 1.3;
+    letter-spacing: -0.5px;
+  }
+  
+  .description-white {
+    font-size: 16px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 1.7;
+    letter-spacing: 0.2px;
+  }
+  
+  /* Middle left - Dark gray box */
+  .middle-left {
+    grid-column: 1;
+    grid-row: 2;
+    background: #2a2a2a;
+    padding: 35px 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  
+  .middle-left .section-heading {
+    font-size: 20px;
+    margin-bottom: 18px;
+  }
+  
+  .description {
+    font-size: 14px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.6;
+    letter-spacing: 0.2px;
+  }
+  
+  /* Middle center - Gray placeholder */
+  .middle-center {
+    grid-column: 2;
+    grid-row: 2;
+    background: #e5e5e5;
+  }
+  
+  /* Middle right - Numbered list */
+  .middle-right {
+    grid-column: 3;
+    grid-row: 1 / 4;
+    background: #0a0a0a;
+    padding: 420px 70px 60px 70px;
+  }
+  
+  .numbered-list {
+    display: flex;
+    flex-direction: column;
+    gap: 45px;
+  }
+  
+  .list-item {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  
+  .number {
+    font-size: 42px;
+    font-weight: 700;
+    color: #0066ff;
+    letter-spacing: -1px;
+    min-width: 70px;
+  }
+  
+  .item-content h3 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  
+  .item-content p {
+    font-size: 15px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.6;
+    letter-spacing: 0.2px;
+  }
+  
+  /* Bottom left - Blue statistic box */
+  .bottom-left {
+    grid-column: 1;
+    grid-row: 3;
+    background: linear-gradient(135deg, #0080ff 0%, #0066ff 50%, #0052cc 100%);
+    padding: 45px 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+  }
+  
+  .statistic {
+    font-size: 80px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1;
+    margin-bottom: 12px;
+    letter-spacing: -3px;
+  }
+  
+  .stat-label {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: 0.2px;
+    line-height: 1.3;
+  }
+  
+  /* Bottom center - Funding box */
+  .bottom-center {
+    grid-column: 2;
+    grid-row: 3;
+    background: #1a1a1a;
+    padding: 35px 35px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  
+  .funding-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  
+  .funding-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+  }
+  
+  .icon-people {
+    width: 38px;
+    height: 38px;
+    background: #ffffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  
+  .bottom-center .description {
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  .logo-section { animation: fadeIn 0.8s ease-out; }
+  .main-heading { animation: slideInLeft 0.8s ease-out 0.2s both; }
+  .top-right { animation: slideInRight 0.8s ease-out 0.4s both; }
+  .middle-left { animation: fadeIn 0.8s ease-out 0.6s both; }
+  .middle-center { animation: fadeIn 0.8s ease-out 0.8s both; }
+  .bottom-left { animation: fadeIn 0.8s ease-out 1s both; }
+  .bottom-center { animation: fadeIn 0.8s ease-out 1.2s both; }
+  
+  .list-item:nth-child(1) { animation: slideInRight 0.8s ease-out 0.6s both; }
+  .list-item:nth-child(2) { animation: slideInRight 0.8s ease-out 0.8s both; }
+  .list-item:nth-child(3) { animation: slideInRight 0.8s ease-out 1s both; }
+</style>
+
+<div class="logo-section">
+  <div class="logo-circle"></div>
+  <div class="logo-text">Business Enterprise</div>
+</div>
+
+<div class="grid-container">
+  <div class="top-left">
+    <h1 class="main-heading"><span class="bold">Steps To Start</span> A Business</h1>
+  </div>
+
+  <div class="top-right">
+    <h2 class="section-heading">Organization Engaged In Commercial</h2>
+    <p class="description-white">
+      Establishing a successful business requires strategic planning, market understanding, and systematic execution. Organizations must navigate legal requirements, secure funding, and develop sustainable operational frameworks to thrive in competitive markets.
+    </p>
+  </div>
+
+  <div class="middle-left">
+    <h2 class="section-heading">Organization Engaged In Commercial</h2>
+    <p class="description">
+      Strategic business formation involves careful consideration of market dynamics and regulatory compliance.
+    </p>
+  </div>
+
+  <div class="middle-center"></div>
+
+  <div class="middle-right">
+    <div class="numbered-list">
+      <div class="list-item">
+        <div class="number">01.</div>
+        <div class="item-content">
+          <h3>Market Research</h3>
+          <p>Comprehensive analysis of target markets, customer needs, and competitive landscape to inform strategic decisions.</p>
+        </div>
+      </div>
+      
+      <div class="list-item">
+        <div class="number">02.</div>
+        <div class="item-content">
+          <h3>Business Plan</h3>
+          <p>Detailed roadmap outlining objectives, strategies, financial projections, and operational frameworks for success.</p>
+        </div>
+      </div>
+      
+      <div class="list-item">
+        <div class="number">03.</div>
+        <div class="item-content">
+          <h3>Legal Structure</h3>
+          <p>Selection of appropriate business entity type, ensuring compliance with regulations and optimal tax positioning.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-left">
+    <div class="statistic">99%</div>
+    <div class="stat-label">Average Service<br>Update</div>
+  </div>
+
+  <div class="bottom-center">
+    <div class="funding-header">
+      <h3 class="funding-title">Funding</h3>
+      <div class="icon-people">👥</div>
+    </div>
+    <p class="description">
+      Securing adequate capital through various funding sources including investors, loans, and grants to support business operations.
+    </p>
+  </div>
+</div>
+</body>
+</html>

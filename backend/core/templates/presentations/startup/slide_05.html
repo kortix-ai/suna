@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 5</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+  }
+  
+  /* Split layout */
+  .left-side {
+    width: 46%;
+    background: #0a0a0a;
+    padding: 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  
+  .right-side {
+    width: 54%;
+    background: linear-gradient(180deg, #4d94ff 0%, #3d85ff 50%, #2d75ff 100%);
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Logo section */
+  .logo-section {
+    position: absolute;
+    top: 60px;
+    left: 80px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    z-index: 10;
+  }
+  
+  .logo-circle {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #0066ff, #0052cc);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .logo-circle::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.1) 3px,
+      rgba(255, 255, 255, 0.1) 6px
+    );
+  }
+  
+  .logo-text {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.5px;
+  }
+  
+  /* Left side content */
+  .left-content {
+    margin-top: 80px;
+  }
+  
+  .main-heading {
+    font-size: 72px;
+    font-weight: 400;
+    color: #ffffff;
+    margin-bottom: 30px;
+    line-height: 1.1;
+    letter-spacing: -1px;
+  }
+  
+  .main-heading .bold {
+    font-weight: 700;
+  }
+  
+  .description {
+    font-size: 17px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.7;
+    margin-bottom: 60px;
+    letter-spacing: 0.3px;
+  }
+  
+  .statistic {
+    font-size: 96px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 20px;
+    letter-spacing: -2px;
+  }
+  
+  .stat-label {
+    font-size: 24px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 15px;
+    letter-spacing: -0.5px;
+  }
+  
+  .stat-description {
+    font-size: 17px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.7;
+    letter-spacing: 0.3px;
+  }
+  
+  .franchise-box {
+    background: #0066ff;
+    padding: 40px;
+    margin-top: 60px;
+  }
+  
+  .franchise-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 15px;
+    letter-spacing: -0.5px;
+  }
+  
+  .franchise-description {
+    font-size: 17px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 1.7;
+    letter-spacing: 0.3px;
+  }
+  
+  /* Right side content */
+  .right-content {
+    flex: 1;
+    padding: 100px 80px;
+  }
+  
+  .b2c-heading {
+    font-size: 32px;
+    font-weight: 700;
+    color: #ffffff;
+    margin-bottom: 30px;
+    letter-spacing: -0.5px;
+  }
+  
+  .b2c-description {
+    font-size: 17px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 1.7;
+    margin-bottom: 50px;
+    letter-spacing: 0.3px;
+  }
+  
+  .checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+  }
+  
+  .checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  
+  .check-icon {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    background: #ffffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .check-icon::after {
+    content: '✓';
+    color: #0066ff;
+    font-size: 24px;
+    font-weight: 700;
+  }
+  
+  .checklist-text {
+    font-size: 19px;
+    font-weight: 500;
+    color: #ffffff;
+    letter-spacing: 0.3px;
+  }
+  
+  .bottom-section {
+    height: 200px;
+    background: #e5e5e5;
+  }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  
+  .logo-section {
+    animation: fadeIn 0.8s ease-out;
+  }
+  
+  .main-heading {
+    animation: slideInLeft 0.8s ease-out 0.2s both;
+  }
+  
+  .description {
+    animation: slideInLeft 0.8s ease-out 0.4s both;
+  }
+  
+  .statistic {
+    animation: slideInLeft 0.8s ease-out 0.6s both;
+  }
+  
+  .franchise-box {
+    animation: slideInLeft 0.8s ease-out 0.8s both;
+  }
+  
+  .b2c-heading {
+    animation: slideInRight 0.8s ease-out 0.4s both;
+  }
+  
+  .b2c-description {
+    animation: slideInRight 0.8s ease-out 0.6s both;
+  }
+  
+  .checklist-item:nth-child(1) {
+    animation: slideInRight 0.8s ease-out 0.8s both;
+  }
+  
+  .checklist-item:nth-child(2) {
+    animation: slideInRight 0.8s ease-out 1s both;
+  }
+  
+  .checklist-item:nth-child(3) {
+    animation: slideInRight 0.8s ease-out 1.2s both;
+  }
+</style>
+
+<div class="left-side">
+  <div class="logo-section">
+    <div class="logo-circle"></div>
+    <div class="logo-text">Business Enterprise</div>
+  </div>
+  
+  <div class="left-content">
+    <h1 class="main-heading">Business <span class="bold">Models</span></h1>
+    
+    <p class="description">
+      Business models define how organizations create, deliver, and capture value in the marketplace. They encompass revenue streams, customer segments, and operational strategies that drive sustainable growth and competitive advantage.
+    </p>
+    
+    <div class="statistic">76.9%</div>
+    <h2 class="stat-label">B2B (Business to Business)</h2>
+    <p class="stat-description">
+      Companies operating in B2B markets focus on providing products and services to other businesses, emphasizing long-term relationships, bulk transactions, and specialized solutions.
+    </p>
+  </div>
+  
+  <div class="franchise-box">
+    <h3 class="franchise-title">Franchise</h3>
+    <p class="franchise-description">
+      A proven business model allowing entrepreneurs to operate under an established brand, leveraging existing systems, support, and market recognition for accelerated growth.
+    </p>
+  </div>
+</div>
+
+<div class="right-side">
+  <div class="right-content">
+    <h2 class="b2c-heading">B2C (Business To Consumer) Benefits</h2>
+    
+    <p class="b2c-description">
+      Direct-to-consumer models enable businesses to build personal connections with end users, offering immediate market feedback and enhanced brand loyalty.
+    </p>
+    
+    <div class="checklist">
+      <div class="checklist-item">
+        <div class="check-icon"></div>
+        <div class="checklist-text">Direct customer relationships and immediate feedback</div>
+      </div>
+      
+      <div class="checklist-item">
+        <div class="check-icon"></div>
+        <div class="checklist-text">Enhanced brand control and customer experience</div>
+      </div>
+      
+      <div class="checklist-item">
+        <div class="check-icon"></div>
+        <div class="checklist-text">Flexible pricing strategies and market adaptation</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="bottom-section"></div>
+</div>
+</body>
+</html>

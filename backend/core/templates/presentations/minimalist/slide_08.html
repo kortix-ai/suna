@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minim - Minimalist Presentation Template - Slide 8</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lora:wght@400;500;600&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  .slide-container {
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Lora', Georgia, serif;
+  }
+  
+  .top-section {
+    background: #f5f1ed;
+    padding: 80px 100px 60px 100px;
+  }
+  
+  .subtitle {
+    font-size: 28px;
+    font-weight: 400;
+    color: #95a5a6;
+    margin-bottom: 20px;
+  }
+  
+  .main-heading {
+    font-size: 100px;
+    font-weight: 400;
+    color: #2c3e50;
+    line-height: 1.1;
+    font-family: 'Playfair Display', Georgia, serif;
+    letter-spacing: -2px;
+  }
+  
+  .bottom-section {
+    flex: 1;
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    padding: 80px 100px;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 40px;
+    flex: 1;
+    align-items: center;
+  }
+  
+  .team-card {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+  }
+  
+  .team-info-top {
+    color: #ffffff;
+  }
+  
+  .team-name {
+    font-size: 28px;
+    font-weight: 400;
+    margin-bottom: 8px;
+  }
+  
+  .team-role {
+    font-size: 20px;
+    font-weight: 400;
+    color: #95a5a6;
+  }
+  
+  .team-photo {
+    width: 100%;
+    height: 280px;
+    border-radius: 12px;
+    background: #d3d3d3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .placeholder-text {
+    font-size: 18px;
+    color: #999999;
+    font-weight: 400;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 40px;
+    padding-top: 30px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .footer-text {
+    font-size: 20px;
+    font-weight: 400;
+    color: #7f8c8d;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  
+  .page-number {
+    font-size: 32px;
+    font-weight: 400;
+    color: #7f8c8d;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="top-section">
+    <div class="subtitle">Minimmal Team</div>
+    <div class="main-heading">core team</div>
+  </div>
+  
+  <div class="bottom-section">
+    <div class="team-grid">
+      <div class="team-card">
+        <div class="team-info-top">
+          <div class="team-name">Sam Doe</div>
+          <div class="team-role">Head of Design</div>
+        </div>
+        <div class="team-photo">
+          <div class="placeholder-text">Photo</div>
+        </div>
+      </div>
+      
+      <div class="team-card">
+        <div class="team-info-top">
+          <div class="team-name">John Doe</div>
+          <div class="team-role">Marketing</div>
+        </div>
+        <div class="team-photo">
+          <div class="placeholder-text">Photo</div>
+        </div>
+      </div>
+      
+      <div class="team-card">
+        <div class="team-info-top">
+          <div class="team-name">Harry Smith</div>
+          <div class="team-role">CTO</div>
+        </div>
+        <div class="team-photo">
+          <div class="placeholder-text">Photo</div>
+        </div>
+      </div>
+      
+      <div class="team-card">
+        <div class="team-info-top">
+          <div class="team-name">Samantha William</div>
+          <div class="team-role">Design Internship</div>
+        </div>
+        <div class="team-photo">
+          <div class="placeholder-text">Photo</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <div class="footer-text">Minim Company</div>
+      <div class="page-number">9</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

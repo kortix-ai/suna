@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Lilita+One&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    background-color: #536CF8;
+    overflow: hidden;
+    position: relative;
+    font-family: Arial, sans-serif;
+}
+
+.header {
+    position: absolute;
+    top: 50px;
+    left: 70px;
+}
+
+.main-title {
+    font-family: 'Lilita One', cursive;
+    font-size: 80px;
+    color: white;
+    text-transform: uppercase;
+    -webkit-text-stroke: 5px black;
+    text-shadow: 
+        -5px -5px 0 black,
+        5px -5px 0 black,
+        -5px 5px 0 black,
+        5px 5px 0 black,
+        -5px 0 0 black,
+        5px 0 0 black,
+        0 -5px 0 black,
+        0 5px 0 black;
+    paint-order: stroke fill;
+    margin-bottom: 10px;
+}
+
+.subtitle {
+    font-family: 'Courier New', monospace;
+    font-size: 36px;
+    color: white;
+    font-weight: normal;
+}
+
+.description-box {
+    position: absolute;
+    top: 210px;
+    left: 70px;
+    width: 1780px;
+    height: 220px;
+    background-color: white;
+    border: 8px solid black;
+    border-radius: 30px;
+}
+
+.description-label {
+    position: absolute;
+    top: -8px;
+    left: 20px;
+    background-color: black;
+    color: white;
+    font-family: 'Lilita One', cursive;
+    font-size: 40px;
+    padding: 10px 30px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+
+.notes-box {
+    position: absolute;
+    top: 470px;
+    left: 70px;
+    width: 1780px;
+    height: 380px;
+    background-color: white;
+    border: 8px solid black;
+    border-radius: 30px;
+}
+
+.notes-label {
+    position: absolute;
+    top: -8px;
+    left: 20px;
+    background-color: black;
+    color: white;
+    font-family: 'Lilita One', cursive;
+    font-size: 40px;
+    padding: 10px 30px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+
+.footer {
+    position: absolute;
+    bottom: 40px;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 70px;
+}
+
+.website-url {
+    font-family: 'Courier New', monospace;
+    font-size: 48px;
+    color: white;
+    font-weight: bold;
+}
+
+.page-number {
+    font-family: 'Lilita One', cursive;
+    font-size: 60px;
+    line-height: 60px;
+    color: white;
+    -webkit-text-stroke: 3px black;
+    text-shadow: 
+        -3px -3px 0 black,
+        3px -3px 0 black,
+        -3px 3px 0 black,
+        3px 3px 0 black;
+    paint-order: stroke fill;
+}
+</style>
+
+<div class="header">
+    <div class="main-title">COMPETITOR 1</div>
+    <div class="subtitle">competitive analysis</div>
+</div>
+
+<div class="description-box">
+    <div class="description-label">DESCRIPTION</div>
+</div>
+
+<div class="notes-box">
+    <div class="notes-label">NOTES</div>
+</div>
+
+<div class="footer">
+    <div class="website-url">moserux.com</div>
+    <div class="page-number">2</div>
+</div>
+</body>
+</html>

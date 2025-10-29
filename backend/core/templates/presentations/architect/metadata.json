@@ -1,0 +1,128 @@
+{
+  "presentation_name": "architec_presentation",
+  "title": "Architec Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide - Transforming Ideas",
+      "filename": "slide_01.html",
+      "file_path": "presentations/architec_presentation/slide_01.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_01.html",
+      "created_at": "2025-10-10T20:14:06.204130"
+    },
+    "2": {
+      "title": "Philosophy - Building Identity",
+      "filename": "slide_02.html",
+      "file_path": "presentations/architec_presentation/slide_02.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_02.html",
+      "created_at": "2025-10-10T20:16:09.556659"
+    },
+    "3": {
+      "title": "Who We Are",
+      "filename": "slide_03.html",
+      "file_path": "presentations/architec_presentation/slide_03.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_03.html",
+      "created_at": "2025-10-10T20:16:30.792621"
+    },
+    "4": {
+      "title": "Our Vision",
+      "filename": "slide_04.html",
+      "file_path": "presentations/architec_presentation/slide_04.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_04.html",
+      "created_at": "2025-10-11T05:11:20.017342"
+    },
+    "5": {
+      "title": "Our Mission",
+      "filename": "slide_05.html",
+      "file_path": "presentations/architec_presentation/slide_05.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_05.html",
+      "created_at": "2025-10-11T05:12:52.387953"
+    },
+    "6": {
+      "title": "What We Do",
+      "filename": "slide_06.html",
+      "file_path": "presentations/architec_presentation/slide_06.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_06.html",
+      "created_at": "2025-10-11T05:13:36.122688"
+    },
+    "7": {
+      "title": "Construction Service",
+      "filename": "slide_07.html",
+      "file_path": "presentations/architec_presentation/slide_07.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_07.html",
+      "created_at": "2025-10-11T05:15:56.237944"
+    },
+    "8": {
+      "title": "Project Planning",
+      "filename": "slide_08.html",
+      "file_path": "presentations/architec_presentation/slide_08.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_08.html",
+      "created_at": "2025-10-11T05:17:12.537504"
+    },
+    "9": {
+      "title": "Why Choose Us",
+      "filename": "slide_09.html",
+      "file_path": "presentations/architec_presentation/slide_09.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_09.html",
+      "created_at": "2025-10-11T05:18:15.227639"
+    },
+    "10": {
+      "title": "Our Strengths",
+      "filename": "slide_10.html",
+      "file_path": "presentations/architec_presentation/slide_10.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_10.html",
+      "created_at": "2025-10-11T05:19:29.145900"
+    },
+    "11": {
+      "title": "Team Introduction",
+      "filename": "slide_11.html",
+      "file_path": "presentations/architec_presentation/slide_11.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_11.html",
+      "created_at": "2025-10-11T05:20:49.804891"
+    },
+    "12": {
+      "title": "Selected High Quality Materials",
+      "filename": "slide_12.html",
+      "file_path": "presentations/architec_presentation/slide_12.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_12.html",
+      "created_at": "2025-10-11T05:21:31.460249"
+    },
+    "13": {
+      "title": "Residential Projects",
+      "filename": "slide_13.html",
+      "file_path": "presentations/architec_presentation/slide_13.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_13.html",
+      "created_at": "2025-10-11T05:22:30.645865"
+    },
+    "14": {
+      "title": "Our Portfolio",
+      "filename": "slide_14.html",
+      "file_path": "presentations/architec_presentation/slide_14.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_14.html",
+      "created_at": "2025-10-11T05:23:35.525383"
+    },
+    "15": {
+      "title": "Workflow Process",
+      "filename": "slide_15.html",
+      "file_path": "presentations/architec_presentation/slide_15.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_15.html",
+      "created_at": "2025-10-11T05:25:23.607725"
+    },
+    "16": {
+      "title": "Attractive Designs",
+      "filename": "slide_16.html",
+      "file_path": "presentations/architec_presentation/slide_16.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_16.html",
+      "created_at": "2025-10-11T05:26:11.044375"
+    },
+    "17": {
+      "title": "Let's Work Together",
+      "filename": "slide_17.html",
+      "file_path": "presentations/architec_presentation/slide_17.html",
+      "preview_url": "/workspace/presentations/architec_presentation/slide_17.html",
+      "created_at": "2025-10-11T05:27:08.303076"
+    }
+  },
+  "created_at": "2025-10-10T20:13:32.246670",
+  "updated_at": "2025-10-11T05:27:08.303092"
+}

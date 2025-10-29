@@ -1,8 +1,9 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/ui';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
-import { Pressable, TextInput, View, ActivityIndicator } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, MoreHorizontal } from 'lucide-react-native';
 import Animated, {
@@ -12,7 +13,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
-import { BlurView } from 'expo-blur';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -132,22 +132,15 @@ export function ThreadHeader({
       }}
       pointerEvents="box-none" // Allow touches to pass through empty areas
     >
-      {/* Floating blur card - Sleek minimal design */}
+      {/* Floating card with solid background - Sleek minimal design */}
       <View className="relative rounded-2xl pt-12 border border-border/30 overflow-hidden">
-        {/* Blur Background */}
-        <BlurView
-          intensity={100}
-          tint={colorScheme === 'dark' ? 'dark' : 'light'}
-          className="absolute inset-0"
-        />
-        
-        {/* Semi-transparent background overlay */}
+        {/* Solid Background */}
         <View 
           className="absolute inset-0"
           style={{ 
             backgroundColor: colorScheme === 'dark' 
-              ? 'rgba(22, 22, 24, 0.5)' 
-              : 'rgba(255, 255, 255, 0.5)' 
+              ? '#161618' 
+              : '#FFFFFF' 
           }}
         />
 
@@ -173,10 +166,7 @@ export function ThreadHeader({
           {/* Center - Thread Title (Editable) */}
           <View className="flex-1 mx-2.5 flex-row items-center justify-center">
             {isLoading || isUpdating ? (
-              <ActivityIndicator 
-                size="small" 
-                color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)'}
-              />
+              <KortixLoader size="small" />
             ) : isEditingTitle ? (
               <TextInput
                 ref={titleInputRef}
