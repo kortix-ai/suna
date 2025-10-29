@@ -1,6 +1,7 @@
 'use client';
 
 import { AlertCircle, Zap, Server, Globe } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -18,7 +19,6 @@ import {
 } from '@/components/ui/select';
 // Models now fetched via useModelSelection hook
 import type { Model } from '@/lib/api';
-import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useModelSelection } from '@/hooks/use-model-selection';
 
@@ -211,7 +211,7 @@ export default function PricingPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+          <KortixLoader size="large" />
           <p className="text-sm text-muted-foreground">
             Loading pricing data...
           </p>
