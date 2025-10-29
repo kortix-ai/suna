@@ -533,7 +533,7 @@ export function MenuPage({
                     <SearchBar
                       value={chatsSearch.query}
                       onChangeText={chatsSearch.updateQuery}
-                      placeholder={t('placeholders.searchChats') || 'Search chats...'}
+                      placeholder={t('menu.searchConversations') || 'Search chats...'}
                       onClear={chatsSearch.clearSearch}
                     />
                   </View>

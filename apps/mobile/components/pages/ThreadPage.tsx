@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -7,7 +7,14 @@ import Animated, {
   useAnimatedStyle, 
   withSpring,
   useAnimatedKeyboard,
+  FadeIn,
+  withRepeat,
+  withTiming,
+  useSharedValue,
+  withDelay,
+  Easing,
 } from 'react-native-reanimated';
+import LottieView from 'lottie-react-native';
 import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
 import { AgentDrawer } from '@/components/agents';
@@ -17,7 +24,7 @@ import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseC
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle, X, RefreshCw } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -29,20 +36,199 @@ interface ThreadPageProps {
   onOpenAuthDrawer: () => void;
 }
 
-/**
- * ThreadPage Component
- * 
- * Dedicated page for displaying and interacting with an active chat thread.
- * Handles all thread-related UI including header, messages, and input.
- * 
- * Features:
- * - Thread header with title editing and actions
- * - Scrollable message view with streaming support
- * - Thread-specific actions (share, files, delete)
- * - Chat input with agent selection
- * - Tool call drawer with navigation
- * - Keyboard-aware layout
- */
+const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({ 
+  isRefreshing,
+  insets
+}: { 
+  isRefreshing: boolean;
+  insets: { top: number };
+}) {
+  const width = useSharedValue(126);
+  const height = useSharedValue(37);
+  const borderTopRadius = useSharedValue(20);
+  const borderBottomRadius = useSharedValue(20);
+  const opacity = useSharedValue(0);
+  const contentOpacity = useSharedValue(0);
+  const contentTranslateY = useSharedValue(0);
+  const lottieRef = React.useRef<LottieView>(null);
+  
+  React.useEffect(() => {
+    if (isRefreshing) {
+      opacity.value = 1;
+      contentOpacity.value = 0;
+      width.value = 126;
+      height.value = 37;
+      borderTopRadius.value = 20;
+      borderBottomRadius.value = 20;
+      contentTranslateY.value = -20;
+      
+      // Start Lottie animation
+      lottieRef.current?.play();
+      
+      width.value = withTiming(160, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      height.value = withTiming(90, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      borderTopRadius.value = withTiming(30, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      borderBottomRadius.value = withTiming(24, { 
+        duration: 450,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      });
+      
+      contentTranslateY.value = withDelay(100, withTiming(20, {
+        duration: 350,
+        easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
+      }));
+      
+      contentOpacity.value = withDelay(200, withTiming(1, { duration: 200 }));
+      
+    } else if (opacity.value === 1) {
+      // Stop Lottie animation
+      lottieRef.current?.pause();
+      
+      contentOpacity.value = withTiming(0, { duration: 150 });
+      contentTranslateY.value = withTiming(-20, {
+        duration: 250,
+        easing: Easing.bezier(0.5, 0, 0.75, 0)
+      });
+      
+      setTimeout(() => {
+        width.value = withTiming(126, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        borderTopRadius.value = withTiming(20, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        borderBottomRadius.value = withTiming(20, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        height.value = withTiming(37, { 
+          duration: 400,
+          easing: Easing.bezier(0.33, 0, 0.67, 1)
+        });
+        
+        setTimeout(() => {
+          opacity.value = withTiming(0, { 
+            duration: 300,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1)
+          });
+        }, 350);
+      }, 150);
+    }
+  }, [isRefreshing]);
+  
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    width: width.value,
+    height: height.value,
+    borderTopLeftRadius: borderTopRadius.value,
+    borderTopRightRadius: borderTopRadius.value,
+    borderBottomLeftRadius: borderBottomRadius.value,
+    borderBottomRightRadius: borderBottomRadius.value,
+    opacity: opacity.value,
+  }));
+  
+  const contentStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+    transform: [{ translateY: contentTranslateY.value }],
+  }));
+  
+  return (
+    <>
+      {Platform.OS === 'ios' && (
+        <View 
+          className="absolute w-full items-center"
+          style={{ 
+            top: 11,
+            zIndex: 9999,
+            elevation: 999,
+          }}
+          pointerEvents="none"
+        >
+          <Animated.View
+            style={[
+              animatedContainerStyle,
+              {
+                backgroundColor: 'black',
+                overflow: 'hidden',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Animated.View style={contentStyle} className="flex-row items-center gap-2">
+              <LottieView
+                ref={lottieRef}
+                source={require('@/components/animations/loading.json')}
+                style={{ width: 20, height: 20 }}
+                autoPlay={false}
+                loop
+                speed={1.5}
+              />
+              <Text style={{ color: 'white', fontSize: 13, fontFamily: 'Roobert-Medium' }}>
+                Refreshing
+              </Text>
+            </Animated.View>
+          </Animated.View>
+        </View>
+      )}
+      
+      {Platform.OS === 'android' && (
+        <View 
+          className="absolute w-full items-center"
+          style={{ 
+            top: insets.top + 10,
+            zIndex: 9999,
+            elevation: 999,
+          }}
+          pointerEvents="none"
+        >
+          <Animated.View 
+            style={[
+              animatedContainerStyle,
+              {
+                width: 150,
+                backgroundColor: '#000000',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Animated.View style={contentStyle} className="flex-row items-center gap-2">
+              <LottieView
+                ref={lottieRef}
+                source={require('@/components/animations/loading.json')}
+                style={{ width: 20, height: 20 }}
+                autoPlay={false}
+                loop
+                speed={1.5}
+              />
+              <Text style={{ color: 'white', fontSize: 13, fontFamily: 'Roobert-Medium' }}>
+                Refreshing
+              </Text>
+            </Animated.View>
+          </Animated.View>
+        </View>
+      )}
+    </>
+  );
+});
+
 export function ThreadPage({
   onMenuPress,
   chat,
@@ -99,33 +285,46 @@ export function ThreadPage({
   const scrollViewRef = React.useRef<ScrollView>(null);
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const lastMessageCountRef = React.useRef(messages.length);
+  const lastStreamingLengthRef = React.useRef(0);
+  const scrollAnimationRef = React.useRef<number | null>(null);
   
   React.useEffect(() => {
     const hasNewMessages = messages.length > lastMessageCountRef.current;
-    const hasStreamingContent = streamingContent.length > 0;
+    const hasStreamingContent = streamingContent !== '';
     
     if ((hasNewMessages || hasStreamingContent) && scrollViewRef.current && !isUserScrolling) {
-      // Use requestAnimationFrame for smoother scrolling
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      });
+      scrollViewRef.current?.scrollToEnd({ animated: false });
     }
     
     lastMessageCountRef.current = messages.length;
+    lastStreamingLengthRef.current = streamingContent.length;
   }, [messages.length, streamingContent, isUserScrolling]);
   
-  // Handle scroll events to detect user interaction
+  React.useEffect(() => {
+    return () => {
+      if (scrollAnimationRef.current) {
+        cancelAnimationFrame(scrollAnimationRef.current);
+      }
+    };
+  }, []);
+  
+  const lastScrollYRef = React.useRef(0);
+  
   const handleScroll = React.useCallback((event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const isAtBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 50;
+    const currentScrollY = contentOffset.y;
+    const maxScrollY = contentSize.height - layoutMeasurement.height;
+    const isAtBottom = currentScrollY >= maxScrollY - 100;
+    const isScrollingUp = currentScrollY < lastScrollYRef.current;
     
-    // If user scrolls away from bottom, mark as user scrolling
-    if (!isAtBottom) {
+    lastScrollYRef.current = currentScrollY;
+    
+    if (isScrollingUp && !isAtBottom) {
       setIsUserScrolling(true);
       setShowScrollToBottom(true);
-    } else {
-      // If user scrolls back to bottom, allow auto-scroll again
+    } else if (isAtBottom) {
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
@@ -137,8 +336,63 @@ export function ThreadPage({
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
   }, []);
+  
+  // Pull to refresh handler
+  const handleRefresh = React.useCallback(async () => {
+    if (chat.isStreaming || chat.isAgentRunning) {
+      console.log('⚠️ Cannot refresh while streaming');
+      return;
+    }
+    
+    console.log('🔄 Pull to refresh triggered');
+    setIsRefreshing(true);
+    
+    try {
+      await chat.refreshMessages();
+      console.log('✅ Messages refreshed');
+    } catch (error) {
+      console.error('❌ Failed to refresh:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [chat]);
 
-  // Log when loading state changes
+  // Ensure thread content is loaded when ThreadPage mounts or thread changes
+  const hasInitializedRef = React.useRef(false);
+  const lastThreadIdRef = React.useRef<string | undefined>(undefined);
+  
+  React.useEffect(() => {
+    const currentThreadId = chat.activeThread?.id;
+    if (!currentThreadId) {
+      console.log('📱 [ThreadPage] No active thread');
+      return;
+    }
+
+    const isInitialMount = !hasInitializedRef.current;
+    const isThreadChanged = lastThreadIdRef.current !== currentThreadId;
+    
+    if (isInitialMount || isThreadChanged) {
+      console.log('🔄 [ThreadPage] Thread mount/change detected:', {
+        threadId: currentThreadId,
+        isInitialMount,
+        isThreadChanged,
+        hasMessages: messages.length > 0,
+        isLoading
+      });
+      
+      hasInitializedRef.current = true;
+      lastThreadIdRef.current = currentThreadId;
+      
+      if (messages.length === 0 && !isLoading && !chat.isStreaming) {
+        console.log('📡 [ThreadPage] No messages found, fetching from backend');
+        chat.refreshMessages().catch(error => {
+          console.error('❌ [ThreadPage] Failed to load thread messages:', error);
+          Alert.alert('Error', 'Failed to load thread messages. Please try again.');
+        });
+      }
+    }
+  }, [chat.activeThread?.id, messages.length, isLoading, chat.isStreaming, chat.refreshMessages]);
+
   React.useEffect(() => {
     console.log('🔄 [ThreadPage] Loading state changed:', {
       isLoading,
@@ -154,18 +408,47 @@ export function ThreadPage({
 
   return (
     <View className="flex-1" style={{ backgroundColor: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}>
-
-
-      <View className="flex-1">
-        {isLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator 
-              size="large" 
-              color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} 
-            />
-          </View>
-        ) : !hasMessages ? (
-          <View className="flex-1 items-center justify-center px-8">
+        <View className="flex-1">
+          {isLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <View className="w-20 h-20 rounded-full items-center justify-center">
+                <LottieView
+                  source={require('@/components/animations/loading.json')}
+                  style={{ width: 40, height: 40 }}
+                  autoPlay
+                  loop
+                  speed={1.2}
+                  colorFilters={[
+                    {
+                      keypath: '*',
+                      color: isDark ? '#ffffff' : '#121215',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          ) : !hasMessages ? (
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ 
+              flex: 1,
+              justifyContent: 'center',
+              alignItems: 'center',
+              paddingHorizontal: 32,
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                tintColor="#000000"
+                titleColor={colorScheme === 'dark' ? '#666666' : '#999999'}
+                title=""
+                progressBackgroundColor={colorScheme === 'dark' ? '#1a1a1c' : '#ffffff'}
+                colors={['#000000']}
+                progressViewOffset={20}
+              />
+            }
+          >
             <View className="w-20 h-20 rounded-full bg-secondary items-center justify-center mb-4">
               <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
             </View>
@@ -175,23 +458,41 @@ export function ThreadPage({
             <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
               No messages yet. Start the conversation!
             </Text>
-          </View>
+          </ScrollView>
         ) : (
           <ScrollView
             ref={scrollViewRef}
             className="flex-1"
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={false}
             contentContainerStyle={{ 
               flexGrow: 1,
               paddingTop: insets.top + 60, 
               paddingBottom: 200,
-              paddingHorizontal: 16, // Comfortable side margins
+              paddingHorizontal: 16,
             }}
             keyboardShouldPersistTaps="handled"
             scrollEventThrottle={16}
             bounces={true}
-            alwaysBounceVertical={false}
+            alwaysBounceVertical={true}
             onScroll={handleScroll}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 100,
+            }}
+            removeClippedSubviews={false}
+            scrollsToTop={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                tintColor="#000000"
+                titleColor={colorScheme === 'dark' ? '#666666' : '#999999'}
+                title=""
+                progressBackgroundColor={colorScheme === 'dark' ? '#1a1a1c' : '#ffffff'}
+                colors={['#000000']}
+                progressViewOffset={20}
+              />
+            }
           >
             <MessageRenderer
               messages={messages}
@@ -435,6 +736,9 @@ export function ThreadPage({
           </View>
         )}
       </Modal>
+      
+      {/* Dynamic Island Pull Refresh Animation - Rendered last to be on top of everything */}
+      <DynamicIslandRefresh isRefreshing={isRefreshing} insets={insets} />
     </View>
   );
 }
