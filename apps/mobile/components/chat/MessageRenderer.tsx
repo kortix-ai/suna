@@ -52,6 +52,7 @@ interface MessageRendererProps {
   isStreaming?: boolean;
   sandboxId?: string;
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
+  onFilePress?: (filePath: string) => void;
 }
 
 export const MessageRenderer = React.memo(function MessageRenderer({
@@ -61,6 +62,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
   isStreaming = false,
   sandboxId: threadSandboxId,
   onToolPress,
+  onFilePress,
 }: MessageRendererProps) {
   const processedStreamingContent = useMemo(() => {
     if (!streamingContent || !streamingContent.trim()) return '';
@@ -164,6 +166,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
               key={group.key} 
               message={group.message}
               isLast={isLastGroup}
+              onFilePress={onFilePress}
             />
           );
         } else {
@@ -179,6 +182,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
               hasStreamingContent={!!processedStreamingContent}
               streamingContent={streamingContent}
               threadSandboxId={threadSandboxId}
+              onFilePress={onFilePress}
             />
           );
         }
@@ -230,10 +234,12 @@ export const MessageRenderer = React.memo(function MessageRenderer({
  */
 const UserMessageBubble = React.memo(function UserMessageBubble({ 
   message, 
-  isLast 
+  isLast,
+  onFilePress
 }: { 
   message: UnifiedMessage;
   isLast: boolean;
+  onFilePress?: (filePath: string) => void;
 }) {
   const content = useMemo(() => {
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
@@ -292,6 +298,7 @@ const UserMessageBubble = React.memo(function UserMessageBubble({
           <FileAttachmentsGrid
             filePaths={fileReferences}
             compact
+            onFilePress={onFilePress}
           />
         </View>
       )}
@@ -323,6 +330,7 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
   hasStreamingContent,
   streamingContent,
   threadSandboxId,
+  onFilePress,
 }: {
   messages: UnifiedMessage[];
   streamingToolCall?: ParsedContent | null;
@@ -333,6 +341,7 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
   hasStreamingContent: boolean;
   streamingContent?: string;
   threadSandboxId?: string;
+  onFilePress?: (filePath: string) => void;
 }) {
   // Build map of tools linked to their calling assistant messages
   const { assistantMessages, toolResultsMap } = useMemo(() => {
@@ -398,6 +407,7 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
               message={assistantMsg}
               hasToolsBelow={!!linkedTools && linkedTools.length > 0}
               threadSandboxId={threadSandboxId}
+              onFilePress={onFilePress}
             />
             {linkedTools && linkedTools.length > 0 && (
               <View className="gap-2.5">
@@ -483,11 +493,13 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
 const AssistantMessageContent = React.memo(function AssistantMessageContent({ 
   message,
   hasToolsBelow,
-  threadSandboxId
+  threadSandboxId,
+  onFilePress
 }: { 
   message: UnifiedMessage;
   hasToolsBelow: boolean;
   threadSandboxId?: string;
+  onFilePress?: (filePath: string) => void;
 }) {
   const { colorScheme } = useColorScheme();
   
@@ -573,6 +585,7 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
           filePaths={fileAttachments}
           sandboxId={sandboxId}
           compact={false}
+          onFilePress={onFilePress}
         />
       )}
       
@@ -603,6 +616,7 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
             sandboxId={sandboxId}
             compact={false}
             showPreviews
+            onFilePress={onFilePress}
           />
         </View>
       )}

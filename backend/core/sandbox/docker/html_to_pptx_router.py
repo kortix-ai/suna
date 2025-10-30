@@ -36,9 +36,10 @@ except ImportError as e:
 # Create router
 router = APIRouter(prefix="/presentation", tags=["pptx-conversion"])
 
-# Create output directory for generated PPTXs
-output_dir = Path("generated_pptx")
-output_dir.mkdir(exist_ok=True)
+# Create output directory for generated PPTXs in workspace downloads
+workspace_dir = "/workspace"
+output_dir = Path(workspace_dir) / "downloads"
+output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class ConvertRequest(BaseModel):
@@ -1532,7 +1533,8 @@ async def convert_presentation_to_pptx(request: ConvertRequest):
         # Otherwise, store locally and return JSON with download URL
         pptx_path, total_slides = await converter.convert_to_pptx(store_locally=True)
         
-        pptx_url = f"/downloads/{pptx_path.name}"
+        # Return workspace-relative path for file system access
+        pptx_url = f"/workspace/downloads/{pptx_path.name}"
         
         return ConvertResponse(
             success=True,

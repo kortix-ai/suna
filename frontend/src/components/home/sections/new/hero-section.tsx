@@ -290,7 +290,7 @@ export function HeroSection() {
                                 <ChatInput
                                     ref={chatInputRef}
                                     onSubmit={handleChatInputSubmit}
-                                    placeholder="Describe the agent you want to build or the task you want completed..."
+                                    placeholder="Describe the task you want your Worker to complete..."
                                     loading={isSubmitting}
                                     disabled={isSubmitting}
                                     value={inputValue}

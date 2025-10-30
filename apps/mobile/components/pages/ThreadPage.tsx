@@ -240,6 +240,7 @@ export function ThreadPage({
   const router = useRouter();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
   const [isFileManagerVisible, setIsFileManagerVisible] = React.useState(false);
+  const [selectedFilePath, setSelectedFilePath] = React.useState<string | undefined>();
   
   // Thread actions hooks
   const deleteThreadMutation = useDeleteThread();
@@ -470,9 +471,15 @@ export function ThreadPage({
               streamingContent={streamingContent}
               streamingToolCall={streamingToolCall}
               isStreaming={chat.isStreaming}
-              sandboxId={fullThreadData?.project?.sandbox?.id}
+              sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
               onToolPress={(toolMessages, initialIndex) => {
                 chat.setSelectedToolData({ toolMessages, initialIndex });
+              }}
+              onFilePress={(filePath) => {
+                console.log('[ThreadPage] File clicked:', filePath);
+                const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
+                setSelectedFilePath(normalizedPath);
+                setIsFileManagerVisible(true);
               }}
             />
           </ScrollView>
@@ -629,11 +636,17 @@ export function ThreadPage({
         presentationStyle="fullScreen"
         onRequestClose={() => setIsFileManagerVisible(false)}
       >
-        {fullThreadData?.project?.sandbox?.id ? (
+        {(chat.activeSandboxId || fullThreadData?.project?.sandbox?.id) ? (
           <FileManagerScreen
-            sandboxId={fullThreadData.project.sandbox.id}
-            sandboxUrl={fullThreadData.project.sandbox.sandbox_url}
-            onClose={() => setIsFileManagerVisible(false)}
+            key={`${chat.activeSandboxId}-${chat.isStreaming}`}
+            sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id || ''}
+            sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
+            initialFilePath={selectedFilePath}
+            isStreaming={chat.isStreaming}
+            onClose={() => {
+              setIsFileManagerVisible(false);
+              setSelectedFilePath(undefined);
+            }}
           />
         ) : (
           <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f8f8f8' }}>
