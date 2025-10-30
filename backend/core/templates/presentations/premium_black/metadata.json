@@ -3,6 +3,83 @@
   "title": "SlideKit Presentation System 2025",
   "description": "",
   "slides": {
+    "1": {
+      "title": "Slide 1",
+      "filename": "slide_01.html",
+      "file_path": "presentations/workspace/slide_01.html",
+      "preview_url": "/workspace/presentations/workspace/slide_01.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "2": {
+      "title": "Slide 2",
+      "filename": "slide_02.html",
+      "file_path": "presentations/workspace/slide_02.html",
+      "preview_url": "/workspace/presentations/workspace/slide_02.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "3": {
+      "title": "Slide 3",
+      "filename": "slide_03.html",
+      "file_path": "presentations/workspace/slide_03.html",
+      "preview_url": "/workspace/presentations/workspace/slide_03.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "4": {
+      "title": "Slide 4",
+      "filename": "slide_04.html",
+      "file_path": "presentations/workspace/slide_04.html",
+      "preview_url": "/workspace/presentations/workspace/slide_04.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "5": {
+      "title": "Slide 5",
+      "filename": "slide_05.html",
+      "file_path": "presentations/workspace/slide_05.html",
+      "preview_url": "/workspace/presentations/workspace/slide_05.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "6": {
+      "title": "Slide 6",
+      "filename": "slide_06.html",
+      "file_path": "presentations/workspace/slide_06.html",
+      "preview_url": "/workspace/presentations/workspace/slide_06.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "7": {
+      "title": "Slide 7",
+      "filename": "slide_07.html",
+      "file_path": "presentations/workspace/slide_07.html",
+      "preview_url": "/workspace/presentations/workspace/slide_07.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "8": {
+      "title": "Slide 8",
+      "filename": "slide_08.html",
+      "file_path": "presentations/workspace/slide_08.html",
+      "preview_url": "/workspace/presentations/workspace/slide_08.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    }, 
+    "9": {
+      "title": "Slide 9",
+      "filename": "slide_09.html",
+      "file_path": "presentations/workspace/slide_09.html",
+      "preview_url": "/workspace/presentations/workspace/slide_09.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "10": {
+      "title": "Slide 10",
+      "filename": "slide_10.html",
+      "file_path": "presentations/workspace/slide_10.html",
+      "preview_url": "/workspace/presentations/workspace/slide_10.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
+    "11": {
+      "title": "Slide 11",
+      "filename": "slide_11.html",
+      "file_path": "presentations/workspace/slide_11.html",
+      "preview_url": "/workspace/presentations/workspace/slide_11.html",
+      "created_at": "2025-10-11T15:16:18.769864"
+    },
     "12": {
       "title": "Brand Design System - Duplicate",
       "filename": "slide_12.html",
