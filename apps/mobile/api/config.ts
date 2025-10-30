@@ -6,11 +6,11 @@
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
-// Backend URL from environment
+// Backend URL from environment (required for builds, localhost fallback for local dev)
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/api';
 
-// Frontend URL for sharing (defaults to production URL)
-const FRONTEND_URL = process.env.EXPO_PUBLIC_FRONTEND_URL || 'https://kortix.com';
+// Frontend URL for sharing (required for builds, set via env vars)
+const FRONTEND_URL = process.env.EXPO_PUBLIC_FRONTEND_URL || '';
 
 /**
  * Get the correct server URL based on platform

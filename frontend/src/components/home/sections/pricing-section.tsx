@@ -6,6 +6,7 @@ import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import React, { useState, useEffect, useCallback } from 'react';
+import NextImage from 'next/image';
 import {
   CheckIcon,
   Clock,
@@ -531,15 +532,19 @@ function PricingTier({
       )}>
         <div className="flex items-center gap-2">
           <div className="bg-black dark:hidden rounded-full px-2 py-1 flex items-center justify-center w-fit">
-            <img
+            <NextImage
               src={getPlanIcon(tier.name)}
               alt={tier.name}
+              width={24}
+              height={24}
               className="h-[24px] w-auto"
             />
           </div>
-          <img
+          <NextImage
             src={getPlanIcon(tier.name)}
             alt={tier.name}
+            width={24}
+            height={24}
             className="h-[24px] w-auto hidden dark:block"
           />
           <div className="flex items-center gap-2">
