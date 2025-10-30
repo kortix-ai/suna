@@ -31,12 +31,16 @@ app.include_router(editor_router)
 app.include_router(pptx_router)
 app.include_router(docx_router)
 
-# Create output directory for generated PDFs (needed by PDF router)
+# Create downloads directory in workspace for all generated files
+downloads_dir = Path(workspace_dir) / "downloads"
+downloads_dir.mkdir(parents=True, exist_ok=True)
+
+# Mount static files for downloads (PDFs, PPTX, etc.)
+app.mount("/downloads", StaticFiles(directory=str(downloads_dir)), name="downloads")
+
+# Create output directory for generated PDFs (legacy - for backward compatibility)
 output_dir = Path("generated_pdfs")
 output_dir.mkdir(exist_ok=True)
-
-# Mount static files for PDF downloads
-app.mount("/downloads", StaticFiles(directory=str(output_dir)), name="downloads")
 
 # Initial directory creation
 os.makedirs(workspace_dir, exist_ok=True)
