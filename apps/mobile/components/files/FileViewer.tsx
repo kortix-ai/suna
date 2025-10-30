@@ -181,34 +181,21 @@ export function FileViewer({
   return (
     <Modal
       visible={visible}
-      animationType="fade"
-      transparent
+      animationType="slide"
+      presentationStyle="fullScreen"
       onRequestClose={handleClose}
-      statusBarTranslucent
     >
-      <View className="flex-1">
-        {/* Solid Background */}
-        <View
-          style={{ 
-            position: 'absolute', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0,
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.9)' : 'rgba(0, 0, 0, 0.9)'
-          }}
-        />
-
+      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
         {/* Header */}
         <Animated.View
           entering={FadeIn.duration(200)}
           exiting={FadeOut.duration(200)}
-          className="px-4 pt-12 pb-4 flex-row items-center justify-between"
+          className="px-4 pt-12 pb-4 flex-row items-center justify-between border-b"
           style={{
-            backgroundColor: isDark ? 'rgba(18, 18, 21, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+            backgroundColor: isDark ? '#121215' : '#ffffff',
+            borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
           }}
         >
-          {/* File Name */}
           <View className="flex-1 min-w-0 mr-4">
             <Text
               style={{ color: isDark ? '#f8f8f8' : '#121215' }}
