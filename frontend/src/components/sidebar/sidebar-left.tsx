@@ -12,6 +12,7 @@ import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { CTACard } from '@/components/sidebar/cta';
+import { siteConfig } from '@/lib/home';
 import {
   Sidebar,
   SidebarContent,
@@ -69,21 +70,44 @@ import Image from 'next/image';
 import { isLocalMode } from '@/lib/config';
 import { KortixProcessModal } from './kortix-enterprise-modal';
 
-// Helper function to get plan icon
+// Helper function to get plan icon - maps frontend tier names from cloudPricingItems
 function getPlanIcon(planName: string, isLocal: boolean = false) {
   if (isLocal) return '/plan-icons/ultra.svg';
 
   const plan = planName?.toLowerCase();
-  if (plan?.includes('ultra')) return '/plan-icons/ultra.svg';
-  if (plan?.includes('pro')) return '/plan-icons/pro.svg';
-  if (plan?.includes('plus')) return '/plan-icons/plus.svg';
-  return '/plan-icons/plus.svg'; // default
+
+  // Ultra tier
+  if (plan?.includes('ultra')) {
+    return '/plan-icons/ultra.svg';
+  }
+
+  // Pro tier (Pro, Business, Enterprise, Scale, Max)
+  if (plan?.includes('pro') || plan?.includes('business') || plan?.includes('enterprise') || plan?.includes('scale') || plan?.includes('max')) {
+    return '/plan-icons/pro.svg';
+  }
+
+  // Plus tier
+  if (plan?.includes('plus')) {
+    return '/plan-icons/plus.svg';
+  }
+
+  // Default to plus
+  return '/plan-icons/plus.svg';
 }
 
-// Helper function to get plan name
+// Helper function to get plan name - matches price_id to cloudPricingItems tier name
 function getPlanName(subscriptionData: any, isLocal: boolean = false): string {
   if (isLocal) return 'Ultra';
-  return subscriptionData?.plan_name || subscriptionData?.tier?.name || 'Free';
+
+  // Match price_id to cloudPricingItems to get the frontend tier name
+  const currentTier = siteConfig.cloudPricingItems.find(
+    (p) => p.stripePriceId === subscriptionData?.price_id ||
+      p.yearlyStripePriceId === subscriptionData?.price_id ||
+      p.monthlyCommitmentStripePriceId === subscriptionData?.price_id
+  );
+
+  // Return the frontend tier name (Plus, Pro, Ultra, etc.) or fallback to backend display name
+  return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || 'Free';
 }
 
 // Helper function to get user initials
