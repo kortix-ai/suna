@@ -4,7 +4,7 @@ import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Mail, ArrowRight, ChevronLeft } from 'lucide-react-native';
+import { Mail, ArrowRight, ChevronLeft, Check } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,6 +14,7 @@ import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
 import * as Haptics from 'expo-haptics';
 import { openInbox } from 'react-native-email-link';
+import * as WebBrowser from 'expo-web-browser';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -52,6 +53,7 @@ export default function AuthScreen() {
   const [fullName, setFullName] = React.useState('');
   const [error, setError] = React.useState('');
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = React.useState(false);
+  const [acceptedTerms, setAcceptedTerms] = React.useState(false);
   
   // Refs
   const nameInputRef = React.useRef<TextInput>(null);
@@ -120,7 +122,25 @@ export default function AuthScreen() {
     setCurrentView('main');
     setError('');
     setForgotPasswordSuccess(false);
+    setAcceptedTerms(false);
   }, []);
+
+  // Open legal pages
+  const handleOpenTerms = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=terms', {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+    });
+  };
+
+  const handleOpenPrivacy = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=privacy', {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+    });
+  };
 
   // OAuth
   const handleOAuthSignIn = async (provider: 'apple' | 'google') => {
@@ -171,6 +191,11 @@ export default function AuthScreen() {
 
     if (password.length < 8) {
       setError(t('auth.passwordTooShort'));
+      return;
+    }
+
+    if (!acceptedTerms) {
+      setError('Please accept the Privacy Policy and Terms of Service');
       return;
     }
 
@@ -632,12 +657,53 @@ export default function AuthScreen() {
                   </Text>
                 )}
 
+                {/* GDPR Consent Checkbox */}
+                <View className="flex-row items-center my-4 px-1">
+                  <Pressable 
+                    onPress={() => {
+                      setAcceptedTerms(!acceptedTerms);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    className="mr-3"
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <View className={`size-5 rounded border-2 items-center justify-center ${
+                      acceptedTerms ? 'bg-primary border-primary' : 'border-border bg-card'
+                    }`}>
+                      {acceptedTerms && (
+                        <Icon as={Check} size={14} className="text-primary-foreground" />
+                      )}
+                    </View>
+                  </Pressable>
+                  
+                  <View className="flex-1 flex-row flex-wrap items-center">
+                    <Text className="text-xs font-roobert text-foreground leading-5">
+                      I accept the{' '}
+                    </Text>
+                    <Pressable onPress={handleOpenPrivacy}>
+                      <Text className="text-xs font-roobert text-foreground leading-5">
+                        Privacy Policy
+                      </Text>
+                    </Pressable>
+                    <Text className="text-xs font-roobert text-foreground leading-5">
+                      {' '}and{' '}
+                    </Text>
+                    <Pressable onPress={handleOpenTerms}>
+                      <Text className="text-xs font-roobert text-foreground leading-5">
+                        Terms of Service
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
                 {/* Sign Up Button */}
                 <Pressable
                   onPress={handleSignUp}
-                  disabled={isLoading}
+                  disabled={isLoading || !acceptedTerms}
                   style={{
-                    backgroundColor: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
+                    backgroundColor: (acceptedTerms && !isLoading) 
+                      ? (colorScheme === 'dark' ? '#F8F8F8' : '#000000')
+                      : '#888888',
                     height: 48,
                     borderRadius: 16,
                     flexDirection: 'row',
@@ -645,7 +711,7 @@ export default function AuthScreen() {
                     justifyContent: 'center',
                     gap: 8,
                     marginBottom: 16,
-                    opacity: isLoading ? 0.7 : 1,
+                    opacity: (isLoading || !acceptedTerms) ? 0.5 : 1,
                   }}
                 >
                   {isLoading && (
@@ -671,22 +737,6 @@ export default function AuthScreen() {
                     />
                   )}
                 </Pressable>
-
-                {/* Terms & Privacy */}
-                <View className="flex-row flex-wrap justify-center mb-4">
-                  <Text className="text-xs font-roobert text-muted-foreground text-center">
-                    {t('auth.bySigningUp')}{' '}
-                  </Text>
-                  <Text className="text-xs font-roobert-medium text-primary text-center">
-                    {t('auth.termsOfService')}
-                  </Text>
-                  <Text className="text-xs font-roobert text-muted-foreground text-center">
-                    {' '}{t('auth.and')}{' '}
-                  </Text>
-                  <Text className="text-xs font-roobert-medium text-primary text-center">
-                    {t('auth.privacyPolicy')}
-                  </Text>
-                </View>
 
                 {/* Sign In Link */}
                 <Pressable onPress={showSignIn} className="mt-2">

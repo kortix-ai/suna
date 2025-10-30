@@ -88,8 +88,8 @@ App Integrations & Automation
 • Sync data between applications automatically
 • Manage your productivity suite through natural language commands
 
-Terms of Use: https://kortix.com/terms
-Privacy Policy: https://kortix.com/privacy
+Terms of Use: https://www.kortix.com/legal?tab=terms
+Privacy Policy: https://www.kortix.com/legal?tab=privacy
 
 ---
 
@@ -167,16 +167,16 @@ Manage all your AI-created work in one place
 ---
 
 ## Support URL
-https://kortix.com/support
+support@kortix.com
 
 ## Marketing URL  
-https://kortix.com
+https://www.kortix.com
 
 ## Privacy Policy URL
-https://kortix.com/privacy
+https://www.kortix.com/legal?tab=privacy
 
 ## Terms of Use URL
-https://kortix.com/terms
+https://www.kortix.com/legal?tab=terms
 
 ---
 
@@ -407,7 +407,7 @@ You can view your created work offline, but creating new slides, documents, and 
 Yes! All your created work – slides, documents, spreadsheets, and reports – syncs seamlessly across all devices through your Kortix account.
 
 ### How can I get help?
-Visit kortix.com/support or email support@kortix.com. We typically respond within 24 hours.
+Visit support@kortix.com. We typically respond within 24 hours.
 
 ---
 

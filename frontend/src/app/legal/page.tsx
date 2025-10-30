@@ -39,19 +39,7 @@ function LegalContent() {
       <section className="w-full pb-20">
         <div className="flex flex-col items-center w-full px-6 pt-10">
           <div className="max-w-4xl w-full mx-auto">
-            <div className="flex items-center justify-center mb-10 relative">
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                className="absolute left-0"
-              >
-                <Link href="/">
-                  <ArrowLeft size={14} />
-                  Back
-                </Link>
-              </Button>
-
+            <div className="flex items-center justify-center mb-10">
               <h1 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-primary">
                 Legal Information
               </h1>
