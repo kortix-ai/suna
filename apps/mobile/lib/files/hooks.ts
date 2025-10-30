@@ -64,7 +64,8 @@ export function useSandboxFiles(
       return data.files.map(transformApiFile);
     },
     enabled: !!sandboxId,
-    staleTime: 1 * 60 * 1000,
+    staleTime: 0,
+    gcTime: 0, 
     ...options,
   });
 }

@@ -1,122 +1,65 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useRef } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { useScroll } from 'motion/react';
-import { FlickeringGrid } from '@/components/home/ui/flickering-grid';
-import { useMediaQuery } from '@/hooks/use-media-query';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export default function NotFound() {
-  const tablet = useMediaQuery('(max-width: 1024px)');
-  const [mounted, setMounted] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
-  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
-  const { scrollY } = useScroll();
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Detect when scrolling is active to reduce animation complexity
-  useEffect(() => {
-    const unsubscribe = scrollY.on('change', () => {
-      setIsScrolling(true);
-
-      // Clear any existing timeout
-      if (scrollTimeout.current) {
-        clearTimeout(scrollTimeout.current);
-      }
-
-      // Set a new timeout
-      scrollTimeout.current = setTimeout(() => {
-        setIsScrolling(false);
-      }, 300); // Wait 300ms after scroll stops
-    });
-
-    return () => {
-      unsubscribe();
-      if (scrollTimeout.current) {
-        clearTimeout(scrollTimeout.current);
-      }
-    };
-  }, [scrollY]);
-
   return (
-    <section className="w-full relative overflow-hidden min-h-screen flex items-center justify-center">
-      <div className="relative flex flex-col items-center w-full px-6">
-        {/* Left side flickering grid with gradient fades */}
-        <div className="absolute left-0 top-0 h-full w-1/3 -z-10 overflow-hidden">
-          {/* Horizontal fade from left to right */}
-          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-background z-10" />
+    <div className="w-full relative overflow-hidden min-h-screen">
+      <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
+        {/* Animated background - exactly like maintenance page */}
+        <AnimatedBg variant="hero" />
 
-          {/* Vertical fade from top */}
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-background via-background/90 to-transparent z-10" />
+        <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
+          {/* Logo - 32px height */}
+          <KortixLogo size={32} />
 
-          {/* Vertical fade to bottom */}
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-background via-background/90 to-transparent z-10" />
+          {/* Title - 43px */}
+          <h1 className="text-[43px] font-normal tracking-tight text-foreground leading-none text-center">
+            Page not found
+          </h1>
 
-          <FlickeringGrid
-            className="h-full w-full"
-            squareSize={mounted && tablet ? 2 : 2.5}
-            gridGap={mounted && tablet ? 2 : 2.5}
-            color="var(--secondary)"
-            maxOpacity={0.4}
-            flickerChance={isScrolling ? 0.01 : 0.03}
-          />
-        </div>
+          {/* Description - 16px */}
+          <p className="text-[16px] text-foreground/60 text-center leading-relaxed">
+            The page you're looking for doesn't exist or has been moved.
+          </p>
 
-        {/* Right side flickering grid with gradient fades */}
-        <div className="absolute right-0 top-0 h-full w-1/3 -z-10 overflow-hidden">
-          {/* Horizontal fade from right to left */}
-          <div className="absolute inset-0 bg-gradient-to-l from-transparent via-transparent to-background z-10" />
+          {/* Status Card - 456px width, 96px height */}
+          <Card className="w-full h-24 bg-card border border-border">
+            <CardContent className="p-6 flex items-center justify-between h-full">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-500/10">
+                  <AlertCircle className="h-6 w-6 text-orange-500" />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[14px] font-medium text-foreground">
+                    404 Error
+                  </span>
+                  <span className="text-[13px] text-foreground/60">
+                    Resource not available
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-          {/* Vertical fade from top */}
-          <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-background via-background/90 to-transparent z-10" />
-
-          {/* Vertical fade to bottom */}
-          <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-background via-background/90 to-transparent z-10" />
-
-          <FlickeringGrid
-            className="h-full w-full"
-            squareSize={mounted && tablet ? 2 : 2.5}
-            gridGap={mounted && tablet ? 2 : 2.5}
-            color="var(--secondary)"
-            maxOpacity={0.4}
-            flickerChance={isScrolling ? 0.01 : 0.03}
-          />
-        </div>
-
-        {/* Center content background with rounded bottom */}
-        <div className="absolute inset-x-1/4 top-0 h-full -z-20 bg-background rounded-b-xl"></div>
-
-        <div className="relative z-10 max-w-3xl mx-auto h-full w-full flex flex-col gap-10 items-center justify-center">
-          <div className="inline-flex h-10 w-fit items-center justify-center gap-2 rounded-full bg-secondary/10 text-secondary px-4">
-            <span className="text-sm font-medium">404 Error</span>
-          </div>
-
-          <div className="flex flex-col items-center justify-center gap-5">
-            <h1 className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-medium tracking-tighter text-balance text-center text-primary">
-              Page not found
-            </h1>
-            <p className="text-base md:text-lg text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight">
-              The page you're looking for doesn't exist or has been moved.
-            </p>
-          </div>
-          <div className="flex items-center w-full max-w-xl gap-2 flex-wrap justify-center">
-            <Link
-              href="/"
-              className="inline-flex h-12 md:h-14 items-center justify-center gap-2 rounded-full bg-primary text-white px-6 shadow-md hover:bg-primary/90 transition-all duration-200"
-            >
-              <ArrowLeft className="size-4 md:size-5 dark:text-black" />
-              <span className="font-medium dark:text-black">Return Home</span>
+          {/* Action Button */}
+          <Button
+            asChild
+            size="lg"
+            className="w-full h-12 rounded-lg font-medium"
+          >
+            <Link href="/" className="flex items-center justify-center gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              <span>Return Home</span>
             </Link>
-          </div>
-
-          {/* Subtle glow effect */}
-          <div className="absolute -bottom-4 inset-x-0 h-6 bg-secondary/20 blur-xl rounded-full -z-10 opacity-70"></div>
+          </Button>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

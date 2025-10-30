@@ -4,7 +4,7 @@
     "slug": "kortix",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/Icon-Light.png",
+    "icon": "./assets/images/AppIcon-Light.png",
     "scheme": "kortix",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
