@@ -50,6 +50,7 @@ interface MessageRendererProps {
   streamingContent?: string;
   streamingToolCall?: ParsedContent | null;
   isStreaming?: boolean;
+  sandboxId?: string;
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
 }
 
@@ -58,6 +59,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
   streamingContent,
   streamingToolCall,
   isStreaming = false,
+  sandboxId: threadSandboxId,
   onToolPress,
 }: MessageRendererProps) {
   const processedStreamingContent = useMemo(() => {
@@ -108,6 +110,13 @@ export const MessageRenderer = React.memo(function MessageRenderer({
     toolMessages.forEach(toolMsg => {
       const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
       const assistantId = metadata.assistant_message_id || null;
+      
+      const parsed = parseToolMessage(toolMsg.content);
+      const toolName = parsed?.toolName || '';
+      
+      if (toolName === 'ask' || toolName === 'complete') {
+        return;
+      }
       
       if (!toolMap.has(assistantId)) {
         toolMap.set(assistantId, []);
@@ -169,6 +178,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
               isStreaming={isStreaming}
               hasStreamingContent={!!processedStreamingContent}
               streamingContent={streamingContent}
+              threadSandboxId={threadSandboxId}
             />
           );
         }
@@ -178,6 +188,14 @@ export const MessageRenderer = React.memo(function MessageRenderer({
         if (lastGroup.type === 'assistant_group') {
           return null;
         }
+        
+        const toolName = streamingToolCall.function_name || streamingToolCall.name || '';
+        const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
+        
+        if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
+          return null;
+        }
+        
         return (
           <View className="px-4 mb-2.5">
             <ToolCard 
@@ -304,6 +322,7 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
   isStreaming,
   hasStreamingContent,
   streamingContent,
+  threadSandboxId,
 }: {
   messages: UnifiedMessage[];
   streamingToolCall?: ParsedContent | null;
@@ -313,6 +332,7 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
   isStreaming: boolean;
   hasStreamingContent: boolean;
   streamingContent?: string;
+  threadSandboxId?: string;
 }) {
   // Build map of tools linked to their calling assistant messages
   const { assistantMessages, toolResultsMap } = useMemo(() => {
@@ -323,6 +343,13 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
     tools.forEach(toolMsg => {
       const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
       const assistantId = metadata.assistant_message_id || null;
+      
+      const parsed = parseToolMessage(toolMsg.content);
+      const toolName = parsed?.toolName || '';
+      
+      if (toolName === 'ask' || toolName === 'complete') {
+        return;
+      }
       
       if (!map.has(assistantId)) {
         map.set(assistantId, []);
@@ -362,8 +389,6 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
           />
         </View>
       )}
-
-      {/* All assistant messages and their tools */}
       {assistantMessages.map((assistantMsg, idx) => {
         const linkedTools = toolResultsMap.get(assistantMsg.message_id || null);
         
@@ -372,9 +397,8 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
             <AssistantMessageContent 
               message={assistantMsg}
               hasToolsBelow={!!linkedTools && linkedTools.length > 0}
+              threadSandboxId={threadSandboxId}
             />
-            
-            {/* Linked tool calls - comfortable spacing */}
             {linkedTools && linkedTools.length > 0 && (
               <View className="gap-2.5">
                 {linkedTools.map((toolMsg, toolIdx) => (
@@ -387,39 +411,67 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
                 ))}
               </View>
             )}
-            
-            {/* Streaming tool call - render as part of this assistant's tools */}
-            {streamingToolCall && idx === assistantMessages.length - 1 && (
-              <View className="px-4 mb-2.5">
-                <ToolCard 
-                  isLoading 
-                  toolCall={streamingToolCall}
-                  streamingContent={streamingContent}
-                />
-              </View>
-            )}
+            {streamingToolCall && idx === assistantMessages.length - 1 && (() => {
+              const toolName = streamingToolCall.function_name || streamingToolCall.name || '';
+              const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
+              
+              if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
+                return null;
+              }
+              
+              return (
+                <View className="px-4 mb-2.5">
+                  <ToolCard 
+                    isLoading 
+                    toolCall={streamingToolCall}
+                    streamingContent={streamingContent}
+                  />
+                </View>
+              );
+            })()}
             
             {/* Loading state after tool execution - like web version */}
             {isStreaming && !hasStreamingContent && !streamingToolCall && 
              linkedTools && linkedTools.length > 0 && 
-             idx === assistantMessages.length - 1 && (
-              <View className="px-4 mt-2">
-                <AgentLoader />
-              </View>
-            )}
+             idx === assistantMessages.length - 1 && (() => {
+               const allToolsAreMessageTools = linkedTools.every(toolMsg => {
+                 const parsed = parseToolMessage(toolMsg.content);
+                 const toolName = parsed?.toolName || '';
+                 return toolName === 'ask' || toolName === 'complete';
+               });
+               
+               if (allToolsAreMessageTools) {
+                 return null;
+               }
+               
+               return (
+                 <View className="px-4 mt-2">
+                   <AgentLoader />
+                 </View>
+               );
+             })()}
           </View>
         );
       })}
       
       {/* Orphaned tools */}
-      {toolResultsMap.get(null)?.map((toolMsg, idx) => (
-        <View key={`${toolMsg.message_id || 'orphan-tool'}-${idx}-${toolMsg.created_at}`} className="px-4 mt-2">
-          <ToolCard
-            message={toolMsg}
-            onPress={() => handleToolPress(toolMsg)}
-          />
-        </View>
-      ))}
+      {toolResultsMap.get(null)?.map((toolMsg, idx) => {
+        const parsed = parseToolMessage(toolMsg.content);
+        const toolName = parsed?.toolName || '';
+        
+        if (toolName === 'ask' || toolName === 'complete') {
+          return null;
+        }
+        
+        return (
+          <View key={`${toolMsg.message_id || 'orphan-tool'}-${idx}-${toolMsg.created_at}`} className="px-4 mt-2">
+            <ToolCard
+              message={toolMsg}
+              onPress={() => handleToolPress(toolMsg)}
+            />
+          </View>
+        );
+      })}
     </View>
   );
 });
@@ -430,14 +482,16 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
  */
 const AssistantMessageContent = React.memo(function AssistantMessageContent({ 
   message,
-  hasToolsBelow 
+  hasToolsBelow,
+  threadSandboxId
 }: { 
   message: UnifiedMessage;
   hasToolsBelow: boolean;
+  threadSandboxId?: string;
 }) {
   const { colorScheme } = useColorScheme();
   
-  const { content, fileAttachments, sandboxId, isStreaming } = useMemo(() => {
+  const { content, fileAttachments, completeToolAttachments, sandboxId, isStreaming } = useMemo(() => {
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
     const rawContent = parsed.content || '';
     
@@ -447,17 +501,38 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
     if (streaming) {
       const files = extractFileReferences(rawContent);
       const cleanContent = removeFileReferences(rawContent);
-      const sandbox = metadata.sandbox_id;
+      const sandbox = metadata.sandbox_id || threadSandboxId;
       
       return { 
         content: cleanContent || null, 
         fileAttachments: files,
+        completeToolAttachments: [],
         sandboxId: sandbox,
         isStreaming: true,
       };
     }
     
     let contentToProcess = rawContent;
+    let completeAttachments: string[] = [];
+    
+    if (isNewXmlFormat(rawContent)) {
+      const toolCalls = parseXmlToolCalls(rawContent);
+      
+      toolCalls.forEach(toolCall => {
+        if (toolCall.functionName === 'complete' && toolCall.parameters.attachments) {
+          const attachments = toolCall.parameters.attachments;
+          const attachmentArray = Array.isArray(attachments) 
+            ? attachments 
+            : (typeof attachments === 'string' ? attachments.split(',').map((a: string) => a.trim()) : []);
+          completeAttachments = [...completeAttachments, ...attachmentArray];
+        }
+      });
+    } else {
+      const oldCompleteMatch = rawContent.match(/<complete[^>]*attachments=["']([^"']*)["']/i);
+      if (oldCompleteMatch && oldCompleteMatch[1]) {
+        completeAttachments = oldCompleteMatch[1].split(',').map((a: string) => a.trim());
+      }
+    }
     
     if (rawContent.includes('<function_calls>')) {
       const beforeFunctionCalls = rawContent.split('<function_calls>')[0].trim();
@@ -470,15 +545,16 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
     cleanContent = preprocessTextOnlyTools(cleanContent);
     const finalContent = stripXMLTags(cleanContent).trim();
     
-    const sandbox = metadata.sandbox_id;
+    const sandbox = metadata.sandbox_id || threadSandboxId;
     
     return { 
       content: finalContent || null, 
       fileAttachments: files,
+      completeToolAttachments: completeAttachments,
       sandboxId: sandbox,
       isStreaming: false,
     };
-  }, [message.content, message.metadata, message.message_id]);
+  }, [message.content, message.metadata, message.message_id, threadSandboxId]);
 
   const selectableRules = useMemo(() => ({
     textgroup: (node: any, children: any) => (
@@ -488,7 +564,7 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
     ),
   }), []);
 
-  if (!content && fileAttachments.length === 0) return null;
+  if (!content && fileAttachments.length === 0 && completeToolAttachments.length === 0) return null;
 
   return (
     <View className={`px-4 ${hasToolsBelow ? 'mb-3' : 'mb-0'}`}>
@@ -517,6 +593,17 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
               <StreamingCursor />
             </View>
           )}
+        </View>
+      )}
+      
+      {completeToolAttachments.length > 0 && (
+        <View className="mt-3">
+          <FileAttachmentsGrid
+            filePaths={completeToolAttachments}
+            sandboxId={sandboxId}
+            compact={false}
+            showPreviews
+          />
         </View>
       )}
     </View>

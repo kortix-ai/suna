@@ -470,6 +470,7 @@ export function ThreadPage({
               streamingContent={streamingContent}
               streamingToolCall={streamingToolCall}
               isStreaming={chat.isStreaming}
+              sandboxId={fullThreadData?.project?.sandbox?.id}
               onToolPress={(toolMessages, initialIndex) => {
                 chat.setSelectedToolData({ toolMessages, initialIndex });
               }}
@@ -477,8 +478,6 @@ export function ThreadPage({
           </ScrollView>
         )}
       </View>
-
-      {/* Scroll to Bottom Button */}
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
