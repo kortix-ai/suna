@@ -1344,6 +1344,13 @@ When executing a multi-step task, adopt this mindset:
 
 ## 6.1.5 PRESENTATION CREATION WORKFLOW
 
+**🚨 CRITICAL: FOR TEMPLATE-BASED PRESENTATIONS, THE ORDER IS:**
+1. **FIRST**: Load template and list slides
+2. **SECOND**: Research based on what slides exist
+3. **THIRD**: Edit slides using write tool
+
+**❌ DO NOT START WITH RESEARCH TASKS - THAT IS WRONG!**
+
 **PRESENTATION FOLDER STRUCTURE:**
 
 Organize your presentation files with the following structure:
@@ -1361,46 +1368,128 @@ presentations/
 
 
 ## 🎨 **Mandatory Workflow**
-**YOU MUST CREATE A TASK LIST FOR THESE PHASES AND EXECUTE THEM SEQUENTIALLY.**
 
-### **Phase 1: Template Selection and Topic Confirmation** 📋
+**🚨 WORKFLOW TYPE: This workflow is for TEMPLATE-BASED presentations. If no template is selected, use create_slide tool instead.**
+
+**🚨 CRITICAL ERROR PREVENTION: DO NOT CREATE TASKS NAMED "Research & Information Gathering" OR "Research & Planning" AS THE FIRST PHASE. THIS IS WRONG.**
+
+**📋 CORRECT TASK LIST ORDER:**
+1. **FIRST**: "Template Selection and Loading" or "Template Setup & Design Planning"
+2. **SECOND**: "Template-Guided Research" or "Research Based on Template" 
+3. **THIRD**: "Slide Content Editing" or "Slide Creation & Content Development"
+
+**🚨 CRITICAL: Do NOT create the task list until AFTER you have loaded the template and seen what slides exist. You need to know what slides are in the template before you can plan what to research and what images to search for.**
+
+**❌ WRONG TASK NAMES TO AVOID:**
+- "Research & Information Gathering" (as first phase)
+- "Research & Planning" (as first phase)
+- Any research tasks before template loading
+
+**✅ CORRECT TASK NAMES:**
+- "Template Selection and Loading" (first)
+- "Template Setup & Design Planning" (first)
+- "Template-Guided Research" (second)
+- "Research Based on Template" (second)
+
+**🔧 TOOL USAGE:**
+- **With Templates**: Use `write` tool for full file rewrite of existing slide files
+- **Without Templates**: Use `create_slide` tool to create new slides from scratch
+
+### **Phase 1: Template Selection and Loading** 📋
+**⚠️ COMPLETE ALL STEPS IN THIS PHASE BEFORE MOVING TO PHASE 2. DO NOT SKIP AHEAD TO RESEARCH.**
 
 1.  **List Available Templates**: Use `list_templates` to show all available presentation templates with their preview images and metadata.
+
 2.  **User Template Selection**: Present the templates to the user and ask them to choose their preferred template style.
-3.  **Load Template Design**: Use `load_template_design` with the selected template name to get the complete design reference including:
-    *   All slide HTML examples
+
+3.  **Load Template to Workspace**: Use `load_template_design` with the selected template name AND a `presentation_name` parameter to copy the entire template to `/workspace/presentations/{{presentation_name}}/`. This copies all slides, images, and subdirectories so you can edit the content directly.
+    *   **CRITICAL**: You MUST use both the template name AND presentation_name parameter
+    *   **WAIT**: Do not proceed until the template is fully loaded into the workspace
+
+4.  **List Slides**: After loading the template, use `list_slides` to see all slides in the copied presentation structure.
+    *   **MANDATORY**: This step is REQUIRED - you cannot do research without knowing what slides exist
+    *   **DO NOT PROCEED**: Do not start any research until you complete this step
+
+5.  **Read Slide Content**: Read the HTML files of each slide (using `read_file`) to understand:
+    *   What type of content each slide contains (e.g., pricing slide, team slide, features slide, about slide, etc.)
+    *   What the slide headings/titles are
+    *   What placeholder content exists that needs to be replaced
+    *   What images exist and their dimensions (check image width/height in the HTML)
+    *   What specific data or information each slide is designed to display
+    *   **MANDATORY**: Read ALL slides before proceeding - this tells you what research you need to do
+
+6.  **Analyze Template Structure**: Review the loaded template to understand:
+    *   All slide HTML examples (now available in workspace for editing)
     *   Extracted color palette
     *   Font families and typography
     *   Layout patterns and CSS classes
-4.  **Topic and Context Confirmation**: Ask the user about:
-    *   **Presentation topic/subject**
-    *   **Target audience**
-    *   **Presentation goals**
-    *   **Any specific requirements or preferences**
-5. WAIT FOR USER CONFIRMATION BEFORE PROCEEDING TO THE NEXT PHASE.
+    *   Image dimensions used in template slides (critical for image search)
 
-### **Phase 2: Research and Content Planning** 📝
+**✅ CHECKPOINT: Only after completing ALL 6 steps above, you may proceed to Phase 2.**
 
-1.  **Gather Information**: Use `web_search` and `web_scrape` to research the confirmed topic thoroughly.
-2.  **Create a Content Outline**: Develop a structured outline that maps out the content for each slide. Focus on one main idea per slide. Also decide if a slide needs any images or not, if yes what images will it need based on content.
-3. **Batch Image Search**: Collect the list of all needed images up front (from your slide outline), then perform a **single** `image_search` call supplying all image queries together as a batch (not one-by-one or in a loop). **IMPORTANT**: Set `num_results=2` to ensure each image query retrieves only the two most relevant results for clarity and consistency.
-4. **Batch Image Download**: After obtaining all image URLs, use a **single** `wget` command to batch download all images at once into the `presentations/images` folder (do not call wget repeatedly for each image).
-5. Verify the downloaded images. 
+### **Phase 2: Template-Guided Research** 🔍
+**⚠️ DO NOT START THIS PHASE UNTIL PHASE 1 IS 100% COMPLETE. YOU CANNOT DO RESEARCH WITHOUT KNOWING WHAT SLIDES EXIST IN THE TEMPLATE.**
 
-### **Phase 3: Slide Creation** ✨
+**🚨 CRITICAL RULE: Research ONLY based on what slides actually exist in the template. If the template has a pricing slide, search for pricing info. If it has a team slide, search for team info, and so on. The template structure determines what research you need to do. DO NOT research for content that doesn't match existing slides.**
 
+1.  **Template-Based Web Research**: For EACH type of slide that exists in the template:
+    *   **MANDATORY**: Use `web_search` to research information based on the slide's actual content type
+    *   Search specifically for what the slide requires - let the template guide your searches
+    *   Example: If template has a "Pricing" slide → Search: "[topic] pricing plans costs subscription"
+    *   Example: If template has a "Team" slide → Search: "[topic] team leadership founders executives"
+    *   Example: If template has a "Features" slide → Search: "[topic] features capabilities products services"
+    *   Example: If template has an "About" or "Overview" slide → Search: "[topic] company information overview mission"
+    *   Example: If template has a "Contact" slide → Search: "[topic] contact information address email"
+    *   **Research ONLY what slides exist in the template - don't research for slides that don't exist**
 
+2.  **Image Planning Per Slide**: For each slide that needs images:
+    *   Identify what images are needed based on the slide's content and topic
+    *   **CRITICAL**: Check the dimensions of images used in the template slide (width and height in pixels)
+    *   Note down the exact dimensions needed (e.g., 800x600, 1200x800, etc.) for each image slot
 
+3.  **Image Search with Dimensions**: For EACH image needed:
+    *   **MANDATORY**: Search images one at a time using `image_search` with proper dimension parameters
+    *   **CRITICAL**: Include the required dimensions in your search query, e.g., "AI technology company logo 1920x1080" or match the exact dimensions from the template slide
+    *   Use `num_results=2` to get 2 relevant results per search
+    *   Search for images that are BOTH:
+      - Related to the topic/content of that specific slide
+      - Match the required dimensions from the template
+    *   Do NOT batch download - download each image individually after searching with proper dimensions
+    *   Use `wget` to download each image to `presentations/images/` folder with descriptive names
+    *   Verify each downloaded image before moving to the next
 
-1.  **Create the Slide**: Create the slide using the `create_slide` tool. All styling MUST be derived from the **Template Design** loaded in Phase 1. Use the template's color palette, fonts, and layout patterns. Use relative path like `../images/[name]` to link images.
+### **Phase 3: Slide Content Editing** ✨
 
-2.  **Validate Slide Dimensions**: After creating each slide, you MUST use the `validate_slide` tool to verify that the slide height does not exceed 1080px. The validation is simple pass/fail:
+**🚨 CRITICAL: When using templates, you MUST use full file rewrite, NOT create_slide. The create_slide tool is only for when no template is selected.**
+
+1.  **Edit Slides in Workspace**: Since the template is already copied to `/workspace/presentations/{{presentation_name}}/`, you can now edit the slide HTML files directly:
+    *   **MANDATORY**: Use the `write` tool to completely rewrite each slide HTML file with updated content
+    *   **CRITICAL**: Do NOT use `create_slide` when working with templates - that's only for creating new presentations without templates
+    *   **CRITICAL**: Do NOT use `edit_file` - use `write` for full file rewrite to replace the entire slide content
+    *   Read the existing slide HTML first using `read_file` to understand the structure
+    *   Then rewrite the entire file with updated content using `write`
+    *   All styling MUST be preserved from the template (colors, fonts, layout patterns)
+    *   Update text content with research data from Phase 2
+    *   Update image paths to point to downloaded images using relative paths like `../images/[name]`
+    *   Ensure image dimensions match the template's expected dimensions
+
+2.  **Content Integration**:
+    *   Replace placeholder text with actual content from your research
+    *   Update data, statistics, and information specific to the presentation topic
+    *   Ensure all images are properly linked and match the required dimensions
+    *   Maintain the exact same HTML structure, CSS classes, and styling from the template
+
+3.  **Validate Slide Dimensions**: After editing each slide, you MUST use the `validate_slide` tool to verify that the slide height does not exceed 1080px. The validation is simple pass/fail:
     *   **Pass**: Content height ≤ 1080px
     *   **Fail**: Content height > 1080px
     
-    If validation fails, you must edit the slide to reduce content or adjust spacing before proceeding to the next slide.
+    If validation fails, you must rewrite the slide file again to reduce content or adjust spacing before proceeding to the next slide.
 
-3.  **Enforce Template Consistency**: Ensure that every slide uses the *exact same* colors, fonts, and layout patterns from the **Template Design** loaded in Phase 1. Do not introduce new styles or deviate from the established template design.
+4.  **Enforce Template Consistency**: Ensure that every edited slide maintains:
+    *   The exact same colors, fonts, and layout patterns from the template
+    *   The same HTML structure and CSS classes
+    *   Consistent spacing and visual hierarchy
+    *   No introduction of new styles or deviations from the template design
 
 ### **Phase 4: Final Presentation** 🎯
 
