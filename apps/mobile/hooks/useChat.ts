@@ -70,6 +70,7 @@ export interface UseChatReturn {
   updateThreadTitle: (newTitle: string) => Promise<void>;
   hasActiveThread: boolean;
   refreshMessages: () => Promise<void>;
+  activeSandboxId?: string;
   
   // Messages & Streaming
   messages: UnifiedMessage[];
@@ -147,7 +148,8 @@ export function useChat(): UseChatReturn {
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false); // Flag for optimistic new threads
+  const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
+  const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
 
   // ============================================================================
   // React Query Hooks
@@ -155,13 +157,20 @@ export function useChat(): UseChatReturn {
 
   const { data: threadsData = [] } = useThreads();
 
-  // Smart data fetching - avoid refetching during streaming
   const shouldFetchThread = !!activeThreadId;
   const shouldFetchMessages = !!activeThreadId;
 
   const { data: threadData, isLoading: isThreadLoading } = useThread(shouldFetchThread ? activeThreadId : undefined);
   const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchMessages ? activeThreadId : undefined);
   const { data: activeRuns } = useActiveAgentRuns();
+
+  useEffect(() => {
+    if (threadData?.project?.sandbox?.id) {
+      setActiveSandboxId(threadData.project.sandbox.id);
+    } else if (!activeThreadId) {
+      setActiveSandboxId(undefined);
+    }
+  }, [threadData, activeThreadId]);
 
   // Mutations
   const sendMessageMutation = useSendMessageMutation();
@@ -276,13 +285,32 @@ export function useChat(): UseChatReturn {
 
     queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
     
-    const sandboxId = threadData?.project?.sandbox?.id;
-    if (sandboxId) {
-      console.log('[useChat] Invalidating file queries for sandbox:', sandboxId);
-      queryClient.invalidateQueries({ 
-        queryKey: ['files', 'sandbox', sandboxId],
-        refetchType: 'all',
+    if (activeThreadId) {
+      console.log('[useChat] Refetching thread data for:', activeThreadId);
+      queryClient.refetchQueries({ 
+        queryKey: chatKeys.thread(activeThreadId),
       });
+    }
+    
+    if (activeSandboxId) {
+      console.log('[useChat] Scheduling file query invalidation for sandbox:', activeSandboxId);
+      // Delay file invalidation to ensure backend has processed files
+      setTimeout(() => {
+        console.log('[useChat] Removing all file queries and forcing refetch for sandbox:', activeSandboxId);
+        
+        // Remove all file queries from cache to force fresh fetch
+        queryClient.removeQueries({ 
+          queryKey: ['files'],
+          exact: false,
+        });
+        
+        // Invalidate to trigger refetch if component is still mounted
+        queryClient.invalidateQueries({ 
+          queryKey: ['files'],
+          exact: false,
+          refetchType: 'all',
+        });
+      }, 1500);
     }
 
     if (isNewThreadOptimistic) {
@@ -292,14 +320,20 @@ export function useChat(): UseChatReturn {
 
     setTimeout(() => {
       if (isMountedRef.current) {
-        console.log('[useChat] Clearing streaming state');
+        console.log('[useChat] Clearing streaming state and refetching data');
         setStreamingContent('');
         setStreamingToolCall(null);
         setAgentRunId(null);
         refetchMessages();
+        
+        if (activeThreadId) {
+          queryClient.refetchQueries({ 
+            queryKey: chatKeys.thread(activeThreadId),
+          });
+        }
       }
-    }, 50);
-  }, [refetchMessages, queryClient, isNewThreadOptimistic, flushStreamingBuffer, threadData]);
+    }, 100);
+  }, [refetchMessages, queryClient, isNewThreadOptimistic, flushStreamingBuffer, activeSandboxId, activeThreadId]);
 
   const handleStreamMessage = useCallback((rawData: string) => {
     if (!isMountedRef.current) return;
@@ -667,10 +701,9 @@ export function useChat(): UseChatReturn {
       });
       
       // If there's a sandbox, refresh file list too
-      const sandboxId = threadData?.project?.sandbox?.id;
-      if (sandboxId) {
+      if (activeSandboxId) {
         queryClient.invalidateQueries({ 
-          queryKey: ['files', 'sandbox', sandboxId],
+          queryKey: ['files', 'sandbox', activeSandboxId],
           refetchType: 'all',
         });
       }
@@ -680,7 +713,7 @@ export function useChat(): UseChatReturn {
       console.error('[useChat] ❌ Failed to refresh messages:', error);
       throw error;
     }
-  }, [activeThreadId, isStreaming, refetchMessages, queryClient, threadData]);
+  }, [activeThreadId, isStreaming, refetchMessages, queryClient, activeSandboxId]);
 
   const loadThread = useCallback((threadId: string) => {
     console.log('[useChat] Loading thread:', threadId);
@@ -718,6 +751,7 @@ export function useChat(): UseChatReturn {
     setAttachments([]);
     setSelectedToolData(null);
     setIsNewThreadOptimistic(false);
+    setActiveSandboxId(undefined);
     completedRunIds.current.clear();
     processedMessageIds.current.clear();
     stopStreaming();
@@ -796,19 +830,19 @@ export function useChat(): UseChatReturn {
         });
         
         currentThreadId = createResult.thread_id;
-        console.log('[useChat] Thread created:', currentThreadId, 'Agent Run:', createResult.agent_run_id);
-        
-        // Set thread ID and start streaming immediately like ChatGPT
+      
         setActiveThreadId(currentThreadId);
+        
+        queryClient.refetchQueries({ 
+          queryKey: chatKeys.thread(currentThreadId),
+        });
         
         if (createResult.agent_run_id) {
           console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
           setAgentRunId(createResult.agent_run_id);
-          // Start streaming immediately - no delays
           startStreaming(createResult.agent_run_id);
         }
         
-        // Clear input and attachments AFTER successful send
         setInputValue('');
         setAttachments([]);
       } else {
@@ -840,8 +874,8 @@ export function useChat(): UseChatReturn {
         
         // Upload files to sandbox if there are attachments
         if (attachments.length > 0) {
-          // Get sandbox ID from thread data
-          const sandboxId = threadData?.project?.sandbox?.id;
+          // Get sandbox ID from active state
+          const sandboxId = activeSandboxId;
           
           if (!sandboxId) {
             console.error('[useChat] No sandbox ID available for file upload');
@@ -925,7 +959,7 @@ export function useChat(): UseChatReturn {
     sendMessageMutation,
     unifiedAgentStartMutation,
     uploadFilesMutation,
-    threadData,
+    activeSandboxId,
     t,
     startStreaming,
   ]);
@@ -958,19 +992,34 @@ export function useChat(): UseChatReturn {
       stopAgentRunMutation.mutate(runIdToStop, {
         onSuccess: () => {
           console.log('[useChat] ✅ Backend stop confirmed');
-          // Invalidate queries to ensure fresh state
+          
           queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
+          
           if (activeThreadId) {
             queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+            queryClient.refetchQueries({ 
+              queryKey: chatKeys.thread(activeThreadId),
+            });
+          }
+          
+          if (activeSandboxId) {
+            console.log('[useChat] Invalidating file queries after stop for sandbox:', activeSandboxId);
+            queryClient.invalidateQueries({ 
+              queryKey: ['files', 'sandbox', activeSandboxId],
+              refetchType: 'all',
+            });
+            queryClient.invalidateQueries({ 
+              queryKey: ['files'],
+              refetchType: 'all',
+            });
           }
         },
         onError: (error) => {
           console.error('[useChat] ❌ Backend stop failed:', error);
-          // UI is already stopped, so this is just a warning
         }
       });
     }
-  }, [agentRunId, stopAgentRunMutation, stopStreaming, queryClient, activeThreadId]);
+  }, [agentRunId, stopAgentRunMutation, stopStreaming, queryClient, activeThreadId, activeSandboxId]);
 
   // ============================================================================
   // Public API - Attachment Operations
@@ -1255,6 +1304,7 @@ export function useChat(): UseChatReturn {
     updateThreadTitle,
     hasActiveThread: !!activeThreadId,
     refreshMessages,
+    activeSandboxId,
     
     // Messages & Streaming
     messages,

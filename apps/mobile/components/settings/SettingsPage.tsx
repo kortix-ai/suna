@@ -21,7 +21,8 @@ import {
   LogOut,
   ChevronRight,
   Zap,
-  FlaskConical
+  FlaskConical,
+  Trash2
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -30,8 +31,10 @@ import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { BillingPage } from './BillingPage';
 import { CreditsPurchasePage } from './CreditsPurchasePage';
+import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
+import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -74,6 +77,9 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isBetaPageVisible, setIsBetaPageVisible] = React.useState(false);
   const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
   const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
+  const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
+  
+  const { data: deletionStatus } = useAccountDeletionStatus();
   
   // Get user data
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || profile?.name || 'Guest';
@@ -127,6 +133,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     console.log('🎯 Beta pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsBetaPageVisible(true);
+  };
+
+  const handleAccountDeletion = () => {
+    console.log('🎯 Account deletion pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsAccountDeletionPageVisible(true);
   };
   
   const handleSignOut = async () => {
@@ -242,6 +254,21 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 onPress={handleSignOut}
               />
             )}
+
+            {!isGuest && (
+              <View className="mt-4">
+                <Text className="text-xs font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+                  Danger Zone
+                </Text>
+                <SettingsItem
+                  icon={Trash2}
+                  label={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
+                  onPress={handleAccountDeletion}
+                  destructive
+                  showBadge={deletionStatus?.has_pending_deletion}
+                />
+              </View>
+            )}
           </View>
           
           <View className="h-20" />
@@ -292,6 +319,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         visible={isCreditsPurchasePageVisible}
         onClose={() => setIsCreditsPurchasePageVisible(false)}
       />
+
+      {/* Account Deletion Page */}
+      <AccountDeletionPage
+        visible={isAccountDeletionPageVisible}
+        onClose={() => setIsAccountDeletionPageVisible(false)}
+      />
     </View>
   );
 }
@@ -306,9 +339,10 @@ interface SettingsItemProps {
   label: string;
   onPress: () => void;
   destructive?: boolean;
+  showBadge?: boolean;
 }
 
-function SettingsItem({ icon, label, onPress, destructive = false }: SettingsItemProps) {
+function SettingsItem({ icon, label, onPress, destructive = false, showBadge = false }: SettingsItemProps) {
   const scale = useSharedValue(1);
   
   const animatedStyle = useAnimatedStyle(() => ({
@@ -339,6 +373,13 @@ function SettingsItem({ icon, label, onPress, destructive = false }: SettingsIte
         <Text className={`text-base font-roobert ${textColor}`}>
           {label}
         </Text>
+        {showBadge && (
+          <View className="bg-destructive/20 px-2 py-0.5 rounded-full">
+            <Text className="text-xs font-roobert-medium text-destructive">
+              Scheduled
+            </Text>
+          </View>
+        )}
       </View>
       
       {!destructive && (

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { View, ScrollView, Pressable, Alert, TextInput } from 'react-native';
+import { View, ScrollView, Pressable, Alert, TextInput, RefreshControl } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
@@ -16,6 +16,7 @@ import {
   X,
   Check,
   AlertCircle,
+  RefreshCw,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,7 +30,6 @@ import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { BlurBackdrop } from '@/components/ui/BlurBackdrop';
 
 import { FileItem } from './FileItem';
 import { FileBreadcrumb } from './FileBreadcrumb';
@@ -78,28 +78,79 @@ interface FileManagerScreenProps {
   sandboxId: string;
   sandboxUrl?: string;
   onClose: () => void;
+  initialFilePath?: string;
+  isStreaming?: boolean;
 }
 
 /**
  * File Manager Screen Component
  */
-export function FileManagerScreen({ sandboxId, sandboxUrl, onClose }: FileManagerScreenProps) {
+export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFilePath, isStreaming = false }: FileManagerScreenProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   // Navigation state
-  const [currentPath, setCurrentPath] = useState('/workspace');
+  const [currentPath, setCurrentPath] = useState(() => {
+    if (initialFilePath) {
+      const dir = initialFilePath.substring(0, initialFilePath.lastIndexOf('/'));
+      return dir || '/workspace';
+    }
+    return '/workspace';
+  });
   
   // Viewer state
-  const [viewerVisible, setViewerVisible] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<SandboxFile | null>(null);
+  const [viewerVisible, setViewerVisible] = useState(!!initialFilePath);
+  const [selectedFile, setSelectedFile] = useState<SandboxFile | null>(() => {
+    if (initialFilePath) {
+      const fileName = initialFilePath.split('/').pop() || '';
+      return {
+        path: initialFilePath,
+        name: fileName,
+        type: 'file',
+        size: 0,
+      } as SandboxFile;
+    }
+    return null;
+  });
 
   // Create folder state
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
   // Fetch files for current path
-  const { data: files, isLoading, error, refetch } = useSandboxFiles(sandboxId, currentPath);
+  const { data: files, isLoading, error, refetch, isRefetching } = useSandboxFiles(sandboxId, currentPath, {
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+    cacheTime: 0,
+  });
+
+  React.useEffect(() => {
+    if (sandboxId) {
+      refetch();
+    }
+  }, [sandboxId, refetch]);
+
+  // Refetch when currentPath changes
+  React.useEffect(() => {
+    refetch();
+  }, [currentPath, refetch]);
+
+  // Track previous streaming state
+  const wasStreamingRef = React.useRef(isStreaming);
+  
+  // Refetch when streaming ends
+  React.useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming) {
+      console.log('[FileManagerScreen] Streaming ended, refetching files...');
+      // Delay refetch to ensure backend has processed files
+      const timer = setTimeout(() => {
+        refetch();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming, refetch]);
 
   // Mutations
   const uploadMutation = useUploadFileToSandbox();

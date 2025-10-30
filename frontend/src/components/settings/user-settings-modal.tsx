@@ -17,6 +17,7 @@ import {
     KeyRound,
     X,
     User,
+    Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -25,6 +26,12 @@ import { isLocalMode } from '@/lib/config';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { 
+    useAccountDeletionStatus, 
+    useRequestAccountDeletion, 
+    useCancelAccountDeletion 
+} from '@/hooks/react-query/account/use-account-deletion';
+import { backendApi } from '@/lib/api-client';
 
 // Import billing modal content components
 import {
@@ -51,6 +58,7 @@ import {
     Clock
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 type TabId = 'general' | 'plan' | 'billing' | 'env-manager';
 
@@ -187,7 +195,13 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [userEmail, setUserEmail] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [showCancelDialog, setShowCancelDialog] = useState(false);
     const supabase = createClient();
+
+    const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
+    const requestDeletion = useRequestAccountDeletion();
+    const cancelDeletion = useCancelAccountDeletion();
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -214,7 +228,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             toast.success('Profile updated successfully');
 
-            // Refresh the page to update the sidebar
             setTimeout(() => {
                 window.location.reload();
             }, 500);
@@ -224,6 +237,25 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleRequestDeletion = async () => {
+        await requestDeletion.mutateAsync('User requested deletion');
+        setShowDeleteDialog(false);
+    };
+
+    const handleCancelDeletion = async () => {
+        await cancelDeletion.mutateAsync();
+        setShowCancelDialog(false);
+    };
+
+    const formatDate = (dateString: string | null) => {
+        if (!dateString) return '';
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+        });
     };
 
     if (isLoading) {
@@ -287,13 +319,152 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     {isSaving ? 'Saving...' : 'Save Changes'}
                 </Button>
             </div>
+
+            {!isLocalMode() && (
+                <>
+                    <div className="pt-6 border-t border-border">
+                        <h3 className="text-lg font-semibold mb-1 text-destructive">Danger Zone</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Permanently delete your account and all associated data
+                        </p>
+
+                        {deletionStatus?.has_pending_deletion ? (
+                            <Alert variant="destructive" className="shadow-none">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertDescription>
+                                    <div className="text-sm">
+                                        <strong>Account Deletion Scheduled</strong>
+                                        <p className="mt-1">
+                                            Your account and all data will be permanently deleted on{' '}
+                                            <strong>{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
+                                        </p>
+                                        <p className="mt-2 text-muted-foreground">
+                                            You can cancel this request anytime before the deletion date.
+                                        </p>
+                                    </div>
+                                </AlertDescription>
+                                <div className="mt-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowCancelDialog(true)}
+                                        disabled={cancelDeletion.isPending}
+                                    >
+                                        Cancel Deletion
+                                    </Button>
+                                </div>
+                            </Alert>
+                        ) : (
+                            <>
+                                <Button
+                                    variant="destructive"
+                                    onClick={() => setShowDeleteDialog(true)}
+                                    className="w-full sm:w-auto"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete Account
+                                </Button>
+                                
+                                {!isLocalMode() && (
+                                    <Button
+                                        variant="destructive"
+                                        onClick={async () => {
+                                            if (confirm('⚠️ TEST MODE: This will IMMEDIATELY delete your account. Continue?')) {
+                                                try {
+                                                    const response = await backendApi.delete('/account/delete-immediately');
+                                                    if (response.success) {
+                                                        toast.success('Account deleted immediately (test mode)');
+                                                        setTimeout(() => window.location.href = '/login', 1000);
+                                                    }
+                                                } catch (error) {
+                                                    toast.error('Failed to delete account');
+                                                }
+                                            }
+                                        }}
+                                        className="w-full sm:w-auto mt-2"
+                                        size="sm"
+                                    >
+                                        🧪 Test: Delete Immediately
+                                    </Button>
+                                )}
+                            </>
+                        )}
+                    </div>
+
+                    <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                        <DialogContent className="max-w-md">
+                            <DialogHeader>
+                                <DialogTitle>Delete Account</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <Alert variant="destructive" className="shadow-none">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertDescription>
+                                        <strong>This action cannot be undone after 30 days</strong>
+                                    </AlertDescription>
+                                </Alert>
+                                <p className="text-sm text-muted-foreground">
+                                    When you delete your account:
+                                </p>
+                                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                                    <li>All your agents and agent versions will be deleted</li>
+                                    <li>All your threads and conversations will be deleted</li>
+                                    <li>All your credentials and integrations will be removed</li>
+                                    <li>Your subscription will be cancelled</li>
+                                    <li>All billing data will be removed</li>
+                                    <li>Your account will be scheduled for deletion in 30 days</li>
+                                </ul>
+                                <p className="text-sm text-muted-foreground">
+                                    You can cancel this request anytime within the 30-day grace period.
+                                    After 30 days, all your data will be permanently deleted and cannot be recovered.
+                                </p>
+                                <div className="flex gap-2 justify-end">
+                                    <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                                        Keep Account
+                                    </Button>
+                                    <Button 
+                                        variant="destructive" 
+                                        onClick={handleRequestDeletion} 
+                                        disabled={requestDeletion.isPending}
+                                    >
+                                        {requestDeletion.isPending ? 'Processing...' : 'Delete Account'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
+                    <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                        <AlertDialogContent className="max-w-md">
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Cancel Account Deletion</AlertDialogTitle>
+                            </AlertDialogHeader>
+                            <div className="space-y-4">
+                                <p className="text-sm text-muted-foreground">
+                                    Are you sure you want to cancel the deletion of your account?
+                                    Your account and all data will be preserved.
+                                </p>
+                                <div className="flex gap-2 justify-end">
+                                    <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+                                        Back
+                                    </Button>
+                                    <Button 
+                                        onClick={handleCancelDeletion} 
+                                        disabled={cancelDeletion.isPending}
+                                    >
+                                        {cancelDeletion.isPending ? 'Processing...' : 'Cancel Deletion'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </>
+            )}
         </div>
     );
 }
 
-// Plan Tab Component - Just pricing cards with switcher
 function PlanTab({ returnUrl }: { returnUrl: string }) {
-
     return (
         <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
             <PricingSection

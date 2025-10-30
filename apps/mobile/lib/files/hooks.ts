@@ -165,7 +165,11 @@ export function useUploadFileToSandbox(
       return res.json();
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: fileKeys.sandboxFiles(variables.sandboxId, '/workspace') });
+      queryClient.invalidateQueries({ 
+        queryKey: ['files', 'sandbox', variables.sandboxId],
+        exact: false,           
+        refetchType: 'all',
+      });
     },
     ...options,
   });
@@ -217,7 +221,11 @@ export function useUploadMultipleFiles(
       return results;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: fileKeys.sandboxFiles(variables.sandboxId, '/workspace') });
+      queryClient.invalidateQueries({ 
+        queryKey: ['files', 'sandbox', variables.sandboxId],
+        exact: false,
+        refetchType: 'all',
+      });
     },
     ...options,
   });
@@ -241,7 +249,11 @@ export function useDeleteSandboxFile(
       if (!res.ok) throw new Error(`Failed to delete file: ${res.status}`);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: fileKeys.sandboxFiles(variables.sandboxId, '/workspace') });
+      queryClient.invalidateQueries({ 
+        queryKey: ['files', 'sandbox', variables.sandboxId],
+        exact: false,
+        refetchType: 'all',
+      });
     },
     ...options,
   });
@@ -266,7 +278,11 @@ export function useCreateSandboxDirectory(
       if (!res.ok) throw new Error(`Failed to create directory: ${res.status}`);
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: fileKeys.sandboxFiles(variables.sandboxId, '/workspace') });
+      queryClient.invalidateQueries({ 
+        queryKey: ['files', 'sandbox', variables.sandboxId],
+        exact: false,
+        refetchType: 'all',
+      });
     },
     ...options,
   });
