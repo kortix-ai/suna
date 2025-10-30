@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { Pressable, View, Alert, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -27,12 +27,21 @@ interface AccountDeletionPageProps {
 
 export function AccountDeletionPage({ visible, onClose }: AccountDeletionPageProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
   const requestDeletion = useRequestAccountDeletion();
   const cancelDeletion = useCancelAccountDeletion();
+  const [confirmText, setConfirmText] = React.useState('');
+
+  React.useEffect(() => {
+    if (visible) {
+      setConfirmText('');
+    }
+  }, [visible]);
 
   const handleClose = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setConfirmText('');
     onClose();
   };
 
@@ -45,37 +54,30 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
     });
   };
 
-  const handleRequestDeletion = () => {
+  const handleRequestDeletion = async () => {
+    if (confirmText !== 'delete') {
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    Alert.alert(
-      'Delete Account',
-      'Are you sure you want to delete your account? All your data will be permanently deleted after 30 days. You can cancel anytime within this period.',
-      [
-        {
-          text: 'Keep Account',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              await requestDeletion.mutateAsync('User requested deletion from mobile');
-              
-              Alert.alert(
-                'Deletion Scheduled',
-                'Your account will be deleted in 30 days. You can cancel this request anytime.',
-                [{ text: 'OK' }]
-              );
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to request account deletion');
-            }
-          },
-        },
-      ]
-    );
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      await requestDeletion.mutateAsync('User requested deletion from mobile');
+      
+      setConfirmText('');
+      
+      Alert.alert(
+        'Deletion Scheduled',
+        'Your account will be deleted in 30 days. You can cancel this request anytime.',
+        [{ 
+          text: 'OK',
+          onPress: handleClose
+        }]
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to request account deletion');
+    }
   };
 
   const handleCancelDeletion = () => {
@@ -200,9 +202,25 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                   </View>
                 </View>
 
+                <View>
+                  <Text className="text-sm font-roobert-medium text-foreground mb-2">
+                    Type <Text className="font-roobert-semibold">delete</Text> to confirm
+                  </Text>
+                  <TextInput
+                    value={confirmText}
+                    onChangeText={setConfirmText}
+                    placeholder="delete"
+                    placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                    className="h-12 px-4 bg-secondary rounded-2xl text-foreground font-roobert text-base"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                  />
+                </View>
+
                 <ActionButton
                   onPress={handleRequestDeletion}
-                  disabled={isLoading}
+                  disabled={isLoading || confirmText !== 'delete'}
                   isLoading={requestDeletion.isPending}
                   variant="destructive"
                   icon={Trash2}
