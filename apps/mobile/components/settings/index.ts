@@ -11,5 +11,6 @@ export { LanguagePage } from './LanguagePage';
 export { NameEditPage } from './NameEditPage';
 export { BillingPage } from './BillingPage';
 export { CreditsPurchasePage } from './CreditsPurchasePage';
+export { AccountDeletionPage } from './AccountDeletionPage';
 export { SettingsHeader } from './SettingsHeader';
 

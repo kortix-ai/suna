@@ -26,6 +26,12 @@ import { isLocalMode } from '@/lib/config';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { 
+    useAccountDeletionStatus, 
+    useRequestAccountDeletion, 
+    useCancelAccountDeletion 
+} from '@/hooks/react-query/account/use-account-deletion';
+import { backendApi } from '@/lib/api-client';
 
 // Import billing modal content components
 import {
@@ -52,6 +58,7 @@ import {
     Clock
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 type TabId = 'general' | 'plan' | 'billing' | 'env-manager';
 
@@ -190,14 +197,11 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
-    const [deletionStatus, setDeletionStatus] = useState<{
-        has_pending_deletion: boolean;
-        deletion_scheduled_for: string | null;
-        requested_at: string | null;
-    } | null>(null);
-    const [isCheckingStatus, setIsCheckingStatus] = useState(false);
-    const [isDeleting, setIsDeleting] = useState(false);
     const supabase = createClient();
+
+    const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
+    const requestDeletion = useRequestAccountDeletion();
+    const cancelDeletion = useCancelAccountDeletion();
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -210,33 +214,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             setIsLoading(false);
         };
 
-        const fetchDeletionStatus = async () => {
-            if (isLocalMode()) return;
-            
-            setIsCheckingStatus(true);
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session?.access_token) return;
-
-                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/account/deletion-status`, {
-                    headers: {
-                        'Authorization': `Bearer ${session.access_token}`,
-                    },
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    setDeletionStatus(data);
-                }
-            } catch (error) {
-                console.error('Error fetching deletion status:', error);
-            } finally {
-                setIsCheckingStatus(false);
-            }
-        };
-
         fetchUserData();
-        fetchDeletionStatus();
     }, []);
 
     const handleSave = async () => {
@@ -262,75 +240,13 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     };
 
     const handleRequestDeletion = async () => {
-        setIsDeleting(true);
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session?.access_token) {
-                toast.error('Not authenticated');
-                return;
-            }
-
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/account/request-deletion`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ reason: 'User requested deletion' }),
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to request account deletion');
-            }
-
-            const data = await response.json();
-            toast.success(data.message);
-            setShowDeleteDialog(false);
-            
-            setDeletionStatus({
-                has_pending_deletion: true,
-                deletion_scheduled_for: data.deletion_scheduled_for,
-                requested_at: new Date().toISOString(),
-            });
-        } catch (error) {
-            console.error('Error requesting deletion:', error);
-            toast.error('Failed to request account deletion');
-        } finally {
-            setIsDeleting(false);
-        }
+        await requestDeletion.mutateAsync('User requested deletion');
+        setShowDeleteDialog(false);
     };
 
     const handleCancelDeletion = async () => {
-        setIsDeleting(true);
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session?.access_token) {
-                toast.error('Not authenticated');
-                return;
-            }
-
-            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/account/cancel-deletion`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
-                },
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to cancel account deletion');
-            }
-
-            const data = await response.json();
-            toast.success(data.message);
-            setShowCancelDialog(false);
-            
-            setDeletionStatus(null);
-        } catch (error) {
-            console.error('Error cancelling deletion:', error);
-            toast.error('Failed to cancel account deletion');
-        } finally {
-            setIsDeleting(false);
-        }
+        await cancelDeletion.mutateAsync();
+        setShowCancelDialog(false);
     };
 
     const formatDate = (dateString: string | null) => {
@@ -432,26 +348,51 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setShowCancelDialog(true)}
-                                        disabled={isDeleting}
+                                        disabled={cancelDeletion.isPending}
                                     >
                                         Cancel Deletion
                                     </Button>
                                 </div>
                             </Alert>
                         ) : (
-                            <Button
-                                variant="destructive"
-                                onClick={() => setShowDeleteDialog(true)}
-                                className="w-full sm:w-auto"
-                            >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete Account
-                            </Button>
+                            <>
+                                <Button
+                                    variant="destructive"
+                                    onClick={() => setShowDeleteDialog(true)}
+                                    className="w-full sm:w-auto"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete Account
+                                </Button>
+                                
+                                {!isLocalMode() && (
+                                    <Button
+                                        variant="destructive"
+                                        onClick={async () => {
+                                            if (confirm('⚠️ TEST MODE: This will IMMEDIATELY delete your account. Continue?')) {
+                                                try {
+                                                    const response = await backendApi.delete('/account/delete-immediately');
+                                                    if (response.success) {
+                                                        toast.success('Account deleted immediately (test mode)');
+                                                        setTimeout(() => window.location.href = '/login', 1000);
+                                                    }
+                                                } catch (error) {
+                                                    toast.error('Failed to delete account');
+                                                }
+                                            }
+                                        }}
+                                        className="w-full sm:w-auto mt-2"
+                                        size="sm"
+                                    >
+                                        🧪 Test: Delete Immediately
+                                    </Button>
+                                )}
+                            </>
                         )}
                     </div>
 
                     <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-                        <DialogContent>
+                        <DialogContent className="max-w-md">
                             <DialogHeader>
                                 <DialogTitle>Delete Account</DialogTitle>
                             </DialogHeader>
@@ -484,20 +425,20 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <Button 
                                         variant="destructive" 
                                         onClick={handleRequestDeletion} 
-                                        disabled={isDeleting}
+                                        disabled={requestDeletion.isPending}
                                     >
-                                        {isDeleting ? 'Processing...' : 'Delete Account'}
+                                        {requestDeletion.isPending ? 'Processing...' : 'Delete Account'}
                                     </Button>
                                 </div>
                             </div>
                         </DialogContent>
                     </Dialog>
 
-                    <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Cancel Account Deletion</DialogTitle>
-                            </DialogHeader>
+                    <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                        <AlertDialogContent className="max-w-md">
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Cancel Account Deletion</AlertDialogTitle>
+                            </AlertDialogHeader>
                             <div className="space-y-4">
                                 <p className="text-sm text-muted-foreground">
                                     Are you sure you want to cancel the deletion of your account?
@@ -509,23 +450,21 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     </Button>
                                     <Button 
                                         onClick={handleCancelDeletion} 
-                                        disabled={isDeleting}
+                                        disabled={cancelDeletion.isPending}
                                     >
-                                        {isDeleting ? 'Processing...' : 'Cancel Deletion'}
+                                        {cancelDeletion.isPending ? 'Processing...' : 'Cancel Deletion'}
                                     </Button>
                                 </div>
                             </div>
-                        </DialogContent>
-                    </Dialog>
+                        </AlertDialogContent>
+                    </AlertDialog>
                 </>
             )}
         </div>
     );
 }
 
-// Plan Tab Component - Just pricing cards with switcher
 function PlanTab({ returnUrl }: { returnUrl: string }) {
-
     return (
         <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
             <PricingSection

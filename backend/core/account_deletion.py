@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-import os
 
 router = APIRouter(tags=["account-deletion"])
 
@@ -24,16 +23,16 @@ class AccountDeletionStatusResponse(BaseModel):
     requested_at: Optional[datetime] = None
     can_cancel: bool = True
 
-@router.post("/api/account/request-deletion", response_model=AccountDeletionResponse)
+@router.post("/account/request-deletion", response_model=AccountDeletionResponse)
 async def request_account_deletion(
     body: AccountDeletionRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         db = DBConnection()
-        client = await db.get_service_role_client()
+        client = await db.client
         
-        personal_account_response = await client.table('basejump.accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
+        personal_account_response = await client.schema('basejump').table('accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
         
         if not personal_account_response.data or len(personal_account_response.data) == 0:
             raise HTTPException(status_code=404, detail="Personal account not found")
@@ -62,7 +61,14 @@ async def request_account_deletion(
             'is_deleted': False
         }).execute()
         
-        logger.info(f"Account deletion requested for user {user_id}, scheduled for {deletion_date}")
+        deletion_id = deletion_request.data[0]['id']
+        
+        schedule_result = await client.rpc('schedule_account_deletion', {
+            'p_deletion_request_id': deletion_id,
+            'p_scheduled_time': deletion_date.isoformat()
+        }).execute()
+        
+        logger.info(f"Account deletion requested for user {user_id}, scheduled for {deletion_date}, cron job: {schedule_result.data}")
         
         return AccountDeletionResponse(
             success=True,
@@ -77,15 +83,15 @@ async def request_account_deletion(
         logger.error(f"Error requesting account deletion: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to request account deletion")
 
-@router.post("/api/account/cancel-deletion")
+@router.post("/account/cancel-deletion")
 async def cancel_account_deletion(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         db = DBConnection()
-        client = await db.get_service_role_client()
+        client = await db.client
         
-        personal_account_response = await client.table('basejump.accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
+        personal_account_response = await client.schema('basejump').table('accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
         
         if not personal_account_response.data or len(personal_account_response.data) == 0:
             raise HTTPException(status_code=404, detail="Personal account not found")
@@ -99,12 +105,16 @@ async def cancel_account_deletion(
         
         request_id = existing_request.data[0]['id']
         
+        cancel_job_result = await client.rpc('cancel_account_deletion_job', {
+            'p_deletion_request_id': request_id
+        }).execute()
+        
         await client.table('account_deletion_requests').update({
             'is_cancelled': True,
             'cancelled_at': datetime.now(timezone.utc).isoformat()
         }).eq('id', request_id).execute()
         
-        logger.info(f"Account deletion cancelled for user {user_id}")
+        logger.info(f"Account deletion cancelled for user {user_id}, cron job cancelled: {cancel_job_result.data}")
         
         return {
             "success": True,
@@ -117,15 +127,15 @@ async def cancel_account_deletion(
         logger.error(f"Error cancelling account deletion: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to cancel account deletion")
 
-@router.get("/api/account/deletion-status", response_model=AccountDeletionStatusResponse)
+@router.get("/account/deletion-status", response_model=AccountDeletionStatusResponse)
 async def get_account_deletion_status(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         db = DBConnection()
-        client = await db.get_service_role_client()
+        client = await db.client
         
-        personal_account_response = await client.table('basejump.accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
+        personal_account_response = await client.schema('basejump').table('accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
         
         if not personal_account_response.data or len(personal_account_response.data) == 0:
             return AccountDeletionStatusResponse(
@@ -160,50 +170,44 @@ async def get_account_deletion_status(
         logger.error(f"Error getting account deletion status: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to get account deletion status")
 
-@router.delete("/api/account/delete-immediately")
+@router.delete("/account/delete-immediately")
 async def delete_account_immediately(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         db = DBConnection()
-        client = await db.get_service_role_client()
+        client = await db.client
         
-        personal_account_response = await client.table('basejump.accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
+        personal_account_response = await client.schema('basejump').table('accounts').select('id').eq('primary_owner_user_id', user_id).eq('personal_account', True).execute()
         
         if not personal_account_response.data or len(personal_account_response.data) == 0:
             raise HTTPException(status_code=404, detail="Personal account not found")
         
         account_id = personal_account_response.data[0]['id']
         
-        result = await client.rpc('delete_user_data', {
+        result = await client.rpc('delete_user_immediately', {
             'p_account_id': account_id,
             'p_user_id': user_id
         }).execute()
         
+        logger.info(f"delete_user_immediately result: {result}")
+        logger.info(f"result.data: {result.data}")
+        
         if result.data:
-            try:
-                from supabase import create_client
-                supabase_url = os.environ.get('SUPABASE_URL')
-                supabase_service_key = os.environ.get('SUPABASE_SERVICE_KEY')
-                
-                if supabase_url and supabase_service_key:
-                    admin_client = create_client(supabase_url, supabase_service_key)
-                    admin_client.auth.admin.delete_user(user_id)
-                    logger.info(f"Deleted auth user {user_id}")
-            except Exception as auth_error:
-                logger.error(f"Error deleting auth user: {str(auth_error)}")
-            
-            logger.info(f"Account deleted immediately for user {user_id}")
+            logger.info(f"Successfully deleted account and auth user for {user_id}")
             
             return {
                 "success": True,
                 "message": "Your account and all associated data have been permanently deleted."
             }
         else:
+            logger.error(f"delete_user_immediately returned False for account {account_id}")
             raise HTTPException(status_code=500, detail="Failed to delete account data")
     
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
         logger.error(f"Error deleting account immediately: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete account")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
