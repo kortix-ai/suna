@@ -31,6 +31,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLanguage } from '@/contexts';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useAuthContext } from '@/contexts/AuthContext';
+import { useAgent } from '@/contexts/AgentContext';
 import { 
   TrialCard, 
   PricingTierCard, 
@@ -74,6 +75,7 @@ export default function OnboardingScreen() {
   const { colorScheme } = useColorScheme();
   const { trialStatus, refetchAll, hasActiveTrial, hasActiveSubscription } = useBillingContext();
   const { signOut, session } = useAuthContext();
+  const { loadAgents } = useAgent();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const scrollX = useSharedValue(0);
@@ -159,8 +161,10 @@ export default function OnboardingScreen() {
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Refetch billing data before routing
+      // Refetch billing data and agents before routing
+      console.log('🔄 Refetching billing data and agents after onboarding completion...');
       refetchAll();
+      await loadAgents();
       
       console.log(`✅ Onboarding completed for user: ${userId}`);
       router.replace('/home');
@@ -168,7 +172,7 @@ export default function OnboardingScreen() {
       console.error('Failed to save onboarding status:', error);
       router.replace('/home');
     }
-  }, [refetchAll, router, session?.user?.id]);
+  }, [refetchAll, loadAgents, router, session?.user?.id]);
 
   const handleLogout = React.useCallback(async () => {
     try {

@@ -14,7 +14,7 @@ import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { KortixLoader } from '@/components/ui';
-import { Search, Plus, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
+import { Search, Plus, X, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
@@ -162,8 +162,8 @@ function EmptyState({
 /**
  * BackButton Component
  * 
- * Elegant back button to close the menu and return to home
- * Uses ChevronLeft icon from Lucide
+ * Elegant close button to close the menu and return to home
+ * Uses X icon from Lucide
  */
 interface BackButtonProps {
   onPress?: () => void;
@@ -186,7 +186,7 @@ function BackButton({ onPress }: BackButtonProps) {
   };
   
   const handlePress = () => {
-    console.log('🎯 Back button pressed');
+    console.log('🎯 Close button pressed');
     console.log('📱 Returning to Home');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress?.();
@@ -204,7 +204,7 @@ function BackButton({ onPress }: BackButtonProps) {
       accessibilityHint={t('actions.returnToHome')}
     >
       <Icon 
-        as={ChevronLeft}
+        as={X}
         size={24}
         className="text-foreground"
         strokeWidth={2}

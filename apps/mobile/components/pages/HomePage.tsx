@@ -4,6 +4,8 @@ import { useColorScheme } from 'nativewind';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
 import { QuickActionBar } from '@/components/quick-actions';
 import { BackgroundLogo, TopNav } from '@/components/home';
+import { BillingPage } from '@/components/settings/BillingPage';
+import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
 import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 
@@ -43,6 +45,10 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   
+  // Billing page state
+  const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
+  const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
+  
   // ChatInput ref for programmatic focus
   const chatInputRef = React.useRef<ChatInputSectionRef>(null);
   
@@ -53,6 +59,31 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
       chatInputRef.current?.focusInput();
     },
   }), []);
+
+  // Handle upgrade button press - opens billing page
+  const handleUpgradePress = React.useCallback(() => {
+    console.log('🎯 Upgrade button pressed - opening billing page');
+    setIsBillingPageVisible(true);
+  }, []);
+
+  // Handle billing page close
+  const handleCloseBilling = React.useCallback(() => {
+    console.log('🎯 Billing page closed');
+    setIsBillingPageVisible(false);
+  }, []);
+
+  // Handle open credits purchase
+  const handleOpenCredits = React.useCallback(() => {
+    console.log('🎯 Opening credits purchase page');
+    setIsBillingPageVisible(false);
+    setIsCreditsPurchasePageVisible(true);
+  }, []);
+
+  // Handle credits purchase page close
+  const handleCloseCredits = React.useCallback(() => {
+    console.log('🎯 Credits purchase page closed');
+    setIsCreditsPurchasePageVisible(false);
+  }, []);
 
 
   return (
@@ -70,7 +101,10 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
         >
           <View className="flex-1 relative">
             {/* Top Navigation */}
-            <TopNav onMenuPress={onMenuPress} />
+            <TopNav 
+              onMenuPress={onMenuPress} 
+              onUpgradePress={handleUpgradePress} 
+            />
 
             {/* New Chat View with Background Logo */}
             <View className="absolute inset-0" pointerEvents="none">
@@ -131,6 +165,19 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           onTakePicture={chat.handleTakePicture}
           onChooseImages={chat.handleChooseImages}
           onChooseFiles={chat.handleChooseFiles}
+        />
+
+        {/* Billing Page */}
+        <BillingPage
+          visible={isBillingPageVisible}
+          onClose={handleCloseBilling}
+          onOpenCredits={handleOpenCredits}
+        />
+
+        {/* Credits Purchase Page */}
+        <CreditsPurchasePage
+          visible={isCreditsPurchasePageVisible}
+          onClose={handleCloseCredits}
         />
       </KeyboardAvoidingView>
     </View>

@@ -6,6 +6,7 @@ import MaskedView from '@react-native-masked-view/masked-view';
 import PlusSvg from '@/assets/brand/tiers/plus.svg';
 import ProSvg from '@/assets/brand/tiers/pro.svg';
 import UltraSvg from '@/assets/brand/tiers/ultra.svg';
+import { useColorScheme } from 'nativewind';
 import type { TierType } from './types';
 
 interface TierBadgeProps {
@@ -28,14 +29,19 @@ interface TierBadgeProps {
  * - Plus & Pro have white text
  */
 export function TierBadge({ tier, size = 'small' }: TierBadgeProps) {
+  const { colorScheme } = useColorScheme();
   const isSmall = size === 'small';
-  // Scale icon to match text height better - 16x13 for small size
-  const iconSize = isSmall ? { width: 20, height: 20 } : { width: 104, height: 87 };
-  const textSize = isSmall ? 'text-[16px]' : 'text-[116px]';
+  // Figma specs: Small size: 12x10px icon, 13.33px text
+  const iconSize = isSmall ? { width: 12, height: 10 } : { width: 104, height: 87 };
+  const textSize = isSmall ? 'text-[13.33px]' : 'text-[116px]';
   const gapSize = isSmall ? 'gap-1' : 'gap-[35px]';
 
   // Select appropriate SVG component
   const TierIcon = tier === 'Plus' ? PlusSvg : tier === 'Pro' ? ProSvg : UltraSvg;
+
+  // Text color adapts to color scheme for visibility
+  // In dark mode: white text, in light mode: dark text for contrast
+  const textColor = colorScheme === 'dark' ? '#f8f8f8' : '#121215';
 
   return (
     <View className={`flex-row items-center ${gapSize}`}>
@@ -72,8 +78,11 @@ export function TierBadge({ tier, size = 'small' }: TierBadgeProps) {
           </LinearGradient>
         </MaskedView>
       ) : (
-        // Plus & Pro with white text
-        <Text className={`${textSize} font-roobert-medium text-white`}>
+        // Plus & Pro with adaptive text color
+        <Text 
+          className={`${textSize} font-roobert-medium`}
+          style={{ color: textColor }}
+        >
           {tier}
         </Text>
       )}
