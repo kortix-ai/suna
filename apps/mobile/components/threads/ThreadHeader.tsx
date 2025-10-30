@@ -5,7 +5,7 @@ import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronRight, MoreHorizontal } from 'lucide-react-native';
+import { Menu, MoreHorizontal } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -146,7 +146,7 @@ export function ThreadHeader({
 
         {/* Main Content - Compact and minimal */}
         <View className="flex-row items-center justify-between px-3 py-2">
-          {/* Left - Chevron Menu Button */}
+          {/* Left - Menu Button */}
           <AnimatedPressable
             onPressIn={() => {
               menuScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
@@ -160,7 +160,7 @@ export function ThreadHeader({
             accessibilityRole="button"
             accessibilityLabel="Open menu"
           >
-            <Icon as={ChevronRight} size={18} className="text-foreground/60" strokeWidth={2} />
+            <Icon as={Menu} size={18} className="text-foreground/60" strokeWidth={2} />
           </AnimatedPressable>
 
           {/* Center - Thread Title (Editable) */}

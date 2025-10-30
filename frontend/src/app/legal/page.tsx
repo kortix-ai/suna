@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
@@ -12,41 +12,26 @@ function LegalContent() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Get tab from URL or default to "terms"
+  // Get tab from URL or default to "imprint"
   const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<'terms' | 'privacy'>(
-    tabParam === 'terms' || tabParam === 'privacy' ? tabParam : 'terms',
+  const [activeTab, setActiveTab] = useState<'terms' | 'privacy' | 'imprint'>(
+    tabParam === 'terms' || tabParam === 'privacy' || tabParam === 'imprint' ? tabParam : 'imprint',
   );
 
-  // Function to update URL without refreshing the page
-  const updateUrl = (tab: string) => {
-    const params = new URLSearchParams(searchParams);
-    params.set('tab', tab);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
-
+  // Sync active tab with URL parameter when it changes
   useEffect(() => {
-    // Update the URL if it doesn't match the active tab
-    if (tabParam !== activeTab) {
-      updateUrl(activeTab);
-    }
-  }, [tabParam, activeTab, updateUrl]);
-
-  // Update the URL when the tab changes
-  useEffect(() => {
-    updateUrl(activeTab);
-  }, [activeTab, updateUrl]);
-
-  // Update the active tab when URL changes
-  useEffect(() => {
-    if (tabParam === 'terms' || tabParam === 'privacy') {
-      setActiveTab(tabParam);
+    const validTab = tabParam === 'terms' || tabParam === 'privacy' || tabParam === 'imprint' ? tabParam : 'imprint';
+    if (validTab !== activeTab) {
+      setActiveTab(validTab);
     }
   }, [tabParam]);
 
-  // Handle tab change
-  const handleTabChange = (tab: 'terms' | 'privacy') => {
+  // Handle tab change - updates both state and URL
+  const handleTabChange = (tab: 'terms' | 'privacy' | 'imprint') => {
     setActiveTab(tab);
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', tab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   return (
@@ -54,19 +39,7 @@ function LegalContent() {
       <section className="w-full pb-20">
         <div className="flex flex-col items-center w-full px-6 pt-10">
           <div className="max-w-4xl w-full mx-auto">
-            <div className="flex items-center justify-center mb-10 relative">
-              <Button
-                variant="outline"
-                size="sm"
-                asChild
-                className="absolute left-0"
-              >
-                <Link href="/">
-                  <ArrowLeft size={14} />
-                  Back
-                </Link>
-              </Button>
-
+            <div className="flex items-center justify-center mb-10">
               <h1 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-primary">
                 Legal Information
               </h1>
@@ -75,9 +48,18 @@ function LegalContent() {
             <div className="flex justify-center mb-8">
               <div className="flex space-x-4 border-b border-border">
                 <button
+                  onClick={() => handleTabChange('imprint')}
+                  className={`pb-2 px-4 ${activeTab === 'imprint'
+                      ? 'border-b-2 border-primary font-medium text-primary'
+                      : 'text-muted-foreground hover:text-primary/80 transition-colors'
+                    }`}
+                >
+                  Imprint
+                </button>
+                <button
                   onClick={() => handleTabChange('terms')}
                   className={`pb-2 px-4 ${activeTab === 'terms'
-                      ? 'border-b-2 border-secondary font-medium text-secondary'
+                      ? 'border-b-2 border-primary font-medium text-primary'
                       : 'text-muted-foreground hover:text-primary/80 transition-colors'
                     }`}
                 >
@@ -86,7 +68,7 @@ function LegalContent() {
                 <button
                   onClick={() => handleTabChange('privacy')}
                   className={`pb-2 px-4 ${activeTab === 'privacy'
-                      ? 'border-b-2 border-secondary font-medium text-secondary'
+                      ? 'border-b-2 border-primary font-medium text-primary'
                       : 'text-muted-foreground hover:text-primary/80 transition-colors'
                     }`}
                 >
@@ -98,7 +80,65 @@ function LegalContent() {
             <Card>
               <CardContent className="p-8">
                 <div className="prose prose-sm max-w-none dark:prose-invert">
-                  {activeTab === 'terms' ? (
+                  {activeTab === 'imprint' ? (
+                    <div>
+                      <h2 className="text-2xl font-medium tracking-tight mb-4">
+                        Imprint
+                      </h2>
+                      <p className="text-sm text-muted-foreground mb-6">
+                        Information according to legal requirements
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Company Information
+                      </h3>
+                      <div className="text-muted-foreground mb-6 space-y-2">
+                        <p>
+                          <strong>Kortix AI Corp</strong>
+                        </p>
+                        <p>701 Tillery Street</p>
+                        <p>Unit 12-2521</p>
+                        <p>Austin, TX 78702</p>
+                        <p>United States</p>
+                      </div>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Contact
+                      </h3>
+                      <div className="text-muted-foreground mb-6">
+                        <p>
+                          Email:{' '}
+                          <a
+                            href="mailto:info@kortix.com"
+                            className="text-primary hover:underline"
+                          >
+                            info@kortix.com
+                          </a>
+                        </p>
+                      </div>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Responsible for Content
+                      </h3>
+                      <p className="text-muted-foreground mb-6">
+                        Kortix AI Corp is responsible for the content of this
+                        website in accordance with applicable laws.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Disclaimer
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        The information provided on this website is for general
+                        informational purposes only. While we strive to keep the
+                        information up to date and accurate, we make no
+                        representations or warranties of any kind, express or
+                        implied, about the completeness, accuracy, reliability,
+                        suitability, or availability of the information contained
+                        on the website.
+                      </p>
+                    </div>
+                  ) : activeTab === 'terms' ? (
                     <div>
                       <h2 className="text-2xl font-medium tracking-tight mb-4">
                         Terms of Service
@@ -320,7 +360,7 @@ function LegalContent() {
                           href="http://www.apache.org/licenses/LICENSE-2.0"
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-secondary hover:underline"
+                          className="text-primary hover:underline"
                         >
                           http://www.apache.org/licenses/LICENSE-2.0
                         </a>
@@ -354,7 +394,7 @@ function LegalContent() {
                         held by others. We respect rights holders internationally,
                         and we ask our users to do the same. If you believe your
                         copyright or trademark is being infringed by the Service,
-                        please write to legal@kortixai.com and we will process and
+                        please write to info@kortix.com and we will process and
                         investigate your request and take appropriate actions
                         under the Digital Millennium Copyright Act and other
                         applicable intellectual property laws with respect to any
@@ -370,7 +410,7 @@ function LegalContent() {
                         subscription, payable in U.S. dollars, that will
                         automatically renew. You can stop using the Service and
                         cancel your subscription at any time through the website
-                        or by emailing us at legal@kortixai.com. If you cancel
+                        or by emailing us at info@kortix.com. If you cancel
                         your subscription, you may not receive a refund or credit
                         for any amounts that have already been billed or paid. The
                         Company reserves the right to change its prices at any
@@ -648,10 +688,10 @@ function LegalContent() {
                         For questions regarding the Service, you can get in touch
                         by emailing us at{' '}
                         <a
-                          href="mailto:legal@kortixai.com"
-                          className="text-secondary hover:underline"
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
                         >
-                          legal@kortixai.com
+                          info@kortix.com
                         </a>
                         .
                       </p>
@@ -872,10 +912,10 @@ function LegalContent() {
                       <p className="text-muted-foreground text-balance">
                         You can get in touch by emailing us at{' '}
                         <a
-                          href="mailto:legal@kortixai.com"
-                          className="text-secondary hover:underline"
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
                         >
-                          legal@kortixai.com
+                          info@kortix.com
                         </a>
                         .
                       </p>
@@ -884,33 +924,6 @@ function LegalContent() {
                 </div>
               </CardContent>
             </Card>
-
-            <div className="mt-12 text-center pb-10">
-              <Link
-                href="/"
-                className="group inline-flex h-10 items-center justify-center gap-2 text-sm font-medium tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground px-6 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] bg-primary hover:bg-primary/90 transition-all duration-200 w-fit"
-              >
-                <span>Return to Home</span>
-                <span className="inline-flex items-center justify-center size-5 rounded-full bg-white/20 group-hover:bg-white/30 transition-colors duration-200">
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="text-white"
-                  >
-                    <path
-                      d="M7 17L17 7M17 7H8M17 7V16"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-              </Link>
-            </div>
           </div>
         </div>
       </section>

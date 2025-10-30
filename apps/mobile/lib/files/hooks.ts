@@ -65,6 +65,7 @@ export function useSandboxFiles(
     },
     enabled: !!sandboxId,
     staleTime: 0,
+    gcTime: 0, 
     ...options,
   });
 }

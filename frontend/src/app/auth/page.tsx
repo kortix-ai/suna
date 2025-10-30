@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import GoogleSignIn from '@/components/GoogleSignIn';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useState, useEffect, Suspense } from 'react';
@@ -44,6 +45,7 @@ function LoginContent() {
   const isSignUp = mode === 'signup';
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [mounted, setMounted] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const { wasLastMethod: wasEmailLastMethod, markAsUsed: markEmailAsUsed } = useAuthMethodTracking('email');
 
@@ -308,14 +310,51 @@ function LoginContent() {
                 required
               />
               {isSignUp && (
-                <Input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  placeholder="Confirm password"
-                  className=""
-                  required
-                />
+                <>
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    placeholder="Confirm password"
+                    className=""
+                    required
+                  />
+                  
+                  {/* GDPR Consent Checkbox */}
+                  <div className="flex items-center gap-3 my-4">
+                    <Checkbox
+                      id="gdprConsent"
+                      checked={acceptedTerms}
+                      onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
+                      required
+                    />
+                    <label 
+                      htmlFor="gdprConsent" 
+                      className="text-sm text-muted-foreground leading-none cursor-pointer select-none"
+                    >
+                      I accept the{' '}
+                      <a 
+                        href="https://www.kortix.com/legal?tab=privacy" 
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline underline-offset-2 transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Privacy Policy
+                      </a>
+                      {' '}and{' '}
+                      <a 
+                        href="https://www.kortix.com/legal?tab=terms"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline underline-offset-2 transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Terms of Service
+                      </a>
+                    </label>
+                  </div>
+                </>
               )}
               <div className="pt-2">
                 <div className="relative">
@@ -323,6 +362,7 @@ function LoginContent() {
                     formAction={isSignUp ? handleSignUp : handleSignIn}
                     className="w-full h-10"
                     pendingText={isSignUp ? "Creating account..." : "Signing in..."}
+                    disabled={isSignUp && !acceptedTerms}
                   >
                     {isSignUp ? 'Create account' : 'Sign in'}
                   </SubmitButton>

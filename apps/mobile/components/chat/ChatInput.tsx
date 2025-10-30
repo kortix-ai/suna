@@ -113,11 +113,11 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     },
   }), []);
   
-  // Pulsing animation for agent running state
+  // Subtle fade animation for agent running state
   React.useEffect(() => {
     if (isAgentRunning) {
       pulseOpacity.value = withRepeat(
-        withTiming(0.5, { duration: 1000 }),
+        withTiming(0.85, { duration: 1500 }),
         -1,
         true
       );
@@ -498,7 +498,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   disabled={isSendingMessage || isTranscribing}
                   className={`rounded-full items-center justify-center ${
                     isAgentRunning 
-                      ? 'bg-destructive' 
+                      ? 'bg-foreground' 
                       : 'bg-primary'
                   }`}
                   style={[{ width: 40, height: 40 }, sendAnimatedStyle]}
@@ -522,7 +522,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                             : AudioLines
                       } 
                       size={isAgentRunning ? 14 : 16} 
-                      className="text-primary-foreground"
+                      className={isAgentRunning ? "text-background" : "text-primary-foreground"}
                       strokeWidth={2}
                     />
                   )}

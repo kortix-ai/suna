@@ -48,6 +48,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [selectedModelId, setSelectedModelId] = React.useState<string | undefined>(undefined);
   const [hasInitialized, setHasInitialized] = React.useState(false);
   
+  // Track previous session state to detect auth changes
+  const prevSessionRef = React.useRef(session);
+  
   // API hooks - only fetch when user is authenticated
   const { data: agentsResponse, isLoading, error, refetch } = useAgents(
     {
@@ -61,6 +64,26 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   );
   
   const agents = agentsResponse?.agents || [];
+  
+  // Refetch agents when session changes (e.g., after signup or trial completion)
+  React.useEffect(() => {
+    const hadSession = !!prevSessionRef.current;
+    const hasSession = !!session;
+    
+    // If we just got a session (signup or login), refetch agents
+    if (!hadSession && hasSession) {
+      console.log('🔄 Session established, refetching agents...');
+      refetch();
+    }
+    
+    // If session user ID changed (switched accounts), refetch agents
+    if (hadSession && hasSession && prevSessionRef.current?.user?.id !== session?.user?.id) {
+      console.log('🔄 Session user changed, refetching agents...');
+      refetch();
+    }
+    
+    prevSessionRef.current = session;
+  }, [session, refetch]);
   
   // Log state changes for debugging
   React.useEffect(() => {
