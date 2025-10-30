@@ -17,6 +17,7 @@ import {
     KeyRound,
     X,
     User,
+    Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -187,6 +188,15 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [userEmail, setUserEmail] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [showCancelDialog, setShowCancelDialog] = useState(false);
+    const [deletionStatus, setDeletionStatus] = useState<{
+        has_pending_deletion: boolean;
+        deletion_scheduled_for: string | null;
+        requested_at: string | null;
+    } | null>(null);
+    const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
     const supabase = createClient();
 
     useEffect(() => {
@@ -200,7 +210,33 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             setIsLoading(false);
         };
 
+        const fetchDeletionStatus = async () => {
+            if (isLocalMode()) return;
+            
+            setIsCheckingStatus(true);
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session?.access_token) return;
+
+                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/account/deletion-status`, {
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                    },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    setDeletionStatus(data);
+                }
+            } catch (error) {
+                console.error('Error fetching deletion status:', error);
+            } finally {
+                setIsCheckingStatus(false);
+            }
+        };
+
         fetchUserData();
+        fetchDeletionStatus();
     }, []);
 
     const handleSave = async () => {
@@ -214,7 +250,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             toast.success('Profile updated successfully');
 
-            // Refresh the page to update the sidebar
             setTimeout(() => {
                 window.location.reload();
             }, 500);
@@ -224,6 +259,87 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleRequestDeletion = async () => {
+        setIsDeleting(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) {
+                toast.error('Not authenticated');
+                return;
+            }
+
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/account/request-deletion`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ reason: 'User requested deletion' }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to request account deletion');
+            }
+
+            const data = await response.json();
+            toast.success(data.message);
+            setShowDeleteDialog(false);
+            
+            setDeletionStatus({
+                has_pending_deletion: true,
+                deletion_scheduled_for: data.deletion_scheduled_for,
+                requested_at: new Date().toISOString(),
+            });
+        } catch (error) {
+            console.error('Error requesting deletion:', error);
+            toast.error('Failed to request account deletion');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const handleCancelDeletion = async () => {
+        setIsDeleting(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) {
+                toast.error('Not authenticated');
+                return;
+            }
+
+            const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/account/cancel-deletion`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to cancel account deletion');
+            }
+
+            const data = await response.json();
+            toast.success(data.message);
+            setShowCancelDialog(false);
+            
+            setDeletionStatus(null);
+        } catch (error) {
+            console.error('Error cancelling deletion:', error);
+            toast.error('Failed to cancel account deletion');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const formatDate = (dateString: string | null) => {
+        if (!dateString) return '';
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+        });
     };
 
     if (isLoading) {
@@ -287,6 +403,122 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     {isSaving ? 'Saving...' : 'Save Changes'}
                 </Button>
             </div>
+
+            {!isLocalMode() && (
+                <>
+                    <div className="pt-6 border-t border-border">
+                        <h3 className="text-lg font-semibold mb-1 text-destructive">Danger Zone</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Permanently delete your account and all associated data
+                        </p>
+
+                        {deletionStatus?.has_pending_deletion ? (
+                            <Alert variant="destructive" className="shadow-none">
+                                <AlertTriangle className="h-4 w-4" />
+                                <AlertDescription>
+                                    <div className="text-sm">
+                                        <strong>Account Deletion Scheduled</strong>
+                                        <p className="mt-1">
+                                            Your account and all data will be permanently deleted on{' '}
+                                            <strong>{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
+                                        </p>
+                                        <p className="mt-2 text-muted-foreground">
+                                            You can cancel this request anytime before the deletion date.
+                                        </p>
+                                    </div>
+                                </AlertDescription>
+                                <div className="mt-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setShowCancelDialog(true)}
+                                        disabled={isDeleting}
+                                    >
+                                        Cancel Deletion
+                                    </Button>
+                                </div>
+                            </Alert>
+                        ) : (
+                            <Button
+                                variant="destructive"
+                                onClick={() => setShowDeleteDialog(true)}
+                                className="w-full sm:w-auto"
+                            >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Account
+                            </Button>
+                        )}
+                    </div>
+
+                    <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Delete Account</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <Alert variant="destructive" className="shadow-none">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    <AlertDescription>
+                                        <strong>This action cannot be undone after 30 days</strong>
+                                    </AlertDescription>
+                                </Alert>
+                                <p className="text-sm text-muted-foreground">
+                                    When you delete your account:
+                                </p>
+                                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                                    <li>All your agents and agent versions will be deleted</li>
+                                    <li>All your threads and conversations will be deleted</li>
+                                    <li>All your credentials and integrations will be removed</li>
+                                    <li>Your subscription will be cancelled</li>
+                                    <li>All billing data will be removed</li>
+                                    <li>Your account will be scheduled for deletion in 30 days</li>
+                                </ul>
+                                <p className="text-sm text-muted-foreground">
+                                    You can cancel this request anytime within the 30-day grace period.
+                                    After 30 days, all your data will be permanently deleted and cannot be recovered.
+                                </p>
+                                <div className="flex gap-2 justify-end">
+                                    <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                                        Keep Account
+                                    </Button>
+                                    <Button 
+                                        variant="destructive" 
+                                        onClick={handleRequestDeletion} 
+                                        disabled={isDeleting}
+                                    >
+                                        {isDeleting ? 'Processing...' : 'Delete Account'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Cancel Account Deletion</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                                <p className="text-sm text-muted-foreground">
+                                    Are you sure you want to cancel the deletion of your account?
+                                    Your account and all data will be preserved.
+                                </p>
+                                <div className="flex gap-2 justify-end">
+                                    <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
+                                        Back
+                                    </Button>
+                                    <Button 
+                                        onClick={handleCancelDeletion} 
+                                        disabled={isDeleting}
+                                    >
+                                        {isDeleting ? 'Processing...' : 'Cancel Deletion'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                </>
+            )}
         </div>
     );
 }
