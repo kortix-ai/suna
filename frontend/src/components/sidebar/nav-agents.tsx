@@ -562,57 +562,46 @@ export function NavAgents() {
       {(state !== 'collapsed' || isMobile) && (
         <>
           {isMultiSelectMode ? (
-            <div className="px-2.5 py-3 mb-1 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
-                  onClick={exitMultiSelectMode}
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  Cancel
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {selectedThreads.size} selected
-                </span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
-                  onClick={selectedThreads.size === combinedThreads.length ? deselectAllThreads : selectAllThreads}
-                >
-                  {selectedThreads.size === combinedThreads.length ? (
-                    <>
-                      <X className="h-4 w-4 mr-1" />
-                      Deselect All
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4 mr-1" />
-                      Select All
-                    </>
-                  )}
-                </Button>
-                {selectedThreads.size > 0 && (
+            <div className="px-2.5 pt-5 mb-1 flex items-center justify-between gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="h-8 px-2 text-xs text-destructive hover:text-destructive"
-                    onClick={handleMultiDelete}
+                    className="h-8 px-3 text-xs"
+                    onClick={selectedThreads.size === combinedThreads.length ? deselectAllThreads : selectAllThreads}
                   >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete ({selectedThreads.size})
+                    {selectedThreads.size === combinedThreads.length ? 'Deselect All' : 'Select All'}
                   </Button>
-                )}
-              </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {selectedThreads.size === combinedThreads.length ? 'Deselect all conversations' : 'Select all conversations'}
+                </TooltipContent>
+              </Tooltip>
+
+              {selectedThreads.size > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 relative"
+                      onClick={handleMultiDelete}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="absolute bottom-1 right-1 h-3 w-3 rounded-full bg-primary text-primary-foreground text-[8px] font-medium flex items-center justify-center">
+                        {selectedThreads.size}
+                      </span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Delete {selectedThreads.size} conversation{selectedThreads.size > 1 ? 's' : ''}</TooltipContent>
+                </Tooltip>
+              )}
             </div>
           ) : (
-            <div className="px-2.5 py-3 mb-1 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="px-2.5 pt-5 mb-1 flex items-center justify-between text-xs text-muted-foreground">
               <span>Search</span>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 h-8">
                 <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
                 <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
               </div>
