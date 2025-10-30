@@ -24,6 +24,7 @@ class SandboxToolsBase(Tool):
         self._sandbox = None
         self._sandbox_id = None
         self._sandbox_pass = None
+        self._sandbox_url = None
 
     async def _ensure_sandbox(self) -> AsyncSandbox:
         """Ensure we have a valid sandbox instance, retrieving it from the project if needed.
@@ -91,11 +92,13 @@ class SandboxToolsBase(Tool):
                     # Store local metadata and ensure sandbox is ready
                     self._sandbox_id = sandbox_id
                     self._sandbox_pass = sandbox_pass
+                    self._sandbox_url = website_url
                     self._sandbox = await get_or_start_sandbox(self._sandbox_id)
                 else:
                     # Use existing sandbox metadata
                     self._sandbox_id = sandbox_info['id']
                     self._sandbox_pass = sandbox_info.get('pass')
+                    self._sandbox_url = sandbox_info.get('sandbox_url')
                     self._sandbox = await get_or_start_sandbox(self._sandbox_id)
 
             except Exception as e:
@@ -117,6 +120,13 @@ class SandboxToolsBase(Tool):
         if self._sandbox_id is None:
             raise RuntimeError("Sandbox ID not initialized. Call _ensure_sandbox() first.")
         return self._sandbox_id
+
+    @property
+    def sandbox_url(self) -> str:
+        """Get the sandbox URL, ensuring it exists."""
+        if self._sandbox_url is None:
+            raise RuntimeError("Sandbox URL not initialized. Call _ensure_sandbox() first.")
+        return self._sandbox_url
 
     def clean_path(self, path: str) -> str:
         """Clean and normalize a path to be relative to /workspace."""

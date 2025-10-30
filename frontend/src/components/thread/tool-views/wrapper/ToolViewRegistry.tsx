@@ -45,6 +45,7 @@ import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 // import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
 import { PresentPresentationToolView } from '../presentation-tools/PresentPresentationToolView';
+import { ExportToPptxToolView, ExportToPdfToolView } from '../presentation-tools/ExportToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
@@ -158,6 +159,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'validate-slide': PresentationViewer,
   // 'presentation-styles': PresentationStylesToolView,
   'present-presentation': PresentPresentationToolView,
+  'export-to-pptx': ExportToPptxToolView,
+  'export-to-pdf': ExportToPdfToolView,
 
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,

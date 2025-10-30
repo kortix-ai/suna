@@ -29,9 +29,10 @@ except ImportError:
 # Create router
 router = APIRouter(prefix="/presentation", tags=["pdf-conversion"])
 
-# Create output directory for generated PDFs
-output_dir = Path("generated_pdfs")
-output_dir.mkdir(exist_ok=True)
+# Create output directory for generated PDFs in workspace downloads
+workspace_dir = "/workspace"
+output_dir = Path(workspace_dir) / "downloads"
+output_dir.mkdir(parents=True, exist_ok=True)
 
 
 class ConvertRequest(BaseModel):
@@ -298,7 +299,8 @@ async def convert_presentation_to_pdf(request: ConvertRequest):
         
         print(f"✨ Conversion completed: {pdf_path}")
         
-        pdf_url = f"/downloads/{pdf_path.name}"
+        # Return workspace-relative path for file system access
+        pdf_url = f"/workspace/downloads/{pdf_path.name}"
         
         return ConvertResponse(
             success=True,

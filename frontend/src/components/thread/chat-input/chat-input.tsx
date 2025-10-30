@@ -195,7 +195,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [hasSubmitted, setHasSubmitted] = useState(false);
 
     const [registryDialogOpen, setRegistryDialogOpen] = useState(false);
     const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
@@ -391,12 +391,18 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
     }, [autoFocus]);
 
-    // Reset submitting state when agent starts running
+    // Clear input when agent starts running (stream connected)
     useEffect(() => {
-      if (isAgentRunning && isSubmitting) {
-        setIsSubmitting(false);
+      if (isAgentRunning) {
+        setLocalValue('');
+        setHasSubmitted(false);
+        
+        // Notify parent in controlled mode
+        if (isControlled && controlledOnChange) {
+          controlledOnChange('');
+        }
       }
-    }, [isAgentRunning, isSubmitting]);
+    }, [isAgentRunning, isControlled, controlledOnChange]);
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
       e.preventDefault();
@@ -413,8 +419,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         return;
       }
 
-      // Set optimistic submitting state to prevent flickering
-      setIsSubmitting(true);
+      // Mark as submitted to disable input immediately
+      setHasSubmitted(true);
 
       let message = value;
 
@@ -446,13 +452,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         model_name: baseModelName,
       });
 
-      // Clear local value after submit
-      setLocalValue('');
-
-      // Notify parent in controlled mode
-      if (isControlled && controlledOnChange) {
-        controlledOnChange('');
-      }
+      // TODO: Clear input after agent stream connects
+      // For now, keep the text visible until stream starts
 
       setUploadedFiles([]);
     }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, generateSlidesTemplateMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled, controlledOnChange]);
@@ -593,7 +594,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       <div className="flex flex-col gap-1 px-2">
         <Textarea
           ref={textareaRef}
-          value={isSubmitting ? '' : value}
+          value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
@@ -602,11 +603,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
             isDraggingOver ? 'opacity-40' : '',
           )}
-          disabled={loading || (disabled && !isAgentRunning)}
+          disabled={loading || (disabled && !isAgentRunning) || hasSubmitted}
           rows={1}
         />
       </div>
-    ), [value, handleChange, handleKeyDown, handlePaste, animatedPlaceholder, isDraggingOver, loading, disabled, isAgentRunning, isSubmitting]);
+    ), [value, handleChange, handleKeyDown, handlePaste, animatedPlaceholder, isDraggingOver, loading, disabled, isAgentRunning, hasSubmitted]);
 
     const renderControls = useMemo(() => (
       <div className="flex items-center justify-between mt-0 mb-1 px-2">
@@ -818,18 +819,17 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                     size="sm"
                     className={cn(
                       "w-8 h-8 flex-shrink-0 self-end rounded-xl relative z-10",
-                      // Override disabled opacity when loading/uploading/submitting to keep loader fully visible
-                      (loading || isUploading || isSubmitting) && "opacity-100 [&[disabled]]:opacity-100"
+                      // Override disabled opacity when loading/uploading to keep loader fully visible
+                      (loading || isUploading) && "opacity-100 [&[disabled]]:opacity-100"
                     )}
                     disabled={
                       (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
                       loading ||
                       (disabled && !isAgentRunning) ||
-                      isUploading ||
-                      isSubmitting
+                      isUploading
                     }
                   >
-                    {((loading || isUploading || isSubmitting) && !isAgentRunning) ? (
+                    {((loading || isUploading) && !isAgentRunning) ? (
                       <KortixLoader size="small" customSize={20} forceTheme="dark" />
                     ) : isAgentRunning ? (
                       <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
@@ -848,7 +848,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           </div>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, isSubmitting, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon]);
 
     return (
       <div className="mx-auto w-full max-w-4xl relative">
