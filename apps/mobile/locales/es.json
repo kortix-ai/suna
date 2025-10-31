@@ -72,6 +72,7 @@
   "chat": {
     "newChat": "Nuevo Chat",
     "placeholder": "Dale a Kortix una tarea...",
+    "inputPlaceholder": "Pídele a Kortix hacer cualquier cosa...",
     "recording": "Grabando...",
     "cancelRecording": "Cancelar grabación",
     "stopRecording": "Detener grabación",
@@ -111,6 +112,9 @@
     "data": "Data",
     "docs": "Docs",
     "people": "Gente",
+    "summarizePlaceholder": "¿Qué te gustaría resumir?",
+    "translatePlaceholder": "¿Qué te gustaría traducir?",
+    "explainPlaceholder": "¿Qué te gustaría que te explique?",
     "research": "Research",
     "chooseStyle": "Elige estilo de {{action}}",
     "imageStyles": {
@@ -231,7 +235,18 @@
     "photosPermissionMessage": "Activa el acceso a fotos en tus ajustes.",
     "failedToOpenCamera": "No se pudo abrir la cámara. Intenta de nuevo.",
     "failedToOpenImagePicker": "No se pudo abrir la galería. Intenta de nuevo.",
-    "failedToOpenFilePicker": "No se pudo abrir el selector de archivos. Intenta de nuevo."
+    "failedToOpenFilePicker": "No se pudo abrir el selector de archivos. Intenta de nuevo.",
+    "fileTooLarge": "El archivo excede el tamaño máximo permitido.",
+    "uploadFailed": "Error al subir archivos. Por favor intenta de nuevo."
+  },
+  "permissions": {
+    "cameraTitle": "Permiso de Cámara Necesario",
+    "cameraMessage": "Por favor activa el acceso a la cámara en tus ajustes para tomar fotos.",
+    "galleryTitle": "Permiso de Galería Necesario",
+    "galleryMessage": "Por favor activa el acceso a la galería en tus ajustes para elegir imágenes."
+  },
+  "audio": {
+    "transcriptionFailed": "Error al transcribir el audio. Por favor intenta de nuevo."
   },
   "billing": {
     "credits": "Créditos",

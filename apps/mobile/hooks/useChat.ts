@@ -164,6 +164,7 @@ export function useChat(): UseChatReturn {
                 m.content === message.content,
             );
             if (optimisticIndex !== -1) {
+              console.log('[STREAM] Replacing optimistic user message with real one');
               return prev.map((m, index) =>
                 index === optimisticIndex ? message : m,
               );
@@ -172,11 +173,8 @@ export function useChat(): UseChatReturn {
           return [...prev, message];
         }
       });
-
-      if (message.type === 'tool') {
-      }
     },
-    [setMessages],
+    [],
   );
 
   const handleStreamStatusChange = useCallback(
@@ -251,17 +249,41 @@ export function useChat(): UseChatReturn {
     
     prevThreadIdRef.current = activeThreadId;
 
-    if (messagesData && !isNewThreadOptimistic && !isStreaming) {
+    if (messagesData) {
       const unifiedMessages = messagesData as unknown as UnifiedMessage[];
       
-      setMessages(unifiedMessages);
+      const shouldReload = messages.length === 0 || messagesData.length > messages.length + 50;
       
-      console.log('🔄 [useChat] Loaded messages for thread:', {
-        messageCount: unifiedMessages.length,
-        currentThreadId: activeThreadId
-      });
+      if (shouldReload) {
+        setMessages((prev) => {
+          const serverIds = new Set(
+            unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[]
+          );
+          
+          const localExtras = (prev || []).filter(
+            (m) =>
+              !m.message_id ||
+              (typeof m.message_id === 'string' && m.message_id.startsWith('optimistic-')) ||
+              !serverIds.has(m.message_id as string),
+          );
+          
+          const merged = [...unifiedMessages, ...localExtras].sort((a, b) => {
+            const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return aTime - bTime;
+          });
+          
+          console.log('🔄 [useChat] Merged messages:', {
+            server: unifiedMessages.length,
+            local: localExtras.length,
+            total: merged.length,
+          });
+          
+          return merged;
+        });
+      }
     }
-  }, [activeThreadId, messagesData, isNewThreadOptimistic, isStreaming]);
+  }, [messagesData, messages.length, activeThreadId]);
 
   useEffect(() => {
     if (!agentRunId || agentRunId === lastStreamStartedRef.current) {
@@ -295,15 +317,12 @@ export function useChat(): UseChatReturn {
       lastStreamStartedRef.current = null;
       
       if (streamHookStatus === 'completed' && activeThreadId) {
-        console.log('[useChat] Streaming completed, clearing optimistic flag and refetching');
+        console.log('[useChat] Streaming completed, refetching in background');
         setIsNewThreadOptimistic(false);
         
-        setTimeout(() => {
-          queryClient.invalidateQueries({ 
-            queryKey: chatKeys.messages(activeThreadId),
-            refetchType: 'all',
-          });
-        }, 100);
+        queryClient.invalidateQueries({ 
+          queryKey: chatKeys.messages(activeThreadId),
+        });
       }
     }
   }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient]);

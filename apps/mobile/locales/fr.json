@@ -72,6 +72,7 @@
   "chat": {
     "newChat": "Nouveau Chat",
     "placeholder": "Donne une tâche à Kortix...",
+    "inputPlaceholder": "Demande à Kortix de faire n'importe quoi...",
     "recording": "Enregistrement...",
     "cancelRecording": "Annuler",
     "stopRecording": "Arrêter",
@@ -111,6 +112,9 @@
     "data": "Data",
     "docs": "Docs",
     "people": "Gens",
+    "summarizePlaceholder": "Que veux-tu résumer?",
+    "translatePlaceholder": "Que veux-tu traduire?",
+    "explainPlaceholder": "Que veux-tu que j'explique?",
     "research": "Research",
     "chooseStyle": "Choisis le style {{action}}",
     "imageStyles": {
@@ -231,7 +235,18 @@
     "photosPermissionMessage": "Active l'accès aux photos dans tes paramètres.",
     "failedToOpenCamera": "Impossible d'ouvrir la caméra. Réessaie.",
     "failedToOpenImagePicker": "Impossible d'ouvrir la galerie. Réessaie.",
-    "failedToOpenFilePicker": "Impossible d'ouvrir le sélecteur. Réessaie."
+    "failedToOpenFilePicker": "Impossible d'ouvrir le sélecteur. Réessaie.",
+    "fileTooLarge": "Le fichier dépasse la taille maximale autorisée.",
+    "uploadFailed": "Échec du téléchargement des fichiers. Veuillez réessayer."
+  },
+  "permissions": {
+    "cameraTitle": "Autorisation Caméra Requise",
+    "cameraMessage": "Veuillez activer l'accès à la caméra dans vos paramètres pour prendre des photos.",
+    "galleryTitle": "Autorisation Galerie Requise",
+    "galleryMessage": "Veuillez activer l'accès à la galerie dans vos paramètres pour choisir des images."
+  },
+  "audio": {
+    "transcriptionFailed": "Échec de la transcription audio. Veuillez réessayer."
   },
   "billing": {
     "credits": "Crédits",
