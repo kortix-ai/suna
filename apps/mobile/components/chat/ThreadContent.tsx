@@ -881,7 +881,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
             </View>
           </View>
       )}
-      <View className="h-48" />
+      <View className="h-4" />
     </View>
   );
 };

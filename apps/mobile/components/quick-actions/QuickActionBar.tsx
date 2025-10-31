@@ -3,7 +3,8 @@ import { ScrollView, View } from 'react-native';
 import { QuickActionCard } from './QuickActionCard';
 import { QuickActionExpandedView } from './QuickActionExpandedView';
 import { QUICK_ACTIONS } from './quickActions';
-import type { QuickAction } from '../shared/types';
+import { QuickAction } from '.';
+
 
 interface QuickActionBarProps {
   actions?: QuickAction[];
@@ -13,12 +14,7 @@ interface QuickActionBarProps {
   onSelectOption?: (optionId: string) => void;
 }
 
-/**
- * QuickActionBar Component
- * 
- * Horizontal scrollable bar of quick action cards.
- * Appears above the chat input for quick access to common actions.
- */
+
 export function QuickActionBar({ 
   actions = QUICK_ACTIONS,
   onActionPress,
@@ -26,7 +22,6 @@ export function QuickActionBar({
   selectedOptionId,
   onSelectOption 
 }: QuickActionBarProps) {
-  // Enhance actions with onPress handler
   const enhancedActions = React.useMemo(() => 
     actions.map(action => ({
       ...action,
@@ -36,29 +31,28 @@ export function QuickActionBar({
     [actions, onActionPress, selectedActionId]
   );
 
-  // Get selected action label
   const selectedAction = actions.find(a => a.id === selectedActionId);
 
-  // If an action is selected, show expanded view
   if (selectedActionId && selectedAction) {
     return (
-      <QuickActionExpandedView
-        actionId={selectedActionId}
-        actionLabel={selectedAction.label}
-        onBack={() => onActionPress?.(selectedActionId)} // Toggle off
-        onSelectOption={(optionId) => onSelectOption?.(optionId)}
-        selectedOptionId={selectedOptionId}
-      />
+      <View className="mb-2 py-2">
+        <QuickActionExpandedView
+          actionId={selectedActionId}
+          actionLabel={selectedAction.label}
+          onBack={() => onActionPress?.(selectedActionId)}
+          onSelectOption={(optionId) => onSelectOption?.(optionId)}
+          selectedOptionId={selectedOptionId}
+        />
+      </View>
     );
   }
 
-  // Otherwise show normal quick action bar
   return (
-    <View className="mb-3">
+    <View className="mb-4 py-2">
       <ScrollView 
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
         className="flex-row"
       >
         {enhancedActions.map((action) => (
