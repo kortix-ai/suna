@@ -787,13 +787,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                           const textBeforeTag = detectedTag && tagStartIndex >= 0 ? textToRender.substring(0, tagStartIndex) : textToRender;
 
                           if (!textToRender && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting')) {
-                            return (
-                              <View className="flex-row items-center gap-1 py-1">
-                                <View className="h-1 w-1 rounded-full bg-primary/40" />
-                                <View className="h-1 w-1 rounded-full bg-primary/40" />
-                                <View className="h-1 w-1 rounded-full bg-primary/40" />
-                              </View>
-                            );
+                            return <AgentLoader />;
                           }
 
                           return (
