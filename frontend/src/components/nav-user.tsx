@@ -8,6 +8,7 @@ import {
   LogOut,
   Sparkles,
 } from "lucide-react"
+import Link from "next/link"
 
 import {
   Avatar,
@@ -96,9 +97,11 @@ export function NavUser({
                 <CreditCard />
                 Billing
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Bell />
-                Notifications
+              <DropdownMenuItem asChild>
+                <Link href="/notifications" className="flex items-center gap-2">
+                  <Bell />
+                  Notifications
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

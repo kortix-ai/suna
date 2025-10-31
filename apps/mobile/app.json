@@ -37,6 +37,15 @@
     "plugins": [
       "expo-router",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/AppIcon-Light.png",
+          "color": "#ffffff",
+          "sounds": [],
+          "mode": "production"
+        }
+      ],
+      [
         "expo-audio",
         {
           "microphonePermission": "Allow $(PRODUCT_NAME) to record audio for transcription."

@@ -22,7 +22,8 @@ import {
   ChevronRight,
   Zap,
   FlaskConical,
-  Trash2
+  Trash2,
+  Bell
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -127,6 +128,13 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     console.log('🎯 App Language pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsLanguagePageVisible(true);
+  };
+
+  const handleNotifications = () => {
+    console.log('🔔 Notifications pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/notifications');
+    onClose();
   };
   
   const handleBeta = () => {
@@ -238,6 +246,12 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               icon={Globe}
               label={t('settings.language')}
               onPress={handleLanguage}
+            />
+            
+            <SettingsItem
+              icon={Bell}
+              label="Notifications"
+              onPress={handleNotifications}
             />
             
             <SettingsItem

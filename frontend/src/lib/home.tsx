@@ -65,10 +65,10 @@ export const siteConfig = {
   keywords: ['AI Worker', 'Generalist AI', 'Open Source AI', 'Autonomous Agent'],
   links: {
     email: 'support@kortix.ai',
-    twitter: 'https://x.com/kortixai',
-    // discord: 'https://discord.gg/kortixai',
+    twitter: 'https://x.com/kortix',
+    // discord: 'https://discord.gg/kortix',
     github: 'https://github.com/Kortix-ai/Suna',
-    instagram: 'https://instagram.com/kortixai',
+    instagram: 'https://instagram.com/kortix',
   },
   nav: {
     links: [

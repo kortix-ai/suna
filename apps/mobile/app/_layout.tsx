@@ -4,6 +4,7 @@ import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
 import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, useAuthContext } from '@/contexts';
+import { PushNotificationSetup } from '@/components/PushNotificationSetup';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
@@ -115,6 +116,7 @@ export default function RootLayout() {
                     <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                       <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
                       <AuthProtection>
+                        <PushNotificationSetup />
                         <Stack 
                           screenOptions={{ 
                             headerShown: false,
@@ -126,6 +128,7 @@ export default function RootLayout() {
                           <Stack.Screen name="home" />
                           <Stack.Screen name="auth" />
                           <Stack.Screen name="trigger-detail" />
+                          <Stack.Screen name="notifications" />
                           <Stack.Screen 
                             name="tool-modal" 
                             options={{ 
