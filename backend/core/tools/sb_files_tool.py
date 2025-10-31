@@ -9,6 +9,7 @@ import json
 import litellm
 import openai
 import asyncio
+import re
 from typing import Optional
 
 @tool_metadata(
@@ -267,6 +268,40 @@ class SandboxFilesTool(SandboxToolsBase):
                     message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
                 except Exception as e:
                     logger.warning(f"Failed to get website URL for index.html: {str(e)}")
+            
+            # Auto-validate presentation slides
+            slide_pattern = r'^presentations/([^/]+)/slide_(\d+)\.html$'
+            slide_match = re.match(slide_pattern, file_path)
+            if slide_match:
+                presentation_name = slide_match.group(1)
+                slide_number = int(slide_match.group(2))
+                
+                try:
+                    # Import and instantiate the presentation tool to access validate_slide
+                    from core.tools.sb_presentation_tool import SandboxPresentationTool
+                    presentation_tool = SandboxPresentationTool(self.project_id, self.thread_manager)
+                    
+                    # Call validate_slide
+                    validation_result = await presentation_tool.validate_slide(presentation_name, slide_number)
+                    
+                    # Append validation message to response
+                    if validation_result.success and validation_result.output:
+                        # output can be a dict or string
+                        if isinstance(validation_result.output, dict):
+                            validation_message = validation_result.output.get("message", "")
+                            if validation_message:
+                                message += f"\n\n{validation_message}"
+                        elif isinstance(validation_result.output, str):
+                            message += f"\n\n{validation_result.output}"
+                    elif not validation_result.success:
+                        # If validation failed to run, append a warning but don't fail the rewrite
+                        logger.warning(f"Slide validation failed to execute: {validation_result.output}")
+                        message += f"\n\n⚠️ Note: Slide validation could not be completed."
+                        
+                except Exception as e:
+                    # Log the error but don't fail the file rewrite
+                    logger.warning(f"Failed to auto-validate slide: {str(e)}")
+                    message += f"\n\n⚠️ Note: Slide validation could not be completed."
             
             return self.success_response(message)
         except Exception as e:

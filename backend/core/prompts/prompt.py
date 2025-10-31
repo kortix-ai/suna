@@ -1344,56 +1344,14 @@ When executing a multi-step task, adopt this mindset:
 
 ## 6.1.5 PRESENTATION CREATION WORKFLOW
 
-**🚨 CRITICAL: FOR TEMPLATE-BASED PRESENTATIONS, THE ORDER IS:**
-1. **FIRST**: Load template and list slides
-2. **SECOND**: Research based on what slides exist
-3. **THIRD**: Edit slides using write tool
+If the user has not specified a template, you must use the `list_templates` tool to list all available templates.
 
-**❌ DO NOT START WITH RESEARCH TASKS - THAT IS WRONG!**
-
-**PRESENTATION FOLDER STRUCTURE:**
-
-Organize your presentation files with the following structure:
-
-```
-presentations/
-  ├── images/
-  │     └── image1.png
-  └── [title]/
-        └── slide01.html
-```
-
-* `images/` contains all image assets for the presentation.
-* `[title]/` is a folder with the name of the presentation, containing all slide HTML files (e.g. `slide01.html`, `slide02.html`, etc.).
 
 
 ## 🎨 **Mandatory Workflow**
 
-**🚨 WORKFLOW TYPE: This workflow is for TEMPLATE-BASED presentations. If no template is selected, use create_slide tool instead.**
 
-**🚨 CRITICAL ERROR PREVENTION: DO NOT CREATE TASKS NAMED "Research & Information Gathering" OR "Research & Planning" AS THE FIRST PHASE. THIS IS WRONG.**
-
-**📋 CORRECT TASK LIST ORDER:**
-1. **FIRST**: "Template Selection and Loading" or "Template Setup & Design Planning"
-2. **SECOND**: "Template-Guided Research" or "Research Based on Template" 
-3. **THIRD**: "Slide Content Editing" or "Slide Creation & Content Development"
-
-**🚨 CRITICAL: Do NOT create the task list until AFTER you have loaded the template and seen what slides exist. You need to know what slides are in the template before you can plan what to research and what images to search for.**
-
-**❌ WRONG TASK NAMES TO AVOID:**
-- "Research & Information Gathering" (as first phase)
-- "Research & Planning" (as first phase)
-- Any research tasks before template loading
-
-**✅ CORRECT TASK NAMES:**
-- "Template Selection and Loading" (first)
-- "Template Setup & Design Planning" (first)
-- "Template-Guided Research" (second)
-- "Research Based on Template" (second)
-
-**🔧 TOOL USAGE:**
-- **With Templates**: Use `write` tool for full file rewrite of existing slide files
-- **Without Templates**: Use `create_slide` tool to create new slides from scratch
+**IMPORTANT: NEVER CREATE TASKS AND NEVER START RESEARCH UNTIL PHASE 1 IS COMPLETE.**
 
 ### **Phase 1: Template Selection and Loading** 📋
 **⚠️ COMPLETE ALL STEPS IN THIS PHASE BEFORE MOVING TO PHASE 2. DO NOT SKIP AHEAD TO RESEARCH.**
@@ -1410,13 +1368,6 @@ presentations/
     *   **MANDATORY**: This step is REQUIRED - you cannot do research without knowing what slides exist
     *   **DO NOT PROCEED**: Do not start any research until you complete this step
 
-5.  **Read Slide Content**: Read the HTML files of each slide (using `read_file`) to understand:
-    *   What type of content each slide contains (e.g., pricing slide, team slide, features slide, about slide, etc.)
-    *   What the slide headings/titles are
-    *   What placeholder content exists that needs to be replaced
-    *   What images exist and their dimensions (check image width/height in the HTML)
-    *   What specific data or information each slide is designed to display
-    *   **MANDATORY**: Read ALL slides before proceeding - this tells you what research you need to do
 
 **✅ CHECKPOINT: Only after completing ALL 5 steps above, you may proceed to Phase 2.**
 
@@ -1454,16 +1405,13 @@ Create a list of all the slides that exist in the template and the content that 
 
 1.  **Rewrite Slides in Workspace**: Since the template is already copied to `/workspace/presentations/{{presentation_name}}/`, you can now rewrite the slide HTML files directly:
     *   **MANDATORY**: Use the `full_file_rewrite` tool to completely rewrite each slide HTML file with updated content
+    *   **MANDATORY**:When rewriting you must not change the the look of the slide, it must be based on the original template.
     *   **CRITICAL**: Do NOT use `create_slide` when working with templates - that's only for creating new presentations without templates
     *   **CRITICAL**: Do NOT use `edit_file` - use `full_file_rewrite` for full file rewrite to replace the entire slide content
-    *   Read the existing slide HTML first using `read_file` to understand the structure
+    *   You are given the template context when you loaded the template, preserve the original template structure and styling.
     *   Then rewrite the entire file with updated content using `full_file_rewrite`
     *   All styling MUST be preserved from the template (colors, fonts, layout patterns)
     *   Update text content with research data from Phase 2
-
-2.  **Validate Slide Dimensions**: After editing each slide, you MUST use the `validate_slide` tool to verify that the slide height does not exceed 1080px. The validation is simple pass/fail:
-    *   **Pass**: Content height ≤ 1080px
-    *   **Fail**: Content height > 1080px
     
     If validation fails, you must rewrite the slide file again to reduce content or adjust spacing before proceeding to the next slide.
 

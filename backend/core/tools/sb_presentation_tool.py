@@ -1,6 +1,7 @@
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
+from core.utils.logger import logger
 from typing import List, Dict, Optional, Union
 import json
 import os
@@ -238,7 +239,7 @@ class SandboxPresentationTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "list_templates",
-            "description": "List all available presentation template names with their metadata and preview images. Use this to see what template styles are available, then use load_template_design to get the full design reference for a specific template.",
+            "description": "**MANDATORY FIRST STEP**: When a user requests a presentation (e.g., 'make a ppt on X', 'create a presentation about Y'), you MUST call this tool FIRST to list all available presentation templates with their preview images and metadata. ONLY skip this if the user explicitly specifies a template name (e.g., 'template hipster', 'use minimalist template'). Users may not know templates exist, so always show them their options first. After they select a template, use load_template_design to load it.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -562,7 +563,7 @@ class SandboxPresentationTool(SandboxToolsBase):
             # Save updated metadata
             await self._save_presentation_metadata(presentation_path, metadata)
             
-            return self.success_response({
+            response_data = {
                 "message": f"Slide {slide_number} '{slide_title}' created/updated successfully",
                 "presentation_name": presentation_name,
                 "presentation_path": f"{self.presentations_dir}/{safe_name}",
@@ -572,7 +573,36 @@ class SandboxPresentationTool(SandboxToolsBase):
                 "preview_url": f"/workspace/{self.presentations_dir}/{safe_name}/{slide_filename}",
                 "total_slides": len(metadata["slides"]),
                 "note": "Professional slide created with custom styling - designed for 1920x1080 resolution"
-            })
+            }
+            
+            # Auto-validate slide dimensions
+            try:
+                validation_result = await self.validate_slide(presentation_name, slide_number)
+                
+                # Append validation message to response
+                if validation_result.success and validation_result.output:
+                    # output can be a dict or string
+                    if isinstance(validation_result.output, dict):
+                        validation_message = validation_result.output.get("message", "")
+                        if validation_message:
+                            response_data["message"] += f"\n\n{validation_message}"
+                            response_data["validation"] = {
+                                "passed": validation_result.output.get("validation_passed", False),
+                                "content_height": validation_result.output.get("actual_content_height", 0)
+                            }
+                    elif isinstance(validation_result.output, str):
+                        response_data["message"] += f"\n\n{validation_result.output}"
+                elif not validation_result.success:
+                    # If validation failed to run, append a warning
+                    logger.warning(f"Slide validation failed to execute: {validation_result.output}")
+                    response_data["message"] += f"\n\n⚠️ Note: Slide validation could not be completed."
+                    
+            except Exception as e:
+                # Log the error but don't fail the slide creation
+                logger.warning(f"Failed to auto-validate slide: {str(e)}")
+                response_data["message"] += f"\n\n⚠️ Note: Slide validation could not be completed."
+            
+            return self.success_response(response_data)
             
         except Exception as e:
             return self.fail_response(f"Failed to create slide: {str(e)}")
