@@ -27,6 +27,7 @@
 services:
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
@@ -45,6 +46,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
@@ -67,6 +69,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    restart: unless-stopped
     volumes:
       - ./backend/.env:/app/.env:ro
     environment:
@@ -85,6 +88,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    restart: unless-stopped
     depends_on:
       - backend
 

@@ -7,6 +7,8 @@ export type ModelProvider =
   | 'openai'
   | 'anthropic'
   | 'google'
+  | 'groq'
+  | 'deepseek'
   | 'xai'
   | 'moonshotai'
   | 'bedrock'
@@ -25,6 +27,12 @@ export function getModelProvider(modelId: string): ModelProvider {
   if (modelId.includes('google') || modelId.includes('gemini')) {
     return 'google';
   }
+  if (modelId.includes('groq')) {
+    return 'groq';
+  }
+  if (modelId.includes('deepseek')) {
+    return 'deepseek';
+  }
   if (modelId.includes('xai') || modelId.includes('grok')) {
     return 'xai';
   }
@@ -42,7 +50,19 @@ export function getModelProvider(modelId: string): ModelProvider {
   const parts = modelId.split('/');
   if (parts.length > 1) {
     const provider = parts[0].toLowerCase();
-    if (['openai', 'anthropic', 'google', 'xai', 'moonshotai', 'bedrock', 'openrouter'].includes(provider)) {
+    if (
+      [
+        'openai',
+        'anthropic',
+        'google',
+        'groq',
+        'deepseek',
+        'xai',
+        'moonshotai',
+        'bedrock',
+        'openrouter'
+      ].includes(provider)
+    ) {
       return provider as ModelProvider;
     }
   }
@@ -72,6 +92,8 @@ export function ModelProviderIcon({
     anthropic: '/images/models/Anthropic.svg',
     openai: '/images/models/OAI.svg',
     google: '/images/models/Gemini.svg',
+    groq: '/images/models/Groq.svg',
+    deepseek: '/images/models/DeepSeek.svg',
     xai: '/images/models/Grok.svg',
     moonshotai: '/images/models/Moonshot.svg',
     bedrock: '/images/models/Anthropic.svg', // Bedrock uses Anthropic models primarily
@@ -129,6 +151,8 @@ export function getModelProviderName(modelId: string): string {
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     google: 'Google',
+    groq: 'Groq',
+    deepseek: 'DeepSeek',
     xai: 'xAI',
     moonshotai: 'Moonshot AI',
     bedrock: 'AWS Bedrock',

@@ -7,6 +7,8 @@ class ModelProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     BEDROCK = "bedrock"
+    GROQ = "groq"
+    DEEPSEEK = "deepseek"
     OPENROUTER = "openrouter"
     GOOGLE = "google"
     XAI = "xai"

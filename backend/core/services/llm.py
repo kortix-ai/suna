@@ -49,6 +49,7 @@ def setup_api_keys() -> None:
         "XAI",
         "MORPH",
         "GEMINI",
+        "DEEPSEEK",
         "OPENAI_COMPATIBLE",
     ]
     
@@ -56,18 +57,24 @@ def setup_api_keys() -> None:
         try:
             key = getattr(config, f"{provider}_API_KEY", None)
             if key:
-                # logger.debug(f"API key set for provider: {provider}")
-                pass
+                os.environ[f"{provider}_API_KEY"] = key
+                logger.debug(f"Loaded API key for provider: {provider}")
             else:
                 logger.debug(f"No API key found for provider: {provider} (this is normal if not using this provider)")
         except AttributeError as e:
             logger.debug(f"Could not access {provider}_API_KEY: {e}")
 
-    # Set up OpenRouter API base if not already set
-    if hasattr(config, 'OPENROUTER_API_KEY') and hasattr(config, 'OPENROUTER_API_BASE'):
-        if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
-            os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
-            # logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
+    base_settings = {
+        "OPENROUTER_API_BASE": getattr(config, 'OPENROUTER_API_BASE', None),
+        "OPENAI_COMPATIBLE_API_BASE": getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None),
+        "GROQ_API_BASE": getattr(config, 'GROQ_API_BASE', None),
+        "DEEPSEEK_API_BASE": getattr(config, 'DEEPSEEK_API_BASE', None),
+        "GEMINI_API_BASE": getattr(config, 'GEMINI_API_BASE', None),
+    }
+
+    for env_key, value in base_settings.items():
+        if value:
+            os.environ[env_key] = value
 
     # Set up AWS Bedrock bearer token authentication
     if hasattr(config, 'AWS_BEARER_TOKEN_BEDROCK'):
@@ -78,66 +85,219 @@ def setup_api_keys() -> None:
         else:
             logger.debug("AWS_BEARER_TOKEN_BEDROCK not configured - Bedrock models will not be available")
 
+    aws_keys = {
+        "AWS_ACCESS_KEY_ID": getattr(config, 'AWS_ACCESS_KEY_ID', None),
+        "AWS_SECRET_ACCESS_KEY": getattr(config, 'AWS_SECRET_ACCESS_KEY', None),
+        "AWS_REGION_NAME": getattr(config, 'AWS_REGION_NAME', None),
+    }
+
+    for env_key, value in aws_keys.items():
+        if value:
+            os.environ[env_key] = value
+
+
+def _build_router_model_list(
+    config_obj,
+    openai_compatible_api_key: Optional[str] = None,
+    openai_compatible_api_base: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Build the LiteLLM router model list based on configured providers."""
+
+    model_list: List[Dict[str, Any]] = []
+
+    def _add_entry(pattern: str, params: Dict[str, Any]) -> None:
+        cleaned = {k: v for k, v in params.items() if v is not None}
+        if not cleaned:
+            return
+        model_list.append({
+            "model_name": pattern,
+            "litellm_params": cleaned,
+        })
+
+    openai_key = getattr(config_obj, "OPENAI_API_KEY", None)
+    if openai_key:
+        _add_entry("openai/*", {"model": "openai/*", "api_key": openai_key})
+
+    anthropic_key = getattr(config_obj, "ANTHROPIC_API_KEY", None)
+    if anthropic_key:
+        _add_entry("anthropic/*", {"model": "anthropic/*", "api_key": anthropic_key})
+
+    gemini_key = getattr(config_obj, "GEMINI_API_KEY", None)
+    if gemini_key:
+        _add_entry(
+            "google/*",
+            {
+                "model": "google/*",
+                "api_key": gemini_key,
+                "api_base": getattr(config_obj, "GEMINI_API_BASE", None),
+            },
+        )
+
+    groq_key = getattr(config_obj, "GROQ_API_KEY", None)
+    if groq_key:
+        _add_entry(
+            "groq/*",
+            {
+                "model": "groq/*",
+                "api_key": groq_key,
+                "api_base": getattr(config_obj, "GROQ_API_BASE", None),
+            },
+        )
+
+    deepseek_key = getattr(config_obj, "DEEPSEEK_API_KEY", None)
+    if deepseek_key:
+        _add_entry(
+            "deepseek/*",
+            {
+                "model": "deepseek/*",
+                "api_key": deepseek_key,
+                "api_base": getattr(config_obj, "DEEPSEEK_API_BASE", None),
+            },
+        )
+
+    openrouter_key = getattr(config_obj, "OPENROUTER_API_KEY", None)
+    if openrouter_key:
+        _add_entry(
+            "openrouter/*",
+            {
+                "model": "openrouter/*",
+                "api_key": openrouter_key,
+                "api_base": getattr(config_obj, "OPENROUTER_API_BASE", None),
+            },
+        )
+
+    if openai_compatible_api_key and openai_compatible_api_base:
+        _add_entry(
+            "openai-compatible/*",
+            {
+                "model": "openai/*",
+                "api_key": openai_compatible_api_key,
+                "api_base": openai_compatible_api_base,
+            },
+        )
+
+    bedrock_params: Dict[str, Any] = {"model": "bedrock/*"}
+    bearer = getattr(config_obj, "AWS_BEARER_TOKEN_BEDROCK", None)
+    if bearer:
+        bedrock_params["aws_bearer_token"] = bearer
+
+    aws_access_key = getattr(config_obj, "AWS_ACCESS_KEY_ID", None)
+    aws_secret = getattr(config_obj, "AWS_SECRET_ACCESS_KEY", None)
+    aws_region = getattr(config_obj, "AWS_REGION_NAME", None)
+
+    if aws_access_key and aws_secret and aws_region:
+        bedrock_params.update(
+            {
+                "aws_access_key_id": aws_access_key,
+                "aws_secret_access_key": aws_secret,
+                "aws_region_name": aws_region,
+            }
+        )
+
+    if len(bedrock_params) > 1:
+        _add_entry("bedrock/*", bedrock_params)
+
+    _add_entry("*", {"model": "*"})
+
+    return model_list
+
+
+def _bedrock_configured(config_obj) -> bool:
+    if not config_obj:
+        return False
+
+    if getattr(config_obj, "AWS_BEARER_TOKEN_BEDROCK", None):
+        return True
+
+    return all(
+        getattr(config_obj, attr, None)
+        for attr in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION_NAME")
+    )
+
+
+def _build_router_fallbacks(config_obj) -> List[Dict[str, List[str]]]:
+    """Construct LiteLLM router fallbacks based on available providers."""
+
+    if _bedrock_configured(config_obj):
+        return [
+            {
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48": [
+                    "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+                    "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
+                    "anthropic/claude-haiku-4-5-20251001",
+                    "anthropic/claude-sonnet-4-20250514",
+                ]
+            },
+            {
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh": [
+                    "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+                    "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
+                    "anthropic/claude-sonnet-4-5-20250929",
+                    "anthropic/claude-sonnet-4-20250514",
+                ]
+            },
+            {
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf": [
+                    "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
+                    "anthropic/claude-sonnet-4-20250514",
+                ]
+            },
+        ]
+
+    # Bedrock credentials are absent; fall back to any available first-choice provider.
+    try:
+        from core.ai_models import model_manager, ModelProvider
+    except Exception:  # pragma: no cover - safeguard against circular import during boot
+        return []
+
+    preferred_order = [
+        ModelProvider.OPENAI,
+        ModelProvider.ANTHROPIC,
+        ModelProvider.GOOGLE,
+        ModelProvider.GROQ,
+        ModelProvider.DEEPSEEK,
+        ModelProvider.OPENROUTER,
+    ]
+
+    available_defaults: List[str] = []
+
+    for provider in preferred_order:
+        models = model_manager.registry.get_by_provider(provider, enabled_only=True)
+        if models:
+            available_defaults.append(models[0].id)
+
+    if len(available_defaults) <= 1:
+        return []
+
+    return [{available_defaults[0]: available_defaults[1:]}]
+
+
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
     global provider_router
-    
+
     # Get config values safely
     config_openai_key = getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None) if config else None
     config_openai_base = getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None) if config else None
-    
-    model_list = [
-        {
-            "model_name": "openai-compatible/*", # support OpenAI-Compatible LLM provider
-            "litellm_params": {
-                "model": "openai/*",
-                "api_key": openai_compatible_api_key or config_openai_key,
-                "api_base": openai_compatible_api_base or config_openai_base,
-            },
-        },
-        {
-            "model_name": "*", # supported LLM provider by LiteLLM
-            "litellm_params": {
-                "model": "*",
-            },
-        },
-    ]
-    
-    # Configure fallbacks: MAP-tagged Bedrock app inference profiles (global routing, 14B tokens/day)
-    fallbacks = [
-        # MAP-tagged Haiku 4.5 (default) -> Sonnet 4 -> Sonnet 4.5 -> Anthropic fallbacks
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
-                "anthropic/claude-haiku-4-5-20251001",
-                "anthropic/claude-sonnet-4-20250514"
-            ]
-        },
-        # MAP-tagged Sonnet 4.5 -> Sonnet 4 -> Haiku 4.5 -> Anthropic fallbacks
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
-                "anthropic/claude-sonnet-4-5-20250929",
-                "anthropic/claude-sonnet-4-20250514"
-            ]
-        },
-        # MAP-tagged Sonnet 4 -> Haiku 4.5 -> Anthropic fallbacks
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
-                "anthropic/claude-sonnet-4-20250514"
-            ]
-        }
-    ]
-    
+
+    model_list = _build_router_model_list(
+        config,
+        openai_compatible_api_key=openai_compatible_api_key or config_openai_key,
+        openai_compatible_api_base=openai_compatible_api_base or config_openai_base,
+    )
+
+    fallbacks = _build_router_fallbacks(config)
+
     provider_router = Router(
         model_list=model_list,
         retry_after=15,
         fallbacks=fallbacks,
     )
-    
-    logger.info(f"Configured LiteLLM Router with {len(fallbacks)} Bedrock-only fallback rules")
+
+    logger.info(
+        "Configured LiteLLM Router with %d provider patterns and %d fallback groups",
+        len(model_list),
+        len(fallbacks),
+    )
 
 def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider setup."""
@@ -226,6 +386,12 @@ async def make_llm_api_call(
     _configure_openai_compatible(params, model_name, api_key, api_base)
     _add_tools_config(params, tools, tool_choice)
     
+    if provider_router is None:
+        setup_provider_router(api_key, api_base)
+
+    if provider_router is None:
+        raise LLMError("LLM provider router is not configured")
+
     try:
         # Log the complete parameters being sent to LiteLLM
         # logger.debug(f"Calling LiteLLM acompletion for {resolved_model_name}")

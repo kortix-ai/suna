@@ -298,10 +298,14 @@ class Configuration:
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
+    DEEPSEEK_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
     XAI_API_KEY: Optional[str] = None
     MORPH_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    GROQ_API_BASE: Optional[str] = "https://api.groq.com/openai/v1"
+    DEEPSEEK_API_BASE: Optional[str] = "https://api.deepseek.com"
+    GEMINI_API_BASE: Optional[str] = "https://generativelanguage.googleapis.com"
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
     OPENAI_COMPATIBLE_API_KEY: Optional[str] = None
     OPENAI_COMPATIBLE_API_BASE: Optional[str] = None
@@ -312,6 +316,9 @@ class Configuration:
     FRONTEND_URL_ENV: Optional[str] = None
     
     # AWS Bedrock authentication
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION_NAME: Optional[str] = None
     AWS_BEARER_TOKEN_BEDROCK: Optional[str] = None
     
     # Supabase configuration
