@@ -293,8 +293,20 @@ export function useChat(): UseChatReturn {
     ) {
       setAgentRunId(null);
       lastStreamStartedRef.current = null;
+      
+      if (streamHookStatus === 'completed' && activeThreadId) {
+        console.log('[useChat] Streaming completed, clearing optimistic flag and refetching');
+        setIsNewThreadOptimistic(false);
+        
+        setTimeout(() => {
+          queryClient.invalidateQueries({ 
+            queryKey: chatKeys.messages(activeThreadId),
+            refetchType: 'all',
+          });
+        }, 100);
+      }
     }
-  }, [streamHookStatus, setAgentRunId]);
+  }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient]);
 
   const refreshMessages = useCallback(async () => {
     if (!activeThreadId || isStreaming) {
