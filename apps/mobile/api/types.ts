@@ -23,7 +23,7 @@ export interface Message {
 export interface UnifiedMessage {
   message_id: string | null; // null for transient stream chunks
   thread_id: string;
-  type: 'user' | 'assistant' | 'tool' | 'system' | 'status' | 'browser_state' | 'image_context';
+  type: 'user' | 'assistant' | 'tool' | 'system' | 'status' | 'browser_state' | 'image_context' | 'llm_response_end' | 'llm_response_start';
   is_llm_message: boolean;
   content: string; // JSON string from backend
   metadata: string; // JSON string from backend
