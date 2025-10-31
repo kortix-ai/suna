@@ -18,6 +18,7 @@ import {
   FileBarChart,
   X,
   Eye,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -1113,6 +1114,8 @@ export function SunaModesPanel({
   // State for PDF preview modal
   const [selectedTemplate, setSelectedTemplate] = useState<{id: string, name: string} | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const [preloadedTemplates, setPreloadedTemplates] = useState<Set<string>>(new Set());
   
   // State for multi-select charts (use controlled state if provided)
   const [uncontrolledSelectedCharts, setUncontrolledSelectedCharts] = useState<string[]>([]);
@@ -1176,9 +1179,26 @@ export function SunaModesPanel({
     setSelectedTemplateId(templateId);
   };
 
+  // Handler to preload PDF on hover
+  const handlePreloadPdf = (templateId: string) => {
+    // Only preload if not already preloaded
+    if (preloadedTemplates.has(templateId)) return;
+
+    // Create a prefetch link
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = getPdfUrl(templateId);
+    link.as = 'document';
+    document.head.appendChild(link);
+
+    // Track this template as preloaded
+    setPreloadedTemplates(prev => new Set(prev).add(templateId));
+  };
+
   // Handler for PDF preview
   const handlePdfPreview = (templateId: string, templateName: string) => {
     setSelectedTemplate({id: templateId, name: templateName});
+    setIsPdfLoading(true);
     setIsPdfModalOpen(true);
   };
 
@@ -1366,6 +1386,7 @@ export function SunaModesPanel({
                         variant="secondary"
                         size="sm"
                         className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 hover:bg-white dark:bg-zinc-800/90 dark:hover:bg-zinc-800 shadow-md"
+                        onMouseEnter={() => handlePreloadPdf(item.id)}
                         onClick={(e) => {
                           e.stopPropagation();
                           handlePdfPreview(item.id, item.name);
@@ -1578,11 +1599,23 @@ export function SunaModesPanel({
           </DialogHeader>
           <div className="p-6 pt-0">
             {selectedTemplate && (
-              <iframe
-                src={getPdfUrl(selectedTemplate.id)}
-                className="w-full h-[70vh] border rounded-lg"
-                title={`${selectedTemplate.name} template preview`}
-              />
+              <div className="relative">
+                {/* Loading overlay */}
+                {isPdfLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-lg z-10">
+                    <div className="flex flex-col items-center gap-3">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <p className="text-sm text-muted-foreground">Loading preview...</p>
+                    </div>
+                  </div>
+                )}
+                <iframe
+                  src={getPdfUrl(selectedTemplate.id)}
+                  className="w-full h-[70vh] border rounded-lg"
+                  title={`${selectedTemplate.name} template preview`}
+                  onLoad={() => setIsPdfLoading(false)}
+                />
+              </div>
             )}
           </div>
         </DialogContent>
