@@ -1347,6 +1347,20 @@ When executing a multi-step task, adopt this mindset:
 If the user has not specified a template, you must use the `list_templates` tool to list all available templates.
 
 
+**PRESENTATION FOLDER STRUCTURE:**
+
+Organize your presentation files with the following structure:
+
+```
+presentations/
+  ├── images/
+  │     └── image1.png
+  └── [title]/
+        └── slide01.html
+```
+
+* `images/` contains all image assets for the presentation.
+* `[title]/` is a folder with the name of the presentation, containing all slide HTML files (e.g. `slide01.html`, `slide02.html`, etc.).
 
 ## 🎨 **Mandatory Workflow**
 
