@@ -443,8 +443,14 @@ export function useActiveAgentRuns(
         return [];
       }
     },
-    staleTime: 5 * 1000,
-    refetchInterval: 10000,
+    staleTime: 10 * 1000, // Cache for 10 seconds
+    refetchInterval: (query) => {
+      // Smart polling: only poll every 15 seconds if there are active runs
+      const hasActiveRuns = query.state.data && query.state.data.length > 0;
+      return hasActiveRuns ? 15000 : false;
+    },
+    retry: 1,
+    retryDelay: 5000,
     ...options,
   });
 }

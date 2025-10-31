@@ -509,22 +509,20 @@ export function ThreadPage({
       )}
 
 
-    <View className="absolute top-0 left-0 right-0">
       {/* Thread Header */}
       <ThreadHeader
-          threadTitle={chat.activeThread?.title}
-          onTitleChange={async (newTitle) => {
-            console.log('📝 Thread title changed to:', newTitle);
-            try {
-              await chat.updateThreadTitle(newTitle);
-            } catch (error) {
-              console.error('❌ Failed to update thread title:', error);
-            }
-          }}
-          onMenuPress={onMenuPress}
-          onActionsPress={() => setIsThreadActionsVisible(true)}
-        />
-    </View>        
+        threadTitle={chat.activeThread?.title}
+        onTitleChange={async (newTitle) => {
+          console.log('📝 Thread title changed to:', newTitle);
+          try {
+            await chat.updateThreadTitle(newTitle);
+          } catch (error) {
+            console.error('❌ Failed to update thread title:', error);
+          }
+        }}
+        onMenuPress={onMenuPress}
+        onActionsPress={() => setIsThreadActionsVisible(true)}
+      />        
 
       {/* Chat Input Section with Gradient */}
       <ChatInputSection

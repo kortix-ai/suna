@@ -9,17 +9,23 @@ import { useMemo } from 'react';
  * This uses a single backend endpoint that returns all active agent runs,
  * which is much more efficient than querying each thread individually.
  * 
- * OPTIMIZED: Removed automatic polling to reduce API load
+ * OPTIMIZED: Graceful error handling - returns empty array on failure
+ * Uses smart polling that's disabled when no runs are active
  */
 export function useThreadAgentStatuses(threadIds: string[]) {
-  // Fetch all active agent runs in a single query - NO AUTOMATIC POLLING
-  const { data: activeRuns, isLoading } = useQuery({
+  // Fetch all active agent runs - with smart polling
+  const { data: activeRuns = [], isLoading } = useQuery({
     queryKey: ['active-agent-runs'],
     queryFn: getActiveAgentRuns,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    refetchInterval: false, // Disable automatic polling
+    staleTime: 10 * 1000, // Cache for 10 seconds
+    refetchInterval: (query) => {
+      // Poll every 15 seconds if there are active runs, otherwise don't poll
+      const hasActiveRuns = query.state.data && query.state.data.length > 0;
+      return hasActiveRuns ? 15000 : false;
+    },
     retry: 1,
-    refetchOnWindowFocus: false, // Disable refetch on window focus
+    retryDelay: 5000,
+    refetchOnWindowFocus: false, // Disable refetch on window focus to reduce load
   });
 
   // Create a map of threadId -> isRunning using useMemo for performance
@@ -32,7 +38,7 @@ export function useThreadAgentStatuses(threadIds: string[]) {
     });
     
     // Update map with active runs
-    if (activeRuns) {
+    if (activeRuns && activeRuns.length > 0) {
       activeRuns.forEach(run => {
         map.set(run.thread_id, true);
       });
