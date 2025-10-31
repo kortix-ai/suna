@@ -77,7 +77,9 @@ export function useThread(
       return res.json();
     },
     enabled: !!threadId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0, // Always refetch to get latest sandbox data
+    refetchOnMount: 'always', // Refetch sandbox on every mount
+    refetchOnWindowFocus: true, // Refetch when window gains focus
     ...options,
   });
 }

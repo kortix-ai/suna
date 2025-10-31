@@ -5,9 +5,11 @@ import { Icon } from '@/components/ui/icon';
 import { CheckCircle2, AlertCircle, Trophy, Sparkles, Paperclip } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractCompleteData } from './_utils';
+import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 
-export function CompleteToolView({ toolData, isStreaming = false }: ToolViewProps) {
+export function CompleteToolView({ toolData, isStreaming = false, project, assistantMessage }: ToolViewProps) {
   const { text, attachments, success } = extractCompleteData(toolData);
+  const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
 
   if (isStreaming) {
     return (
@@ -91,24 +93,12 @@ export function CompleteToolView({ toolData, isStreaming = false }: ToolViewProp
                 Files ({attachments.length})
               </Text>
             </View>
-            <View className="gap-2">
-              {attachments.map((attachment, idx) => {
-                const fileName = attachment.split('/').pop() || attachment;
-                return (
-                  <View 
-                    key={idx}
-                    className="bg-card border border-border rounded-xl p-3 flex-row items-center gap-3"
-                  >
-                    <View className="bg-primary/10 rounded-lg p-2">
-                      <Icon as={Paperclip} size={16} className="text-primary" />
-                    </View>
-                    <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={2}>
-                      {fileName}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
+            <FileAttachmentsGrid
+              filePaths={attachments}
+              sandboxId={sandboxId}
+              compact={false}
+              showPreviews={true}
+            />
           </View>
         )}
       </View>

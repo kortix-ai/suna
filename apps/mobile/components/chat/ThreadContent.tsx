@@ -395,6 +395,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
   agentName = 'Suna',
 }) => {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const displayMessages = useMemo(() => {
     const displayableTypes = ['user', 'assistant', 'tool', 'system', 'status', 'browser_state'];
@@ -670,12 +671,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
           const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
 
           return (
-            <View key={group.key} className="space-y-3 mb-2.5">
+            <View key={group.key} className="mb-5">
               {renderStandaloneAttachments(attachments as string[], sandboxId, onFilePress, true)}
 
               {cleanContent && (
-                <View className="flex-row justify-end px-4">
-                  <View className="max-w-[85%] rounded-3xl rounded-br-lg bg-card border border-border px-4 py-3">
+                <View className="flex-row justify-end items-end">
+                  <View 
+                    className="max-w-[82%] rounded-[22px] px-5 py-2.5"
+                    style={{
+                      backgroundColor: isDark ? '#18181B' : '#FAFAFA',
+                      borderWidth: 1,
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: isDark ? 0.3 : 0.08,
+                      shadowRadius: 12,
+                      elevation: 2,
+                    }}
+                  >
                     <Markdown
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                       onLinkPress={(url) => {
@@ -698,9 +711,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
           const toolResultsMap = toolResultsMaps.get(group.key) || new Map();
 
           return (
-            <View key={group.key} className="mb-2.5">
+            <View key={group.key} className="mb-5">
               <View className="flex-col gap-2">
-                <View className="flex-row items-center px-4">
+                <View className="flex-row items-center">
                   <AgentIdentifier 
                     agentId={groupAgentId}
                     size={24}
@@ -708,7 +721,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                   />
                 </View>
 
-                <View className="max-w-[90%] px-4">
+                <View className="w-full">
                   <View className="space-y-2">
                     {(() => {
                       const elements: React.ReactNode[] = [];
@@ -849,7 +862,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         }
         
         return (
-          <View className="px-4 mb-2.5">
+          <View className="mb-5">
             <View className="mb-2">
               <AgentIdentifier 
                 size={24}
@@ -866,7 +879,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
       
       {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
         (messages.length === 0 || messages[messages.length - 1].type === 'user')) && (
-          <View className="w-full px-4 mb-2.5">
+          <View className="w-full mb-5">
             <View className="flex-col gap-2">
               <View className="flex-row items-center">
                 <AgentIdentifier 

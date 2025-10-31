@@ -125,6 +125,12 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
     cacheTime: 0,
   });
 
+  // Refetch on initial mount (when "manage files" is clicked)
+  React.useEffect(() => {
+    console.log('[FileManagerScreen] Initial mount - refetching files...');
+    refetch();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   React.useEffect(() => {
     if (sandboxId) {
       refetch();
