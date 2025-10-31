@@ -14,7 +14,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
-import { MessageRenderer, ToolCallPanel, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
+import { ThreadContent, ToolCallPanel, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
 import { FileManagerScreen } from '@/components/files';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
@@ -466,16 +466,21 @@ export function ThreadPage({
               />
             }
           >
-            <MessageRenderer
+            <ThreadContent
               messages={messages}
-              streamingContent={streamingContent}
+              streamingTextContent={streamingContent}
               streamingToolCall={streamingToolCall}
-              isStreaming={chat.isStreaming}
+              agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+              streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
               sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+              handleToolClick={(assistantMessageId: string | null, toolName: string) => {
+                console.log('[ThreadPage] Tool clicked:', toolName);
+              }}
               onToolPress={(toolMessages, initialIndex) => {
+                console.log('[ThreadPage] Tool card pressed, opening panel');
                 chat.setSelectedToolData({ toolMessages, initialIndex });
               }}
-              onFilePress={(filePath) => {
+              onFilePress={(filePath: string) => {
                 console.log('[ThreadPage] File clicked:', filePath);
                 const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
                 setSelectedFilePath(normalizedPath);

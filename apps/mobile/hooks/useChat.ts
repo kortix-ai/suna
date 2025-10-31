@@ -1,26 +1,11 @@
-/**
- * Unified Chat Hook
- * 
- * Single source of truth for all chat state and operations.
- * Consolidates:
- * - useChatThread (chat orchestration)
- * - useThreadData (data loading)
- * - useAgentStream (streaming)
- * - useChatInput (input state)
- * - React Query hooks (API calls)
- */
-
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Alert, Keyboard } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
-import EventSource from 'react-native-sse';
 import { useQueryClient } from '@tanstack/react-query';
-import type { UnifiedMessage, ParsedContent, ParsedMetadata, Thread } from '@/api/types';
-import { API_URL, getAuthToken } from '@/api/config';
-import { safeJsonParse } from '@/lib/utils/message-grouping';
+import type { UnifiedMessage } from '@/api/types';
 import { useLanguage } from '@/contexts';
-import type { ToolMessagePair } from '@/components/chat/MessageRenderer';
+import type { ToolMessagePair } from '@/components/chat';
 import {
   useThreads,
   useThread,
@@ -39,10 +24,7 @@ import {
   validateFileSize,
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
-
-// ============================================================================
-// Types
-// ============================================================================
+import { useAgentStream } from './useAgentStream';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -56,7 +38,6 @@ export interface Attachment {
 }
 
 export interface UseChatReturn {
-  // Thread Management
   activeThread: {
     id: string;
     title?: string;
@@ -64,7 +45,7 @@ export interface UseChatReturn {
     createdAt: Date;
     updatedAt: Date;
   } | null;
-  threads: Thread[];
+  threads: any[];
   loadThread: (threadId: string) => void;
   startNewChat: () => void;
   updateThreadTitle: (newTitle: string) => Promise<void>;
@@ -72,73 +53,54 @@ export interface UseChatReturn {
   refreshMessages: () => Promise<void>;
   activeSandboxId?: string;
   
-  // Messages & Streaming
   messages: UnifiedMessage[];
   streamingContent: string;
-  streamingToolCall: ParsedContent | null;
+  streamingToolCall: any;
   isStreaming: boolean;
   
-  // Message Operations
   sendMessage: (content: string, agentId: string, agentName: string) => Promise<void>;
   stopAgent: () => void;
   
-  // Input State
   inputValue: string;
   setInputValue: (value: string) => void;
   attachments: Attachment[];
   addAttachment: (attachment: Attachment) => void;
   removeAttachment: (index: number) => void;
   
-  // Tool Drawer
   selectedToolData: {
     toolMessages: ToolMessagePair[];
     initialIndex: number;
   } | null;
   setSelectedToolData: (data: { toolMessages: ToolMessagePair[]; initialIndex: number; } | null) => void;
   
-  // Loading States
   isLoading: boolean;
   isSendingMessage: boolean;
   isAgentRunning: boolean;
   
-  // Attachment Actions
   handleTakePicture: () => Promise<void>;
   handleChooseImages: () => Promise<void>;
   handleChooseFiles: () => Promise<void>;
   
-  // Quick Actions
   selectedQuickAction: string | null;
   handleQuickAction: (actionId: string) => void;
   clearQuickAction: () => void;
   getPlaceholder: () => string;
   
-  // Attachment Drawer
   isAttachmentDrawerVisible: boolean;
   openAttachmentDrawer: () => void;
   closeAttachmentDrawer: () => void;
   
-  // Audio Transcription
   transcribeAndAddToInput: (audioUri: string) => Promise<void>;
   isTranscribing: boolean;
 }
-
-// ============================================================================
-// Main Hook
-// ============================================================================
 
 export function useChat(): UseChatReturn {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
 
-  // ============================================================================
-  // State - Single Source of Truth
-  // ============================================================================
-
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>();
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
-  const [streamingContent, setStreamingContent] = useState('');
-  const [streamingToolCall, setStreamingToolCall] = useState<ParsedContent | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedToolData, setSelectedToolData] = useState<{
@@ -150,13 +112,10 @@ export function useChat(): UseChatReturn {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
-
-  // ============================================================================
-  // React Query Hooks
-  // ============================================================================
+  const [userInitiatedRun, setUserInitiatedRun] = useState(false);
 
   const { data: threadsData = [] } = useThreads();
-
+  
   const shouldFetchThread = !!activeThreadId;
   const shouldFetchMessages = !!activeThreadId;
 
@@ -172,462 +131,129 @@ export function useChat(): UseChatReturn {
     }
   }, [threadData, activeThreadId]);
 
-  // Mutations
   const sendMessageMutation = useSendMessageMutation();
   const unifiedAgentStartMutation = useUnifiedAgentStartMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
   const uploadFilesMutation = useUploadMultipleFiles();
 
-  // ============================================================================
-  // Streaming - Internal EventSource Management
-  // ============================================================================
+  const lastStreamStartedRef = useRef<string | null>(null);
 
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const isMountedRef = useRef<boolean>(true);
-  const currentRunIdRef = useRef<string | null>(null);
-  const processedMessageIds = useRef<Set<string>>(new Set());
-  const completedRunIds = useRef<Set<string>>(new Set());
-  
-  const streamingBufferRef = useRef<string>('');
-  const streamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastUpdateTimeRef = useRef<number>(0);
-  const isInToolModeRef = useRef<boolean>(false);
-
-  const isStreaming = !!currentRunIdRef.current;
-
-  const flushStreamingBuffer = useCallback(() => {
-    if (streamingBufferRef.current && isMountedRef.current) {
-      const content = streamingBufferRef.current;
-      streamingBufferRef.current = '';
-      setStreamingContent((prev) => prev + content);
-      lastUpdateTimeRef.current = Date.now();
-    }
-  }, []);
-
-  const addContentImmediate = useCallback((content: string) => {
-    streamingBufferRef.current += content;
-    
-    const now = Date.now();
-    const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
-    
-    if (streamingTimerRef.current) {
-      clearTimeout(streamingTimerRef.current);
-    }
-    
-    if (timeSinceLastUpdate >= 16 || streamingBufferRef.current.length >= 5) {
-      flushStreamingBuffer();
-    } else {
-      streamingTimerRef.current = setTimeout(() => {
-        flushStreamingBuffer();
-      }, 16);
-    }
-  }, [flushStreamingBuffer]);
-
-  // Helper t o safely update messages array with deduplication
-  const updateMessagesWithDeduplication = useCallback((newMessage: UnifiedMessage) => {
-    setMessages((prev) => {
-      const messageExists = prev.some(
-        (m) => m.message_id === newMessage.message_id,
-      );
-      if (messageExists) {
-        return prev.map((m) =>
-          m.message_id === newMessage.message_id ? newMessage : m,
+  const handleNewMessageFromStream = useCallback(
+    (message: UnifiedMessage) => {
+      if (!message.message_id) {
+        console.warn(
+          `[STREAM HANDLER] Received message is missing ID: Type=${message.type}`,
         );
-      } else {
-        if (newMessage.type === 'user') {
-          const newContent = safeJsonParse<ParsedContent>(newMessage.content, {});
-          const newText = typeof newContent.content === 'string' ? newContent.content : '';
-          
-          const optimisticIndex = prev.findIndex((m) => {
-            if (m.type !== 'user') return false;
-            if (!(m.message_id?.startsWith('optimistic-') || m.message_id?.startsWith('temp-'))) return false;
-            
-            // Parse the optimistic message content
-            const optimisticContent = safeJsonParse<ParsedContent>(m.content, {});
-            const optimisticText = typeof optimisticContent.content === 'string' ? optimisticContent.content : '';
-            
-            // Compare actual text content, not JSON strings
-            return optimisticText === newText;
-          });
-          
-          if (optimisticIndex !== -1) {
-            // Replace the optimistic message with the real one
-            return prev.map((m, index) =>
-              index === optimisticIndex ? newMessage : m,
+      }
+
+      setMessages((prev) => {
+        const messageExists = prev.some(
+          (m) => m.message_id === message.message_id,
+        );
+        if (messageExists) {
+          return prev.map((m) =>
+            m.message_id === message.message_id ? message : m,
+          );
+        } else {
+          if (message.type === 'user') {
+            const optimisticIndex = prev.findIndex(
+              (m) =>
+                m.type === 'user' &&
+                m.message_id?.startsWith('optimistic-') &&
+                m.content === message.content,
             );
+            if (optimisticIndex !== -1) {
+              return prev.map((m, index) =>
+                index === optimisticIndex ? message : m,
+              );
+            }
           }
+          return [...prev, message];
         }
-        // Add new message
-        return [...prev, newMessage];
+      });
+
+      if (message.type === 'tool') {
       }
-    });
+    },
+    [setMessages],
+  );
+
+  const handleStreamStatusChange = useCallback(
+    (hookStatus: string) => {
+      switch (hookStatus) {
+        case 'idle':
+        case 'completed':
+        case 'stopped':
+        case 'agent_not_running':
+        case 'error':
+        case 'failed':
+          setAgentRunId(null);
+          break;
+        case 'connecting':
+          break;
+        case 'streaming':
+          break;
+      }
+    },
+    [setAgentRunId],
+  );
+
+  const handleStreamError = useCallback((errorMessage: string) => {
+    const lower = errorMessage.toLowerCase();
+    const isExpected =
+      lower.includes('not found') || lower.includes('agent run is not running');
+
+    if (isExpected) {
+      console.info(`[PAGE] Stream skipped for inactive run: ${errorMessage}`);
+      return;
+    }
+
+    console.error(`[PAGE] Stream hook error: ${errorMessage}`);
   }, []);
 
-  // Finalize stream
-  const finalizeStream = useCallback(() => {
-    if (!isMountedRef.current) return;
+  const handleStreamClose = useCallback(() => { }, []);
 
-    console.log('[useChat] Finalizing stream');
-    
-    if (streamingTimerRef.current) {
-      clearTimeout(streamingTimerRef.current);
-      streamingTimerRef.current = null;
-    }
-    flushStreamingBuffer();
-    
-    if (currentRunIdRef.current) {
-      completedRunIds.current.add(currentRunIdRef.current);
-    }
-    
-    currentRunIdRef.current = null;
-    processedMessageIds.current.clear();
+  const {
+    status: streamHookStatus,
+    textContent: streamingTextContent,
+    toolCall: streamingToolCall,
+    error: streamError,
+    agentRunId: currentHookRunId,
+    startStreaming,
+    stopStreaming,
+  } = useAgentStream(
+    {
+      onMessage: handleNewMessageFromStream,
+      onStatusChange: handleStreamStatusChange,
+      onError: handleStreamError,
+      onClose: handleStreamClose,
+    },
+    activeThreadId || '',
+    setMessages,
+    undefined,
+  );
 
-    queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
-    
-    if (activeThreadId) {
-      console.log('[useChat] Refetching thread data for:', activeThreadId);
-      queryClient.refetchQueries({ 
-        queryKey: chatKeys.thread(activeThreadId),
-      });
-    }
-    
-    if (activeSandboxId) {
-      console.log('[useChat] Scheduling file query invalidation for sandbox:', activeSandboxId);
-      // Delay file invalidation to ensure backend has processed files
-      setTimeout(() => {
-        console.log('[useChat] Removing all file queries and forcing refetch for sandbox:', activeSandboxId);
-        
-        // Remove all file queries from cache to force fresh fetch
-        queryClient.removeQueries({ 
-          queryKey: ['files'],
-          exact: false,
-        });
-        
-        // Invalidate to trigger refetch if component is still mounted
-        queryClient.invalidateQueries({ 
-          queryKey: ['files'],
-          exact: false,
-          refetchType: 'all',
-        });
-      }, 1500);
-    }
+  const isStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
 
-    if (isNewThreadOptimistic) {
-      console.log('[useChat] Clearing optimistic flag - streaming complete');
-      setIsNewThreadOptimistic(false);
-    }
-
-    setTimeout(() => {
-      if (isMountedRef.current) {
-        console.log('[useChat] Clearing streaming state and refetching data');
-        setStreamingContent('');
-        setStreamingToolCall(null);
-        setAgentRunId(null);
-        refetchMessages();
-        
-        if (activeThreadId) {
-          queryClient.refetchQueries({ 
-            queryKey: chatKeys.thread(activeThreadId),
-          });
-        }
-      }
-    }, 100);
-  }, [refetchMessages, queryClient, isNewThreadOptimistic, flushStreamingBuffer, activeSandboxId, activeThreadId]);
-
-  const handleStreamMessage = useCallback((rawData: string) => {
-    if (!isMountedRef.current) return;
-
-    let processedData = rawData;
-    if (processedData.startsWith('data: ')) {
-      processedData = processedData.substring(6).trim();
-    }
-    if (!processedData) return;
-
-    // Check for completion messages
-    if (
-      processedData === '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}' ||
-      processedData.includes('Run data not available for streaming') ||
-      processedData.includes('Stream ended with status: completed')
-    ) {
-      console.log('[useChat] Stream completion detected, closing connection');
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      finalizeStream();
-      return;
-    }
-
-    // Check for error messages
-    try {
-      const jsonData = JSON.parse(processedData);
-      if (jsonData.status === 'error') {
-        console.error('[useChat] Received error status message:', jsonData);
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-        finalizeStream();
-        return;
-      }
-    } catch (jsonError) {
-      // Not JSON, continue processing
-    }
-
-    // Parse JSON message
-    const message = safeJsonParse<UnifiedMessage | null>(processedData, null);
-    if (!message) {
-      console.warn('[useChat] Failed to parse streamed message:', processedData);
-      return;
-    }
-
-    const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
-    const parsedMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-
-    switch (message.type) {
-      case 'assistant':
-        if (parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
-          const content = parsedContent.content;
-          
-          if (content.includes('<function_calls>')) {
-            const beforeFunctionCalls = content.split('<function_calls>')[0];
-            
-            if (beforeFunctionCalls && !isInToolModeRef.current) {
-              addContentImmediate(beforeFunctionCalls);
-            }
-            
-            isInToolModeRef.current = true;
-            
-            if (!streamingToolCall) {
-              setStreamingToolCall({
-                role: 'assistant',
-                status_type: 'tool_started',
-                name: 'Tool',
-                function_name: 'Tool',
-                arguments: {},
-              });
-            }
-            
-            const invokeMatch = content.match(/<invoke name="([^"]+)">/);
-            if (invokeMatch) {
-              const functionName = invokeMatch[1];
-              console.log('[useChat] Extracted function name:', functionName);
-              
-              setStreamingToolCall({
-                role: 'assistant',
-                status_type: 'tool_started',
-                name: functionName,
-                function_name: functionName,
-                arguments: {},
-              });
-            }
-          } else if (!isInToolModeRef.current) {
-            addContentImmediate(content);
-          }
-        } else if (parsedMetadata.stream_status === 'complete') {
-          if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
-            processedMessageIds.current.add(message.message_id);
-            
-            updateMessagesWithDeduplication(message);
-            
-            isInToolModeRef.current = false;
-            
-            setTimeout(() => {
-              if (isMountedRef.current) {
-                setStreamingContent('');
-              }
-            }, 50);
-          }
-        } else if (!parsedMetadata.stream_status) {
-          if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
-            processedMessageIds.current.add(message.message_id);
-            updateMessagesWithDeduplication(message);
-          }
-        }
-        break;
-
-      case 'user':
-        // Handle user messages from stream - deduplicate with optimistic messages
-        if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
-          processedMessageIds.current.add(message.message_id);
-          updateMessagesWithDeduplication(message);
-        }
-        break;
-
-      case 'tool':
-        setStreamingToolCall(null);
-        isInToolModeRef.current = false;
-
-        if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
-          processedMessageIds.current.add(message.message_id);
-          updateMessagesWithDeduplication(message);
-        }
-        break;
-
-      case 'status':
-        switch (parsedContent.status_type) {
-          case 'tool_started':
-            setStreamingToolCall({
-              role: 'assistant',
-              status_type: 'tool_started',
-              name: parsedContent.function_name,
-              function_name: parsedContent.function_name,
-              arguments: parsedContent.arguments,
-            });
-            break;
-
-          case 'tool_completed':
-            setStreamingToolCall(null);
-            break;
-
-          case 'thread_run_end':
-            // Don't finalize here - wait for explicit completion
-            console.log('[useChat] thread_run_end received');
-            break;
-        }
-        break;
-    }
-  }, [addContentImmediate, finalizeStream, flushStreamingBuffer, updateMessagesWithDeduplication]);
-
-  // Start streaming
-  const startStreaming = useCallback(async (runId: string) => {
-    if (!isMountedRef.current) {
-      console.log('[useChat] Not mounted, skipping stream connection');
-      return;
-    }
-
-    // Prevent duplicate streams
-    if (currentRunIdRef.current === runId) {
-      console.log('[useChat] Already streaming this run:', runId);
-      return;
-    }
-
-    // Close any existing stream
-    if (eventSourceRef.current) {
-      console.log('[useChat] Closing existing stream before starting new one');
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-
-    console.log('[useChat] 🚀 Starting stream for run:', runId);
-    
-    if (streamingTimerRef.current) {
-      clearTimeout(streamingTimerRef.current);
-      streamingTimerRef.current = null;
-    }
-    streamingBufferRef.current = '';
-    lastUpdateTimeRef.current = Date.now();
-    isInToolModeRef.current = false;
-    
-    setStreamingContent('');
-    setStreamingToolCall(null);
-    processedMessageIds.current.clear();
-    currentRunIdRef.current = runId;
-
-    try {
-      const token = await getAuthToken();
-      const url = `${API_URL}/agent-run/${runId}/stream`;
-
-      const eventSource = new EventSource(url, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        pollingInterval: 0, // Disable reconnection
-      });
-
-      eventSourceRef.current = eventSource;
-
-      eventSource.addEventListener('open', () => {
-        console.log('[useChat] ✅ Stream connected');
-      });
-
-      eventSource.addEventListener('message', (event: any) => {
-        if (event.data) {
-          handleStreamMessage(event.data);
-        }
-      });
-
-      eventSource.addEventListener('error', (error: any) => {
-        console.error('[useChat] ❌ Stream error:', error);
-        if (eventSourceRef.current) {
-          eventSourceRef.current.close();
-          eventSourceRef.current = null;
-        }
-        finalizeStream();
-      });
-    } catch (error) {
-      console.error('[useChat] Failed to start stream:', error);
-      currentRunIdRef.current = null;
-      finalizeStream();
-    }
-  }, [handleStreamMessage, finalizeStream]);
-
-  // Stop streaming
-  const stopStreaming = useCallback(() => {
-    console.log('[useChat] Stopping stream');
-    
-    if (streamingTimerRef.current) {
-      clearTimeout(streamingTimerRef.current);
-      streamingTimerRef.current = null;
-    }
-    streamingBufferRef.current = '';
-    isInToolModeRef.current = false;
-    
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-
-    currentRunIdRef.current = null;
-    setStreamingContent('');
-    setStreamingToolCall(null);
-    processedMessageIds.current.clear();
-  }, []);
-
-  // ============================================================================
-  // Effects - Thread Management & Auto-Connect
-  // ============================================================================
-
-  // Set mounted state
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  // Thread change cleanup
   const prevThreadIdRef = useRef<string | undefined>(undefined);
   
   useEffect(() => {
-    // Only cleanup if thread actually changed (not on initial load or same thread)
-    if (prevThreadIdRef.current && prevThreadIdRef.current !== activeThreadId) {
-      console.log('[useChat] Thread switched');
+    const prevThread = prevThreadIdRef.current;
+    const isThreadSwitch = prevThread && activeThreadId && prevThread !== activeThreadId;
+    
+    if (isThreadSwitch) {
+      console.log('[useChat] Thread switched from', prevThread, 'to', activeThreadId);
       
-      // ✨ Clear messages immediately when switching threads
       setMessages([]);
-      
-      // Clear streaming state
-      setStreamingContent('');
-      setStreamingToolCall(null);
-      
-      // Close any active stream
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-        currentRunIdRef.current = null;
-      }
+      lastStreamStartedRef.current = null;
     }
     
-    // Update the previous thread ID
     prevThreadIdRef.current = activeThreadId;
 
-    // Load messages for thread - simple approach since we clear on thread switch
     if (messagesData && !isNewThreadOptimistic && !isStreaming) {
       const unifiedMessages = messagesData as unknown as UnifiedMessage[];
       
-      // Simple merge: Don't keep any optimistic messages, just use server data
       setMessages(unifiedMessages);
       
       console.log('🔄 [useChat] Loaded messages for thread:', {
@@ -635,53 +261,52 @@ export function useChat(): UseChatReturn {
         currentThreadId: activeThreadId
       });
     }
-
-    // Check for active agent run
-    const activeRun = activeRuns?.find(r => r.thread_id === activeThreadId);
-    if (activeRun?.status === 'running' && !completedRunIds.current.has(activeRun.id)) {
-      console.log('[useChat] Found active agent run:', activeRun.id);
-      setAgentRunId(activeRun.id);
-    } else if (agentRunId && !activeRun && !isStreaming) {
-      console.log('[useChat] No active agent run and not streaming, clearing agentRunId');
-      setAgentRunId(null);
-    }
-  }, [activeThreadId, messagesData, activeRuns, agentRunId, isNewThreadOptimistic]);
+  }, [activeThreadId, messagesData, isNewThreadOptimistic, isStreaming]);
 
   useEffect(() => {
-    if (agentRunId && activeThreadId && !currentRunIdRef.current) {
-      console.log('[useChat] Auto-connecting to stream:', agentRunId);
+    if (!agentRunId || agentRunId === lastStreamStartedRef.current) {
+      return;
+    }
+
+    if (userInitiatedRun) {
+      console.log(`[useChat] Starting user-initiated stream for runId: ${agentRunId}`);
+      lastStreamStartedRef.current = agentRunId;
+      setUserInitiatedRun(false);
       startStreaming(agentRunId);
-    } else if (!agentRunId && currentRunIdRef.current) {
-      console.log('[useChat] No agentRunId but stream active, stopping');
-      stopStreaming();
+      return;
     }
-  }, [agentRunId, activeThreadId, startStreaming, stopStreaming]);
+
+    const activeRun = activeRuns?.find(r => r.id === agentRunId && r.status === 'running');
+    if (activeRun) {
+      console.log(`[useChat] Starting auto stream for runId: ${agentRunId}`);
+      lastStreamStartedRef.current = agentRunId;
+      startStreaming(agentRunId);
+    }
+  }, [agentRunId, startStreaming, userInitiatedRun, activeRuns]);
 
   useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
+    if (
+      (streamHookStatus === 'completed' ||
+        streamHookStatus === 'stopped' ||
+        streamHookStatus === 'agent_not_running' ||
+        streamHookStatus === 'error')
+    ) {
+      setAgentRunId(null);
+      lastStreamStartedRef.current = null;
+      
+      if (streamHookStatus === 'completed' && activeThreadId) {
+        console.log('[useChat] Streaming completed, clearing optimistic flag and refetching');
+        setIsNewThreadOptimistic(false);
+        
+        setTimeout(() => {
+          queryClient.invalidateQueries({ 
+            queryKey: chatKeys.messages(activeThreadId),
+            refetchType: 'all',
+          });
+        }, 100);
       }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (activeThreadId) {
-      console.log('📊 [useChat] Loading state:', {
-        isLoading: (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic && messages.length === 0,
-        isThreadLoading,
-        isMessagesLoading,
-        isNewThreadOptimistic,
-        messagesCount: messages.length,
-        threadId: activeThreadId,
-      });
     }
-  }, [isThreadLoading, isMessagesLoading, activeThreadId, isNewThreadOptimistic, messages.length]);
-
-  // ============================================================================
-  // Public API - Thread Operations
-  // ============================================================================
+  }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient]);
 
   const refreshMessages = useCallback(async () => {
     if (!activeThreadId || isStreaming) {
@@ -692,15 +317,12 @@ export function useChat(): UseChatReturn {
     console.log('[useChat] 🔄 Refreshing messages for thread:', activeThreadId);
     
     try {
-      // Refetch messages from server
       await refetchMessages();
       
-      // Also invalidate queries to ensure fresh data
       queryClient.invalidateQueries({ 
         queryKey: chatKeys.messages(activeThreadId) 
       });
       
-      // If there's a sandbox, refresh file list too
       if (activeSandboxId) {
         queryClient.invalidateQueries({ 
           queryKey: ['files', 'sandbox', activeSandboxId],
@@ -719,26 +341,17 @@ export function useChat(): UseChatReturn {
     console.log('[useChat] Loading thread:', threadId);
     console.log('🔄 [useChat] Thread loading initiated');
     
-    // Clear agent run ID first to prevent race condition
     setAgentRunId(null);
     
-    // Stop any active streaming
     stopStreaming();
     
-    // Clear completed runs tracking for fresh state
-    completedRunIds.current.clear();
-    processedMessageIds.current.clear(); // Clear processed message tracking
-    
-    // Clear UI state
     setSelectedToolData(null);
     setInputValue('');
     setAttachments([]);
-    setIsNewThreadOptimistic(false); // Clear optimistic flag when loading existing thread
+    setIsNewThreadOptimistic(false);
     
-    // Clear messages to ensure clean thread switch
     setMessages([]);
     
-    // Set new thread
     setActiveThreadId(threadId);
   }, [stopStreaming]);
 
@@ -752,8 +365,6 @@ export function useChat(): UseChatReturn {
     setSelectedToolData(null);
     setIsNewThreadOptimistic(false);
     setActiveSandboxId(undefined);
-    completedRunIds.current.clear();
-    processedMessageIds.current.clear();
     stopStreaming();
   }, [stopStreaming]);
 
@@ -782,7 +393,6 @@ export function useChat(): UseChatReturn {
     try {
       console.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length });
       
-      // Validate file sizes
       for (const attachment of attachments) {
         const validation = validateFileSize(attachment.size);
         if (!validation.valid) {
@@ -794,12 +404,8 @@ export function useChat(): UseChatReturn {
       let currentThreadId = activeThreadId;
       
       if (!currentThreadId) {
-        // ========================================================================
-        // NEW THREAD: Use /agent/start with FormData
-        // ========================================================================
         console.log('[useChat] Creating new thread via /agent/start with optimistic UI');
         
-        // ✨ INSTANT UI: Show user message immediately like ChatGPT
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
           thread_id: 'optimistic',
@@ -814,7 +420,6 @@ export function useChat(): UseChatReturn {
         setIsNewThreadOptimistic(true);
         console.log('✨ [useChat] INSTANT user message display');
         
-        // Convert attachments to FormData-compatible format
         const formDataFiles = attachments.length > 0
           ? await convertAttachmentsToFormDataFiles(attachments)
           : [];
@@ -822,11 +427,10 @@ export function useChat(): UseChatReturn {
         console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
         const createResult = await unifiedAgentStartMutation.mutateAsync({
-          // No threadId = create new thread
           prompt: content,
           agentId: agentId,
           modelName: 'claude-sonnet-4',
-          files: formDataFiles as any, // FormData files for new thread
+          files: formDataFiles as any,
         });
         
         currentThreadId = createResult.thread_id;
@@ -839,19 +443,15 @@ export function useChat(): UseChatReturn {
         
         if (createResult.agent_run_id) {
           console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
+          setUserInitiatedRun(true);
           setAgentRunId(createResult.agent_run_id);
-          startStreaming(createResult.agent_run_id);
         }
         
         setInputValue('');
         setAttachments([]);
       } else {
-        // ========================================================================
-        // EXISTING THREAD: Upload files to sandbox, then send message with references
-        // ========================================================================
         console.log('[useChat] Sending to existing thread:', currentThreadId);
         
-        // ✨ INSTANT UI: Show user message immediately like ChatGPT (same as new threads)
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
           thread_id: currentThreadId,
@@ -863,18 +463,14 @@ export function useChat(): UseChatReturn {
           updated_at: new Date().toISOString(),
         };
         
-        // Add optimistic message to existing messages
         setMessages((prev) => [...prev, optimisticUserMessage]);
         console.log('✨ [useChat] INSTANT user message display for existing thread');
         
-        // Set optimistic flag for existing threads too (for consistent behavior)
         setIsNewThreadOptimistic(true);
         
         let messageContent = content;
         
-        // Upload files to sandbox if there are attachments
         if (attachments.length > 0) {
-          // Get sandbox ID from active state
           const sandboxId = activeSandboxId;
           
           if (!sandboxId) {
@@ -889,10 +485,8 @@ export function useChat(): UseChatReturn {
           console.log('[useChat] Uploading', attachments.length, 'files to sandbox:', sandboxId);
           
           try {
-            // Convert attachments to upload format
             const filesToUpload = await convertAttachmentsToFormDataFiles(attachments);
             
-            // Upload files to sandbox (simplified - no progress tracking for now)
             const uploadResults = await uploadFilesMutation.mutateAsync({
               sandboxId,
               files: filesToUpload.map(f => ({
@@ -904,11 +498,9 @@ export function useChat(): UseChatReturn {
             
             console.log('[useChat] Files uploaded successfully:', uploadResults.length);
             
-            // Generate file references
             const filePaths = uploadResults.map(result => result.path);
             const fileReferences = generateFileReferences(filePaths);
             
-            // Append file references to message
             messageContent = content
               ? `${content}\n\n${fileReferences}`
               : fileReferences;
@@ -921,11 +513,10 @@ export function useChat(): UseChatReturn {
               t('common.error'),
               t('attachments.uploadFailed') || 'Failed to upload files'
             );
-            return; // Don't send message if upload failed
+            return;
           }
         }
         
-        // Send message with file references (if any)
         const result = await sendMessageMutation.mutateAsync({
           threadId: currentThreadId,
           message: messageContent,
@@ -934,18 +525,14 @@ export function useChat(): UseChatReturn {
         
         console.log('[useChat] Message sent, agent run started:', result.agentRunId);
         
-        // Set agent run ID and start streaming immediately like ChatGPT
         if (result.agentRunId) {
           console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
+          setUserInitiatedRun(true);
           setAgentRunId(result.agentRunId);
-          // Start streaming immediately - no delays
-          startStreaming(result.agentRunId);
         }
         
-        // Clear optimistic flag after successful send
         setIsNewThreadOptimistic(false);
         
-        // Clear input and attachments AFTER successful send
         setInputValue('');
         setAttachments([]);
       }
@@ -961,342 +548,208 @@ export function useChat(): UseChatReturn {
     uploadFilesMutation,
     activeSandboxId,
     t,
-    startStreaming,
   ]);
 
-  const stopAgent = useCallback(() => {
+  const stopAgent = useCallback(async () => {
     if (agentRunId) {
       console.log('[useChat] 🛑 Stopping agent run:', agentRunId);
       
       const runIdToStop = agentRunId;
       
-      // ✨ IMMEDIATE UI FEEDBACK - Clear all state first
-      console.log('[useChat] ⚡ Clearing UI state immediately');
-      
-      // 1. Mark run as completed to prevent reconnection
-      completedRunIds.current.add(runIdToStop);
-      
-      // 2. Clear agent run ID
       setAgentRunId(null);
       
-      // 3. Stop streaming and close connection
-      stopStreaming();
+      await stopStreaming();
       
-      // 4. Clear streaming content immediately
-      setStreamingContent('');
-      setStreamingToolCall(null);
-      
-      console.log('[useChat] ✅ UI cleared immediately');
-      
-      // Make API call to stop on backend (async, but UI is already stopped)
-      stopAgentRunMutation.mutate(runIdToStop, {
-        onSuccess: () => {
-          console.log('[useChat] ✅ Backend stop confirmed');
-          
-          queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
-          
-          if (activeThreadId) {
-            queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
-            queryClient.refetchQueries({ 
-              queryKey: chatKeys.thread(activeThreadId),
-            });
-          }
-          
-          if (activeSandboxId) {
-            console.log('[useChat] Invalidating file queries after stop for sandbox:', activeSandboxId);
-            queryClient.invalidateQueries({ 
-              queryKey: ['files', 'sandbox', activeSandboxId],
-              refetchType: 'all',
-            });
-            queryClient.invalidateQueries({ 
-              queryKey: ['files'],
-              refetchType: 'all',
-            });
-          }
-        },
-        onError: (error) => {
-          console.error('[useChat] ❌ Backend stop failed:', error);
+      try {
+        await stopAgentRunMutation.mutateAsync(runIdToStop);
+        console.log('[useChat] ✅ Backend stop confirmed');
+        
+        queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
+        
+        if (activeThreadId) {
+          queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          refetchMessages();
         }
-      });
+      } catch (error) {
+        console.error('[useChat] ❌ Error stopping agent:', error);
+      }
     }
-  }, [agentRunId, stopAgentRunMutation, stopStreaming, queryClient, activeThreadId, activeSandboxId]);
-
-  // ============================================================================
-  // Public API - Attachment Operations
-  // ============================================================================
-
-  const handleTakePicture = useCallback(async () => {
-    console.log('[useChat] Take picture');
-    
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (status !== 'granted') {
-        console.log('[useChat] Camera permission denied');
-        Alert.alert(
-          t('attachments.cameraPermissionRequired'),
-          t('attachments.cameraPermissionMessage'),
-          [{ text: t('common.ok') }]
-        );
-        return;
-      }
-
-      console.log('[useChat] Opening camera');
-      
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        console.log('[useChat] Picture taken:', asset.uri);
-
-        const newAttachment: Attachment = {
-          type: 'image',
-          uri: asset.uri,
-          mimeType: asset.type,
-        };
-        
-        setAttachments(prev => [...prev, newAttachment]);
-      }
-    } catch (error) {
-      console.error('[useChat] Camera error:', error);
-      Alert.alert(t('common.error'), t('attachments.failedToOpenCamera'));
-    }
-  }, [t, attachments]);
-
-  const handleChooseImages = useCallback(async () => {
-    console.log('[useChat] Choose images');
-    
-    try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (status !== 'granted') {
-        console.log('[useChat] Media library permission denied');
-        Alert.alert(
-          t('attachments.photosPermissionRequired'),
-          t('attachments.photosPermissionMessage'),
-          [{ text: t('common.ok') }]
-        );
-        return;
-      }
-
-      console.log('[useChat] Opening image picker');
-      
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images', 'videos'],
-        allowsMultipleSelection: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        console.log('[useChat] Selected', result.assets.length, 'items');
-        
-        const newAttachments: Attachment[] = result.assets.map((asset) => ({
-          type: asset.type === 'video' ? 'video' : 'image',
-          uri: asset.uri,
-          mimeType: asset.type,
-        }));
-        
-        setAttachments(prev => [...prev, ...newAttachments]);
-      }
-    } catch (error) {
-      console.error('[useChat] Image picker error:', error);
-      Alert.alert(t('common.error'), t('attachments.failedToOpenImagePicker'));
-    }
-  }, [t, attachments]);
-
-  const handleChooseFiles = useCallback(async () => {
-    console.log('[useChat] Choose files');
-    
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-        multiple: true,
-      });
-
-      if (result.canceled) {
-        console.log('[useChat] Document picker canceled');
-        return;
-      }
-
-      if (result.assets && result.assets.length > 0) {
-        console.log('[useChat] Selected', result.assets.length, 'files');
-        
-        const newAttachments: Attachment[] = result.assets.map((asset) => ({
-          type: 'document',
-          uri: asset.uri,
-          name: asset.name,
-          size: asset.size,
-          mimeType: asset.mimeType,
-        }));
-        
-        setAttachments(prev => [...prev, ...newAttachments]);
-      }
-    } catch (error) {
-      console.error('[useChat] Document picker error:', error);
-      Alert.alert(t('common.error'), t('attachments.failedToOpenFilePicker'));
-    }
-  }, [t, attachments]);
-
-  const removeAttachment = useCallback((index: number) => {
-    console.log('[useChat] Removing attachment at index:', index);
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-  }, []);
+  }, [agentRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
   const addAttachment = useCallback((attachment: Attachment) => {
-    console.log('[useChat] Adding attachment:', attachment);
     setAttachments(prev => [...prev, attachment]);
   }, []);
 
-  // ============================================================================
-  // Public API - Quick Actions
-  // ============================================================================
+  const removeAttachment = useCallback((index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleTakePicture = useCallback(async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        t('permissions.cameraTitle'),
+        t('permissions.cameraMessage')
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      addAttachment({
+        type: 'image',
+        uri: asset.uri,
+        name: asset.fileName || `photo_${Date.now()}.jpg`,
+        mimeType: asset.mimeType || 'image/jpeg',
+      });
+    }
+    
+    setIsAttachmentDrawerVisible(false);
+  }, [t, addAttachment]);
+
+  const handleChooseImages = useCallback(async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        t('permissions.galleryTitle'),
+        t('permissions.galleryMessage')
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      result.assets.forEach(asset => {
+        addAttachment({
+          type: 'image',
+          uri: asset.uri,
+          name: asset.fileName || `image_${Date.now()}.jpg`,
+          mimeType: asset.mimeType || 'image/jpeg',
+        });
+      });
+    }
+    
+    setIsAttachmentDrawerVisible(false);
+  }, [t, addAttachment]);
+
+  const handleChooseFiles = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled) {
+        result.assets.forEach(asset => {
+          addAttachment({
+            type: 'document',
+            uri: asset.uri,
+            name: asset.name,
+            size: asset.size || undefined,
+            mimeType: asset.mimeType || undefined,
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Error picking document:', error);
+    }
+    
+    setIsAttachmentDrawerVisible(false);
+  }, [addAttachment]);
 
   const handleQuickAction = useCallback((actionId: string) => {
-    console.log('[useChat] Quick action:', actionId);
-    
-    if (selectedQuickAction === actionId) {
-      setSelectedQuickAction(null);
-    } else {
-      setSelectedQuickAction(actionId);
-    }
-  }, [selectedQuickAction]);
+    setSelectedQuickAction(actionId);
+  }, []);
 
   const clearQuickAction = useCallback(() => {
-    console.log('[useChat] Clearing quick action');
     setSelectedQuickAction(null);
   }, []);
 
   const getPlaceholder = useCallback(() => {
-    if (!selectedQuickAction) return t('placeholders.default');
-    
-    switch (selectedQuickAction) {
-      case 'image':
-        return t('placeholders.imageGeneration');
-      case 'slides':
-        return t('placeholders.slidesGeneration');
-      case 'data':
-        return t('placeholders.dataAnalysis');
-      case 'docs':
-        return t('placeholders.documentCreation');
-      case 'people':
-        return t('placeholders.peopleSearch');
-      case 'research':
-        return t('placeholders.researchQuery');
-      default:
-        return t('placeholders.default');
+    if (selectedQuickAction) {
+      switch (selectedQuickAction) {
+        case 'summarize':
+          return t('quickActions.summarizePlaceholder') || 'What would you like to summarize?';
+        case 'translate':
+          return t('quickActions.translatePlaceholder') || 'What would you like to translate?';
+        case 'explain':
+          return t('quickActions.explainPlaceholder') || 'What would you like explained?';
+        default:
+          return t('chat.inputPlaceholder') || 'Type a message...';
+      }
     }
+    return t('chat.inputPlaceholder') || 'Type a message...';
   }, [selectedQuickAction, t]);
 
-  // ============================================================================
-  // Public API - Attachment Drawer
-  // ============================================================================
-
   const openAttachmentDrawer = useCallback(() => {
-    console.log('[useChat] Opening attachment drawer');
-    Keyboard.dismiss(); // Dismiss keyboard to prevent interference
     setIsAttachmentDrawerVisible(true);
   }, []);
 
   const closeAttachmentDrawer = useCallback(() => {
-    console.log('[useChat] Closing attachment drawer');
     setIsAttachmentDrawerVisible(false);
   }, []);
 
-  // ============================================================================
-  // Public API - Audio Transcription
-  // ============================================================================
-
   const transcribeAndAddToInput = useCallback(async (audioUri: string) => {
-    console.log('[useChat] Transcribing audio:', audioUri);
-    
-    // Validate audio file
-    const validation = validateAudioFile(audioUri);
-    if (!validation.valid) {
-      console.error('[useChat] Invalid audio file:', validation.error);
-      Alert.alert(t('common.error'), validation.error || 'Invalid audio file');
-      return;
-    }
-    
-    setIsTranscribing(true);
-    
     try {
-      // Transcribe audio
-      const transcribedText = await transcribeAudio(audioUri);
-      console.log('[useChat] Transcription complete:', transcribedText);
+      setIsTranscribing(true);
       
-      // Add transcribed text to input
-      // If there's already text, add a space before appending
-      setInputValue(prev => {
-        const newValue = prev ? `${prev} ${transcribedText}` : transcribedText;
-        console.log('[useChat] Updated input value with transcription');
-        return newValue;
-      });
+      const validation = await validateAudioFile(audioUri);
+      if (!validation.valid) {
+        Alert.alert(t('common.error'), validation.error || 'Invalid audio file');
+        return;
+      }
+
+      const transcript = await transcribeAudio(audioUri);
       
-      // Show success feedback
-      console.log('✅ Transcription added to input');
+      if (transcript) {
+        setInputValue(prev => {
+          const separator = prev.trim() ? ' ' : '';
+          return prev + separator + transcript;
+        });
+      }
     } catch (error) {
-      console.error('[useChat] Transcription failed:', error);
+      console.error('Transcription error:', error);
       Alert.alert(
         t('common.error'),
-        error instanceof Error ? error.message : 'Failed to transcribe audio'
+        t('audio.transcriptionFailed') || 'Failed to transcribe audio'
       );
     } finally {
       setIsTranscribing(false);
     }
   }, [t]);
 
-  // ============================================================================
-  // Computed State
-  // ============================================================================
-
   const activeThread = useMemo(() => {
-    if (!threadData) return null;
+    if (!activeThreadId || !threadData) return null;
+    
     return {
-      id: threadData.thread_id,
-      title: threadData.project?.name || threadData.title || 'New Chat',
-      messages: messages,
+      id: activeThreadId,
+      title: threadData.title,
+      messages,
       createdAt: new Date(threadData.created_at),
       updatedAt: new Date(threadData.updated_at),
     };
-  }, [threadData, messages]);
+  }, [activeThreadId, threadData, messages]);
 
-  // ✨ Agent running state - combines agentRunId, streaming, and currentRunIdRef
-  // Note: Don't include sendMessageMutation/unifiedAgentStartMutation.isPending here
-  // as those are for initial send, not for ongoing agent execution
-  const isAgentRunning = !!agentRunId || isStreaming || !!currentRunIdRef.current;
-  
-  // Debug running state
-  useEffect(() => {
-    console.log('🔍 [useChat] Running state check:', {
-      agentRunId: !!agentRunId,
-      isStreaming,
-      currentRunId: !!currentRunIdRef.current,
-      isAgentRunning
-    });
-  }, [agentRunId, isStreaming, isAgentRunning]);
-  
-  // Check if any attachments are currently uploading
-  const hasUploadingAttachments = attachments.some(a => a.isUploading);
-  
-  // Don't disable input during upload - only during message send/agent run
-  const isSendingMessage = sendMessageMutation.isPending || unifiedAgentStartMutation.isPending;
-  
-  // Compute isLoading: true when thread data or messages are being fetched
-  // ✨ BUT: Never show loading when we have messages (optimistic or real) - they should appear instantly
-  // ✨ AND: Never show loading for new optimistic threads - they should appear instantly
-  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic && messages.length === 0;
-
-  // ============================================================================
-  // Return Public API
-  // ============================================================================
+  const isLoading = (isThreadLoading || isMessagesLoading) && 
+    !!activeThreadId && 
+    !isNewThreadOptimistic && 
+    messages.length === 0;
 
   return {
-    // Thread Management
     activeThread,
     threads: threadsData,
     loadThread,
@@ -1306,51 +759,41 @@ export function useChat(): UseChatReturn {
     refreshMessages,
     activeSandboxId,
     
-    // Messages & Streaming
     messages,
-    streamingContent,
+    streamingContent: streamingTextContent,
     streamingToolCall,
     isStreaming,
     
-    // Message Operations
     sendMessage,
     stopAgent,
     
-    // Input State
     inputValue,
     setInputValue,
     attachments,
     addAttachment,
     removeAttachment,
     
-    // Tool Drawer
     selectedToolData,
     setSelectedToolData,
     
-    // Loading States
     isLoading,
-    isSendingMessage,
-    isAgentRunning,
+    isSendingMessage: sendMessageMutation.isPending || unifiedAgentStartMutation.isPending,
+    isAgentRunning: isStreaming,
     
-    // Attachment Actions
     handleTakePicture,
     handleChooseImages,
     handleChooseFiles,
     
-    // Quick Actions
     selectedQuickAction,
     handleQuickAction,
     clearQuickAction,
     getPlaceholder,
     
-    // Attachment Drawer
     isAttachmentDrawerVisible,
     openAttachmentDrawer,
     closeAttachmentDrawer,
     
-    // Audio Transcription
     transcribeAndAddToInput,
     isTranscribing,
   };
 }
-
