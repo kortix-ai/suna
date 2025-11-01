@@ -44,7 +44,10 @@ export function useThreadData(threadId: string, projectId: string): UseThreadDat
 
   const threadQuery = useThreadQuery(threadId);
   const messagesQuery = useMessagesQuery(threadId);
-  const projectQuery = useProjectQuery(projectId);
+  
+  // For shared pages, projectId might be empty - get it from thread data
+  const effectiveProjectId = projectId || threadQuery.data?.project_id || '';
+  const projectQuery = useProjectQuery(effectiveProjectId);
   const agentRunsQuery = useAgentRunsQuery(threadId);
   
   // (debug logs removed)

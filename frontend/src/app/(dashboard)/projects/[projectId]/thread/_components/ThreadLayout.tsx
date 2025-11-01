@@ -42,6 +42,7 @@ interface ThreadLayoutProps {
   agentName?: string;
   disableInitialAnimation?: boolean;
   compact?: boolean;
+  variant?: 'default' | 'shared';
 }
 
 export function ThreadLayout({
@@ -77,10 +78,11 @@ export function ThreadLayout({
   initialLoadCompleted,
   agentName,
   disableInitialAnimation = false,
-  compact = false
+  compact = false,
+  variant = 'default'
 }: ThreadLayoutProps) {
   const isActuallyMobile = useIsMobile();
-  
+
   // Compact mode for embedded use
   if (compact) {
     return (
@@ -170,6 +172,7 @@ export function ThreadLayout({
           onProjectRenamed={onProjectRenamed}
           isMobileView={isMobile}
           debugMode={debugMode}
+          variant={variant}
         />
 
         {children}

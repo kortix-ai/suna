@@ -58,7 +58,7 @@ export const PlaybackControls = ({
   const [playbackState, setPlaybackState] = useState<PlaybackState>({
     isPlaying: false,
     currentMessageIndex: 0,
-    visibleMessages: [],
+    visibleMessages: messages.length > 0 ? [messages[0]] : [], // Start with just the first message
     streamingText: '',
     isStreamingText: false,
     currentToolCall: null,
@@ -76,11 +76,28 @@ export const PlaybackControls = ({
 
   const playbackTimeout = useRef<NodeJS.Timeout | null>(null);
   const [isToolInitialized, setIsToolInitialized] = useState(false);
+  const playbackStateRef = useRef(playbackState);
+  const isProcessingRef = useRef(false);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    playbackStateRef.current = playbackState;
+  }, [playbackState]);
 
   // Helper function to update playback state
   const updatePlaybackState = useCallback((updates: Partial<PlaybackState>) => {
     setPlaybackState((prev) => ({ ...prev, ...updates }));
   }, []);
+
+  // Sync visible messages when messages prop changes (for initial load)
+  useEffect(() => {
+    if (messages.length > 0 && visibleMessages.length === 0) {
+      setPlaybackState((prev) => ({
+        ...prev,
+        visibleMessages: [messages[0]], // Show only first message initially
+      }));
+    }
+  }, [messages.length, visibleMessages.length]);
 
   // Define togglePlayback and resetPlayback functions
   const togglePlayback = useCallback(() => {
@@ -185,7 +202,13 @@ export const PlaybackControls = ({
   // Streaming text function
   const streamText = useCallback(
     (text: string, onComplete: () => void) => {
-      if (!text || !isPlaying) {
+      if (!text) {
+        onComplete();
+        return () => { };
+      }
+
+      // Check isPlaying from ref, not closure
+      if (!playbackStateRef.current.isPlaying) {
         onComplete();
         return () => { };
       }
@@ -236,8 +259,8 @@ export const PlaybackControls = ({
       let isPaused = false;
 
       const processNextCharacter = () => {
-        // Check if component is unmounted or playback is stopped
-        if (!isPlaying || isPaused) {
+        // Check if component is unmounted or playback is stopped - use ref for current state
+        if (!playbackStateRef.current.isPlaying || isPaused) {
           setTimeout(processNextCharacter, 100); // Check again after a short delay
           return;
         }
@@ -349,72 +372,99 @@ export const PlaybackControls = ({
     ],
   );
 
-  // Main playback function
+  // Main playback function - ONLY triggers when play/pause changes
   useEffect(() => {
     if (!isPlaying || messages.length === 0) return;
 
-    let cleanupStreaming: (() => void) | undefined;
+    let isCancelled = false;
 
-    const playbackNextMessage = async () => {
-      // Ensure we're within bounds
-      if (currentMessageIndex >= messages.length) {
-        updatePlaybackState({ isPlaying: false });
-        return;
-      }
+    const runPlaybackLoop = async () => {
+      while (!isCancelled && playbackStateRef.current.isPlaying) {
+        const state = playbackStateRef.current;
+        const msgIndex = state.currentMessageIndex;
 
-      const currentMessage = messages[currentMessageIndex];
-      // If it's an assistant message, stream it
-      if (currentMessage.type === 'assistant') {
-        try {
-          // Parse the content if it's JSON
-          let content = currentMessage.content;
-          try {
-            const parsed = JSON.parse(content);
-            if (parsed.content) {
-              content = parsed.content;
-            }
-          } catch (e) {
-            // Not JSON, use as is
-          }
-
-          // Stream the message content
-          await new Promise<void>((resolve) => {
-            cleanupStreaming = streamText(content, resolve);
-          });
-        } catch (error) {
-          console.error('Error streaming message:', error);
+        // Check if we're done
+        if (msgIndex >= messages.length) {
+          setPlaybackState(prev => ({ ...prev, isPlaying: false }));
+          break;
         }
-      } else {
-        // For non-assistant messages, just add them to visible messages
-        updatePlaybackState({
-          visibleMessages: [...visibleMessages, currentMessage],
-        });
 
-        // Wait a moment before showing the next message
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        const currentMessage = messages[msgIndex];
+
+        // Skip if this message is already visible (happens with first message on autoplay)
+        const isAlreadyVisible = state.visibleMessages.some(
+          (m) => m.message_id === currentMessage.message_id
+        );
+
+        if (isAlreadyVisible && msgIndex === 0) {
+          // First message already visible, just move to next
+          setPlaybackState(prev => ({
+            ...prev,
+            currentMessageIndex: prev.currentMessageIndex + 1,
+          }));
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        }
+
+        // If it's an assistant message, stream it
+        if (currentMessage.type === 'assistant') {
+          try {
+            // Parse the content if it's JSON
+            let content = currentMessage.content;
+            try {
+              const parsed = JSON.parse(content);
+              if (parsed.content) {
+                content = parsed.content;
+              }
+            } catch (e) {
+              // Not JSON, use as is
+            }
+
+            // Stream the message content and wait for completion
+            let cleanup: (() => void) | undefined;
+            await new Promise<void>((resolve) => {
+              cleanup = streamText(content, () => {
+                console.log('Stream completed for message', msgIndex);
+                resolve();
+              });
+            });
+
+            if (cleanup && isCancelled) {
+              cleanup();
+            }
+          } catch (error) {
+            console.error('Error streaming message:', error);
+          }
+        } else {
+          // For non-assistant messages, just add them to visible messages
+          setPlaybackState(prev => ({
+            ...prev,
+            visibleMessages: [...prev.visibleMessages, currentMessage],
+          }));
+
+          // Wait a moment before showing the next message
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
+        if (isCancelled) break;
+
+        // Move to the next message
+        setPlaybackState(prev => ({
+          ...prev,
+          currentMessageIndex: prev.currentMessageIndex + 1,
+        }));
+
+        // Longer delay between messages to prevent infinite loop
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
-
-      // Move to the next message
-      updatePlaybackState({
-        currentMessageIndex: currentMessageIndex + 1,
-      });
     };
 
-    // Start playback with a small delay
-    playbackTimeout.current = setTimeout(playbackNextMessage, 500);
+    runPlaybackLoop();
 
     return () => {
-      clearTimeout(playbackTimeout.current);
-      if (cleanupStreaming) cleanupStreaming();
+      isCancelled = true;
     };
-  }, [
-    isPlaying,
-    currentMessageIndex,
-    messages,
-    streamText,
-    updatePlaybackState,
-    visibleMessages,
-  ]);
+  }, [isPlaying, messages, streamText]);
 
   // Floating playback controls position based on side panel state
   const controlsPositionClass = isSidePanelOpen
