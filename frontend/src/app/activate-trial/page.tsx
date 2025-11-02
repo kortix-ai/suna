@@ -17,8 +17,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
-import { MaintenanceAlert } from '@/components/maintenance-alert';
 import { useAuth } from '@/components/AuthProvider';
+import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 
 export default function ActivateTrialPage() {
   const router = useRouter();
@@ -81,7 +81,7 @@ export default function ActivateTrialPage() {
   }
 
   if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
+    return <MaintenancePage/>;
   }
 
   const isLoading = isLoadingSubscription || isLoadingTrial;

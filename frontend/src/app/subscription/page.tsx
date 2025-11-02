@@ -15,7 +15,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
-import { MaintenanceAlert } from '@/components/maintenance-alert';
+import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 
 export default function SubscriptionRequiredPage() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
@@ -74,7 +74,7 @@ export default function SubscriptionRequiredPage() {
   }
 
   if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
+    return <MaintenancePage/>;
   }
 
 
