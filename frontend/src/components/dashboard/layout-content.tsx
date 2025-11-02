@@ -17,7 +17,6 @@ import { useProjects, useThreads } from '@/hooks/react-query/sidebar/use-sidebar
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
-import { MaintenanceAlert } from '../maintenance-alert';
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider';
 
 interface DashboardLayoutContentProps {
@@ -99,7 +98,7 @@ export default function DashboardLayoutContent({
   // Show maintenance page if maintenance mode is enabled
   // Only show if we have actual data (not placeholder) or if explicitly enabled
   if (maintenanceNotice?.enabled && !maintenanceLoading) {
-    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
+    return <MaintenancePage/>
   }
 
   // Show maintenance page if API is not healthy OR if health check failed
