@@ -779,9 +779,9 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                     canPurchase={subscriptionData?.can_purchase_credits || false}
                     onPurchaseClick={() => setShowCreditPurchaseModal(true)}
                 />
-            </div>            {/* Cancel Dialog */}
+            </div>
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle>Cancel Subscription</DialogTitle>
                     </DialogHeader>

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
 
-TRIAL_ENABLED = True
+TRIAL_ENABLED = False
 TRIAL_DURATION_DAYS = 7
 TRIAL_TIER = "tier_2_20"
 TRIAL_CREDITS = Decimal("5.00")
@@ -36,8 +36,8 @@ TIERS: Dict[str, Tier] = {
     ),
     'free': Tier(
         name='free',
-        price_ids=[],
-        monthly_credits=Decimal('0.00'),
+        price_ids=[config.STRIPE_FREE_TIER_ID],
+        monthly_credits=Decimal('3.00'),
         display_name='Free Tier',
         can_purchase_credits=False,
         models=['all'],

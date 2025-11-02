@@ -453,10 +453,83 @@ class WebhookService:
     
     async def _handle_subscription_created_or_updated(self, event, client):
         subscription = event.data.object
+        subscription_id = subscription.get('id')
+        subscription_status = subscription.get('status')
+        
+        logger.info(f"[SUBSCRIPTION HANDLER] Event: {event.type}, Subscription: {subscription_id}, Status: {subscription_status}")
         
         if event.type == 'customer.subscription.updated':
             previous_attributes = event.data.get('previous_attributes', {})
             await self._handle_subscription_updated(event, subscription, client)
+        
+        if event.type == 'customer.subscription.created':
+            logger.info(f"[SUBSCRIPTION.CREATED] Processing subscription.created for {subscription_id}")
+            account_id = subscription.get('metadata', {}).get('account_id')
+            customer_id = subscription.get('customer')
+            price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+            
+            logger.info(f"[SUBSCRIPTION.CREATED] account_id={account_id}, customer_id={customer_id}, price_id={price_id}")
+            
+            if not account_id and customer_id:
+                customer_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id')\
+                    .eq('id', customer_id)\
+                    .execute()
+                if customer_result.data:
+                    account_id = customer_result.data[0].get('account_id')
+                    logger.info(f"[SUBSCRIPTION.CREATED] Found account_id from billing_customers: {account_id}")
+            
+            if account_id and customer_id:
+                canceled_subs = []
+                new_price = subscription['items']['data'][0]['price']
+                new_amount = new_price.get('unit_amount', 0) or 0
+                
+                logger.info(f"[SUBSCRIPTION CLEANUP] New subscription {subscription_id} created with amount ${new_amount/100:.2f}, checking for duplicates...")
+                
+                previous_subscription_id = subscription.get('metadata', {}).get('previous_subscription_id')
+                if previous_subscription_id:
+                    try:
+                        logger.info(f"[UPGRADE CLEANUP] Immediately canceling previous subscription {previous_subscription_id} for {account_id}")
+                        await StripeAPIWrapper.cancel_subscription(previous_subscription_id)
+                        canceled_subs.append(previous_subscription_id)
+                        logger.info(f"[UPGRADE CLEANUP] ✅ Canceled previous subscription {previous_subscription_id}")
+                    except stripe.error.StripeError as e:
+                        logger.warning(f"[UPGRADE CLEANUP] Could not cancel previous subscription {previous_subscription_id}: {e}")
+                
+                try:
+                    logger.info(f"[SUBSCRIPTION CLEANUP] Fetching all active subscriptions for customer {customer_id}")
+                    customer_subs = await self.stripe.Subscription.list_async(
+                        customer=customer_id,
+                        status='active',
+                        limit=10
+                    )
+                    
+                    logger.info(f"[SUBSCRIPTION CLEANUP] Found {len(customer_subs.data)} active subscriptions for customer")
+                    
+                    for old_sub in customer_subs.data:
+                        if old_sub.id != subscription_id and old_sub.id not in canceled_subs:
+                            old_price = old_sub['items']['data'][0]['price']
+                            old_amount = old_price.get('unit_amount', 0) or 0
+                            
+                            logger.info(f"[SUBSCRIPTION CLEANUP] Checking subscription {old_sub.id} with amount ${old_amount/100:.2f}")
+                            
+                            if old_amount == 0 and new_amount > 0:
+                                logger.info(f"[DUPLICATE CLEANUP] New subscription is PAID (${new_amount/100:.2f}), canceling old FREE subscription {old_sub.id}")
+                                await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                canceled_subs.append(old_sub.id)
+                                logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled old $0 subscription {old_sub.id}")
+                            elif old_amount == 0 and new_amount == 0:
+                                logger.info(f"[DUPLICATE CLEANUP] Both are $0, keeping newer subscription {subscription_id}, canceling old {old_sub.id}")
+                                await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                canceled_subs.append(old_sub.id)
+                                logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled duplicate $0 subscription {old_sub.id}")
+                    
+                    if canceled_subs:
+                        logger.info(f"[CLEANUP SUMMARY] ✅ Canceled {len(canceled_subs)} old subscriptions: {canceled_subs}")
+                    else:
+                        logger.info(f"[CLEANUP SUMMARY] No duplicate subscriptions found to cancel")
+                except stripe.error.StripeError as e:
+                    logger.error(f"[DUPLICATE CLEANUP] Error checking for duplicate subscriptions: {e}")
         
         if subscription.status in ['active', 'trialing']:
             if subscription.status == 'trialing' and not subscription.get('metadata', {}).get('account_id'):
@@ -477,27 +550,110 @@ class WebhookService:
                         logger.error(f"[WEBHOOK] Failed to update subscription metadata: {e}")
             
             if event.type == 'customer.subscription.created':
+                logger.info(f"[SUBSCRIPTION.CREATED] Processing subscription.created event for subscription {subscription.get('id')}")
                 account_id = subscription.get('metadata', {}).get('account_id')
                 price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                 commitment_type = subscription.get('metadata', {}).get('commitment_type')
+                customer_id = subscription.get('customer')
+                
+                logger.info(f"[SUBSCRIPTION.CREATED] account_id={account_id}, customer_id={customer_id}, price_id={price_id}")
                 
                 if not account_id:
                     customer_result = await client.schema('basejump').from_('billing_customers')\
                         .select('account_id')\
-                        .eq('id', subscription['customer'])\
+                        .eq('id', customer_id)\
                         .execute()
                     if customer_result.data:
                         account_id = customer_result.data[0].get('account_id')
                 
-                if account_id:
+                if account_id and customer_id:
+                    canceled_subs = []
+                    new_price = subscription['items']['data'][0]['price']
+                    new_amount = new_price.get('unit_amount', 0) or 0
+                    
+                    logger.info(f"[SUBSCRIPTION CLEANUP] New subscription {subscription.id} created with amount ${new_amount/100:.2f}, checking for duplicates...")
+                    
+                    previous_subscription_id = subscription.get('metadata', {}).get('previous_subscription_id')
+                    if previous_subscription_id:
+                        try:
+                            logger.info(f"[UPGRADE CLEANUP] Immediately canceling previous subscription {previous_subscription_id} for {account_id}")
+                            await StripeAPIWrapper.cancel_subscription(previous_subscription_id)
+                            canceled_subs.append(previous_subscription_id)
+                            logger.info(f"[UPGRADE CLEANUP] ✅ Canceled previous subscription {previous_subscription_id}")
+                        except stripe.error.StripeError as e:
+                            logger.warning(f"[UPGRADE CLEANUP] Could not cancel previous subscription {previous_subscription_id}: {e}")
+                    
+                    try:
+                        logger.info(f"[SUBSCRIPTION CLEANUP] Fetching all active subscriptions for customer {customer_id}")
+                        customer_subs = await self.stripe.Subscription.list_async(
+                            customer=customer_id,
+                            status='active',
+                            limit=10
+                        )
+                        
+                        logger.info(f"[SUBSCRIPTION CLEANUP] Found {len(customer_subs.data)} active subscriptions for customer")
+                        
+                        for old_sub in customer_subs.data:
+                            if old_sub.id != subscription.id and old_sub.id not in canceled_subs:
+                                old_price = old_sub['items']['data'][0]['price']
+                                old_amount = old_price.get('unit_amount', 0) or 0
+                                
+                                logger.info(f"[SUBSCRIPTION CLEANUP] Checking subscription {old_sub.id} with amount ${old_amount/100:.2f}")
+                                
+                                if old_amount == 0 and new_amount > 0:
+                                    logger.info(f"[DUPLICATE CLEANUP] New subscription is PAID (${new_amount/100:.2f}), canceling old FREE subscription {old_sub.id}")
+                                    await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                    canceled_subs.append(old_sub.id)
+                                    logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled old $0 subscription {old_sub.id}")
+                                elif old_amount == 0 and new_amount == 0:
+                                    logger.info(f"[DUPLICATE CLEANUP] Both are $0, keeping newer subscription {subscription.id}, canceling old {old_sub.id}")
+                                    await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                    canceled_subs.append(old_sub.id)
+                                    logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled duplicate $0 subscription {old_sub.id}")
+                        
+                        if canceled_subs:
+                            logger.info(f"[CLEANUP SUMMARY] ✅ Canceled {len(canceled_subs)} old subscriptions: {canceled_subs}")
+                        else:
+                            logger.info(f"[CLEANUP SUMMARY] No duplicate subscriptions found to cancel")
+                    except stripe.error.StripeError as e:
+                        logger.error(f"[DUPLICATE CLEANUP] Error checking for duplicate subscriptions: {e}")
+                    
                     trial_check = await client.from_('credit_accounts').select(
-                        'trial_status, tier'
+                        'trial_status, tier, stripe_subscription_id'
                     ).eq('account_id', account_id).execute()
                     
                     if trial_check.data:
                         trial_status = trial_check.data[0].get('trial_status')
+                        current_tier = trial_check.data[0].get('tier')
+                        current_subscription_id = trial_check.data[0].get('stripe_subscription_id')
                         
-                        if trial_status == 'active':
+                        if current_tier == 'free' and subscription.status == 'active':
+                            logger.info(f"[WEBHOOK] User {account_id} upgrading from free tier to paid")
+                            tier_info = get_tier_by_price_id(price_id)
+                            if tier_info:
+                                billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                                next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                                
+                                await client.from_('credit_accounts').update({
+                                    'tier': tier_info.name,
+                                    'stripe_subscription_id': subscription['id'],
+                                    'billing_cycle_anchor': billing_anchor.isoformat(),
+                                    'next_credit_grant': next_grant_date.isoformat(),
+                                    'last_grant_date': billing_anchor.isoformat()
+                                }).eq('account_id', account_id).execute()
+                                
+                                from decimal import Decimal
+                                await credit_manager.add_credits(
+                                    account_id=account_id,
+                                    amount=Decimal(str(tier_info.monthly_credits)),
+                                    is_expiring=True,
+                                    description=f"Initial {tier_info.display_name} subscription credits",
+                                    expires_at=next_grant_date
+                                )
+                                
+                                logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from free tier")
+                        
+                        elif trial_status == 'active':
                             tier_info = get_tier_by_price_id(price_id)
                             if tier_info:
                                 await client.from_('credit_accounts').update({
@@ -1074,6 +1230,21 @@ class WebhookService:
                     return
                 
                 is_true_renewal = billing_reason == 'subscription_cycle'
+                is_initial_subscription = billing_reason == 'subscription_create'
+                
+                if is_initial_subscription:
+                    last_grant = account.get('last_grant_date')
+                    if last_grant:
+                        last_grant_dt = datetime.fromisoformat(last_grant.replace('Z', '+00:00'))
+                        seconds_since_grant = (datetime.now(timezone.utc) - last_grant_dt).total_seconds()
+                        
+                        if seconds_since_grant < 60:
+                            logger.info(f"[INITIAL GRANT SKIP] Credits already granted {seconds_since_grant:.0f}s ago via subscription.created webhook, skipping duplicate grant")
+                            await client.from_('credit_accounts').update({
+                                'last_processed_invoice_id': invoice_id
+                            }).eq('account_id', account_id).execute()
+                            return
+                
                 if is_true_renewal:
                     logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id} (TRUE RENEWAL)")
                     result = await client.rpc('atomic_grant_renewal_credits', {

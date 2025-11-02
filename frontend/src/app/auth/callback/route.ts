@@ -28,6 +28,28 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${baseUrl}/auth?error=${encodeURIComponent(error.message)}`)
       }
 
+      if (data.user) {
+        const { data: accountData } = await supabase
+          .schema('basejump')
+          .from('accounts')
+          .select('id')
+          .eq('primary_owner_user_id', data.user.id)
+          .eq('personal_account', true)
+          .single();
+
+        if (accountData) {
+          const { data: creditAccount } = await supabase
+            .from('credit_accounts')
+            .select('tier, stripe_subscription_id')
+            .eq('account_id', accountData.id)
+            .single();
+
+          if (creditAccount && (creditAccount.tier === 'none' || !creditAccount.stripe_subscription_id)) {
+            return NextResponse.redirect(`${baseUrl}/setting-up`);
+          }
+        }
+      }
+
       // URL to redirect to after sign in process completes
       return NextResponse.redirect(`${baseUrl}${next}`)
     } catch (error) {

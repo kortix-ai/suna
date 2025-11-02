@@ -20,10 +20,11 @@ const PUBLIC_ROUTES = [
   '/support', // Support page should be public
 ];
 
-// Routes that require authentication but are related to billing/trials
+// Routes that require authentication but are related to billing/trials/setup
 const BILLING_ROUTES = [
   '/activate-trial',
   '/subscription',
+  '/setting-up',
 ];
 
 // Routes that require authentication and active subscription
@@ -149,24 +150,14 @@ export async function middleware(request: NextRequest) {
       const trialExpired = creditAccount.trial_status === 'expired' || creditAccount.trial_status === 'cancelled';
       const trialConverted = creditAccount.trial_status === 'converted';
       
-      if (hasPaidTier && (trialConverted || !trialExpired)) {
-        return supabaseResponse;
-      }
-
-      if (hasFreeTier && !hasActiveTrial) {
+      if (hasPaidTier || hasFreeTier) {
         return supabaseResponse;
       }
 
       if (!hasPaidTier && !hasFreeTier && !hasActiveTrial && !trialConverted) {
-        if (hasUsedTrial || trialExpired || creditAccount.trial_status === 'cancelled') {
-          const url = request.nextUrl.clone();
-          url.pathname = '/subscription';
-          return NextResponse.redirect(url);
-        } else {
-          const url = request.nextUrl.clone();
-          url.pathname = '/activate-trial';
-          return NextResponse.redirect(url);
-        }
+        const url = request.nextUrl.clone();
+        url.pathname = '/subscription';
+        return NextResponse.redirect(url);
       } else if ((trialExpired || trialConverted) && !hasPaidTier && !hasFreeTier) {
         const url = request.nextUrl.clone();
         url.pathname = '/subscription';
