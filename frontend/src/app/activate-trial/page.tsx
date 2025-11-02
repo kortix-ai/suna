@@ -19,6 +19,7 @@ import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
 import { useAuth } from '@/components/AuthProvider';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
+import { useAdminRole } from '@/hooks/react-query/use-admin-role';
 
 export default function ActivateTrialPage() {
   const router = useRouter();
@@ -27,6 +28,8 @@ export default function ActivateTrialPage() {
   const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus(!!user);
   const startTrialMutation = useStartTrial();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
+  const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
+  const isAdmin = adminRoleData?.isAdmin ?? false;
 
   useEffect(() => {
     if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
@@ -70,7 +73,7 @@ export default function ActivateTrialPage() {
     router.push('/auth');
   };
 
-  const isMaintenanceLoading = maintenanceLoading;
+  const isMaintenanceLoading = maintenanceLoading || isCheckingAdminRole;
 
   if (isMaintenanceLoading) {
     return (
@@ -80,7 +83,7 @@ export default function ActivateTrialPage() {
     );
   }
 
-  if (maintenanceNotice?.enabled) {
+  if (maintenanceNotice?.enabled && !isAdmin) {
     return <MaintenancePage/>;
   }
 
