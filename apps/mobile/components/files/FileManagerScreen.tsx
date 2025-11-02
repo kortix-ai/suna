@@ -122,14 +122,8 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
     staleTime: 0,
-    cacheTime: 0,
+    gcTime: 0,
   });
-
-  // Refetch on initial mount (when "manage files" is clicked)
-  React.useEffect(() => {
-    console.log('[FileManagerScreen] Initial mount - refetching files...');
-    refetch();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     if (sandboxId) {
@@ -146,7 +140,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
   const wasStreamingRef = React.useRef(isStreaming);
   
   // Refetch when streaming ends
-  React.useEffect(() => {
+  React.useEffect(() => { 
     if (wasStreamingRef.current && !isStreaming) {
       console.log('[FileManagerScreen] Streaming ended, refetching files...');
       // Delay refetch to ensure backend has processed files
