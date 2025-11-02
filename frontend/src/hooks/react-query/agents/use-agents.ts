@@ -99,7 +99,10 @@ export const useUpdateAgent = () => {
       updateAgent(agentId, data),
     {
       onSuccess: (data, variables) => {
+        // Update the cache optimistically
         queryClient.setQueryData(agentKeys.detail(variables.agentId), data);
+        // Invalidate to ensure all dependent queries are refreshed
+        queryClient.invalidateQueries({ queryKey: agentKeys.detail(variables.agentId) });
         queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
       },
     }
