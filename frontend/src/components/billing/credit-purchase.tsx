@@ -247,4 +247,4 @@ export function CreditBalanceDisplay({ balance, canPurchase, onPurchaseClick }: 
             </CardContent>
         </Card>
     );
-} 
+}
