@@ -197,6 +197,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const supabase = createClient();
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
@@ -242,6 +243,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const handleRequestDeletion = async () => {
         await requestDeletion.mutateAsync('User requested deletion');
         setShowDeleteDialog(false);
+        setDeleteConfirmText('');
     };
 
     const handleCancelDeletion = async () => {
@@ -364,34 +366,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <Trash2 className="h-4 w-4" />
                                     Delete Account
                                 </Button>
-                                
-                                {!isLocalMode() && (
-                                    <Button
-                                        variant="destructive"
-                                        onClick={async () => {
-                                            if (confirm('⚠️ TEST MODE: This will IMMEDIATELY delete your account. Continue?')) {
-                                                try {
-                                                    const response = await backendApi.delete('/account/delete-immediately');
-                                                    if (response.success) {
-                                                        toast.success('Account deleted immediately (test mode)');
-                                                        setTimeout(() => window.location.href = '/login', 1000);
-                                                    }
-                                                } catch (error) {
-                                                    toast.error('Failed to delete account');
-                                                }
-                                            }
-                                        }}
-                                        className="w-full sm:w-auto mt-2"
-                                        size="sm"
-                                    >
-                                        🧪 Test: Delete Immediately
-                                    </Button>
-                                )}
                             </>
                         )}
                     </div>
 
-                    <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                    <Dialog open={showDeleteDialog} onOpenChange={(open) => {
+                        setShowDeleteDialog(open);
+                        if (!open) setDeleteConfirmText('');
+                    }}>
                         <DialogContent className="max-w-md">
                             <DialogHeader>
                                 <DialogTitle>Delete Account</DialogTitle>
@@ -418,14 +400,32 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     You can cancel this request anytime within the 30-day grace period.
                                     After 30 days, all your data will be permanently deleted and cannot be recovered.
                                 </p>
+                                
+                                <div className="space-y-2">
+                                    <Label htmlFor="delete-confirm">
+                                        Type <strong>delete</strong> to confirm
+                                    </Label>
+                                    <Input
+                                        id="delete-confirm"
+                                        value={deleteConfirmText}
+                                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                        placeholder="delete"
+                                        className="shadow-none"
+                                        autoComplete="off"
+                                    />
+                                </div>
+                                
                                 <div className="flex gap-2 justify-end">
-                                    <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                                    <Button variant="outline" onClick={() => {
+                                        setShowDeleteDialog(false);
+                                        setDeleteConfirmText('');
+                                    }}>
                                         Keep Account
                                     </Button>
                                     <Button 
                                         variant="destructive" 
                                         onClick={handleRequestDeletion} 
-                                        disabled={requestDeletion.isPending}
+                                        disabled={requestDeletion.isPending || deleteConfirmText !== 'delete'}
                                     >
                                         {requestDeletion.isPending ? 'Processing...' : 'Delete Account'}
                                     </Button>

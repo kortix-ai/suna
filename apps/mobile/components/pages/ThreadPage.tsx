@@ -247,7 +247,15 @@ export function ThreadPage({
   const shareThreadMutation = useShareThread();
   
   // Get full thread data with sandbox info
-  const { data: fullThreadData } = useThread(chat.activeThread?.id);
+  const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
+  
+  // Refetch thread data when file manager opens to ensure latest sandbox info
+  React.useEffect(() => {
+    if (isFileManagerVisible) {
+      console.log('[ThreadPage] File manager opened - refetching thread/sandbox data...');
+      refetchThreadData();
+    }
+  }, [isFileManagerVisible, refetchThreadData]);
   
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
@@ -440,7 +448,7 @@ export function ThreadPage({
               flexGrow: 1,
               paddingTop: insets.top + 60, 
               paddingBottom: 200,
-              paddingHorizontal: 16,
+              paddingHorizontal: 14,
             }}
             keyboardShouldPersistTaps="handled"
             scrollEventThrottle={16}
@@ -501,22 +509,20 @@ export function ThreadPage({
       )}
 
 
-    <View className="absolute top-0 left-0 right-0">
       {/* Thread Header */}
       <ThreadHeader
-          threadTitle={chat.activeThread?.title}
-          onTitleChange={async (newTitle) => {
-            console.log('📝 Thread title changed to:', newTitle);
-            try {
-              await chat.updateThreadTitle(newTitle);
-            } catch (error) {
-              console.error('❌ Failed to update thread title:', error);
-            }
-          }}
-          onMenuPress={onMenuPress}
-          onActionsPress={() => setIsThreadActionsVisible(true)}
-        />
-    </View>        
+        threadTitle={chat.activeThread?.title}
+        onTitleChange={async (newTitle) => {
+          console.log('📝 Thread title changed to:', newTitle);
+          try {
+            await chat.updateThreadTitle(newTitle);
+          } catch (error) {
+            console.error('❌ Failed to update thread title:', error);
+          }
+        }}
+        onMenuPress={onMenuPress}
+        onActionsPress={() => setIsThreadActionsVisible(true)}
+      />        
 
       {/* Chat Input Section with Gradient */}
       <ChatInputSection
