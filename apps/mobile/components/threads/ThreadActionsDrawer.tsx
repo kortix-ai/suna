@@ -147,7 +147,6 @@ export function ThreadActionsDrawer({
 
   const handleAction = (action: () => void) => {
     action();
-    onClose();
   };
 
   const renderBackdrop = React.useCallback(

@@ -121,7 +121,7 @@ export function useChat(): UseChatReturn {
 
   const { data: threadData, isLoading: isThreadLoading } = useThread(shouldFetchThread ? activeThreadId : undefined);
   const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchMessages ? activeThreadId : undefined);
-  const { data: activeRuns } = useActiveAgentRuns();
+  const { data: activeRuns, refetch: refetchActiveRuns } = useActiveAgentRuns();
 
   useEffect(() => {
     if (threadData?.project?.sandbox?.id) {
@@ -327,6 +327,23 @@ export function useChat(): UseChatReturn {
     }
   }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient]);
 
+  // Check for running agents when thread becomes active or app comes to foreground
+  useEffect(() => {
+    if (!activeThreadId || !activeRuns) {
+      return;
+    }
+
+    // If we don't have an agentRunId set but there's an active run for this thread, resume it
+    const runningAgentForThread = activeRuns.find(
+      run => run.thread_id === activeThreadId && run.status === 'running'
+    );
+
+    if (runningAgentForThread && !agentRunId && !lastStreamStartedRef.current) {
+      console.log('🔄 [useChat] Detected active run for current thread, resuming:', runningAgentForThread.id);
+      setAgentRunId(runningAgentForThread.id);
+    }
+  }, [activeThreadId, activeRuns, agentRunId]);
+
   const refreshMessages = useCallback(async () => {
     if (!activeThreadId || isStreaming) {
       console.log('[useChat] Cannot refresh: no active thread or streaming in progress');
@@ -372,7 +389,25 @@ export function useChat(): UseChatReturn {
     setMessages([]);
     
     setActiveThreadId(threadId);
-  }, [stopStreaming]);
+    
+    // Refetch active runs to check if there's a running agent for this thread
+    console.log('🔍 [useChat] Checking for active agent runs...');
+    refetchActiveRuns().then(result => {
+      if (result.data) {
+        const runningAgentForThread = result.data.find(
+          run => run.thread_id === threadId && run.status === 'running'
+        );
+        if (runningAgentForThread) {
+          console.log('✅ [useChat] Found running agent, will auto-resume:', runningAgentForThread.id);
+          setAgentRunId(runningAgentForThread.id);
+        } else {
+          console.log('ℹ️ [useChat] No active agent run found for this thread');
+        }
+      }
+    }).catch(error => {
+      console.error('❌ [useChat] Failed to refetch active runs:', error);
+    });
+  }, [stopStreaming, refetchActiveRuns]);
 
   const startNewChat = useCallback(() => {
     console.log('[useChat] Starting new chat');

@@ -1051,7 +1051,8 @@ export const getActiveAgentRuns = async (): Promise<ActiveAgentRun[]> => {
     } = await supabase.auth.getSession();
 
     if (!session?.access_token) {
-      throw new NoAccessTokenAvailableError();
+      console.warn('No access token available for fetching active agent runs');
+      return [];
     }
 
     const response = await fetch(`${API_URL}/agent-runs/active`, {
@@ -1062,19 +1063,16 @@ export const getActiveAgentRuns = async (): Promise<ActiveAgentRun[]> => {
     });
 
     if (!response.ok) {
-      throw new Error(`Error getting active agent runs: ${response.statusText}`);
+      console.warn(`Failed to fetch active agent runs: ${response.status} ${response.statusText}`);
+      return [];
     }
 
     const data = await response.json();
     return data.active_runs || [];
   } catch (error) {
-    if (error instanceof NoAccessTokenAvailableError) {
-      throw error;
-    }
-
-    console.error('Failed to get active agent runs:', error);
-    handleApiError(error, { operation: 'get active agent runs', resource: 'active agent runs', silent: true });
-    throw error;
+    // Silently handle errors and return empty array to prevent UI disruption
+    console.warn('Error fetching active agent runs:', error);
+    return [];
   }
 };
 

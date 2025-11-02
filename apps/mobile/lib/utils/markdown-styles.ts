@@ -11,58 +11,58 @@ export const markdownStyles = StyleSheet.create({
   // Root body
   body: {
     color: '#18181b', // zinc-900
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 17,
+    lineHeight: 25,
     fontFamily: 'System',
   },
 
   // Headings
   heading1: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
     marginTop: 16,
     marginBottom: 8,
-    lineHeight: 32,
+    lineHeight: 34,
     color: '#18181b',
   },
   heading2: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     marginTop: 14,
+    marginBottom: 6,
+    lineHeight: 30,
+    color: '#18181b',
+  },
+  heading3: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 12,
     marginBottom: 6,
     lineHeight: 28,
     color: '#18181b',
   },
-  heading3: {
+  heading4: {
     fontSize: 18,
     fontWeight: '600',
-    marginTop: 12,
-    marginBottom: 6,
+    marginTop: 10,
+    marginBottom: 4,
     lineHeight: 26,
     color: '#18181b',
   },
-  heading4: {
-    fontSize: 16,
+  heading5: {
+    fontSize: 17,
     fontWeight: '600',
-    marginTop: 10,
+    marginTop: 8,
     marginBottom: 4,
     lineHeight: 24,
     color: '#18181b',
   },
-  heading5: {
-    fontSize: 15,
+  heading6: {
+    fontSize: 16,
     fontWeight: '600',
     marginTop: 8,
     marginBottom: 4,
     lineHeight: 22,
-    color: '#18181b',
-  },
-  heading6: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 8,
-    marginBottom: 4,
-    lineHeight: 20,
     color: '#18181b',
   },
 
@@ -137,7 +137,7 @@ export const markdownStyles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     fontFamily: 'Menlo, Monaco, Courier New, monospace',
-    fontSize: 13,
+    fontSize: 14,
     color: '#dc2626', // red-600
   },
   code_block: {
@@ -147,8 +147,8 @@ export const markdownStyles = StyleSheet.create({
     marginVertical: 8,
     color: '#fafafa', // zinc-50 - LIGHT TEXT FOR DARK BACKGROUND
     fontFamily: 'Menlo, Monaco, Courier New, monospace',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   fence: {
     backgroundColor: '#18181b', // zinc-900
@@ -157,8 +157,8 @@ export const markdownStyles = StyleSheet.create({
     marginVertical: 8,
     color: '#fafafa', // zinc-50 - LIGHT TEXT FOR DARK BACKGROUND
     fontFamily: 'Menlo, Monaco, Courier New, monospace',
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
 
   // Tables
@@ -211,7 +211,7 @@ export const markdownStyles = StyleSheet.create({
   // Paragraphs
   paragraph: {
     marginVertical: 6,
-    lineHeight: 24,
+    lineHeight: 25,
   },
 
   // Text container

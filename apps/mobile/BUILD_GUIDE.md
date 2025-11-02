@@ -81,7 +81,7 @@ eas login
 eas build --profile testflight --platform ios
 ```
 
-### 4. Follow the prompts
+### 4. Follow the prompts (if first time)
 - Say **YES** when asked to log in to your Apple account
 - Enter Apple ID: `mkprivat2005@gmail.com`
 - Select team when prompted
@@ -122,16 +122,18 @@ Visit the URL provided in the terminal output
 Located in: `apps/mobile/eas.json`
 
 - **testflight**: For TestFlight distribution
-  - Profile: Lines 19-24
-  - Submit config: Lines 34-40
+  - Profile: Lines 20-26
+  - Submit config: Lines 36-42
 
 - **production**: For App Store release
-  - Profile: Lines 14-18
-  - Submit config: Lines 27-32
+  - Profile: Lines 14-19
+  - Submit config: Lines 29-35
 
 - **preview**: For internal testing
   - Profile: Lines 11-13
 
 - **development**: For dev client builds
   - Profile: Lines 7-10
+  - Uses `.env` file locally (not included in builds)
+
 

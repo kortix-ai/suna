@@ -12,12 +12,12 @@ import { useApiHealth } from '@/hooks/react-query';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { DeleteOperationProvider } from '@/contexts/DeleteOperationContext';
 import { StatusOverlay } from '@/components/ui/status-overlay';
+import { useAdminRole } from '@/hooks/react-query/use-admin-role';
 
 import { useProjects, useThreads } from '@/hooks/react-query/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
-import { MaintenanceAlert } from '../maintenance-alert';
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider';
 
 interface DashboardLayoutContentProps {
@@ -47,13 +47,8 @@ export default function DashboardLayoutContent({
     sort_order: 'asc'
   });
 
-  useEffect(() => {
-    if (maintenanceNotice?.enabled) {
-      // setShowMaintenanceAlert(true); // This line was removed
-    } else {
-      // setShowMaintenanceAlert(false); // This line was removed
-    }
-  }, [maintenanceNotice]);
+  const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
+  const isAdmin = adminRoleData?.isAdmin ?? false;
 
   // Log data prefetching for debugging
   useEffect(() => {
@@ -98,14 +93,16 @@ export default function DashboardLayoutContent({
 
   // Show maintenance page if maintenance mode is enabled
   // Only show if we have actual data (not placeholder) or if explicitly enabled
-  if (maintenanceNotice?.enabled && !maintenanceLoading) {
-    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
+  // Bypass maintenance for admins after role check completes
+  if (maintenanceNotice?.enabled && !maintenanceLoading && !isCheckingAdminRole && !isAdmin) {
+    return <MaintenancePage/>
   }
 
   // Show maintenance page if API is not healthy OR if health check failed
   // But only after initial check completes (not during loading with placeholder data)
   // This prevents flash during navigation when placeholder data is being used
-  if (!isCheckingHealth && (!isApiHealthy || healthError)) {
+  // Bypass for admins after role check completes
+  if (!isCheckingHealth && !isCheckingAdminRole && (!isApiHealthy || healthError) && !isAdmin) {
     return <MaintenancePage />;
   }
 

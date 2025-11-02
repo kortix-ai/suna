@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import {
   Image as ImageIcon,
@@ -1335,10 +1336,13 @@ export function SunaModesPanel({
                   >
                     <div className="w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
                       {item.image ? (
-                        <img 
+                        <Image 
                           src={item.image} 
                           alt={item.name}
-                          className="w-full h-full object-cover"
+                          fill
+                          sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
+                          className="object-cover"
+                          loading="lazy"
                         />
                       ) : (
                         <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
@@ -1368,12 +1372,15 @@ export function SunaModesPanel({
                     )}
                     onClick={() => handleTemplateSelect(item.id)}
                   >
-                    <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative">
+                    <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative aspect-[4/3]">
                       {item.image ? (
-                        <img 
+                        <Image 
                           src={item.image} 
                           alt={item.name}
-                          className="w-full h-auto"
+                          fill
+                          sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                          className="object-contain"
+                          loading="lazy"
                         />
                       ) : (
                         <SlideTemplateIcon 

@@ -395,6 +395,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
   agentName = 'Suna',
 }) => {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const displayMessages = useMemo(() => {
     const displayableTypes = ['user', 'assistant', 'tool', 'system', 'status', 'browser_state'];
@@ -670,12 +671,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
           const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
 
           return (
-            <View key={group.key} className="space-y-3 mb-2.5">
+            <View key={group.key} className="mb-6">
               {renderStandaloneAttachments(attachments as string[], sandboxId, onFilePress, true)}
 
               {cleanContent && (
-                <View className="flex-row justify-end px-4">
-                  <View className="max-w-[85%] rounded-3xl rounded-br-lg bg-card border border-border px-4 py-3">
+                <View className="flex-row justify-end">
+                  <View 
+                    className="max-w-[80%] rounded-[20px] px-4 py-3"
+                    style={{
+                      backgroundColor: isDark ? '#18181B' : '#FAFAFA',
+                      borderWidth: 1,
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                    }}
+                  >
                     <Markdown
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                       onLinkPress={(url) => {
@@ -690,197 +698,146 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
               )}
             </View>
           );
-        } else if (group.type === 'assistant_group') {
+        }
+        
+        if (group.type === 'assistant_group') {
           const firstAssistantMsg = group.messages.find(m => m.type === 'assistant');
           const groupAgentId = firstAssistantMsg?.agent_id;
-          
           const assistantMessages = group.messages.filter(m => m.type === 'assistant');
           const toolResultsMap = toolResultsMaps.get(group.key) || new Map();
 
           return (
-            <View key={group.key} className="mb-2.5">
-              <View className="flex-col gap-2">
-                <View className="flex-row items-center px-4">
-                  <AgentIdentifier 
-                    agentId={groupAgentId}
-                    size={24}
-                    showName
-                  />
-                </View>
-
-                <View className="max-w-[90%] px-4">
-                  <View className="space-y-2">
-                    {(() => {
-                      const elements: React.ReactNode[] = [];
-                      let assistantMessageCount = 0;
-
-                      assistantMessages.forEach((message, msgIndex) => {
-                        const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
-                        const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
-
-                        if (!parsedContent.content) return;
-
-                        elements.push(
-                          <View key={msgKey} className={assistantMessageCount > 0 ? "mt-4" : ""}>
-                            <MarkdownContent 
-                              content={parsedContent.content}
-                              handleToolClick={handleToolClick}
-                              messageId={message.message_id}
-                              onFilePress={onFilePress}
-                              sandboxId={sandboxId}
-                            />
-                          </View>
-                        );
-
-                        const linkedTools = toolResultsMap.get(message.message_id || null);
-                        if (linkedTools && linkedTools.length > 0) {
-                          linkedTools.forEach((toolMsg: UnifiedMessage, toolIdx: number) => {
-                            const handlePress = () => {
-                              const clickedIndex = allToolMessages.findIndex(
-                                t => t.toolMessage.message_id === toolMsg.message_id
-                              );
-                              console.log('🎯 [ThreadContent] Tool clicked:', {
-                                toolId: toolMsg.message_id,
-                                indexInThread: clickedIndex,
-                                totalToolsInThread: allToolMessages.length,
-                              });
-                              onToolPress?.(allToolMessages, clickedIndex >= 0 ? clickedIndex : 0);
-                            };
-                            
-                            elements.push(
-                              <View key={`tool-${toolMsg.message_id || 'tool'}-${toolIdx}`} className="mt-2.5">
-                                <ToolCard
-                                  message={toolMsg}
-                                  onPress={handlePress}
-                                />
-                              </View>
-                            );
-                          });
-                        }
-
-                        assistantMessageCount++;
-                      });
-
-                      return elements;
-                    })()}
-
-                    {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                      <View className="mt-4">
-                        {(() => {
-                          let textToRender = preprocessTextOnlyToolsLocal(streamingTextContent || '');
-
-                          let detectedTag: string | null = null;
-                          let tagStartIndex = -1;
-                          if (textToRender) {
-                            const functionCallsIndex = textToRender.indexOf('<function_calls>');
-                            if (functionCallsIndex !== -1) {
-                              detectedTag = 'function_calls';
-                              tagStartIndex = functionCallsIndex;
-                            } else {
-                              const partialXmlMatch = textToRender.match(/<[a-zA-Z_:][a-zA-Z0-9_:]*$|<$/);
-                              if (partialXmlMatch) {
-                                detectedTag = 'partial';
-                                tagStartIndex = partialXmlMatch.index!;
-                              }
-                            }
-                          }
-                          const textBeforeTag = detectedTag && tagStartIndex >= 0 ? textToRender.substring(0, tagStartIndex) : textToRender;
-
-                          if (!textToRender && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting')) {
-                            return <AgentLoader />;
-                          }
-
-                          return (
-                            <View>
-                              <Markdown
-                                style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                                onLinkPress={(url) => {
-                                  Linking.openURL(url).catch(console.error);
-                                  return false;
-                                }}
-                              >
-                                {textBeforeTag}
-                              </Markdown>
-                            </View>
-                          );
-                        })()}
-                      </View>
-                    )}
-                    
-                    {groupIndex === groupedMessages.length - 1 && streamingToolCall && (
-                      <View className="mt-2.5">
-                        {(() => {
-                          const toolName = streamingToolCall.function_name || streamingToolCall.name || '';
-                          const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
-                          
-                          if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
-                            return null;
-                          }
-                          
-                          return (
-                            <ToolCard 
-                              isLoading 
-                              toolCall={streamingToolCall}
-                            />
-                          );
-                        })()}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </View>
-            </View>
-          );
-        }
-        return null;
-      })}
-      
-      {streamingToolCall && groupedMessages.length > 0 && (() => {
-        const lastGroup = groupedMessages[groupedMessages.length - 1];
-        if (lastGroup.type === 'assistant_group') {
-          return null;
-        }
-        
-        const toolName = streamingToolCall.function_name || streamingToolCall.name || '';
-        const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
-        
-        if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
-          return null;
-        }
-        
-        return (
-          <View className="px-4 mb-2.5">
-            <View className="mb-2">
-              <AgentIdentifier 
-                size={24}
-                showName
-              />
-            </View>
-            <ToolCard 
-              isLoading 
-              toolCall={streamingToolCall}
-            />
-          </View>
-        );
-      })()}
-      
-      {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
-        (messages.length === 0 || messages[messages.length - 1].type === 'user')) && (
-          <View className="w-full px-4 mb-2.5">
-            <View className="flex-col gap-2">
-              <View className="flex-row items-center">
+            <View key={group.key} className="mb-6">
+              <View className="flex-row items-center mb-3">
                 <AgentIdentifier 
+                  agentId={groupAgentId}
                   size={24}
                   showName
                 />
               </View>
 
-              <View className="w-full">
-                <AgentLoader />
+              <View className="gap-3">
+                {assistantMessages.map((message, msgIndex) => {
+                  const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
+                  const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
+
+                  if (!parsedContent.content) return null;
+
+                  const linkedTools = toolResultsMap.get(message.message_id || null);
+
+                  return (
+                    <View key={msgKey}>
+                      <MarkdownContent 
+                        content={parsedContent.content}
+                        handleToolClick={handleToolClick}
+                        messageId={message.message_id}
+                        onFilePress={onFilePress}
+                        sandboxId={sandboxId}
+                      />
+                      
+                      {linkedTools && linkedTools.length > 0 && (
+                        <View className="gap-2 mt-3">
+                          {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => {
+                            const handlePress = () => {
+                              const clickedIndex = allToolMessages.findIndex(
+                                t => t.toolMessage.message_id === toolMsg.message_id
+                              );
+                              onToolPress?.(allToolMessages, clickedIndex >= 0 ? clickedIndex : 0);
+                            };
+                            
+                            return (
+                              <ToolCard
+                                key={`tool-${toolMsg.message_id || toolIdx}`}
+                                message={toolMsg}
+                                onPress={handlePress}
+                              />
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+
+                {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                  <View className="mt-3">
+                    {(() => {
+                      let textToRender = preprocessTextOnlyToolsLocal(streamingTextContent || '');
+
+                      let detectedTag: string | null = null;
+                      let tagStartIndex = -1;
+                      if (textToRender) {
+                        const functionCallsIndex = textToRender.indexOf('<function_calls>');
+                        if (functionCallsIndex !== -1) {
+                          detectedTag = 'function_calls';
+                          tagStartIndex = functionCallsIndex;
+                        } else {
+                          const partialXmlMatch = textToRender.match(/<[a-zA-Z_:][a-zA-Z0-9_:]*$|<$/);
+                          if (partialXmlMatch) {
+                            detectedTag = 'partial';
+                            tagStartIndex = partialXmlMatch.index!;
+                          }
+                        }
+                      }
+                      const textBeforeTag = detectedTag && tagStartIndex >= 0 ? textToRender.substring(0, tagStartIndex) : textToRender;
+
+                      if (!textToRender) {
+                        return <AgentLoader />;
+                      }
+
+                      return (
+                        <Markdown
+                          style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                          onLinkPress={(url) => {
+                            Linking.openURL(url).catch(console.error);
+                            return false;
+                          }}
+                        >
+                          {textBeforeTag}
+                        </Markdown>
+                      );
+                    })()}
+                  </View>
+                )}
+                
+                {groupIndex === groupedMessages.length - 1 && streamingToolCall && (() => {
+                  const toolName = streamingToolCall.function_name || streamingToolCall.name || '';
+                  const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
+                  
+                  if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
+                    return null;
+                  }
+                  
+                  return (
+                    <View className="mt-3">
+                      <ToolCard 
+                        isLoading 
+                        toolCall={streamingToolCall}
+                      />
+                    </View>
+                  );
+                })()}
               </View>
             </View>
+          );
+        }
+        
+        return null;
+      })}
+      
+      {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
+        (messages.length === 0 || messages[messages.length - 1].type === 'user')) && (
+          <View className="mb-6">
+            <View className="flex-row items-center mb-3">
+              <AgentIdentifier 
+                size={24}
+                showName
+              />
+            </View>
+            <AgentLoader />
           </View>
       )}
+      
       <View className="h-4" />
     </View>
   );

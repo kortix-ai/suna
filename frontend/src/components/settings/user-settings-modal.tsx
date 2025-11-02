@@ -197,6 +197,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const supabase = createClient();
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
@@ -242,6 +243,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const handleRequestDeletion = async () => {
         await requestDeletion.mutateAsync('User requested deletion');
         setShowDeleteDialog(false);
+        setDeleteConfirmText('');
     };
 
     const handleCancelDeletion = async () => {
@@ -368,7 +370,10 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                         )}
                     </div>
 
-                    <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                    <Dialog open={showDeleteDialog} onOpenChange={(open) => {
+                        setShowDeleteDialog(open);
+                        if (!open) setDeleteConfirmText('');
+                    }}>
                         <DialogContent className="max-w-md">
                             <DialogHeader>
                                 <DialogTitle>Delete Account</DialogTitle>
@@ -395,14 +400,32 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     You can cancel this request anytime within the 30-day grace period.
                                     After 30 days, all your data will be permanently deleted and cannot be recovered.
                                 </p>
+                                
+                                <div className="space-y-2">
+                                    <Label htmlFor="delete-confirm">
+                                        Type <strong>delete</strong> to confirm
+                                    </Label>
+                                    <Input
+                                        id="delete-confirm"
+                                        value={deleteConfirmText}
+                                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                        placeholder="delete"
+                                        className="shadow-none"
+                                        autoComplete="off"
+                                    />
+                                </div>
+                                
                                 <div className="flex gap-2 justify-end">
-                                    <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                                    <Button variant="outline" onClick={() => {
+                                        setShowDeleteDialog(false);
+                                        setDeleteConfirmText('');
+                                    }}>
                                         Keep Account
                                     </Button>
                                     <Button 
                                         variant="destructive" 
                                         onClick={handleRequestDeletion} 
-                                        disabled={requestDeletion.isPending}
+                                        disabled={requestDeletion.isPending || deleteConfirmText !== 'delete'}
                                     >
                                         {requestDeletion.isPending ? 'Processing...' : 'Delete Account'}
                                     </Button>
