@@ -366,29 +366,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <Trash2 className="h-4 w-4" />
                                     Delete Account
                                 </Button>
-                                
-                                {isLocalMode() && (
-                                    <Button
-                                        variant="destructive"
-                                        onClick={async () => {
-                                            if (confirm('⚠️ TEST MODE: This will IMMEDIATELY delete your account. Continue?')) {
-                                                try {
-                                                    const response = await backendApi.delete('/account/delete-immediately');
-                                                    if (response.success) {
-                                                        toast.success('Account deleted immediately (test mode)');
-                                                        setTimeout(() => window.location.href = '/login', 1000);
-                                                    }
-                                                } catch (error) {
-                                                    toast.error('Failed to delete account');
-                                                }
-                                            }
-                                        }}
-                                        className="w-full sm:w-auto mt-2"
-                                        size="sm"
-                                    >
-                                        🧪 Test: Delete Immediately
-                                    </Button>
-                                )}
                             </>
                         )}
                     </div>
