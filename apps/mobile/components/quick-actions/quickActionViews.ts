@@ -1,10 +1,9 @@
 import { 
-  Sparkles, Palette, Camera, Pencil, Box, Layers,
-  Briefcase, TrendingUp, FileText, Mail, BookOpen, GraduationCap,
   BarChart3, PieChart, LineChart, Table, Calculator, Presentation as PresentationIcon,
   ScrollText, FileCheck, MessageSquare, Newspaper, Notebook, FileEdit,
   UserCheck, Users2, UserSearch, Handshake, Crown, Target,
-  BookMarked, Globe, Microscope, Library, Lightbulb, Database
+  BookMarked, Globe, Microscope, Library, Lightbulb, Database,
+  TrendingUp, Mail, FileText, GraduationCap
 } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 
@@ -42,14 +41,24 @@ export const IMAGE_STYLES: QuickActionOption[] = [
 
 // Slides Templates
 export const SLIDES_TEMPLATES: QuickActionOption[] = [
-  { id: 'business', label: 'Business', icon: Briefcase },
-  { id: 'pitch-deck', label: 'Pitch Deck', icon: TrendingUp },
-  { id: 'report', label: 'Report', icon: FileText },
-  { id: 'educational', label: 'Education', icon: GraduationCap },
-  { id: 'creative', label: 'Creative', icon: Sparkles },
-  { id: 'minimal', label: 'Minimal', icon: Layers },
-  { id: 'marketing', label: 'Marketing', icon: Target },
-  { id: 'training', label: 'Training', icon: BookOpen },
+  { id: 'minimalist', label: 'Minimalist', imageUrl: require('@/assets/images/quick-actions/presentation-templates/minimalist-min.png') },
+  { id: 'minimalist_2', label: 'Minimalist 2', imageUrl: require('@/assets/images/quick-actions/presentation-templates/minimalist_2-min.png') },
+  { id: 'black_and_white_clean', label: 'Black & White', imageUrl: require('@/assets/images/quick-actions/presentation-templates/black_and_white_clean-min.png') },
+  { id: 'colorful', label: 'Colorful', imageUrl: require('@/assets/images/quick-actions/presentation-templates/colorful-min.png') },
+  { id: 'startup', label: 'Startup', imageUrl: require('@/assets/images/quick-actions/presentation-templates/startup-min.png') },
+  { id: 'elevator_pitch', label: 'Elevator Pitch', imageUrl: require('@/assets/images/quick-actions/presentation-templates/elevator_pitch-min.png') },
+  { id: 'portfolio', label: 'Portfolio', imageUrl: require('@/assets/images/quick-actions/presentation-templates/portfolio-min.png') },
+  { id: 'textbook', label: 'Textbook', imageUrl: require('@/assets/images/quick-actions/presentation-templates/textbook-min.png') },
+  { id: 'architect', label: 'Architect', imageUrl: require('@/assets/images/quick-actions/presentation-templates/architect-min.png') },
+  { id: 'hipster', label: 'Hipster', imageUrl: require('@/assets/images/quick-actions/presentation-templates/hipster-min.png') },
+  { id: 'green', label: 'Green', imageUrl: require('@/assets/images/quick-actions/presentation-templates/green-min.png') },
+  { id: 'premium_black', label: 'Premium Black', imageUrl: require('@/assets/images/quick-actions/presentation-templates/premium_black-min.png') },
+  { id: 'premium_green', label: 'Premium Green', imageUrl: require('@/assets/images/quick-actions/presentation-templates/premium_green-min.png') },
+  { id: 'professor_gray', label: 'Professor Gray', imageUrl: require('@/assets/images/quick-actions/presentation-templates/professor_gray-min.png') },
+  { id: 'gamer_gray', label: 'Gamer Gray', imageUrl: require('@/assets/images/quick-actions/presentation-templates/gamer_gray-min.png') },
+  { id: 'competitor_analysis_blue', label: 'Analysis Blue', imageUrl: require('@/assets/images/quick-actions/presentation-templates/competitor_analysis_blue-min.png') },
+  { id: 'numbers_clean', label: 'Numbers Clean', imageUrl: require('@/assets/images/quick-actions/presentation-templates/numbers_clean-min.png') },
+  { id: 'numbers_colorful', label: 'Numbers Colorful', imageUrl: require('@/assets/images/quick-actions/presentation-templates/numbers_colorful-min.png') },
 ];
 
 // Data Analysis Types
