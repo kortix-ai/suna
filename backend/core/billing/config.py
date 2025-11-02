@@ -12,7 +12,7 @@ TOKEN_PRICE_MULTIPLIER = Decimal('1.2')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 
-FREE_TIER_INITIAL_CREDITS = Decimal('5.00')
+FREE_TIER_INITIAL_CREDITS = Decimal('3.00')
 
 @dataclass
 class Tier:
@@ -38,10 +38,10 @@ TIERS: Dict[str, Tier] = {
         name='free',
         price_ids=[],
         monthly_credits=Decimal('0.00'),
-        display_name='Free Tier (Discontinued)',
+        display_name='Free Tier',
         can_purchase_credits=False,
-        models=[],
-        project_limit=0
+        models=['all'],
+        project_limit=3
     ),
     'tier_2_20': Tier(
         name='tier_2_20',

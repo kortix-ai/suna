@@ -142,16 +142,21 @@ export async function middleware(request: NextRequest) {
         }
       }
 
-      const hasTier = creditAccount.tier && creditAccount.tier !== 'none' && creditAccount.tier !== 'free';
+      const hasPaidTier = creditAccount.tier && creditAccount.tier !== 'none' && creditAccount.tier !== 'free';
+      const hasFreeTier = creditAccount.tier === 'free';
       const hasActiveTrial = creditAccount.trial_status === 'active';
       const trialExpired = creditAccount.trial_status === 'expired' || creditAccount.trial_status === 'cancelled';
       const trialConverted = creditAccount.trial_status === 'converted';
       
-      if (hasTier && (trialConverted || !trialExpired)) {
+      if (hasPaidTier && (trialConverted || !trialExpired)) {
         return supabaseResponse;
       }
 
-      if (!hasTier && !hasActiveTrial && !trialConverted) {
+      if (hasFreeTier && !hasActiveTrial) {
+        return supabaseResponse;
+      }
+
+      if (!hasPaidTier && !hasFreeTier && !hasActiveTrial && !trialConverted) {
         if (hasUsedTrial || trialExpired || creditAccount.trial_status === 'cancelled') {
           const url = request.nextUrl.clone();
           url.pathname = '/subscription';
@@ -161,7 +166,7 @@ export async function middleware(request: NextRequest) {
           url.pathname = '/activate-trial';
           return NextResponse.redirect(url);
         }
-      } else if ((trialExpired || trialConverted) && !hasTier) {
+      } else if ((trialExpired || trialConverted) && !hasPaidTier && !hasFreeTier) {
         const url = request.nextUrl.clone();
         url.pathname = '/subscription';
         return NextResponse.redirect(url);
