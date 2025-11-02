@@ -86,8 +86,17 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               <QuickActionBar 
                 onActionPress={chat.handleQuickAction}
                 selectedActionId={chat.selectedQuickAction}
-                selectedOptionId={null}
-                onSelectOption={() => {}}
+                selectedOptionId={chat.selectedQuickActionOption}
+                onSelectOption={(optionId) => {
+                  console.log('🎯 Option selected:', optionId);
+                  chat.setSelectedQuickActionOption(optionId);
+                }}
+                onSelectPrompt={(prompt) => {
+                  console.log('📝 Loading prompt into input:', prompt);
+                  chat.setInputValue(prompt);
+                  // Also focus the input so the user can immediately edit or send
+                  chatInputRef.current?.focusInput();
+                }}
               />
             </View>
             <ChatInputSection
@@ -112,6 +121,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               attachments={chat.attachments}
               onRemoveAttachment={chat.removeAttachment}
               selectedQuickAction={chat.selectedQuickAction}
+              selectedQuickActionOption={chat.selectedQuickActionOption}
               onClearQuickAction={chat.clearQuickAction}
               isAuthenticated={isAuthenticated}
               onOpenAuthDrawer={onOpenAuthDrawer}
