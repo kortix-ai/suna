@@ -170,17 +170,17 @@ export function usePlaybackController({
             if (currentIndex < textStr.length) {
                 console.log('[Playback Stream] Processing char at index', currentIndex);
                 // Dynamically adjust typing speed for realistic effect
-                const baseDelay = 5; // Base typing speed: 5ms
+                const baseDelay = 2; // Base typing speed: 2ms (faster!)
                 let typingDelay = baseDelay;
 
                 // Add more delay for punctuation to make it feel natural
                 const char = textStr[currentIndex];
                 if ('.!?,;:'.includes(char)) {
-                    // Pause after punctuation (100-150ms)
-                    typingDelay = baseDelay + Math.random() * 50 + 100;
+                    // Pause after punctuation (30-50ms) - much shorter
+                    typingDelay = baseDelay + Math.random() * 20 + 30;
                 } else {
-                    // Random variation for normal typing (5-10ms)
-                    const variableDelay = Math.random() * 5;
+                    // Random variation for normal typing (2-4ms) - faster!
+                    const variableDelay = Math.random() * 2;
                     typingDelay = baseDelay + variableDelay;
                 }
 
