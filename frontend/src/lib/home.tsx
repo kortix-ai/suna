@@ -128,7 +128,7 @@ export const siteConfig = {
       /** @deprecated */
       hours: '2 hours',
       features: [
-        '$20 AI token credits/m',
+        '2,000 AI token credits/m',
         '5 custom agents',
         'Private projects',
         'Custom abilities',
@@ -154,7 +154,7 @@ export const siteConfig = {
       /** @deprecated */
       hours: '6 hours',
       features: [
-        '$50 AI token credits/m',
+        '5,000 AI token credits/m',
         '20 custom agents',
         'Private projects',
         'Custom abilities',
@@ -179,7 +179,7 @@ export const siteConfig = {
       isPopular: false,
       hours: '12 hours',
       features: [
-        '$100 AI token credits/m',
+        '10,000 AI token credits/m',
         '20 custom agents',
         'Private projects',
         'Custom abilities',
@@ -204,7 +204,7 @@ export const siteConfig = {
       isPopular: false,
       hours: '25 hours',
       features: [
-        '$200 AI token credits/m',
+        '20,000 AI token credits/m',
         '100 custom agents',
         'Private projects',
         'Custom abilities',
@@ -230,7 +230,7 @@ export const siteConfig = {
       isPopular: false,
       hours: '50 hours',
       features: [
-        '$400 AI token credits/m',
+        '40,000 AI token credits/m',
         'Private projects',
         'Custom abilities',
         '100+ integrations',
@@ -255,7 +255,7 @@ export const siteConfig = {
       isPopular: false,
       hours: '125 hours',
       features: [
-        '$800 AI token credits/m',
+        '80,000 AI token credits/m',
         'Private projects',
         'Custom abilities',
         '100+ integrations',
@@ -281,7 +281,7 @@ export const siteConfig = {
       isPopular: false,
       hours: '200 hours',
       features: [
-        '$1000 AI token credits/m',
+        '100,000 AI token credits/m',
         'Private projects',
         'Custom abilities',
         '100+ integrations',

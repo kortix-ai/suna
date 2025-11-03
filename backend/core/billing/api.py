@@ -185,21 +185,23 @@ async def check_status(
             "is_trial": is_trial
         }
         
+        from .config import CREDITS_PER_DOLLAR
+        
         return {
             "can_run": can_run,
             "message": "Sufficient credits" if can_run else "Insufficient credits - please add more credits",
             "subscription": subscription,
-            "credit_balance": float(balance),
+            "credit_balance": float(balance) * CREDITS_PER_DOLLAR,
             "can_purchase_credits": tier.get('can_purchase_credits', False),
             "tier_info": tier,
             "is_trial": is_trial,
             "trial_status": trial_status,
             "trial_ends_at": trial_ends_at,
             "credits_summary": {
-                "balance": float(balance),
-                "lifetime_granted": summary['lifetime_granted'],
-                "lifetime_purchased": summary['lifetime_purchased'],
-                "lifetime_used": summary['lifetime_used']
+                "balance": float(balance) * CREDITS_PER_DOLLAR,
+                "lifetime_granted": summary['lifetime_granted'] * CREDITS_PER_DOLLAR,
+                "lifetime_purchased": summary['lifetime_purchased'] * CREDITS_PER_DOLLAR,
+                "lifetime_used": summary['lifetime_used'] * CREDITS_PER_DOLLAR
             }
         }
         
@@ -277,6 +279,8 @@ async def deduct_token_usage(
 async def get_credit_balance(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
+    from .config import CREDITS_PER_DOLLAR
+    
     db = DBConnection()
     client = await db.client
     
@@ -293,10 +297,14 @@ async def get_credit_balance(
         
         is_trial = trial_status == 'active'
         
+        balance_dollars = float(account.get('balance', 0))
+        expiring_dollars = float(account.get('expiring_credits', 0))
+        non_expiring_dollars = float(account.get('non_expiring_credits', 0))
+        
         return {
-            'balance': float(account.get('balance', 0)),
-            'expiring_credits': float(account.get('expiring_credits', 0)),
-            'non_expiring_credits': float(account.get('non_expiring_credits', 0)),
+            'balance': balance_dollars * CREDITS_PER_DOLLAR,
+            'expiring_credits': expiring_dollars * CREDITS_PER_DOLLAR,
+            'non_expiring_credits': non_expiring_dollars * CREDITS_PER_DOLLAR,
             'tier': tier_name,
             'tier_display_name': tier_info.display_name if tier_info else 'No Plan',
             'is_trial': is_trial,
@@ -305,16 +313,16 @@ async def get_credit_balance(
             'can_purchase_credits': tier_info.can_purchase_credits if tier_info else False,
             'next_credit_grant': account.get('next_credit_grant'),
             'breakdown': {
-                'expiring': float(account.get('expiring_credits', 0)),
-                'non_expiring': float(account.get('non_expiring_credits', 0)),
-                'total': float(account.get('balance', 0))
+                'expiring': expiring_dollars * CREDITS_PER_DOLLAR,
+                'non_expiring': non_expiring_dollars * CREDITS_PER_DOLLAR,
+                'total': balance_dollars * CREDITS_PER_DOLLAR
             }
         }
     
     return {
-        'balance': 0.0,
-        'expiring_credits': 0.0,
-        'non_expiring_credits': 0.0,
+        'balance': 0,
+        'expiring_credits': 0,
+        'non_expiring_credits': 0,
         'tier': 'none',
         'tier_display_name': 'No Plan',
         'is_trial': False,
@@ -323,9 +331,9 @@ async def get_credit_balance(
         'can_purchase_credits': False,
         'next_credit_grant': None,
         'breakdown': {
-            'expiring': 0.0,
-            'non_expiring': 0.0,
-            'total': 0.0
+            'expiring': 0,
+            'non_expiring': 0,
+            'total': 0
         }
     }
 
@@ -380,6 +388,8 @@ async def get_subscription(
             display_plan_name = tier_info.get('display_name', tier_info['name'])
             is_trial = False
         
+        from .config import CREDITS_PER_DOLLAR
+        
         return {
             'status': status,
             'plan_name': tier_info['name'],
@@ -387,20 +397,20 @@ async def get_subscription(
             'price_id': subscription_info['price_id'],
             'subscription': subscription_data,
             'subscription_id': subscription_data['id'] if subscription_data else None,
-            'current_usage': float(summary['lifetime_used']),
-            'cost_limit': tier_info['credits'],
-            'credit_balance': float(balance),
+            'current_usage': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
+            'cost_limit': tier_info['credits'] * CREDITS_PER_DOLLAR,
+            'credit_balance': float(balance) * CREDITS_PER_DOLLAR,
             'can_purchase_credits': TIERS.get(tier_info['name'], TIERS['none']).can_purchase_credits,
             'tier': tier_info,
             'is_trial': is_trial,
             'trial_status': trial_status,
             'trial_ends_at': trial_ends_at,
             'credits': {
-                'balance': float(balance),
-                'tier_credits': tier_info['credits'],
-                'lifetime_granted': float(summary['lifetime_granted']),
-                'lifetime_purchased': float(summary['lifetime_purchased']),
-                'lifetime_used': float(summary['lifetime_used']),
+                'balance': float(balance) * CREDITS_PER_DOLLAR,
+                'tier_credits': tier_info['credits'] * CREDITS_PER_DOLLAR,
+                'lifetime_granted': float(summary['lifetime_granted']) * CREDITS_PER_DOLLAR,
+                'lifetime_purchased': float(summary['lifetime_purchased']) * CREDITS_PER_DOLLAR,
+                'lifetime_used': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
                 'can_purchase_credits': TIERS.get(tier_info['name'], TIERS['none']).can_purchase_credits
             }
         }

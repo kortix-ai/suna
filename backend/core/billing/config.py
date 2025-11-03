@@ -12,6 +12,8 @@ TOKEN_PRICE_MULTIPLIER = Decimal('1.2')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 
+CREDITS_PER_DOLLAR = 100
+
 FREE_TIER_INITIAL_CREDITS = Decimal('2.00')
 
 @dataclass
@@ -37,7 +39,7 @@ TIERS: Dict[str, Tier] = {
     'free': Tier(
         name='free',
         price_ids=[config.STRIPE_FREE_TIER_ID],
-        monthly_credits=Decimal('3.00'),
+        monthly_credits=FREE_TIER_INITIAL_CREDITS,
         display_name='Free Tier',
         can_purchase_credits=False,
         models=['all'],
