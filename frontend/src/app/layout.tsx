@@ -79,8 +79,8 @@ export const metadata: Metadata = {
     title: 'Kortix - Open Source Generalist AI Worker',
     description:
       'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
-    creator: '@kortixai',
-    site: '@kortixai',
+    creator: '@kortix',
+    site: '@kortix',
     images: [new URL('/banner.png', siteConfig.url).toString()],
   },
   icons: {

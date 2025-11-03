@@ -10,7 +10,7 @@ class EmailService:
     def __init__(self):
         self.api_token = os.getenv('MAILTRAP_API_TOKEN')
         self.sender_email = os.getenv('MAILTRAP_SENDER_EMAIL', 'dom@kortix.ai')
-        self.sender_name = os.getenv('MAILTRAP_SENDER_NAME', 'Suna Team')
+        self.sender_name = os.getenv('MAILTRAP_SENDER_NAME', ' Team')
         
         if not self.api_token:
             logger.warning("MAILTRAP_API_TOKEN not found in environment variables")
@@ -26,7 +26,7 @@ class EmailService:
         if not user_name:
             user_name = user_email.split('@')[0].title()
         
-        subject = "🎉 Welcome to Suna — Let's Get Started "
+        subject = "🎉 Welcome to Kortix— Let's Get Started "
         html_content = self._get_welcome_email_template(user_name)
         text_content = self._get_welcome_email_text(user_name)
         
@@ -71,7 +71,7 @@ class EmailService:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Kortix Suna</title>
+  <title>Welcome to Kortix</title>
   <style>
     body {{
       font-family: Arial, sans-serif;
@@ -137,13 +137,13 @@ class EmailService:
 <body>
   <div class="container">
     <div class="logo-container">
-      <img src="https://i.postimg.cc/WdNtRx5Z/kortix-suna-logo.png" alt="Kortix Suna Logo" class="logo">
+      <img src="https://i.postimg.cc/WdNtRx5Z/kortix--logo.png" alt="Kortix Logo" class="logo">
     </div>
-    <h1>Welcome to Kortix Suna!</h1>
+    <h1>Welcome to Kortix!</h1>
 
     <p>Hi {user_name},</p>
 
-    <p><em><strong>Welcome to Kortix Suna — we're excited to have you on board!</strong></em></p>
+    <p><em><strong>Welcome to Kortix — we're excited to have you on board!</strong></em></p>
 
     <p>To get started, we'd like to get to know you better: fill out this short <a href="https://docs.google.com/forms/d/e/1FAIpQLSef1EHuqmIh_iQz-kwhjnzSC3Ml-V_5wIySDpMoMU9W_j24JQ/viewform">form</a>!</p>
 
@@ -155,11 +155,11 @@ class EmailService:
 
     <p><strong>For your business:</strong> if you want to automate manual and ordinary tasks for your company, book a call with us <a href="https://cal.com/team/kortix/enterprise-demo">here</a></p>
 
-    <p>Thanks again, and welcome to the Suna community <span class="emoji">🌞</span></p>
+    <p>Thanks again, and welcome to the  community <span class="emoji">🌞</span></p>
 
-    <p>— The Suna Team</p>
+    <p>— The  Team</p>
 
-    <a href="https://www.suna.so/" class="button">Go to the platform</a>
+    <a href="https://www..kortix.com/" class="button">Go to the platform</a>
   </div>
 </body>
 </html>"""
@@ -167,7 +167,7 @@ class EmailService:
     def _get_welcome_email_text(self, user_name: str) -> str:
         return f"""Hi {user_name},
 
-Welcome to Suna — we're excited to have you on board!
+Welcome to  — we're excited to have you on board!
 
 To get started, we'd like to get to know you better: fill out this short form!
 https://docs.google.com/forms/d/e/1FAIpQLSef1EHuqmIh_iQz-kwhjnzSC3Ml-V_5wIySDpMoMU9W_j24JQ/viewform
@@ -179,14 +179,14 @@ Let us know if you need help getting started or have questions — we're always 
 
 For your business: if you want to automate manual and ordinary tasks for your company, book a call with us here: https://cal.com/team/kortix/enterprise-demo 
 
-Thanks again, and welcome to the Suna community 🌞
+Thanks again, and welcome to the  community 🌞
 
-— The Suna Team
+— The  Team
 
-Go to the platform: https://www.suna.so/
+Go to the platform: https://www.kortix.com/
 
 ---
-© 2025 Suna. All rights reserved.
-You received this email because you signed up for a Suna account."""
+© 2025 . All rights reserved.
+You received this email because you signed up for a  account."""
 
 email_service = EmailService() 

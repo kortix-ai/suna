@@ -52,7 +52,7 @@ export function FooterSection() {
                   </svg>
                 </a>
                 <a
-                  href="https://x.com/kortixai"
+                  href="https://x.com/kortix"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="X (Twitter)"

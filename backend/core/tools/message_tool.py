@@ -1,6 +1,9 @@
 from typing import List, Optional, Union
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.logger import logger
+import structlog
+from core.services.notification_service import notification_service
+from core.services.supabase import DBConnection
 
 @tool_metadata(
     display_name="Chat & Messages",
@@ -174,10 +177,79 @@ class MessageTool(Tool):
             # Convert single attachment to list for consistent handling
             if attachments and isinstance(attachments, str):
                 attachments = [attachments]
+            
+            # Send notification about completion (non-blocking)
+            try:
+                await self._send_completion_notification(text)
+            except Exception as notif_error:
+                logger.error(f"Error sending completion notification: {str(notif_error)}")
+                # Don't fail the tool execution if notification fails
                 
             return self.success_response({"status": "complete"})
         except Exception as e:
             return self.fail_response(f"Error entering complete state: {str(e)}")
+    
+    async def _send_completion_notification(self, completion_text: Optional[str] = None):
+        """Send a notification when the complete tool is successfully executed."""
+        try:
+            # Get thread_id from context
+            context_vars = structlog.contextvars.get_contextvars()
+            thread_id = context_vars.get('thread_id')
+            
+            if not thread_id:
+                logger.warning("No thread_id available in context for completion notification")
+                return
+            
+            db = DBConnection()
+            await db.initialize()
+            client = await db.client
+            
+            # Get thread information
+            thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
+            if not thread_result.data:
+                logger.warning(f"Thread {thread_id} not found for completion notification")
+                return
+            
+            account_id = thread_result.data[0]['account_id']
+            
+            # Get the most recent agent run for this thread
+            agent_run_result = await client.table('agent_runs').select('id').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()
+            agent_run_id = agent_run_result.data[0]['id'] if agent_run_result.data and len(agent_run_result.data) > 0 else None
+            
+            # Use provided completion text or default
+            if not completion_text:
+                completion_text = "Your agent has completed all tasks!"
+            
+            # Get user_id from account (primary owner)
+            account_result = await client.schema('basejump').from_('accounts').select('primary_owner_user_id').eq('id', account_id).execute()
+            if not account_result.data or len(account_result.data) == 0:
+                logger.warning(f"Account {account_id} not found for completion notification")
+                return
+            
+            user_id = account_result.data[0]['primary_owner_user_id']
+            
+            # Send notification
+            await notification_service.send_notification(
+                user_id=user_id,
+                account_id=account_id,
+                title="Agent Completed",
+                message=completion_text[:500] if len(completion_text) > 500 else completion_text,  # Limit message length
+                notification_type="agent_complete",
+                category="agent",
+                thread_id=thread_id,
+                agent_run_id=agent_run_id,
+                send_email=True,
+                send_push=True,
+                metadata={
+                    'thread_id': thread_id
+                }
+            )
+            
+            logger.debug(f"Completion notification sent for thread {thread_id}")
+            
+        except Exception as e:
+            logger.error(f"Error sending completion notification: {str(e)}")
+            # Don't re-raise - notification failure shouldn't break tool execution
 
     @openapi_schema({
         "type": "function",

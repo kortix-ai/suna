@@ -18,7 +18,7 @@ export const siteConfig = {
   publisher: 'Kortix Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
   category: 'Technology',
   applicationName: 'Suna',
-  twitterHandle: '@kortixai',
+  twitterHandle: '@kortix',
   githubUrl: 'https://github.com/kortix-ai/suna',
   
   // Mobile-specific configurations

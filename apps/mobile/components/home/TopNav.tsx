@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useColorScheme } from 'nativewind';
+import { NotificationBell } from '@/components/notifications';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -145,8 +146,9 @@ export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
         </AnimatedPressable>
       )}
 
-      {/* Theme Switcher - positioned at right */}
-      <View className="absolute right-6">
+      {/* Notifications & Theme Switcher - positioned at right */}
+      <View className="absolute right-6 flex-row items-center gap-4">
+        <NotificationBell />
         <ThemeSwitcher />
       </View>
     </View>
