@@ -696,7 +696,7 @@ export function NavAgents() {
         </>
       )}
 
-      <div ref={scrollContainerRef} className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-10">
+      <div ref={scrollContainerRef} className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-16">
         {(state !== 'collapsed' || isMobile) && (
           <>
             {isLoading ? (
@@ -746,31 +746,33 @@ export function NavAgents() {
                   </div>
                 ))}
                 
+                {/* Show skeleton loaders while loading more threads */}
+                {isThreadsLoading && allThreads.length > 0 && (
+                  <div className="space-y-1 mt-1">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <div key={`loading-skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
+                        <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                        <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                        <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
                 {/* Load More section - simple and minimal */}
-                {threadsResponse?.pagination && threadsResponse.pagination.total > pageLimit && (
+                {threadsResponse?.pagination && threadsResponse.pagination.total > pageLimit && !isThreadsLoading && (
                   <div className="px-2 py-3">
                     {hasMore ? (
                       <button
                         onClick={handleLoadMore}
-                        disabled={isThreadsLoading}
                         className={cn(
                           "w-full py-2 px-3 text-xs text-muted-foreground",
                           "hover:text-foreground hover:bg-accent/50",
                           "transition-colors rounded-md",
-                          "disabled:opacity-50 disabled:cursor-not-allowed",
                           "flex items-center justify-center gap-2"
                         )}
                       >
-                        {isThreadsLoading ? (
-                          <>
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            <span>Loading more...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span>Load more ({threadsResponse.pagination.total - allThreads.length} remaining)</span>
-                          </>
-                        )}
+                        <span>Load more ({threadsResponse.pagination.total - allThreads.length} remaining)</span>
                       </button>
                     ) : (
                       <div className="text-center py-2 text-xs text-muted-foreground">
