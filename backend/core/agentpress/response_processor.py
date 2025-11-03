@@ -596,7 +596,9 @@ class ResponseProcessor:
 
             should_auto_continue = (can_auto_continue and finish_reason == 'length')
 
-            if accumulated_content and not should_auto_continue:
+            # Don't save partial response if user stopped (cancelled)
+            # But do save for other early stops like XML limit reached
+            if accumulated_content and not should_auto_continue and finish_reason != "cancelled":
                 # ... (Truncate accumulated_content logic) ...
                 if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls and xml_chunks_buffer:
                     last_xml_chunk = xml_chunks_buffer[-1]
