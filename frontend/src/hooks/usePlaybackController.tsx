@@ -148,7 +148,6 @@ export function usePlaybackController({
         }
 
         const textStr = typeof text === 'string' ? text : String(text);
-        console.log('[Playback Stream] Starting stream. Text type:', typeof text, 'Text length:', textStr.length, 'First 50 chars:', textStr.substring(0, 50));
 
         dispatch({ type: 'SET_IS_STREAMING', value: true });
         dispatch({ type: 'SET_STREAMING_TEXT', text: '' });
@@ -158,17 +157,14 @@ export function usePlaybackController({
         let isCancelled = false;
 
         const streamNextChar = () => {
-            console.log('[Playback Stream] streamNextChar called. currentIndex:', currentIndex, 'text.length:', textStr.length, 'isCancelled:', isCancelled, 'isPlaying:', stateRef.current.isPlaying);
 
             if (isCancelled || !stateRef.current.isPlaying) {
-                console.log('[Playback Stream] Cancelled or not playing!');
                 dispatch({ type: 'SET_IS_STREAMING', value: false });
                 onComplete();
                 return;
             }
 
             if (currentIndex < textStr.length) {
-                console.log('[Playback Stream] Processing char at index', currentIndex);
                 // Dynamically adjust typing speed for realistic effect
                 const baseDelay = 2; // Base typing speed: 2ms (faster!)
                 let typingDelay = baseDelay;
@@ -186,9 +182,7 @@ export function usePlaybackController({
 
                 // Add the next character
                 currentText += char;
-                if (currentIndex === 0 || currentIndex === textStr.length - 1 || currentIndex % 50 === 0) {
-                    console.log('[Playback Stream] char', currentIndex, ':', currentText.substring(Math.max(0, currentIndex - 10), currentIndex + 1));
-                }
+
                 dispatch({ type: 'SET_STREAMING_TEXT', text: currentText });
                 currentIndex++;
 
@@ -196,7 +190,6 @@ export function usePlaybackController({
                 setTimeout(streamNextChar, typingDelay);
             } else {
                 // Finished streaming - add the complete message to visibleMessages
-                console.log('[Playback Stream] Complete! Adding message to visible');
                 dispatch({ type: 'SET_IS_STREAMING', value: false });
 
                 const currentState = stateRef.current;

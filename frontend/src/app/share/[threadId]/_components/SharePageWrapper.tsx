@@ -27,9 +27,9 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
         checkAuth();
     }, []);
 
-    // Still loading auth state - don't render children yet
+    // Don't block render - show content immediately for anon users
     if (isChecking) {
-        return null;
+        return <div className="flex-1">{children}</div>;
     }
 
     // If user is logged in, wrap with all necessary providers and show sidebar
@@ -48,6 +48,6 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
         );
     }
 
-    // If not logged in, just render children without sidebar but centered
+    // Anon user: render children without sidebar, minimal wrapper
     return <div className="flex-1">{children}</div>;
 }

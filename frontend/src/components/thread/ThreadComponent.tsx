@@ -141,7 +141,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     messagesQuery,
     projectQuery,
     agentRunsQuery,
-  } = useThreadData(threadId, projectId);
+  } = useThreadData(threadId, projectId, isShared);
 
   const {
     toolCalls,
@@ -176,8 +176,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     useProjectRealtime(projectId);
   }
 
-  // Keyboard shortcuts - only in non-shared mode
-  if (!isShared) {
+  // Keyboard shortcuts - only when sidebar is available (non-shared mode with sidebar context)
+  if (!isShared && leftSidebarState && setLeftSidebarOpen) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useKeyboardShortcuts({
       isSidePanelOpen,
@@ -207,16 +207,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     const handleSandboxActive = (event: Event) => {
       const customEvent = event as CustomEvent<{ sandboxId: string; projectId: string }>;
       const { sandboxId, projectId: eventProjectId } = customEvent.detail;
-      
+
       // Only invalidate if it's for this project
       if (eventProjectId === projectId) {
         console.log('[ThreadComponent] Sandbox active, invalidating file caches for:', sandboxId);
-        
+
         // Invalidate all file content queries
-        queryClient.invalidateQueries({ 
+        queryClient.invalidateQueries({
           queryKey: fileQueryKeys.contents()
         });
-        
+
         // This will cause all file attachments to refetch with the now-active sandbox
         // toast.success('Sandbox is ready');
       }
@@ -401,7 +401,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           break;
         case 'connecting':
           setAgentStatus('connecting');
-          
+
           // Add optimistic message when agent starts connecting
           if (pendingMessageRef.current) {
             const optimisticUserMessage: UnifiedMessage = {
@@ -417,7 +417,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
             setMessages((prev) => [...prev, optimisticUserMessage]);
             pendingMessageRef.current = null; // Clear after adding
-            
+
             // Auto-scroll to bottom when message is added
             setTimeout(() => {
               if (scrollContainerRef.current) {
@@ -447,7 +447,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
     console.error(`[PAGE] Stream hook error: ${errorMessage}`);
     toast.error(`Stream Error: ${errorMessage}`);
-    
+
     // Clear pending message on error
     pendingMessageRef.current = null;
   }, []);

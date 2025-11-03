@@ -78,7 +78,7 @@ function shouldFilterAskTool(toolName: string, assistantContent: any, toolConten
 
 export function useToolCalls(
   messages: UnifiedMessage[],
-  setLeftSidebarOpen: (open: boolean) => void,
+  setLeftSidebarOpen?: (open: boolean) => void,
   agentStatus?: AgentStatus,
   compact?: boolean
 ): UseToolCallsReturn {
@@ -97,7 +97,7 @@ export function useToolCalls(
       if (!newState) {
         userClosedPanelRef.current = true;
       }
-      if (newState) {
+      if (newState && setLeftSidebarOpen) {
         setLeftSidebarOpen(false);
       }
       return newState;
