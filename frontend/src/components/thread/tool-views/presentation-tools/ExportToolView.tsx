@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../../file-attachment';
+import { useAuth } from '@/components/AuthProvider';
 
 interface ExportToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
@@ -88,6 +89,9 @@ export function ExportToolView({
   assistantTimestamp,
   toolTimestamp,
 }: ExportToolViewProps) {
+  // Auth for file downloads
+  const { session } = useAuth();
+  
   // Determine format from tool name
   const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
   const config = formatConfigs[format];
@@ -154,29 +158,35 @@ export function ExportToolView({
   };
 
   // Handle direct file download for stored files
+  // Uses backend API which auto-starts sandbox if needed
   const handleDirectDownload = async () => {
-    if (!downloadUrl || !project?.sandbox?.sandbox_url || !project?.sandbox?.id) return;
+    if (!downloadUrl || !project?.sandbox?.id) return;
     
     try {
       setIsDownloading(true);
       
-      // Convert /workspace/downloads/{filename} to /downloads/{filename} for sandbox static server
-      const sandboxPath = downloadUrl.replace('/workspace', '');
-      const fullUrl = `${project.sandbox.sandbox_url}${sandboxPath}`;
+      // Extract filename from downloadUrl
+      const filename = downloadUrl.split('/').pop() || `presentation${config.defaultExtension}`;
       
-      // Fetch the file as blob
-      const response = await fetch(fullUrl);
+      // Use backend file endpoint which handles sandbox startup automatically
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+      
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${project.sandbox.id}/files/content?path=${encodeURIComponent(downloadUrl)}`,
+        { headers }
+      );
+      
       if (!response.ok) {
-        throw new Error('Failed to download file');
+        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
       }
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      
-      // Extract filename from downloadUrl
-      const filename = downloadUrl.split('/').pop() || `presentation${config.defaultExtension}`;
       a.download = filename;
       
       document.body.appendChild(a);
