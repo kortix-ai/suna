@@ -26,10 +26,11 @@ async def get_user_threads(
     try:
         offset = (page - 1) * limit
         
-        # First, get threads for the user
-        threads_result = await client.table('threads').select('*').eq('account_id', user_id).order('created_at', desc=True).execute()
+        # Get total count first (efficient count query)
+        count_result = await client.table('threads').select('*', count='exact').eq('account_id', user_id).execute()
+        total_count = count_result.count or 0
         
-        if not threads_result.data:
+        if total_count == 0:
             logger.debug(f"No threads found for user: {user_id}")
             return {
                 "threads": [],
@@ -41,10 +42,15 @@ async def get_user_threads(
                 }
             }
         
-        total_count = len(threads_result.data)
+        # Fetch only the requested page using database-level pagination
+        threads_result = await client.table('threads')\
+            .select('*')\
+            .eq('account_id', user_id)\
+            .order('created_at', desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
         
-        # Apply pagination to threads
-        paginated_threads = threads_result.data[offset:offset + limit]
+        paginated_threads = threads_result.data
         
         # Extract unique project IDs from threads that have them
         project_ids = [
