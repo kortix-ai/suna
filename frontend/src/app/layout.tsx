@@ -93,8 +93,8 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'Kortix - Open Source Generalist AI Worker',
     description: siteConfig.description,
-    creator: '@kortixai',
-    site: '@kortixai',
+    creator: '@kortix',
+    site: '@kortix',
     images: ['/banner.png'],
   },
   icons: {
@@ -135,7 +135,7 @@ export default function RootLayout({
               foundingDate: '2024',
               sameAs: [
                 'https://github.com/kortix-ai',
-                'https://x.com/kortixai',
+                'https://x.com/kortix',
                 'https://linkedin.com/company/kortix',
               ],
               contactPoint: {
