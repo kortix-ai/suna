@@ -190,7 +190,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         });
         
         // This will cause all file attachments to refetch with the now-active sandbox
-        toast.success('Sandbox is ready');
+        // toast.success('Sandbox is ready');
       }
     };
 
