@@ -64,7 +64,7 @@ export const siteConfig = {
   url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   keywords: ['AI Worker', 'Generalist AI', 'Open Source AI', 'Autonomous Agent'],
   links: {
-    email: 'support@kortix.ai',
+    email: 'support@kortix.com',
     twitter: 'https://x.com/kortixai',
     // discord: 'https://discord.gg/kortixai',
     github: 'https://github.com/Kortix-ai/Suna',
@@ -1233,9 +1233,9 @@ export const siteConfig = {
     {
       title: 'Kortix',
       links: [
-        { id: 1, title: 'About', url: 'https://kortix.ai' },
-        { id: 3, title: 'Contact', url: 'mailto:hey@kortix.ai' },
-        { id: 4, title: 'Careers', url: 'https://kortix.ai/careers' },
+        { id: 1, title: 'About', url: 'https://kortix.com' },
+        { id: 3, title: 'Contact', url: 'mailto:hey@kortix.com' },
+        { id: 4, title: 'Careers', url: 'https://kortix.com/careers' },
       ],
     },
     {
@@ -1256,12 +1256,12 @@ export const siteConfig = {
         {
           id: 9,
           title: 'Privacy Policy',
-          url: 'https://suna.so/legal?tab=privacy',
+          url: 'https://kortix.com/legal?tab=privacy',
         },
         {
           id: 10,
           title: 'Terms of Service',
-          url: 'https://suna.so/legal?tab=terms',
+          url: 'https://kortix.com/legal?tab=terms',
         },
         {
           id: 11,
@@ -1312,7 +1312,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1576091160550-2173dba999ef?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/2fbf0552-87d6-4d12-be25-d54f435bc493',
+      url: 'https://kortix.com/share/2fbf0552-87d6-4d12-be25-d54f435bc493',
     },
     {
       id: 'vc-list',
@@ -1347,7 +1347,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1444653614773-995cb1ef9efa?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/a172382b-aa77-42a2-a3e1-46f32a0f9c37',
+      url: 'https://kortix.com/share/a172382b-aa77-42a2-a3e1-46f32a0f9c37',
     },
     {
       id: 'candidate-search',
@@ -1389,7 +1389,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/d9e39c94-4f6f-4b5a-b1a0-b681bfe0dee8',
+      url: 'https://kortix.com/share/d9e39c94-4f6f-4b5a-b1a0-b681bfe0dee8',
     },
     {
       id: 'company-trip',
@@ -1438,7 +1438,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/23f7d904-eb66-4a9c-9247-b9704ddfd233',
+      url: 'https://kortix.com/share/23f7d904-eb66-4a9c-9247-b9704ddfd233',
     },
     {
       id: 'excel-spreadsheet',
@@ -1480,7 +1480,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/2a147a3a-3778-4624-8285-42474c8c1c9c',
+      url: 'https://kortix.com/share/2a147a3a-3778-4624-8285-42474c8c1c9c',
     },
     {
       id: 'speaker-prospecting',
@@ -1522,7 +1522,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/6830cc6d-3fbd-492a-93f8-510a5f48ce50',
+      url: 'https://kortix.com/share/6830cc6d-3fbd-492a-93f8-510a5f48ce50',
     },
     {
       id: 'scientific-papers',
@@ -1564,7 +1564,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1532153975070-2e9ab71f1b14?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/a106ef9f-ed97-46ee-8e51-7bfaf2ac3c29',
+      url: 'https://kortix.com/share/a106ef9f-ed97-46ee-8e51-7bfaf2ac3c29',
     },
     {
       id: 'lead-generation',
@@ -1606,13 +1606,13 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1552581234-26160f608093?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/c3472df7-adc1-4d5f-9927-4f8f513ec2fe',
+      url: 'https://kortix.com/share/c3472df7-adc1-4d5f-9927-4f8f513ec2fe',
     },
     {
       id: 'seo-analysis',
       title: 'SEO Analysis',
       description:
-        "Based on my website suna.so, generate an SEO report analysis, find top-ranking pages by keyword clusters, and identify topics I'm missing.",
+        "Based on my website kortix.com, generate an SEO report analysis, find top-ranking pages by keyword clusters, and identify topics I'm missing.",
       category: 'marketing',
       featured: true,
       icon: (
@@ -1655,7 +1655,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/cf756e02-fee9-4281-a0e4-76ac850f1ac9',
+      url: 'https://kortix.com/share/cf756e02-fee9-4281-a0e4-76ac850f1ac9',
     },
     {
       id: 'personal-trip',
@@ -1704,7 +1704,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/8442cc76-ac8b-438c-b539-4b93909a2218',
+      url: 'https://kortix.com/share/8442cc76-ac8b-438c-b539-4b93909a2218',
     },
     {
       id: 'funded-startups',
@@ -1739,7 +1739,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1444653614773-995cb1ef9efa?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/f04c871c-6bf5-4464-8e9c-5351c9cf5a60',
+      url: 'https://kortix.com/share/f04c871c-6bf5-4464-8e9c-5351c9cf5a60',
     },
     {
       id: 'scrape-forums',
@@ -1781,7 +1781,7 @@ export const siteConfig = {
       ),
       image:
         'https://images.unsplash.com/photo-1523580494863-6f3031224c94?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2400&q=80',
-      url: 'https://suna.so/share/53bcd4c7-40d6-4293-9f69-e2638ddcfad8',
+      url: 'https://kortix.com/share/53bcd4c7-40d6-4293-9f69-e2638ddcfad8',
     },
   ],
 };

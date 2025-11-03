@@ -144,8 +144,8 @@ export default function SubscriptionRequiredPage() {
         <div className="text-center text-sm text-muted-foreground -mt-10">
           <p>
             Questions? Contact us at{' '}
-            <a href="mailto:support@kortix.ai" className="underline hover:text-primary">
-              support@kortix.ai
+            <a href="mailto:support@kortix.com" className="underline hover:text-primary">
+              support@kortix.com
             </a>
           </p>
         </div>

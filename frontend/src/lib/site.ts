@@ -1,7 +1,7 @@
 export const siteConfig = {
   name: 'Kortix',
-  url: 'https://suna.so/',
-  description: 'Kortix AI',
+  url: 'https://kortix.com',
+  description: 'Open Source Generalist AI Worker. Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
   links: {
     twitter: 'https://x.com/kortixai',
     github: 'https://github.com/kortix-ai/',

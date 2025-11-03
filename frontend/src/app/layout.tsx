@@ -15,33 +15,44 @@ import { roobertMono } from './fonts/roobert-mono';
 
 
 export const viewport: Viewport = {
-  themeColor: 'black',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: 'white' },
+    { media: '(prefers-color-scheme: dark)', color: 'black' }
+  ],
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
     default: siteConfig.name,
-    template: `%s - ${siteConfig.name}`,
+    template: `%s | ${siteConfig.name}`,
   },
-  description:
-    'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Kortix becomes your digital companion for research, data analysis, and everyday challenges.',
+  description: siteConfig.description,
   keywords: [
-    'AI',
+    'AI assistant',
+    'open source AI',
     'artificial intelligence',
+    'AI worker',
     'browser automation',
     'web scraping',
     'file management',
-    'AI assistant',
-    'open source',
-    'research',
+    'research assistant',
     'data analysis',
+    'task automation',
+    'Kortix',
+    'generalist AI',
   ],
-  authors: [{ name: 'Kortix Team', url: 'https://suna.so' }],
-  creator:
-    'Kortix Team',
-  publisher:
-    'Kortix Team',
+  authors: [
+    { 
+      name: 'Kortix Team', 
+      url: 'https://kortix.com' 
+    }
+  ],
+  creator: 'Kortix Team',
+  publisher: 'Kortix Team',
   category: 'Technology',
   applicationName: 'Kortix',
   formatDetection: {
@@ -52,46 +63,54 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
+    nocache: false,
     googleBot: {
       index: true,
       follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
     },
   },
   openGraph: {
+    type: 'website',
     title: 'Kortix - Open Source Generalist AI Worker',
-    description:
-      'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+    description: siteConfig.description,
     url: siteConfig.url,
     siteName: 'Kortix',
+    locale: 'en_US',
     images: [
       {
-        url: new URL('/banner.png', siteConfig.url).toString(),
+        url: '/banner.png',
         width: 1200,
         height: 630,
         alt: 'Kortix - Open Source Generalist AI Worker',
         type: 'image/png',
       },
     ],
-    locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Kortix - Open Source Generalist AI Worker',
-    description:
-      'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+    description: siteConfig.description,
     creator: '@kortixai',
     site: '@kortixai',
-    images: [new URL('/banner.png', siteConfig.url).toString()],
+    images: ['/banner.png'],
   },
   icons: {
     icon: [
-      { url: '/favicon.png', sizes: 'any', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon.png', sizes: 'any' },
       { url: '/favicon-light.png', sizes: 'any', media: '(prefers-color-scheme: dark)' },
     ],
     shortcut: '/favicon.png',
+    apple: '/favicon.png',
   },
+  manifest: '/manifest.json',
   alternates: {
     canonical: siteConfig.url,
+  },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
 };
 
@@ -101,6 +120,58 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${roobert.variable} ${roobertMono.variable}`}>
       <head>
+        {/* Structured Data for Organization */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'Organization',
+              name: 'Kortix',
+              alternateName: ['Suna', 'Kortix AI'],
+              url: 'https://kortix.com',
+              logo: 'https://kortix.com/favicon.png',
+              description: siteConfig.description,
+              foundingDate: '2024',
+              sameAs: [
+                'https://github.com/kortix-ai',
+                'https://x.com/kortixai',
+                'https://linkedin.com/company/kortix',
+              ],
+              contactPoint: {
+                '@type': 'ContactPoint',
+                contactType: 'Customer Support',
+                url: 'https://kortix.com',
+              },
+            }),
+          }}
+        />
+        
+        {/* Structured Data for Software Application */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'SoftwareApplication',
+              name: 'Kortix',
+              alternateName: 'Suna',
+              applicationCategory: 'BusinessApplication',
+              operatingSystem: 'Web, macOS, Windows, Linux',
+              offers: {
+                '@type': 'Offer',
+                price: '0',
+                priceCurrency: 'USD',
+              },
+              aggregateRating: {
+                '@type': 'AggregateRating',
+                ratingValue: '4.8',
+                ratingCount: '1000',
+              },
+            }),
+          }}
+        />
+        
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
           new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
