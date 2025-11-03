@@ -206,34 +206,75 @@ export const getPublicProjects = async (): Promise<Project[]> => {
       if (data.sandbox?.id) {
         // Fire off sandbox activation without blocking
         const ensureSandboxActive = async () => {
-          try {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-  
-            // For public projects, we don't need authentication
-            const headers: Record<string, string> = {
-              'Content-Type': 'application/json',
-            };
-  
-            if (session?.access_token) {
-              headers['Authorization'] = `Bearer ${session.access_token}`;
+          const maxRetries = 5;
+          const baseDelay = 2000; // Start with 2 seconds
+          
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+              const {
+                data: { session },
+              } = await supabase.auth.getSession();
+    
+              // For public projects, we don't need authentication
+              const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+              };
+    
+              if (session?.access_token) {
+                headers['Authorization'] = `Bearer ${session.access_token}`;
+              }
+              const response = await fetch(
+                `${API_URL}/project/${projectId}/sandbox/ensure-active`,
+                {
+                  method: 'POST',
+                  headers,
+                },
+              );
+    
+              if (!response.ok) {
+                const errorText = await response
+                  .text()
+                  .catch(() => 'No error details available');
+                
+                // Retry on any error if we have attempts left
+                if (attempt < maxRetries - 1) {
+                  const delay = Math.min(baseDelay * Math.pow(2, attempt), 30000); // Max 30s
+                  console.log(`Sandbox ensure-active failed (${response.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                  continue;
+                }
+                
+                // Give up after all retries
+                console.warn(
+                  `Failed to ensure sandbox is active after all retries: ${response.status} ${response.statusText}`,
+                  errorText,
+                );
+                return;
+              }
+              
+               // Success! Parse response to get sandbox ID
+               try {
+                 const result = await response.json();
+                 const sandboxId = result.sandbox_id;
+                 console.log('Sandbox is active:', sandboxId);
+                 
+                 // Dispatch event so components can invalidate caches
+                 window.dispatchEvent(new CustomEvent('sandbox-active', {
+                   detail: { sandboxId, projectId }
+                 }));
+               } catch (parseError) {
+                 console.warn('Sandbox active but failed to parse response:', parseError);
+               }
+               return;
+            } catch (sandboxError) {
+              if (attempt < maxRetries - 1) {
+                const delay = Math.min(baseDelay * Math.pow(2, attempt), 30000);
+                console.log(`Error ensuring sandbox active, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+              }
+              console.warn('Failed to ensure sandbox is active after all retries:', sandboxError);
             }
-            const response = await fetch(
-              `${API_URL}/project/${projectId}/sandbox/ensure-active`,
-              {
-                method: 'POST',
-                headers,
-              },
-            );
-  
-            if (!response.ok) {
-              const errorText = await response
-                .text()
-                .catch(() => 'No error details available');
-            }
-          } catch (sandboxError) {
-            console.warn('Failed to ensure sandbox is active:', sandboxError);
           }
         };
   

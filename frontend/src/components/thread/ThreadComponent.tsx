@@ -47,6 +47,7 @@ import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog'
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { threadKeys } from '@/hooks/react-query/threads/keys';
+import { fileQueryKeys } from '@/hooks/react-query/files';
 import { useProjectRealtime } from '@/hooks/useProjectRealtime';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 
@@ -172,6 +173,30 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
     queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
   }, [threadId, queryClient]);
+
+  // Listen for sandbox-active event to invalidate file caches
+  useEffect(() => {
+    const handleSandboxActive = (event: Event) => {
+      const customEvent = event as CustomEvent<{ sandboxId: string; projectId: string }>;
+      const { sandboxId, projectId: eventProjectId } = customEvent.detail;
+      
+      // Only invalidate if it's for this project
+      if (eventProjectId === projectId) {
+        console.log('[ThreadComponent] Sandbox active, invalidating file caches for:', sandboxId);
+        
+        // Invalidate all file content queries
+        queryClient.invalidateQueries({ 
+          queryKey: fileQueryKeys.contents()
+        });
+        
+        // This will cause all file attachments to refetch with the now-active sandbox
+        toast.success('Sandbox is ready');
+      }
+    };
+
+    window.addEventListener('sandbox-active', handleSandboxActive);
+    return () => window.removeEventListener('sandbox-active', handleSandboxActive);
+  }, [projectId, queryClient]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
