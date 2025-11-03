@@ -244,13 +244,7 @@ export function CreditBalanceDisplay({ balance, canPurchase, onPurchaseClick }: 
                 <div className="text-2xl font-medium">
                     ${balance.toFixed(2)}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                    {canPurchase
-                        ? 'Available for usage beyond subscription limits'
-                        : 'Upgrade to highest tier to purchase credits'
-                    }
-                </p>
             </CardContent>
         </Card>
     );
-} 
+}
