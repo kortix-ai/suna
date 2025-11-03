@@ -1,7 +1,5 @@
 'use client';
-import { HeroVideoSection } from '@/components/home/sections/hero-video-section';
 import { siteConfig } from '@/lib/home';
-import { ArrowRight, Github, X, AlertCircle, Square } from 'lucide-react';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, useRef, FormEvent } from 'react';

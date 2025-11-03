@@ -51,6 +51,7 @@ export interface BillingContextType {
   
   // Computed states
   hasActiveSubscription: boolean;
+  hasFreeTier: boolean;
   hasActiveTrial: boolean;
   needsSubscription: boolean;
 }
@@ -156,8 +157,12 @@ export function BillingProvider({ children }: BillingProviderProps) {
   // Computed states for easier access
   const hasActiveSubscription = Boolean(
     subscriptionData?.tier && 
-    subscriptionData.tier.name !== 'none' && 
-    subscriptionData.tier.name !== 'free'
+    subscriptionData.tier.name !== 'none'
+  );
+
+  const hasFreeTier = Boolean(
+    subscriptionData?.tier && 
+    subscriptionData.tier.name === 'free'
   );
 
   const hasActiveTrial = Boolean(
@@ -195,6 +200,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
     
     // Computed states
     hasActiveSubscription,
+    hasFreeTier,
     hasActiveTrial,
     needsSubscription,
   };

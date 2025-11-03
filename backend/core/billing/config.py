@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
 
-TRIAL_ENABLED = True
+TRIAL_ENABLED = False
 TRIAL_DURATION_DAYS = 7
 TRIAL_TIER = "tier_2_20"
 TRIAL_CREDITS = Decimal("5.00")
@@ -12,7 +12,9 @@ TOKEN_PRICE_MULTIPLIER = Decimal('1.2')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 
-FREE_TIER_INITIAL_CREDITS = Decimal('5.00')
+CREDITS_PER_DOLLAR = 100
+
+FREE_TIER_INITIAL_CREDITS = Decimal('2.00')
 
 @dataclass
 class Tier:
@@ -36,12 +38,12 @@ TIERS: Dict[str, Tier] = {
     ),
     'free': Tier(
         name='free',
-        price_ids=[],
-        monthly_credits=Decimal('0.00'),
-        display_name='Free Tier (Discontinued)',
+        price_ids=[config.STRIPE_FREE_TIER_ID],
+        monthly_credits=FREE_TIER_INITIAL_CREDITS,
+        display_name='Free Tier',
         can_purchase_credits=False,
-        models=[],
-        project_limit=0
+        models=['all'],
+        project_limit=3
     ),
     'tier_2_20': Tier(
         name='tier_2_20',

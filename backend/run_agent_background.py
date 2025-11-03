@@ -117,6 +117,9 @@ async def run_agent_background(
     pubsub = None
     stop_checker = None
     stop_signal_received = False
+    
+    # Create cancellation event to signal LLM to stop
+    cancellation_event = asyncio.Event()
 
     # Define Redis keys and channels
     response_list_key = f"agent_run:{agent_run_id}:responses"
@@ -137,6 +140,8 @@ async def run_agent_background(
                     if data == "STOP":
                         logger.debug(f"Received STOP signal for agent run {agent_run_id} (Instance: {instance_id})")
                         stop_signal_received = True
+                        # Set cancellation event to stop LLM execution immediately
+                        cancellation_event.set()
                         break
                 # Periodically refresh the active run key TTL
                 if total_responses % 50 == 0: # Refresh every 50 responses or so
@@ -166,12 +171,13 @@ async def run_agent_background(
         # Ensure active run key exists and has TTL
         await redis.set(instance_active_key, "running", ex=redis.REDIS_KEY_TTL)
 
-        # Initialize agent generator
+        # Initialize agent generator with cancellation event
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id,
             model_name=effective_model,
             agent_config=agent_config,
             trace=trace,
+            cancellation_event=cancellation_event,
         )
 
         final_status = "running"

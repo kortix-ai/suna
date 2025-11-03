@@ -34,7 +34,7 @@ import { useTheme } from "next-themes"
 const data = {
   user: {
     name: "Kortix User",
-    email: "docs@kortix.ai",
+    email: "docs@kortix.com",
     avatar: "/favicon.png",
   },
   teams: [

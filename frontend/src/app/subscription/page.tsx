@@ -15,13 +15,16 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
-import { MaintenanceAlert } from '@/components/maintenance-alert';
+import { MaintenancePage } from '@/components/maintenance/maintenance-page';
+import { useAdminRole } from '@/hooks/react-query/use-admin-role';
 
 export default function SubscriptionRequiredPage() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [billingStatus, setBillingStatus] = useState<any>(null);
   const router = useRouter();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
+  const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
+  const isAdmin = adminRoleData?.isAdmin ?? false;
 
   useEffect(() => {
     checkBillingStatus();
@@ -63,7 +66,7 @@ export default function SubscriptionRequiredPage() {
     router.push('/auth');
   };
 
-  const isMaintenanceLoading = maintenanceLoading;
+  const isMaintenanceLoading = maintenanceLoading || isCheckingAdminRole;
 
   if (isMaintenanceLoading) {
     return (
@@ -73,8 +76,8 @@ export default function SubscriptionRequiredPage() {
     );
   }
 
-  if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
+  if (maintenanceNotice?.enabled && !isAdmin) {
+    return <MaintenancePage/>;
   }
 
 
@@ -141,8 +144,8 @@ export default function SubscriptionRequiredPage() {
         <div className="text-center text-sm text-muted-foreground -mt-10">
           <p>
             Questions? Contact us at{' '}
-            <a href="mailto:support@kortix.ai" className="underline hover:text-primary">
-              support@kortix.ai
+            <a href="mailto:support@kortix.com" className="underline hover:text-primary">
+              support@kortix.com
             </a>
           </p>
         </div>

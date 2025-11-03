@@ -183,13 +183,13 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_tasks",
-            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. IMPORTANT: Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. Break down complex operations into individual, sequential tasks to maintain the one-task-at-a-time execution principle. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id').",
+            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. IMPORTANT: Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. Break down complex operations into individual, sequential tasks to maintain the one-task-at-a-time execution principle. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sections": {
                         "type": "array",
-                        "description": "List of sections with their tasks for batch creation",
+                        "description": "List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with 'title' (string) and 'tasks' (array of strings). Example: [{\"title\": \"Section 1\", \"tasks\": [\"task 1\", \"task 2\"]}, {\"title\": \"Section 2\", \"tasks\": [\"task 3\"]}]",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -199,7 +199,7 @@ class TaskListTool(SandboxToolsBase):
                                 },
                                 "tasks": {
                                     "type": "array",
-                                    "description": "Task contents for this section",
+                                    "description": "Task contents for this section. Must be an array of strings, not a JSON string.",
                                     "items": {"type": "string"},
                                     "minItems": 1
                                 }
@@ -217,7 +217,7 @@ class TaskListTool(SandboxToolsBase):
                     },
                     "task_contents": {
                         "type": "array",
-                        "description": "Task contents for single section creation (use with section_title or section_id)",
+                        "description": "Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string. Example: [\"task 1\", \"task 2\", \"task 3\"]",
                         "items": {"type": "string"}
                     }
                 },
@@ -239,6 +239,43 @@ class TaskListTool(SandboxToolsBase):
                           task_contents: Optional[List[str]] = None) -> ToolResult:
         """Create tasks - supports both batch multi-section and single section creation"""
         try:
+            # Parse sections if it's a JSON string (can happen when LLM passes it as string)
+            if sections is not None:
+                logger.debug(f"Received sections parameter: type={type(sections).__name__}, value={str(sections)[:200]}")
+                if isinstance(sections, str):
+                    try:
+                        sections = json.loads(sections)
+                        logger.debug(f"Parsed sections from JSON string: {len(sections) if isinstance(sections, list) else 'not a list'} items")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse sections JSON: {e}, raw value: {sections[:500]}")
+                        return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}")
+                
+                # Validate that sections is a list after parsing
+                if not isinstance(sections, list):
+                    return ToolResult(success=False, output=f"❌ Sections must be a list/array, got {type(sections).__name__}")
+                
+                # Validate structure of each section
+                for idx, section_data in enumerate(sections):
+                    if not isinstance(section_data, dict):
+                        return ToolResult(success=False, output=f"❌ Section at index {idx} must be an object/dict, got {type(section_data).__name__}")
+                    if "title" not in section_data:
+                        return ToolResult(success=False, output=f"❌ Section at index {idx} is missing required 'title' field")
+                    if "tasks" not in section_data:
+                        return ToolResult(success=False, output=f"❌ Section at index {idx} is missing required 'tasks' field")
+                    if not isinstance(section_data["tasks"], list):
+                        return ToolResult(success=False, output=f"❌ Section '{section_data.get('title', 'unknown')}' tasks must be a list/array")
+            
+            # Parse task_contents if it's a JSON string
+            if task_contents is not None and isinstance(task_contents, str):
+                try:
+                    task_contents = json.loads(task_contents)
+                except json.JSONDecodeError as e:
+                    return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents parameter: {str(e)}")
+                
+                # Validate that task_contents is a list after parsing
+                if not isinstance(task_contents, list):
+                    return ToolResult(success=False, output=f"❌ Task_contents must be a list/array, got {type(task_contents).__name__}")
+            
             existing_sections, existing_tasks = await self._load_data()
             section_map = {s.id: s for s in existing_sections}
             title_map = {s.title.lower(): s for s in existing_sections}
@@ -323,7 +360,7 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call rather than making multiple consecutive update calls. Always maintain sequential execution order."
+                        "description": "Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call rather than making multiple consecutive update calls. Always maintain sequential execution order. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\", \"id3\"]"
                     },
                     "content": {
                         "type": "string",
@@ -347,11 +384,27 @@ class TaskListTool(SandboxToolsBase):
                           status: Optional[str] = None, section_id: Optional[str] = None) -> ToolResult:
         """Update one or more tasks"""
         try:
-            # Normalize task_ids to always be a list
-            if isinstance(task_ids, str):
-                target_task_ids = [task_ids]
+            # Parse task_ids if it's a JSON string (can happen when LLM passes it as string)
+            if task_ids is not None:
+                if isinstance(task_ids, str):
+                    # Try to parse as JSON array first
+                    try:
+                        parsed = json.loads(task_ids)
+                        if isinstance(parsed, list):
+                            target_task_ids = parsed
+                        else:
+                            # If not a list after parsing, treat as single ID
+                            target_task_ids = [task_ids]
+                    except (json.JSONDecodeError, ValueError):
+                        # Not JSON, treat as single task ID string
+                        target_task_ids = [task_ids]
+                elif isinstance(task_ids, list):
+                    target_task_ids = task_ids
+                else:
+                    # If it's neither string nor list, wrap it
+                    target_task_ids = [task_ids]
             else:
-                target_task_ids = task_ids
+                return ToolResult(success=False, output="❌ Task IDs are required")
             
             sections, tasks = await self._load_data()
             section_map = {s.id: s for s in sections}
@@ -403,14 +456,14 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Task ID (string) or array of task IDs to delete (optional)"
+                        "description": "Task ID (string) or array of task IDs to delete (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\", \"id3\"]"
                     },
                     "section_ids": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections) (optional)"
+                        "description": "Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections) (optional). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string). Example: [\"id1\", \"id2\"]"
                     },
                     "confirm": {
                         "type": "boolean",
@@ -443,11 +496,20 @@ class TaskListTool(SandboxToolsBase):
             deleted_tasks = 0
             remaining_tasks = tasks.copy()
             if task_ids:
-                # Normalize task_ids to always be a list
+                # Parse task_ids if it's a JSON string (can happen when LLM passes it as string)
                 if isinstance(task_ids, str):
-                    target_task_ids = [task_ids]
-                else:
+                    try:
+                        parsed = json.loads(task_ids)
+                        if isinstance(parsed, list):
+                            target_task_ids = parsed
+                        else:
+                            target_task_ids = [task_ids]
+                    except (json.JSONDecodeError, ValueError):
+                        target_task_ids = [task_ids]
+                elif isinstance(task_ids, list):
                     target_task_ids = task_ids
+                else:
+                    target_task_ids = [task_ids]
                 
                 # Validate all task IDs exist
                 missing_tasks = [tid for tid in target_task_ids if tid not in task_map]
@@ -463,11 +525,20 @@ class TaskListTool(SandboxToolsBase):
             deleted_sections = 0
             remaining_sections = sections.copy()
             if section_ids:
-                # Normalize section_ids to always be a list
+                # Parse section_ids if it's a JSON string (can happen when LLM passes it as string)
                 if isinstance(section_ids, str):
-                    target_section_ids = [section_ids]
-                else:
+                    try:
+                        parsed = json.loads(section_ids)
+                        if isinstance(parsed, list):
+                            target_section_ids = parsed
+                        else:
+                            target_section_ids = [section_ids]
+                    except (json.JSONDecodeError, ValueError):
+                        target_section_ids = [section_ids]
+                elif isinstance(section_ids, list):
                     target_section_ids = section_ids
+                else:
+                    target_section_ids = [section_ids]
                 
                 # Validate all section IDs exist
                 missing_sections = [sid for sid in target_section_ids if sid not in section_map]

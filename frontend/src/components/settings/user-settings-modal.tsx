@@ -59,6 +59,7 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
+import { getPlanIcon, getPlanName } from '../sidebar/sidebar-left';
 
 type TabId = 'general' | 'plan' | 'billing' | 'env-manager';
 
@@ -366,29 +367,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <Trash2 className="h-4 w-4" />
                                     Delete Account
                                 </Button>
-                                
-                                {isLocalMode() && (
-                                    <Button
-                                        variant="destructive"
-                                        onClick={async () => {
-                                            if (confirm('⚠️ TEST MODE: This will IMMEDIATELY delete your account. Continue?')) {
-                                                try {
-                                                    const response = await backendApi.delete('/account/delete-immediately');
-                                                    if (response.success) {
-                                                        toast.success('Account deleted immediately (test mode)');
-                                                        setTimeout(() => window.location.href = '/login', 1000);
-                                                    }
-                                                } catch (error) {
-                                                    toast.error('Failed to delete account');
-                                                }
-                                            }
-                                        }}
-                                        className="w-full sm:w-auto mt-2"
-                                        size="sm"
-                                    >
-                                        🧪 Test: Delete Immediately
-                                    </Button>
-                                )}
                             </>
                         )}
                     </div>
@@ -512,6 +490,10 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
     const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
+
+    const isLocal = isLocalMode();
+    const planName = getPlanName(subscriptionData, isLocal);
+    const planIcon = getPlanIcon(planName, isLocal);
 
     const {
         data: commitmentInfo,
@@ -694,13 +676,14 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
     }
 
     const isSubscribed = subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing';
+    const isFreeTier = subscriptionData?.tier?.name === 'free';
     const subscription = subscriptionData?.subscription;
     const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at;
 
     return (
         <div className="p-6 space-y-6">
             {/* Current Subscription Status */}
-            {isSubscribed && subscription && (
+            {(isSubscribed || isFreeTier) && (
                 <Card className="shadow-none">
                     <CardHeader>
                         <div className="flex items-center justify-between">
@@ -709,6 +692,11 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                                 <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
                                     <Clock className="h-3 w-3 mr-1" />
                                     Cancelling
+                                </Badge>
+                            ) : isFreeTier ? (
+                                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                                    <Zap className="h-3 w-3" />
+                                    Free Tier
                                 </Badge>
                             ) : (
                                 <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
@@ -721,20 +709,38 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                     <CardContent className="space-y-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Plan</p>
-                                <p className="font-medium">{subscriptionData.plan_name || 'Premium'}</p>
+                                {!isFreeTier && planName && planIcon ? (
+                                    <div className="flex items-center">
+                                    <>
+                                        <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
+                                        <img
+                                            src={planIcon}
+                                            alt={planName}
+                                            className="flex-shrink-0 h-[16px] w-auto"
+                                        />
+                                        </div>
+                                        <img
+                                        src={planIcon}
+                                        alt={planName}
+                                        className="flex-shrink-0 h-[16px] w-auto hidden dark:block"
+                                        />
+                                    </>
+                                    </div>
+                                ) : null}
                             </div>
                             <div className="text-right">
-                                <p className="text-sm text-muted-foreground">
-                                    {subscription.current_period_end && `Next billing date`}
-                                </p>
-                                <p className="font-medium">
-                                    {subscription.current_period_end && formatDate(subscription.current_period_end)}
-                                </p>
+                                {!isFreeTier && (
+                                    <>
+                                        <p className="text-sm text-muted-foreground">
+                                            {subscription?.current_period_end && `Next billing date`}
+                                        </p>
+                                        <p className="font-medium">
+                                            {subscription?.current_period_end && formatDate(subscription.current_period_end)}
+                                        </p>
+                                    </>
+                                )}
                             </div>
                         </div>
-
-                        {/* Commitment info */}
                         {commitmentInfo?.has_commitment && (
                             <Alert className="border-blue-500/50 bg-blue-500/10 shadow-none">
                                 <Shield className="h-4 w-4 text-blue-500" />
@@ -761,36 +767,38 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                             </Alert>
                         )}
 
-                        <div className="flex gap-2 pt-2">
-                            {isCancelled ? (
-                                <Button
-                                    onClick={handleReactivate}
-                                    disabled={isCancelling}
-                                    className="flex-1"
-                                >
-                                    <RotateCcw className="h-4 w-4 mr-2" />
-                                    {isCancelling ? 'Reactivating...' : 'Reactivate Subscription'}
-                                </Button>
-                            ) : (
-                                <>
+                        {!isFreeTier && (
+                            <div className="flex gap-2 pt-2">
+                                {isCancelled ? (
                                     <Button
-                                        onClick={handleManageSubscription}
-                                        disabled={isManaging}
-                                        variant="outline"
+                                        onClick={handleReactivate}
+                                        disabled={isCancelling}
                                         className="flex-1"
                                     >
-                                        {isManaging ? 'Loading...' : 'Manage Subscription'}
+                                        <RotateCcw className="h-4 w-4 mr-2" />
+                                        {isCancelling ? 'Reactivating...' : 'Reactivate Subscription'}
                                     </Button>
-                                    <Button
-                                        onClick={() => setShowCancelDialog(true)}
-                                        variant="outline"
-                                        className="flex-1 text-destructive hover:text-destructive"
-                                    >
-                                        Cancel Plan
-                                    </Button>
-                                </>
-                            )}
-                        </div>
+                                ) : (
+                                    <>
+                                        <Button
+                                            onClick={handleManageSubscription}
+                                            disabled={isManaging}
+                                            variant="outline"
+                                            className="flex-1"
+                                        >
+                                            {isManaging ? 'Loading...' : 'Manage Subscription'}
+                                        </Button>
+                                        <Button
+                                            onClick={() => setShowCancelDialog(true)}
+                                            variant="outline"
+                                            className="flex-1 text-destructive hover:text-destructive"
+                                        >
+                                            Cancel Plan
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             )}
@@ -802,9 +810,9 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                     canPurchase={subscriptionData?.can_purchase_credits || false}
                     onPurchaseClick={() => setShowCreditPurchaseModal(true)}
                 />
-            </div>            {/* Cancel Dialog */}
+            </div>
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle>Cancel Subscription</DialogTitle>
                     </DialogHeader>

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from './error-handler';
+import { backendApi } from './api-client';
 import posthog from 'posthog-js';
 
 // Get backend URL from environment variables
@@ -239,59 +240,46 @@ export interface FileInfo {
 // Project APIs
 export const getProjects = async (): Promise<Project[]> => {
   try {
-    const supabase = createClient();
+    const response = await backendApi.get<{ threads: any[] }>('/threads', {
+      showErrors: false,
+    });
 
-    // Get the current user's ID to filter projects
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) {
-      console.error('Error getting current user:', userError);
+    if (response.error) {
+      console.error('Error getting projects from threads:', response.error);
       return [];
     }
 
-    // If no user is logged in, return an empty array
-    if (!userData.user) {
+    if (!response.data?.threads) {
       return [];
     }
 
-    // Query only projects where account_id matches the current user's ID
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('account_id', userData.user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      // Handle permission errors specifically
-      if (
-        error.code === '42501' &&
-        error.message.includes('has_role_on_account')
-      ) {
-        console.error(
-          'Permission error: User does not have proper account access',
-        );
-        return []; // Return empty array instead of throwing
+    // Extract unique projects from threads
+    const projectsMap = new Map<string, Project>();
+    
+    response.data.threads.forEach((thread: any) => {
+      if (thread.project) {
+        const project = thread.project;
+        if (!projectsMap.has(project.project_id)) {
+          projectsMap.set(project.project_id, {
+            id: project.project_id,
+            name: project.name || '',
+            description: project.description || '',
+            created_at: project.created_at,
+            updated_at: project.updated_at,
+            sandbox: project.sandbox || {
+              id: '',
+              pass: '',
+              vnc_preview: '',
+              sandbox_url: '',
+            },
+            // Include icon field for thread categorization
+            icon_name: project.icon_name,
+          });
+        }
       }
-      throw error;
-    }
+    });
 
-    // Map database fields to our Project type
-    const mappedProjects: Project[] = (data || []).map((project) => ({
-      id: project.project_id,
-      name: project.name || '',
-      description: project.description || '',
-      created_at: project.created_at,
-      updated_at: project.updated_at,
-      sandbox: project.sandbox || {
-        id: '',
-        pass: '',
-        vnc_preview: '',
-        sandbox_url: '',
-      },
-      // Include icon field for thread categorization
-      icon_name: project.icon_name,
-    }));
-
-    return mappedProjects;
+    return Array.from(projectsMap.values());
   } catch (err) {
     console.error('Error fetching projects:', err);
     handleApiError(err, { operation: 'load projects', resource: 'projects' });
@@ -322,39 +310,76 @@ export const getProject = async (projectId: string): Promise<Project> => {
     if (data.sandbox?.id) {
       // Fire off sandbox activation without blocking
       const ensureSandboxActive = async () => {
-        try {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
+        const maxRetries = 5;
+        const baseDelay = 2000; // Start with 2 seconds
+        
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
 
-          // For public projects, we don't need authentication
-          const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-          };
+            // For public projects, we don't need authentication
+            const headers: Record<string, string> = {
+              'Content-Type': 'application/json',
+            };
 
-          if (session?.access_token) {
-            headers['Authorization'] = `Bearer ${session.access_token}`;
-          }
+            if (session?.access_token) {
+              headers['Authorization'] = `Bearer ${session.access_token}`;
+            }
 
-          const response = await fetch(
-            `${API_URL}/project/${projectId}/sandbox/ensure-active`,
-            {
-              method: 'POST',
-              headers,
-            },
-          );
-
-          if (!response.ok) {
-            const errorText = await response
-              .text()
-              .catch(() => 'No error details available');
-            console.warn(
-              `Failed to ensure sandbox is active: ${response.status} ${response.statusText}`,
-              errorText,
+            const response = await fetch(
+              `${API_URL}/project/${projectId}/sandbox/ensure-active`,
+              {
+                method: 'POST',
+                headers,
+              },
             );
+
+            if (!response.ok) {
+              const errorText = await response
+                .text()
+                .catch(() => 'No error details available');
+              
+              // Retry on any error if we have attempts left
+              if (attempt < maxRetries - 1) {
+                const delay = Math.min(baseDelay * Math.pow(2, attempt), 30000); // Max 30s
+                console.log(`Sandbox ensure-active failed (${response.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+              }
+              
+              // Give up after all retries
+              console.warn(
+                `Failed to ensure sandbox is active after all retries: ${response.status} ${response.statusText}`,
+                errorText,
+              );
+              return;
+            }
+            
+             // Success! Parse response to get sandbox ID
+             try {
+               const result = await response.json();
+               const sandboxId = result.sandbox_id;
+               console.log('Sandbox is active:', sandboxId);
+               
+               // Dispatch event so components can invalidate caches
+               window.dispatchEvent(new CustomEvent('sandbox-active', {
+                 detail: { sandboxId, projectId }
+               }));
+             } catch (parseError) {
+               console.warn('Sandbox active but failed to parse response:', parseError);
+             }
+             return;
+          } catch (sandboxError) {
+            if (attempt < maxRetries - 1) {
+              const delay = Math.min(baseDelay * Math.pow(2, attempt), 30000);
+              console.log(`Error ensuring sandbox active, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            console.warn('Failed to ensure sandbox is active after all retries:', sandboxError);
           }
-        } catch (sandboxError) {
-          console.warn('Failed to ensure sandbox is active:', sandboxError);
         }
       };
 
@@ -506,45 +531,139 @@ export const deleteProject = async (projectId: string): Promise<void> => {
 
 // Thread APIs
 export const getThreads = async (projectId?: string): Promise<Thread[]> => {
-  const supabase = createClient();
+  try {
+    const response = await backendApi.get<{ threads: any[] }>('/threads', {
+      showErrors: false,
+    });
 
-  // Get the current user's ID to filter threads
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError) {
-    console.error('Error getting current user:', userError);
-    return [];
-  }
+    if (response.error) {
+      console.error('Error getting threads:', response.error);
+      handleApiError(response.error, { 
+        operation: 'load threads', 
+        resource: projectId ? `threads for project ${projectId}` : 'threads' 
+      });
+      return [];
+    }
 
-  // If no user is logged in, return an empty array
-  if (!userData.user) {
-    return [];
-  }
+    if (!response.data?.threads) {
+      return [];
+    }
 
-  let query = supabase.from('threads').select('*');
-
-  // Always filter by the current user's account ID
-  query = query.eq('account_id', userData.user.id);
-
-  if (projectId) {
-    query = query.eq('project_id', projectId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    handleApiError(error, { operation: 'load threads', resource: projectId ? `threads for project ${projectId}` : 'threads' });
-    throw error;
-  }
-
-  const mappedThreads: Thread[] = (data || [])
-    .map((thread) => ({
+    // Map backend response to Thread type
+    let threads = response.data.threads.map((thread: any) => ({
       thread_id: thread.thread_id,
       project_id: thread.project_id,
       created_at: thread.created_at,
       updated_at: thread.updated_at,
-      metadata: thread.metadata,
+      metadata: thread.metadata || {},
     }));
-  return mappedThreads;
+
+    // Filter by projectId if provided
+    if (projectId) {
+      threads = threads.filter((thread: Thread) => thread.project_id === projectId);
+    }
+
+    return threads;
+  } catch (err) {
+    console.error('Error fetching threads:', err);
+    handleApiError(err, { 
+      operation: 'load threads', 
+      resource: projectId ? `threads for project ${projectId}` : 'threads' 
+    });
+    return [];
+  }
+};
+
+// Paginated threads API - for components that need pagination
+export interface ThreadsResponse {
+  threads: Thread[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
+export const getThreadsPaginated = async (projectId?: string, page: number = 1, limit: number = 50): Promise<ThreadsResponse> => {
+  try {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+    
+    const response = await backendApi.get<{ threads: any[]; pagination: any }>(`/threads?${params.toString()}`, {
+      showErrors: false,
+    });
+
+    if (response.error) {
+      console.error('Error getting paginated threads:', response.error);
+      handleApiError(response.error, { 
+        operation: 'load threads', 
+        resource: projectId ? `threads for project ${projectId}` : 'threads' 
+      });
+      return {
+        threads: [],
+        pagination: {
+          page: 1,
+          limit: 50,
+          total: 0,
+          pages: 0,
+        }
+      };
+    }
+
+    if (!response.data?.threads) {
+      return {
+        threads: [],
+        pagination: response.data?.pagination || {
+          page: 1,
+          limit: 50,
+          total: 0,
+          pages: 0,
+        }
+      };
+    }
+
+    // Map backend response to Thread type
+    let threads = response.data.threads.map((thread: any) => ({
+      thread_id: thread.thread_id,
+      project_id: thread.project_id,
+      created_at: thread.created_at,
+      updated_at: thread.updated_at,
+      metadata: thread.metadata || {},
+    }));
+
+    // Filter by projectId if provided
+    if (projectId) {
+      threads = threads.filter((thread: Thread) => thread.project_id === projectId);
+    }
+
+    return {
+      threads,
+      pagination: response.data.pagination || {
+        page,
+        limit,
+        total: threads.length,
+        pages: 1,
+      }
+    };
+  } catch (err) {
+    console.error('Error fetching paginated threads:', err);
+    handleApiError(err, { 
+      operation: 'load threads', 
+      resource: projectId ? `threads for project ${projectId}` : 'threads' 
+    });
+    return {
+      threads: [],
+      pagination: {
+        page: 1,
+        limit: 50,
+        total: 0,
+        pages: 0,
+      }
+    };
+  }
 };
 
 export const getThread = async (threadId: string): Promise<Thread> => {

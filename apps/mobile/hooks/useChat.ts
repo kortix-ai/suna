@@ -82,7 +82,9 @@ export interface UseChatReturn {
   handleChooseFiles: () => Promise<void>;
   
   selectedQuickAction: string | null;
+  selectedQuickActionOption: string | null;
   handleQuickAction: (actionId: string) => void;
+  setSelectedQuickActionOption: (optionId: string | null) => void;
   clearQuickAction: () => void;
   getPlaceholder: () => string;
   
@@ -109,6 +111,7 @@ export function useChat(): UseChatReturn {
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
+  const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
@@ -445,7 +448,7 @@ export function useChat(): UseChatReturn {
     if (!content.trim() && attachments.length === 0) return;
 
     try {
-      console.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length });
+      console.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length, selectedQuickAction, selectedQuickActionOption });
       
       for (const attachment of attachments) {
         const validation = validateFileSize(attachment.size);
@@ -480,8 +483,21 @@ export function useChat(): UseChatReturn {
         
         console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
+        // Append hidden context for selected quick action options
+        let messageWithContext = content;
+        
+        if (selectedQuickAction === 'slides' && selectedQuickActionOption) {
+          messageWithContext += `\n\n----\n\n**Presentation Template:** ${selectedQuickActionOption}`;
+          console.log('[useChat] Appended slides template context to new thread:', selectedQuickActionOption);
+        }
+        
+        if (selectedQuickAction === 'image' && selectedQuickActionOption) {
+          messageWithContext += `\n\n----\n\n**Image Style:** ${selectedQuickActionOption}`;
+          console.log('[useChat] Appended image style context to new thread:', selectedQuickActionOption);
+        }
+        
         const createResult = await unifiedAgentStartMutation.mutateAsync({
-          prompt: content,
+          prompt: messageWithContext,
           agentId: agentId,
           modelName: 'claude-sonnet-4',
           files: formDataFiles as any,
@@ -524,6 +540,18 @@ export function useChat(): UseChatReturn {
         
         let messageContent = content;
         
+        // Append hidden context for slides template
+        if (selectedQuickAction === 'slides' && selectedQuickActionOption) {
+          messageContent += `\n\n----\n\n**Presentation Template:** ${selectedQuickActionOption}`;
+          console.log('[useChat] Appended slides template context:', selectedQuickActionOption);
+        }
+        
+        // Append hidden context for image style
+        if (selectedQuickAction === 'image' && selectedQuickActionOption) {
+          messageContent += `\n\n----\n\n**Image Style:** ${selectedQuickActionOption}`;
+          console.log('[useChat] Appended image style context:', selectedQuickActionOption);
+        }
+        
         if (attachments.length > 0) {
           const sandboxId = activeSandboxId;
           
@@ -555,8 +583,8 @@ export function useChat(): UseChatReturn {
             const filePaths = uploadResults.map(result => result.path);
             const fileReferences = generateFileReferences(filePaths);
             
-            messageContent = content
-              ? `${content}\n\n${fileReferences}`
+            messageContent = messageContent
+              ? `${messageContent}\n\n${fileReferences}`
               : fileReferences;
               
             console.log('[useChat] Message with file references prepared');
@@ -601,6 +629,8 @@ export function useChat(): UseChatReturn {
     unifiedAgentStartMutation,
     uploadFilesMutation,
     activeSandboxId,
+    selectedQuickAction,
+    selectedQuickActionOption,
     t,
   ]);
 
@@ -727,10 +757,13 @@ export function useChat(): UseChatReturn {
 
   const handleQuickAction = useCallback((actionId: string) => {
     setSelectedQuickAction(actionId);
+    // Reset selected option when changing quick action
+    setSelectedQuickActionOption(null);
   }, []);
 
   const clearQuickAction = useCallback(() => {
     setSelectedQuickAction(null);
+    setSelectedQuickActionOption(null);
   }, []);
 
   const getPlaceholder = useCallback(() => {
@@ -839,7 +872,9 @@ export function useChat(): UseChatReturn {
     handleChooseFiles,
     
     selectedQuickAction,
+    selectedQuickActionOption,
     handleQuickAction,
+    setSelectedQuickActionOption,
     clearQuickAction,
     getPlaceholder,
     

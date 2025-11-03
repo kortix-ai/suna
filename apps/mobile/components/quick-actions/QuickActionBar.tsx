@@ -12,6 +12,7 @@ interface QuickActionBarProps {
   selectedActionId?: string | null;
   selectedOptionId?: string | null;
   onSelectOption?: (optionId: string) => void;
+  onSelectPrompt?: (prompt: string) => void;
 }
 
 
@@ -20,7 +21,8 @@ export function QuickActionBar({
   onActionPress,
   selectedActionId,
   selectedOptionId,
-  onSelectOption 
+  onSelectOption,
+  onSelectPrompt
 }: QuickActionBarProps) {
   const enhancedActions = React.useMemo(() => 
     actions.map(action => ({
@@ -42,6 +44,7 @@ export function QuickActionBar({
           onBack={() => onActionPress?.(selectedActionId)}
           onSelectOption={(optionId) => onSelectOption?.(optionId)}
           selectedOptionId={selectedOptionId}
+          onSelectPrompt={onSelectPrompt}
         />
       </View>
     );
