@@ -18,23 +18,29 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9,
     },
     {
-      url: `${baseUrl}/docs`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/templates`,
-      lastModified: new Date(),
-      changeFrequency: 'daily',
-      priority: 0.9,
-    },
-    {
-      url: `${baseUrl}/agents`,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.7,
-    },
+        url: `${baseUrl}/legal`,
+        lastModified: new Date(),
+        changeFrequency: 'monthly',
+        priority: 0.5,
+      },    
+    // {
+    //   url: `${baseUrl}/docs`,
+    //   lastModified: new Date(),
+    //   changeFrequency: 'weekly',
+    //   priority: 0.8,
+    // },
+    // {
+    //   url: `${baseUrl}/templates`,
+    //   lastModified: new Date(),
+    //   changeFrequency: 'daily',
+    //   priority: 0.9,
+    // },
+    // {
+    //   url: `${baseUrl}/agents`,
+    //   lastModified: new Date(),
+    //   changeFrequency: 'weekly',
+    //   priority: 0.7,
+    // },
   ];
 }
 
