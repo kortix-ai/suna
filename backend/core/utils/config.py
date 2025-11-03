@@ -83,7 +83,7 @@ class Configuration:
 
 
     # Subscription tier IDs - Production
-    STRIPE_FREE_TIER_ID_PROD: Optional[str] = 'price_1RIGvuG6l1KZGqIrw14abxeL'
+    STRIPE_FREE_TIER_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
     STRIPE_TIER_2_20_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrhomjgDnO'
     STRIPE_TIER_6_50_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIr5q0sybWn'
     STRIPE_TIER_12_100_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIr5Y20ZLHm'
