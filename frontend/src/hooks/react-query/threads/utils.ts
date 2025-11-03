@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/client";
+import { getProject as getProjectFromApi, type Project } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+// Re-export Project type for consistent imports
+export type { Project };
 
 export type Thread = {
     thread_id: string;
@@ -13,22 +17,6 @@ export type Thread = {
     
       [key: string]: any;
     };
-    [key: string]: any;
-  };
-  
-  export type Project = {
-    id: string;
-    name: string;
-    description: string;
-    created_at: string;
-    updated_at?: string;
-    sandbox: {
-      vnc_preview?: string;
-      sandbox_url?: string;
-      id?: string;
-      pass?: string;
-    };
-    is_public?: boolean;
     [key: string]: any;
   };
   
@@ -184,83 +172,10 @@ export const getPublicProjects = async (): Promise<Project[]> => {
 
 
 
+  // Wrapper around api.ts getProject to maintain consistent imports
+  // Delegates to api.ts which includes retry logic + better error handling
   export const getProject = async (projectId: string): Promise<Project> => {
-    const supabase = createClient();
-  
-    try {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('project_id', projectId)
-        .single();
-  
-      if (error) {
-        // Handle the specific "no rows returned" error from Supabase
-        if (error.code === 'PGRST116') {
-          throw new Error(`Project not found or not accessible: ${projectId}`);
-        }
-        throw error;
-      }
-
-      // If project has a sandbox, ensure it's started
-      if (data.sandbox?.id) {
-        // Fire off sandbox activation without blocking
-        const ensureSandboxActive = async () => {
-          try {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-  
-            // For public projects, we don't need authentication
-            const headers: Record<string, string> = {
-              'Content-Type': 'application/json',
-            };
-  
-            if (session?.access_token) {
-              headers['Authorization'] = `Bearer ${session.access_token}`;
-            }
-            const response = await fetch(
-              `${API_URL}/project/${projectId}/sandbox/ensure-active`,
-              {
-                method: 'POST',
-                headers,
-              },
-            );
-  
-            if (!response.ok) {
-              const errorText = await response
-                .text()
-                .catch(() => 'No error details available');
-            }
-          } catch (sandboxError) {
-            console.warn('Failed to ensure sandbox is active:', sandboxError);
-          }
-        };
-  
-        // Start the sandbox activation without awaiting
-        ensureSandboxActive();
-      }
-  
-      // Map database fields to our Project type
-      const mappedProject: Project = {
-        id: data.project_id,
-        name: data.name || '',
-        description: data.description || '',
-        is_public: data.is_public || false,
-        created_at: data.created_at,
-        sandbox: data.sandbox || {
-          id: '',
-          pass: '',
-          vnc_preview: '',
-          sandbox_url: '',
-        },
-      };
-  
-      return mappedProject;
-    } catch (error) {
-      console.error(`Error fetching project ${projectId}:`, error);
-      throw error;
-    }
+    return await getProjectFromApi(projectId);
   };
 
 
