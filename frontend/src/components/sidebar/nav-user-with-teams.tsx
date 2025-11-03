@@ -202,23 +202,30 @@ export function NavUserWithTeams({
                 </Avatar>
                 <div className="flex flex-col justify-between flex-1 min-w-0 h-10 group-data-[collapsible=icon]:hidden">
                   <span className="truncate font-medium text-sm leading-tight">{user.name}</span>
-                  {user.planName && user.planIcon ? (
-                    <div className="flex items-center">
-                      <>
-                        <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
+                  {user.planName ? (
+                    user.planIcon ? (
+                      <div className="flex items-center">
+                        <>
+                          <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
+                            <img
+                              src={user.planIcon}
+                              alt={user.planName}
+                              className="flex-shrink-0 h-[10px] w-auto"
+                            />
+                          </div>
                           <img
                             src={user.planIcon}
                             alt={user.planName}
-                            className="flex-shrink-0 h-[10px] w-auto"
+                            className="flex-shrink-0 h-[10px] w-auto hidden dark:block"
                           />
-                        </div>
-                        <img
-                          src={user.planIcon}
-                          alt={user.planName}
-                          className="flex-shrink-0 h-[10px] w-auto hidden dark:block"
-                        />
-                      </>
-                    </div>
+                        </>
+                      </div>
+                    ) : (
+                      <div className='flex items-center'>
+                        <Zap className="h-3 w-3 text-blue-500 dark:text-blue-400 mr-1" />
+                        <span className="text-xs text-blue-500 dark:text-blue-400 leading-tight">Free</span>
+                      </div>
+                    )
                   ) : (
                     <span className="truncate text-xs text-muted-foreground leading-tight">{user.email}</span>
                   )}

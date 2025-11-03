@@ -4,6 +4,7 @@ import { useRouter, Stack } from 'expo-router';
 import { KortixLoader } from '@/components/ui';
 import { useAuthContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { useAccountInitialization } from '@/hooks/useAccountInitialization';
 
 /**
  * Splash Screen
@@ -21,10 +22,11 @@ export default function SplashScreen() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
+  const { isInitializing } = useAccountInitialization();
 
   // Route user once we have all the info
   React.useEffect(() => {
-    if (!authLoading && !onboardingLoading) {
+    if (!authLoading && !onboardingLoading && !isInitializing) {
       // Small delay for smooth transition
       const timeoutId = setTimeout(() => {
         if (!isAuthenticated) {
@@ -41,7 +43,7 @@ export default function SplashScreen() {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [authLoading, onboardingLoading, isAuthenticated, hasCompletedOnboarding, router]);
+  }, [authLoading, onboardingLoading, isInitializing, isAuthenticated, hasCompletedOnboarding, router]);
 
   return (
     <>

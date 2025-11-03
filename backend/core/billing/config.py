@@ -12,7 +12,7 @@ TOKEN_PRICE_MULTIPLIER = Decimal('1.2')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 
-FREE_TIER_INITIAL_CREDITS = Decimal('3.00')
+FREE_TIER_INITIAL_CREDITS = Decimal('2.00')
 
 @dataclass
 class Tier:

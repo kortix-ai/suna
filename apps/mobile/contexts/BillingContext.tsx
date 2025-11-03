@@ -200,6 +200,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
     
     // Computed states
     hasActiveSubscription,
+    hasFreeTier,
     hasActiveTrial,
     needsSubscription,
   };
