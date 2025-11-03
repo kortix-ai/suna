@@ -62,7 +62,7 @@ class ModelManager:
         """Get complete LiteLLM parameters for a model from the registry."""
         model = self.get_model(model_id)
         if not model:
-            logger.warning(f"Model '{model_id}' not found in registry, using basic params")
+            # logger.warning(f"Model '{model_id}' not found in registry, using basic params")
             return {
                 "model": model_id,
                 "num_retries": 5,

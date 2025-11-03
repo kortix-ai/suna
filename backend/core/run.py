@@ -633,7 +633,7 @@ class AgentRunner:
         mcp_manager = MCPManager(self.thread_manager, self.account_id)
         return await mcp_manager.register_mcp_tools(self.config.agent_config)
     
-    async def run(self) -> AsyncGenerator[Dict[str, Any], None]:
+    async def run(self, cancellation_event: Optional[asyncio.Event] = None) -> AsyncGenerator[Dict[str, Any], None]:
         await self.setup()
         await self.setup_tools()
         mcp_wrapper_instance = await self.setup_mcp_tools()
@@ -708,7 +708,8 @@ class AgentRunner:
                         xml_adding_strategy="user_message"
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
-                    generation=generation
+                    generation=generation,
+                    cancellation_event=cancellation_event
                 )
 
                 last_tool_call = None
@@ -830,7 +831,8 @@ async def run_agent(
     max_iterations: int = 100,
     model_name: str = "openai/gpt-5-mini",
     agent_config: Optional[dict] = None,    
-    trace: Optional[StatefulTraceClient] = None
+    trace: Optional[StatefulTraceClient] = None,
+    cancellation_event: Optional[asyncio.Event] = None
 ):
     effective_model = model_name
 
@@ -854,5 +856,5 @@ async def run_agent(
     )
     
     runner = AgentRunner(config)
-    async for chunk in runner.run():
+    async for chunk in runner.run(cancellation_event=cancellation_event):
         yield chunk
