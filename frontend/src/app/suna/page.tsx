@@ -68,7 +68,7 @@ export default function SunaPage() {
             logo: 'https://kortix.com/favicon.png',
             sameAs: [
               'https://github.com/kortix-ai',
-              'https://x.com/kortixai',
+              'https://x.com/kortix',
               'https://linkedin.com/company/kortix',
             ],
             description:
