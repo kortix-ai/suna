@@ -42,7 +42,7 @@ export const PRICING_TIERS: PricingTier[] = [
       : 'price_1RqYGaG6l1KZGqIrIzcdPzeQ',      // Staging/Local commitment
     credits: 20,
     features: [
-      '$20 AI token credits/m',
+      '2,000 AI token credits/m',
       '5 custom agents',
       'Private projects',
       '100+ integrations',
@@ -69,7 +69,7 @@ export const PRICING_TIERS: PricingTier[] = [
       : 'price_1RqYH1G6l1KZGqIrWDKh8xIU',      // Staging/Local commitment
     credits: 50,
     features: [
-      '$50 AI token credits/m',
+      '5,000 AI token credits/m',
       '20 custom agents',
       'Private projects',
       '100+ integrations',
@@ -92,7 +92,7 @@ export const PRICING_TIERS: PricingTier[] = [
       : 'price_1ReGnZG6l1KZGqIr0ThLEl5S',      // Staging/Local yearly
     credits: 100,
     features: [
-      '$100 AI token credits/m',
+      '10,000 AI token credits/m',
       'Unlimited custom agents',
       'Private projects',
       '100+ integrations',

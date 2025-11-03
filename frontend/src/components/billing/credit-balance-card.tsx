@@ -130,16 +130,16 @@ export function CreditBalanceCard({
           <Coins className="h-5 w-5 text-primary" />
           <div>
             <p className="text-sm text-muted-foreground">Credit Balance</p>
-            <p className="text-2xl font-medium">${balance.balance.toFixed(2)}</p>
+            <p className="text-2xl font-medium">{Math.round(balance.balance).toLocaleString()} credits</p>
             {hasBreakdown && showPurchaseButton && balance.can_purchase_credits && (expiringCredits > 0 || nonExpiringCredits > 0) && (
               <div className="flex gap-3 mt-1">
                 <span className="text-xs text-muted-foreground">
                   <Clock className="h-3 w-3 inline mr-1 text-orange-500" />
-                  ${expiringCredits.toFixed(2)}
+                  {Math.round(expiringCredits).toLocaleString()}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   <Infinity className="h-3 w-3 inline mr-1 text-green-500" />
-                  ${nonExpiringCredits.toFixed(2)}
+                  {Math.round(nonExpiringCredits).toLocaleString()}
                 </span>
               </div>
             )}
@@ -166,8 +166,8 @@ export function CreditBalanceCard({
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-medium">${balance.balance.toFixed(2)}</span>
-                <span className="text-sm text-muted-foreground">total available</span>
+                <span className="text-3xl font-medium">{Math.round(balance.balance).toLocaleString()}</span>
+                <span className="text-sm text-muted-foreground">credits available</span>
               </div>
             </div>
           </div>

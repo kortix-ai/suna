@@ -242,7 +242,7 @@ export function CreditBalanceDisplay({ balance, canPurchase, onPurchaseClick }: 
             </CardHeader>
             <CardContent>
                 <div className="text-2xl font-medium">
-                    ${balance.toFixed(2)}
+                    {Math.round(balance).toLocaleString()}
                 </div>
             </CardContent>
         </Card>
