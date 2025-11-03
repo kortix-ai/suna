@@ -303,15 +303,15 @@ export function NavAgents() {
   useEffect(() => {
     if (threadsResponse?.pagination) {
       const currentTotal = threadsResponse.pagination.total;
-      
+
       // If the total decreased (threads were deleted), reset to page 1
-      if (previousTotalRef.current !== undefined && 
-          currentTotal < previousTotalRef.current && 
-          currentPage > 1) {
+      if (previousTotalRef.current !== undefined &&
+        currentTotal < previousTotalRef.current &&
+        currentPage > 1) {
         setCurrentPage(1);
         setAllThreads([]);
       }
-      
+
       previousTotalRef.current = currentTotal;
     }
   }, [threadsResponse?.pagination, currentPage]);
@@ -329,9 +329,9 @@ export function NavAgents() {
   const groupedTriggerThreads: GroupedThreads = groupThreadsByDate(triggerThreads);
 
   // Check if there are more threads to load
-  const hasMore = threadsResponse?.pagination && 
-                  threadsResponse.pagination.page < threadsResponse.pagination.pages;
-  
+  const hasMore = threadsResponse?.pagination &&
+    threadsResponse.pagination.page < threadsResponse.pagination.pages;
+
   const handleLoadMore = () => {
     if (hasMore && !isThreadsLoading) {
       // Save current scroll position and height before loading more
@@ -339,7 +339,7 @@ export function NavAgents() {
       if (scrollContainer) {
         savedScrollPositionRef.current = scrollContainer.scrollTop;
       }
-      
+
       setCurrentPage(prev => prev + 1);
     }
   };
@@ -745,7 +745,7 @@ export function NavAgents() {
                     })}
                   </div>
                 ))}
-                
+
                 {/* Show skeleton loaders while loading more threads */}
                 {isThreadsLoading && allThreads.length > 0 && (
                   <div className="space-y-1 mt-1">
@@ -758,7 +758,7 @@ export function NavAgents() {
                     ))}
                   </div>
                 )}
-                
+
                 {/* Load More section - simple and minimal */}
                 {threadsResponse?.pagination && threadsResponse.pagination.total > pageLimit && !isThreadsLoading && (
                   <div className="px-2 py-3">
@@ -783,7 +783,7 @@ export function NavAgents() {
                 )}
               </>
             ) : (
-              <div className="py-2 text-sm text-muted-foreground">
+              <div className="py-2 pl-2.5 text-sm text-muted-foreground">
                 No conversations yet
               </div>
             )}
