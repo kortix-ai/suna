@@ -160,6 +160,43 @@ export const useDeleteAgent = () => {
   )();
 };
 
+interface DeleteMultipleAgentsVariables {
+  agentIds: string[];
+  onProgress?: (completed: number, total: number) => void;
+}
+
+export const useDeleteMultipleAgents = () => {
+  const queryClient = useQueryClient();
+  
+  return createMutationHook(
+    async ({ agentIds, onProgress }: DeleteMultipleAgentsVariables) => {
+      let completedCount = 0;
+      const results = await Promise.all(
+        agentIds.map(async (agentId) => {
+          try {
+            await deleteAgent(agentId);
+            completedCount++;
+            onProgress?.(completedCount, agentIds.length);
+            return { success: true, agentId };
+          } catch (error) {
+            return { success: false, agentId, error };
+          }
+        })
+      );
+      
+      return {
+        successful: results.filter(r => r.success).map(r => r.agentId),
+        failed: results.filter(r => !r.success).map(r => r.agentId),
+      };
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+      },
+    }
+  )();
+};
+
 export const useOptimisticAgentUpdate = () => {
   const queryClient = useQueryClient();
   
