@@ -26,7 +26,6 @@ This will guide you through configuring all required services and dependencies.
 
 For detailed setup instructions, please refer to:
 
-- [Self-Hosting Guide](docs/SELF-HOSTING.md) - Complete setup instructions
 - [Backend Development Setup](backend/README.md) - Backend-specific development
 - [Frontend Development Setup](frontend/README.md) - Frontend-specific development
 
