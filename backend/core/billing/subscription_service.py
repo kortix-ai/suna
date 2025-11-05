@@ -663,9 +663,19 @@ class SubscriptionService:
             seconds_since_period_start = (now - billing_anchor).total_seconds()
             
             if 0 <= seconds_since_period_start < 1800:
-                is_renewal = True
-                logger.warning(f"[RENEWAL DETECTION] We're only {seconds_since_period_start:.0f}s after period start")
-                logger.warning(f"[RENEWAL DETECTION] This is almost certainly a renewal - BLOCKING subscription.updated credits")
+                current_tier_name = current_account.data[0].get('tier') if current_account.data else 'none'
+                new_tier_info = get_tier_by_price_id(price_id)
+                
+                is_free_to_paid_upgrade = (current_tier_name in ['free', 'none'] and 
+                                          new_tier_info and 
+                                          new_tier_info.name not in ['free', 'none'])
+                
+                if is_free_to_paid_upgrade:
+                    logger.info(f"[RENEWAL DETECTION] Within 30min of period start BUT upgrading from {current_tier_name} to {new_tier_info.name} - NOT blocking")
+                else:
+                    is_renewal = True
+                    logger.warning(f"[RENEWAL DETECTION] We're only {seconds_since_period_start:.0f}s after period start")
+                    logger.warning(f"[RENEWAL DETECTION] This is almost certainly a renewal - BLOCKING subscription.updated credits")
         
         if not is_renewal and not is_upgrade and previous_attributes and 'current_period_start' in previous_attributes:
             prev_period_start = previous_attributes.get('current_period_start')
