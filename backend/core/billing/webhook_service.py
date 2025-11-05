@@ -730,8 +730,62 @@ class WebhookService:
                 current_price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                 prev_price_id = previous_attributes.get('items', {}).get('data', [{}])[0].get('price', {}).get('id') if previous_attributes.get('items') else None
                 
+                prev_status = previous_attributes.get('status')
+                current_status = subscription.get('status')
+                
                 if current_price_id and prev_price_id and current_price_id == prev_price_id:
-                    return
+                    if not (prev_status == 'incomplete' and current_status == 'active'):
+                        return
+                    else:
+                        logger.info(f"[WEBHOOK] Subscription {subscription['id']} changed from incomplete→active with same price_id, need to grant initial credits")
+                        
+                        account_id = subscription.get('metadata', {}).get('account_id')
+                        if not account_id:
+                            customer_id = subscription.get('customer')
+                            customer_result = await client.schema('basejump').from_('billing_customers')\
+                                .select('account_id')\
+                                .eq('id', customer_id)\
+                                .execute()
+                            if customer_result.data:
+                                account_id = customer_result.data[0].get('account_id')
+                        
+                        if account_id:
+                            trial_check = await client.from_('credit_accounts').select(
+                                'trial_status, tier'
+                            ).eq('account_id', account_id).execute()
+                            
+                            if trial_check.data:
+                                current_tier = trial_check.data[0].get('tier')
+                                
+                                if current_tier in ['free', 'none']:
+                                    tier_info = get_tier_by_price_id(current_price_id)
+                                    if not tier_info:
+                                        logger.error(f"[WEBHOOK] Cannot process incomplete→active transition - price_id {current_price_id} not recognized")
+                                        raise ValueError(f"Unrecognized price_id: {current_price_id}")
+                                    
+                                    billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                                    next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                                    
+                                    logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} via incomplete→active transition to {tier_info.name}")
+                                    await client.from_('credit_accounts').update({
+                                        'tier': tier_info.name,
+                                        'stripe_subscription_id': subscription['id'],
+                                        'billing_cycle_anchor': billing_anchor.isoformat(),
+                                        'next_credit_grant': next_grant_date.isoformat(),
+                                        'last_grant_date': billing_anchor.isoformat()
+                                    }).eq('account_id', account_id).execute()
+                                    
+                                    from decimal import Decimal
+                                    await credit_manager.add_credits(
+                                        account_id=account_id,
+                                        amount=Decimal(str(tier_info.monthly_credits)),
+                                        is_expiring=True,
+                                        description=f"Initial {tier_info.display_name} subscription credits (incomplete→active)",
+                                        expires_at=next_grant_date
+                                    )
+                                    
+                                    logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for incomplete→active upgrade")
+                                    return
 
                 current_tier_info = get_tier_by_price_id(current_price_id) if current_price_id else None
                 prev_tier_info = get_tier_by_price_id(prev_price_id) if prev_price_id else None
@@ -767,7 +821,9 @@ class WebhookService:
                         now = datetime.now(timezone.utc).timestamp()
                         time_since_period = now - current_period_start
                         
-                        if 0 <= time_since_period < 1800:
+                        is_incomplete_to_active = prev_status == 'incomplete' and current_status == 'active'
+                        
+                        if 0 <= time_since_period < 1800 and not is_incomplete_to_active:
                             return
 
                     if 'current_period_start' in previous_attributes:
@@ -1277,9 +1333,18 @@ class WebhookService:
                         
                         if seconds_since_grant < 60:
                             logger.info(f"[INITIAL GRANT SKIP] Credits already granted {seconds_since_grant:.0f}s ago via subscription.created webhook, skipping duplicate grant")
-                            await client.from_('credit_accounts').update({
-                                'last_processed_invoice_id': invoice_id
-                            }).eq('account_id', account_id).execute()
+                            update_data = {
+                                'last_processed_invoice_id': invoice_id,
+                                'tier': tier,
+                                'stripe_subscription_id': subscription_id,
+                                'billing_cycle_anchor': period_start_dt.isoformat(),
+                                'next_credit_grant': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+                            }
+                            if trial_status != account.get('trial_status'):
+                                update_data['trial_status'] = trial_status
+                            
+                            logger.info(f"[INITIAL GRANT SKIP] Updating tier to {tier} and metadata even though credits were already granted")
+                            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
                             return
                 
                 if is_true_renewal:
