@@ -217,20 +217,23 @@ class WebhookService:
                     price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                     tier_info = get_tier_by_price_id(price_id)
                     
-                    if tier_info:
-                        await client.from_('credit_accounts').update({
-                            'trial_status': 'converted',
-                            'tier': tier_info.name,
-                            'stripe_subscription_id': subscription['id']
-                        }).eq('account_id', account_id).execute()
-                        
-                        await client.from_('trial_history').update({
-                            'ended_at': datetime.now(timezone.utc).isoformat(),
-                            'converted_to_paid': True,
-                            'status': 'converted'
-                        }).eq('account_id', account_id).is_('ended_at', 'null').execute()
-                        
-                        return  # MOVED INSIDE - only return if we converted an active trial
+                    if not tier_info:
+                        logger.error(f"[WEBHOOK CHECKOUT] Cannot process checkout - price_id {price_id} not recognized")
+                        raise ValueError(f"Unrecognized price_id: {price_id}")
+                    
+                    await client.from_('credit_accounts').update({
+                        'trial_status': 'converted',
+                        'tier': tier_info.name,
+                        'stripe_subscription_id': subscription['id']
+                    }).eq('account_id', account_id).execute()
+                    
+                    await client.from_('trial_history').update({
+                        'ended_at': datetime.now(timezone.utc).isoformat(),
+                        'converted_to_paid': True,
+                        'status': 'converted'
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    
+                    return
 
         logger.info(f"[WEBHOOK CHECKOUT] Checking converting_from_trial metadata: {session.get('metadata', {}).get('converting_from_trial')}")
         if session.get('metadata', {}).get('converting_from_trial') == 'true':
@@ -247,7 +250,8 @@ class WebhookService:
                 tier_info = get_tier_by_price_id(price_id)
                 
                 if not tier_info:
-                    return
+                    logger.error(f"[TRIAL CONVERSION] Cannot process trial conversion - price_id {price_id} not recognized")
+                    raise ValueError(f"Unrecognized price_id: {price_id}")
                 
                 lock_key = f"credit_grant:trial_conversion:{account_id}"
                 lock = DistributedLock(lock_key, timeout_seconds=60)
@@ -627,13 +631,27 @@ class WebhookService:
                         current_tier = trial_check.data[0].get('tier')
                         current_subscription_id = trial_check.data[0].get('stripe_subscription_id')
                         
-                        if current_tier in ['free', 'none'] and subscription.status == 'active':
-                            logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to paid")
+                        if current_tier in ['free', 'none']:
                             tier_info = get_tier_by_price_id(price_id)
-                            if tier_info:
-                                billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
-                                next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                            if not tier_info:
+                                logger.error(f"[WEBHOOK] Cannot process subscription - price_id {price_id} not recognized")
+                                raise ValueError(f"Unrecognized price_id: {price_id}")
+                            
+                            billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                            next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                            
+                            if subscription.status == 'incomplete':
+                                logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to {tier_info.name} (payment pending)")
+                                await client.from_('credit_accounts').update({
+                                    'tier': tier_info.name,
+                                    'stripe_subscription_id': subscription['id'],
+                                    'billing_cycle_anchor': billing_anchor.isoformat(),
+                                    'next_credit_grant': next_grant_date.isoformat()
+                                }).eq('account_id', account_id).execute()
+                                logger.info(f"[WEBHOOK] Updated tier to {tier_info.name}, waiting for payment to grant credits")
                                 
+                            elif subscription.status == 'active':
+                                logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to paid")
                                 await client.from_('credit_accounts').update({
                                     'tier': tier_info.name,
                                     'stripe_subscription_id': subscription['id'],
@@ -651,48 +669,54 @@ class WebhookService:
                                     expires_at=next_grant_date
                                 )
                                 
-                                logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from free tier")
+                                logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from {current_tier} tier")
                         
                         elif trial_status == 'active':
                             tier_info = get_tier_by_price_id(price_id)
-                            if tier_info:
-                                await client.from_('credit_accounts').update({
-                                    'trial_status': 'converted',
-                                    'tier': tier_info.name,
-                                    'stripe_subscription_id': subscription['id']
-                                }).eq('account_id', account_id).execute()
-                                
-                                await client.from_('trial_history').update({
-                                    'ended_at': datetime.now(timezone.utc).isoformat(),
-                                    'converted_to_paid': True
-                                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                            if not tier_info:
+                                logger.error(f"[WEBHOOK] Cannot process trial conversion - price_id {price_id} not recognized")
+                                raise ValueError(f"Unrecognized price_id: {price_id}")
+                            
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'converted',
+                                'tier': tier_info.name,
+                                'stripe_subscription_id': subscription['id']
+                            }).eq('account_id', account_id).execute()
+                            
+                            await client.from_('trial_history').update({
+                                'ended_at': datetime.now(timezone.utc).isoformat(),
+                                'converted_to_paid': True
+                            }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                         
                         elif trial_status == 'cancelled' and subscription.status == 'active':
                             logger.info(f"[WEBHOOK] User {account_id} with cancelled trial is subscribing again")
                             tier_info = get_tier_by_price_id(price_id)
-                            if tier_info:
-                                billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
-                                next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
-                                
-                                await client.from_('credit_accounts').update({
-                                    'trial_status': 'none',
-                                    'tier': tier_info.name,
-                                    'stripe_subscription_id': subscription['id'],
-                                    'billing_cycle_anchor': billing_anchor.isoformat(),
-                                    'next_credit_grant': next_grant_date.isoformat(),
-                                    'last_grant_date': billing_anchor.isoformat()
-                                }).eq('account_id', account_id).execute()
-                                
-                                from decimal import Decimal
-                                await credit_manager.add_credits(
-                                    account_id=account_id,
-                                    amount=Decimal(str(tier_info.monthly_credits)),
-                                    is_expiring=True,
-                                    description=f"Initial {tier_info.display_name} subscription credits",
-                                    expires_at=next_grant_date
-                                )
-                                
-                                logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for new subscription after cancelled trial")
+                            if not tier_info:
+                                logger.error(f"[WEBHOOK] Cannot process cancelled trial resubscription - price_id {price_id} not recognized")
+                                raise ValueError(f"Unrecognized price_id: {price_id}")
+                            
+                            billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                            next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                            
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'none',
+                                'tier': tier_info.name,
+                                'stripe_subscription_id': subscription['id'],
+                                'billing_cycle_anchor': billing_anchor.isoformat(),
+                                'next_credit_grant': next_grant_date.isoformat(),
+                                'last_grant_date': billing_anchor.isoformat()
+                            }).eq('account_id', account_id).execute()
+                            
+                            from decimal import Decimal
+                            await credit_manager.add_credits(
+                                account_id=account_id,
+                                amount=Decimal(str(tier_info.monthly_credits)),
+                                is_expiring=True,
+                                description=f"Initial {tier_info.display_name} subscription credits",
+                                expires_at=next_grant_date
+                            )
+                            
+                            logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for new subscription after cancelled trial")
                 
                 if account_id and price_id and (
                     is_commitment_price_id(price_id) or 
@@ -1225,9 +1249,11 @@ class WebhookService:
                         tier = tier_info.name
                         logger.info(f"[RENEWAL] Updated tier from price_id {price_id}: {tier}")
                     else:
-                        logger.error(f"[RENEWAL] Price ID {price_id} not recognized in tier configuration")
+                        logger.error(f"[RENEWAL] Price ID {price_id} not recognized in tier configuration - cannot process invoice")
+                        raise ValueError(f"Unrecognized price_id: {price_id}")
                 else:
-                    logger.error(f"[RENEWAL] Could not determine price_id from subscription or invoice")
+                    logger.error(f"[RENEWAL] Could not determine price_id from subscription or invoice - cannot process invoice")
+                    raise ValueError("Could not determine price_id from subscription or invoice")
                 
                 if trial_status == 'cancelled' and billing_reason == 'subscription_create':
                     logger.info(f"[RENEWAL] Cancelled trial user subscribing - resetting trial status to 'none'")
@@ -1237,11 +1263,8 @@ class WebhookService:
                 logger.info(f"[RENEWAL] invoice_id={invoice_id}, billing_reason={billing_reason}, monthly_credits={monthly_credits}, tier={tier}")
                 
                 if monthly_credits <= 0:
-                    logger.info(f"[RENEWAL] No credits to grant for tier {tier}, skipping")
-                    await client.from_('credit_accounts').update({
-                        'last_processed_invoice_id': invoice_id
-                    }).eq('account_id', account_id).execute()
-                    return
+                    logger.error(f"[RENEWAL] No credits configured for tier {tier} - cannot process invoice")
+                    raise ValueError(f"No credits configured for tier: {tier}")
                 
                 is_true_renewal = billing_reason == 'subscription_cycle'
                 is_initial_subscription = billing_reason == 'subscription_create'
