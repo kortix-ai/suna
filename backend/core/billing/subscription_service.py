@@ -664,14 +664,19 @@ class SubscriptionService:
             
             if 0 <= seconds_since_period_start < 1800:
                 current_tier_name = current_account.data[0].get('tier') if current_account.data else 'none'
+                old_subscription_id = current_account.data[0].get('stripe_subscription_id') if current_account.data else None
                 new_tier_info = get_tier_by_price_id(price_id)
+                
+                is_new_subscription = (old_subscription_id is None or 
+                                      old_subscription_id == '' or 
+                                      old_subscription_id != subscription.get('id'))
                 
                 is_free_to_paid_upgrade = (current_tier_name in ['free', 'none'] and 
                                           new_tier_info and 
                                           new_tier_info.name not in ['free', 'none'])
                 
-                if is_free_to_paid_upgrade:
-                    logger.info(f"[RENEWAL DETECTION] Within 30min of period start BUT upgrading from {current_tier_name} to {new_tier_info.name} - NOT blocking")
+                if is_new_subscription or is_free_to_paid_upgrade:
+                    logger.info(f"[RENEWAL DETECTION] Within 30min BUT new subscription (old_sub={old_subscription_id}, new_sub={subscription.get('id')}) or free-to-paid upgrade ({current_tier_name} → {new_tier_info.name if new_tier_info else 'unknown'}) - NOT blocking")
                 else:
                     is_renewal = True
                     logger.warning(f"[RENEWAL DETECTION] We're only {seconds_since_period_start:.0f}s after period start")
