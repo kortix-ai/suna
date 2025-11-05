@@ -634,7 +634,7 @@ export function NavAgents() {
 
   // Loading state or error handling
   // Only show skeleton on initial load, not when loading more pages
-  const isInitialLoading = (isProjectsLoading || isThreadsLoading) && allThreads.length === 0;
+  const isInitialLoading = (isProjectsLoading || isThreadsLoading) && combinedThreads.length === 0;
   const isLoading = isInitialLoading;
   const hasError = projectsError || threadsError;
 
