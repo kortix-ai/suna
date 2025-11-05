@@ -6,7 +6,7 @@ interface BillingErrorState {
   currentUsage?: number;
   limit?: number;
   subscription?: {
-    price_id?: string;
+    tier_key?: string;  // Backend tier key
     plan_name?: string;
     current_usage?: number;
     limit?: number;

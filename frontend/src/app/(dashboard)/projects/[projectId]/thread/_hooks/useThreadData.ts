@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Project } from '@/lib/api';
-import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
-import { useMessagesQuery } from '@/hooks/react-query/threads/use-messages';
-import { useProjectQuery } from '@/hooks/react-query/threads/use-project';
-import { useAgentRunsQuery } from '@/hooks/react-query/threads/use-agent-run';
+import { useThreadQuery } from '@/hooks/threads/use-threads';
+import { useMessagesQuery } from '@/hooks/threads/use-messages';
+import { useProjectQuery } from '@/hooks/threads/use-project';
+import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '../_types';
 
 interface UseThreadDataReturn {

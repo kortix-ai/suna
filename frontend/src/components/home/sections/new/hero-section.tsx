@@ -10,11 +10,10 @@ import {
     BillingError,
     AgentRunLimitError,
 } from '@/lib/api';
-import { useInitiateAgentMutation } from '@/hooks/react-query/dashboard/use-initiate-agent';
-import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
-import { generateThreadName } from '@/lib/actions/threads';
+import { useInitiateAgentMutation } from '@/hooks/dashboard/use-initiate-agent';
+import { useThreadQuery } from '@/hooks/threads/use-threads';
 import GoogleSignIn from '@/components/GoogleSignIn';
-import { useAgents } from '@/hooks/react-query/agents/use-agents';
+import { useAgents } from '@/hooks/agents/use-agents';
 import {
     Dialog,
     DialogContent,
@@ -28,17 +27,17 @@ import { useBillingError } from '@/hooks/useBillingError';
 import { useAccounts } from '@/hooks/use-accounts';
 import { isLocalMode, config, isStagingMode } from '@/lib/config';
 import { toast } from 'sonner';
-import { BillingModal } from '@/components/billing/billing-modal';
+import { PlanSelectionModal } from '@/components/billing/pricing';
 import GitHubSignIn from '@/components/GithubSignIn';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { createQueryHook } from '@/hooks/use-query';
-import { agentKeys } from '@/hooks/react-query/agents/keys';
-import { getAgents } from '@/hooks/react-query/agents/utils';
+import { agentKeys } from '@/hooks/agents/keys';
+import { getAgents } from '@/hooks/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
-import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
-import { useAgentSelection } from '@/lib/stores/agent-selection-store';
+import { useSunaModePersistence } from '@/stores/suna-modes-store';
+import { useAgentSelection } from '@/stores/agent-selection-store';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -233,10 +232,9 @@ export function HeroSection() {
 
     return (
         <section id="hero" className="w-full relative overflow-hidden">
-            <BillingModal
+            <PlanSelectionModal
                 open={showPaymentModal}
                 onOpenChange={setShowPaymentModal}
-                showUsageLimitAlert={true}
             />
             <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
                 {/* Animated background */}

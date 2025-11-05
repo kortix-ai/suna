@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { threadKeys } from '@/hooks/react-query/threads/keys';
+import { threadKeys } from '@/hooks/threads/keys';
 import { Project } from '../app/(dashboard)/projects/[projectId]/thread/_types';
 
 /**

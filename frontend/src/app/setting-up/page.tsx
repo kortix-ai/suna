@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
-import { useInitializeAccount } from '@/hooks/react-query/use-account-setup';
+import { useInitializeAccount } from '@/hooks/use-account-setup';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { KortixLoader } from '@/components/ui/kortix-loader';

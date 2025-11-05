@@ -14,26 +14,11 @@ import {
   ParsedMetadata,
 } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
-import { agentKeys } from '@/hooks/react-query/agents/keys';
-import { composioKeys } from '@/hooks/react-query/composio/keys';
-import { knowledgeBaseKeys } from '@/hooks/react-query/knowledge-base/keys';
-import { fileQueryKeys } from '@/hooks/react-query/files/use-file-queries';
-import { useContextUsageStore } from '@/lib/stores/context-usage-store';
-
-interface ApiMessageType {
-  message_id?: string;
-  thread_id?: string;
-  type: string;
-  is_llm_message?: boolean;
-  content: string;
-  metadata?: string;
-  created_at?: string;
-  updated_at?: string;
-  agent_id?: string;
-  agents?: {
-    name: string;
-  };
-}
+import { agentKeys } from '@/hooks/agents/keys';
+import { composioKeys } from '@/hooks/composio/keys';
+import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
+import { fileQueryKeys } from '@/hooks/files/use-file-queries';
+import { useContextUsageStore } from '@/stores/context-usage-store';
 
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
@@ -55,27 +40,6 @@ export interface AgentStreamCallbacks {
   onAssistantStart?: () => void; // Optional: Notify when assistant starts streaming
   onAssistantChunk?: (chunk: { content: string }) => void; // Optional: Notify on each assistant message chunk
 }
-
-// Helper function to map API messages to UnifiedMessages
-const mapApiMessagesToUnified = (
-  messagesData: ApiMessageType[] | null | undefined,
-  currentThreadId: string,
-): UnifiedMessage[] => {
-  return (messagesData || [])
-    .filter((msg) => msg.type !== 'status')
-    .map((msg: ApiMessageType) => ({
-      message_id: msg.message_id || null,
-      thread_id: msg.thread_id || currentThreadId,
-      type: (msg.type || 'system') as UnifiedMessage['type'],
-      is_llm_message: Boolean(msg.is_llm_message),
-      content: msg.content || '',
-      metadata: msg.metadata || '{}',
-      created_at: msg.created_at || new Date().toISOString(),
-      updated_at: msg.updated_at || new Date().toISOString(),
-      agent_id: (msg as any).agent_id,
-      agents: (msg as any).agents,
-    }));
-};
 
 export function useAgentStream(
   callbacks: AgentStreamCallbacks,

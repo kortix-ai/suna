@@ -29,9 +29,10 @@ import {
   FileText,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/use-accounts';
-import NewTeamForm from '@/components/basejump/new-team-form';
+import { useSubscription } from '@/hooks/use-billing-v2';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,8 +65,8 @@ import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
 import { isLocalMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { BillingModal } from '@/components/billing/billing-modal';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
+import { PlanSelectionModal } from '@/components/billing/pricing';
 
 export function NavUserWithTeams({
   user,
@@ -82,11 +83,18 @@ export function NavUserWithTeams({
   const router = useRouter();
   const { isMobile } = useSidebar();
   const { data: accounts } = useAccounts();
+  const { data: subscriptionData } = useSubscription(true);
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
-  const [showBillingModal, setShowBillingModal] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState<'general' | 'plan' | 'billing' | 'env-manager'>('general');
+  const [showPlanModal, setShowPlanModal] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<'general' | 'billing' | 'env-manager'>('general');
   const { theme, setTheme } = useTheme();
+
+  // Check if user is on free tier
+  const isFreeTier = subscriptionData?.tier_key === 'free' || 
+                     subscriptionData?.tier?.name === 'free' || 
+                     subscriptionData?.plan_name === 'free' ||
+                     !subscriptionData?.tier_key;
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -187,12 +195,12 @@ export function NavUserWithTeams({
   return (
     <Dialog open={showNewTeamDialog} onOpenChange={setShowNewTeamDialog}>
       <SidebarMenu>
-        <SidebarMenuItem>
+        <SidebarMenuItem className="relative">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border h-[64px] p-3 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!w-10 group-data-[collapsible=icon]:border-0"
+                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border p-3 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!w-10 group-data-[collapsible=icon]:border-0"
               >
                 <Avatar className="h-10 w-10 rounded-full flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
@@ -200,7 +208,7 @@ export function NavUserWithTeams({
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col justify-between flex-1 min-w-0 h-10 group-data-[collapsible=icon]:hidden">
+                <div className="flex flex-col justify-center gap-0.5 flex-1 min-w-0 group-data-[collapsible=icon]:hidden ml-3">
                   <span className="truncate font-medium text-sm leading-tight">{user.name}</span>
                   {user.planName ? (
                     user.planIcon ? (
@@ -222,8 +230,7 @@ export function NavUserWithTeams({
                       </div>
                     ) : (
                       <div className='flex items-center'>
-                        <Zap className="h-3 w-3 text-blue-500 dark:text-blue-400 mr-1" />
-                        <span className="text-xs text-blue-500 dark:text-blue-400 leading-tight">Free</span>
+                        <span className="text-[13px] font-medium text-muted-foreground leading-tight">Basic</span>
                       </div>
                     )
                   ) : (
@@ -326,8 +333,7 @@ export function NavUserWithTeams({
               <DropdownMenuGroup>
                 <DropdownMenuItem
                   onClick={() => {
-                    setSettingsTab('plan');
-                    setShowSettingsModal(true);
+                    setShowPlanModal(true);
                   }}
                   className="gap-2 p-2"
                 >
@@ -424,6 +430,19 @@ export function NavUserWithTeams({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          
+          {/* Upgrade Button - Only for Free Tier */}
+          {isFreeTier && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden">
+              <Button
+                onClick={() => setShowPlanModal(true)}
+                className="w-full bg-black dark:bg-white hover:bg-black/90 dark:hover:bg-white/90 text-white dark:text-black font-semibold"
+                size="sm"
+              >
+                Upgrade
+              </Button>
+            </div>
+          )}
         </SidebarMenuItem>
       </SidebarMenu>
 
@@ -436,21 +455,21 @@ export function NavUserWithTeams({
             Create a team to collaborate with others.
           </DialogDescription>
         </DialogHeader>
-        <NewTeamForm />
+        {/* Team form removed - basejump functionality deprecated */}
       </DialogContent>
-
-      {/* Billing Modal */}
-      <BillingModal
-        open={showBillingModal}
-        onOpenChange={setShowBillingModal}
-        returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
-      />
 
       {/* User Settings Modal */}
       <UserSettingsModal
         open={showSettingsModal}
         onOpenChange={setShowSettingsModal}
         defaultTab={settingsTab}
+        returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
+      />
+
+      {/* Plan Selection Modal */}
+      <PlanSelectionModal
+        open={showPlanModal}
+        onOpenChange={setShowPlanModal}
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
     </Dialog>

@@ -232,16 +232,16 @@ export async function startTrialCheckout(
  * 4. If immediate upgrade, calls success callback
  */
 export async function startPlanCheckout(
-  priceId: string,
+  tierKey: string,
   commitmentType: 'monthly' | 'yearly' | 'yearly_commitment' = 'monthly',
   onSuccess?: () => void,
   onCancel?: () => void
 ): Promise<CreateCheckoutSessionResponse> {
-  console.log('💳 Starting plan checkout...', { priceId, commitmentType });
+  console.log('💳 Starting plan checkout...', { tierKey, commitmentType });
 
   try {
     const request: CreateCheckoutSessionRequest = {
-      price_id: priceId,
+      tier_key: tierKey,
       success_url: buildSuccessUrl('plan'),
       cancel_url: buildCancelUrl(),
       commitment_type: commitmentType,

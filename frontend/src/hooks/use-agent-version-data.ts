@@ -1,7 +1,8 @@
 import { useMemo, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useAgent } from '@/hooks/react-query/agents/use-agents';
-import { useAgentVersion, useVersionStore } from '@/lib/versioning';
+import { useAgent } from '@/hooks/agents/use-agents';
+import { useAgentVersion } from '@/hooks/agents/use-agent-versions';
+import { useAgentVersionStore } from '@/stores/agent-version-store';
 
 interface NormalizedMCP {
   name: string;
@@ -127,7 +128,7 @@ export function useAgentVersionData({ agentId }: UseAgentVersionDataProps): UseA
     shouldLoadVersion ? versionToLoad : null
   );
   
-  const { setCurrentVersion, clearVersionState } = useVersionStore();
+  const { setCurrentVersion, clearVersionState } = useAgentVersionStore();
   
   const versionData = useMemo(() => {
     const normalized = normalizeVersionData(rawVersionData);
@@ -141,21 +142,20 @@ export function useAgentVersionData({ agentId }: UseAgentVersionDataProps): UseA
   useEffect(() => {
     if (versionData) {
       setCurrentVersion({
-        versionId: { value: versionData.version_id },
-        agentId: { value: versionData.agent_id },
-        versionNumber: { value: versionData.version_number },
-        versionName: versionData.version_name,
-        systemPrompt: versionData.system_prompt,
+        version_id: versionData.version_id,
+        agent_id: versionData.agent_id,
+        version_number: versionData.version_number,
+        version_name: versionData.version_name,
+        system_prompt: versionData.system_prompt,
         model: versionData.model,
-        configuredMcps: versionData.configured_mcps,
-        customMcps: versionData.custom_mcps,
-        toolConfiguration: { tools: versionData.agentpress_tools },
+        configured_mcps: versionData.configured_mcps,
+        custom_mcps: versionData.custom_mcps,
         agentpress_tools: versionData.agentpress_tools,
-        isActive: versionData.is_active,
-        createdAt: new Date(versionData.created_at),
-        updatedAt: new Date(versionData.updated_at),
-        createdBy: { value: versionData.created_by || '' },
-        changeDescription: versionData.change_description,
+        is_active: versionData.is_active,
+        created_at: versionData.created_at,
+        updated_at: versionData.updated_at,
+        created_by: versionData.created_by,
+        change_description: versionData.change_description,
       });
     } else if (!versionParam) {
       clearVersionState();

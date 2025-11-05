@@ -29,7 +29,7 @@ import {
     useDeleteTrigger,
     useToggleTrigger,
     useTriggerProviders
-} from '@/hooks/react-query/triggers';
+} from '@/hooks/triggers';
 import { TriggerCreationDialog } from '@/components/triggers/trigger-creation-dialog';
 
 interface TriggersScreenProps {

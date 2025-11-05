@@ -489,9 +489,9 @@ class Configuration:
         if self.ENV_MODE == EnvMode.PRODUCTION:
             return 'https://kortix.com'
         elif self.ENV_MODE == EnvMode.STAGING:
-            return 'https://staging.kortix.com'
+            return 'http://localhost:3000'
+            # return 'https://staging.suna.so'
         else:
-            # Local mode
             return 'http://localhost:3000'
     
     def _generate_admin_api_key(self) -> str:

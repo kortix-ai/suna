@@ -30,7 +30,7 @@ import {
     useAccountDeletionStatus, 
     useRequestAccountDeletion, 
     useCancelAccountDeletion 
-} from '@/hooks/react-query/account/use-account-deletion';
+} from '@/hooks/account/use-account-deletion';
 import { backendApi } from '@/lib/api-client';
 
 // Import billing modal content components
@@ -42,9 +42,9 @@ import {
     SubscriptionStatus,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
-import { PricingSection } from '@/components/home/sections/pricing-section';
+import { PlanSelectionModal } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
-import { useSubscriptionCommitment } from '@/hooks/react-query/subscriptions/use-subscriptions';
+import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -61,7 +61,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanIcon, getPlanName } from '../sidebar/sidebar-left';
 
-type TabId = 'general' | 'plan' | 'billing' | 'env-manager';
+type TabId = 'general' | 'billing' | 'env-manager';
 
 interface Tab {
     id: TabId;
@@ -83,12 +83,12 @@ export function UserSettingsModal({
 }: UserSettingsModalProps) {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
+    const [showPlanModal, setShowPlanModal] = useState(false);
     const isLocal = isLocalMode();
 
     // Build tabs array based on local mode
     const tabs: Tab[] = [
         { id: 'general', label: 'General', icon: Settings },
-        { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
     ];    // Update active tab when defaultTab changes
@@ -180,11 +180,17 @@ export function UserSettingsModal({
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto">
                         {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                        {activeTab === 'plan' && <PlanTab returnUrl={returnUrl} />}
-                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} />}
+                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                     </div>
                 </div>
+
+                {/* Full-screen Plan Selection Modal */}
+                <PlanSelectionModal
+                    open={showPlanModal}
+                    onOpenChange={setShowPlanModal}
+                    returnUrl={returnUrl}
+                />
             </DialogContent>
         </Dialog>
     );
@@ -465,22 +471,8 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     );
 }
 
-function PlanTab({ returnUrl }: { returnUrl: string }) {
-    return (
-        <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
-            <PricingSection
-                returnUrl={returnUrl}
-                showTitleAndTabs={false}
-                showInfo={false}
-                insideDialog={false}
-                noPadding={false}
-            />
-        </div>
-    );
-}
-
 // Billing Tab Component - Usage, credits, subscription management
-function BillingTab({ returnUrl }: { returnUrl: string }) {
+function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenPlanModal: () => void }) {
     const { session, isLoading: authLoading } = useAuth();
     const queryClient = useQueryClient();
     const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(null);
@@ -696,7 +688,7 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                             ) : isFreeTier ? (
                                 <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
                                     <Zap className="h-3 w-3" />
-                                    Free Tier
+                                    Basic
                                 </Badge>
                             ) : (
                                 <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
@@ -710,7 +702,7 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                         <div className="flex items-center justify-between">
                             <div>
                                 {!isFreeTier && planName && planIcon ? (
-                                    <div className="flex items-center">
+                                    <div className="flex items-center gap-2">
                                     <>
                                         <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
                                         <img
@@ -725,21 +717,25 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                                         className="flex-shrink-0 h-[16px] w-auto hidden dark:block"
                                         />
                                     </>
+                                        <span className="ml-2 font-medium">{planName}</span>
                                     </div>
-                                ) : null}
+                                ) : (
+                                    <span className="font-medium">{planName || 'Basic'}</span>
+                                )}
+                                {subscription?.current_period_end && (
+                                    <div className="text-sm text-muted-foreground mt-1">
+                                        Next billing date: {formatDate(subscription.current_period_end)}
                             </div>
-                            <div className="text-right">
-                                {!isFreeTier && (
-                                    <>
-                                        <p className="text-sm text-muted-foreground">
-                                            {subscription?.current_period_end && `Next billing date`}
-                                        </p>
-                                        <p className="font-medium">
-                                            {subscription?.current_period_end && formatDate(subscription.current_period_end)}
-                                        </p>
-                                    </>
                                 )}
                             </div>
+                            <Button
+                                variant="outline"
+                                onClick={onOpenPlanModal}
+                                className="ml-4"
+                            >
+                                <Zap className="h-4 w-4 mr-2" />
+                                Change Plan
+                            </Button>
                         </div>
                         {commitmentInfo?.has_commitment && (
                             <Alert className="border-blue-500/50 bg-blue-500/10 shadow-none">

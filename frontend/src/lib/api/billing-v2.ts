@@ -20,11 +20,11 @@ export interface CreditBalance {
 export interface SubscriptionInfo {
   status: string;
   plan_name: string;
-  price_id: string;
+  tier_key: string;  // Backend tier key
   subscription: {
     id: string;
     status: string;
-    price_id: string;
+    tier_key: string;  // Backend tier key
     current_period_end: string;
     cancel_at?: string;
     canceled_at?: string;
@@ -87,7 +87,7 @@ export interface UsageHistory {
 }
 
 export interface CreateCheckoutSessionRequest {
-  price_id: string;
+  tier_key: string;  // Backend tier key like 'tier_2_20', 'free', etc.
   success_url: string;
   cancel_url: string;
 }

@@ -1,10 +1,7 @@
 'use client';
 
-import React, { useState, Suspense, useCallback, useEffect } from 'react';
-import { Skeleton } from '@/components/ui/skeleton';
+import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-// TOURS DISABLED - Joyride imports commented out
-// import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
 import {
   ChatInput,
   ChatInputHandles,
@@ -20,55 +17,22 @@ import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
-import { useInitiateAgentWithInvalidation } from '@/hooks/react-query/dashboard/use-initiate-agent';
+import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
 
-import { useAgents } from '@/hooks/react-query/agents/use-agents';
-import { cn } from '@/lib/utils';
-import { BillingModal } from '@/components/billing/billing-modal';
-import { useAgentSelection } from '@/lib/stores/agent-selection-store';
+import { useAgents } from '@/hooks/agents/use-agents';
+import { PlanSelectionModal } from '@/components/billing/pricing';
+import { useAgentSelection } from '@/stores/agent-selection-store';
 import { SunaModesPanel } from './suna-modes-panel';
-import { AIWorkerTemplates } from './ai-worker-templates';
-import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
+import { useThreadQuery } from '@/hooks/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { KortixLogo } from '../sidebar/kortix-logo';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { CustomAgentsSection } from './custom-agents-section';
 import { toast } from 'sonner';
-import { ReleaseBadge } from '../auth/release-badge';
-// TOURS DISABLED - Tour imports commented out
-// import { useDashboardTour } from '@/hooks/use-dashboard-tour';
-// import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
-import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
-import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
+import { useSunaModePersistence } from '@/stores/suna-modes-store';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
-/* TOURS DISABLED - dashboardTourSteps commented out
-const dashboardTourSteps: Step[] = [
-  {
-    target: '[data-tour="chat-input"]',
-    content: 'Type your questions or tasks here. Suna can help with research, analysis, automation, and much more.',
-    title: 'Start a Conversation',
-    placement: 'top',
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="my-agents"]',
-    content: 'Create and manage your custom AI agents here. Build specialized agents for different tasks and workflows.',
-    title: 'Manage Your Agents',
-    placement: 'right',
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="examples"]',
-    content: 'Get started quickly with these example prompts. Click any example to try it out.',
-    title: 'Example Prompts',
-    placement: 'top',
-    disableBeacon: true,
-  },
-];
-*/
 
 export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
@@ -115,17 +79,6 @@ export function DashboardContent() {
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-
-  // TOURS DISABLED - Tour integration commented out
-  // const {
-  //   run,
-  //   stepIndex,
-  //   setStepIndex,
-  //   stopTour,
-  //   showWelcome,
-  //   handleWelcomeAccept,
-  //   handleWelcomeDecline,
-  // } = useDashboardTour();
 
   // Feature flag for custom agents section
 
@@ -183,17 +136,6 @@ export function DashboardContent() {
       setInitiatedThreadId(null);
     }
   }, [threadQuery.data, initiatedThreadId, router]);
-
-  // TOURS DISABLED - handleTourCallback commented out
-  // const handleTourCallback = useCallback((data: CallBackProps) => {
-  //   const { status, type, index } = data;
-
-  //   if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-  //     stopTour();
-  //   } else if (type === 'step:after') {
-  //     setStepIndex(index + 1);
-  //   }
-  // }, [stopTour, setStepIndex]);
 
   const handleSubmit = async (
     message: string,
@@ -289,85 +231,9 @@ export function DashboardContent() {
 
   return (
     <>
-      {/* TOURS DISABLED - Joyride and TourConfirmationDialog commented out */}
-      {/* <Joyride
-        steps={dashboardTourSteps}
-        run={run}
-        stepIndex={stepIndex}
-        callback={handleTourCallback}
-        continuous
-        showProgress
-        showSkipButton
-        disableOverlayClose
-        disableScrollParentFix
-        styles={{
-          options: {
-            primaryColor: '#000000',
-            backgroundColor: '#ffffff',
-            textColor: '#000000',
-            overlayColor: 'rgba(0, 0, 0, 0.7)',
-            arrowColor: '#ffffff',
-            zIndex: 1000,
-          },
-          tooltip: {
-            backgroundColor: '#ffffff',
-            borderRadius: 8,
-            fontSize: 14,
-            padding: 20,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            border: '1px solid #e5e7eb',
-          },
-          tooltipTitle: {
-            color: '#000000',
-            fontSize: 16,
-            fontWeight: 600,
-            marginBottom: 8,
-          },
-          tooltipContent: {
-            color: '#000000',
-            fontSize: 14,
-            lineHeight: 1.5,
-          },
-          buttonNext: {
-            backgroundColor: '#000000',
-            color: '#ffffff',
-            fontSize: 12,
-            padding: '8px 16px',
-            borderRadius: 6,
-            border: 'none',
-            fontWeight: 500,
-          },
-          buttonBack: {
-            color: '#6b7280',
-            backgroundColor: 'transparent',
-            fontSize: 12,
-            padding: '8px 16px',
-            border: '1px solid #e5e7eb',
-            borderRadius: 6,
-          },
-          buttonSkip: {
-            color: '#6b7280',
-            backgroundColor: 'transparent',
-            fontSize: 12,
-            border: 'none',
-          },
-          buttonClose: {
-            color: '#6b7280',
-            backgroundColor: 'transparent',
-          },
-        }}
-      /> */}
-
-      {/* <TourConfirmationDialog
-        open={showWelcome}
-        onAccept={handleWelcomeAccept}
-        onDecline={handleWelcomeDecline}
-      /> */}
-
-      <BillingModal
+      <PlanSelectionModal
         open={showPaymentModal}
         onOpenChange={setShowPaymentModal}
-        showUsageLimitAlert={true}
       />
 
       <div className="flex flex-col h-screen w-full overflow-hidden">

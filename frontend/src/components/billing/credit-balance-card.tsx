@@ -11,7 +11,7 @@ import {
   Coins,
   AlertCircle
 } from 'lucide-react';
-import { useCreditBalance, usePurchaseCredits } from '@/hooks/react-query/use-billing-v2';
+import { useCreditBalance, usePurchaseCredits } from '@/hooks/use-billing-v2';
 import { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import {

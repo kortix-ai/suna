@@ -14,7 +14,7 @@ import {
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { ThreadIcon } from './thread-icon';
-import { useThreads, useProjects, processThreadsWithProjects } from '@/hooks/react-query/sidebar/use-sidebar';
+import { useThreads, useProjects, processThreadsWithProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useSidebar } from '@/components/ui/sidebar';
 

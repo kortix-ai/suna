@@ -18,11 +18,11 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/use-model-selection';
-import { formatModelName } from '@/lib/stores/model-store';
+import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
 import { PaywallDialog } from '@/components/payment/paywall-dialog';
-import { BillingModal } from '@/components/billing/billing-modal';
+import { PlanSelectionModal } from '@/components/billing/pricing';
 import Link from 'next/link';
 
 interface CustomModel {
@@ -64,7 +64,7 @@ export function AgentModelSelector({
   
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [lockedModel, setLockedModel] = useState<string | null>(null);
-  const [billingModalOpen, setBillingModalOpen] = useState(false);
+  const [planModalOpen, setPlanSelectionModalOpen] = useState(false);
   
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<CustomModelFormData>({ id: '', label: '' });
@@ -188,7 +188,7 @@ export function AgentModelSelector({
   };
 
   const handleUpgradeClick = () => {
-    setBillingModalOpen(true);
+    setPlanSelectionModalOpen(true);
   };
 
   const closePaywallDialog = () => {
@@ -638,9 +638,9 @@ export function AgentModelSelector({
           cancelText="Maybe Later"
         />
       )}
-      <BillingModal
-        open={billingModalOpen}
-        onOpenChange={setBillingModalOpen}
+      <PlanSelectionModal
+        open={planModalOpen}
+        onOpenChange={setPlanSelectionModalOpen}
       />
     </div>
   );

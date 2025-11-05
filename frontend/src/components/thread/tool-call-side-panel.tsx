@@ -23,7 +23,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
-import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 
 export interface ToolCallInput {
   assistantCall: {

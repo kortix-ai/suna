@@ -3,7 +3,7 @@
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { BillingModal } from './billing-modal';
+import { PlanSelectionModal } from './pricing';
 import { useState } from 'react';
 
 interface BillingErrorAlertProps {
@@ -13,6 +13,7 @@ interface BillingErrorAlertProps {
   accountId?: string | null;
   onDismiss: () => void;
   isOpen: boolean;
+  expired?: boolean;
 }
 
 export function BillingErrorAlert({
@@ -22,17 +23,17 @@ export function BillingErrorAlert({
   accountId,
   onDismiss,
   isOpen,
+  expired = false,
 }: BillingErrorAlertProps) {
-  const [showBillingModal, setShowBillingModal] = useState(false);
+  const [showPlanSelectionModal, setShowPlanSelectionModal] = useState(false);
 
   if (!isOpen) return null;
 
   return (
     <>
-      <BillingModal 
-        open={showBillingModal} 
-        onOpenChange={setShowBillingModal}
-        showUsageLimitAlert={true}
+      <PlanSelectionModal 
+        open={showPlanSelectionModal} 
+        onOpenChange={setShowPlanSelectionModal}
       />
       <div className="fixed bottom-4 right-4 z-[9999]">
       <div className="bg-destructive/15 backdrop-blur-sm border border-destructive/30 rounded-lg p-5 shadow-lg max-w-md">
@@ -43,7 +44,7 @@ export function BillingErrorAlert({
           <div className="flex-1">
             <div className="flex justify-between items-start mb-2">
               <h3 className="text-sm font-semibold text-destructive">
-                Usage Limit Reached
+                {expired ? 'You are out of credits' : 'Usage Limit Reached'}
               </h3>
               <Button
                 variant="ghost"
@@ -54,7 +55,9 @@ export function BillingErrorAlert({
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground mb-3">{message}</p>
+            <p className="text-sm text-muted-foreground mb-3">
+              {expired ? 'You are out of credits' : message}
+            </p>
 
             <div className="flex gap-2">
               <Button
@@ -67,7 +70,7 @@ export function BillingErrorAlert({
               </Button>
               <Button
                 size="sm"
-                onClick={() => setShowBillingModal(true)}
+                onClick={() => setShowPlanSelectionModal(true)}
                 className="text-xs bg-destructive hover:bg-destructive/90"
               >
                 Upgrade Plan

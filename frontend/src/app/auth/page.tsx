@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAuth } from '@/components/AuthProvider';
-import { useAuthMethodTracking } from '@/lib/stores/auth-tracking';
+import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { toast } from 'sonner';
 
 import {

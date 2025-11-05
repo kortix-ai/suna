@@ -40,10 +40,10 @@ TIERS: Dict[str, Tier] = {
         name='free',
         price_ids=[config.STRIPE_FREE_TIER_ID],
         monthly_credits=FREE_TIER_INITIAL_CREDITS,
-        display_name='Free Tier',
+        display_name='Basic',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=3
+        project_limit=1
     ),
     'tier_2_20': Tier(
         name='tier_2_20',

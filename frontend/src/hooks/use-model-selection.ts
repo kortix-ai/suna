@@ -1,7 +1,7 @@
 'use client';
 
-import { useModelStore } from '@/lib/stores/model-store';
-import { useSubscriptionData } from '@/contexts/SubscriptionContext';
+import { useModelStore } from '@/stores/model-store';
+import { useSubscriptionData } from '@/stores/subscription-store';
 import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getAvailableModels } from '@/lib/api';

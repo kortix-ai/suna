@@ -11,7 +11,6 @@ import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
 import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { CTACard } from '@/components/sidebar/cta';
 import { siteConfig } from '@/lib/home';
 import {
   Sidebar,
@@ -45,26 +44,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuGroup,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
-} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
-import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
-import { useSubscriptionData } from '@/contexts/SubscriptionContext';
+import { useDocumentModalStore } from '@/stores/use-document-modal-store';
+import { useSubscriptionData } from '@/stores/subscription-store';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Image from 'next/image';
 import { isLocalMode } from '@/lib/config';
@@ -99,23 +85,21 @@ export function getPlanIcon(planName: string, isLocal: boolean = false) {
   return '/plan-icons/plus.svg';
 }
 
-// Helper function to get plan name - matches price_id to cloudPricingItems tier name
+// Helper function to get plan name - uses tier_key to match cloudPricingItems tier name
 export function getPlanName(subscriptionData: any, isLocal: boolean = false): string {
   if (isLocal) return 'Ultra';
 
   if (subscriptionData?.tier?.name === 'free') {
-    return 'Free Tier';
+    return 'Basic';
   }
 
-  // Match price_id to cloudPricingItems to get the frontend tier name
+  // Match tier_key to cloudPricingItems to get the frontend tier name
   const currentTier = siteConfig.cloudPricingItems.find(
-    (p) => p.stripePriceId === subscriptionData?.price_id ||
-      p.yearlyStripePriceId === subscriptionData?.price_id ||
-      p.monthlyCommitmentStripePriceId === subscriptionData?.price_id
+    (p) => p.tierKey === subscriptionData?.tier_key || p.tierKey === subscriptionData?.tier?.name || p.tierKey === subscriptionData?.plan_name
   );
 
   // Return the frontend tier name (Plus, Pro, Ultra, etc.) or fallback to backend display name
-  return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || 'Free';
+  return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || '';
 }
 
 // Helper function to get user initials

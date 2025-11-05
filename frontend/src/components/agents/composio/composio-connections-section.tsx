@@ -45,13 +45,13 @@ import {
   XCircle,
   Trash2,
 } from 'lucide-react';
-import { useComposioCredentialsProfiles, useComposioMcpUrl } from '@/hooks/react-query/composio/use-composio-profiles';
-import { useDeleteProfile, useBulkDeleteProfiles, useSetDefaultProfile } from '@/hooks/react-query/composio/use-composio-mutations';
+import { useComposioCredentialsProfiles, useComposioMcpUrl } from '@/hooks/composio/use-composio-profiles';
+import { useDeleteProfile, useBulkDeleteProfiles, useSetDefaultProfile } from '@/hooks/composio/use-composio-mutations';
 import { ComposioRegistry } from './composio-registry';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import type { ComposioProfileSummary, ComposioToolkitGroup } from '@/hooks/react-query/composio/utils';
+import type { ComposioProfileSummary, ComposioToolkitGroup } from '@/hooks/composio/utils';
 
 interface ComposioConnectionsSectionProps {
   className?: string;

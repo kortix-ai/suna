@@ -17,12 +17,12 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { isLocalMode } from '@/lib/config';
 import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
-import { useAddUserMessageMutation } from '@/hooks/react-query/threads/use-messages';
+import { useAddUserMessageMutation } from '@/hooks/threads/use-messages';
 import {
   useStartAgentMutation,
   useStopAgentMutation,
-} from '@/hooks/react-query/threads/use-agent-run';
-import { useSharedSubscription } from '@/contexts/SubscriptionContext';
+} from '@/hooks/threads/use-agent-run';
+import { useSharedSubscription } from '@/stores/subscription-store';
 export type SubscriptionStatus = 'no_subscription' | 'active';
 
 import {
@@ -42,12 +42,12 @@ import { ThreadError, UpgradeDialog, ThreadLayout } from '@/app/(dashboard)/proj
 import {
   useThreadAgent,
   useAgents,
-} from '@/hooks/react-query/agents/use-agents';
+} from '@/hooks/agents/use-agents';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
-import { useAgentSelection } from '@/lib/stores/agent-selection-store';
+import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
-import { threadKeys } from '@/hooks/react-query/threads/keys';
-import { fileQueryKeys } from '@/hooks/react-query/files';
+import { threadKeys } from '@/hooks/threads/keys';
+import { fileQueryKeys } from '@/hooks/files';
 import { useProjectRealtime } from '@/hooks/useProjectRealtime';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 

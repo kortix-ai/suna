@@ -19,7 +19,7 @@ import {
 import { toast } from 'sonner';
 import { cancelSubscription } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { subscriptionKeys } from '@/hooks/react-query/subscriptions/keys';
+import { subscriptionKeys } from '@/hooks/subscriptions/keys';
 
 interface CancelSubscriptionButtonProps {
   subscriptionId?: string;

@@ -1,6 +1,6 @@
 "use client"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { useContextUsageStore } from "@/lib/stores/context-usage-store"
+import { useContextUsageStore } from "@/stores/context-usage-store"
 import { useModelSelection } from "@/hooks/use-model-selection"
 import { cn } from "@/lib/utils"
 

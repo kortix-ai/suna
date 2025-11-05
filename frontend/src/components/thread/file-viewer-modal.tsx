@@ -47,7 +47,7 @@ import {
   useDirectoryQuery,
   useFileContentQuery,
   FileCache
-} from '@/hooks/react-query/files';
+} from '@/hooks/files';
 import JSZip from 'jszip';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { TipTapDocumentModal } from './tiptap-document-modal';
