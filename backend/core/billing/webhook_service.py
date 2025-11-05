@@ -627,8 +627,8 @@ class WebhookService:
                         current_tier = trial_check.data[0].get('tier')
                         current_subscription_id = trial_check.data[0].get('stripe_subscription_id')
                         
-                        if current_tier == 'free' and subscription.status == 'active':
-                            logger.info(f"[WEBHOOK] User {account_id} upgrading from free tier to paid")
+                        if current_tier in ['free', 'none'] and subscription.status == 'active':
+                            logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to paid")
                             tier_info = get_tier_by_price_id(price_id)
                             if tier_info:
                                 billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
@@ -1208,12 +1208,26 @@ class WebhookService:
                     trial_status = 'converted'
                     logger.info(f"[RENEWAL] Trial status updated to 'converted' for account {account_id}")
                 
-                price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') and subscription['items']['data'] else None
+                
+                if not price_id:
+                    logger.warning(f"[RENEWAL] No price_id from subscription, attempting to extract from invoice")
+                    if invoice.get('lines', {}).get('data'):
+                        for line in invoice['lines']['data']:
+                            if line.get('price') and line.get('price', {}).get('id'):
+                                price_id = line['price']['id']
+                                logger.info(f"[RENEWAL] Found price_id from invoice line: {price_id}")
+                                break
+                
                 if price_id:
                     tier_info = get_tier_by_price_id(price_id)
                     if tier_info:
                         tier = tier_info.name
-                        logger.info(f"[RENEWAL] Updated tier from subscription price_id: {tier}")
+                        logger.info(f"[RENEWAL] Updated tier from price_id {price_id}: {tier}")
+                    else:
+                        logger.error(f"[RENEWAL] Price ID {price_id} not recognized in tier configuration")
+                else:
+                    logger.error(f"[RENEWAL] Could not determine price_id from subscription or invoice")
                 
                 if trial_status == 'cancelled' and billing_reason == 'subscription_create':
                     logger.info(f"[RENEWAL] Cancelled trial user subscribing - resetting trial status to 'none'")
