@@ -1277,9 +1277,18 @@ class WebhookService:
                         
                         if seconds_since_grant < 60:
                             logger.info(f"[INITIAL GRANT SKIP] Credits already granted {seconds_since_grant:.0f}s ago via subscription.created webhook, skipping duplicate grant")
-                            await client.from_('credit_accounts').update({
-                                'last_processed_invoice_id': invoice_id
-                            }).eq('account_id', account_id).execute()
+                            update_data = {
+                                'last_processed_invoice_id': invoice_id,
+                                'tier': tier,
+                                'stripe_subscription_id': subscription_id,
+                                'billing_cycle_anchor': period_start_dt.isoformat(),
+                                'next_credit_grant': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+                            }
+                            if trial_status != account.get('trial_status'):
+                                update_data['trial_status'] = trial_status
+                            
+                            logger.info(f"[INITIAL GRANT SKIP] Updating tier to {tier} and metadata even though credits were already granted")
+                            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
                             return
                 
                 if is_true_renewal:
