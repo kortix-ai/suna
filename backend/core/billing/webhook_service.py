@@ -1327,12 +1327,14 @@ class WebhookService:
                 
                 if is_initial_subscription:
                     last_grant = account.get('last_grant_date')
-                    if last_grant:
+                    current_db_tier = account.get('tier')
+                    
+                    if last_grant and current_db_tier == tier:
                         last_grant_dt = datetime.fromisoformat(last_grant.replace('Z', '+00:00'))
                         seconds_since_grant = (datetime.now(timezone.utc) - last_grant_dt).total_seconds()
                         
                         if seconds_since_grant < 60:
-                            logger.info(f"[INITIAL GRANT SKIP] Credits already granted {seconds_since_grant:.0f}s ago via subscription.created webhook, skipping duplicate grant")
+                            logger.info(f"[INITIAL GRANT SKIP] Credits already granted {seconds_since_grant:.0f}s ago for tier {tier}, skipping duplicate grant")
                             update_data = {
                                 'last_processed_invoice_id': invoice_id,
                                 'tier': tier,
@@ -1343,9 +1345,11 @@ class WebhookService:
                             if trial_status != account.get('trial_status'):
                                 update_data['trial_status'] = trial_status
                             
-                            logger.info(f"[INITIAL GRANT SKIP] Updating tier to {tier} and metadata even though credits were already granted")
+                            logger.info(f"[INITIAL GRANT SKIP] Updating metadata for tier {tier}")
                             await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
                             return
+                    elif last_grant and current_db_tier != tier:
+                        logger.info(f"[TIER CHANGE DETECTED] Last grant was for tier {current_db_tier}, but invoice is for tier {tier} - will grant credits for new tier")
                 
                 if is_true_renewal:
                     logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id} (TRUE RENEWAL)")
