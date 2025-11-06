@@ -58,6 +58,7 @@ export interface SubscriptionInfo {
   status: string;
   plan_name: string;
   tier_key: string;  // Backend tier key
+  billing_period?: 'monthly' | 'yearly' | 'yearly_commitment' | null;  // Billing period from price_id
   subscription: {
     id: string;
     status: string;

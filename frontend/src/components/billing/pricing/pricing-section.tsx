@@ -187,7 +187,8 @@ function PricingTier({
   returnUrl,
   insideDialog = false,
   billingPeriod = 'monthly' as 'monthly' | 'yearly' | 'yearly_commitment',
-}: PricingTierProps) {
+  currentBillingPeriod = null as 'monthly' | 'yearly' | 'yearly_commitment' | null,
+}: PricingTierProps & { currentBillingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment' | null }) {
   const queryClient = useQueryClient();
 
   // Determine the price to display based on billing period
@@ -316,16 +317,14 @@ function PricingTier({
   );
 
   const userPlanName = currentSubscription?.plan_name || 'none';
-  const isCurrentActivePlan = isAuthenticated && (
-    currentSubscription?.tier_key === tier.tierKey ||
-    currentSubscription?.tier?.name === tier.tierKey ||
-    (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
-    (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly') ||
-    (currentSubscription?.subscription &&
-      userPlanName === 'tier_2_20' &&
-      tier.price === '$20' &&
-      currentSubscription?.subscription?.status === 'active')
-  );
+  
+  // Check if this is the current plan - must match BOTH tier_key AND billing period
+  const isSameTier = currentSubscription?.tier_key === tier.tierKey || 
+                      currentSubscription?.tier?.name === tier.tierKey;
+  const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
+  
+  const isCurrentActivePlan = isAuthenticated && isSameTier && isSameBillingPeriod && 
+    currentSubscription?.subscription?.status === 'active';
 
   const isScheduled = isAuthenticated && (currentSubscription as any)?.has_schedule;
   const isScheduledTargetPlan =
@@ -409,6 +408,15 @@ function PricingTier({
       const isSameTierUpgradeToLongerTerm = isSameTier && (
         (billingPeriod === 'yearly_commitment' || billingPeriod === 'yearly')
       );
+      
+      // Prevent downgrading from yearly to monthly - once yearly, stay yearly
+      // This blocks: yearly -> monthly, yearly_commitment -> monthly for same tier
+      const isYearlyDowngradeToMonthly = isSameTier && 
+        currentBillingPeriod && 
+        (currentBillingPeriod === 'yearly' || currentBillingPeriod === 'yearly_commitment') &&
+        billingPeriod === 'monthly' &&
+        currentSubscription?.subscription?.status === 'active';
+      
       const isSameTierDowngradeToShorterTerm = false; // Simplified for now
 
       // Use the plan change validation already computed above
@@ -422,6 +430,12 @@ function PricingTier({
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
+      } else if (isYearlyDowngradeToMonthly) {
+        // Prevent downgrading from yearly to monthly - once yearly, stay yearly
+        buttonText = 'Not Available';
+        buttonDisabled = true;
+        buttonVariant = 'secondary';
+        buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
       } else if (!planChangeValidation.allowed) {
         // Plan change not allowed due to business rules
         buttonText = 'Not Available';
@@ -654,15 +668,52 @@ export function PricingSection({
   const isAuthenticated = isUserAuthenticated && !!subscriptionData && subscriptionQueryError === null;
   const currentSubscription = subscriptionData || null;
 
+  // Determine current subscription's billing period
+  const getCurrentBillingPeriod = (): 'monthly' | 'yearly' | 'yearly_commitment' | null => {
+    if (!isAuthenticated || !currentSubscription) {
+      return null;
+    }
+
+    // Use billing_period from API response (most reliable - comes from price_id)
+    if (currentSubscription.billing_period) {
+      return currentSubscription.billing_period;
+    }
+
+    // Fallback: Check commitment info
+    if (subCommitmentQuery.data?.has_commitment && 
+        subCommitmentQuery.data?.commitment_type === 'yearly_commitment') {
+      return 'yearly_commitment';
+    }
+
+    // Fallback: Try to infer from period length
+    if (currentSubscription.subscription?.current_period_end) {
+      const periodEnd = typeof currentSubscription.subscription.current_period_end === 'number'
+        ? currentSubscription.subscription.current_period_end * 1000
+        : new Date(currentSubscription.subscription.current_period_end).getTime();
+      
+      const now = Date.now();
+      const daysInPeriod = Math.round((periodEnd - now) / (1000 * 60 * 60 * 24));
+      
+      // If period is longer than 180 days, likely yearly; otherwise monthly
+      if (daysInPeriod > 180) {
+        return 'yearly';
+      }
+    }
+    
+    // Default to monthly if period is short or can't determine
+    return 'monthly';
+  };
+
+  const currentBillingPeriod = getCurrentBillingPeriod();
+
   const getDefaultBillingPeriod = useCallback((): 'monthly' | 'yearly' | 'yearly_commitment' => {
     if (!isAuthenticated || !currentSubscription) {
       return 'yearly_commitment';
     }
 
-    // Default to yearly_commitment for now
-    // Backend will resolve tier_key to the appropriate Stripe price_id internally based on commitment_type
-    return 'yearly_commitment';
-  }, [isAuthenticated, currentSubscription]);
+    // Use current subscription's billing period if available, otherwise default to yearly_commitment
+    return currentBillingPeriod || 'yearly_commitment';
+  }, [isAuthenticated, currentSubscription, currentBillingPeriod]);
 
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
@@ -746,6 +797,7 @@ export function PricingSection({
                 returnUrl={returnUrl}
                 insideDialog={insideDialog}
                 billingPeriod={billingPeriod}
+                currentBillingPeriod={currentBillingPeriod}
               />
             ))}
         </div>

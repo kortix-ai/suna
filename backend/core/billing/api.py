@@ -389,7 +389,12 @@ async def get_subscription(
             display_plan_name = tier_info.get('display_name', tier_info['name'])
             is_trial = False
         
-        from .config import CREDITS_PER_DOLLAR
+        from .config import CREDITS_PER_DOLLAR, get_price_type
+        
+        # Determine billing period from price_id
+        billing_period = None
+        if subscription_info.get('price_id'):
+            billing_period = get_price_type(subscription_info['price_id'])
         
         return {
             'status': status,
@@ -397,6 +402,7 @@ async def get_subscription(
             'tier_key': tier_info['name'],  # Explicit tier_key for frontend
             'display_plan_name': display_plan_name,
             'price_id': subscription_info['price_id'],
+            'billing_period': billing_period,  # 'monthly', 'yearly', or 'yearly_commitment'
             'subscription': subscription_data,
             'subscription_id': subscription_data['id'] if subscription_data else None,
             'current_usage': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
@@ -431,6 +437,7 @@ async def get_subscription(
             'tier_key': 'none',  # Explicit tier_key for frontend
             'display_plan_name': 'No Plan',
             'price_id': None,
+            'billing_period': None,
             'subscription': None,
             'subscription_id': None,
             'current_usage': 0,
