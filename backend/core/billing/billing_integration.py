@@ -29,6 +29,7 @@ class BillingIntegration:
         completion_tokens: int,
         model: str,
         message_id: Optional[str] = None,
+        thread_id: Optional[str] = None,
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0
     ) -> Dict:
@@ -67,7 +68,7 @@ class BillingIntegration:
             account_id=account_id,
             amount=cost,
             description=f"{model} usage",
-            thread_id=None,
+            thread_id=thread_id,
             message_id=message_id
         )
         

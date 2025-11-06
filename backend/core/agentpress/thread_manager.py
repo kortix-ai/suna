@@ -161,6 +161,7 @@ class ThreadManager:
                     completion_tokens=completion_tokens,
                     model=model or "unknown",
                     message_id=saved_message['message_id'],
+                    thread_id=thread_id,
                     cache_read_tokens=cache_read_tokens,
                     cache_creation_tokens=cache_creation_tokens
                 )

@@ -28,31 +28,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Loader2,
   AlertCircle,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Clock,
-  Infinity,
-  Plus,
   Minus,
-  RefreshCw,
-  Info,
+  TrendingDown,
 } from 'lucide-react';
-import { useTransactions, useTransactionsSummary } from '@/hooks/react-query/billing/use-transactions';
-import { cn } from '@/lib/utils';
+import { useCreditUsage } from '@/hooks/react-query/billing/use-credit-usage';
 
-interface Props {
-  accountId?: string;
-}
-
-export default function CreditTransactions({ accountId }: Props) {
+export default function CreditUsage() {
   const [offset, setOffset] = useState(0);
-  const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
+  const [days, setDays] = useState(30);
   const limit = 50;
 
-  const { data, isLoading, error, refetch } = useTransactions(limit, offset, typeFilter);
+  const { data, isLoading, error, refetch } = useCreditUsage(limit, offset, days);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -64,39 +51,16 @@ export default function CreditTransactions({ accountId }: Props) {
     });
   };
 
-  const formatAmount = (amount: number) => {
-    const absAmount = Math.abs(amount);
-    const formatted = absAmount.toFixed(1);
-    return amount >= 0 ? `+${formatted}` : `-${formatted}`;
+  const formatCredits = (credits: number) => {
+    return credits.toFixed(1);
   };
 
-  const formatBalance = (balance: number) => {
-    return balance.toFixed(1);
-  };
-
-  const getTransactionIcon = (type: string, amount: number) => {
-    if (amount > 0) {
-      return <Plus className="h-4 w-4 text-green-500" />;
-    }
-    if (type === 'usage') {
-      return <Minus className="h-4 w-4 text-orange-500" />;
-    }
-    if (type === 'expired') {
-      return <Clock className="h-4 w-4 text-red-500" />;
-    }
-    return <Minus className="h-4 w-4 text-red-500" />;
-  };
-
-  const getTransactionBadge = (type: string) => {
+  const getUsageTypeBadge = (type: string) => {
     const badges: Record<string, { label: string; variant: any }> = {
-      'tier_grant': { label: 'Tier Grant', variant: 'default' },
-      'purchase': { label: 'Purchase', variant: 'default' },
-      'admin_grant': { label: 'Admin Grant', variant: 'secondary' },
-      'promotional': { label: 'Promotional', variant: 'secondary' },
       'usage': { label: 'Usage', variant: 'outline' },
-      'refund': { label: 'Refund', variant: 'secondary' },
-      'adjustment': { label: 'Adjustment', variant: 'outline' },
+      'debit': { label: 'Debit', variant: 'outline' },
       'expired': { label: 'Expired', variant: 'destructive' },
+      'adjustment': { label: 'Adjustment', variant: 'secondary' },
     };
 
     const badge = badges[type] || { label: type, variant: 'outline' };
@@ -113,13 +77,18 @@ export default function CreditTransactions({ accountId }: Props) {
     }
   };
 
+  const handleDaysChange = (value: string) => {
+    setDays(parseInt(value));
+    setOffset(0);
+  };
+
   if (isLoading && offset === 0) {
     return (
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Credit Transactions</CardTitle>
-            <CardDescription>Loading your transaction history...</CardDescription>
+            <CardTitle>Credit Usage</CardTitle>
+            <CardDescription>Loading your usage history...</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -137,14 +106,14 @@ export default function CreditTransactions({ accountId }: Props) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Credit Transactions</CardTitle>
+          <CardTitle>Credit Usage</CardTitle>
         </CardHeader>
         <CardContent>
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>
-              {error.message || 'Failed to load transactions'}
+              {error.message || 'Failed to load usage history'}
             </AlertDescription>
           </Alert>
         </CardContent>
@@ -152,17 +121,62 @@ export default function CreditTransactions({ accountId }: Props) {
     );
   }
 
-  const currentBalance = data?.current_balance;
-  const transactions = data?.transactions || [];
+  const usageRecords = data?.usage_records || [];
+  const summary = data?.summary;
 
   return (
     <div className="space-y-6">
+      {summary && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Usage Summary</CardTitle>
+            <CardDescription>Total credits consumed in the selected period</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <TrendingDown className="h-5 w-5 text-red-500" />
+              <div>
+                <div className="text-3xl font-semibold text-red-600">
+                  {formatCredits(summary.total_credits_used)}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Credits used in the last {summary.period_days} days
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
+        <CardHeader className='px-0'>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Usage History</CardTitle>
+              <CardDescription>
+                Detailed breakdown of credit consumption
+              </CardDescription>
+            </div>
+            <Select value={days.toString()} onValueChange={handleDaysChange}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select period" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="60">Last 60 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+                <SelectItem value="180">Last 180 days</SelectItem>
+                <SelectItem value="365">Last year</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
         <CardContent className='px-0'>
-          {transactions.length === 0 ? (
+          {usageRecords.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">
-                {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
+                No usage found in the last {days} days.
               </p>
             </div>
           ) : (
@@ -174,51 +188,30 @@ export default function CreditTransactions({ accountId }: Props) {
                       <TableHead className="w-[180px]">Date</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead className="text-center">Credit Type</TableHead>
-                      <TableHead className="text-right">Credits</TableHead>
+                      <TableHead className="text-right">Credits Used</TableHead>
                       <TableHead className="text-right">Credits After</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((tx) => (
-                      <TableRow key={tx.id}>
+                    {usageRecords.map((record) => (
+                      <TableRow key={record.id}>
                         <TableCell className="font-mono text-xs">
-                          {formatDate(tx.created_at)}
+                          {formatDate(record.created_at)}
                         </TableCell>
                         <TableCell>
-                          {getTransactionBadge(tx.type)}
+                          {getUsageTypeBadge(record.type)}
                         </TableCell>
                         <TableCell className="text-sm">
                           <div className="flex items-center gap-2">
-                            {getTransactionIcon(tx.type, tx.amount)}
-                            {tx.description || 'No description'}
+                            <Minus className="h-4 w-4 text-red-500" />
+                            {record.description || 'No description'}
                           </div>
                         </TableCell>
-                        <TableCell className="text-center">
-                          {tx.is_expiring !== undefined && (
-                            <div className="flex items-center justify-center gap-1">
-                              {tx.is_expiring ? (
-                                <>
-                                  <Clock className="h-3 w-3 text-orange-500" />
-                                  <span className="text-xs text-muted-foreground">Expiring</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Infinity className="h-3 w-3 text-blue-500" />
-                                  <span className="text-xs text-muted-foreground">Permanent</span>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className={cn(
-                          "text-right font-mono font-semibold",
-                          tx.amount >= 0 ? "text-green-600" : "text-red-600"
-                        )}>
-                          {formatAmount(tx.amount)}
+                        <TableCell className="text-right font-mono font-semibold text-red-600">
+                          {formatCredits(record.credits_used)}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {formatBalance(tx.balance_after)}
+                          {formatCredits(record.balance_after)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -228,7 +221,7 @@ export default function CreditTransactions({ accountId }: Props) {
               {data?.pagination && (
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">
-                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total} transactions
+                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total} records
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -256,4 +249,5 @@ export default function CreditTransactions({ accountId }: Props) {
       </Card>
     </div>
   );
-} 
+}
+
