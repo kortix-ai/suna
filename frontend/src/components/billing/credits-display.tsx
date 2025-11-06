@@ -15,7 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 export function CreditsDisplay() {
   const { user } = useAuth();
   const { data: balance, isLoading: balanceLoading } = useCreditBalance(!!user);
-  const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscription(!!user);
+  const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscription({ enabled: !!user });
   const [showPlanModal, setShowPlanModal] = useState(false);
   const queryClient = useQueryClient();
   const isLocal = isLocalMode();
@@ -94,11 +94,11 @@ export function CreditsDisplay() {
 
         {/* Credits amount */}
         <div className="flex items-baseline gap-1.5 min-w-0">
-          <span className="text-[15px] font-semibold text-foreground dark:text-foreground leading-none tabular-nums">
+          <span className="text-[15px] font-medium text-foreground dark:text-foreground leading-none tabular-nums">
             {formattedCredits}
           </span>
           <span className="text-[13px] font-medium text-muted-foreground/50 dark:text-muted-foreground/60 leading-none whitespace-nowrap">
-            credits
+            Credits
           </span>
         </div>
 

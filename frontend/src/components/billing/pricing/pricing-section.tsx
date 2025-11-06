@@ -19,6 +19,7 @@ import {
   Diamond,
   Heart,
   Zap,
+  ShoppingCart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,7 @@ import { billingKeys } from '@/hooks/billing/use-subscription';
 import posthog from 'posthog-js';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { TierBadge } from '@/components/billing/tier-badge';
+import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -717,6 +719,7 @@ export function PricingSection({
 
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
+  const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
 
   useEffect(() => {
     setBillingPeriod(getDefaultBillingPeriod());
@@ -801,7 +804,32 @@ export function PricingSection({
               />
             ))}
         </div>
+
+        {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
+        {isAuthenticated && 
+         currentSubscription?.credits?.can_purchase_credits && (
+          <div className="w-full max-w-6xl mt-12 flex justify-center">
+            <Button
+              onClick={() => setShowCreditPurchaseModal(true)}
+              variant="outline"
+              size="lg"
+              className="gap-2"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              Get Additional Credits
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Credit Purchase Modal */}
+      <CreditPurchaseModal
+        open={showCreditPurchaseModal}
+        onOpenChange={setShowCreditPurchaseModal}
+        currentBalance={currentSubscription?.credits?.balance || 0}
+        canPurchase={currentSubscription?.credits?.can_purchase_credits || false}
+        onPurchaseComplete={handleSubscriptionUpdate}
+      />
     </section>
   );
 }
