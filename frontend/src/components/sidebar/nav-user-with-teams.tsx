@@ -93,10 +93,10 @@ export function NavUserWithTeams({
   const { theme, setTheme } = useTheme();
 
   // Check if user is on free tier
-  const isFreeTier = subscriptionData?.tier_key === 'free' || 
-                     subscriptionData?.tier?.name === 'free' || 
-                     subscriptionData?.plan_name === 'free' ||
-                     !subscriptionData?.tier_key;
+  const isFreeTier = subscriptionData?.tier_key === 'free' ||
+    subscriptionData?.tier?.name === 'free' ||
+    subscriptionData?.plan_name === 'free' ||
+    !subscriptionData?.tier_key;
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -421,7 +421,7 @@ export function NavUserWithTeams({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          
+
           {/* Upgrade Button - Only for Free Tier */}
           {isFreeTier && (
             <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50">

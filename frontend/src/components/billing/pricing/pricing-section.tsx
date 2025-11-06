@@ -37,6 +37,7 @@ import posthog from 'posthog-js';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
+import { BorderBeam } from '@/components/ui/border-beam';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -165,7 +166,7 @@ function BillingPeriodToggle({
           Yearly
           <span className={cn(
             "px-1.5 py-0.5 rounded-full text-xs font-medium",
-            isYearly 
+            isYearly
               ? "bg-background/90 text-primary"
               : "bg-muted/80 text-primary dark:bg-muted"
           )}>
@@ -211,7 +212,7 @@ function PricingTier({
       console.log(`[${tier.name}] Yearly: ${tier.yearlyPrice}`);
       return tier.yearlyPrice;
     }
-    
+
     console.log(`[${tier.name}] Monthly: ${tier.price}`);
     return tier.price;
   };
@@ -320,19 +321,19 @@ function PricingTier({
   );
 
   const userPlanName = currentSubscription?.plan_name || 'none';
-  
+
   // Check if this is the current plan - must match BOTH tier_key AND billing period
-  const isSameTier = currentSubscription?.tier_key === tier.tierKey || 
-                      currentSubscription?.tier?.name === tier.tierKey;
+  const isSameTier = currentSubscription?.tier_key === tier.tierKey ||
+    currentSubscription?.tier?.name === tier.tierKey;
   const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
-  
-  const isCurrentActivePlan = isAuthenticated && isSameTier && isSameBillingPeriod && 
+
+  const isCurrentActivePlan = isAuthenticated && isSameTier && isSameBillingPeriod &&
     currentSubscription?.subscription?.status === 'active';
 
   const isScheduled = isAuthenticated && (currentSubscription as any)?.has_schedule;
   const isScheduledTargetPlan =
     isScheduled && (
-      (currentSubscription as any)?.scheduled_tier_key === tier.tierKey || 
+      (currentSubscription as any)?.scheduled_tier_key === tier.tierKey ||
       (currentSubscription as any)?.scheduled_plan_name === tier.tierKey ||
       (currentSubscription as any)?.scheduled_plan_name === tier.name
     );
@@ -345,7 +346,7 @@ function PricingTier({
   let statusBadge = null;
   let buttonClassName = '';
 
-  const planChangeValidation = { allowed: true }; 
+  const planChangeValidation = { allowed: true };
 
   if (isAuthenticated) {
     if (isCurrentActivePlan) {
@@ -411,15 +412,15 @@ function PricingTier({
       const isSameTierUpgradeToLongerTerm = isSameTier && (
         (billingPeriod === 'yearly_commitment' || billingPeriod === 'yearly')
       );
-      
+
       // Prevent downgrading from yearly to monthly - once yearly, stay yearly
       // This blocks: yearly -> monthly, yearly_commitment -> monthly for same tier
-      const isYearlyDowngradeToMonthly = isSameTier && 
-        currentBillingPeriod && 
+      const isYearlyDowngradeToMonthly = isSameTier &&
+        currentBillingPeriod &&
         (currentBillingPeriod === 'yearly' || currentBillingPeriod === 'yearly_commitment') &&
         billingPeriod === 'monthly' &&
         currentSubscription?.subscription?.status === 'active';
-      
+
       const isSameTierDowngradeToShorterTerm = false; // Simplified for now
 
       // Use the plan change validation already computed above
@@ -451,7 +452,7 @@ function PricingTier({
           if (isSameTierUpgradeToLongerTerm && targetAmount <= currentAmount) {
             buttonText = billingPeriod === 'yearly_commitment' ? 'Upgrade' : 'Switch to Legacy Yearly';
             buttonVariant = billingPeriod === 'yearly_commitment' ? tier.buttonColor as ButtonVariant : 'default';
-            buttonClassName = billingPeriod === 'yearly_commitment' 
+            buttonClassName = billingPeriod === 'yearly_commitment'
               ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
               : 'bg-green-600 hover:bg-green-700 text-white';
           } else {
@@ -542,16 +543,11 @@ function PricingTier({
         "flex flex-col gap-3 relative z-10",
         insideDialog ? "p-3" : "p-4"
       )}>
-        <div className="flex items-center gap-2">
-          {tier.name === 'Basic' ? (
-            // For Basic plan, just show plain text
-            <span className="text-lg font-semibold">Basic</span>
-          ) : (
-            <TierBadge planName={tier.name} size="lg" variant="default" />
-          )}
+        <div className="flex items-center justify-between gap-2">
+          <TierBadge planName={tier.name} size="lg" variant="default" />
           <div className="flex items-center gap-2">
             {tier.isPopular && (
-              <Badge variant='outline'>Popular</Badge>
+              <Badge variant='default'>Popular</Badge>
             )}
             {/* Show upgrade badge for yearly commitment plans when user is on monthly */}
             {isAuthenticated && statusBadge}
@@ -638,6 +634,29 @@ function PricingTier({
           {buttonText}
         </Button>
       </div>
+
+      {/* BorderBeam for Ultra plan only - dual tracers in sync */}
+      {isUltraPlan && (
+        <>
+          <BorderBeam
+            size={200}
+            duration={12}
+            delay={0}
+            borderWidth={1.5}
+            colorFrom="#23D3FF"
+            colorTo="#FF1B07"
+          />
+          <BorderBeam
+            size={200}
+            duration={12}
+            delay={0}
+            borderWidth={1.5}
+            colorFrom="#FFC78C"
+            colorTo="#FDF5E0"
+            initialOffset={50}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -683,8 +702,8 @@ export function PricingSection({
     }
 
     // Fallback: Check commitment info
-    if (subCommitmentQuery.data?.has_commitment && 
-        subCommitmentQuery.data?.commitment_type === 'yearly_commitment') {
+    if (subCommitmentQuery.data?.has_commitment &&
+      subCommitmentQuery.data?.commitment_type === 'yearly_commitment') {
       return 'yearly_commitment';
     }
 
@@ -693,16 +712,16 @@ export function PricingSection({
       const periodEnd = typeof currentSubscription.subscription.current_period_end === 'number'
         ? currentSubscription.subscription.current_period_end * 1000
         : new Date(currentSubscription.subscription.current_period_end).getTime();
-      
+
       const now = Date.now();
       const daysInPeriod = Math.round((periodEnd - now) / (1000 * 60 * 60 * 24));
-      
+
       // If period is longer than 180 days, likely yearly; otherwise monthly
       if (daysInPeriod > 180) {
         return 'yearly';
       }
     }
-    
+
     // Default to monthly if period is short or can't determine
     return 'monthly';
   };
@@ -807,29 +826,29 @@ export function PricingSection({
         </div>
 
         {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
-        {isAuthenticated && 
-         currentSubscription?.credits?.can_purchase_credits && (
-          <div className="w-full max-w-6xl mt-12 flex flex-col items-center gap-4">
-            <Button
-              onClick={() => setShowCreditPurchaseModal(true)}
-              variant="outline"
-              size="lg"
-              className="gap-2"
-            >
-              <ShoppingCart className="h-5 w-5" />
-              Get Additional Credits
-            </Button>
-            {/* Credits Explained Link */}
-            <Button
-              variant="link"
-              onClick={() => window.open('/credits-explained', '_blank')}
-              className="text-muted-foreground hover:text-foreground h-auto p-0"
-            >
-              <Lightbulb className="h-3.5 w-3.5 mr-2" />
-              <span className="text-sm">Credits explained</span>
-            </Button>
-          </div>
-        )}
+        {isAuthenticated &&
+          currentSubscription?.credits?.can_purchase_credits && (
+            <div className="w-full max-w-6xl mt-12 flex flex-col items-center gap-4">
+              <Button
+                onClick={() => setShowCreditPurchaseModal(true)}
+                variant="outline"
+                size="lg"
+                className="gap-2"
+              >
+                <ShoppingCart className="h-5 w-5" />
+                Get Additional Credits
+              </Button>
+              {/* Credits Explained Link */}
+              <Button
+                variant="link"
+                onClick={() => window.open('/credits-explained', '_blank')}
+                className="text-muted-foreground hover:text-foreground h-auto p-0"
+              >
+                <Lightbulb className="h-3.5 w-3.5 mr-2" />
+                <span className="text-sm">Credits explained</span>
+              </Button>
+            </div>
+          )}
 
         {/* Credits Explained Link - Show when not authenticated or when credits purchase is not available */}
         {(!isAuthenticated || !currentSubscription?.credits?.can_purchase_credits) && (
