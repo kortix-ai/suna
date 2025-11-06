@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ComposioConnectionsSection } from '../../../../components/agents/composio/composio-connections-section';
 import { PageHeader } from '@/components/ui/page-header';
+import { copy } from '@/copy';
 
 export default function AppProfilesPage() {
 
@@ -13,7 +14,7 @@ export default function AppProfilesPage() {
     <div className="container mx-auto max-w-7xl px-4 py-8">
       <div className="space-y-8">
         <PageHeader icon={Zap}>
-          <span className="text-primary">App Credentials</span>
+          <span className="text-primary">{copy.credentials.title}</span>
         </PageHeader>
         <ComposioConnectionsSection />
       </div>

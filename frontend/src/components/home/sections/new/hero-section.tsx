@@ -1,5 +1,6 @@
 'use client';
 import { siteConfig } from '@/lib/home';
+import { copy } from '@/copy';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, useRef, FormEvent } from 'react';
@@ -288,7 +289,7 @@ export function HeroSection() {
                                 <ChatInput
                                     ref={chatInputRef}
                                     onSubmit={handleChatInputSubmit}
-                                    placeholder="Describe the task you want your Worker to complete..."
+                                    placeholder={copy.home.inputPlaceholder}
                                     loading={isSubmitting}
                                     disabled={isSubmitting}
                                     value={inputValue}
@@ -338,7 +339,7 @@ export function HeroSection() {
                     <DialogHeader>
                         <div className="flex items-center justify-between">
                             <DialogTitle className="text-xl font-medium">
-                                Sign in to continue
+                                {copy.home.authDialog.title}
                             </DialogTitle>
                             {/* <button 
                 onClick={() => setAuthDialogOpen(false)}
@@ -348,7 +349,7 @@ export function HeroSection() {
               </button> */}
                         </div>
                         <DialogDescription className="text-muted-foreground">
-                            Sign in or create an account to talk with Kortix
+                            {copy.home.authDialog.description}
                         </DialogDescription>
                     </DialogHeader>
 
@@ -365,7 +366,7 @@ export function HeroSection() {
                         </div>
                         <div className="relative flex justify-center text-sm">
                             <span className="px-3 bg-background text-muted-foreground font-medium">
-                                or continue with email
+                                {copy.home.authDialog.divider}
                             </span>
                         </div>
                     </div>
@@ -377,7 +378,7 @@ export function HeroSection() {
                             className="flex h-12 items-center justify-center w-full text-center rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-sm font-medium"
                             onClick={() => setAuthDialogOpen(false)}
                         >
-                            Sign in with email
+                            {copy.home.authDialog.signInEmail}
                         </Link>
 
                         <Link
@@ -385,18 +386,18 @@ export function HeroSection() {
                             className="flex h-12 items-center justify-center w-full text-center rounded-full border border-border bg-background hover:bg-accent/50 transition-all font-medium"
                             onClick={() => setAuthDialogOpen(false)}
                         >
-                            Create new account
+                            {copy.home.authDialog.createAccount}
                         </Link>
                     </div>
 
                     <div className="mt-8 text-center text-[13px] text-muted-foreground leading-relaxed">
-                        By continuing, you agree to our{' '}
+                        {copy.home.authDialog.consentPrefix}{' '}
                         <a href="https://www.kortix.com/legal?tab=terms" target="_blank" rel="noopener noreferrer" className="text-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors">
-                            Terms of Service
+                            {copy.home.authDialog.terms}
                         </a>{' '}
-                        and{' '}
+                        {copy.home.authDialog.and}{' '}
                         <a href="https://www.kortix.com/legal?tab=privacy" target="_blank" rel="noopener noreferrer" className="text-foreground/70 hover:text-foreground underline underline-offset-2 transition-colors">
-                            Privacy Policy
+                            {copy.home.authDialog.privacy}
                         </a>
                     </div>
                 </DialogContent>

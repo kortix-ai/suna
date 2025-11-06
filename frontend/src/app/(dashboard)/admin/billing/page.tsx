@@ -15,6 +15,7 @@ import {
   DollarSign,
   Sparkles
 } from 'lucide-react';
+import { copy } from '@/copy';
 
 export default function AdminBillingPage() {
   const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
@@ -53,10 +54,10 @@ export default function AdminBillingPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-              Billing Management - Admin
+              {copy.billing.adminTitle}
             </h1>
             <p className="text-md text-muted-foreground mt-2">
-              Manage billing and user accounts
+              {copy.billing.adminSubtitle}
             </p>
           </div>
         </div>

@@ -1,29 +1,30 @@
-# Kortix SDK
+# SDK Kortix
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 
 > [!WARNING]
-> **This SDK is currently in early development and is NOT ready for production use.**
+> **Этот SDK находится на ранней стадии разработки и НЕ готов для продакшена.**
 > 
-> The API is subject to breaking changes, features may be incomplete, and documentation may be outdated. Use at your own risk.
+> API может меняться с обратной несовместимостью, функциональность может быть неполной, а документация — устаревшей. Используйте на свой страх и риск.
 
-A Python SDK that enables you to create, manage, and interact with AI Workers on [Suna](https://suna.so).
+Python‑SDK, который позволяет создавать, управлять и взаимодействовать с AI‑работниками на платформе [Suna](https://suna.so).
 
-## 📦 Installation
+## 📦 Установка
 
-Install directly from the GitHub repository:
+Установка напрямую из репозитория GitHub:
 
 ```bash
-pip install "kortix @ git+https://github.com/kortix-ai/suna.git@main#subdirectory=sdk"
+pip3 install "kortix @ git+https://github.com/kortix-ai/suna.git@main#subdirectory=sdk"
 ```
 
-Or using uv:
+Или с помощью uv:
 
 ```bash
 uv add "kortix @ git+https://github.com/kortix-ai/suna.git@main#subdirectory=sdk"
 ```
 
 ## 🔧 Quick Start
+## 🔧 Быстрый старт
 
 ```python
 import asyncio
@@ -31,29 +32,29 @@ from kortix import kortix
 
 async def main():
     mcp_tools = kortix.MCPTools(
-        "http://localhost:4000/mcp/",  # Point to any HTTP MCP server
+        "http://localhost:4000/mcp/",  # Укажите любой HTTP‑сервер MCP
         "Kortix",
     )
     await mcp_tools.initialize()
 
-    # Initialize the client
+    # Инициализация клиента
     client = kortix.Kortix(api_key="your-api-key")
 
-    # Create an agent
+    # Создание агента
     agent = await client.Agent.create(
         name="My Assistant",
-        system_prompt="You are a helpful AI assistant.",
+        system_prompt="Вы полезный AI‑ассистент.",
         mcp_tools=[mcp_tools],
         allowed_tools=["get_wind_direction"],
     )
 
-    # Create a conversation thread
+    # Создание потока (thread) разговора
     thread = await client.Thread.create()
 
-    # Run the agent
+    # Запуск агента
     run = await agent.run("Hello, how are you?", thread)
 
-    # Stream the response
+    # Потоковая передача ответа
     stream = await run.get_stream()
     async for chunk in stream:
         print(chunk, end="")
@@ -62,16 +63,16 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## 🔑 Environment Setup
+## 🔑 Настройка окружения
 
-Get your API key from [https://suna.so/settings/api-keys](https://suna.so/settings/api-keys)
+Получите API‑ключ по адресу [https://suna.so/settings/api-keys](https://suna.so/settings/api-keys)
 
-## 🧪 Running Examples
+## 🧪 Запуск примеров
 
 ```bash
-# Install dependencies
+# Установить зависимости
 uv sync
 
-# Run the main example
+# Запустить основной пример
 PYTHONPATH=$(pwd) uv run example/example.py
 ```

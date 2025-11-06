@@ -33,6 +33,7 @@ import GitHubSignIn from '@/components/GithubSignIn';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { ReleaseBadge } from '@/components/auth/release-badge';
+import { copy } from '@/copy';
 
 function LoginContent() {
   const router = useRouter();
@@ -102,7 +103,7 @@ function LoginContent() {
     }
 
     if (result && typeof result === 'object' && 'message' in result) {
-      toast.error('Login failed', {
+      toast.error(copy.auth.loginFailed, {
         description: result.message as string,
         duration: 5000,
       });
@@ -157,7 +158,7 @@ function LoginContent() {
 
         return result;
       } else {
-        toast.error('Sign up failed', {
+        toast.error(copy.auth.signUpFailed, {
           description: resultMessage,
           duration: 5000,
         });
@@ -176,7 +177,7 @@ function LoginContent() {
     if (!forgotPasswordEmail || !forgotPasswordEmail.includes('@')) {
       setForgotPasswordStatus({
         success: false,
-        message: 'Please enter a valid email address',
+        message: copy.auth.enterValidEmail,
       });
       return;
     }
@@ -226,20 +227,20 @@ function LoginContent() {
             </div>
 
             <h1 className="text-3xl font-semibold text-foreground mb-4">
-              Check your email
+              {copy.auth.checkEmailTitle}
             </h1>
 
             <p className="text-muted-foreground mb-2">
-              We've sent a confirmation link to:
+              {copy.auth.checkEmailDesc}
             </p>
 
             <p className="text-lg font-medium mb-6">
-              {registrationEmail || 'your email address'}
+              {registrationEmail || copy.auth.yourEmailAddress}
             </p>
 
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/50 rounded-lg p-4 mb-8">
               <p className="text-sm text-green-800 dark:text-green-400">
-                Click the link in the email to activate your account. If you don't see the email, check your spam folder.
+                {copy.auth.checkEmailInfo}
               </p>
             </div>
 
@@ -248,13 +249,13 @@ function LoginContent() {
                 href="/"
                 className="flex h-11 items-center justify-center px-6 text-center rounded-lg border border-border bg-background hover:bg-accent transition-colors"
               >
-                Return to home
+                {copy.auth.returnHome}
               </Link>
               <button
                 onClick={resetRegistrationSuccess}
                 className="flex h-11 items-center justify-center px-6 text-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
               >
-                Back to sign in
+                {copy.auth.backToSignIn}
               </button>
             </div>
           </div>
@@ -275,7 +276,7 @@ function LoginContent() {
           <div className="w-full max-w-sm">
             <div className="mb-4 flex items-center flex-col gap-3 sm:gap-4 justify-center">
               <h1 className="text-xl sm:text-2xl font-semibold text-foreground text-center leading-tight">
-                {isSignUp ? 'Create your account' : 'Log into your account'}
+                {isSignUp ? copy.auth.titleSignUp : copy.auth.titleSignIn}
               </h1>
             </div>
             <div className="space-y-3 mb-4">
@@ -288,7 +289,7 @@ function LoginContent() {
               </div>
               <div className="relative flex justify-center text-sm">
                 <span className="px-2 bg-background text-muted-foreground">
-                  or email
+                  {copy.auth.oauthSeparator}
                 </span>
               </div>
             </div>
@@ -297,7 +298,7 @@ function LoginContent() {
                 id="email"
                 name="email"
                 type="email"
-                placeholder="Email address"
+                placeholder={copy.auth.emailPlaceholder}
                 className=""
                 required
               />
@@ -305,7 +306,7 @@ function LoginContent() {
                 id="password"
                 name="password"
                 type="password"
-                placeholder="Password"
+                placeholder={copy.auth.passwordPlaceholder}
                 className=""
                 required
               />
@@ -315,7 +316,7 @@ function LoginContent() {
                     id="confirmPassword"
                     name="confirmPassword"
                     type="password"
-                    placeholder="Confirm password"
+                    placeholder={copy.auth.confirmPasswordPlaceholder}
                     className=""
                     required
                   />
@@ -332,7 +333,7 @@ function LoginContent() {
                       htmlFor="gdprConsent" 
                       className="text-sm text-muted-foreground leading-none cursor-pointer select-none"
                     >
-                      I accept the{' '}
+                      {copy.auth.consentTextPrefix}{' '}
                       <a 
                         href="https://www.kortix.com/legal?tab=privacy" 
                         target="_blank"
@@ -340,9 +341,9 @@ function LoginContent() {
                         className="hover:underline underline-offset-2 transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        Privacy Policy
+                        {copy.auth.privacyPolicy}
                       </a>
-                      {' '}and{' '}
+                      {' '}{copy.auth.consentTextMiddle}{' '}
                       <a 
                         href="https://www.kortix.com/legal?tab=terms"
                         target="_blank"
@@ -350,7 +351,7 @@ function LoginContent() {
                         className="hover:underline underline-offset-2 transition-colors"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        Terms of Service
+                        {copy.auth.termsOfService}
                       </a>
                     </label>
                   </div>
@@ -361,10 +362,10 @@ function LoginContent() {
                   <SubmitButton
                     formAction={isSignUp ? handleSignUp : handleSignIn}
                     className="w-full h-10"
-                    pendingText={isSignUp ? "Creating account..." : "Signing in..."}
+                    pendingText={isSignUp ? copy.auth.creatingAccountPending : copy.auth.signingInPending}
                     disabled={isSignUp && !acceptedTerms}
                   >
-                    {isSignUp ? 'Create account' : 'Sign in'}
+                    {isSignUp ? copy.auth.createAccount : copy.auth.signInButton}
                   </SubmitButton>
                   {wasEmailLastMethod && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background shadow-sm">
@@ -382,7 +383,7 @@ function LoginContent() {
                   onClick={() => setForgotPasswordOpen(true)}
                   className="text-primary hover:underline"
                 >
-                  Forgot password?
+                  {copy.auth.forgotPasswordLink}
                 </button>
               )}
 
@@ -395,8 +396,8 @@ function LoginContent() {
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {isSignUp
-                    ? 'Already have an account? Sign in'
-                    : "Don't have an account? Sign up"
+                    ? copy.auth.toggleToSignIn
+                    : copy.auth.toggleToSignUp
                   }
                 </Link>
               </div>
@@ -426,17 +427,17 @@ function LoginContent() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center justify-between">
-              <DialogTitle>Reset Password</DialogTitle>
+              <DialogTitle>{copy.auth.resetPasswordTitle}</DialogTitle>
             </div>
             <DialogDescription>
-              Enter your email address and we'll send you a link to reset your password.
+              {copy.auth.resetPasswordDesc}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleForgotPassword} className="space-y-4">
             <Input
               id="forgot-password-email"
               type="email"
-              placeholder="Email address"
+              placeholder={copy.auth.emailPlaceholder}
               value={forgotPasswordEmail}
               onChange={(e) => setForgotPasswordEmail(e.target.value)}
               className=""
@@ -463,13 +464,13 @@ function LoginContent() {
                 onClick={() => setForgotPasswordOpen(false)}
                 className="h-10 px-4 border border-border bg-background hover:bg-accent transition-colors rounded-md"
               >
-                Cancel
+                {copy.common.cancel}
               </button>
               <button
                 type="submit"
                 className="h-10 px-4 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-md"
               >
-                Send Reset Link
+                {copy.auth.resetPasswordSend}
               </button>
             </DialogFooter>
           </form>

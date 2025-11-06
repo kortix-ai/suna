@@ -21,6 +21,7 @@ import {
 import type { Model } from '@/lib/api';
 import { useMemo, useState } from 'react';
 import { useModelSelection } from '@/hooks/use-model-selection';
+import { copy } from '@/copy';
 
 // Example task data with token usage
 const exampleTasks = [
@@ -213,7 +214,7 @@ export default function PricingPage() {
         <div className="flex flex-col items-center gap-4">
           <KortixLoader size="large" />
           <p className="text-sm text-muted-foreground">
-            Loading pricing data...
+            {copy.pricing.loading}
           </p>
         </div>
       </div>
@@ -227,10 +228,10 @@ export default function PricingPage() {
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
           <div className="space-y-2">
             <h3 className="text-lg font-semibold text-foreground">
-              Pricing Unavailable
+              {copy.pricing.unavailableTitle}
             </h3>
             <p className="text-sm text-muted-foreground">
-              Failed to fetch model pricing. Please refresh the page.
+              {copy.pricing.unavailableDesc}
             </p>
           </div>
         </div>
@@ -242,10 +243,9 @@ export default function PricingPage() {
     <div className="space-y-8 p-8 max-w-4xl mx-auto">
       {/* Header Section */}
       <div className="space-y-4">
-        <h1 className="text-3xl font-medium text-foreground">Token Pricing</h1>
+        <h1 className="text-3xl font-medium text-foreground">{copy.pricing.title}</h1>
         <p className="text-lg text-muted-foreground max-w-3xl">
-          Understand how tokens work, explore pricing for AI models, and find
-          the right plan for your needs.
+          {copy.pricing.subtitle}
         </p>
       </div>
 

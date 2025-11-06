@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import Script from 'next/script';
+import { copy } from '@/copy';
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
@@ -39,7 +40,7 @@ function CheckoutContent() {
       clearInterval(interval);
       if (typeof window.Stripe === 'undefined') {
         console.error('❌ Stripe still not loaded after 5 seconds');
-        setError('Payment system taking too long to load. Please refresh the page.');
+        setError(copy.checkout.stripeSlowLoad);
         setIsLoading(false);
       }
     }, 5000);
@@ -55,7 +56,7 @@ function CheckoutContent() {
     
     if (!clientSecret) {
       console.error('❌ No client secret provided');
-      setError('No checkout session provided. Please start the checkout process again.');
+      setError(copy.checkout.noSession);
       setIsLoading(false);
       return;
     }
@@ -129,7 +130,7 @@ function CheckoutContent() {
         }}
         onError={(e) => {
           console.error('❌ Stripe.js failed to load:', e);
-          setError('Failed to load payment system');
+          setError(copy.checkout.stripeLoadFailed);
           setIsLoading(false);
         }}
         onReady={() => {
@@ -142,8 +143,8 @@ function CheckoutContent() {
         {error ? (
           <Card className="w-full max-w-md bg-white">
             <CardHeader className="text-center">
-              <CardTitle className="text-gray-900">Checkout Error</CardTitle>
-              <CardDescription className="text-gray-600">Unable to load checkout</CardDescription>
+              <CardTitle className="text-gray-900">{copy.checkout.errorTitle}</CardTitle>
+              <CardDescription className="text-gray-600">{copy.checkout.errorDesc}</CardDescription>
             </CardHeader>
             <CardContent>
               <Alert variant="destructive">
@@ -156,7 +157,7 @@ function CheckoutContent() {
         ) : isLoading ? (
           <div className="flex flex-col items-center gap-4">
             <KortixLoader size="xlarge" />
-            <p className="text-gray-600 text-sm">Loading secure checkout...</p>
+            <p className="text-gray-600 text-sm">{copy.checkout.loadingText}</p>
           </div>
         ) : (
           // Embedded checkout container
@@ -180,4 +181,3 @@ export default function CheckoutPage() {
     </Suspense>
   );
 }
-

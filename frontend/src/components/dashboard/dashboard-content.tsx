@@ -41,6 +41,7 @@ import { ReleaseBadge } from '../auth/release-badge';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
+import { copy } from '@/copy';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -255,7 +256,7 @@ export function DashboardContent() {
       } else if (error instanceof ProjectLimitError) {
         setShowPaymentModal(true);
       } else {
-        const errorMessage = error instanceof Error ? error.message : 'Operation failed';
+        const errorMessage = error instanceof Error ? error.message : copy.errors.operationFailed;
         toast.error(errorMessage);
       }
       // Only reset loading state if there was an error or no thread_id was returned
@@ -425,7 +426,7 @@ export function DashboardContent() {
                         <p
                           className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
                         >
-                          What do you want to get done?
+                          {copy.dashboard.promptTitle}
                         </p>
                       </div>
 
@@ -434,7 +435,7 @@ export function DashboardContent() {
                           ref={chatInputRef}
                           onSubmit={handleSubmit}
                           loading={isSubmitting || isRedirecting}
-                          placeholder="Describe what you need help with..."
+                          placeholder={copy.dashboard.inputPlaceholder}
                           value={inputValue}
                           onChange={setInputValue}
                           hideAttachments={false}

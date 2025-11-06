@@ -49,6 +49,7 @@ import {
   APIKeyResponse,
   APIKeyCreateResponse,
 } from '@/lib/api-client';
+import { copy } from '@/copy';
 
 interface NewAPIKeyData {
   title: string;
@@ -90,15 +91,15 @@ export default function APIKeysPage() {
         setShowCreatedKey(true);
         setIsCreateDialogOpen(false);
         queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-        toast.success('API key created successfully');
+        toast.success(copy.apiKeys.toastCreateSuccess);
         // Reset form
         setNewKeyData({ title: '', description: '', expiresInDays: 'never' });
       } else {
-        toast.error(response.error?.message || 'Failed to create API key');
+        toast.error(response.error?.message || copy.apiKeys.toastCreateFailed);
       }
     },
     onError: (error) => {
-      toast.error('Failed to create API key');
+      toast.error(copy.apiKeys.toastCreateFailed);
       console.error('Error creating API key:', error);
     },
   });
@@ -108,10 +109,10 @@ export default function APIKeysPage() {
     mutationFn: (keyId: string) => apiKeysApi.revoke(keyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-      toast.success('API key revoked successfully');
+      toast.success(copy.apiKeys.toastRevokeSuccess);
     },
     onError: (error) => {
-      toast.error('Failed to revoke API key');
+      toast.error(copy.apiKeys.toastRevokeFailed);
       console.error('Error revoking API key:', error);
     },
   });
@@ -121,10 +122,10 @@ export default function APIKeysPage() {
     mutationFn: (keyId: string) => apiKeysApi.delete(keyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys'] });
-      toast.success('API key deleted successfully');
+      toast.success(copy.apiKeys.toastDeleteSuccess);
     },
     onError: (error) => {
-      toast.error('Failed to delete API key');
+      toast.error(copy.apiKeys.toastDeleteFailed);
       console.error('Error deleting API key:', error);
     },
   });
@@ -145,9 +146,9 @@ export default function APIKeysPage() {
   const handleCopyKey = async (key: string, keyType: string = 'key') => {
     try {
       await navigator.clipboard.writeText(key);
-      toast.success(`${keyType} copied to clipboard`);
+      toast.success(copy.apiKeys.toastCopied.replace('{what}', keyType));
     } catch (error) {
-      toast.error(`Failed to copy ${keyType}`);
+      toast.error(copy.apiKeys.toastCopyFailed.replace('{what}', keyType));
     }
   };
 
@@ -155,14 +156,14 @@ export default function APIKeysPage() {
     try {
       const fullKey = `${publicKey}:${secretKey}`;
       await navigator.clipboard.writeText(fullKey);
-      toast.success('Full API key copied to clipboard');
+      toast.success(copy.apiKeys.toastCopiedFull);
     } catch (error) {
-      toast.error('Failed to copy full API key');
+      toast.error(copy.apiKeys.toastCopyFullFailed);
     }
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString('ru-RU', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -176,19 +177,19 @@ export default function APIKeysPage() {
       case 'active':
         return (
           <Badge className="bg-green-100 text-green-800 border-green-200">
-            Active
+            {copy.apiKeys.statusActive}
           </Badge>
         );
       case 'revoked':
         return (
           <Badge className="bg-red-100 text-red-800 border-red-200">
-            Revoked
+            {copy.apiKeys.statusRevoked}
           </Badge>
         );
       case 'expired':
         return (
           <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
-            Expired
+            {copy.apiKeys.statusExpired}
           </Badge>
         );
       default:
@@ -208,10 +209,10 @@ export default function APIKeysPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <Key className="w-6 h-6" />
-            <h1 className="text-2xl font-medium">API Keys</h1>
+            <h1 className="text-2xl font-medium">{copy.apiKeys.title}</h1>
           </div>
           <p className="text-muted-foreground">
-            Manage your API keys for programmatic access to Kortix
+            {copy.apiKeys.description}
           </p>
         </div>
 
@@ -225,18 +226,17 @@ export default function APIKeysPage() {
                 </div>
                 <div className="absolute -top-1 -right-1">
                   <Badge variant="secondary" className="h-5 px-1.5 text-xs bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
-                    Beta
+                    {copy.apiKeys.betaBadge}
                   </Badge>
                 </div>
               </div>
               <div className="flex-1 space-y-3">
                 <div>
                   <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1">
-                    Kortix SDK & API
+                    {copy.apiKeys.sdkTitle}
                   </h3>
                   <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
-                    Our SDK and API are currently in beta. Use these API keys to integrate with our
-                    programmatic interface for building custom applications and automations.
+                    {copy.apiKeys.sdkDesc}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -246,7 +246,7 @@ export default function APIKeysPage() {
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                   >
-                    <span>View SDK Documentation</span>
+                    <span>{copy.apiKeys.sdkDocsLink}</span>
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 </div>
@@ -260,7 +260,7 @@ export default function APIKeysPage() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Shield className="w-4 h-4" />
             <span>
-              API keys use a public/secret key pair for secure authentication
+              {copy.apiKeys.headerNote}
             </span>
           </div>
 
@@ -271,25 +271,25 @@ export default function APIKeysPage() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="w-4 h-4 mr-2" />
-                New API Key
+                {copy.apiKeys.newKey}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle>Create API Key</DialogTitle>
+                <DialogTitle>{copy.apiKeys.createDialogTitle}</DialogTitle>
                 <DialogDescription>
-                  Create a new API key for programmatic access to your account.
+                  {copy.apiKeys.createDialogDesc}
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-4">
                 <div>
                   <Label htmlFor="title" className="m-1">
-                    Title *
+                    {copy.apiKeys.fieldTitle}
                   </Label>
                   <Input
                     id="title"
-                    placeholder="My API Key"
+                    placeholder={copy.apiKeys.fieldTitlePlaceholder}
                     value={newKeyData.title}
                     onChange={(e) =>
                       setNewKeyData((prev) => ({
@@ -302,11 +302,11 @@ export default function APIKeysPage() {
 
                 <div>
                   <Label htmlFor="description" className="m-1">
-                    Description
+                    {copy.apiKeys.fieldDescription}
                   </Label>
                   <Textarea
                     id="description"
-                    placeholder="Optional description for this API key"
+                    placeholder={copy.apiKeys.fieldDescriptionPlaceholder}
                     value={newKeyData.description}
                     onChange={(e) =>
                       setNewKeyData((prev) => ({
@@ -319,7 +319,7 @@ export default function APIKeysPage() {
 
                 <div>
                   <Label htmlFor="expires" className="m-1">
-                    Expires In
+                    {copy.apiKeys.fieldExpires}
                   </Label>
                   <Select
                     value={newKeyData.expiresInDays}
@@ -331,14 +331,14 @@ export default function APIKeysPage() {
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Never expires" />
+                      <SelectValue placeholder={copy.apiKeys.expiresNever} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="never">Never expires</SelectItem>
-                      <SelectItem value="7">7 days</SelectItem>
-                      <SelectItem value="30">30 days</SelectItem>
-                      <SelectItem value="90">90 days</SelectItem>
-                      <SelectItem value="365">1 year</SelectItem>
+                      <SelectItem value="never">{copy.apiKeys.expiresNever}</SelectItem>
+                      <SelectItem value="7">{copy.apiKeys.expires7d}</SelectItem>
+                      <SelectItem value="30">{copy.apiKeys.expires30d}</SelectItem>
+                      <SelectItem value="90">{copy.apiKeys.expires90d}</SelectItem>
+                      <SelectItem value="365">{copy.apiKeys.expires365d}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -349,7 +349,7 @@ export default function APIKeysPage() {
                   variant="outline"
                   onClick={() => setIsCreateDialogOpen(false)}
                 >
-                  Cancel
+                  {copy.common.cancel}
                 </Button>
                 <Button
                   onClick={handleCreateAPIKey}
@@ -357,7 +357,7 @@ export default function APIKeysPage() {
                     !newKeyData.title.trim() || createMutation.isPending
                   }
                 >
-                  {createMutation.isPending ? 'Creating...' : 'Create API Key'}
+                  {createMutation.isPending ? copy.apiKeys.creating : copy.apiKeys.createButton}
                 </Button>
               </div>
             </DialogContent>
@@ -383,7 +383,7 @@ export default function APIKeysPage() {
           <Card>
             <CardContent className="p-6 text-center">
               <p className="text-muted-foreground">
-                Failed to load API keys. Please try again.
+                {copy.apiKeys.listLoadFailed}
               </p>
             </CardContent>
           </Card>
@@ -391,15 +391,13 @@ export default function APIKeysPage() {
           <Card>
             <CardContent className="p-6 text-center">
               <Key className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No API keys yet</h3>
+              <h3 className="text-lg font-medium mb-2">{copy.apiKeys.emptyTitle}</h3>
               <p className="text-muted-foreground mb-4">
-                Create your first API key pair to start using the Kortix API
-                programmatically. Each key includes a public identifier and
-                secret for secure authentication.
+                {copy.apiKeys.emptyDesc}
               </p>
               <Button onClick={() => setIsCreateDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
-                Create API Key
+                {copy.apiKeys.emptyCreateButton}
               </Button>
             </CardContent>
           </Card>
@@ -431,14 +429,14 @@ export default function APIKeysPage() {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                       <div>
-                        <p className="text-muted-foreground mb-1">Created</p>
+                        <p className="text-muted-foreground mb-1">{copy.apiKeys.cardCreatedLabel}</p>
                         <p className="font-medium">
                           {formatDate(apiKey.created_at)}
                         </p>
                       </div>
                       {apiKey.expires_at && (
                         <div>
-                          <p className="text-muted-foreground mb-1">Expires</p>
+                          <p className="text-muted-foreground mb-1">{copy.apiKeys.cardExpiresLabel}</p>
                           <p
                             className={`font-medium ${isKeyExpired(apiKey.expires_at) ? 'text-yellow-600' : ''}`}
                           >
@@ -449,7 +447,7 @@ export default function APIKeysPage() {
                       {apiKey.last_used_at && (
                         <div>
                           <p className="text-muted-foreground mb-1">
-                            Last Used
+                            {copy.apiKeys.cardLastUsedLabel}
                           </p>
                           <p className="font-medium">
                             {formatDate(apiKey.last_used_at)}
@@ -465,27 +463,25 @@ export default function APIKeysPage() {
                         <AlertDialogTrigger asChild>
                           <Button variant="outline" size="sm">
                             <Trash2 className="w-4 h-4 mr-2" />
-                            Revoke
+                            {copy.apiKeys.revoke}
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Revoke API Key</AlertDialogTitle>
+                            <AlertDialogTitle>{copy.apiKeys.revokeDialogTitle}</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Are you sure you want to revoke "{apiKey.title}"?
-                              This action cannot be undone and any applications
-                              using this key will stop working.
+                              {copy.apiKeys.revokeDialogDesc.replace('{title}', apiKey.title)}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogCancel>{copy.common.cancel}</AlertDialogCancel>
                             <AlertDialogAction
                               onClick={() =>
                                 revokeMutation.mutate(apiKey.key_id)
                               }
                               className="bg-destructive hover:bg-destructive/90 text-white"
                             >
-                              Revoke Key
+                              {copy.apiKeys.revokeConfirm}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
@@ -498,34 +494,33 @@ export default function APIKeysPage() {
                       <div className="flex gap-2 mt-4">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete API Key</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to permanently delete "
-                                {apiKey.title}"? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() =>
-                                  deleteMutation.mutate(apiKey.key_id)
-                                }
-                                className="bg-destructive hover:bg-destructive/90 text-white"
-                              >
-                                Delete Key
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    )}
+                          <Button variant="outline" size="sm">
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            {copy.apiKeys.delete}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{copy.apiKeys.deleteDialogTitle}</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {copy.apiKeys.deleteDialogDesc.replace('{title}', apiKey.title)}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{copy.common.cancel}</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() =>
+                                deleteMutation.mutate(apiKey.key_id)
+                              }
+                              className="bg-destructive hover:bg-destructive/90 text-white"
+                            >
+                              {copy.apiKeys.deleteConfirm}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -538,17 +533,17 @@ export default function APIKeysPage() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-green-600" />
-                API Key Created
+                {copy.apiKeys.createdDialogTitle}
               </DialogTitle>
               <DialogDescription>
-                Your API key has been created successfully
+                {copy.apiKeys.createdDialogDesc}
               </DialogDescription>
             </DialogHeader>
 
             {createdApiKey && (
               <div className="space-y-4">
                 <div>
-                  <Label className="m-1">API Key</Label>
+                  <Label className="m-1">{copy.apiKeys.createdDialogLabel}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={`${createdApiKey.public_key}:${createdApiKey.secret_key}`}
@@ -573,8 +568,7 @@ export default function APIKeysPage() {
                 <div className="space-y-3">
                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                     <p className="text-sm text-yellow-800">
-                      <strong>Important:</strong> Store this API key securely.
-                      For security reasons, we cannot show it again.
+                      <strong>{copy.apiKeys.createdDialogImportant}</strong> {copy.apiKeys.createdDialogImportantText}
                     </p>
                   </div>
                 </div>
@@ -582,7 +576,7 @@ export default function APIKeysPage() {
             )}
 
             <div className="flex justify-end">
-              <Button onClick={() => setShowCreatedKey(false)}>Close</Button>
+              <Button onClick={() => setShowCreatedKey(false)}>{copy.apiKeys.close}</Button>
             </div>
           </DialogContent>
         </Dialog>

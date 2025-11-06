@@ -1,25 +1,25 @@
 # ============================================================================
-# SUNA DOCKER COMPOSE - LOCAL DEVELOPMENT
+# SUNA DOCKER COMPOSE — ЛОКАЛЬНАЯ РАЗРАБОТКА
 # ============================================================================
-# This Docker Compose file runs Suna services (Backend, Worker, Frontend, Redis)
+# Этот файл Docker Compose запускает сервисы Suna (Backend, Worker, Frontend, Redis)
 #
-# ⚠️  IMPORTANT LIMITATION - LOCAL SUPABASE:
-# Currently, local Supabase (via `npx supabase start`) is NOT supported with
-# Docker Compose due to network configuration complexity.
+# ⚠️  ВАЖНОЕ ОГРАНИЧЕНИЕ — ЛОКАЛЬНЫЙ SUPABASE:
+# В настоящее время локальный Supabase (через `npx supabase start`) НЕ поддерживается
+# совместно с Docker Compose из-за сложности сетевой конфигурации.
 #
-# TODO: Integrate Supabase services directly into this compose file to enable
-#       full Docker-based local development with proper network configuration.
+# TODO: Интегрировать службы Supabase непосредственно в этот compose‑файл,
+#       чтобы обеспечить полноценную локальную разработку на Docker с корректной сетью.
 #
-# CURRENT WORKAROUND:
-# - Use cloud Supabase for Docker Compose setup
-# - OR run everything manually (no Docker) to use local Supabase
+# ТЕКУЩЕЕ ОБХОДНОЕ РЕШЕНИЕ:
+# - Использовать облачный Supabase для запуска через Docker Compose
+# - ИЛИ запускать всё вручную (без Docker), чтобы использовать локальный Supabase
 #
-# Quick Start:
-#   docker compose up -d          # Start all services
-#   docker compose down           # Stop all services
-#   docker compose logs -f        # View all logs
+# Быстрый старт:
+#   docker compose up -d          # Запустить все сервисы
+#   docker compose down           # Остановить все сервисы
+#   docker compose logs -f        # Смотреть все логи
 #
-# Access:
+# Доступ:
 #   - Suna Frontend:     http://localhost:3000
 #   - Suna Backend API:  http://localhost:8000
 # ============================================================================

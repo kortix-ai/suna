@@ -1,12 +1,12 @@
 <div align="center">
 
-# Kortix – Open Source Platform to Build, Manage and Train AI Agents
+# Kortix — открытая платформа для создания, управления и обучения AI‑агентов
 
 ![Kortix Screenshot](frontend/public/banner.png)
 
-**The complete platform for creating autonomous AI agents that work for you**
+**Полная платформа для создания автономных AI‑агентов, которые работают на вас**
 
-Kortix is a comprehensive open source platform that empowers you to build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf, from general-purpose assistants to specialized automation tools.
+Kortix — это комплексная открытая платформа, которая позволяет создавать, управлять и обучать продвинутых AI‑агентов для любых задач. Создавайте мощных агентов, которые действуют автономно от вашего имени — от универсальных помощников до специализированных инструментов автоматизации.
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue)](./license)
 [![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/Py6pCBUUPw)
@@ -26,159 +26,159 @@ Kortix is a comprehensive open source platform that empowers you to build, manag
 
 </div>
 
-## 🌟 What Makes Kortix Special
+## 🌟 Что делает Kortix особенным
 
-### 🤖 Includes Suna – Flagship Generalist AI Worker
-Meet Suna, our showcase agent that demonstrates the full power of the Kortix platform. Through natural conversation, Suna handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Kortix.
+### 🤖 Включает Suna — флагманского универсального AI‑работника
+Познакомьтесь с Suna — демонстрационным агентом, показывающим полную мощь платформы Kortix. Через естественный диалог Suna выполняет исследования, анализ данных, автоматизацию браузера, управление файлами и сложные рабочие процессы — демонстрируя, что возможно при работе с Kortix.
 
-### 🔧 Build Custom Suna-Type Agents
-Create your own specialized agents tailored to specific domains, workflows, or business needs. Whether you need agents for customer service, data processing, content creation, or industry-specific tasks, Kortix provides the infrastructure and tools to build, deploy, and scale them.
+### 🔧 Создавайте собственных агентов типа Suna
+Создавайте специализированных агентов под конкретные области, процессы и бизнес‑задачи. Будь то поддержка клиентов, обработка данных, создание контента или отраслевые сценарии — Kortix предоставляет инфраструктуру и инструменты для разработки, развертывания и масштабирования.
 
-### 🚀 Complete Platform Capabilities
-- **Browser Automation**: Navigate websites, extract data, fill forms, automate web workflows
-- **File Management**: Create, edit, and organize documents, spreadsheets, presentations, code
-- **Web Intelligence**: Crawling, search capabilities, data extraction and synthesis
-- **System Operations**: Command-line execution, system administration, DevOps tasks
-- **API Integrations**: Connect with external services and automate cross-platform workflows
-- **Agent Builder**: Visual tools to configure, customize, and deploy agents
+### 🚀 Полные возможности платформы
+- **Автоматизация браузера**: навигация по сайтам, извлечение данных, заполнение форм, автоматизация веб‑процессов
+- **Управление файлами**: создание, редактирование и организация документов, таблиц, презентаций и кода
+- **Веб‑интеллект**: краулинг, поисковые возможности, извлечение и синтез данных
+- **Системные операции**: выполнение командной строки, администрирование систем, DevOps‑задачи
+- **Интеграции API**: подключение внешних сервисов и автоматизация межплатформенных процессов
+- **Конструктор агентов**: визуальные инструменты для настройки, кастомизации и развертывания агентов
 
-## 📋 Table of Contents
+## 📋 Содержание
 
-- [🌟 What Makes Kortix Special](#-what-makes-kortix-special)
-- [🎯 Agent Examples & Use Cases](#-agent-examples--use-cases)
-- [🏗️ Platform Architecture](#️-platform-architecture)
-- [🚀 Quick Start](#-quick-start)
-- [🏠 Self-Hosting](#-self-hosting)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
+- [🌟 Что делает Kortix особенным](#-что-делает-kortix-особенным)
+- [🎯 Примеры агентов и сценарии использования](#-примеры-агентов-и-сценарии-использования)
+- [🏗️ Архитектура платформы](#️-архитектура-платформы)
+- [🚀 Быстрый старт](#-быстрый-старт)
+- [🏠 Самостоятельный хостинг](#-самостоятельный-хостинг)
+- [🤝 Участие в разработке](#-участие-в-разработке)
+- [📄 Лицензия](#-лицензия)
 
-## 🎯 Agent Examples & Use Cases
+## 🎯 Примеры агентов и сценарии использования
 
-### Suna - Your Generalist AI Worker
+### Suna — ваш универсальный AI‑работник
 
-Suna demonstrates the full capabilities of the Kortix platform as a versatile AI worker that can:
+Suna демонстрирует полные возможности платформы Kortix как многофункциональный AI‑работник, который умеет:
 
-**🔍 Research & Analysis**
-- Conduct comprehensive web research across multiple sources
-- Analyze documents, reports, and datasets
-- Synthesize information and create detailed summaries
-- Market research and competitive intelligence
+**🔍 Исследования и анализ**
+- Выполнять комплексные веб‑исследования по множеству источников
+- Анализировать документы, отчеты и наборы данных
+- Синтезировать информацию и создавать подробные сводки
+- Проводить маркетинговые исследования и конкурентный анализ
 
-**🌐 Browser Automation**
-- Navigate complex websites and web applications
-- Extract data from multiple pages automatically
-- Fill forms and submit information
-- Automate repetitive web-based workflows
+**🌐 Автоматизация браузера**
+- Навигировать по сложным сайтам и веб‑приложениям
+- Автоматически извлекать данные с нескольких страниц
+- Заполнять формы и отправлять информацию
+- Автоматизировать повторяющиеся веб‑процессы
 
-**📁 File & Document Management**
-- Create and edit documents, spreadsheets, presentations
-- Organize and structure file systems
-- Convert between different file formats
-- Generate reports and documentation
+**📁 Управление файлами и документами**
+- Создавать и редактировать документы, таблицы, презентации
+- Организовывать и структурировать файловые системы
+- Конвертировать между различными форматами
+- Генерировать отчеты и документацию
 
-**📊 Data Processing & Analysis**
-- Clean and transform datasets from various sources
-- Perform statistical analysis and create visualizations
-- Monitor KPIs and generate insights
-- Integrate data from multiple APIs and databases
+**📊 Обработка и анализ данных**
+- Очищать и преобразовывать наборы данных из разных источников
+- Выполнять статистический анализ и создавать визуализации
+- Мониторить KPI и получать инсайты
+- Интегрировать данные из нескольких API и баз данных
 
-**⚙️ System Administration**
-- Execute command-line operations safely
-- Manage system configurations and deployments
-- Automate DevOps workflows
-- Monitor system health and performance
+**⚙️ Администрирование систем**
+- Безопасно выполнять операции в командной строке
+- Управлять конфигурациями и развертываниями
+- Автоматизировать DevOps‑процессы
+- Отслеживать состояние и производительность систем
 
-### Build Your Own Specialized Agents
+### Создавайте собственных специализированных агентов
 
-The Kortix platform enables you to create agents tailored to specific needs:
+Платформа Kortix позволяет создавать агентов под конкретные нужды:
 
-**🎧 Customer Service Agents**
-- Handle support tickets and FAQ responses
-- Manage user onboarding and training
-- Escalate complex issues to human agents
-- Track customer satisfaction and feedback
+**🎧 Агенты поддержки клиентов**
+- Обрабатывать заявки и ответы на FAQ
+- Управлять онбордингом и обучением пользователей
+- Эскалировать сложные случаи к людям‑операторам
+- Отслеживать удовлетворенность и обратную связь
 
-**✍️ Content Creation Agents**
-- Generate marketing copy and social media posts
-- Create technical documentation and tutorials
-- Develop educational content and training materials
-- Maintain content calendars and publishing schedules
+**✍️ Агенты по созданию контента**
+- Генерировать маркетинговые тексты и посты для соцсетей
+- Создавать техническую документацию и руководства
+- Разрабатывать образовательный контент и учебные материалы
+- Вести контент‑календарь и графики публикаций
 
-**📈 Sales & Marketing Agents**
-- Qualify leads and manage CRM systems
-- Schedule meetings and follow up with prospects
-- Create personalized outreach campaigns
-- Generate sales reports and forecasts
+**📈 Агенты продаж и маркетинга**
+- Квалифицировать лиды и работать с CRM
+- Планировать встречи и вести последующие коммуникации
+- Создавать персонализированные кампании
+- Генерировать отчеты и прогнозы по продажам
 
-**🔬 Research & Development Agents**
-- Conduct academic and scientific research
-- Monitor industry trends and innovations
-- Analyze patents and competitive landscapes
-- Generate research reports and recommendations
+**🔬 Агенты исследований и разработок**
+- Проводить академические и научные исследования
+- Отслеживать отраслевые тренды и инновации
+- Анализировать патенты и конкурентную среду
+- Генерировать исследовательские отчеты и рекомендации
 
-**🏭 Industry-Specific Agents**
-- Healthcare: Patient data analysis, appointment scheduling
-- Finance: Risk assessment, compliance monitoring
-- Legal: Document review, case research
-- Education: Curriculum development, student assessment
+**🏭 Отраслевые агенты**
+- Здравоохранение: анализ данных пациентов, расписание приемов
+- Финансы: оценка рисков, мониторинг соответствия требованиям
+- Юриспруденция: ревизия документов, исследование кейсов
+- Образование: разработка программ, оценка студентов
 
-Each agent can be configured with custom tools, workflows, knowledge bases, and integrations specific to your requirements.
+Каждый агент настраивается с помощью собственных инструментов, процессов, баз знаний и интеграций под ваши требования.
 
-## 🏗️ Platform Architecture
+## 🏗️ Архитектура платформы
 
 ![Architecture Diagram](docs/images/diagram.png)
 
-Kortix consists of four main components that work together to provide a complete AI agent development platform:
+Kortix включает четыре ключевых компонента, которые совместно обеспечивают полноценную платформу для разработки AI‑агентов:
 
-### 🔧 Backend API
-Python/FastAPI service that powers the agent platform with REST endpoints, thread management, agent orchestration, and LLM integration with Anthropic, OpenAI, and others via LiteLLM. Includes agent builder tools, workflow management, and extensible tool system.
+### 🔧 Серверная часть (Backend API)
+Сервис на Python/FastAPI, обеспечивающий платформу агентов: REST‑эндпоинты, управление потоками (threads), оркестрация агентов и интеграция LLM (Anthropic, OpenAI и др. через LiteLLM). Включает конструктор агентов, управление рабочими процессами и расширяемую систему инструментов.
 
-### 🖥️ Frontend Dashboard
-Next.js/React application providing a comprehensive agent management interface with chat interfaces, agent configuration dashboards, workflow builders, monitoring tools, and deployment controls.
+### 🖥️ Панель управления (Frontend)
+Приложение на Next.js/React с полноценным интерфейсом управления агентами: чаты, панели конфигурации, конструкторы процессов, инструменты мониторинга и управление развертываниями.
 
-### 🐳 Agent Runtime
-Isolated Docker execution environments for each agent instance featuring browser automation, code interpreter, file system access, tool integration, security sandboxing, and scalable agent deployment.
+### 🐳 Среда выполнения агента
+Изолированные Docker‑окружения для каждого экземпляра агента: автоматизация браузера, интерпретатор кода, доступ к файловой системе, интеграция инструментов, защищенная песочница и масштабируемое развертывание агентов.
 
-### 🗄️ Database & Storage
-Supabase-powered data layer handling authentication, user management, agent configurations, conversation history, file storage, workflow state, analytics, and real-time subscriptions for live agent monitoring.
+### 🗄️ База данных и хранилище
+Даталейер на Supabase: аутентификация, управление пользователями, конфигурации агентов, история диалогов, хранение файлов, состояние рабочих процессов, аналитика и realtime‑подписки для живого мониторинга агентов.
 
-## 🚀 Quick Start
+## 🚀 Быстрый старт
 
-Get your Kortix platform running in minutes with our automated setup wizard:
+Запустите платформу Kortix за считанные минуты с помощью автоматического мастера установки:
 
-### 1️⃣ Clone the Repository
+### 1️⃣ Клонируйте репозиторий
 ```bash
 git clone https://github.com/kortix-ai/suna.git
 cd suna
 ```
 
-### 2️⃣ Run the Setup Wizard
+### 2️⃣ Запустите мастер установки
 ```bash
-python setup.py
+python3 setup.py
 ```
-The wizard will guide you through 14 steps with progress saving, so you can resume if interrupted.
+Мастер проведет вас через 14 шагов с сохранением прогресса, чтобы вы могли продолжить, если процесс прервется.
 
-### 3️⃣ Start the Platform
+### 3️⃣ Запустите платформу
 ```bash
-python start.py
+python3 start.py
 ```
 
-That's it! Your Kortix platform will be running with Suna ready to assist you.
+Готово! Платформа Kortix запущена, и Suna готов помочь.
 
-## 🏠 Self-Hosting
+## 🏠 Самостоятельный хостинг
 
-Just use "setup.py". Ty mate.
+Просто используйте «setup.py». Спасибо!
 
-## 📄 License
+## 📄 Лицензия
 
-Kortix is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+Kortix распространяется по лицензии Apache License, версия 2.0. Полный текст см. в файле [LICENSE](./LICENSE).
 
 ---
 
 <div align="center">
 
-**Ready to build your first AI agent?** 
+**Готовы создать своего первого AI‑агента?** 
 
-[Get Started](./docs/SELF-HOSTING.md) • [Join Discord](https://discord.gg/Py6pCBUUPw) • [Follow on Twitter](https://x.com/kortix)
+[Начать](./docs/SELF-HOSTING.md) • [Присоединиться к Discord](https://discord.gg/Py6pCBUUPw) • [Подписаться в Twitter](https://x.com/kortix)
 
 </div>
