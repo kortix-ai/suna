@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useGetAAL } from '@/hooks/react-query/phone-verification';
+import { useGetAAL } from '@/hooks/auth';
 import { useAuth } from '@/components/AuthProvider';
 
 interface BackgroundAALCheckerProps {

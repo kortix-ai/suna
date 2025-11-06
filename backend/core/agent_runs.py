@@ -452,6 +452,16 @@ async def unified_agent_start(
     client = await utils.db.client
     account_id = user_id  # In Basejump, personal account_id is the same as user_id
     
+    # Debug logging - log what we received
+    logger.debug(f"Received agent start request: thread_id={thread_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
+    logger.debug(f"Parameter types: thread_id={type(thread_id)}, prompt={type(prompt)}, model_name={type(model_name)}, agent_id={type(agent_id)}")
+    
+    # Additional validation logging
+    if not thread_id and (not prompt or (isinstance(prompt, str) and not prompt.strip())):
+        error_msg = f"VALIDATION ERROR: New thread requires prompt. Received: prompt={prompt!r} (type={type(prompt)}), thread_id={thread_id!r}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=400, detail="prompt is required when creating a new thread")
+    
     # Resolve and validate model name
     if model_name is None:
         model_name = await model_manager.get_default_model_for_user(client, account_id)
@@ -557,7 +567,8 @@ async def unified_agent_start(
             # ================================================================
             
             # Validate that prompt is provided for new threads
-            if not prompt:
+            if not prompt or (isinstance(prompt, str) and not prompt.strip()):
+                logger.error(f"Validation failed: prompt is required for new threads. Received prompt={prompt!r}, type={type(prompt)}")
                 raise HTTPException(status_code=400, detail="prompt is required when creating a new thread")
             
             logger.debug(f"Creating new thread with prompt and {len(files)} files")
@@ -654,6 +665,14 @@ async def unified_agent_start(
         raise
     except Exception as e:
         logger.error(f"Error in unified agent start: {str(e)}\n{traceback.format_exc()}")
+        # Log the actual error details for debugging
+        import traceback
+        error_details = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        logger.error(f"Full error details: {error_details}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")

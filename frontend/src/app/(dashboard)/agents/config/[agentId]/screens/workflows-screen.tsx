@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAgent, useUpdateAgent } from '@/hooks/react-query/agents/use-agents';
+import { useAgent, useUpdateAgent } from '@/hooks/agents/use-agents';
 import { GranularToolConfiguration } from '@/components/agents/tools/granular-tool-configuration';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';

@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { SectionHeader } from '@/components/home/section-header';
-import { FooterSection } from '@/components/home/sections/footer-section';
+import { FooterSection } from '@/components/home/footer-section';
 import { motion } from 'motion/react';
 import { 
   ArrowRight, 
@@ -22,6 +21,15 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { KortixEnterpriseModal } from '@/components/sidebar/kortix-enterprise-modal';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+
+// Section Header Component
+const SectionHeader = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <div className="p-8 space-y-4">
+      {children}
+    </div>
+  );
+};
 
 // Hero Section Component
 const CustomHeroSection = () => {

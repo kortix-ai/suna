@@ -8,12 +8,12 @@ import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UpgradeDialog } from '@/components/ui/upgrade-dialog';
 import Link from 'next/link';
-import { useStopAgentMutation } from '@/hooks/react-query/threads/use-agent-run';
-import { AgentRun, getAgentRuns } from '@/lib/api';
+import { useStopAgentMutation } from '@/hooks/threads/use-agent-run';
+import { AgentRun, getAgentRuns } from '@/lib/api/agents';
 import { toast } from 'sonner';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { getThread, getProject } from '@/hooks/react-query/threads/utils';
-import { threadKeys } from '@/hooks/react-query/threads/keys';
+import { getThread, getProject } from '@/hooks/threads/utils';
+import { threadKeys } from '@/hooks/threads/keys';
 
 interface RunningThreadInfo {
   threadId: string;

@@ -12,17 +12,7 @@ import {
   Shield
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { reactivateSubscription } from '@/lib/api';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { useQueryClient } from '@tanstack/react-query';
-import { subscriptionKeys } from '@/hooks/react-query/subscriptions/keys';
+import { useReactivateSubscription } from '@/hooks/billing';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 interface SubscriptionCancellationCardProps {
@@ -45,9 +35,8 @@ export function SubscriptionCancellationCard({
   commitmentEndDate,
   onReactivate
 }: SubscriptionCancellationCardProps) {
-  const [isReactivating, setIsReactivating] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const queryClient = useQueryClient();
+  const reactivateSubscriptionMutation = useReactivateSubscription();
 
   const isCancelled = subscription?.cancel_at || subscription?.canceled_at || subscription?.cancel_at_period_end;
   
@@ -82,29 +71,15 @@ export function SubscriptionCancellationCard({
     (cancellationDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   );
 
-  const handleReactivate = async () => {
-    setIsReactivating(true);
-    try {
-      const response = await reactivateSubscription();
-      
-      if (response.success) {
-        toast.success(response.message || 'Subscription reactivated successfully');
-        // Invalidate both subscription and cancellation status queries
-        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all });
-        queryClient.invalidateQueries({ queryKey: ['subscription', 'cancellation-status'] });
+  const handleReactivate = () => {
+    setShowConfirmDialog(false);
+    reactivateSubscriptionMutation.mutate(undefined, {
+      onSuccess: () => {
         if (onReactivate) {
           onReactivate();
         }
-      } else {
-        toast.error(response.message || 'Failed to reactivate subscription');
       }
-    } catch (error: any) {
-      console.error('Error reactivating subscription:', error);
-      toast.error(error.message || 'Failed to reactivate subscription');
-    } finally {
-      setIsReactivating(false);
-      setShowConfirmDialog(false);
-    }
+    });
   };
 
   return (
@@ -131,11 +106,11 @@ export function SubscriptionCancellationCard({
             </p>
             <Button
               onClick={() => setShowConfirmDialog(true)}
-              disabled={isReactivating}
+              disabled={reactivateSubscriptionMutation.isPending}
               variant="default"
               className="w-full"
             >
-              {isReactivating ? (
+              {reactivateSubscriptionMutation.isPending ? (
                 <>
                   <RotateCcw className="h-4 w-4 animate-spin" />
                   Reactivating...
@@ -168,9 +143,9 @@ export function SubscriptionCancellationCard({
             </Button>
             <Button
               onClick={handleReactivate}
-              disabled={isReactivating}
+              disabled={reactivateSubscriptionMutation.isPending}
             >
-              {isReactivating ? 'Reactivating...' : 'Confirm Reactivation'}
+              {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Confirm Reactivation'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

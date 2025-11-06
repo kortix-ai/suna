@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
-import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
+import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
+import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { backendApi } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
-import { composioApi } from '@/hooks/react-query/composio/utils';
+import { composioApi } from '@/hooks/composio/utils';
 import { ComposioToolsSelector } from './composio-tools-selector';
 
 interface ComposioToolsManagerProps {

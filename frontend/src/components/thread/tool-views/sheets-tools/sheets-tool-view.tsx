@@ -11,7 +11,7 @@ import { FileAttachment } from '../../file-attachment';
 import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/AuthProvider';
-import { fetchFileContent } from '@/hooks/react-query/files/use-file-queries';
+import { fetchFileContent } from '@/hooks/files/use-file-queries';
 
 function getFileUrl(sandboxId: string | undefined, path: string): string {
   if (!sandboxId) return path;

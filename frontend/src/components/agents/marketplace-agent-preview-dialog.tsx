@@ -9,7 +9,7 @@ import { Bot, Download, Wrench, Plug, Tag, User, Calendar, Loader2, Share, Cpu, 
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { toast } from 'sonner';
 import type { MarketplaceTemplate, UsageExampleMessage } from '@/components/agents/installation/types';
-import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
+import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { useRouter } from 'next/navigation';
 import { backendApi } from '@/lib/api-client';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';

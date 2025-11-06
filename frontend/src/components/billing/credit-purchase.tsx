@@ -10,12 +10,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, CreditCard, AlertCircle, Zap, AlertCircleIcon } from 'lucide-react';
-import { apiClient, backendApi } from '@/lib/api-client';
+import { Loader2, AlertCircle } from 'lucide-react';
+import { billingApi } from '@/lib/api/billing';
 import { toast } from 'sonner';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 interface CreditPurchaseProps {
     open: boolean;
@@ -64,19 +63,19 @@ export function CreditPurchaseModal({
         setIsProcessing(true);
         setError(null);
         try {
-            const response = await backendApi.post('/billing/purchase-credits', {
-                amount_dollars: amount,
+            const response = await billingApi.purchaseCredits({
+                amount: amount,
                 success_url: `${window.location.origin}/dashboard?credit_purchase=success`,
                 cancel_url: `${window.location.origin}/dashboard?credit_purchase=cancelled`
             });
-            if (response.data.url) {
-                window.location.href = response.data.url;
+            if (response.checkout_url) {
+                window.location.href = response.checkout_url;
             } else {
                 throw new Error('No checkout URL received');
             }
         } catch (err: any) {
             console.error('Credit purchase error:', err);
-            const errorMessage = err.response?.data?.detail || err.message || 'Failed to create checkout session';
+            const errorMessage = err.details?.detail || err.message || 'Failed to create checkout session';
             setError(errorMessage);
             toast.error(errorMessage);
         } finally {
@@ -112,13 +111,13 @@ export function CreditPurchaseModal({
                     <DialogHeader>
                         <DialogTitle>Credits Not Available</DialogTitle>
                         <DialogDescription>
-                            Credit purchases are only available for users on the highest subscription tier ($1000/month).
+                            Credit purchases are only available for users on the $200/month subscription tier.
                         </DialogDescription>
                     </DialogHeader>
                     <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                            Please upgrade your subscription to the highest tier to unlock credit purchases for unlimited usage.
+                            Please upgrade your subscription to the $200/month tier to unlock credit purchases for unlimited usage.
                         </AlertDescription>
                     </Alert>
                     <div className="flex justify-end">
@@ -135,45 +134,33 @@ export function CreditPurchaseModal({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Zap className="h-5 w-5 text-amber-500 dark:text-amber-400" />
-                        Purchase Credits
-                    </DialogTitle>
+                    <DialogTitle>Get additional credits</DialogTitle>
                     <DialogDescription>
                         Add credits to your account for usage beyond your subscription limit.
                     </DialogDescription>
                 </DialogHeader>
 
                 {currentBalance > 0 && (
-                    <Alert className="text-purple-600 dark:text-purple-400 bg-purple-50 border-purple-200 dark:bg-purple-950 dark:border-purple-800">
-                        <AlertCircleIcon className="h-4 w-4" />
-                        <AlertDescription className="text-purple-600 dark:text-purple-400">
-                            Current balance: <strong>${currentBalance.toFixed(2)}</strong>
-                        </AlertDescription>
-                    </Alert>
+                    <div className="text-sm text-muted-foreground">
+                        Current balance: {formatCredits(currentBalance, { showDecimals: true })}
+                    </div>
                 )}
 
                 <div className="space-y-4">
                     <div>
-                        <Label className="text-base font-semibold mb-3 block">Select a Package</Label>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             {CREDIT_PACKAGES.map((pkg) => (
                                 <Card
                                     key={pkg.amount}
                                     className={`cursor-pointer transition-all ${selectedPackage?.amount === pkg.amount
-                                        ? 'ring-2 ring-primary'
-                                        : 'hover:shadow-md'
+                                        ? 'ring-2 ring-border'
+                                        : 'hover:border-border/80'
                                         }`}
                                     onClick={() => handlePackageSelect(pkg)}
                                 >
-                                    <CardContent className="p-4 text-center relative">
-                                        {pkg.popular && (
-                                            <Badge className="absolute -top-2 -right-2" variant="default">
-                                                Popular
-                                            </Badge>
-                                        )}
-                                        <div className="text-2xl font-medium">${pkg.amount}</div>
-                                        <div className="text-sm text-muted-foreground">credits</div>
+                                    <CardContent className="p-4 text-center">
+                                        <div className="text-xl font-medium">${pkg.amount}</div>
+                                        <div className="text-xs text-muted-foreground mt-1">Credits</div>
                                     </CardContent>
                                 </Card>
                             ))}
@@ -186,28 +173,19 @@ export function CreditPurchaseModal({
                         </Alert>
                     )}
                 </div>
-                <div className="flex justify-end gap-3 mt-6">
-                    <Button
-                        variant="outline"
-                        onClick={() => onOpenChange(false)}
-                        disabled={isProcessing}
-                    >
-                        Cancel
-                    </Button>
+                <div className="flex justify-center mt-6">
                     <Button
                         onClick={handleConfirmPurchase}
                         disabled={isProcessing || (!selectedPackage && !customAmount)}
+                        className="w-full sm:w-auto min-w-[120px]"
                     >
                         {isProcessing ? (
                             <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                 Processing...
                             </>
                         ) : (
-                            <>
-                                <CreditCard className="h-4 w-4" />
-                                Purchase Credits
-                            </>
+                            'Continue'
                         )}
                     </Button>
                 </div>
@@ -225,10 +203,7 @@ export function CreditBalanceDisplay({ balance, canPurchase, onPurchaseClick }: 
         <Card>
             <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                        <Zap className="h-4 w-4 text-yellow-500" />
-                        Credit Balance
-                    </span>
+                    <span>Credit Balance</span>
                     {canPurchase && onPurchaseClick && (
                         <Button
                             size="sm"
@@ -242,7 +217,7 @@ export function CreditBalanceDisplay({ balance, canPurchase, onPurchaseClick }: 
             </CardHeader>
             <CardContent>
                 <div className="text-2xl font-medium">
-                    {Math.round(balance).toLocaleString()}
+                    {formatCredits(balance)}
                 </div>
             </CardContent>
         </Card>

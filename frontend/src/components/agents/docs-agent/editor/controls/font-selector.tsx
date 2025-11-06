@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { useEditorStore } from '@/lib/stores/use-editor-store';
+import { useEditorStore } from '@/stores/use-editor-store';
 
 const fonts = [
   { name: 'Default', value: '' },

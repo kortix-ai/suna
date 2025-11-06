@@ -30,7 +30,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 stripe.api_key = config.STRIPE_SECRET_KEY
 
 class CreateCheckoutSessionRequest(BaseModel):
-    price_id: str
+    tier_key: str  # Backend tier key like 'tier_2_20', 'free', etc.
     success_url: str
     cancel_url: str
     commitment_type: Optional[str] = None
@@ -389,13 +389,20 @@ async def get_subscription(
             display_plan_name = tier_info.get('display_name', tier_info['name'])
             is_trial = False
         
-        from .config import CREDITS_PER_DOLLAR
+        from .config import CREDITS_PER_DOLLAR, get_price_type
+        
+        # Determine billing period from price_id
+        billing_period = None
+        if subscription_info.get('price_id'):
+            billing_period = get_price_type(subscription_info['price_id'])
         
         return {
             'status': status,
             'plan_name': tier_info['name'],
+            'tier_key': tier_info['name'],  # Explicit tier_key for frontend
             'display_plan_name': display_plan_name,
             'price_id': subscription_info['price_id'],
+            'billing_period': billing_period,  # 'monthly', 'yearly', or 'yearly_commitment'
             'subscription': subscription_data,
             'subscription_id': subscription_data['id'] if subscription_data else None,
             'current_usage': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
@@ -427,8 +434,10 @@ async def get_subscription(
         return {
             'status': 'no_subscription',
             'plan_name': 'none',
+            'tier_key': 'none',  # Explicit tier_key for frontend
             'display_plan_name': 'No Plan',
             'price_id': None,
+            'billing_period': None,
             'subscription': None,
             'subscription_id': None,
             'current_usage': 0,
@@ -503,15 +512,31 @@ async def create_checkout_session(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        # Resolve tier_key to price_id
+        from .config import get_tier_by_name
+        tier = get_tier_by_name(request.tier_key)
+        if not tier:
+            raise HTTPException(status_code=400, detail=f"Invalid tier_key: {request.tier_key}")
+        
+        # Select the appropriate price_id based on commitment_type
+        if request.commitment_type == 'yearly_commitment' and len(tier.price_ids) >= 3:
+            price_id = tier.price_ids[2]  # Yearly commitment is usually 3rd
+        elif request.commitment_type == 'yearly' and len(tier.price_ids) >= 2:
+            price_id = tier.price_ids[1]  # Yearly is usually 2nd
+        else:
+            price_id = tier.price_ids[0]  # Monthly is always first
+        
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
-            price_id=request.price_id,
+            price_id=price_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url,
             commitment_type=request.commitment_type
         )
         return result
             
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error creating checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1376,3 +1401,39 @@ async def get_circuit_breaker_status(
     except Exception as e:
         logger.error(f"Error getting circuit breaker status: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.get("/tier-configurations")
+async def get_tier_configurations() -> Dict:
+    """
+    Get all available subscription tier configurations including price IDs.
+    This endpoint is PUBLIC and does not require authentication.
+    """
+    try:
+        from .config import TIERS
+        
+        tier_configs = []
+        for tier_key, tier in TIERS.items():
+            # Skip 'none' tier as it's not a real subscription tier
+            if tier_key == 'none':
+                continue
+                
+            tier_config = {
+                'tier_key': tier_key,
+                'name': tier.name,
+                'display_name': tier.display_name,
+                'monthly_credits': float(tier.monthly_credits),
+                'can_purchase_credits': tier.can_purchase_credits,
+                'project_limit': tier.project_limit,
+                'price_ids': tier.price_ids,
+            }
+            tier_configs.append(tier_config)
+        
+        return {
+            'success': True,
+            'tiers': tier_configs,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting tier configurations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tier configurations") 

@@ -120,44 +120,19 @@ def _generate_display_name(name: str) -> str:
 
 
 def discover_tools() -> Dict[str, Type[Tool]]:
-    """Discover all available Tool subclasses and map them to their tool names.
+    """Discover all available tools from the centralized tool registry.
     
-    Tool names are derived from the module file name (e.g., 'web_search_tool.py' -> 'web_search_tool')
-    rather than the class name, as file names match the naming convention used in agent configurations.
-    Falls back to generating from class name if module name is not available.
+    Tool names and their corresponding classes are defined in the centralized registry
+    (core.tools.tool_registry), which is also used for runtime tool registration.
+    This ensures tool names are always consistent between runtime and UI metadata,
+    eliminating naming mismatches.
     
     Returns:
         Dict mapping tool names (str) to tool classes (Type[Tool])
         Example: {'web_search_tool': SandboxWebSearchTool, 'browser_tool': BrowserTool, ...}
     """
-    # Ensure all tool modules are loaded
-    _ensure_tools_imported()
-    
-    # Get all Tool subclasses
-    tool_classes = _get_all_tool_subclasses()
-    
-    tools_map = {}
-    for tool_class in tool_classes:
-        # Try to get tool name from the module file name first (more reliable)
-        tool_name = None
-        if hasattr(tool_class, '__module__'):
-            module_name = tool_class.__module__
-            # Extract the last part (e.g., 'core.tools.web_search_tool' -> 'web_search_tool')
-            if '.' in module_name:
-                potential_name = module_name.split('.')[-1]
-                # If it ends with _tool, use it as-is
-                if potential_name.endswith('_tool'):
-                    tool_name = potential_name
-        
-        # Fallback to generating from class name if module name doesn't work
-        if not tool_name:
-            tool_name = _generate_tool_name(tool_class.__name__)
-        
-        tools_map[tool_name] = tool_class
-        # logger.debug(f"Discovered tool: {tool_name} ({tool_class.__name__})")
-    
-    # logger.info(f"Discovered {len(tools_map)} tools")
-    return tools_map
+    from core.tools.tool_registry import get_all_tools
+    return get_all_tools()
 
 
 def _extract_tool_metadata(tool_name: str, tool_class: Type[Tool]) -> Dict[str, Any]:

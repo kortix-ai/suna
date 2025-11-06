@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { fetchFileContent } from '@/hooks/react-query/files/use-file-queries';
+import { fetchFileContent } from '@/hooks/files/use-file-queries';
 
 declare global {
   interface Window {

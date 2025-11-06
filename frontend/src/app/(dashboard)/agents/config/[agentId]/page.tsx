@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAgent } from '@/hooks/react-query/agents/use-agents';
+import { useAgent } from '@/hooks/agents/use-agents';
 import { ChevronLeft, Brain, BookOpen, Zap, Wrench, Server, Pencil, MessageCircle } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { InstructionsScreen } from './screens/instructions-screen';
 import { KnowledgeScreen } from './screens/knowledge-screen';
 import { ToolsScreen } from './screens/tools-screen';
 import { IntegrationsScreen } from './screens/integrations-screen';
-import { useUpdateAgent } from '@/hooks/react-query/agents/use-agents';
+import { useUpdateAgent } from '@/hooks/agents/use-agents';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 

@@ -18,9 +18,9 @@ import {
     DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
-import { useFileContent, useImageContent } from '@/hooks/react-query/files';
+import { useFileContent, useImageContent } from '@/hooks/files';
 import { useAuth } from '@/components/AuthProvider';
-import { Project } from '@/lib/api';
+import { Project } from '@/lib/api/projects';
 
 // Define basic file types
 export type FileType =

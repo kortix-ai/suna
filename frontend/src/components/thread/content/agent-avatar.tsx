@@ -1,11 +1,11 @@
 'use client';
 
 import React from 'react';
-import { useAgentFromCache } from '@/hooks/react-query/agents/use-agents';
+import { useAgentFromCache } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { cn } from '@/lib/utils';
-import type { Agent } from '@/hooks/react-query/agents/utils';
+import type { Agent } from '@/hooks/agents/utils';
 
 interface AgentAvatarProps {
   // For passing agent data directly (preferred - no fetch)

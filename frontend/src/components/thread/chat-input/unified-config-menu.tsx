@@ -15,9 +15,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow } from 'lucide-react';
-import { useAgents } from '@/hooks/react-query/agents/use-agents';
+import { useAgents } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import type { ModelOption } from '@/hooks/use-model-selection';
+import type { ModelOption } from '@/hooks/agents';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 
@@ -26,7 +26,7 @@ export type SubscriptionStatus = 'no_subscription' | 'active';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
-import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
+import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
@@ -396,7 +396,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     { action: 'knowledge' as const, icon: Brain },
                                     { action: 'integrations' as const, icon: LibraryBig },
                                     { action: 'triggers' as const, icon: Zap },
-                                    { action: 'playbooks' as const, icon: Workflow },
                                 ].map(({ action, icon: Icon }) => (
                                     <Button
                                         key={action}

@@ -1,7 +1,7 @@
 // Active onboarding components
 export { OnboardingProvider } from './onboarding-provider';
-export { useOnboarding, usePostSubscriptionOnboarding } from '@/hooks/use-onboarding';
-export type { OnboardingStep } from '@/hooks/use-onboarding';
+export { useOnboarding, usePostSubscriptionOnboarding } from '@/hooks/onboarding';
+export type { OnboardingStep } from '@/hooks/onboarding';
 
 // Main onboarding page
 export { NewOnboardingPage } from './new-onboarding-page';

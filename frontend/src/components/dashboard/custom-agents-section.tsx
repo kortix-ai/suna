@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Ripple } from '../ui/ripple';
-import { useKortixTeamTemplates, useInstallTemplate } from '@/hooks/react-query/secure-mcp/use-secure-mcp';
+import { useKortixTeamTemplates, useInstallTemplate } from '@/hooks/secure-mcp/use-secure-mcp';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 import { MarketplaceAgentPreviewDialog } from '@/components/agents/marketplace-agent-preview-dialog';
@@ -13,7 +13,7 @@ import { StreamlinedInstallDialog } from '@/components/agents/installation/strea
 import { toast } from 'sonner';
 import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dialog';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
-import { AgentCountLimitError } from '@/lib/api';
+import { AgentCountLimitError } from '@/lib/api/errors';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import type { BaseAgentData } from '@/components/ui/unified-agent-card';
 import { ChevronRight, Code2, Calendar, MessageSquare, Briefcase, ShoppingCart, Users, Wrench, GraduationCap, Heart, Home, ScrollText, Calculator, FileText, Palette, User, DollarSign, Target, BookOpen, ChevronDown } from 'lucide-react';

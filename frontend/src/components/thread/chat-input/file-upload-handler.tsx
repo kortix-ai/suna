@@ -6,7 +6,7 @@ import { Paperclip, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { fileQueryKeys } from '@/hooks/react-query/files/use-file-queries';
+import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import {
   Tooltip,
   TooltipContent,
