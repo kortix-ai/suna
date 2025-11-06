@@ -23,14 +23,29 @@ export type Thread = {
 
   export const getThread = async (threadId: string): Promise<Thread> => {
     const supabase = createClient();
-    const { data, error } = await supabase
-      .from('threads')
-      .select('*')
-      .eq('thread_id', threadId)
-      .single();
-  
-    if (error) throw error;
-  
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Build headers with optional auth token
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
+    // Use backend API endpoint with auth handling
+    const response = await fetch(`${API_URL}/threads/${threadId}`, {
+      headers,
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(errorText || `Failed to fetch thread: ${response.statusText}`);
+    }
+
+    const data = await response.json();
     return data;
   };
 
@@ -39,22 +54,30 @@ export const updateThread = async (
     data: Partial<Thread>,
   ): Promise<Thread> => {
     const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new Error('You must be logged in to update a thread');
+    }
+
+    // Use backend API endpoint with auth handling
+    const response = await fetch(`${API_URL}/threads/${threadId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(data),
+      cache: 'no-store',
+    });
   
-    const updateData = { ...data };
-  
-    // Update the thread
-    const { data: updatedThread, error } = await supabase
-      .from('threads')
-      .update(updateData)
-      .eq('thread_id', threadId)
-      .select()
-      .single();
-  
-    if (error) {
-      console.error('Error updating thread:', error);
-      throw new Error(`Error updating thread: ${error.message}`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('Error updating thread:', errorText);
+      throw new Error(`Error updating thread: ${errorText}`);
     }
   
+    const updatedThread = await response.json();
     return updatedThread;
   };
 

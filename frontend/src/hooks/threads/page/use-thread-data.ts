@@ -26,7 +26,7 @@ interface UseThreadDataReturn {
   agentRunsQuery: ReturnType<typeof useAgentRunsQuery>;
 }
 
-export function useThreadData(threadId: string, projectId: string): UseThreadDataReturn {
+export function useThreadData(threadId: string, projectId: string, isShared: boolean = false): UseThreadDataReturn {
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
@@ -44,8 +44,13 @@ export function useThreadData(threadId: string, projectId: string): UseThreadDat
 
   const threadQuery = useThreadQuery(threadId);
   const messagesQuery = useMessagesQuery(threadId);
-  const projectQuery = useProjectQuery(projectId);
-  const agentRunsQuery = useAgentRunsQuery(threadId);
+  
+  // For shared pages, projectId might be empty - get it from thread data
+  const effectiveProjectId = projectId || threadQuery.data?.project_id || '';
+  const projectQuery = useProjectQuery(effectiveProjectId);
+  
+  // Only fetch agent runs if not in shared mode (requires authentication)
+  const agentRunsQuery = useAgentRunsQuery(threadId, { enabled: !isShared });
   
   // (debug logs removed)
 
@@ -125,7 +130,8 @@ export function useThreadData(threadId: string, projectId: string): UseThreadDat
           }
         }
 
-        if (agentRunsQuery.data && !agentRunsCheckedRef.current && isMounted) {
+        // For shared pages, skip agent runs check (anon users don't have access)
+        if (!isShared && agentRunsQuery.data && !agentRunsCheckedRef.current && isMounted) {
           // (debug logs removed)
           
           agentRunsCheckedRef.current = true;
@@ -142,7 +148,12 @@ export function useThreadData(threadId: string, projectId: string): UseThreadDat
           }
         }
 
-        if (threadQuery.data && messagesQuery.data && agentRunsQuery.data) {
+        // For shared pages, only wait for thread and messages data
+        const requiredDataLoaded = isShared 
+          ? (threadQuery.data && messagesQuery.data)
+          : (threadQuery.data && messagesQuery.data && agentRunsQuery.data);
+          
+        if (requiredDataLoaded) {
           initialLoadCompleted.current = true;
           setIsLoading(false);
           // Removed time-based final check to avoid incorrectly forcing idle while a stream is active
