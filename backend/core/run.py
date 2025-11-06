@@ -664,20 +664,21 @@ class AgentRunner:
         while continue_execution and iteration_count < self.config.max_iterations:
             iteration_count += 1
 
-            # Check if user can continue
-            # - First iteration: Check if balance is positive (if negative, stop)
-            # - During execution: Skip check (allow current request to complete and go slightly negative)
-            if iteration_count == 1:
-                can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(self.account_id)
-                if not can_run:
-                    error_msg = f"Insufficient credits: {message}"
-                    logger.warning(f"Stopping agent due to negative balance: {error_msg}")
-                    yield {
-                        "type": "status",
-                        "status": "stopped",
-                        "message": error_msg
-                    }
-                    break
+            # Check credits before EVERY iteration
+            # - If balance is positive: Allow this iteration (even if it goes negative during it)
+            # - If balance is negative: Stop (prevents infinite debt)
+            # This way, a user with $0.10 can run a $0.15 request and go to -$0.05,
+            # but the next iteration will stop them
+            can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(self.account_id)
+            if not can_run:
+                error_msg = f"Insufficient credits: {message}"
+                logger.warning(f"Stopping agent - balance is negative: {error_msg}")
+                yield {
+                    "type": "status",
+                    "status": "stopped",
+                    "message": error_msg
+                }
+                break
 
             latest_message = await self.client.table('messages').select('*').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()
             if latest_message.data and len(latest_message.data) > 0:
