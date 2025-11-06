@@ -412,17 +412,14 @@ class WebhookService:
                     logger.warning(f"[WEBHOOK] Unknown price_id {price_id} for subscription {subscription_id}")
                     return
                 
-                # Check current credit account status
                 credit_account = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
                 
                 if credit_account.data:
                     current = credit_account.data[0]
-                    # Only process if this is truly a new subscription (not already set up)
                     if current.get('stripe_subscription_id') == subscription_id and current.get('tier') == tier_info.name:
                         logger.info(f"[WEBHOOK] Subscription already set up for {account_id}, skipping")
                         return
                     
-                    # Handle cancelled trial users resubscribing
                     if current.get('trial_status') == 'cancelled':
                         logger.info(f"[WEBHOOK DEFAULT] User {account_id} with cancelled trial is subscribing - handling as new subscription")
                 
@@ -439,6 +436,17 @@ class WebhookService:
                     
                     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                    
+                    from decimal import Decimal
+                    await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=Decimal(str(tier_info.monthly_credits)),
+                        is_expiring=True,
+                        description=f"Initial {tier_info.display_name} subscription credits (checkout.session.completed)",
+                        expires_at=next_grant_date
+                    )
+                    
+                    logger.info(f"[WEBHOOK DEFAULT] Granted {tier_info.monthly_credits} credits to {account_id}")
                     
                     update_data = {
                         'tier': tier_info.name,
@@ -652,13 +660,6 @@ class WebhookService:
                                 
                             elif subscription.status == 'active':
                                 logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to paid")
-                                await client.from_('credit_accounts').update({
-                                    'tier': tier_info.name,
-                                    'stripe_subscription_id': subscription['id'],
-                                    'billing_cycle_anchor': billing_anchor.isoformat(),
-                                    'next_credit_grant': next_grant_date.isoformat(),
-                                    'last_grant_date': billing_anchor.isoformat()
-                                }).eq('account_id', account_id).execute()
                                 
                                 from decimal import Decimal
                                 await credit_manager.add_credits(
@@ -670,6 +671,14 @@ class WebhookService:
                                 )
                                 
                                 logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from {current_tier} tier")
+                                
+                                await client.from_('credit_accounts').update({
+                                    'tier': tier_info.name,
+                                    'stripe_subscription_id': subscription['id'],
+                                    'billing_cycle_anchor': billing_anchor.isoformat(),
+                                    'next_credit_grant': next_grant_date.isoformat(),
+                                    'last_grant_date': billing_anchor.isoformat()
+                                }).eq('account_id', account_id).execute()
                         
                         elif trial_status == 'active':
                             tier_info = get_tier_by_price_id(price_id)
@@ -698,15 +707,6 @@ class WebhookService:
                             billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                             next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                             
-                            await client.from_('credit_accounts').update({
-                                'trial_status': 'none',
-                                'tier': tier_info.name,
-                                'stripe_subscription_id': subscription['id'],
-                                'billing_cycle_anchor': billing_anchor.isoformat(),
-                                'next_credit_grant': next_grant_date.isoformat(),
-                                'last_grant_date': billing_anchor.isoformat()
-                            }).eq('account_id', account_id).execute()
-                            
                             from decimal import Decimal
                             await credit_manager.add_credits(
                                 account_id=account_id,
@@ -717,6 +717,15 @@ class WebhookService:
                             )
                             
                             logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for new subscription after cancelled trial")
+                            
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'none',
+                                'tier': tier_info.name,
+                                'stripe_subscription_id': subscription['id'],
+                                'billing_cycle_anchor': billing_anchor.isoformat(),
+                                'next_credit_grant': next_grant_date.isoformat(),
+                                'last_grant_date': billing_anchor.isoformat()
+                            }).eq('account_id', account_id).execute()
                 
                 if account_id and price_id and (
                     is_commitment_price_id(price_id) or 
@@ -767,13 +776,6 @@ class WebhookService:
                                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                                     
                                     logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} via incomplete→active transition to {tier_info.name}")
-                                    await client.from_('credit_accounts').update({
-                                        'tier': tier_info.name,
-                                        'stripe_subscription_id': subscription['id'],
-                                        'billing_cycle_anchor': billing_anchor.isoformat(),
-                                        'next_credit_grant': next_grant_date.isoformat(),
-                                        'last_grant_date': billing_anchor.isoformat()
-                                    }).eq('account_id', account_id).execute()
                                     
                                     from decimal import Decimal
                                     await credit_manager.add_credits(
@@ -785,6 +787,15 @@ class WebhookService:
                                     )
                                     
                                     logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for incomplete→active upgrade")
+                                    
+                                    await client.from_('credit_accounts').update({
+                                        'tier': tier_info.name,
+                                        'stripe_subscription_id': subscription['id'],
+                                        'billing_cycle_anchor': billing_anchor.isoformat(),
+                                        'next_credit_grant': next_grant_date.isoformat(),
+                                        'last_grant_date': billing_anchor.isoformat()
+                                    }).eq('account_id', account_id).execute()
+                                    
                                     return
 
                 current_tier_info = get_tier_by_price_id(current_price_id) if current_price_id else None
