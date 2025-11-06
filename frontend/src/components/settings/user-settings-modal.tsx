@@ -28,6 +28,7 @@ import { isLocalMode } from '@/lib/config';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
 import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { useQueryClient } from '@tanstack/react-query';
 import { 
     useAccountDeletionStatus, 
     useRequestAccountDeletion, 
@@ -42,7 +43,9 @@ import {
     useSubscriptionCommitment, 
     useCreatePortalSession,
     useCancelSubscription,
-    useReactivateSubscription
+    useReactivateSubscription,
+    useCreditBalance,
+    billingKeys
 } from '@/hooks/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -54,11 +57,15 @@ import {
     Shield,
     CheckCircle,
     RotateCcw,
-    Clock
+    Clock,
+    Infinity,
+    ShoppingCart,
+    Lightbulb
 } from 'lucide-react';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import ThreadUsage from '@/components/billing/thread-usage';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager';
 
@@ -479,6 +486,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     const { session, isLoading: authLoading } = useAuth();
     const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
+    const queryClient = useQueryClient();
 
     const isLocal = isLocalMode();
 
@@ -499,6 +507,12 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         refetch: refetchCommitment
     } = useSubscriptionCommitment(subscriptionData?.subscription?.id, !!subscriptionData?.subscription?.id);
 
+    const {
+        data: creditBalance,
+        isLoading: isLoadingBalance,
+        refetch: refetchBalance
+    } = useCreditBalance(!!session && !authLoading);
+
     // Mutations
     const createPortalSessionMutation = useCreatePortalSession();
     const cancelSubscriptionMutation = useCancelSubscription();
@@ -507,28 +521,35 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     const planName = getPlanName(subscriptionData, isLocal);
     const planIcon = getPlanIcon(planName, isLocal);
 
-    // Refetch billing info whenever the billing tab becomes active
+    // Calculate days until refresh
+    const getDaysUntilRefresh = () => {
+        if (!creditBalance?.next_credit_grant) return null;
+        const nextGrant = new Date(creditBalance.next_credit_grant);
+        const now = new Date();
+        const diffTime = nextGrant.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays > 0 ? diffDays : null;
+    };
+
+    const daysUntilRefresh = getDaysUntilRefresh();
+    const expiringCredits = creditBalance?.expiring_credits || 0;
+    const nonExpiringCredits = creditBalance?.non_expiring_credits || 0;
+    const totalCredits = creditBalance?.balance || 0;
+
+    // Refetch billing info whenever the billing tab becomes active (only once per activation)
     const prevIsActiveRef = useRef(false);
     useEffect(() => {
+        // Only refetch if tab just became active (not on every render)
         if (isActive && !prevIsActiveRef.current && session && !authLoading) {
             console.log('🔄 Billing tab activated, refetching billing info...');
-            refetchSubscription().then((result) => {
-                const data = result.data;
-                console.log('🔄 Billing data fetched:', JSON.stringify(data, null, 2));
-                console.log('🔄 Subscription cancellation status:', {
-                    cancel_at_period_end: data?.subscription?.cancel_at_period_end,
-                    cancel_at: data?.subscription?.cancel_at,
-                    canceled_at: data?.subscription?.canceled_at,
-                    status: data?.subscription?.status,
-                });
-                // Also refetch commitment info if we have a subscription
-                if (data?.subscription?.id) {
-                    refetchCommitment();
-                }
-            });
+            // Use queryClient to invalidate instead of individual refetches to avoid cascading
+            // This will trigger refetches but React Query will dedupe concurrent requests
+            queryClient.invalidateQueries({ queryKey: billingKeys.all });
         }
         prevIsActiveRef.current = isActive;
-    }, [isActive, session, authLoading, refetchSubscription, refetchCommitment]);
+        // Only depend on isActive, session, and authLoading - not the refetch functions
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isActive, session, authLoading]);
 
     const formatDate = (dateString: string) => {
         return new Date(dateString).toLocaleDateString('en-US', {
@@ -594,7 +615,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         reactivateSubscriptionMutation.mutate();
     };
 
-    const isLoading = isLoadingSubscription || authLoading;
+    const isLoading = isLoadingSubscription || isLoadingBalance || authLoading;
     const error = subscriptionError ? (subscriptionError instanceof Error ? subscriptionError.message : 'Failed to load subscription data') : null;
 
     if (isLoading) {
@@ -640,139 +661,182 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     const isFreeTier = subscriptionData?.tier?.name === 'free';
     const subscription = subscriptionData?.subscription;
     const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at || subscription?.canceled_at;
+    const canPurchaseCredits = subscriptionData?.credits?.can_purchase_credits || false;
 
     return (
-        <div className="p-6 space-y-6">
-            {(isSubscribed || isFreeTier) && (
-                <Card className="shadow-none">
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg">Current Plan</CardTitle>
-                            {isCancelled ? (
-                                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    Cancelling
-                                </Badge>
-                            ) : isFreeTier ? (
-                                <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
-                                    <Zap className="h-3 w-3" />
-                                    Basic
-                                </Badge>
-                            ) : (
-                                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Active
-                                </Badge>
-                            )}
-                        </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                {!isFreeTier && planName && planIcon ? (
-                                    <div className="flex items-center gap-2">
-                                    <>
-                                        <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
-                                        <img
-                                            src={planIcon}
-                                            alt={planName}
-                                            className="flex-shrink-0 h-[16px] w-auto"
-                                        />
-                                        </div>
-                                        <img
-                                        src={planIcon}
-                                        alt={planName}
-                                        className="flex-shrink-0 h-[16px] w-auto hidden dark:block"
-                                        />
-                                    </>
-                                        <span className="ml-2 font-medium">{planName}</span>
-                                    </div>
-                                ) : (
-                                    <span className="font-medium">{planName || 'Basic'}</span>
-                                )}
-                                {subscription?.current_period_end && (
-                                    <div className="text-sm text-muted-foreground mt-1">
-                                        Next billing date: {formatDateFlexible(subscription.current_period_end)}
-                            </div>
-                                )}
-                            </div>
-                            <Button
-                                variant="outline"
-                                onClick={onOpenPlanModal}
-                                className="ml-4"
-                            >
-                                <Zap className="h-4 w-4 mr-2" />
-                                Change Plan
-                            </Button>
-                        </div>
-                        {commitmentInfo?.has_commitment && (
-                            <Alert className="border-blue-500/50 bg-blue-500/10 shadow-none">
-                                <Shield className="h-4 w-4 text-blue-500" />
-                                <AlertDescription>
-                                    <div className="text-sm">
-                                        <strong>Annual Commitment Active</strong>
-                                        <p className="text-muted-foreground mt-1">
-                                            Your commitment ends on {formatEndDate(commitmentInfo.commitment_end_date)}
-                                        </p>
-                                    </div>
-                                </AlertDescription>
-                            </Alert>
+        <div className="p-8 max-w-5xl mx-auto space-y-12">
+            {/* Minimal Plan Indicator */}
+            {!isFreeTier && planName && (
+                <div className="flex items-center pb-4 border-b border-border/50">
+                    <div className="flex items-center gap-3">
+                        {planIcon && (
+                            <>
+                                <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center">
+                                    <img src={planIcon} alt={planName} className="h-4 w-auto" />
+                                </div>
+                                <img src={planIcon} alt={planName} className="h-4 w-auto hidden dark:block" />
+                            </>
                         )}
-                        {isCancelled && (
-                            <Alert variant="destructive" className="shadow-none">
-                                <AlertTriangle className="h-4 w-4" />
-                                <AlertDescription>
-                                    <div className="text-sm">
-                                        Your subscription will be cancelled on {getEffectiveCancellationDate()}
-                                    </div>
-                                </AlertDescription>
-                            </Alert>
+                        <span className="text-sm text-muted-foreground">{planName}</span>
+                        {subscription?.current_period_end && (
+                            <span className="text-sm text-muted-foreground/60">
+                                • Renews {formatDateFlexible(subscription.current_period_end)}
+                            </span>
                         )}
-
-                        {!isFreeTier && (
-                            <div className="flex gap-2 pt-2">
-                                {isCancelled ? (
-                                    <Button
-                                        onClick={handleReactivate}
-                                        disabled={reactivateSubscriptionMutation.isPending}
-                                        className="flex-1"
-                                    >
-                                        <RotateCcw className="h-4 w-4 mr-2" />
-                                        {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate Subscription'}
-                                    </Button>
-                                ) : (
-                                    <>
-                                        <Button
-                                            onClick={handleManageSubscription}
-                                            disabled={createPortalSessionMutation.isPending}
-                                            variant="outline"
-                                            className="flex-1"
-                                        >
-                                            {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage Subscription'}
-                                        </Button>
-                                        <Button
-                                            onClick={() => setShowCancelDialog(true)}
-                                            variant="outline"
-                                            className="flex-1 text-destructive hover:text-destructive"
-                                        >
-                                            Cancel Plan
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             )}
-            <div>
-                <CreditBalanceDisplay
-                    balance={subscriptionData?.credits?.balance || 0}
-                    canPurchase={subscriptionData?.credits?.can_purchase_credits || false}
-                    onPurchaseClick={() => setShowCreditPurchaseModal(true)}
-                />
+
+            {/* Header - Clean & Minimal */}
+            <div className="space-y-4">
+                <div>
+                    <h1 className="text-2xl font-medium tracking-tight mb-2">Billing Status</h1>
+                    <p className="text-sm text-muted-foreground">Manage your credits and subscription</p>
+                </div>
+                
+                <div className="space-y-2">
+                    <div className="text-3xl leading-none font-medium">{formatCredits(totalCredits)}</div>
+                    <p className="text-sm text-muted-foreground">Total Available Credits</p>
+                </div>
             </div>
 
-            <CreditsHelpAlert />
+            {/* Credit Breakdown - Vercel Style */}
+            <div className="grid grid-cols-2 gap-4">
+                {/* Monthly Credits */}
+                <div className="relative overflow-hidden rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-6">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-orange-500" />
+                            <span className="text-sm text-muted-foreground">Monthly Credits</span>
+                        </div>
+                        <div>
+                            <div className="text-2xl leading-none font-medium mb-2">{formatCredits(expiringCredits)}</div>
+                            <p className="text-xs text-muted-foreground">
+                                {daysUntilRefresh !== null 
+                                    ? `Refresh in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
+                                    : 'No refresh scheduled'
+                                }
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Extra Credits */}
+                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-2">
+                            <Infinity className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Extra Credits</span>
+                        </div>
+                        <div>
+                            <div className="text-2xl leading-none font-medium mb-2">{formatCredits(nonExpiringCredits)}</div>
+                            <p className="text-xs text-muted-foreground">Non-expiring</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Action Buttons - Clean Layout */}
+            <div className="flex items-center gap-3">
+                <Button
+                    onClick={handleManageSubscription}
+                    disabled={createPortalSessionMutation.isPending}
+                    className="h-10"
+                >
+                    {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage Subscription'}
+                </Button>
+                {canPurchaseCredits && (
+                    <Button
+                        onClick={() => setShowCreditPurchaseModal(true)}
+                        variant="outline"
+                        className="h-10"
+                    >
+                        <ShoppingCart className="h-4 w-4 mr-2" />
+                        Get Additional Credits
+                    </Button>
+                )}
+                {!isFreeTier && planName && (
+                    <Button
+                        onClick={onOpenPlanModal}
+                        variant="outline"
+                        className="h-10"
+                    >
+                        Change Plan
+                    </Button>
+                )}
+            </div>
+
+            {/* Commitment or Cancellation Alerts */}
+            {commitmentInfo?.has_commitment && (
+                <Alert className="border-blue-500/20 bg-blue-500/5 rounded-[18px]">
+                    <Shield className="h-4 w-4 text-blue-500" />
+                    <AlertDescription>
+                        <strong className="text-sm">Annual Commitment</strong>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Active until {formatEndDate(commitmentInfo.commitment_end_date || '')}
+                        </p>
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {isCancelled && (
+                <Alert variant="destructive" className="rounded-[18px]">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                        Your subscription will be cancelled on {getEffectiveCancellationDate()}
+                        {!isCancelled && (
+                            <Button
+                                onClick={handleReactivate}
+                                variant="outline"
+                                size="sm"
+                                className="ml-4"
+                            >
+                                Reactivate
+                            </Button>
+                        )}
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {/* Help Link - Subtle */}
+            <div className="flex items-center justify-center pt-6 border-t border-border/50">
+                <Button
+                    variant="link"
+                    onClick={() => window.open('/help/credits', '_blank')}
+                    className="text-muted-foreground hover:text-foreground h-auto p-0"
+                >
+                    <Lightbulb className="h-3.5 w-3.5 mr-2" />
+                    <span className="text-sm">See how Model Pricing works</span>
+                </Button>
+            </div>
+
+            {/* Cancel Plan Button - Subtle Placement */}
+            {!isFreeTier && !isCancelled && (
+                <div className="flex justify-center">
+                    <Button
+                        onClick={() => setShowCancelDialog(true)}
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-destructive h-auto p-2 text-xs"
+                    >
+                        Cancel Plan
+                    </Button>
+                </div>
+            )}
+
+            {isCancelled && (
+                <div className="flex justify-center">
+                    <Button
+                        onClick={handleReactivate}
+                        disabled={reactivateSubscriptionMutation.isPending}
+                        variant="outline"
+                        size="sm"
+                    >
+                        <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                        {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate Subscription'}
+                    </Button>
+                </div>
+            )}
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
                 <DialogContent className="max-w-md">
                     <DialogHeader>
@@ -801,10 +865,11 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
             <CreditPurchaseModal
                 open={showCreditPurchaseModal}
                 onOpenChange={setShowCreditPurchaseModal}
-                currentBalance={subscriptionData?.credits?.balance || 0}
-                canPurchase={subscriptionData?.credits?.can_purchase_credits || false}
+                currentBalance={totalCredits / 100}
+                canPurchase={canPurchaseCredits}
                 onPurchaseComplete={() => {
                     refetchSubscription();
+                    refetchBalance();
                 }}
             />
         </div>

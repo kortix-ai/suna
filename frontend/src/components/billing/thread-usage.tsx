@@ -29,6 +29,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useThreadUsage } from '@/hooks/billing/use-thread-usage';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 export default function ThreadUsage() {
   const router = useRouter();
@@ -54,10 +55,6 @@ export default function ThreadUsage() {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const formatCredits = (credits: number) => {
-    return credits.toFixed(1);
   };
 
   const handlePrevPage = () => {
@@ -137,9 +134,9 @@ export default function ThreadUsage() {
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <TrendingDown className="h-5 w-5 text-red-500" />
+                <TrendingDown className="h-5 w-5 text-muted-foreground" />
                 <div>
-                  <div className="text-3xl font-semibold text-red-600">
+                  <div className="text-3xl font-semibold">
                     {formatCredits(summary.total_credits_used)}
                   </div>
                   <p className="text-sm text-muted-foreground">
@@ -203,7 +200,7 @@ export default function ThreadUsage() {
                         <TableCell className="text-sm">
                           {formatDate(record.last_used)}
                         </TableCell>
-                        <TableCell className="text-right text-red-600">
+                        <TableCell className="text-right">
                           {formatCredits(record.credits_used)}
                         </TableCell>
                       </TableRow>

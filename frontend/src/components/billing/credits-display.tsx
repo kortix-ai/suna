@@ -11,6 +11,7 @@ import { TierBadge } from '@/components/billing/tier-badge';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 export function CreditsDisplay() {
   const { user } = useAuth();
@@ -48,7 +49,7 @@ export function CreditsDisplay() {
   }
 
   const credits = balance?.balance || 0;
-  const formattedCredits = Math.floor(credits).toLocaleString();
+  const formattedCredits = formatCredits(credits);
 
   const handleClick = () => {
     setShowPlanModal(true);

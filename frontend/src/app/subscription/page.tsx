@@ -20,7 +20,7 @@ export default function SubscriptionRequiredPage() {
   const router = useRouter();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
   const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
-  const { data: subscriptionData, isLoading: isLoadingSubscription, refetch: refetchSubscription } = useSubscription(true);
+  const { data: subscriptionData, isLoading: isLoadingSubscription, refetch: refetchSubscription } = useSubscription({ enabled: true });
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
   useEffect(() => {

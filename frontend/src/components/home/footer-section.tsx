@@ -1,6 +1,6 @@
 'use client';
 
-import { FlickeringGrid } from '@/components/home/ui/flickering-grid';
+import { FlickeringGrid } from '@/components/ui/flickering-grid';
 import { useMediaQuery } from '@/hooks/utils';
 import { siteConfig } from '@/lib/home';
 import { ChevronRightIcon } from '@radix-ui/react-icons';
@@ -145,3 +145,4 @@ export function FooterSection() {
     </footer>
   );
 }
+

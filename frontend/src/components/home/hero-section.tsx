@@ -1,6 +1,6 @@
 'use client';
 import { siteConfig } from '@/lib/home';
-import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile } from '@/hooks/utils';
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import Link from 'next/link';
@@ -400,3 +400,4 @@ export function HeroSection() {
         </section>
     );
 }
+

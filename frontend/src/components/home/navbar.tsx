@@ -311,3 +311,4 @@ export function Navbar({ tabs }: NavbarProps = {}) {
     </header>
   );
 }
+

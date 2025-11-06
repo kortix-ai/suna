@@ -33,7 +33,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/hooks/billing/use-subscription';
 import posthog from 'posthog-js';
-import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
 

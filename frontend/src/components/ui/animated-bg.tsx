@@ -424,3 +424,4 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         </div>
     );
 }
+

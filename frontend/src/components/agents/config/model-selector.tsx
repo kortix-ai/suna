@@ -21,7 +21,6 @@ import { useModelSelection } from '@/hooks/agents';
 import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
-import { PaywallDialog } from '@/components/payment/paywall-dialog';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import Link from 'next/link';
 
@@ -62,8 +61,6 @@ export function AgentModelSelector({
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
-  const [paywallOpen, setPaywallOpen] = useState(false);
-  const [lockedModel, setLockedModel] = useState<string | null>(null);
   const [planModalOpen, setPlanSelectionModalOpen] = useState(false);
   
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
@@ -182,18 +179,13 @@ export function AgentModelSelector({
       onChange(modelId);
       setIsOpen(false);
     } else {
-      setLockedModel(modelId);
-      setPaywallOpen(true);
+      // If user doesn't have access, open plan selection modal
+      setPlanSelectionModalOpen(true);
     }
   };
 
   const handleUpgradeClick = () => {
     setPlanSelectionModalOpen(true);
-  };
-
-  const closePaywallDialog = () => {
-    setPaywallOpen(false);
-    setLockedModel(null);
   };
 
   const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -620,22 +612,6 @@ export function AgentModelSelector({
           onSave={handleSaveCustomModel}
           initialData={dialogInitialData}
           mode={dialogMode}
-        />
-      )}
-      {paywallOpen && (
-        <PaywallDialog
-          open={true}
-          onDialogClose={closePaywallDialog}
-          title="Premium Model"
-          description={
-            lockedModel
-              ? `Subscribe to access ${enhancedModelOptions.find(
-                  (m) => m.id === lockedModel
-                )?.label}`
-              : 'Subscribe to access premium models with enhanced capabilities'
-          }
-          ctaText="Subscribe Now"
-          cancelText="Maybe Later"
         />
       )}
       <PlanSelectionModal

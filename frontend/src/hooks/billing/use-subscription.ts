@@ -165,7 +165,11 @@ export const useCreditBalance = (enabled = true) => {
   return useQuery({
     queryKey: billingKeys.balance(),
     queryFn: () => billingApi.getCreditBalance(),
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60 * 5, // 5 minutes - increased from 30 seconds
+    gcTime: 1000 * 60 * 10, // 10 minutes cache time
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: false, // Don't refetch on mount if data is fresh
+    refetchOnReconnect: true, // Only refetch on reconnect
     enabled,
   });
 };
@@ -177,7 +181,10 @@ export const useBillingStatus = () => {
   return useQuery({
     queryKey: billingKeys.status(),
     queryFn: () => billingApi.checkBillingStatus(),
-    staleTime: 1000 * 30,
+    staleTime: 1000 * 60 * 5, // 5 minutes - increased from 30 seconds
+    gcTime: 1000 * 60 * 10, // 10 minutes cache time
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 };
 
