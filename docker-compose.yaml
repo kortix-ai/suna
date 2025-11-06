@@ -47,8 +47,10 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - ./.env
     volumes:
-      - ./backend/.env:/app/.env:ro
+      - ./.env:/app/.env:ro
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -67,8 +69,10 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    env_file:
+      - ./.env
     volumes:
-      - ./backend/.env:/app/.env:ro
+      - ./.env:/app/.env:ro
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -83,8 +87,16 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ENV_MODE: ${NEXT_PUBLIC_ENV_MODE}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
+        NEXT_PUBLIC_URL: ${NEXT_PUBLIC_URL}
     ports:
       - "3000:3000"
+    env_file:
+      - ./.env
     depends_on:
       - backend
 
