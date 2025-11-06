@@ -736,19 +736,30 @@ async def get_credit_usage_by_thread(
     account_id: str = Depends(verify_and_get_user_id_from_jwt),
     limit: int = Query(50, ge=1, le=100, description="Number of threads to fetch"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
-    days: int = Query(30, ge=1, le=365, description="Number of days to look back")
+    days: Optional[int] = Query(None, ge=1, le=365, description="Number of days to look back"),
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)")
 ) -> Dict:
     try:
         db = DBConnection()
         client = await db.client
         
-        since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        if start_date and end_date:
+            since_date = start_date
+            until_date = end_date
+        elif days:
+            since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            until_date = datetime.utcnow().isoformat()
+        else:
+            since_date = (datetime.utcnow() - timedelta(days=30)).isoformat()
+            until_date = datetime.utcnow().isoformat()
         
         ledger_result = await client.from_('credit_ledger')\
             .select('metadata, amount, created_at')\
             .eq('account_id', account_id)\
             .lt('amount', 0)\
             .gte('created_at', since_date)\
+            .lte('created_at', until_date)\
             .execute()
         
         message_ids_to_lookup = []
@@ -867,7 +878,8 @@ async def get_credit_usage_by_thread(
                 'total_credits_used': total_usage,
                 'total_threads': total_threads,
                 'period_days': days,
-                'since_date': since_date
+                'start_date': since_date,
+                'end_date': until_date
             }
         }
 
