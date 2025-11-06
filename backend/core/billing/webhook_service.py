@@ -990,8 +990,31 @@ class WebhookService:
         if not account_id:
             return
         
+        customer_id = subscription.get('customer')
+        if customer_id:
+            try:
+                active_subs = await self.stripe.Subscription.list_async(
+                    customer=customer_id,
+                    status='all',
+                    limit=10
+                )
+                
+                other_active_subs = [
+                    sub for sub in active_subs.data 
+                    if sub.id != subscription.id and sub.status in ['active', 'trialing', 'incomplete']
+                ]
+                
+                if other_active_subs:
+                    logger.info(f"[SUBSCRIPTION DELETED] User {account_id} has {len(other_active_subs)} other active subscriptions - skipping credit removal (likely an upgrade)")
+                    logger.info(f"[SUBSCRIPTION DELETED] Other subscriptions: {[s.id for s in other_active_subs]}")
+                    return
+                else:
+                    logger.info(f"[SUBSCRIPTION DELETED] No other active subscriptions found for {account_id} - proceeding with cancellation cleanup")
+            except Exception as e:
+                logger.error(f"[SUBSCRIPTION DELETED] Error checking for other subscriptions: {e}")
+        
         current_account = await client.from_('credit_accounts').select(
-            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits'
+            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id'
         ).eq('account_id', account_id).execute()
         
         if not current_account.data:
@@ -1004,6 +1027,11 @@ class WebhookService:
         current_balance = account_data.get('balance', 0)
         expiring_credits = account_data.get('expiring_credits', 0)
         non_expiring_credits = account_data.get('non_expiring_credits', 0)
+        current_subscription_id = account_data.get('stripe_subscription_id')
+        
+        if current_subscription_id and current_subscription_id != subscription.id:
+            logger.info(f"[SUBSCRIPTION DELETED] Account {account_id} already has different subscription {current_subscription_id} - skipping cleanup")
+            return
         
         if current_trial_status == 'active' and subscription.status == 'trialing':
             await client.from_('credit_accounts').update({
