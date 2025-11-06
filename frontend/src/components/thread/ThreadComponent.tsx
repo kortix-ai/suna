@@ -25,6 +25,7 @@ import {
   useStopAgentMutation,
 } from '@/hooks/threads/use-agent-run';
 import { useSharedSubscription } from '@/stores/subscription-store';
+import { useAuth } from '@/components/AuthProvider';
 export type SubscriptionStatus = 'no_subscription' | 'active';
 
 import {
@@ -66,6 +67,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
+  // Check if user is authenticated
+  const { user } = useAuth();
+  const isAuthenticated = !!user;
+
   // State
   const [isSending, setIsSending] = useState(false);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
@@ -78,6 +83,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
     useState(false);
   // Use Zustand store for agent selection persistence - skip in shared mode
+  // Always call hooks unconditionally, but disable queries for unauthenticated users
+  const agentSelection = useAgentSelection();
+  const agentsQuery = useAgents({}, { enabled: isAuthenticated && !isShared });
+
+  // Use conditional values based on isShared
   const {
     selectedAgentId,
     setSelectedAgent,
@@ -90,10 +100,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     initializeFromAgents: () => { },
     getCurrentAgent: () => undefined,
     isSunaAgent: false,
-  } : useAgentSelection();
+  } : agentSelection;
 
-  const { data: agentsResponse } = isShared ? { data: undefined } : useAgents();
-  const agents = agentsResponse?.agents || [];
+  const agents = isShared ? [] : (agentsQuery?.data?.agents || []);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -161,7 +170,19 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
 
-  // Billing hooks - only in non-shared mode (requires authentication)
+  // Billing hooks - always call unconditionally, but disable for unauthenticated/shared
+  const billingModal = useBillingModal();
+  const threadBilling = useThreadBilling(
+    null,
+    agentStatus,
+    initialLoadCompleted,
+    () => {
+      billingModal.openModal();
+    },
+    isAuthenticated && !isShared // Only enable for authenticated non-shared users
+  );
+
+  // Use conditional values based on isShared
   const {
     showModal: showBillingModal,
     creditsExhausted,
@@ -172,7 +193,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     creditsExhausted: false,
     openModal: () => { },
     closeModal: () => { },
-  } : useBillingModal();
+  } : billingModal;
 
   const {
     checkBillingLimits,
@@ -180,15 +201,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   } = isShared ? {
     checkBillingLimits: async () => false,
     billingStatusQuery: { data: undefined, isLoading: false, error: null, refetch: async () => { } } as any,
-  } : useThreadBilling(null, agentStatus, initialLoadCompleted, () => {
-    openBillingModal();
-  });
+  } : threadBilling;
 
-  // Real-time project updates (for sandbox creation) - skip in shared mode
-  if (!isShared) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useProjectRealtime(projectId);
-  }
+  // Real-time project updates (for sandbox creation) - always call unconditionally
+  useProjectRealtime(projectId);
 
   // Keyboard shortcuts
   useThreadKeyboardShortcuts({
@@ -199,11 +215,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   });
 
-  // Mutations - only in non-shared mode
-  const addUserMessageMutation = isShared ? null : useAddUserMessageMutation();
-  const startAgentMutation = isShared ? null : useStartAgentMutation();
-  const stopAgentMutation = isShared ? null : useStopAgentMutation();
-  const { data: threadAgentData } = isShared ? { data: undefined } : useThreadAgent(threadId);
+  // Mutations - always call unconditionally
+  const addUserMessageMutation = useAddUserMessageMutation();
+  const startAgentMutation = useStartAgentMutation();
+  const stopAgentMutation = useStopAgentMutation();
+  const threadAgentQuery = useThreadAgent(threadId, { enabled: isAuthenticated && !isShared });
+
+  // Use conditional values based on isShared
+  const { data: threadAgentData } = isShared ? { data: undefined } : threadAgentQuery;
   const agent = threadAgentData?.agent;
 
   useEffect(() => {
@@ -310,7 +329,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [threadAgentData, agents, initializeFromAgents, configuredAgentId, selectedAgentId, setSelectedAgent]);
 
-  const { data: subscriptionData } = isShared ? { data: undefined } : useSharedSubscription();
+  // Always call unconditionally
+  const sharedSubscription = useSharedSubscription();
+  const { data: subscriptionData } = isShared ? { data: undefined } : sharedSubscription;
   const subscriptionStatus: SubscriptionStatus =
     subscriptionData?.status === 'active' ||
       subscriptionData?.status === 'trialing'

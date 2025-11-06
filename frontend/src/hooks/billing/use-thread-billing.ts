@@ -12,10 +12,11 @@ export function useThreadBilling(
   projectAccountId: string | null | undefined,
   agentStatus: AgentStatus,
   initialLoadCompleted: boolean,
-  onBillingError?: () => void
+  onBillingError?: () => void,
+  enabled = true // Add enabled parameter, default to true
 ): UseThreadBillingReturn {
   const previousAgentStatus = useRef<AgentStatus>('idle');
-  const billingStatusQuery = useBillingStatusQuery();
+  const billingStatusQuery = useBillingStatusQuery(enabled); // Pass enabled to query
 
   const checkBillingLimits = useCallback(async () => {
     if (isLocalMode()) {
