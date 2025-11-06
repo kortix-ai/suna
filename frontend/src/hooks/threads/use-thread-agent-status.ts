@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getActiveAgentRuns } from '@/lib/api';
+import { getActiveAgentRuns } from '@/lib/api/agents';
 import { useMemo } from 'react';
 
 /**

@@ -5,8 +5,8 @@ import {
   getAgentStatus,
   stopAgent,
   AgentRun,
-  getMessages,
-} from '@/lib/api';
+} from '@/lib/api/agents';
+import { getMessages } from '@/lib/api/threads';
 import { toast } from 'sonner';
 import {
   UnifiedMessage,

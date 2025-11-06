@@ -12,7 +12,7 @@ import { CustomServerStep } from './installation/custom-server-step';
 import type { SetupStep } from './installation/types';
 import { useAnalyzeJsonForImport, useImportAgentFromJson, type JsonAnalysisResult, type JsonImportResult } from '@/hooks/agents/use-json-import';
 import { AgentCountLimitDialog } from './agent-count-limit-dialog';
-import { AgentCountLimitError } from '@/lib/api';
+import { AgentCountLimitError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils';
 
 interface JsonImportDialogProps {

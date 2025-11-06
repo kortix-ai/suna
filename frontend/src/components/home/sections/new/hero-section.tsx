@@ -6,10 +6,7 @@ import { useState, useEffect, useRef, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import {
-    BillingError,
-    AgentRunLimitError,
-} from '@/lib/api';
+import { AgentRunLimitError, BillingError } from '@/lib/api/errors';
 import { useInitiateAgentMutation } from '@/hooks/dashboard/use-initiate-agent';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
 import GoogleSignIn from '@/components/GoogleSignIn';

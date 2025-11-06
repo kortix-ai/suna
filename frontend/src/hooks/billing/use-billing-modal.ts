@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { BillingError, ProjectLimitError } from '@/lib/api';
+import { ProjectLimitError, BillingError } from '@/lib/api/errors';
 
 interface UseBillingModalReturn {
   showModal: boolean;

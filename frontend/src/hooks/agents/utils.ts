@@ -261,7 +261,7 @@ export const createAgent = async (agentData: AgentCreateRequest): Promise<Agent>
       );
       
       if (isAgentLimitError) {
-        const { AgentCountLimitError } = await import('@/lib/api');
+        const { AgentCountLimitError } = await import('@/lib/api/errors');
         const errorDetail = errorData.detail || errorData;
         throw new AgentCountLimitError(response.status, errorDetail);
       }

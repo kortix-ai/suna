@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import { getProject as getProjectFromApi, type Project } from "@/lib/api";
+import { getProject as getProjectFromApi, type Project } from "@/lib/api/projects";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 

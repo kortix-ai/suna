@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { cancelTrial } from '@/lib/api/billing-v2';
+import { cancelTrial } from '@/lib/api/billing';
 import { toast } from 'sonner';
 
 export function useCancelTrial() {

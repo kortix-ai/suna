@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { checkApiHealth, type HealthCheckResponse } from '@/lib/api';
+import { checkApiHealth, type HealthCheckResponse } from '@/lib/api/health';
 import { healthKeys } from '../files/keys';
 
 export const useApiHealth = (options?) => {

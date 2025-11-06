@@ -2,15 +2,13 @@
 
 import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
+import { billingKeys } from '@/hooks/billing/use-subscription';
 import {
   ChatInput,
   ChatInputHandles,
 } from '@/components/thread/chat-input/chat-input';
-import {
-  BillingError,
-  AgentRunLimitError,
-  ProjectLimitError,
-} from '@/lib/api';
+import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
 import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
@@ -69,6 +67,7 @@ export function DashboardContent() {
   } | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const { user } = useAuth();
   const chatInputRef = React.useRef<ChatInputHandles>(null);
@@ -136,6 +135,26 @@ export function DashboardContent() {
       setInitiatedThreadId(null);
     }
   }, [threadQuery.data, initiatedThreadId, router]);
+
+  // Check for checkout success and invalidate billing queries
+  React.useEffect(() => {
+    const checkoutSuccess = searchParams.get('checkout');
+    const sessionId = searchParams.get('session_id');
+    const clientSecret = searchParams.get('client_secret');
+    
+    // If we have checkout success indicators, invalidate billing queries
+    if (checkoutSuccess === 'success' || sessionId || clientSecret) {
+      console.log('🔄 Checkout success detected, invalidating billing queries...');
+      queryClient.invalidateQueries({ queryKey: billingKeys.all });
+      
+      // Clean up URL params
+      const url = new URL(window.location.href);
+      url.searchParams.delete('checkout');
+      url.searchParams.delete('session_id');
+      url.searchParams.delete('client_secret');
+      router.replace(url.pathname + url.search, { scroll: false });
+    }
+  }, [searchParams, queryClient, router]);
 
   const handleSubmit = async (
     message: string,

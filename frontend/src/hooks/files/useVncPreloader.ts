@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { Project } from '@/lib/api';
+import { Project } from '@/lib/api/projects';
 
 export type VncStatus = 'idle' | 'loading' | 'ready' | 'error';
 

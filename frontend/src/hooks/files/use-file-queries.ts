@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
-import { listSandboxFiles, type FileInfo } from '@/lib/api';
+import { listSandboxFiles, type FileInfo } from '@/lib/api/sandbox';
 
 /**
  * Normalize a file path to ensure consistent caching

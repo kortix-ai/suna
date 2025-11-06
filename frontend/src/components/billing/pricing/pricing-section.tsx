@@ -19,19 +19,23 @@ import {
   Diamond,
   Heart,
   Zap,
+  ShoppingCart,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SubscriptionInfo } from '@/lib/api/billing-v2';
-import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { SubscriptionInfo } from '@/lib/api/billing';
+import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api/billing';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
 import { useSubscription } from '@/hooks/billing';
-import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
+import { useSubscriptionCommitment } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
+import { useQueryClient } from '@tanstack/react-query';
+import { billingKeys } from '@/hooks/billing/use-subscription';
 import posthog from 'posthog-js';
-import { Badge } from '@/components/ui/badge';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { TierBadge } from '@/components/billing/tier-badge';
+import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -185,7 +189,9 @@ function PricingTier({
   returnUrl,
   insideDialog = false,
   billingPeriod = 'monthly' as 'monthly' | 'yearly' | 'yearly_commitment',
-}: PricingTierProps) {
+  currentBillingPeriod = null as 'monthly' | 'yearly' | 'yearly_commitment' | null,
+}: PricingTierProps & { currentBillingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment' | null }) {
+  const queryClient = useQueryClient();
 
   // Determine the price to display based on billing period
   const getDisplayPrice = () => {
@@ -257,6 +263,9 @@ function PricingTier({
             : 'Subscription updated successfully';
           toast.success(upgradeMessage);
           posthog.capture('plan_upgraded');
+          // Invalidate all billing queries immediately after upgrade
+          queryClient.invalidateQueries({ queryKey: billingKeys.all });
+          // Trigger subscription update callback to refetch data
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'commitment_blocks_downgrade':
@@ -279,6 +288,9 @@ function PricingTier({
             </div>,
           );
           posthog.capture('plan_downgraded');
+          // Invalidate queries to show scheduled change
+          queryClient.invalidateQueries({ queryKey: billingKeys.all });
+          // Trigger subscription update callback to refetch data
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'no_change':
@@ -307,16 +319,14 @@ function PricingTier({
   );
 
   const userPlanName = currentSubscription?.plan_name || 'none';
-  const isCurrentActivePlan = isAuthenticated && (
-    currentSubscription?.tier_key === tier.tierKey ||
-    currentSubscription?.tier?.name === tier.tierKey ||
-    (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
-    (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly') ||
-    (currentSubscription?.subscription &&
-      userPlanName === 'tier_2_20' &&
-      tier.price === '$20' &&
-      currentSubscription?.subscription?.status === 'active')
-  );
+  
+  // Check if this is the current plan - must match BOTH tier_key AND billing period
+  const isSameTier = currentSubscription?.tier_key === tier.tierKey || 
+                      currentSubscription?.tier?.name === tier.tierKey;
+  const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
+  
+  const isCurrentActivePlan = isAuthenticated && isSameTier && isSameBillingPeriod && 
+    currentSubscription?.subscription?.status === 'active';
 
   const isScheduled = isAuthenticated && (currentSubscription as any)?.has_schedule;
   const isScheduledTargetPlan =
@@ -400,6 +410,15 @@ function PricingTier({
       const isSameTierUpgradeToLongerTerm = isSameTier && (
         (billingPeriod === 'yearly_commitment' || billingPeriod === 'yearly')
       );
+      
+      // Prevent downgrading from yearly to monthly - once yearly, stay yearly
+      // This blocks: yearly -> monthly, yearly_commitment -> monthly for same tier
+      const isYearlyDowngradeToMonthly = isSameTier && 
+        currentBillingPeriod && 
+        (currentBillingPeriod === 'yearly' || currentBillingPeriod === 'yearly_commitment') &&
+        billingPeriod === 'monthly' &&
+        currentSubscription?.subscription?.status === 'active';
+      
       const isSameTierDowngradeToShorterTerm = false; // Simplified for now
 
       // Use the plan change validation already computed above
@@ -413,6 +432,12 @@ function PricingTier({
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
+      } else if (isYearlyDowngradeToMonthly) {
+        // Prevent downgrading from yearly to monthly - once yearly, stay yearly
+        buttonText = 'Not Available';
+        buttonDisabled = true;
+        buttonVariant = 'secondary';
+        buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
       } else if (!planChangeValidation.allowed) {
         // Plan change not allowed due to business rules
         buttonText = 'Not Available';
@@ -637,25 +662,64 @@ export function PricingSection({
 }: PricingSectionProps) {
   const { user } = useAuth();
   const isUserAuthenticated = !!user;
+  const queryClient = useQueryClient();
 
-  const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription(isUserAuthenticated);
+  const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription({ enabled: isUserAuthenticated });
   const subCommitmentQuery = useSubscriptionCommitment(subscriptionData?.subscription?.id, isUserAuthenticated);
 
   const isAuthenticated = isUserAuthenticated && !!subscriptionData && subscriptionQueryError === null;
   const currentSubscription = subscriptionData || null;
+
+  // Determine current subscription's billing period
+  const getCurrentBillingPeriod = (): 'monthly' | 'yearly' | 'yearly_commitment' | null => {
+    if (!isAuthenticated || !currentSubscription) {
+      return null;
+    }
+
+    // Use billing_period from API response (most reliable - comes from price_id)
+    if (currentSubscription.billing_period) {
+      return currentSubscription.billing_period;
+    }
+
+    // Fallback: Check commitment info
+    if (subCommitmentQuery.data?.has_commitment && 
+        subCommitmentQuery.data?.commitment_type === 'yearly_commitment') {
+      return 'yearly_commitment';
+    }
+
+    // Fallback: Try to infer from period length
+    if (currentSubscription.subscription?.current_period_end) {
+      const periodEnd = typeof currentSubscription.subscription.current_period_end === 'number'
+        ? currentSubscription.subscription.current_period_end * 1000
+        : new Date(currentSubscription.subscription.current_period_end).getTime();
+      
+      const now = Date.now();
+      const daysInPeriod = Math.round((periodEnd - now) / (1000 * 60 * 60 * 24));
+      
+      // If period is longer than 180 days, likely yearly; otherwise monthly
+      if (daysInPeriod > 180) {
+        return 'yearly';
+      }
+    }
+    
+    // Default to monthly if period is short or can't determine
+    return 'monthly';
+  };
+
+  const currentBillingPeriod = getCurrentBillingPeriod();
 
   const getDefaultBillingPeriod = useCallback((): 'monthly' | 'yearly' | 'yearly_commitment' => {
     if (!isAuthenticated || !currentSubscription) {
       return 'yearly_commitment';
     }
 
-    // Default to yearly_commitment for now
-    // Backend will resolve tier_key to the appropriate Stripe price_id internally based on commitment_type
-    return 'yearly_commitment';
-  }, [isAuthenticated, currentSubscription]);
+    // Use current subscription's billing period if available, otherwise default to yearly_commitment
+    return currentBillingPeriod || 'yearly_commitment';
+  }, [isAuthenticated, currentSubscription, currentBillingPeriod]);
 
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
+  const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
 
   useEffect(() => {
     setBillingPeriod(getDefaultBillingPeriod());
@@ -666,9 +730,12 @@ export function PricingSection({
   };
 
   const handleSubscriptionUpdate = () => {
+    // Invalidate all billing-related queries to force refetch
+    queryClient.invalidateQueries({ queryKey: billingKeys.all });
+    // Also refetch subscription and commitment directly
     refetchSubscription();
     subCommitmentQuery.refetch();
-    // The useSubscription hook will automatically refetch, so we just need to clear loading states
+    // Clear loading states
     setTimeout(() => {
       setPlanLoadingStates({});
     }, 1000);
@@ -733,10 +800,36 @@ export function PricingSection({
                 returnUrl={returnUrl}
                 insideDialog={insideDialog}
                 billingPeriod={billingPeriod}
+                currentBillingPeriod={currentBillingPeriod}
               />
             ))}
         </div>
+
+        {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
+        {isAuthenticated && 
+         currentSubscription?.credits?.can_purchase_credits && (
+          <div className="w-full max-w-6xl mt-12 flex justify-center">
+            <Button
+              onClick={() => setShowCreditPurchaseModal(true)}
+              variant="outline"
+              size="lg"
+              className="gap-2"
+            >
+              <ShoppingCart className="h-5 w-5" />
+              Get Additional Credits
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Credit Purchase Modal */}
+      <CreditPurchaseModal
+        open={showCreditPurchaseModal}
+        onOpenChange={setShowCreditPurchaseModal}
+        currentBalance={currentSubscription?.credits?.balance || 0}
+        canPurchase={currentSubscription?.credits?.can_purchase_credits || false}
+        onPurchaseComplete={handleSubscriptionUpdate}
+      />
     </section>
   );
 }

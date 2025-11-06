@@ -45,7 +45,7 @@ export const useCreateAgent = () => {
       toast.success('Agent created successfully');
     },
     onError: async (error) => {
-      const { AgentCountLimitError } = await import('@/lib/api');
+      const { AgentCountLimitError } = await import('@/lib/api/errors');
       if (error instanceof AgentCountLimitError) {
         return;
       }

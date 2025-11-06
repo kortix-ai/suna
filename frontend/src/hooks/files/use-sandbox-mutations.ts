@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { 
   createSandboxFile,
   createSandboxFileJson
-} from '@/lib/api';
+} from '@/lib/api/sandbox';
 import { toast } from 'sonner';
 import { handleApiError } from '@/lib/error-handler';
 

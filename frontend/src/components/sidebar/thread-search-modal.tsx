@@ -11,7 +11,8 @@ import {
     CommandItem,
     CommandList,
 } from '@/components/ui/command';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { ThreadIcon } from './thread-icon';
 import { useThreads, useProjects, processThreadsWithProjects } from '@/hooks/sidebar/use-sidebar';
@@ -54,6 +55,9 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl p-0 overflow-hidden bg-background">
+                <VisuallyHidden>
+                    <DialogTitle>Search chats</DialogTitle>
+                </VisuallyHidden>
                 <Command className="bg-background border-0" shouldFilter={false}>
                     <div className="px-4 py-3">
                         <CommandInput

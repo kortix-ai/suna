@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   createThread, 
   addUserMessage 
-} from '@/lib/api';
+} from '@/lib/api/threads';
 import { toast } from 'sonner';
 import { handleApiError } from '@/lib/error-handler';
 import { deleteThread } from './utils';
