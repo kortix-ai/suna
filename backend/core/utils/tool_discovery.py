@@ -71,7 +71,8 @@ def _generate_tool_name(class_name: str) -> str:
     """Generate a tool name from class name.
     
     Converts CamelCase class names to snake_case tool names.
-    Example: SandboxFilesTool -> sb_files_tool
+    This is a fallback - normally we use the module file name instead.
+    Example: SandboxFilesTool -> sandbox_files_tool
     
     Args:
         class_name: Name of the tool class
@@ -119,10 +120,15 @@ def _generate_display_name(name: str) -> str:
 
 
 def discover_tools() -> Dict[str, Type[Tool]]:
-    """Discover all available Tool subclasses.
+    """Discover all available Tool subclasses and map them to their tool names.
+    
+    Tool names are derived from the module file name (e.g., 'web_search_tool.py' -> 'web_search_tool')
+    rather than the class name, as file names match the naming convention used in agent configurations.
+    Falls back to generating from class name if module name is not available.
     
     Returns:
-        Dict mapping tool names to tool classes
+        Dict mapping tool names (str) to tool classes (Type[Tool])
+        Example: {'web_search_tool': SandboxWebSearchTool, 'browser_tool': BrowserTool, ...}
     """
     # Ensure all tool modules are loaded
     _ensure_tools_imported()
@@ -132,7 +138,21 @@ def discover_tools() -> Dict[str, Type[Tool]]:
     
     tools_map = {}
     for tool_class in tool_classes:
-        tool_name = _generate_tool_name(tool_class.__name__)
+        # Try to get tool name from the module file name first (more reliable)
+        tool_name = None
+        if hasattr(tool_class, '__module__'):
+            module_name = tool_class.__module__
+            # Extract the last part (e.g., 'core.tools.web_search_tool' -> 'web_search_tool')
+            if '.' in module_name:
+                potential_name = module_name.split('.')[-1]
+                # If it ends with _tool, use it as-is
+                if potential_name.endswith('_tool'):
+                    tool_name = potential_name
+        
+        # Fallback to generating from class name if module name doesn't work
+        if not tool_name:
+            tool_name = _generate_tool_name(tool_class.__name__)
+        
         tools_map[tool_name] = tool_class
         # logger.debug(f"Discovered tool: {tool_name} ({tool_class.__name__})")
     
