@@ -1,0 +1,121 @@
+# Railway.com Configuration
+# Multi-service deployment: Frontend, Backend API, and Worker
+# Docs: https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "DOCKERFILE"
+watchPatterns = [
+  "/backend/**",
+  "/frontend/**",
+  "railway.*.Dockerfile"
+]
+
+# Backend API Service
+[[services]]
+name = "backend-api"
+dockerfile = "railway.backend.Dockerfile"
+command = ""  # Use Dockerfile CMD
+
+[services.healthcheck]
+path = "/api/health"
+timeout = 10
+interval = 30
+
+[services.resources]
+# Adjust based on your Railway plan
+# Starter: 512MB RAM, 1 vCPU
+# Developer: 8GB RAM, 8 vCPU
+# Team: 32GB RAM, 32 vCPU
+memory = 2048  # 2GB RAM recommended minimum
+cpu = 2        # 2 vCPUs
+
+[[services.env]]
+# Backend environment variables
+# Set these in Railway dashboard or via railway CLI
+keys = [
+  "ENV_MODE",
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "TAVILY_API_KEY",
+  "FIRECRAWL_API_KEY",
+  "REDIS_HOST",
+  "REDIS_PORT",
+  "REDIS_PASSWORD",
+  "REDIS_SSL",
+  "MIN_WORKERS",
+  "MAX_WORKERS",
+  "THREADS",
+  "WORKER_CONNECTIONS"
+]
+
+[[services.ports]]
+port = 8000
+protocol = "http"
+
+# Background Worker Service
+[[services]]
+name = "worker"
+dockerfile = "railway.worker.Dockerfile"
+command = ""  # Use Dockerfile CMD
+
+[services.resources]
+memory = 1024  # 1GB RAM
+cpu = 2        # 2 vCPUs
+
+[[services.env]]
+keys = [
+  "ENV_MODE",
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "TAVILY_API_KEY",
+  "FIRECRAWL_API_KEY",
+  "REDIS_HOST",
+  "REDIS_PORT",
+  "REDIS_PASSWORD",
+  "REDIS_SSL",
+  "MIN_PROCESSES",
+  "MAX_PROCESSES",
+  "THREADS_PER_PROCESS"
+]
+
+# Frontend Service
+[[services]]
+name = "frontend"
+dockerfile = "railway.frontend.Dockerfile"
+command = ""  # Use Dockerfile CMD
+
+[services.healthcheck]
+path = "/api/health"
+timeout = 10
+interval = 30
+
+[services.resources]
+memory = 1024  # 1GB RAM
+cpu = 1        # 1 vCPU
+
+[[services.env]]
+keys = [
+  "NEXT_PUBLIC_ENV_MODE",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "NEXT_PUBLIC_BACKEND_URL",
+  "NEXT_PUBLIC_URL",
+  "NEXT_PUBLIC_POSTHOG_KEY",
+  "KORTIX_ADMIN_API_KEY",
+  "NODE_ENV",
+  "PORT"
+]
+
+[[services.ports]]
+port = 3000
+protocol = "http"
+
+# Redis Service (use Railway's Redis plugin instead)
+# Add Redis via Railway dashboard: New > Database > Redis
+# This will automatically provide REDIS_HOST, REDIS_PORT, etc.

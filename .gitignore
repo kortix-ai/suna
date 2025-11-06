@@ -225,3 +225,6 @@ apps/mobile/.env*.local
 apps/mobile/app-example
 # Docker-specific env files
 *.env.docker
+
+# Railway-specific env files
+.env.railway

@@ -1,0 +1,194 @@
+# Railway.com Development Docker Compose
+# This mimics the Railway production environment for local testing
+# Use this to test Railway Dockerfiles before deploying
+
+version: '3.8'
+
+services:
+  # Redis Service (mimics Railway Redis plugin)
+  redis:
+    image: redis:8-alpine
+    container_name: kortix-redis-railway
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kortix-railway
+
+  # Backend API Service
+  backend-api:
+    build:
+      context: .
+      dockerfile: railway.backend.Dockerfile
+    container_name: kortix-backend-api-railway
+    ports:
+      - "8000:8000"
+    environment:
+      # Environment
+      ENV_MODE: production
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_SSL: "false"
+
+      # Worker Configuration (Railway optimized)
+      MIN_WORKERS: 2
+      MAX_WORKERS: 4
+      THREADS: 2
+      WORKER_CONNECTIONS: 1000
+
+      # Supabase (replace with your values or load from .env)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # LLM API Keys
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+
+      # Search APIs
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      RAPID_API_KEY: ${RAPID_API_KEY:-}
+
+      # Web Scraping
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+
+      # Optional Services
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
+      DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL:-}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - kortix-railway
+    restart: on-failure
+
+  # Worker Service (Dramatiq Background Tasks)
+  worker:
+    build:
+      context: .
+      dockerfile: railway.worker.Dockerfile
+    container_name: kortix-worker-railway
+    environment:
+      # Environment
+      ENV_MODE: production
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_SSL: "false"
+
+      # Worker Configuration (Railway optimized)
+      MIN_PROCESSES: 2
+      MAX_PROCESSES: 4
+      THREADS_PER_PROCESS: 4
+
+      # Supabase (same as backend)
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # LLM API Keys
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+
+      # Search APIs
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      RAPID_API_KEY: ${RAPID_API_KEY:-}
+
+      # Web Scraping
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+
+      # Optional Services
+      DAYTONA_API_KEY: ${DAYTONA_API_KEY:-}
+      DAYTONA_SERVER_URL: ${DAYTONA_SERVER_URL:-}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "pgrep -f dramatiq || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - kortix-railway
+    restart: on-failure
+
+  # Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: railway.frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_ENV_MODE: production
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_BACKEND_URL: http://localhost:8000/api
+        NEXT_PUBLIC_URL: http://localhost:3000
+        NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+    container_name: kortix-frontend-railway
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_ENV_MODE: production
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000/api
+      NEXT_PUBLIC_URL: http://localhost:3000
+      NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+      KORTIX_ADMIN_API_KEY: ${KORTIX_ADMIN_API_KEY:-}
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - kortix-railway
+    restart: on-failure
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  kortix-railway:
+    driver: bridge
+    name: kortix-railway-network
