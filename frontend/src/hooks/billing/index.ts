@@ -23,6 +23,10 @@ export {
 // Billing Error Handling
 export { useBillingError } from './use-billing-error';
 
+// Credit & Thread Usage
+export { useCreditUsage } from './use-credit-usage';
+export { useThreadUsage } from './use-thread-usage';
+
 // Billing Status
 export { useBillingStatusQuery } from './use-billing-status';
 

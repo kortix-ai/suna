@@ -16,8 +16,10 @@ import {
     CreditCard,
     KeyRound,
     X,
-    User,
     Trash2,
+    TrendingDown,
+    ExternalLink,
+    Info,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -31,9 +33,6 @@ import {
     useRequestAccountDeletion, 
     useCancelAccountDeletion 
 } from '@/hooks/account/use-account-deletion';
-import { backendApi } from '@/lib/api-client';
-
-// Import billing modal content components
 import {
     getSubscription,
     createPortalSession,
@@ -42,7 +41,7 @@ import {
     SubscriptionStatus,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
-import { PlanSelectionModal } from '@/components/billing/pricing';
+import { PlanSelectionModal, PricingSection } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
 import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,8 +59,9 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
+import ThreadUsage from '@/components/billing/thread-usage';
 
-type TabId = 'general' | 'billing' | 'env-manager';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager';
 
 interface Tab {
     id: TabId;
@@ -70,7 +70,7 @@ interface Tab {
     disabled?: boolean;
 }interface UserSettingsModalProps {
     open: boolean;
-    onOpenChange: (open: boolean) => void;
+    onOpenChange: (open: boolean) => void; 
     defaultTab?: TabId;
     returnUrl?: string;
 }
@@ -85,13 +85,13 @@ export function UserSettingsModal({
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
     const [showPlanModal, setShowPlanModal] = useState(false);
     const isLocal = isLocalMode();
-
-    // Build tabs array based on local mode
     const tabs: Tab[] = [
         { id: 'general', label: 'General', icon: Settings },
+        { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
+        { id: 'usage', label: 'Usage', icon: TrendingDown },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
-    ];    // Update active tab when defaultTab changes
+    ];
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
@@ -105,10 +105,7 @@ export function UserSettingsModal({
                 )}
                 hideCloseButton={true}
             >
-                {/* Hidden title for accessibility */}
                 <DialogTitle className="sr-only">Settings</DialogTitle>
-
-                {/* Header - only on mobile */}
                 {isMobile && (
                     <DialogHeader className="p-4 border-b border-border">
                         <div className="flex items-center justify-between">
@@ -123,13 +120,12 @@ export function UserSettingsModal({
                             </Button>
                         </div>
                     </DialogHeader>
-                )}                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[700px]")}>
-                    {/* Sidebar */}
+                )}                
+                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[700px]")}>
                     <div className={cn(
                         "bg-background",
                         isMobile ? "p-2" : "w-56 p-4"
                     )}>
-                        {/* Custom Close Button - Desktop only */}
                         {!isMobile && (
                             <div className="flex justify-start mb-3">
                                 <Button
@@ -176,11 +172,11 @@ export function UserSettingsModal({
                             })}
                         </div>
                     </div>
-
-                    {/* Content */}
                     <div className="flex-1 overflow-y-auto">
                         {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                        {activeTab === 'plan' && <PlanTab returnUrl={returnUrl} />}
                         {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} />}
+                        {activeTab === 'usage' && <UsageTab />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                     </div>
                 </div>
@@ -196,7 +192,6 @@ export function UserSettingsModal({
     );
 }
 
-// General Tab Component
 function GeneralTab({ onClose }: { onClose: () => void }) {
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
@@ -472,6 +467,19 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     );
 }
 
+function PlanTab({ returnUrl }: { returnUrl: string }) {
+    return (
+        <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
+            <PricingSection
+                returnUrl={returnUrl}
+                showTitleAndTabs={false}
+                insideDialog={false}
+                noPadding={false}
+            />
+        </div>
+    );
+}
+
 // Billing Tab Component - Usage, credits, subscription management
 function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenPlanModal: () => void }) {
     const { session, isLoading: authLoading } = useAuth();
@@ -675,7 +683,6 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
 
     return (
         <div className="p-6 space-y-6">
-            {/* Current Subscription Status */}
             {(isSubscribed || isFreeTier) && (
                 <Card className="shadow-none">
                     <CardHeader>
@@ -751,8 +758,6 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                                 </AlertDescription>
                             </Alert>
                         )}
-
-                        {/* Cancellation notice */}
                         {isCancelled && (
                             <Alert variant="destructive" className="shadow-none">
                                 <AlertTriangle className="h-4 w-4" />
@@ -799,8 +804,6 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                     </CardContent>
                 </Card>
             )}
-
-            {/* Credit Balance */}
             <div>
                 <CreditBalanceDisplay
                     balance={subscriptionData?.credit_balance || 0}
@@ -808,6 +811,8 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                     onPurchaseClick={() => setShowCreditPurchaseModal(true)}
                 />
             </div>
+
+            <CreditsHelpAlert />
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
                 <DialogContent className="max-w-md">
                     <DialogHeader>
@@ -829,8 +834,6 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                     </div>
                 </DialogContent>
             </Dialog>
-
-            {/* Credit Purchase Modal */}
             <CreditPurchaseModal
                 open={showCreditPurchaseModal}
                 onOpenChange={setShowCreditPurchaseModal}
@@ -844,7 +847,35 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
     );
 }
 
-// Env Manager Tab Component
+function CreditsHelpAlert() {
+  return (
+    <Alert>
+      <AlertDescription>
+        <div className="flex items-center">
+          <Info className="h-4 w-4" />
+          <Button
+            variant="link"
+            size="sm"
+            className="h-7 text-muted-foreground"
+            onClick={() => window.open('/help/credits', '_blank')}
+          >
+            Learn More about Credits
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function UsageTab() {
+  return (
+      <div className="p-6 space-y-6">
+        <CreditsHelpAlert />
+        <ThreadUsage />
+      </div>
+  );
+}
+
 function EnvManagerTab() {
     return (
         <div className="p-6">

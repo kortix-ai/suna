@@ -228,9 +228,12 @@ export function useAgentStream(
         queryKey: fileQueryKeys.all,
       });
 
-      // Invalidate active agent runs to update sidebar status indicators
       queryClient.invalidateQueries({ 
         queryKey: ['active-agent-runs'],
+      });
+
+      queryClient.invalidateQueries({ 
+        queryKey: ['billing'],
       });
 
       if (agentId) {
