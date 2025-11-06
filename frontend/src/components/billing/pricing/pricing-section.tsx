@@ -822,7 +822,7 @@ export function PricingSection({
             {/* Credits Explained Link */}
             <Button
               variant="link"
-              onClick={() => window.open('/help/credits', '_blank')}
+              onClick={() => window.open('/credits-explained', '_blank')}
               className="text-muted-foreground hover:text-foreground h-auto p-0"
             >
               <Lightbulb className="h-3.5 w-3.5 mr-2" />
@@ -836,7 +836,7 @@ export function PricingSection({
           <div className="w-full max-w-6xl mt-8 flex justify-center">
             <Button
               variant="link"
-              onClick={() => window.open('/help/credits', '_blank')}
+              onClick={() => window.open('/credits-explained', '_blank')}
               className="text-muted-foreground hover:text-foreground h-auto p-0"
             >
               <Lightbulb className="h-3.5 w-3.5 mr-2" />

@@ -20,6 +20,8 @@ import {
     TrendingDown,
     ExternalLink,
     Info,
+    FileText,
+    Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -67,7 +69,7 @@ import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import ThreadUsage from '@/components/billing/thread-usage';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 
-type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations';
 
 interface Tab {
     id: TabId;
@@ -96,6 +98,8 @@ export function UserSettingsModal({
         { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
         { id: 'usage', label: 'Usage', icon: TrendingDown },
+        { id: 'knowledge-base', label: 'Knowledge Base', icon: FileText },
+        { id: 'integrations', label: 'Integrations', icon: Plug },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
     ];
     
@@ -106,6 +110,10 @@ export function UserSettingsModal({
     const handleTabClick = (tabId: TabId) => {
         if (tabId === 'plan') {
             setShowPlanModal(true);
+        } else if (tabId === 'knowledge-base') {
+            window.open('/knowledge', '_blank');
+        } else if (tabId === 'integrations') {
+            window.open('/settings/credentials', '_blank');
         } else {
             setActiveTab(tabId);
         }
@@ -192,6 +200,8 @@ export function UserSettingsModal({
                         {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
                         {activeTab === 'usage' && <UsageTab />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
+                        {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
+                        {activeTab === 'integrations' && <IntegrationsTab />}
                     </div>
                 </div>
 
@@ -664,11 +674,17 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     const canPurchaseCredits = subscriptionData?.credits?.can_purchase_credits || false;
 
     return (
-        <div className="p-8 max-w-5xl mx-auto space-y-12">
-            {/* Minimal Plan Indicator */}
-            {!isFreeTier && planName && (
-                <div className="flex items-center pb-4 border-b border-border/50">
-                    <div className="flex items-center gap-3">
+        <div className="p-6 space-y-8">
+            {/* Header with Plan Badge on Right */}
+            <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-medium tracking-tight">Billing Status</h1>
+                    <p className="text-sm text-muted-foreground">Manage your credits and subscription</p>
+                </div>
+
+                {/* Plan Badge with Renewal Info - Right aligned */}
+                {!isFreeTier && planName && (
+                    <div className="flex items-center gap-2 text-right">
                         {planIcon && (
                             <>
                                 <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center">
@@ -677,40 +693,40 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                                 <img src={planIcon} alt={planName} className="h-4 w-auto hidden dark:block" />
                             </>
                         )}
-                        <span className="text-sm text-muted-foreground">{planName}</span>
                         {subscription?.current_period_end && (
-                            <span className="text-sm text-muted-foreground/60">
-                                • Renews {formatDateFlexible(subscription.current_period_end)}
+                            <span className="text-xs text-muted-foreground">
+                                Renews {formatDateFlexible(subscription.current_period_end)}
                             </span>
                         )}
                     </div>
-                </div>
-            )}
-
-            {/* Header - Clean & Minimal */}
-            <div className="space-y-4">
-                <div>
-                    <h1 className="text-2xl font-medium tracking-tight mb-2">Billing Status</h1>
-                    <p className="text-sm text-muted-foreground">Manage your credits and subscription</p>
-                </div>
-                
-                <div className="space-y-2">
-                    <div className="text-3xl leading-none font-medium">{formatCredits(totalCredits)}</div>
-                    <p className="text-sm text-muted-foreground">Total Available Credits</p>
-                </div>
+                )}
             </div>
 
-            {/* Credit Breakdown - Vercel Style */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Credit Breakdown - 3 Boxes Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Total Available Credits */}
+                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Total Available Credits</span>
+                        </div>
+                        <div>
+                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(totalCredits)}</div>
+                            <p className="text-xs text-muted-foreground">All credits</p>
+                        </div>
+                    </div>
+                </div>
+
                 {/* Monthly Credits */}
                 <div className="relative overflow-hidden rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-6">
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4 text-orange-500" />
                             <span className="text-sm text-muted-foreground">Monthly Credits</span>
                         </div>
                         <div>
-                            <div className="text-2xl leading-none font-medium mb-2">{formatCredits(expiringCredits)}</div>
+                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(expiringCredits)}</div>
                             <p className="text-xs text-muted-foreground">
                                 {daysUntilRefresh !== null 
                                     ? `Refresh in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
@@ -723,13 +739,13 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
                 {/* Extra Credits */}
                 <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2">
                             <Infinity className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">Extra Credits</span>
                         </div>
                         <div>
-                            <div className="text-2xl leading-none font-medium mb-2">{formatCredits(nonExpiringCredits)}</div>
+                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(nonExpiringCredits)}</div>
                             <p className="text-xs text-muted-foreground">Non-expiring</p>
                         </div>
                     </div>
@@ -802,7 +818,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
             <div className="flex items-center justify-center pt-6 border-t border-border/50">
                 <Button
                     variant="link"
-                    onClick={() => window.open('/help/credits', '_blank')}
+                    onClick={() => window.open('/credits-explained', '_blank')}
                     className="text-muted-foreground hover:text-foreground h-auto p-0"
                 >
                     <Lightbulb className="h-3.5 w-3.5 mr-2" />
@@ -908,6 +924,42 @@ function EnvManagerTab() {
     return (
         <div className="p-6">
             <LocalEnvManager />
+        </div>
+    );
+}
+
+function KnowledgeBaseTab() {
+    useEffect(() => {
+        window.open('/knowledge', '_blank');
+    }, []);
+    
+    return (
+        <div className="p-6 space-y-4">
+            <div className="text-center py-8">
+                <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Opening Knowledge Base</h3>
+                <p className="text-sm text-muted-foreground">
+                    Redirecting to Knowledge Base page...
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function IntegrationsTab() {
+    useEffect(() => {
+        window.open('/settings/credentials', '_blank');
+    }, []);
+    
+    return (
+        <div className="p-6 space-y-4">
+            <div className="text-center py-8">
+                <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Opening Integrations</h3>
+                <p className="text-sm text-muted-foreground">
+                    Redirecting to Integrations page...
+                </p>
+            </div>
         </div>
     );
 }

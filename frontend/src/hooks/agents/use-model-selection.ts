@@ -5,6 +5,7 @@ import { useSubscriptionData } from '@/stores/subscription-store';
 import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getAvailableModels } from '@/lib/api/billing';
+import { useAuth } from '@/components/AuthProvider';
 
 export interface ModelOption {
   id: string;
@@ -37,13 +38,21 @@ const getDefaultModel = (models: ModelOption[], hasActiveSubscription: boolean):
 };
 
 export const useModelSelection = () => {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  
   // Fetch models directly in this hook
+  // Only fetch if user is authenticated
   const { data: modelsData, isLoading } = useQuery({
     queryKey: ['models', 'available'],
     queryFn: getAvailableModels,
+    enabled: !!user && !isAuthLoading, // Only fetch when authenticated
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
-    retry: 2,
+    retry: (failureCount, error: any) => {
+      // Don't retry on 401 errors (unauthorized)
+      if (error?.status === 401) return false;
+      return failureCount < 2;
+    },
   });
 
   const { data: subscriptionData } = useSubscriptionData();

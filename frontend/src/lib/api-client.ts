@@ -42,10 +42,16 @@ async function makeRequest<T = any>(
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...fetchOptions.headers as Record<string, string>,
-    };
+    // Don't set Content-Type for FormData - browser will set it automatically with boundary
+    const isFormData = fetchOptions.body instanceof FormData;
+    const headers: Record<string, string> = {};
+    
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    // Merge with any headers from fetchOptions
+    Object.assign(headers, fetchOptions.headers as Record<string, string>);
 
     if (session?.access_token) {
       headers['Authorization'] = `Bearer ${session.access_token}`;

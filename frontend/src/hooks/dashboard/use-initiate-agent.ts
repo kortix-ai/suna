@@ -17,13 +17,27 @@ export const useInitiateAgentMutation = () => {
   >({
     mutationFn: async (formData: FormData) => {
       // Extract FormData fields
-      const prompt = formData.get('prompt') as string;
-      const model_name = formData.get('model_name') as string | undefined;
+      const prompt_raw = formData.get('prompt') as string | undefined | null;
+      // For prompt, keep empty string (don't convert to undefined) so backend can validate
+      // The backend requires prompt for new threads, so we need to send it even if empty
+      const prompt = prompt_raw !== null && prompt_raw !== undefined ? prompt_raw.trim() : undefined;
+      const model_name_raw = formData.get('model_name') as string | undefined | null;
+      const model_name = model_name_raw && model_name_raw.trim() ? model_name_raw.trim() : undefined;
       const agent_id = formData.get('agent_id') as string | undefined;
       const files = formData.getAll('files') as File[];
       
+      // Debug logging
+      console.log('[useInitiateAgent] Extracted from FormData:', {
+        prompt: prompt ? prompt.substring(0, 100) : prompt === '' ? '(empty string)' : undefined,
+        promptLength: prompt?.length ?? (prompt === '' ? 0 : undefined),
+        promptIsEmptyString: prompt === '',
+        model_name,
+        agent_id,
+        filesCount: files.length,
+      });
+      
       return await unifiedAgentStart({
-        prompt,
+        prompt: prompt !== undefined ? prompt : undefined, // Send empty string if present, undefined if not in FormData
         model_name,
         agent_id,
         files: files.length > 0 ? files : undefined,

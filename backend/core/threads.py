@@ -72,12 +72,12 @@ async def get_user_threads(
                 in_values=unique_project_ids
             )
             
-            logger.debug(f"[API] Retrieved {len(projects_data)} projects")
+            # logger.debug(f"[API] Retrieved {len(projects_data)} projects")
             
             # DEBUG: Log first project to see if icon_name exists
-            if projects_data and len(projects_data) > 0:
-                logger.debug(f"[API] FIRST PROJECT RAW FROM DB: {projects_data[0]}")
-                logger.debug(f"[API] FIRST PROJECT ICON_NAME: {projects_data[0].get('icon_name', 'NOT FOUND')}")
+            # if projects_data and len(projects_data) > 0:
+            #     logger.debug(f"[API] FIRST PROJECT RAW FROM DB: {projects_data[0]}")
+            #     logger.debug(f"[API] FIRST PROJECT ICON_NAME: {projects_data[0].get('icon_name', 'NOT FOUND')}")
             
             # Create a lookup map of projects by ID
             projects_by_id = {
@@ -93,7 +93,7 @@ async def get_user_threads(
                 project = projects_by_id[thread['project_id']]
                 
                 # DEBUG: Log what we're getting from the project
-                logger.debug(f"[API] Mapping project {project['project_id']}: icon_name = {project.get('icon_name', 'MISSING')}")
+                # logger.debug(f"[API] Mapping project {project['project_id']}: icon_name = {project.get('icon_name', 'MISSING')}")
                 
                 project_data = {
                     "project_id": project['project_id'],
@@ -107,7 +107,7 @@ async def get_user_threads(
                 }
                 
                 # DEBUG: Log the mapped project_data
-                logger.debug(f"[API] Mapped project_data: {project_data}")
+                # logger.debug(f"[API] Mapped project_data: {project_data}")
             
             mapped_thread = {
                 "thread_id": thread['thread_id'],
@@ -122,7 +122,7 @@ async def get_user_threads(
         
         total_pages = (total_count + limit - 1) // limit if total_count else 0
         
-        logger.debug(f"[API] Mapped threads for frontend: {len(mapped_threads)} threads, {len(projects_by_id)} unique projects")
+        # logger.debug(f"[API] Mapped threads for frontend: {len(mapped_threads)} threads, {len(projects_by_id)} unique projects")
         
         return {
             "threads": mapped_threads,
@@ -166,7 +166,7 @@ async def get_thread(
             
             if project_result.data:
                 project = project_result.data[0]
-                logger.debug(f"[API] Raw project from DB for thread {thread_id}")
+                # logger.debug(f"[API] Raw project from DB for thread {thread_id}")
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
@@ -210,7 +210,7 @@ async def get_thread(
             "recent_agent_runs": agent_runs_data
         }
         
-        logger.debug(f"[API] Mapped thread for frontend: {thread_id} with {message_count} messages and {len(agent_runs_data)} recent runs")
+        # logger.debug(f"[API] Mapped thread for frontend: {thread_id} with {message_count} messages and {len(agent_runs_data)} recent runs")
         return mapped_thread
         
     except HTTPException:

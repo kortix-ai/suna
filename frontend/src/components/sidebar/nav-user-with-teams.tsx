@@ -27,6 +27,7 @@ import {
   Users,
   BarChart3,
   FileText,
+  TrendingDown,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
 import { useSubscription } from '@/hooks/billing';
@@ -88,7 +89,7 @@ export function NavUserWithTeams({
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showPlanModal, setShowPlanModal] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState<'general' | 'billing' | 'env-manager'>('general');
+  const [settingsTab, setSettingsTab] = React.useState<'general' | 'billing' | 'usage' | 'env-manager'>('general');
   const { theme, setTheme } = useTheme();
 
   // Check if user is on free tier
@@ -335,6 +336,16 @@ export function NavUserWithTeams({
                 >
                   <CreditCard className="h-4 w-4" />
                   <span>Billing</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSettingsTab('usage');
+                    setShowSettingsModal(true);
+                  }}
+                  className="gap-2 p-2"
+                >
+                  <TrendingDown className="h-4 w-4" />
+                  <span>Usage</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings/credentials" className="gap-2 p-2">

@@ -499,8 +499,17 @@ export const billingApi = {
   },
 
   async getAvailableModels() {
-    const response = await backendApi.get<AvailableModelsResponse>('/billing/available-models');
-    if (response.error) throw response.error;
+    const response = await backendApi.get<AvailableModelsResponse>('/billing/available-models', {
+      showErrors: false, // Don't show errors for 401 - handled by enabled check in hook
+    });
+    // Don't throw 401 errors - they're expected when not authenticated
+    if (response.error && response.error.status !== 401) {
+      throw response.error;
+    }
+    // Return empty data structure if unauthorized or error
+    if (response.error) {
+      return { models: [], subscription_tier: 'none', total_models: 0 };
+    }
     return response.data!;
   }
 };

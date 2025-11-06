@@ -29,7 +29,7 @@ export const useStartAgentMutation = () => {
       };
     }) => unifiedAgentStart({
       threadId,
-      model_name: options?.model_name,
+      model_name: options?.model_name && options.model_name.trim() ? options.model_name.trim() : undefined,
       agent_id: options?.agent_id,
     }),
     onSuccess: () => {

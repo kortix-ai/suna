@@ -177,7 +177,16 @@ export function DashboardContent() {
       localStorage.removeItem(PENDING_PROMPT_KEY);
 
       const formData = new FormData();
-      formData.append('prompt', message);
+      
+      // Always append prompt - it's required for new threads
+      // The message should never be empty due to validation above, but ensure we always send it
+      const trimmedMessage = message.trim();
+      if (!trimmedMessage && files.length === 0) {
+        setIsSubmitting(false);
+        throw new Error('Prompt is required when starting a new agent');
+      }
+      // Always append prompt (even if empty, backend will validate)
+      formData.append('prompt', trimmedMessage || message);
 
       // Add selected agent if one is chosen
       if (selectedAgentId) {
@@ -189,9 +198,20 @@ export function DashboardContent() {
         formData.append('files', file, normalizedName);
       });
 
-      if (options?.model_name) formData.append('model_name', options.model_name);
+      if (options?.model_name && options.model_name.trim()) {
+        formData.append('model_name', options.model_name.trim());
+      }
       formData.append('stream', 'true'); // Always stream for better UX
       formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
+
+      // Debug logging
+      console.log('[Dashboard] Starting agent with:', {
+        prompt: message.substring(0, 100),
+        promptLength: message.length,
+        model_name: options?.model_name,
+        agent_id: selectedAgentId,
+        filesCount: files.length,
+      });
 
       const result = await initiateAgentMutation.mutateAsync(formData);
 

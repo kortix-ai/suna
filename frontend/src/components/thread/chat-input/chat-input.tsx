@@ -450,13 +450,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         message = message + slidesTemplateMarkdown;
       }
 
-      const baseModelName = getActualModelId(selectedModel);
+      const baseModelName = selectedModel ? getActualModelId(selectedModel) : undefined;
 
       posthog.capture("task_prompt_submitted", { message });
 
       onSubmit(message, {
         agent_id: selectedAgentId,
-        model_name: baseModelName,
+        model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
       });
 
       // TODO: Clear input after agent stream connects
