@@ -116,14 +116,17 @@ class ToolManager:
         
         sandbox_tools = []
         for tool_name, module_path, class_name in SANDBOX_TOOLS:
-            tool_class = get_tool_class(module_path, class_name)
-            kwargs = {
-                'project_id': self.project_id,
-                'thread_manager': self.thread_manager
-            }
-            if tool_name in tools_needing_thread_id:
-                kwargs['thread_id'] = self.thread_id
-            sandbox_tools.append((tool_name, tool_class, kwargs))
+            try:
+                tool_class = get_tool_class(module_path, class_name)
+                kwargs = {
+                    'project_id': self.project_id,
+                    'thread_manager': self.thread_manager
+                }
+                if tool_name in tools_needing_thread_id:
+                    kwargs['thread_id'] = self.thread_id
+                sandbox_tools.append((tool_name, tool_class, kwargs))
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"❌ Failed to load tool {tool_name} ({class_name}): {e}")
         
         for tool_name, tool_class, kwargs in sandbox_tools:
             if tool_name not in disabled_tools:
@@ -178,7 +181,13 @@ class ToolManager:
             # Skip agent_creation_tool as it's registered separately in _register_suna_specific_tools
             if tool_name == 'agent_creation_tool':
                 continue
-            tool_class = get_tool_class(module_path, class_name)
+            
+            try:
+                tool_class = get_tool_class(module_path, class_name)
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"❌ Failed to load tool {tool_name} ({class_name}): {e}")
+                continue
+            
             if tool_name not in disabled_tools:
                 try:
                     enabled_methods = self._get_enabled_methods_for_tool(tool_name)
@@ -201,24 +210,28 @@ class ToolManager:
             from core.services.supabase import DBConnection
             
             db = DBConnection()
-            tool_info = get_tool_info('agent_creation_tool')
-            if tool_info:
-                _, module_path, class_name = tool_info
-                AgentCreationTool = get_tool_class(module_path, class_name)
-            else:
-                # Fallback to direct import if not in registry
-                from core.tools.agent_creation_tool import AgentCreationTool
             
-            enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
-            self.thread_manager.add_tool(
-                AgentCreationTool, 
-                function_names=enabled_methods, 
-                thread_manager=self.thread_manager, 
-                db_connection=db, 
-                account_id=self.account_id
-            )
-            if enabled_methods:
-                logger.debug(f"✅ Registered agent_creation_tool with methods: {enabled_methods}")
+            try:
+                tool_info = get_tool_info('agent_creation_tool')
+                if tool_info:
+                    _, module_path, class_name = tool_info
+                    AgentCreationTool = get_tool_class(module_path, class_name)
+                else:
+                    # Fallback to direct import if not in registry
+                    from core.tools.agent_creation_tool import AgentCreationTool
+                
+                enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
+                self.thread_manager.add_tool(
+                    AgentCreationTool, 
+                    function_names=enabled_methods, 
+                    thread_manager=self.thread_manager, 
+                    db_connection=db, 
+                    account_id=self.account_id
+                )
+                if enabled_methods:
+                    logger.debug(f"✅ Registered agent_creation_tool with methods: {enabled_methods}")
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"❌ Failed to load agent_creation_tool: {e}")
     
     def _register_browser_tool(self, disabled_tools: List[str]):
         """Register browser tool with sandbox access."""
