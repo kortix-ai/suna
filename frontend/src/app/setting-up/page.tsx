@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useInitializeAccount } from '@/hooks/account';
-import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Card, CardContent } from '@/components/ui/card';

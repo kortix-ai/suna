@@ -1,4 +1,4 @@
-import { FlickeringGrid } from '@/components/home/ui/flickering-grid';
+import { FlickeringGrid } from '@/components/ui/flickering-grid';
 import { config } from '@/lib/config';
 
 interface UpgradePlan {

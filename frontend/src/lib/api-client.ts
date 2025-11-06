@@ -27,9 +27,17 @@ async function makeRequest<T = any>(
     ...fetchOptions
   } = options;
 
+  const controller = new AbortController();
+  let timeoutId: NodeJS.Timeout | null = null;
+  let isAborted = false;
+
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    timeoutId = setTimeout(() => {
+      if (!isAborted && !controller.signal.aborted) {
+        isAborted = true;
+        controller.abort();
+      }
+    }, timeout);
 
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -53,7 +61,10 @@ async function makeRequest<T = any>(
       signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
 
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
@@ -103,29 +114,55 @@ async function makeRequest<T = any>(
     };
 
   } catch (error: any) {
+    // Always clear timeout on error
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
+    // Check if this is an abort error (timeout or manual abort)
+    const isAbortError = error?.name === 'AbortError' || 
+                         error?.name === 'AbortSignal' ||
+                         (error instanceof Error && error.message.includes('aborted'));
+
+    // If it was aborted, mark it so we don't try to abort again
+    if (isAbortError) {
+      isAborted = true;
+    }
+
     let apiError: ApiError;
     
-    if (error?.name === 'AbortError') {
+    if (isAbortError) {
       apiError = Object.assign(Object.create(Error.prototype), {
         message: 'Request timeout',
         name: 'ApiError',
         code: 'TIMEOUT'
       });
+      
+      // Only show timeout errors if showErrors is true
+      // This prevents spam from multiple concurrent timeouts or React Query cancellations
+      if (showErrors) {
+        handleNetworkError(apiError, errorContext);
+      }
     } else if (error instanceof Error) {
       apiError = Object.assign(Object.create(Error.prototype), {
         message: error.message,
         name: error.name || 'ApiError',
         stack: error.stack
       });
+
+      if (showErrors) {
+        handleNetworkError(apiError, errorContext);
+      }
     } else {
       apiError = Object.assign(Object.create(Error.prototype), {
         message: String(error),
         name: 'ApiError'
       });
-    }
 
-    if (showErrors) {
-      handleNetworkError(apiError, errorContext);
+      if (showErrors) {
+        handleNetworkError(apiError, errorContext);
+      }
     }
 
     return {

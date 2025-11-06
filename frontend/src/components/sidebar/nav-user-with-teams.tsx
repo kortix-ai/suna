@@ -84,7 +84,7 @@ export function NavUserWithTeams({
   const router = useRouter();
   const { isMobile } = useSidebar();
   const { data: accounts } = useAccounts();
-  const { data: subscriptionData } = useSubscription(true);
+  const { data: subscriptionData } = useSubscription({ enabled: true });
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showPlanModal, setShowPlanModal] = React.useState(false);
@@ -413,12 +413,12 @@ export function NavUserWithTeams({
           
           {/* Upgrade Button - Only for Free Tier */}
           {isFreeTier && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden">
+            <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50">
               <Button
                 onClick={() => setShowPlanModal(true)}
                 variant="default"
                 size="lg"
-                className="w-full"
+                className="w-full relative z-50"
               >
                 Upgrade
               </Button>

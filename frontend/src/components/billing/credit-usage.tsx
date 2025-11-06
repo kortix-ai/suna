@@ -33,6 +33,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { useCreditUsage } from '@/hooks/billing/use-credit-usage';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 export default function CreditUsage() {
   const [offset, setOffset] = useState(0);
@@ -49,10 +50,6 @@ export default function CreditUsage() {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const formatCredits = (credits: number) => {
-    return credits.toFixed(1);
   };
 
   const getUsageTypeBadge = (type: string) => {

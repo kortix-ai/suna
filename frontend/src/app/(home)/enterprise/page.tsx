@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { FooterSection } from '@/components/home/sections/footer-section';
+import { FooterSection } from '@/components/home/footer-section';
 import { motion } from 'motion/react';
 import { 
   ArrowRight, 

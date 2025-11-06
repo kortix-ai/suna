@@ -23,7 +23,7 @@ import { useAdminRole } from '@/hooks/admin';
 export default function ActivateTrialPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { data: subscription, isLoading: isLoadingSubscription } = useSubscription(!!user);
+  const { data: subscription, isLoading: isLoadingSubscription } = useSubscription({ enabled: !!user });
   const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus(!!user);
   const startTrialMutation = useStartTrial();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();

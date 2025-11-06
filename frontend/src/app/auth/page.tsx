@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import GitHubSignIn from '@/components/GithubSignIn';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { ReleaseBadge } from '@/components/auth/release-badge';
 
 function LoginContent() {

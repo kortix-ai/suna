@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { billingApi } from '@/lib/api/billing';
 import { toast } from 'sonner';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 interface CreditPurchaseProps {
     open: boolean;
@@ -216,7 +217,7 @@ export function CreditBalanceDisplay({ balance, canPurchase, onPurchaseClick }: 
             </CardHeader>
             <CardContent>
                 <div className="text-2xl font-medium">
-                    {Math.round(balance).toLocaleString()}
+                    {formatCredits(balance)}
                 </div>
             </CardContent>
         </Card>
