@@ -15,7 +15,7 @@ from core.agentpress.tool import Tool
 
 # Core tools - Always available
 CORE_TOOLS = [
-    ('expand_message_tool', 'core.tools.expand_message_tool', 'ExpandMessageTool'),
+    ('expand_msg_tool', 'core.tools.expand_msg_tool', 'ExpandMessageTool'),
     ('message_tool', 'core.tools.message_tool', 'MessageTool'),
     ('task_list_tool', 'core.tools.task_list_tool', 'TaskListTool'),
 ]

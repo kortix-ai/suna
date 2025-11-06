@@ -2,6 +2,46 @@
 -- Users can only go slightly negative from a single request
 -- Once negative, they cannot start new requests until they add credits
 
+-- Step 1: Drop ALL table-level constraints that prevent negative balances
+-- (there may be multiple constraint names from different migrations)
+ALTER TABLE public.credit_accounts 
+DROP CONSTRAINT IF EXISTS check_balance_non_negative;
+
+ALTER TABLE public.credit_accounts 
+DROP CONSTRAINT IF EXISTS check_no_negative_balance;
+
+ALTER TABLE public.credit_accounts 
+DROP CONSTRAINT IF EXISTS credit_accounts_balance_check;
+
+ALTER TABLE public.credit_accounts 
+DROP CONSTRAINT IF EXISTS check_no_negative_credits;
+
+-- Drop any other CHECK constraints on balance-related columns
+-- This covers any constraint we might have missed
+DO $$
+DECLARE
+    constraint_name TEXT;
+BEGIN
+    FOR constraint_name IN 
+        SELECT con.conname
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+        WHERE nsp.nspname = 'public'
+        AND rel.relname = 'credit_accounts'
+        AND con.contype = 'c'  -- CHECK constraint
+        AND EXISTS (
+            SELECT 1 FROM unnest(con.conkey) AS key
+            JOIN pg_attribute attr ON attr.attnum = key AND attr.attrelid = rel.oid
+            WHERE attr.attname IN ('balance', 'expiring_credits', 'non_expiring_credits')
+        )
+    LOOP
+        EXECUTE format('ALTER TABLE public.credit_accounts DROP CONSTRAINT IF EXISTS %I', constraint_name);
+        RAISE NOTICE 'Dropped constraint: %', constraint_name;
+    END LOOP;
+END $$;
+
+-- Step 2: Update the atomic function to allow negative deductions
 CREATE OR REPLACE FUNCTION atomic_use_credits(
     p_account_id UUID,
     p_amount NUMERIC(10, 2),

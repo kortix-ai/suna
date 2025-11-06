@@ -92,9 +92,18 @@ export function UserSettingsModal({
         { id: 'usage', label: 'Usage', icon: TrendingDown },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
     ];
+    
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
+
+    const handleTabClick = (tabId: TabId) => {
+        if (tabId === 'plan') {
+            setShowPlanModal(true);
+        } else {
+            setActiveTab(tabId);
+        }
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -155,7 +164,7 @@ export function UserSettingsModal({
                                         )}
                                     >
                                         <button
-                                            onClick={() => setActiveTab(tab.id)}
+                                            onClick={() => handleTabClick(tab.id)}
                                             disabled={tab.disabled}
                                             className={cn(
                                                 "w-full flex items-center gap-3 px-4 py-3 text-sm",
@@ -174,7 +183,6 @@ export function UserSettingsModal({
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                        {activeTab === 'plan' && <PlanTab returnUrl={returnUrl} />}
                         {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} />}
                         {activeTab === 'usage' && <UsageTab />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
@@ -463,19 +471,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     </AlertDialog>
                 </>
             )}
-        </div>
-    );
-}
-
-function PlanTab({ returnUrl }: { returnUrl: string }) {
-    return (
-        <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
-            <PricingSection
-                returnUrl={returnUrl}
-                showTitleAndTabs={false}
-                insideDialog={false}
-                noPadding={false}
-            />
         </div>
     );
 }
