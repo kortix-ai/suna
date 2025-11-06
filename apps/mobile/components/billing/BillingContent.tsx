@@ -8,7 +8,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { PRICING_TIERS, BillingPeriod, getPriceId, getDisplayPrice, startPlanCheckout, startTrialCheckout } from '@/lib/billing';
+import { PRICING_TIERS, BillingPeriod, getDisplayPrice, startPlanCheckout, startTrialCheckout } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import { TrialCard } from './TrialCard';
 import { PricingTierCard } from './PricingTierCard';
@@ -69,16 +69,15 @@ export function BillingContent({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedPlan(tier.name);
 
-    const priceId = getPriceId(tier, billingPeriod);
-    if (!priceId) {
-      console.error('❌ No price ID found for tier:', tier.name, billingPeriod);
+    if (!tier.id) {
+      console.error('❌ No tier ID found for tier:', tier.name);
       setSelectedPlan(null);
       return;
     }
 
     try {
       await startPlanCheckout(
-        priceId,
+        tier.id,  // Use tier.id (tier_key) instead of priceId
         billingPeriod,
         () => {
           // Success callback

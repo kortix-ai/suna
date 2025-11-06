@@ -15,9 +15,9 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { MCPConfiguration } from './types';
-import { useCredentialProfilesForMcp } from '@/hooks/react-query/mcp/use-credential-profiles';
+import { useCredentialProfilesForMcp } from '@/hooks/mcp/use-credential-profiles';
 
-import { useComposioToolkits } from '@/hooks/react-query/composio/use-composio';
+import { useComposioToolkits } from '@/hooks/composio/use-composio';
 
 interface ConfiguredMcpListProps {
   configuredMCPs: MCPConfiguration[];

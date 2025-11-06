@@ -40,10 +40,10 @@ TIERS: Dict[str, Tier] = {
         name='free',
         price_ids=[config.STRIPE_FREE_TIER_ID],
         monthly_credits=FREE_TIER_INITIAL_CREDITS,
-        display_name='Free Tier',
+        display_name='Basic',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=3
+        project_limit=1
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
@@ -54,7 +54,7 @@ TIERS: Dict[str, Tier] = {
         ],
         monthly_credits=Decimal('20.00'),
         display_name='Starter',
-        can_purchase_credits=True,
+        can_purchase_credits=False,
         models=['all'],
         project_limit=100
     ),
@@ -67,7 +67,7 @@ TIERS: Dict[str, Tier] = {
         ],
         monthly_credits=Decimal('50.00'),
         display_name='Professional',
-        can_purchase_credits=True,
+        can_purchase_credits=False,
         models=['all'],
         project_limit=500
     ),
@@ -79,7 +79,7 @@ TIERS: Dict[str, Tier] = {
         ],
         monthly_credits=Decimal('100.00'),
         display_name='Team',
-        can_purchase_credits=True,
+        can_purchase_credits=False,
         models=['all'],
         project_limit=1000
     ),
@@ -104,7 +104,7 @@ TIERS: Dict[str, Tier] = {
         ],
         monthly_credits=Decimal('400.00'),
         display_name='Enterprise',
-        can_purchase_credits=True,
+        can_purchase_credits=False,
         models=['all'],
         project_limit=5000
     ),
@@ -116,7 +116,7 @@ TIERS: Dict[str, Tier] = {
         ],
         monthly_credits=Decimal('800.00'),
         display_name='Enterprise Plus',
-        can_purchase_credits=True,
+        can_purchase_credits=False,
         models=['all'],
         project_limit=10000
     ),
@@ -128,7 +128,7 @@ TIERS: Dict[str, Tier] = {
         ],
         monthly_credits=Decimal('1000.00'),
         display_name='Ultimate',
-        can_purchase_credits=True,
+        can_purchase_credits=False,
         models=['all'],
         project_limit=25000
     ),

@@ -32,7 +32,7 @@ import {
   Minus,
   TrendingDown,
 } from 'lucide-react';
-import { useCreditUsage } from '@/hooks/react-query/billing/use-credit-usage';
+import { useCreditUsage } from '@/hooks/billing/use-credit-usage';
 
 export default function CreditUsage() {
   const [offset, setOffset] = useState(0);

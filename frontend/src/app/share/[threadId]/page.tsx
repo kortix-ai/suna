@@ -14,7 +14,7 @@ import {
   ThreadParams,
 } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
-import { useAgentStream } from '@/hooks/useAgentStream';
+import { useAgentStream } from '@/hooks/agents';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 import { extractToolName } from '@/components/thread/tool-views/xml-parser';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';

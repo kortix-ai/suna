@@ -5,7 +5,7 @@ import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Icons } from './home/icons';
 // Using proper GitHub brand icon from Icons component
-import { useAuthMethodTracking } from '@/lib/stores/auth-tracking';
+import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 

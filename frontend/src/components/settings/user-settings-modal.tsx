@@ -26,13 +26,13 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { 
     useAccountDeletionStatus, 
     useRequestAccountDeletion, 
     useCancelAccountDeletion 
-} from '@/hooks/react-query/account/use-account-deletion';
+} from '@/hooks/account/use-account-deletion';
 import {
     getSubscription,
     createPortalSession,
@@ -41,9 +41,9 @@ import {
     SubscriptionStatus,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
-import { PricingSection } from '@/components/home/sections/pricing-section';
+import { PlanSelectionModal, PricingSection } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
-import { useSubscriptionCommitment } from '@/hooks/react-query/subscriptions/use-subscriptions';
+import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -58,7 +58,7 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
-import { getPlanIcon, getPlanName } from '../sidebar/sidebar-left';
+import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import ThreadUsage from '@/components/billing/thread-usage';
 
 type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager';
@@ -70,7 +70,7 @@ interface Tab {
     disabled?: boolean;
 }interface UserSettingsModalProps {
     open: boolean;
-    onOpenChange: (open: boolean) => void;
+    onOpenChange: (open: boolean) => void; 
     defaultTab?: TabId;
     returnUrl?: string;
 }
@@ -83,6 +83,7 @@ export function UserSettingsModal({
 }: UserSettingsModalProps) {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
+    const [showPlanModal, setShowPlanModal] = useState(false);
     const isLocal = isLocalMode();
     const tabs: Tab[] = [
         { id: 'general', label: 'General', icon: Settings },
@@ -174,11 +175,18 @@ export function UserSettingsModal({
                     <div className="flex-1 overflow-y-auto">
                         {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
                         {activeTab === 'plan' && <PlanTab returnUrl={returnUrl} />}
-                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} />}
+                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} />}
                         {activeTab === 'usage' && <UsageTab />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                     </div>
                 </div>
+
+                {/* Full-screen Plan Selection Modal */}
+                <PlanSelectionModal
+                    open={showPlanModal}
+                    onOpenChange={setShowPlanModal}
+                    returnUrl={returnUrl}
+                />
             </DialogContent>
         </Dialog>
     );
@@ -301,7 +309,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                 </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-border">
+            <div className="flex justify-end gap-2 pt-4">
                 <Button
                     variant="outline"
                     onClick={onClose}
@@ -318,21 +326,23 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             {!isLocalMode() && (
                 <>
-                    <div className="pt-6 border-t border-border">
-                        <h3 className="text-lg font-semibold mb-1 text-destructive">Danger Zone</h3>
-                        <p className="text-sm text-muted-foreground mb-4">
-                            Permanently delete your account and all associated data
-                        </p>
+                    <div className="pt-8 space-y-4">
+                        <div>
+                            <h3 className="text-base font-medium mb-1">Delete Account</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Permanently remove your account and all associated data
+                            </p>
+                        </div>
 
                         {deletionStatus?.has_pending_deletion ? (
-                            <Alert variant="destructive" className="shadow-none">
-                                <AlertTriangle className="h-4 w-4" />
+                            <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
+                                <Clock className="h-4 w-4 text-amber-600" />
                                 <AlertDescription>
                                     <div className="text-sm">
-                                        <strong>Account Deletion Scheduled</strong>
-                                        <p className="mt-1">
-                                            Your account and all data will be permanently deleted on{' '}
-                                            <strong>{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
+                                        <strong className="text-foreground">Deletion Scheduled</strong>
+                                        <p className="mt-1 text-muted-foreground">
+                                            Your account will be permanently deleted on{' '}
+                                            <strong className="text-foreground">{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
                                         </p>
                                         <p className="mt-2 text-muted-foreground">
                                             You can cancel this request anytime before the deletion date.
@@ -346,21 +356,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         onClick={() => setShowCancelDialog(true)}
                                         disabled={cancelDeletion.isPending}
                                     >
-                                        Cancel Deletion
+                                        Cancel Deletion Request
                                     </Button>
                                 </div>
                             </Alert>
                         ) : (
-                            <>
-                                <Button
-                                    variant="destructive"
-                                    onClick={() => setShowDeleteDialog(true)}
-                                    className="w-full sm:w-auto"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete Account
-                                </Button>
-                            </>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowDeleteDialog(true)}
+                                className="text-muted-foreground hover:text-foreground"
+                            >
+                                Delete Account
+                            </Button>
                         )}
                     </div>
 
@@ -373,23 +380,25 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 <DialogTitle>Delete Account</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
-                                <Alert variant="destructive" className="shadow-none">
-                                    <AlertTriangle className="h-4 w-4" />
+                                <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
+                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
                                     <AlertDescription>
-                                        <strong>This action cannot be undone after 30 days</strong>
+                                        <strong className="text-foreground">This action cannot be undone after 30 days</strong>
                                     </AlertDescription>
                                 </Alert>
-                                <p className="text-sm text-muted-foreground">
-                                    When you delete your account:
-                                </p>
-                                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-                                    <li>All your agents and agent versions will be deleted</li>
-                                    <li>All your threads and conversations will be deleted</li>
-                                    <li>All your credentials and integrations will be removed</li>
-                                    <li>Your subscription will be cancelled</li>
-                                    <li>All billing data will be removed</li>
-                                    <li>Your account will be scheduled for deletion in 30 days</li>
-                                </ul>
+                                <div>
+                                    <p className="text-sm font-medium mb-2">
+                                        When you delete your account:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
+                                        <li>All your agents and agent versions will be deleted</li>
+                                        <li>All your threads and conversations will be deleted</li>
+                                        <li>All your credentials and integrations will be removed</li>
+                                        <li>Your subscription will be cancelled</li>
+                                        <li>All billing data will be removed</li>
+                                        <li>Your account will be scheduled for deletion in 30 days</li>
+                                    </ul>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                     You can cancel this request anytime within the 30-day grace period.
                                     After 30 days, all your data will be permanently deleted and cannot be recovered.
@@ -464,7 +473,6 @@ function PlanTab({ returnUrl }: { returnUrl: string }) {
             <PricingSection
                 returnUrl={returnUrl}
                 showTitleAndTabs={false}
-                showInfo={false}
                 insideDialog={false}
                 noPadding={false}
             />
@@ -472,7 +480,8 @@ function PlanTab({ returnUrl }: { returnUrl: string }) {
     );
 }
 
-function BillingTab({ returnUrl }: { returnUrl: string }) {
+// Billing Tab Component - Usage, credits, subscription management
+function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenPlanModal: () => void }) {
     const { session, isLoading: authLoading } = useAuth();
     const queryClient = useQueryClient();
     const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(null);
@@ -687,7 +696,7 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                             ) : isFreeTier ? (
                                 <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
                                     <Zap className="h-3 w-3" />
-                                    Free Tier
+                                    Basic
                                 </Badge>
                             ) : (
                                 <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
@@ -701,7 +710,7 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                         <div className="flex items-center justify-between">
                             <div>
                                 {!isFreeTier && planName && planIcon ? (
-                                    <div className="flex items-center">
+                                    <div className="flex items-center gap-2">
                                     <>
                                         <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
                                         <img
@@ -716,21 +725,25 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
                                         className="flex-shrink-0 h-[16px] w-auto hidden dark:block"
                                         />
                                     </>
+                                        <span className="ml-2 font-medium">{planName}</span>
                                     </div>
-                                ) : null}
+                                ) : (
+                                    <span className="font-medium">{planName || 'Basic'}</span>
+                                )}
+                                {subscription?.current_period_end && (
+                                    <div className="text-sm text-muted-foreground mt-1">
+                                        Next billing date: {formatDate(subscription.current_period_end)}
                             </div>
-                            <div className="text-right">
-                                {!isFreeTier && (
-                                    <>
-                                        <p className="text-sm text-muted-foreground">
-                                            {subscription?.current_period_end && `Next billing date`}
-                                        </p>
-                                        <p className="font-medium">
-                                            {subscription?.current_period_end && formatDate(subscription.current_period_end)}
-                                        </p>
-                                    </>
                                 )}
                             </div>
+                            <Button
+                                variant="outline"
+                                onClick={onOpenPlanModal}
+                                className="ml-4"
+                            >
+                                <Zap className="h-4 w-4 mr-2" />
+                                Change Plan
+                            </Button>
                         </div>
                         {commitmentInfo?.has_commitment && (
                             <Alert className="border-blue-500/50 bg-blue-500/10 shadow-none">

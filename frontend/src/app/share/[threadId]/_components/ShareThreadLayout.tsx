@@ -4,7 +4,7 @@ import { ToolCallSidePanel } from '@/components/thread/tool-call-side-panel';
 import { SiteHeader } from '@/components/thread/thread-site-header';
 import { Project } from '@/lib/api';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { UnifiedMessage } from '@/components/thread/types';
 
 

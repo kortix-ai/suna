@@ -13,7 +13,7 @@ import { ArrowRight, Clock, PlugZap } from 'lucide-react';
 import { EventBasedTriggerDialog } from '@/components/agents/triggers/event-based-trigger-dialog';
 import { SimplifiedScheduleConfig } from '@/components/agents/triggers/providers/simplified-schedule-config';
 import { ScheduleTriggerConfig } from '@/components/agents/triggers/types';
-import { useCreateTrigger, useUpdateTrigger } from '@/hooks/react-query/triggers';
+import { useCreateTrigger, useUpdateTrigger } from '@/hooks/triggers';
 import { toast } from 'sonner';
 import { AgentSelector } from '@/components/agents/agent-selector';
 

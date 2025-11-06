@@ -28,7 +28,7 @@ import {
   TrendingDown,
   ExternalLink,
 } from 'lucide-react';
-import { useThreadUsage } from '@/hooks/react-query/billing/use-thread-usage';
+import { useThreadUsage } from '@/hooks/billing/use-thread-usage';
 
 export default function ThreadUsage() {
   const router = useRouter();

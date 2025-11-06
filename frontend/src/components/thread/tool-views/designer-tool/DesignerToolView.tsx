@@ -31,7 +31,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Toggle } from '@/components/ui/toggle';
-import { useImageContent } from '@/hooks/react-query/files';
+import { useImageContent } from '@/hooks/files';
 
 interface DesignElement {
   id: string;

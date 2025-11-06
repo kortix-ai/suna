@@ -785,7 +785,7 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
         const content = typeof latestMsg.content === 'string' ? JSON.parse(latestMsg.content) : latestMsg.content;
         if (content?.usage?.total_tokens) {
           // Store context usage
-          const { useContextUsageStore } = await import('@/lib/stores/context-usage-store');
+          const { useContextUsageStore } = await import('@/stores/context-usage-store');
           useContextUsageStore.getState().setUsage(threadId, {
             current_tokens: content.usage.total_tokens
           });
@@ -1720,7 +1720,7 @@ export const checkApiHealth = async (): Promise<HealthCheckResponse> => {
 
 // Billing API Types
 export interface CreateCheckoutSessionRequest {
-  price_id: string;
+  tier_key: string;  // Backend tier key like 'tier_2_20', 'free', etc.
   success_url: string;
   cancel_url: string;
   referral_id?: string;
@@ -1734,17 +1734,20 @@ export interface CreatePortalSessionRequest {
 export interface SubscriptionStatus {
   status: string; // Includes 'active', 'trialing', 'past_due', 'scheduled_downgrade', 'no_subscription'
   plan_name?: string;
-  price_id?: string;
+  tier_key?: string;  // Backend tier key like 'tier_2_20', 'free', etc.
   current_period_end?: string; // ISO datetime string
   cancel_at_period_end?: boolean;
   trial_end?: string; // ISO datetime string
+  trial_status?: string; // Trial status: 'active', 'expired', 'cancelled', 'used', 'converted'
+  trial_ends_at?: string; // ISO datetime string
+  is_trial?: boolean;
   minutes_limit?: number;
   cost_limit?: number;
   current_usage?: number;
   // Fields for scheduled changes
   has_schedule?: boolean;
   scheduled_plan_name?: string;
-  scheduled_price_id?: string;
+  scheduled_tier_key?: string;  // Backend tier key for scheduled change
   scheduled_change_date?: string; // ISO datetime string
   // Subscription data for frontend components
   subscription_id?: string;
@@ -1803,11 +1806,11 @@ export interface UserSubscriptionResponse {
       [key: string]: string;
     };
   };
-  price_id?: string;
+  tier_key?: string;  // Backend tier key
   plan_name?: string;
   status?: string;
   has_schedule?: boolean;
-  scheduled_price_id?: string;
+  scheduled_tier_key?: string;  // Backend tier key for scheduled change
   current_period_end?: number;
   current_period_start?: number;
   cancel_at_period_end?: boolean;
@@ -1851,7 +1854,7 @@ export interface BillingStatusResponse {
   can_run: boolean;
   message: string;
   subscription: {
-    price_id: string;
+    tier_key: string;  // Backend tier key
     plan_name: string;
     minutes_limit?: number;
   };

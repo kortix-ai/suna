@@ -35,14 +35,14 @@ export interface SubscriptionInfo {
   status: string;
   plan_name: string;
   display_plan_name?: string;
-  price_id: string;
+  tier_key: string;  // Backend tier key
   is_trial?: boolean;
   trial_status?: string;
   trial_ends_at?: string;
   subscription: {
     id: string | null;
     status: string;
-    price_id: string;
+    tier_key: string;  // Backend tier key
     current_period_end: string | null;
     cancel_at?: string;
     canceled_at?: string;
@@ -100,7 +100,7 @@ export interface TrialStatus {
 }
 
 export interface CreateCheckoutSessionRequest {
-  price_id: string;
+  tier_key: string;  // Backend tier key like 'tier_2_20', 'free', etc.
   success_url: string;
   cancel_url: string;
   commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';

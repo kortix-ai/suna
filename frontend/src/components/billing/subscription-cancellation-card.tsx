@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useQueryClient } from '@tanstack/react-query';
-import { subscriptionKeys } from '@/hooks/react-query/subscriptions/keys';
+import { subscriptionKeys } from '@/hooks/subscriptions/keys';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 interface SubscriptionCancellationCardProps {

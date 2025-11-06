@@ -15,7 +15,7 @@ import {
   Loader2,
   Plus,
 } from 'lucide-react';
-import { useCredentialProfilesForMcp } from '@/hooks/react-query/mcp/use-credential-profiles';
+import { useCredentialProfilesForMcp } from '@/hooks/mcp/use-credential-profiles';
 
 interface ComposioCredentialProfileSelectorProps {
   toolkitSlug: string;

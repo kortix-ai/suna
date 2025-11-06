@@ -20,8 +20,8 @@ import {
   Users,
   Activity
 } from 'lucide-react';
-import { useAdminUserList, useAdminUserStats } from '@/hooks/react-query/admin/use-admin-users';
-import type { UserSummary } from '@/hooks/react-query/admin/use-admin-users';
+import { useAdminUserList, useAdminUserStats } from '@/hooks/admin/use-admin-users';
+import type { UserSummary } from '@/hooks/admin/use-admin-users';
 
 interface AdminUserTableProps {
   onUserSelect?: (user: UserSummary) => void;

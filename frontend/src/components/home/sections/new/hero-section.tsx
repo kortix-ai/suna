@@ -1,7 +1,7 @@
 'use client';
 import { siteConfig } from '@/lib/home';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -10,11 +10,10 @@ import {
     BillingError,
     AgentRunLimitError,
 } from '@/lib/api';
-import { useInitiateAgentMutation } from '@/hooks/react-query/dashboard/use-initiate-agent';
-import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
-import { generateThreadName } from '@/lib/actions/threads';
+import { useInitiateAgentMutation } from '@/hooks/dashboard/use-initiate-agent';
+import { useThreadQuery } from '@/hooks/threads/use-threads';
 import GoogleSignIn from '@/components/GoogleSignIn';
-import { useAgents } from '@/hooks/react-query/agents/use-agents';
+import { useAgents } from '@/hooks/agents/use-agents';
 import {
     Dialog,
     DialogContent,
@@ -23,22 +22,19 @@ import {
     DialogTitle,
     DialogOverlay,
 } from '@/components/ui/dialog';
-import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
-import { useBillingError } from '@/hooks/useBillingError';
-import { useAccounts } from '@/hooks/use-accounts';
 import { isLocalMode, config, isStagingMode } from '@/lib/config';
 import { toast } from 'sonner';
-import { BillingModal } from '@/components/billing/billing-modal';
+import { PlanSelectionModal } from '@/components/billing/pricing';
 import GitHubSignIn from '@/components/GithubSignIn';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { createQueryHook } from '@/hooks/use-query';
-import { agentKeys } from '@/hooks/react-query/agents/keys';
-import { getAgents } from '@/hooks/react-query/agents/utils';
+import { useQuery } from '@tanstack/react-query';
+import { agentKeys } from '@/hooks/agents/keys';
+import { getAgents } from '@/hooks/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
-import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
-import { useAgentSelection } from '@/lib/stores/agent-selection-store';
+import { useSunaModePersistence } from '@/stores/suna-modes-store';
+import { useAgentSelection } from '@/stores/agent-selection-store';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -77,10 +73,6 @@ export function HeroSection() {
     } = useSunaModePersistence();
     const router = useRouter();
     const { user, isLoading } = useAuth();
-    const { billingError, handleBillingError, clearBillingError } =
-        useBillingError();
-    const { data: accounts } = useAccounts();
-    const personalAccount = accounts?.find((account) => account.personal_account);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const initiateAgentMutation = useInitiateAgentMutation();
     const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
@@ -93,23 +85,21 @@ export function HeroSection() {
     } | null>(null);
 
     // Fetch agents for selection
-    const { data: agentsResponse } = createQueryHook(
-        agentKeys.list({
+    const { data: agentsResponse } = useQuery({
+        queryKey: agentKeys.list({
             limit: 100,
             sort_by: 'name',
             sort_order: 'asc'
         }),
-        () => getAgents({
+        queryFn: () => getAgents({
             limit: 100,
             sort_by: 'name',
             sort_order: 'asc'
         }),
-        {
-            enabled: !!user && !isLoading,
-            staleTime: 5 * 60 * 1000,
-            gcTime: 10 * 60 * 1000,
-        }
-    )();
+        enabled: !!user && !isLoading,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    });
 
     const agents = agentsResponse?.agents || [];
 
@@ -233,10 +223,9 @@ export function HeroSection() {
 
     return (
         <section id="hero" className="w-full relative overflow-hidden">
-            <BillingModal
+            <PlanSelectionModal
                 open={showPaymentModal}
                 onOpenChange={setShowPaymentModal}
-                showUsageLimitAlert={true}
             />
             <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
                 {/* Animated background */}
@@ -401,16 +390,6 @@ export function HeroSection() {
                     </div>
                 </DialogContent>
             </Dialog>
-
-            {/* Add Billing Error Alert here */}
-            <BillingErrorAlert
-                message={billingError?.message}
-                currentUsage={billingError?.currentUsage}
-                limit={billingError?.limit}
-                accountId={personalAccount?.account_id}
-                onDismiss={clearBillingError}
-                isOpen={!!billingError}
-            />
 
             {agentLimitData && (
                 <AgentRunLimitDialog

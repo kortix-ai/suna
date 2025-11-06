@@ -40,14 +40,14 @@ import {
   MessageSquare,
   ExternalLink,
 } from 'lucide-react';
-import { useAdminUserDetails, useAdminUserThreads, useAdminUserActivity } from '@/hooks/react-query/admin/use-admin-users';
+import { useAdminUserDetails, useAdminUserThreads, useAdminUserActivity } from '@/hooks/admin/use-admin-users';
 import {
   useUserBillingSummary,
   useAdjustCredits,
   useProcessRefund,
   useAdminUserTransactions,
-} from '@/hooks/react-query/admin/use-admin-billing';
-import type { UserSummary } from '@/hooks/react-query/admin/use-admin-users';
+} from '@/hooks/billing';
+import type { UserSummary } from '@/hooks/admin/use-admin-users';
 
 interface AdminUserDetailsDialogProps {
   user: UserSummary | null;

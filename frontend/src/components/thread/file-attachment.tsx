@@ -18,7 +18,7 @@ import {
     DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
 
-import { useFileContent, useImageContent } from '@/hooks/react-query/files';
+import { useFileContent, useImageContent } from '@/hooks/files';
 import { useAuth } from '@/components/AuthProvider';
 import { Project } from '@/lib/api';
 

@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/command';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 
 interface HelpSearchModalProps {
     open: boolean;

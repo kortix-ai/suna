@@ -13,7 +13,7 @@ import {
   useDeleteTrigger, 
   useToggleTrigger,
   useTriggerProviders 
-} from '@/hooks/react-query/triggers';
+} from '@/hooks/triggers';
 import { toast } from 'sonner';
 import { OneClickIntegrations } from './one-click-integrations';
 
