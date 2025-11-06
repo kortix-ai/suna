@@ -57,7 +57,7 @@ export function getPlanIcon(planName: string, isLocal: boolean = false): string 
 
   // Basic/Free tier - no icon
   if (plan?.includes('free') || plan?.includes('basic')) {
-    return null;
+    return '/plan-icons/basic.svg';
   }
 
   // Ultra tier
