@@ -21,24 +21,41 @@ interface ThreadUsageResponse {
   summary: {
     total_credits_used: number;
     total_threads: number;
-    period_days: number;
-    since_date: string;
+    period_days: number | null;
+    start_date: string;
+    end_date: string;
   };
 }
 
-export function useThreadUsage(
-  limit: number = 50,
-  offset: number = 0,
-  days: number = 30
-) {
+interface UseThreadUsageParams {
+  limit?: number;
+  offset?: number;
+  days?: number;
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export function useThreadUsage({
+  limit = 50,
+  offset = 0,
+  days,
+  startDate,
+  endDate,
+}: UseThreadUsageParams) {
   return useQuery<ThreadUsageResponse>({
-    queryKey: ['billing', 'thread-usage', limit, offset, days],
+    queryKey: ['billing', 'thread-usage', limit, offset, days, startDate?.toISOString(), endDate?.toISOString()],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),
         offset: offset.toString(),
-        days: days.toString(),
       });
+      
+      if (startDate && endDate) {
+        params.append('start_date', startDate.toISOString());
+        params.append('end_date', endDate.toISOString());
+      } else if (days) {
+        params.append('days', days.toString());
+      }
       
       const response = await backendApi.get(`/billing/credit-usage-by-thread?${params.toString()}`);
       if (response.error) {
