@@ -222,7 +222,7 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "full_file_rewrite",
-            "description": "Completely rewrite an existing file with new content. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). IMPORTANT: Always prefer using edit_file for making changes to code. Only use this tool when edit_file fails or when you need to replace the entire file content.",
+            "description": "Completely rewrite an existing file with new content. **FOR PRESENTATIONS**: This tool is MANDATORY for template-based presentations - use it to rewrite existing slide HTML files that came from the template. When rewriting template slides, you MUST preserve the original template structure, styling, and layout - only update the content with research data. Do NOT use `create_slide` for template-based presentations. **FOR OTHER FILES**: The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Always prefer using edit_file for making changes to code. Only use this tool when edit_file fails or when you need to replace the entire file content.",
             "parameters": {
                 "type": "object",
                 "properties": {
