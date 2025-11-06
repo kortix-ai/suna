@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { format } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
 import {
   Card,
   CardContent,
@@ -20,13 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import {
   AlertCircle,
   TrendingDown,
@@ -37,10 +33,18 @@ import { useThreadUsage } from '@/hooks/billing/use-thread-usage';
 export default function ThreadUsage() {
   const router = useRouter();
   const [offset, setOffset] = useState(0);
-  const [days, setDays] = useState(30);
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: new Date(new Date().setDate(new Date().getDate() - 29)),
+    to: new Date(),
+  });
   const limit = 50;
 
-  const { data, isLoading, error } = useThreadUsage(limit, offset, days);
+  const { data, isLoading, error } = useThreadUsage({
+    limit,
+    offset,
+    startDate: dateRange?.from,
+    endDate: dateRange?.to,
+  });
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -66,8 +70,8 @@ export default function ThreadUsage() {
     }
   };
 
-  const handleDaysChange = (value: string) => {
-    setDays(parseInt(value));
+  const handleDateRangeUpdate = (values: { range: DateRange }) => {
+    setDateRange(values.range);
     setOffset(0);
   };
 
@@ -123,11 +127,15 @@ export default function ThreadUsage() {
     <div className="space-y-6">
       {summary && (
           <Card className='w-full'>
-            <CardHeader>
-              <CardTitle>Total Usage</CardTitle>
-              <CardDescription>Credits consumed across all threads</CardDescription>
-            </CardHeader>
-            <CardContent>
+            <CardHeader className='flex items-center justify-between'>
+              <div>
+                <CardTitle>Total Usage</CardTitle>
+                <CardDescription className='mt-2'>
+                  {dateRange.from && dateRange.to
+                    ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                    : 'Selected period'}
+                </CardDescription>
+              </div>
               <div className="flex items-center gap-2">
                 <TrendingDown className="h-5 w-5 text-red-500" />
                 <div>
@@ -135,14 +143,13 @@ export default function ThreadUsage() {
                     {formatCredits(summary.total_credits_used)}
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Last {summary.period_days} days
+                    Credits consumed
                   </p>
                 </div>
               </div>
-            </CardContent>
+            </CardHeader>
           </Card>
       )}
-
       <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
         <CardHeader className='px-0'>
           <div className="flex items-center justify-between">
@@ -152,26 +159,21 @@ export default function ThreadUsage() {
                 Credit consumption per conversation
               </CardDescription>
             </div>
-            <Select value={days.toString()} onValueChange={handleDaysChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="60">Last 60 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="180">Last 180 days</SelectItem>
-                <SelectItem value="365">Last year</SelectItem>
-              </SelectContent>
-            </Select>
+            <DateRangePicker
+              initialDateFrom={dateRange.from}
+              initialDateTo={dateRange.to}
+              onUpdate={handleDateRangeUpdate}
+              align="end"
+            />
           </div>
         </CardHeader>
         <CardContent className='px-0'>
           {threadRecords.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground">
-                No thread usage found in the last {days} days.
+                {dateRange.from && dateRange.to
+                  ? `No thread usage found between ${format(dateRange.from, "MMM dd, yyyy")} and ${format(dateRange.to, "MMM dd, yyyy")}.`
+                  : 'No thread usage found.'}
               </p>
             </div>
           ) : (
