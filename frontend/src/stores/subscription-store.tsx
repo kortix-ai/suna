@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { SubscriptionInfo, CreditBalance } from '@/lib/api/billing-v2';
+import { SubscriptionInfo, CreditBalance } from '@/lib/api/billing';
 import { useSubscription, useCreditBalance } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import React from 'react';
@@ -74,7 +74,7 @@ export function useSubscriptionStoreSync() {
     isLoading: subscriptionLoading, 
     error: subscriptionError, 
     refetch: refetchSubscription 
-  } = useSubscription(isAuthenticated);
+  } = useSubscription({ enabled: isAuthenticated });
   
   const {
     data: creditBalance,
@@ -150,7 +150,7 @@ export function useSubscriptionData() {
   const store = useSubscriptionStore();
   const { user } = useAuth();
   
-  const directSubscription = useSubscription(!!user);
+  const directSubscription = useSubscription({ enabled: !!user });
   const directCreditBalance = useCreditBalance(!!user);
   
   if (store.subscriptionData) {

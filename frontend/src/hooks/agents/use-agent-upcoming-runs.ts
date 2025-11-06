@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiClient, backendApi } from '@/lib/api-client';
+import { backendApi } from '@/lib/api-client';
 
 interface UpcomingRun {
   trigger_id: string;

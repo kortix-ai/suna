@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, CreditCard, AlertCircle, Zap, AlertCircleIcon } from 'lucide-react';
-import { apiClient, backendApi } from '@/lib/api-client';
+import { backendApi } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 interface CreditPurchaseProps {

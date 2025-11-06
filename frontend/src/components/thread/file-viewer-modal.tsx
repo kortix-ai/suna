@@ -32,8 +32,8 @@ import {
 import {
   listSandboxFiles,
   type FileInfo,
-  Project,
-} from '@/lib/api';
+} from '@/lib/api/sandbox';
+import { Project } from '@/lib/api/projects';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/AuthProvider';

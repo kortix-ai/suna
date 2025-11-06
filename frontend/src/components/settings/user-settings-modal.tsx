@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -33,17 +33,17 @@ import {
     useRequestAccountDeletion, 
     useCancelAccountDeletion 
 } from '@/hooks/account/use-account-deletion';
-import {
-    getSubscription,
-    createPortalSession,
-    cancelSubscription,
-    reactivateSubscription,
-    SubscriptionStatus,
-} from '@/lib/api';
+import { SubscriptionInfo } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { PlanSelectionModal, PricingSection } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
-import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
+import { 
+    useSubscription, 
+    useSubscriptionCommitment, 
+    useCreatePortalSession,
+    useCancelSubscription,
+    useReactivateSubscription
+} from '@/hooks/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -56,7 +56,6 @@ import {
     RotateCcw,
     Clock
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import ThreadUsage from '@/components/billing/thread-usage';
@@ -183,7 +182,7 @@ export function UserSettingsModal({
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} />}
+                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
                         {activeTab === 'usage' && <UsageTab />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                     </div>
@@ -476,56 +475,84 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 }
 
 // Billing Tab Component - Usage, credits, subscription management
-function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenPlanModal: () => void }) {
+function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: string; onOpenPlanModal: () => void; isActive: boolean }) {
     const { session, isLoading: authLoading } = useAuth();
-    const queryClient = useQueryClient();
-    const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [isManaging, setIsManaging] = useState(false);
     const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
-    const [isCancelling, setIsCancelling] = useState(false);
 
     const isLocal = isLocalMode();
-    const planName = getPlanName(subscriptionData, isLocal);
-    const planIcon = getPlanIcon(planName, isLocal);
+
+    // Use React Query hooks for subscription data
+    const {
+        data: subscriptionData,
+        isLoading: isLoadingSubscription,
+        error: subscriptionError,
+        refetch: refetchSubscription
+    } = useSubscription({
+        enabled: !!session && !authLoading,
+    });
 
     const {
         data: commitmentInfo,
         isLoading: commitmentLoading,
         error: commitmentError,
         refetch: refetchCommitment
-    } = useSubscriptionCommitment(subscriptionData?.subscription?.id || null);
+    } = useSubscriptionCommitment(subscriptionData?.subscription?.id, !!subscriptionData?.subscription?.id);
 
-    const fetchSubscriptionData = async () => {
-        if (!session) return;
+    // Mutations
+    const createPortalSessionMutation = useCreatePortalSession();
+    const cancelSubscriptionMutation = useCancelSubscription();
+    const reactivateSubscriptionMutation = useReactivateSubscription();
 
-        try {
-            setIsLoading(true);
-            const data = await getSubscription();
-            setSubscriptionData(data);
-            setError(null);
-            return data;
-        } catch (err) {
-            console.error('Failed to get subscription:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load subscription data');
-        } finally {
-            setIsLoading(false);
+    const planName = getPlanName(subscriptionData, isLocal);
+    const planIcon = getPlanIcon(planName, isLocal);
+
+    // Refetch billing info whenever the billing tab becomes active
+    const prevIsActiveRef = useRef(false);
+    useEffect(() => {
+        if (isActive && !prevIsActiveRef.current && session && !authLoading) {
+            console.log('🔄 Billing tab activated, refetching billing info...');
+            refetchSubscription().then((result) => {
+                const data = result.data;
+                console.log('🔄 Billing data fetched:', JSON.stringify(data, null, 2));
+                console.log('🔄 Subscription cancellation status:', {
+                    cancel_at_period_end: data?.subscription?.cancel_at_period_end,
+                    cancel_at: data?.subscription?.cancel_at,
+                    canceled_at: data?.subscription?.canceled_at,
+                    status: data?.subscription?.status,
+                });
+                // Also refetch commitment info if we have a subscription
+                if (data?.subscription?.id) {
+                    refetchCommitment();
+                }
+            });
         }
+        prevIsActiveRef.current = isActive;
+    }, [isActive, session, authLoading, refetchSubscription, refetchCommitment]);
+
+    const formatDate = (dateString: string) => {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+        });
     };
 
-    useEffect(() => {
-        if (authLoading || !session) return;
-        fetchSubscriptionData();
-    }, [session, authLoading]);
-
-    const formatDate = (timestamp: number) => {
+    const formatDateFromTimestamp = (timestamp: number) => {
         return new Date(timestamp * 1000).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'long',
             day: 'numeric',
         });
+    };
+
+    const formatDateFlexible = (dateValue: string | number) => {
+        if (typeof dateValue === 'number') {
+            // If it's a number, treat it as Unix timestamp (seconds)
+            return formatDateFromTimestamp(dateValue);
+        }
+        // Otherwise treat it as ISO string
+        return formatDate(dateValue);
     };
 
     const formatEndDate = (dateString: string) => {
@@ -542,97 +569,35 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
 
     const getEffectiveCancellationDate = () => {
         if (subscriptionData?.subscription?.cancel_at) {
-            return formatDate(subscriptionData.subscription.cancel_at);
+            const cancelAt = subscriptionData.subscription.cancel_at;
+            if (typeof cancelAt === 'number') {
+                return formatDateFromTimestamp(cancelAt);
+            }
+            return formatDate(cancelAt);
         }
-        return formatDate(subscriptionData?.subscription?.current_period_end || 0);
+        if (subscriptionData?.subscription?.current_period_end) {
+            return formatDateFlexible(subscriptionData.subscription.current_period_end);
+        }
+        return 'N/A';
     };
 
-    const handleManageSubscription = async () => {
-        try {
-            setIsManaging(true);
-            const { url } = await createPortalSession({ return_url: returnUrl });
-            window.location.href = url;
-        } catch (err) {
-            console.error('Failed to create portal session:', err);
-            setError(err instanceof Error ? err.message : 'Failed to create portal session');
-        } finally {
-            setIsManaging(false);
-        }
+    const handleManageSubscription = () => {
+        createPortalSessionMutation.mutate({ return_url: returnUrl });
     };
 
-    const handleCancel = async () => {
-        setIsCancelling(true);
-        const originalState = subscriptionData;
-
-        try {
-            setShowCancelDialog(false);
-
-            if (subscriptionData?.subscription) {
-                const optimisticState = {
-                    ...subscriptionData,
-                    subscription: {
-                        ...subscriptionData.subscription,
-                        cancel_at_period_end: true,
-                        ...(commitmentInfo?.has_commitment && commitmentInfo.commitment_end_date ? {
-                            cancel_at: Math.floor(new Date(commitmentInfo.commitment_end_date).getTime() / 1000)
-                        } : {})
-                    }
-                };
-                setSubscriptionData(optimisticState);
-            }
-
-            const response = await cancelSubscription();
-
-            if (response.success) {
-                toast.success(response.message);
-            } else {
-                setSubscriptionData(originalState);
-                toast.error(response.message);
-            }
-        } catch (error: any) {
-            console.error('Error cancelling subscription:', error);
-            setSubscriptionData(originalState);
-            toast.error(error.message || 'Failed to cancel subscription');
-        } finally {
-            setIsCancelling(false);
-        }
+    const handleCancel = () => {
+        setShowCancelDialog(false);
+        cancelSubscriptionMutation.mutate(undefined);
     };
 
-    const handleReactivate = async () => {
-        setIsCancelling(true);
-        const originalState = subscriptionData;
-
-        try {
-            if (subscriptionData?.subscription) {
-                const optimisticState = {
-                    ...subscriptionData,
-                    subscription: {
-                        ...subscriptionData.subscription,
-                        cancel_at_period_end: false,
-                        cancel_at: undefined
-                    }
-                };
-                setSubscriptionData(optimisticState);
-            }
-
-            const response = await reactivateSubscription();
-
-            if (response.success) {
-                toast.success(response.message);
-            } else {
-                setSubscriptionData(originalState);
-                toast.error(response.message);
-            }
-        } catch (error: any) {
-            console.error('Error reactivating subscription:', error);
-            setSubscriptionData(originalState);
-            toast.error(error.message || 'Failed to reactivate subscription');
-        } finally {
-            setIsCancelling(false);
-        }
+    const handleReactivate = () => {
+        reactivateSubscriptionMutation.mutate();
     };
 
-    if (isLoading || authLoading) {
+    const isLoading = isLoadingSubscription || authLoading;
+    const error = subscriptionError ? (subscriptionError instanceof Error ? subscriptionError.message : 'Failed to load subscription data') : null;
+
+    if (isLoading) {
         return (
             <div className="p-6 space-y-6">
                 <Skeleton className="h-8 w-32" />
@@ -674,7 +639,7 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
     const isSubscribed = subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing';
     const isFreeTier = subscriptionData?.tier?.name === 'free';
     const subscription = subscriptionData?.subscription;
-    const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at;
+    const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at || subscription?.canceled_at;
 
     return (
         <div className="p-6 space-y-6">
@@ -727,7 +692,7 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                                 )}
                                 {subscription?.current_period_end && (
                                     <div className="text-sm text-muted-foreground mt-1">
-                                        Next billing date: {formatDate(subscription.current_period_end)}
+                                        Next billing date: {formatDateFlexible(subscription.current_period_end)}
                             </div>
                                 )}
                             </div>
@@ -769,21 +734,21 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                                 {isCancelled ? (
                                     <Button
                                         onClick={handleReactivate}
-                                        disabled={isCancelling}
+                                        disabled={reactivateSubscriptionMutation.isPending}
                                         className="flex-1"
                                     >
                                         <RotateCcw className="h-4 w-4 mr-2" />
-                                        {isCancelling ? 'Reactivating...' : 'Reactivate Subscription'}
+                                        {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate Subscription'}
                                     </Button>
                                 ) : (
                                     <>
                                         <Button
                                             onClick={handleManageSubscription}
-                                            disabled={isManaging}
+                                            disabled={createPortalSessionMutation.isPending}
                                             variant="outline"
                                             className="flex-1"
                                         >
-                                            {isManaging ? 'Loading...' : 'Manage Subscription'}
+                                            {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage Subscription'}
                                         </Button>
                                         <Button
                                             onClick={() => setShowCancelDialog(true)}
@@ -801,8 +766,8 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
             )}
             <div>
                 <CreditBalanceDisplay
-                    balance={subscriptionData?.credit_balance || 0}
-                    canPurchase={subscriptionData?.can_purchase_credits || false}
+                    balance={subscriptionData?.credits?.balance || 0}
+                    canPurchase={subscriptionData?.credits?.can_purchase_credits || false}
                     onPurchaseClick={() => setShowCreditPurchaseModal(true)}
                 />
             </div>
@@ -816,14 +781,18 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
                     <div className="space-y-4">
                         <p className="text-sm text-muted-foreground">
                             Are you sure you want to cancel your subscription? You'll continue to have access until{' '}
-                            {subscription?.current_period_end && formatDate(subscription.current_period_end)}.
+                            {subscription?.current_period_end && formatDateFlexible(subscription.current_period_end)}.
                         </p>
                         <div className="flex gap-2 justify-end">
                             <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
                                 Keep Subscription
                             </Button>
-                            <Button variant="destructive" onClick={handleCancel} disabled={isCancelling}>
-                                {isCancelling ? 'Cancelling...' : 'Cancel Plan'}
+                            <Button 
+                                variant="destructive" 
+                                onClick={handleCancel} 
+                                disabled={cancelSubscriptionMutation.isPending}
+                            >
+                                {cancelSubscriptionMutation.isPending ? 'Cancelling...' : 'Cancel Plan'}
                             </Button>
                         </div>
                     </div>
@@ -832,10 +801,10 @@ function BillingTab({ returnUrl, onOpenPlanModal }: { returnUrl: string; onOpenP
             <CreditPurchaseModal
                 open={showCreditPurchaseModal}
                 onOpenChange={setShowCreditPurchaseModal}
-                currentBalance={subscriptionData?.credit_balance || 0}
-                canPurchase={subscriptionData?.can_purchase_credits || false}
+                currentBalance={subscriptionData?.credits?.balance || 0}
+                canPurchase={subscriptionData?.credits?.can_purchase_credits || false}
                 onPurchaseComplete={() => {
-                    fetchSubscriptionData();
+                    refetchSubscription();
                 }}
             />
         </div>

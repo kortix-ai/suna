@@ -11,6 +11,10 @@ import { Button } from '@/components/ui/button';
 import { PricingSection } from './pricing-section';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
+import { useQueryClient } from '@tanstack/react-query';
+import { billingKeys } from '@/hooks/billing/use-subscription';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 interface PlanSelectionModalProps {
     open: boolean;
@@ -26,6 +30,40 @@ export function PlanSelectionModal({
     creditsExhausted = false,
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? window.location.href : '/';
+    const queryClient = useQueryClient();
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    // Check for checkout success when modal opens and invalidate queries
+    useEffect(() => {
+        if (open) {
+            const checkoutSuccess = searchParams.get('checkout');
+            const sessionId = searchParams.get('session_id');
+            const clientSecret = searchParams.get('client_secret');
+            
+            // If we have checkout success indicators, invalidate billing queries
+            if (checkoutSuccess === 'success' || sessionId || clientSecret) {
+                console.log('🔄 Checkout success detected in modal, invalidating billing queries...');
+                queryClient.invalidateQueries({ queryKey: billingKeys.all });
+                
+                // Clean up URL params
+                const url = new URL(window.location.href);
+                url.searchParams.delete('checkout');
+                url.searchParams.delete('session_id');
+                url.searchParams.delete('client_secret');
+                router.replace(url.pathname + url.search, { scroll: false });
+            }
+        }
+    }, [open, searchParams, queryClient, router]);
+
+    const handleSubscriptionUpdate = () => {
+        // Invalidate all billing queries
+        queryClient.invalidateQueries({ queryKey: billingKeys.all });
+        // Close modal after successful upgrade
+        setTimeout(() => {
+            onOpenChange(false);
+        }, 500);
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -75,10 +113,7 @@ export function PlanSelectionModal({
                             insideDialog={false}
                             noPadding={true}
                             customTitle={creditsExhausted ? "You ran out of credits. Upgrade now." : undefined}
-                            onSubscriptionUpdate={() => {
-                                // Optionally close modal after successful subscription update
-                                // onOpenChange(false);
-                            }}
+                            onSubscriptionUpdate={handleSubscriptionUpdate}
                         />
                     </div>
                 </div>

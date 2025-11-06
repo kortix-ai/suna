@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getTrialStatus, startTrial } from '@/lib/api/billing-v2';
+import { getTrialStatus, startTrial } from '@/lib/api/billing';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 

@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Project } from '@/lib/api';
-import { Message as BaseApiMessageType } from '@/lib/api';
+import type { Project } from '@/lib/api/projects';
+import { Message as BaseApiMessageType } from '@/lib/api/threads';
 
 // Define a type for the params to make React.use() work properly
 export type ThreadParams = {

@@ -59,7 +59,7 @@ import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, 
 import { projectKeys, threadKeys } from '@/hooks/threads/keys';
 import { useThreadAgentStatuses } from '@/hooks/threads';
 import { formatDateForList } from '@/lib/utils/date-formatting';
-import { Thread, getThreadsPaginated } from '@/lib/api';
+import { Thread, getThreadsPaginated } from '@/lib/api/threads';
 import { useQuery } from '@tanstack/react-query';
 
 // Component for date group headers

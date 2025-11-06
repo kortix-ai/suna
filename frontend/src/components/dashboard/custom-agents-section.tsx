@@ -13,7 +13,7 @@ import { StreamlinedInstallDialog } from '@/components/agents/installation/strea
 import { toast } from 'sonner';
 import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dialog';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
-import { AgentCountLimitError } from '@/lib/api';
+import { AgentCountLimitError } from '@/lib/api/errors';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import type { BaseAgentData } from '@/components/ui/unified-agent-card';
 import { ChevronRight, Code2, Calendar, MessageSquare, Briefcase, ShoppingCart, Users, Wrench, GraduationCap, Heart, Home, ScrollText, Calculator, FileText, Palette, User, DollarSign, Target, BookOpen, ChevronDown } from 'lucide-react';

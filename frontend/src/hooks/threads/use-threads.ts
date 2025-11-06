@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { threadKeys } from "./keys";
 import { Thread, updateThread, toggleThreadPublicStatus, deleteThread, getThread } from "./utils";
-import { getThreads } from "@/lib/api";
+import { getThreads } from "@/lib/api/threads";
 
 export const useThreadQuery = (threadId: string, options?) => {
   return useQuery<Thread>({

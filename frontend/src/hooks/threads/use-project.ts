@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { threadKeys, projectKeys } from "./keys";
 import { getProject, getPublicProjects, Project, updateProject } from "./utils";
-import { getProjects, createProject, deleteProject } from "@/lib/api";
+import { getProjects, createProject, deleteProject } from "@/lib/api/projects";
 import { toast } from 'sonner';
 import { handleApiError } from '@/lib/error-handler';
 

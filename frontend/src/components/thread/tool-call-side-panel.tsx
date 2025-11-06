@@ -1,6 +1,6 @@
 'use client';
 
-import { Project } from '@/lib/api';
+import { Project } from '@/lib/api/projects';
 import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import React, { memo, useMemo, useCallback } from 'react';
 import { Slider } from '@/components/ui/slider';

@@ -1,6 +1,7 @@
 'use client';
 
-import { unifiedAgentStart, UnifiedAgentStartResponse, BillingError, AgentRunLimitError } from "@/lib/api";
+import { unifiedAgentStart, UnifiedAgentStartResponse } from "@/lib/api/agents";
+import { AgentRunLimitError, BillingError } from "@/lib/api/errors";
 import { useMutation } from "@tanstack/react-query";
 import { handleApiSuccess, handleApiError } from "@/lib/error-handler";
 import { dashboardKeys } from "./keys";

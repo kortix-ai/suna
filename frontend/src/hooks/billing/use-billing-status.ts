@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { threadKeys } from "@/hooks/threads/keys";
-import { checkBillingStatus, type BillingStatusResponse } from "@/lib/api";
+import { checkBillingStatus, type BillingStatusResponse } from "@/lib/api/billing";
 
 export const useBillingStatusQuery = (enabled = true, options?) => {
   return useQuery<BillingStatusResponse>({

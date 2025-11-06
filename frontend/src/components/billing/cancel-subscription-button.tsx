@@ -17,9 +17,7 @@ import {
   Shield
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { cancelSubscription } from '@/lib/api';
-import { useQueryClient } from '@tanstack/react-query';
-import { subscriptionKeys } from '@/hooks/subscriptions/keys';
+import { useCancelSubscription } from '@/hooks/billing';
 
 interface CancelSubscriptionButtonProps {
   subscriptionId?: string;
@@ -43,31 +41,17 @@ export function CancelSubscriptionButton({
   className
 }: CancelSubscriptionButtonProps) {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
-  const [isCancelling, setIsCancelling] = useState(false);
-  const queryClient = useQueryClient();
+  const cancelSubscriptionMutation = useCancelSubscription();
 
-  const handleCancel = async () => {
-    setIsCancelling(true);
-    try {
-      const response = await cancelSubscription();
-      
-      if (response.success) {
-        toast.success(response.message);
-        queryClient.invalidateQueries({ queryKey: subscriptionKeys.all });
-        queryClient.invalidateQueries({ queryKey: ['subscription', 'cancellation-status'] });
-        setShowCancelDialog(false);
+  const handleCancel = () => {
+    setShowCancelDialog(false);
+    cancelSubscriptionMutation.mutate(undefined, {
+      onSuccess: () => {
         if (onCancel) {
           onCancel();
         }
-      } else {
-        toast.error(response.message);
       }
-    } catch (error: any) {
-      console.error('Error cancelling subscription:', error);
-      toast.error(error.message || 'Failed to cancel subscription');
-    } finally {
-      setIsCancelling(false);
-    }
+    });
   };
 
   if (!subscriptionId) {
@@ -153,16 +137,16 @@ export function CancelSubscriptionButton({
             <Button
               variant="outline"
               onClick={() => setShowCancelDialog(false)}
-              disabled={isCancelling}
+              disabled={cancelSubscriptionMutation.isPending}
             >
               Keep Subscription
             </Button>
             <Button
               variant="destructive"
               onClick={handleCancel}
-              disabled={isCancelling}
+              disabled={cancelSubscriptionMutation.isPending}
             >
-              {isCancelling ? (
+              {cancelSubscriptionMutation.isPending ? (
                 <>
                   <X className="mr-2 h-4 w-4 animate-pulse" />
                   Cancelling...

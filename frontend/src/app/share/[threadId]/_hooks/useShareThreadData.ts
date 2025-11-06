@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   getMessages,
-  getProject,
-  getThread,
-  Project,
   Message as BaseApiMessageType,
-} from '@/lib/api';
+} from '@/lib/api/threads';
+import { getProject, Project } from '@/lib/api/projects';
+import { getThread } from '@/lib/api/threads';
 import {
   UnifiedMessage,
   ParsedMetadata,

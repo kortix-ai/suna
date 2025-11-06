@@ -78,7 +78,7 @@ export const useImportAgentFromJson = () => {
         );
         
         if (isAgentLimitError) {
-          const { AgentCountLimitError } = await import('@/lib/api');
+          const { AgentCountLimitError } = await import('@/lib/api/errors');
           const errorDetail = errorData?.detail || errorData;
           throw new AgentCountLimitError(error.response.status, errorDetail);
         }

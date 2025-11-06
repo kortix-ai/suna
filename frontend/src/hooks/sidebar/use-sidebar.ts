@@ -1,6 +1,7 @@
 'use client';
 
-import { Project, Thread } from "@/lib/api";
+import { Project } from "@/lib/api/projects";
+import { Thread } from "@/lib/api/threads";
 
 // Re-export hooks from their proper locations for backward compatibility
 export { useProjects, usePublicProjectsQuery, useCreateProject, useUpdateProject, useDeleteProject } from '../threads/use-project';

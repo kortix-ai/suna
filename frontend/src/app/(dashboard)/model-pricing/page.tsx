@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 // Models now fetched via useModelSelection hook
-import type { Model } from '@/lib/api';
+import type { Model } from '@/lib/api/billing';
 import { useMemo, useState } from 'react';
 import { useModelSelection } from '@/hooks/agents';
 

@@ -21,15 +21,17 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SubscriptionInfo } from '@/lib/api/billing-v2';
-import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
+import { SubscriptionInfo } from '@/lib/api/billing';
+import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api/billing';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
 import { useSubscription } from '@/hooks/billing';
-import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
+import { useSubscriptionCommitment } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
+import { useQueryClient } from '@tanstack/react-query';
+import { billingKeys } from '@/hooks/billing/use-subscription';
 import posthog from 'posthog-js';
-import { Badge } from '@/components/ui/badge';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { TierBadge } from '@/components/billing/tier-badge';
 
@@ -186,6 +188,7 @@ function PricingTier({
   insideDialog = false,
   billingPeriod = 'monthly' as 'monthly' | 'yearly' | 'yearly_commitment',
 }: PricingTierProps) {
+  const queryClient = useQueryClient();
 
   // Determine the price to display based on billing period
   const getDisplayPrice = () => {
@@ -257,6 +260,9 @@ function PricingTier({
             : 'Subscription updated successfully';
           toast.success(upgradeMessage);
           posthog.capture('plan_upgraded');
+          // Invalidate all billing queries immediately after upgrade
+          queryClient.invalidateQueries({ queryKey: billingKeys.all });
+          // Trigger subscription update callback to refetch data
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'commitment_blocks_downgrade':
@@ -279,6 +285,9 @@ function PricingTier({
             </div>,
           );
           posthog.capture('plan_downgraded');
+          // Invalidate queries to show scheduled change
+          queryClient.invalidateQueries({ queryKey: billingKeys.all });
+          // Trigger subscription update callback to refetch data
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'no_change':
@@ -637,8 +646,9 @@ export function PricingSection({
 }: PricingSectionProps) {
   const { user } = useAuth();
   const isUserAuthenticated = !!user;
+  const queryClient = useQueryClient();
 
-  const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription(isUserAuthenticated);
+  const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription({ enabled: isUserAuthenticated });
   const subCommitmentQuery = useSubscriptionCommitment(subscriptionData?.subscription?.id, isUserAuthenticated);
 
   const isAuthenticated = isUserAuthenticated && !!subscriptionData && subscriptionQueryError === null;
@@ -666,9 +676,12 @@ export function PricingSection({
   };
 
   const handleSubscriptionUpdate = () => {
+    // Invalidate all billing-related queries to force refetch
+    queryClient.invalidateQueries({ queryKey: billingKeys.all });
+    // Also refetch subscription and commitment directly
     refetchSubscription();
     subCommitmentQuery.refetch();
-    // The useSubscription hook will automatically refetch, so we just need to clear loading states
+    // Clear loading states
     setTimeout(() => {
       setPlanLoadingStates({});
     }, 1000);

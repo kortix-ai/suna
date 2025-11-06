@@ -4,7 +4,7 @@ import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thre
 import { FileAttachmentGrid } from '@/components/thread/file-attachment';
 import { useFilePreloader } from '@/hooks/files';
 import { useAuth } from '@/components/AuthProvider';
-import { Project } from '@/lib/api';
+import { Project } from '@/lib/api/projects';
 import {
     extractPrimaryParam,
     getToolIcon,
