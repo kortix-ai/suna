@@ -10,9 +10,9 @@ import { toast } from 'sonner';
 import { ProfileConnector } from './installation/streamlined-profile-connector';
 import { CustomServerStep } from './installation/custom-server-step';
 import type { SetupStep } from './installation/types';
-import { useAnalyzeJsonForImport, useImportAgentFromJson, type JsonAnalysisResult, type JsonImportResult } from '@/hooks/react-query/agents/use-json-import';
+import { useAnalyzeJsonForImport, useImportAgentFromJson, type JsonAnalysisResult, type JsonImportResult } from '@/hooks/agents/use-json-import';
 import { AgentCountLimitDialog } from './agent-count-limit-dialog';
-import { AgentCountLimitError } from '@/lib/api';
+import { AgentCountLimitError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils';
 
 interface JsonImportDialogProps {

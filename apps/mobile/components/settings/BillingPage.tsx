@@ -17,7 +17,7 @@ import {
   CreditsCard,
   PricingTierCard
 } from '@/components/billing';
-import { startPlanCheckout, getPriceId, PRICING_TIERS, getDisplayPrice, type PricingTier, type BillingPeriod } from '@/lib/billing';
+import { startPlanCheckout, PRICING_TIERS, getDisplayPrice, type PricingTier, type BillingPeriod } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 
 interface BillingPageProps {
@@ -50,9 +50,7 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
       setSelectedPlan(tier.id);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      const priceId = getPriceId(tier, billingPeriod);
-
-      await startPlanCheckout(priceId, billingPeriod, () => {
+      await startPlanCheckout(tier.id, billingPeriod, () => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         refetchAll();
         handleClose();
@@ -83,13 +81,9 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
     }
   };
 
-  const currentPriceId = subscriptionData?.price_id;
-
   const isTierActive = (tier: PricingTier) => {
-    if (!currentPriceId) return false;
-    const monthlyPriceId = getPriceId(tier, 'monthly');
-    const yearlyPriceId = getPriceId(tier, 'yearly_commitment');
-    return currentPriceId === monthlyPriceId || currentPriceId === yearlyPriceId;
+    if (!subscriptionData?.tier_key && !subscriptionData?.plan_name) return false;
+    return subscriptionData?.tier_key === tier.id || subscriptionData?.plan_name === tier.id;
   };
 
   if (!visible) return null;

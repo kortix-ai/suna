@@ -5,7 +5,7 @@
  * All tool metadata is fetched from the backend auto-discovery system.
  * 
  * Use the useToolsMetadata() hook to fetch tool data:
- * import { useToolsMetadata } from '@/hooks/react-query/tools/use-tools-metadata';
+ * import { useToolsMetadata } from '@/hooks/tools/use-tools-metadata';
  */
 
 export interface ToolMethod {

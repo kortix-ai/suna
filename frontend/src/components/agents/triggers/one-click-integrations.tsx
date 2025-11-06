@@ -10,12 +10,12 @@ import {
   useInstallOAuthIntegration,
   useUninstallOAuthIntegration,
   useOAuthCallbackHandler
-} from '@/hooks/react-query/triggers/use-oauth-integrations';
+} from '@/hooks/triggers/use-oauth-integrations';
 import {
   useAgentTriggers,
   useCreateTrigger,
   useDeleteTrigger
-} from '@/hooks/react-query/triggers';
+} from '@/hooks/triggers';
 import { toast } from 'sonner';
 import { EventBasedTriggerDialog } from './event-based-trigger-dialog';
 import { config, EnvMode } from '@/lib/config';

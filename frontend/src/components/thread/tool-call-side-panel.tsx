@@ -1,6 +1,6 @@
 'use client';
 
-import { Project } from '@/lib/api';
+import { Project } from '@/lib/api/projects';
 import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import React, { memo, useMemo, useCallback } from 'react';
 import { Slider } from '@/components/ui/slider';
@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
 import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Minimize2, Globe, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ToolView } from './tool-views/wrapper';
@@ -23,7 +23,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
-import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 
 export interface ToolCallInput {
   assistantCall: {

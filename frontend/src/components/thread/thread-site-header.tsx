@@ -12,14 +12,14 @@ import {
 } from "@/components/ui/tooltip"
 import { useState, useRef, KeyboardEvent } from "react"
 import { Input } from "@/components/ui/input"
-import { useUpdateProject } from "@/hooks/react-query"
+import { useUpdateProject } from "@/hooks/threads/use-project";
 import { Skeleton } from "@/components/ui/skeleton"
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useIsMobile } from "@/hooks/utils"
 import { cn } from "@/lib/utils"
 import { ShareModal } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
-import { projectKeys } from "@/hooks/react-query/sidebar/keys";
-import { threadKeys } from "@/hooks/react-query/threads/keys";
+import { projectKeys } from "@/hooks/threads/keys";
+import { threadKeys } from "@/hooks/threads/keys";
 
 interface ThreadSiteHeaderProps {
   threadId?: string;

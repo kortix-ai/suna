@@ -17,10 +17,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Search, Save, AlertCircle, Loader2, Filter, X, ChevronDown } from 'lucide-react';
 import { backendApi } from '@/lib/api-client';
-import { useComposioTools } from '@/hooks/react-query/composio/use-composio';
+import { useComposioTools } from '@/hooks/composio/use-composio';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import type { ComposioTool } from '@/hooks/react-query/composio/utils';
+import type { ComposioTool } from '@/hooks/composio/utils';
 
 interface ComposioToolsSelectorProps {
   profileId?: string;

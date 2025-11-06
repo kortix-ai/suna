@@ -8,23 +8,22 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useTrialStatus, useStartTrial } from '@/hooks/react-query/billing/use-trial-status';
-import { useSubscription } from '@/hooks/react-query/use-billing-v2';
+import { useTrialStatus, useStartTrial, useSubscription } from '@/hooks/billing';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
+import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useAuth } from '@/components/AuthProvider';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
-import { useAdminRole } from '@/hooks/react-query/use-admin-role';
+import { useAdminRole } from '@/hooks/admin';
 
 export default function ActivateTrialPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { data: subscription, isLoading: isLoadingSubscription } = useSubscription(!!user);
+  const { data: subscription, isLoading: isLoadingSubscription } = useSubscription({ enabled: !!user });
   const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus(!!user);
   const startTrialMutation = useStartTrial();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
@@ -38,9 +37,10 @@ export default function ActivateTrialPage() {
         trialStatus.trial_status === 'expired' ||
         trialStatus.trial_status === 'cancelled' ||
         trialStatus.trial_status === 'converted';
-      const hasActiveSubscription = subscription.tier &&
-        subscription.tier.name !== 'none' &&
-        subscription.tier.name !== 'free';
+      
+      // ✅ Use tier_key and allow free tier
+      const tierKey = subscription.tier_key || subscription.tier?.name;
+      const hasActiveSubscription = tierKey && tierKey !== 'none';
 
       if (hasActiveTrial || hasActiveSubscription) {
         router.push('/dashboard');

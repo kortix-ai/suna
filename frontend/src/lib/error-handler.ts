@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import { BillingError, AgentRunLimitError, ProjectLimitError } from './api';
+import { AgentRunLimitError, ProjectLimitError, BillingError } from './api/errors';
 
 export interface ApiError extends Error {
   status?: number;

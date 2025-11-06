@@ -167,11 +167,6 @@ api_router = APIRouter()
 
 # Include all API routers without individual prefixes
 api_router.include_router(core_api.router)
-
-# Include sanitized API endpoints for frontend-ready message format
-from core import api_sanitized
-api_router.include_router(api_sanitized.router)
-
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
 api_router.include_router(setup_router)

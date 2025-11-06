@@ -1,74 +1,35 @@
 'use client';
 
-import React, { useState, Suspense, useCallback, useEffect } from 'react';
-import { Skeleton } from '@/components/ui/skeleton';
+import React, { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-// TOURS DISABLED - Joyride imports commented out
-// import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
+import { useQueryClient } from '@tanstack/react-query';
+import { billingKeys } from '@/hooks/billing/use-subscription';
 import {
   ChatInput,
   ChatInputHandles,
 } from '@/components/thread/chat-input/chat-input';
-import {
-  BillingError,
-  AgentRunLimitError,
-  ProjectLimitError,
-} from '@/lib/api';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { useBillingError } from '@/hooks/useBillingError';
-import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
-import { useAccounts } from '@/hooks/use-accounts';
+import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
+import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
-import { useInitiateAgentWithInvalidation } from '@/hooks/react-query/dashboard/use-initiate-agent';
+import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
 
-import { useAgents } from '@/hooks/react-query/agents/use-agents';
-import { cn } from '@/lib/utils';
-import { BillingModal } from '@/components/billing/billing-modal';
-import { useAgentSelection } from '@/lib/stores/agent-selection-store';
+import { useAgents } from '@/hooks/agents/use-agents';
+import { PlanSelectionModal } from '@/components/billing/pricing';
+import { useBillingModal } from '@/hooks/billing/use-billing-modal';
+import { useAgentSelection } from '@/stores/agent-selection-store';
 import { SunaModesPanel } from './suna-modes-panel';
-import { AIWorkerTemplates } from './ai-worker-templates';
-import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
+import { useThreadQuery } from '@/hooks/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
-import { KortixLogo } from '../sidebar/kortix-logo';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { CustomAgentsSection } from './custom-agents-section';
 import { toast } from 'sonner';
-import { ReleaseBadge } from '../auth/release-badge';
-// TOURS DISABLED - Tour imports commented out
-// import { useDashboardTour } from '@/hooks/use-dashboard-tour';
-// import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
-import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
-import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
+import { useSunaModePersistence } from '@/stores/suna-modes-store';
+import { CreditsDisplay } from '@/components/billing/credits-display';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
-/* TOURS DISABLED - dashboardTourSteps commented out
-const dashboardTourSteps: Step[] = [
-  {
-    target: '[data-tour="chat-input"]',
-    content: 'Type your questions or tasks here. Suna can help with research, analysis, automation, and much more.',
-    title: 'Start a Conversation',
-    placement: 'top',
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="my-agents"]',
-    content: 'Create and manage your custom AI agents here. Build specialized agents for different tasks and workflows.',
-    title: 'Manage Your Agents',
-    placement: 'right',
-    disableBeacon: true,
-  },
-  {
-    target: '[data-tour="examples"]',
-    content: 'Get started quickly with these example prompts. Click any example to try it out.',
-    title: 'Example Prompts',
-    placement: 'top',
-    disableBeacon: true,
-  },
-];
-*/
 
 export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
@@ -99,8 +60,6 @@ export function DashboardContent() {
     getCurrentAgent
   } = useAgentSelection();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-  const { billingError, handleBillingError, clearBillingError } =
-    useBillingError();
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
@@ -108,24 +67,17 @@ export function DashboardContent() {
   } | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const { user } = useAuth();
-  const { data: accounts } = useAccounts({ enabled: !!user });
-  const personalAccount = accounts?.find((account) => account.personal_account);
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-
-  // TOURS DISABLED - Tour integration commented out
-  // const {
-  //   run,
-  //   stepIndex,
-  //   setStepIndex,
-  //   stopTour,
-  //   showWelcome,
-  //   handleWelcomeAccept,
-  //   handleWelcomeDecline,
-  // } = useDashboardTour();
+  const {
+    showModal: showBillingModal,
+    creditsExhausted,
+    openModal: openBillingModal,
+    closeModal: closeBillingModal,
+  } = useBillingModal();
 
   // Feature flag for custom agents section
 
@@ -184,16 +136,25 @@ export function DashboardContent() {
     }
   }, [threadQuery.data, initiatedThreadId, router]);
 
-  // TOURS DISABLED - handleTourCallback commented out
-  // const handleTourCallback = useCallback((data: CallBackProps) => {
-  //   const { status, type, index } = data;
-
-  //   if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-  //     stopTour();
-  //   } else if (type === 'step:after') {
-  //     setStepIndex(index + 1);
-  //   }
-  // }, [stopTour, setStepIndex]);
+  // Check for checkout success and invalidate billing queries
+  React.useEffect(() => {
+    const checkoutSuccess = searchParams.get('checkout');
+    const sessionId = searchParams.get('session_id');
+    const clientSecret = searchParams.get('client_secret');
+    
+    // If we have checkout success indicators, invalidate billing queries
+    if (checkoutSuccess === 'success' || sessionId || clientSecret) {
+      console.log('🔄 Checkout success detected, invalidating billing queries...');
+      queryClient.invalidateQueries({ queryKey: billingKeys.all });
+      
+      // Clean up URL params
+      const url = new URL(window.location.href);
+      url.searchParams.delete('checkout');
+      url.searchParams.delete('session_id');
+      url.searchParams.delete('client_secret');
+      router.replace(url.pathname + url.search, { scroll: false });
+    }
+  }, [searchParams, queryClient, router]);
 
   const handleSubmit = async (
     message: string,
@@ -216,7 +177,16 @@ export function DashboardContent() {
       localStorage.removeItem(PENDING_PROMPT_KEY);
 
       const formData = new FormData();
-      formData.append('prompt', message);
+      
+      // Always append prompt - it's required for new threads
+      // The message should never be empty due to validation above, but ensure we always send it
+      const trimmedMessage = message.trim();
+      if (!trimmedMessage && files.length === 0) {
+        setIsSubmitting(false);
+        throw new Error('Prompt is required when starting a new agent');
+      }
+      // Always append prompt (even if empty, backend will validate)
+      formData.append('prompt', trimmedMessage || message);
 
       // Add selected agent if one is chosen
       if (selectedAgentId) {
@@ -228,9 +198,20 @@ export function DashboardContent() {
         formData.append('files', file, normalizedName);
       });
 
-      if (options?.model_name) formData.append('model_name', options.model_name);
+      if (options?.model_name && options.model_name.trim()) {
+        formData.append('model_name', options.model_name.trim());
+      }
       formData.append('stream', 'true'); // Always stream for better UX
       formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
+
+      // Debug logging
+      console.log('[Dashboard] Starting agent with:', {
+        prompt: message.substring(0, 100),
+        promptLength: message.length,
+        model_name: options?.model_name,
+        agent_id: selectedAgentId,
+        filesCount: files.length,
+      });
 
       const result = await initiateAgentMutation.mutateAsync(formData);
 
@@ -244,7 +225,7 @@ export function DashboardContent() {
     } catch (error: any) {
       console.error('Error during submission process:', error);
       if (error instanceof BillingError) {
-        setShowPaymentModal(true);
+        openBillingModal(error);
       } else if (error instanceof AgentRunLimitError) {
         const { running_thread_ids, running_count } = error.detail;
         setAgentLimitData({
@@ -253,7 +234,7 @@ export function DashboardContent() {
         });
         setShowAgentLimitDialog(true);
       } else if (error instanceof ProjectLimitError) {
-        setShowPaymentModal(true);
+        openBillingModal(error);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
@@ -289,89 +270,17 @@ export function DashboardContent() {
 
   return (
     <>
-      {/* TOURS DISABLED - Joyride and TourConfirmationDialog commented out */}
-      {/* <Joyride
-        steps={dashboardTourSteps}
-        run={run}
-        stepIndex={stepIndex}
-        callback={handleTourCallback}
-        continuous
-        showProgress
-        showSkipButton
-        disableOverlayClose
-        disableScrollParentFix
-        styles={{
-          options: {
-            primaryColor: '#000000',
-            backgroundColor: '#ffffff',
-            textColor: '#000000',
-            overlayColor: 'rgba(0, 0, 0, 0.7)',
-            arrowColor: '#ffffff',
-            zIndex: 1000,
-          },
-          tooltip: {
-            backgroundColor: '#ffffff',
-            borderRadius: 8,
-            fontSize: 14,
-            padding: 20,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            border: '1px solid #e5e7eb',
-          },
-          tooltipTitle: {
-            color: '#000000',
-            fontSize: 16,
-            fontWeight: 600,
-            marginBottom: 8,
-          },
-          tooltipContent: {
-            color: '#000000',
-            fontSize: 14,
-            lineHeight: 1.5,
-          },
-          buttonNext: {
-            backgroundColor: '#000000',
-            color: '#ffffff',
-            fontSize: 12,
-            padding: '8px 16px',
-            borderRadius: 6,
-            border: 'none',
-            fontWeight: 500,
-          },
-          buttonBack: {
-            color: '#6b7280',
-            backgroundColor: 'transparent',
-            fontSize: 12,
-            padding: '8px 16px',
-            border: '1px solid #e5e7eb',
-            borderRadius: 6,
-          },
-          buttonSkip: {
-            color: '#6b7280',
-            backgroundColor: 'transparent',
-            fontSize: 12,
-            border: 'none',
-          },
-          buttonClose: {
-            color: '#6b7280',
-            backgroundColor: 'transparent',
-          },
-        }}
-      /> */}
-
-      {/* <TourConfirmationDialog
-        open={showWelcome}
-        onAccept={handleWelcomeAccept}
-        onDecline={handleWelcomeDecline}
-      /> */}
-
-      <BillingModal
-        open={showPaymentModal}
-        onOpenChange={setShowPaymentModal}
-        showUsageLimitAlert={true}
+      <PlanSelectionModal
+        open={showBillingModal}
+        onOpenChange={closeBillingModal}
+        creditsExhausted={creditsExhausted}
       />
 
-      <div className="flex flex-col h-screen w-full overflow-hidden">
-
+      <div className="flex flex-col h-screen w-full overflow-hidden relative">
+        {/* Credits Display - Top right corner */}
+        <div className="absolute top-4 right-4 z-10">
+          <CreditsDisplay />
+        </div>
 
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
@@ -412,6 +321,7 @@ export function DashboardContent() {
                 </div>
               </div>
             )} */}
+            
 
             {/* Centered content area */}
             <div className="flex-1 flex items-start justify-center pt-[30vh]">
@@ -420,7 +330,7 @@ export function DashboardContent() {
                 <div className="w-full animate-in fade-in-0 duration-300">
                   {/* Title and chat input - Fixed position */}
                   <div className="px-4 py-8">
-                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-4 md:space-y-6">
+                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-6 md:space-y-8">
                       <div className="flex flex-col items-center text-center w-full">
                         <p
                           className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
@@ -492,15 +402,6 @@ export function DashboardContent() {
               )}
             </div>
           </div>
-
-          <BillingErrorAlert
-            message={billingError?.message}
-            currentUsage={billingError?.currentUsage}
-            limit={billingError?.limit}
-            accountId={personalAccount?.account_id}
-            onDismiss={clearBillingError}
-            isOpen={!!billingError}
-          />
         </div>
       </div>
 

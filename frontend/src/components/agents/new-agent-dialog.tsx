@@ -12,10 +12,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useCreateNewAgent } from '@/hooks/react-query/agents/use-agents';
+import { useCreateNewAgent } from '@/hooks/agents/use-agents';
 import { JsonImportDialog } from './json-import-dialog';
 import { AgentCountLimitDialog } from './agent-count-limit-dialog';
-import { AgentCountLimitError } from '@/lib/api';
+import { AgentCountLimitError } from '@/lib/api/errors';
 import { toast } from 'sonner';
 import { AgentCreationModal } from './agent-creation-modal';
 import { isLocalMode, isStagingMode } from '@/lib/config';

@@ -1,9 +1,11 @@
 'use client';
 
-import React from 'react';
 import dynamic from 'next/dynamic';
-import { ThreadParams } from '@/components/thread/types';
 import { SharePageWrapper } from './_components/SharePageWrapper';
+import React from 'react';
+import {
+  ThreadParams,
+} from '@/components/thread/types';
 
 // Dynamic import to avoid SSR issues with browser-only dependencies
 const ThreadComponent = dynamic(

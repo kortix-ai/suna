@@ -6,7 +6,6 @@ from typing import Optional, Dict, List, Any, AsyncGenerator
 from dataclasses import dataclass
 
 from core.tools.message_tool import MessageTool
-from core.tools.sb_expose_tool import SandboxExposeTool
 from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
 from dotenv import load_dotenv
@@ -15,9 +14,6 @@ from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.response_processor import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
-from core.tools.sb_shell_tool import SandboxShellTool
-from core.tools.sb_files_tool import SandboxFilesTool
-from core.tools.sb_kb_tool import SandboxKbTool
 from core.tools.data_providers_tool import DataProvidersTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.prompts.prompt import get_system_prompt
@@ -25,11 +21,6 @@ from core.prompts.prompt import get_system_prompt
 from core.utils.logger import logger
 
 from core.billing.billing_integration import billing_integration
-from core.tools.sb_vision_tool import SandboxVisionTool
-from core.tools.sb_image_edit_tool import SandboxImageEditTool
-from core.tools.sb_designer_tool import SandboxDesignerTool
-from core.tools.sb_presentation_tool import SandboxPresentationTool
-from core.tools.sb_document_parser import SandboxDocumentParserTool
 
 from core.services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
@@ -37,8 +28,6 @@ from langfuse.client import StatefulTraceClient
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.tools.task_list_tool import TaskListTool
 from core.agentpress.tool import SchemaType
-from core.tools.sb_upload_file_tool import SandboxUploadFileTool
-from core.tools.sb_docs_tool import SandboxDocsTool
 from core.tools.people_search_tool import PeopleSearchTool
 from core.tools.company_search_tool import CompanySearchTool
 from core.tools.paper_search_tool import PaperSearchTool
@@ -119,19 +108,25 @@ class ToolManager:
                 if enabled_methods:
                     logger.debug(f"✅ Registered image_search_tool with methods: {enabled_methods}")
         
-        # Register other sandbox tools
-        sandbox_tools = [
-            ('sb_shell_tool', SandboxShellTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_files_tool', SandboxFilesTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_expose_tool', SandboxExposeTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_vision_tool', SandboxVisionTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
-            ('sb_image_edit_tool', SandboxImageEditTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
-            ('sb_kb_tool', SandboxKbTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_design_tool', SandboxDesignerTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
-            ('sb_presentation_tool', SandboxPresentationTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-        ]
+        # Register other sandbox tools from centralized registry
+        from core.tools.tool_registry import SANDBOX_TOOLS, get_tool_class
+        
+        # Tools that need thread_id
+        tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
+        
+        sandbox_tools = []
+        for tool_name, module_path, class_name in SANDBOX_TOOLS:
+            try:
+                tool_class = get_tool_class(module_path, class_name)
+                kwargs = {
+                    'project_id': self.project_id,
+                    'thread_manager': self.thread_manager
+                }
+                if tool_name in tools_needing_thread_id:
+                    kwargs['thread_id'] = self.thread_id
+                sandbox_tools.append((tool_name, tool_class, kwargs))
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"❌ Failed to load tool {tool_name} ({class_name}): {e}")
         
         for tool_name, tool_class, kwargs in sandbox_tools:
             if tool_name not in disabled_tools:
@@ -177,22 +172,22 @@ class ToolManager:
             
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools with proper initialization."""
-        from core.tools.agent_builder_tools.agent_config_tool import AgentConfigTool
-        from core.tools.agent_builder_tools.mcp_search_tool import MCPSearchTool
-        from core.tools.agent_builder_tools.credential_profile_tool import CredentialProfileTool
-        from core.tools.agent_builder_tools.trigger_tool import TriggerTool
+        from core.tools.tool_registry import AGENT_BUILDER_TOOLS, get_tool_class
         from core.services.supabase import DBConnection
         
         db = DBConnection()
-        
-        agent_builder_tools = [
-            ('agent_config_tool', AgentConfigTool),
-            ('mcp_search_tool', MCPSearchTool),
-            ('credential_profile_tool', CredentialProfileTool),
-            ('trigger_tool', TriggerTool),
-        ]
 
-        for tool_name, tool_class in agent_builder_tools:
+        for tool_name, module_path, class_name in AGENT_BUILDER_TOOLS:
+            # Skip agent_creation_tool as it's registered separately in _register_suna_specific_tools
+            if tool_name == 'agent_creation_tool':
+                continue
+            
+            try:
+                tool_class = get_tool_class(module_path, class_name)
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"❌ Failed to load tool {tool_name} ({class_name}): {e}")
+                continue
+            
             if tool_name not in disabled_tools:
                 try:
                     enabled_methods = self._get_enabled_methods_for_tool(tool_name)
@@ -211,20 +206,32 @@ class ToolManager:
     def _register_suna_specific_tools(self, disabled_tools: List[str]):
         """Register Suna-specific tools like agent creation."""
         if 'agent_creation_tool' not in disabled_tools and self.account_id:
-            from core.tools.agent_creation_tool import AgentCreationTool
+            from core.tools.tool_registry import get_tool_info, get_tool_class
             from core.services.supabase import DBConnection
             
             db = DBConnection()
-            enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
-            self.thread_manager.add_tool(
-                AgentCreationTool, 
-                function_names=enabled_methods, 
-                thread_manager=self.thread_manager, 
-                db_connection=db, 
-                account_id=self.account_id
-            )
-            if enabled_methods:
-                logger.debug(f"✅ Registered agent_creation_tool with methods: {enabled_methods}")
+            
+            try:
+                tool_info = get_tool_info('agent_creation_tool')
+                if tool_info:
+                    _, module_path, class_name = tool_info
+                    AgentCreationTool = get_tool_class(module_path, class_name)
+                else:
+                    # Fallback to direct import if not in registry
+                    from core.tools.agent_creation_tool import AgentCreationTool
+                
+                enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
+                self.thread_manager.add_tool(
+                    AgentCreationTool, 
+                    function_names=enabled_methods, 
+                    thread_manager=self.thread_manager, 
+                    db_connection=db, 
+                    account_id=self.account_id
+                )
+                if enabled_methods:
+                    logger.debug(f"✅ Registered agent_creation_tool with methods: {enabled_methods}")
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"❌ Failed to load agent_creation_tool: {e}")
     
     def _register_browser_tool(self, disabled_tools: List[str]):
         """Register browser tool with sandbox access."""
@@ -664,9 +671,15 @@ class AgentRunner:
         while continue_execution and iteration_count < self.config.max_iterations:
             iteration_count += 1
 
+            # Check credits before EVERY iteration
+            # - If balance is positive: Allow this iteration (even if it goes negative during it)
+            # - If balance is negative: Stop (prevents infinite debt)
+            # This way, a user with $0.10 can run a $0.15 request and go to -$0.05,
+            # but the next iteration will stop them
             can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(self.account_id)
             if not can_run:
                 error_msg = f"Insufficient credits: {message}"
+                logger.warning(f"Stopping agent - balance is negative: {error_msg}")
                 yield {
                     "type": "status",
                     "status": "stopped",

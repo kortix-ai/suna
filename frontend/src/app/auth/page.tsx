@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import GoogleSignIn from '@/components/GoogleSignIn';
-import { useMediaQuery } from '@/hooks/use-media-query';
+import { useMediaQuery } from '@/hooks/utils';
 import { useState, useEffect, Suspense } from 'react';
 import { signIn, signUp, forgotPassword } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAuth } from '@/components/AuthProvider';
-import { useAuthMethodTracking } from '@/lib/stores/auth-tracking';
+import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { toast } from 'sonner';
 
 import {
@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import GitHubSignIn from '@/components/GithubSignIn';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { ReleaseBadge } from '@/components/auth/release-badge';
 
 function LoginContent() {

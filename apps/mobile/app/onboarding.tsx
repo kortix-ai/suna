@@ -40,7 +40,6 @@ import {
 import { 
   PRICING_TIERS, 
   BillingPeriod, 
-  getPriceId, 
   getDisplayPrice, 
   startPlanCheckout, 
   startTrialCheckout 
@@ -543,16 +542,15 @@ function BillingSlide({
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedPlan(tier.name);
 
-    const priceId = getPriceId(tier, billingPeriod);
-    if (!priceId) {
-      console.error('❌ No price ID found for tier:', tier.name, billingPeriod);
+    if (!tier.id) {
+      console.error('❌ No tier ID found for tier:', tier.name);
       setSelectedPlan(null);
       return;
     }
 
     try {
       await startPlanCheckout(
-        priceId,
+        tier.id,  // Use tier.id (tier_key) instead of priceId
         billingPeriod,
         () => {
           setSelectedPlan(null);

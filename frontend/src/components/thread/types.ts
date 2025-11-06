@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Project } from '@/lib/api';
-import { Message as BaseApiMessageType } from '@/lib/api';
+import type { Project } from '@/lib/api/projects';
+import { Message as BaseApiMessageType } from '@/lib/api/threads';
 
 // Define a type for the params to make React.use() work properly
 export type ThreadParams = {
@@ -65,6 +65,17 @@ export interface ApiMessageType extends Omit<BaseApiMessageType, 'type'> {
   // Allow 'type' to be potentially wider than the base type
   type?: string;
 }
+
+// Thread page-specific types
+export interface StreamingToolCall {
+  id?: string;
+  name?: string;
+  arguments?: string;
+  index?: number;
+  xml_tag_name?: string;
+}
+
+export type AgentStatus = 'idle' | 'running' | 'connecting' | 'error';
 
 // Re-export existing types
 export type { Project };

@@ -26,7 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
-import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
+import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 // Unified agent card variants
 export type AgentCardVariant = 

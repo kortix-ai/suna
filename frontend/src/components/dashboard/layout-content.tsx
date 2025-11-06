@@ -3,25 +3,32 @@
 import { useEffect } from 'react';
 import { SidebarLeft, FloatingMobileMenuButton } from '@/components/sidebar/sidebar-left';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { useAccounts } from '@/hooks/use-accounts';
+import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
-import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
+import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useRouter } from 'next/navigation';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { useApiHealth } from '@/hooks/react-query';
+import { useApiHealth } from '@/hooks/usage/use-health';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
-import { DeleteOperationProvider } from '@/contexts/DeleteOperationContext';
+import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { StatusOverlay } from '@/components/ui/status-overlay';
-import { useAdminRole } from '@/hooks/react-query/use-admin-role';
+import { useAdminRole } from '@/hooks/admin';
 
-import { useProjects, useThreads } from '@/hooks/react-query/sidebar/use-sidebar';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { useAgents } from '@/hooks/react-query/agents/use-agents';
-import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
+import { useProjects, useThreads } from '@/hooks/sidebar/use-sidebar';
+import { useIsMobile } from '@/hooks/utils';
+import { useAgents } from '@/hooks/agents/use-agents';
+import { SubscriptionStoreSync } from '@/stores/subscription-store';
+import { PresentationViewerWrapper } from '@/stores/presentation-viewer-store';
 import { OnboardingProvider } from '@/components/onboarding/onboarding-provider';
 
 interface DashboardLayoutContentProps {
   children: React.ReactNode;
+}
+
+// Wrapper component to handle delete operation side effects
+function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode }) {
+  useDeleteOperationEffects();
+  return <>{children}</>;
 }
 
 export default function DashboardLayoutContent({
@@ -107,8 +114,8 @@ export default function DashboardLayoutContent({
   }
 
   return (
-    <DeleteOperationProvider>
-      <SubscriptionProvider>
+    <DeleteOperationEffectsWrapper>
+      <SubscriptionStoreSync>
         <OnboardingProvider>
           <SidebarProvider>
             <SidebarLeft />
@@ -137,7 +144,8 @@ export default function DashboardLayoutContent({
             <FloatingMobileMenuButton />
           </SidebarProvider>
         </OnboardingProvider>
-      </SubscriptionProvider>
-    </DeleteOperationProvider>
+        <PresentationViewerWrapper />
+      </SubscriptionStoreSync>
+    </DeleteOperationEffectsWrapper>
   );
 }

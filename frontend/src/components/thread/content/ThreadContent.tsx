@@ -2,9 +2,9 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { CircleDashed, CheckCircle, AlertTriangle } from 'lucide-react';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
 import { FileAttachmentGrid } from '@/components/thread/file-attachment';
-import { useFilePreloader } from '@/hooks/react-query/files';
+import { useFilePreloader } from '@/hooks/files';
 import { useAuth } from '@/components/AuthProvider';
-import { Project } from '@/lib/api';
+import { Project } from '@/lib/api/projects';
 import {
     extractPrimaryParam,
     getToolIcon,

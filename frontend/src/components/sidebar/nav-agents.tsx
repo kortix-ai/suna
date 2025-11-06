@@ -51,15 +51,15 @@ import {
 import Link from "next/link"
 import { ShareModal } from "./share-modal"
 import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmationDialog"
-import { useDeleteOperation } from '@/contexts/DeleteOperationContext'
+import { useDeleteOperation } from '@/stores/delete-operation-store'
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ThreadWithProject, GroupedThreads } from '@/hooks/react-query/sidebar/use-sidebar';
-import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, useProjects, groupThreadsByDate } from '@/hooks/react-query/sidebar/use-sidebar';
-import { projectKeys, threadKeys } from '@/hooks/react-query/sidebar/keys';
-import { useThreadAgentStatuses } from '@/hooks/use-thread-agent-status';
+import { ThreadWithProject, GroupedThreads } from '@/hooks/sidebar/use-sidebar';
+import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, useProjects, groupThreadsByDate } from '@/hooks/sidebar/use-sidebar';
+import { projectKeys, threadKeys } from '@/hooks/threads/keys';
+import { useThreadAgentStatuses } from '@/hooks/threads';
 import { formatDateForList } from '@/lib/utils/date-formatting';
-import { Thread, getThreadsPaginated } from '@/lib/api';
+import { Thread, getThreadsPaginated } from '@/lib/api/threads';
 import { useQuery } from '@tanstack/react-query';
 
 // Component for date group headers
@@ -634,7 +634,7 @@ export function NavAgents() {
 
   // Loading state or error handling
   // Only show skeleton on initial load, not when loading more pages
-  const isInitialLoading = (isProjectsLoading || isThreadsLoading) && allThreads.length === 0;
+  const isInitialLoading = (isProjectsLoading || isThreadsLoading) && combinedThreads.length === 0;
   const isLoading = isInitialLoading;
   const hasError = projectsError || threadsError;
 

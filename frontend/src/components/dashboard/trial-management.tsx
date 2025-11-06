@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useTrialStatus } from '@/hooks/react-query/billing/use-trial-status';
-import { useCancelTrial } from '@/hooks/react-query/billing/use-cancel-trial';
+import { useTrialStatus, useCancelTrial } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import {
   Card,

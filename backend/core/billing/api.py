@@ -14,7 +14,8 @@ from core.ai_models import model_manager
 from .config import (
     TOKEN_PRICE_MULTIPLIER, 
     get_tier_by_name,
-    TIERS
+    TIERS,
+    CREDITS_PER_DOLLAR
 )
 from .credit_manager import credit_manager
 from .webhook_service import webhook_service
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 stripe.api_key = config.STRIPE_SECRET_KEY
 
 class CreateCheckoutSessionRequest(BaseModel):
-    price_id: str
+    tier_key: str  # Backend tier key like 'tier_2_20', 'free', etc.
     success_url: str
     cancel_url: str
     commitment_type: Optional[str] = None
@@ -388,13 +389,20 @@ async def get_subscription(
             display_plan_name = tier_info.get('display_name', tier_info['name'])
             is_trial = False
         
-        from .config import CREDITS_PER_DOLLAR
+        from .config import CREDITS_PER_DOLLAR, get_price_type
+        
+        # Determine billing period from price_id
+        billing_period = None
+        if subscription_info.get('price_id'):
+            billing_period = get_price_type(subscription_info['price_id'])
         
         return {
             'status': status,
             'plan_name': tier_info['name'],
+            'tier_key': tier_info['name'],  # Explicit tier_key for frontend
             'display_plan_name': display_plan_name,
             'price_id': subscription_info['price_id'],
+            'billing_period': billing_period,  # 'monthly', 'yearly', or 'yearly_commitment'
             'subscription': subscription_data,
             'subscription_id': subscription_data['id'] if subscription_data else None,
             'current_usage': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
@@ -426,8 +434,10 @@ async def get_subscription(
         return {
             'status': 'no_subscription',
             'plan_name': 'none',
+            'tier_key': 'none',  # Explicit tier_key for frontend
             'display_plan_name': 'No Plan',
             'price_id': None,
+            'billing_period': None,
             'subscription': None,
             'subscription_id': None,
             'current_usage': 0,
@@ -502,15 +512,31 @@ async def create_checkout_session(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        # Resolve tier_key to price_id
+        from .config import get_tier_by_name
+        tier = get_tier_by_name(request.tier_key)
+        if not tier:
+            raise HTTPException(status_code=400, detail=f"Invalid tier_key: {request.tier_key}")
+        
+        # Select the appropriate price_id based on commitment_type
+        if request.commitment_type == 'yearly_commitment' and len(tier.price_ids) >= 3:
+            price_id = tier.price_ids[2]  # Yearly commitment is usually 3rd
+        elif request.commitment_type == 'yearly' and len(tier.price_ids) >= 2:
+            price_id = tier.price_ids[1]  # Yearly is usually 2nd
+        else:
+            price_id = tier.price_ids[0]  # Monthly is always first
+        
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
-            price_id=request.price_id,
+            price_id=price_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url,
             commitment_type=request.commitment_type
         )
         return result
             
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error creating checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -628,14 +654,21 @@ async def get_my_transactions(
             transactions.append({
                 'id': tx.get('id'),
                 'created_at': tx.get('created_at'),
-                'amount': float(tx.get('amount', 0)),
-                'balance_after': float(tx.get('balance_after', 0)),
+                'amount': float(tx.get('amount', 0)) * CREDITS_PER_DOLLAR,
+                'balance_after': float(tx.get('balance_after', 0)) * CREDITS_PER_DOLLAR,
                 'type': tx.get('type'),
                 'description': tx.get('description'),
                 'is_expiring': tx.get('is_expiring', False),
                 'expires_at': tx.get('expires_at'),
                 'metadata': tx.get('metadata', {})
             })
+        
+        balance_info_credits = {
+            'total': balance_info.get('total', 0) * CREDITS_PER_DOLLAR,
+            'expiring': balance_info.get('expiring', 0) * CREDITS_PER_DOLLAR,
+            'non_expiring': balance_info.get('non_expiring', 0) * CREDITS_PER_DOLLAR,
+            'tier': balance_info.get('tier', 'none')
+        }
         
         return {
             'transactions': transactions,
@@ -645,12 +678,242 @@ async def get_my_transactions(
                 'offset': offset,
                 'has_more': offset + limit < total_count
             },
-            'current_balance': balance_info
+            'current_balance': balance_info_credits
         }
         
     except Exception as e:
         logger.error(f"Failed to get transactions for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve transactions")
+
+@router.get("/credit-usage")
+async def get_credit_usage(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    limit: int = Query(50, ge=1, le=100, description="Number of usage records to fetch"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back")
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        
+        query = client.from_('credit_ledger')\
+            .select('*')\
+            .eq('account_id', account_id)\
+            .lt('amount', 0)\
+            .gte('created_at', since_date)\
+            .order('created_at', desc=True)
+        
+        count_query = client.from_('credit_ledger')\
+            .select('*', count='exact')\
+            .eq('account_id', account_id)\
+            .lt('amount', 0)\
+            .gte('created_at', since_date)
+        count_result = await count_query.execute()
+        total_count = count_result.count or 0
+        
+        if offset:
+            query = query.range(offset, offset + limit - 1)
+        else:
+            query = query.limit(limit)
+        
+        result = await query.execute()
+        
+        usage_records = []
+        total_usage = 0
+        for tx in result.data or []:
+            amount_dollars = float(tx.get('amount', 0))
+            amount_credits = abs(amount_dollars) * CREDITS_PER_DOLLAR
+            total_usage += amount_credits
+            
+            usage_records.append({
+                'id': tx.get('id'),
+                'created_at': tx.get('created_at'),
+                'credits_used': amount_credits,
+                'balance_after': float(tx.get('balance_after', 0)) * CREDITS_PER_DOLLAR,
+                'type': tx.get('type'),
+                'description': tx.get('description'),
+                'metadata': tx.get('metadata', {})
+            })
+        
+        return {
+            'usage_records': usage_records,
+            'pagination': {
+                'total': total_count,
+                'limit': limit,
+                'offset': offset,
+                'has_more': offset + limit < total_count
+            },
+            'summary': {
+                'total_credits_used': total_usage,
+                'period_days': days,
+                'since_date': since_date
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get credit usage for account {account_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve credit usage")
+
+@router.get("/credit-usage-by-thread")
+async def get_credit_usage_by_thread(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    limit: int = Query(50, ge=1, le=100, description="Number of threads to fetch"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    days: Optional[int] = Query(None, ge=1, le=365, description="Number of days to look back"),
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)")
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        if start_date and end_date:
+            since_date = start_date
+            until_date = end_date
+        elif days:
+            since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            until_date = datetime.utcnow().isoformat()
+        else:
+            since_date = (datetime.utcnow() - timedelta(days=30)).isoformat()
+            until_date = datetime.utcnow().isoformat()
+        
+        ledger_result = await client.from_('credit_ledger')\
+            .select('metadata, amount, created_at')\
+            .eq('account_id', account_id)\
+            .lt('amount', 0)\
+            .gte('created_at', since_date)\
+            .lte('created_at', until_date)\
+            .execute()
+        
+        message_ids_to_lookup = []
+        for entry in ledger_result.data or []:
+            metadata = entry.get('metadata', {})
+            thread_id = metadata.get('thread_id') if metadata else None
+            message_id = metadata.get('message_id') if metadata else None
+            
+            if not thread_id and message_id:
+                message_ids_to_lookup.append(message_id)
+        
+        message_to_thread_map = {}
+        if message_ids_to_lookup:
+            batch_size = 100
+            for i in range(0, len(message_ids_to_lookup), batch_size):
+                batch = message_ids_to_lookup[i:i + batch_size]
+                messages_result = await client.from_('messages')\
+                    .select('message_id, thread_id')\
+                    .in_('message_id', batch)\
+                    .execute()
+                
+                for msg in messages_result.data or []:
+                    message_to_thread_map[msg['message_id']] = msg['thread_id']
+            
+        
+        thread_usage = {}
+        thread_dates = {}
+        
+        for entry in ledger_result.data or []:
+            metadata = entry.get('metadata', {})
+            thread_id = metadata.get('thread_id') if metadata else None
+            message_id = metadata.get('message_id') if metadata else None
+            
+            if not thread_id and message_id:
+                thread_id = message_to_thread_map.get(message_id)
+            
+            if not thread_id:
+                continue
+            
+            amount_dollars = abs(float(entry.get('amount', 0)))
+            amount_credits = amount_dollars * CREDITS_PER_DOLLAR
+            created_at = entry.get('created_at')
+            
+            if thread_id not in thread_usage:
+                thread_usage[thread_id] = 0
+                thread_dates[thread_id] = created_at
+            
+            thread_usage[thread_id] += amount_credits
+            
+            if created_at > thread_dates[thread_id]:
+                thread_dates[thread_id] = created_at
+
+        sorted_threads = sorted(
+            thread_usage.items(),
+            key=lambda x: thread_dates[x[0]],
+            reverse=True
+        )
+        
+        total_threads = len(sorted_threads)
+        paginated_threads = sorted_threads[offset:offset + limit]
+        
+        thread_ids = [t[0] for t in paginated_threads]
+        
+        threads_info = {}
+        if thread_ids:
+            threads_result = await client.from_('threads')\
+                .select('thread_id, project_id, created_at')\
+                .in_('thread_id', thread_ids)\
+                .execute()
+            
+            
+            for thread in threads_result.data or []:
+                threads_info[thread['thread_id']] = thread
+            
+            project_ids = list(set([t.get('project_id') for t in threads_result.data or [] if t.get('project_id')]))
+            projects_info = {}
+            
+            if project_ids:
+                projects_result = await client.from_('projects')\
+                    .select('project_id, name, icon_name')\
+                    .in_('project_id', project_ids)\
+                    .execute()
+                
+                for project in projects_result.data or []:
+                    projects_info[project['project_id']] = project
+        
+        thread_records = []
+        total_usage = 0
+        
+        for thread_id, credits_used in paginated_threads:
+            thread_info = threads_info.get(thread_id, {})
+            project_id = thread_info.get('project_id')
+            project_info = projects_info.get(project_id, {}) if project_id else {}
+            project_name = project_info.get('name', 'Unnamed Project')
+            
+            total_usage += credits_used
+            
+            thread_records.append({
+                'thread_id': thread_id,
+                'project_id': project_id,
+                'project_name': project_name,
+                'credits_used': credits_used,
+                'last_used': thread_dates[thread_id],
+                'created_at': thread_info.get('created_at')
+            })
+        
+        result = {
+            'thread_usage': thread_records,
+            'pagination': {
+                'total': total_threads,
+                'limit': limit,
+                'offset': offset,
+                'has_more': offset + limit < total_threads
+            },
+            'summary': {
+                'total_credits_used': total_usage,
+                'total_threads': total_threads,
+                'period_days': days,
+                'start_date': since_date,
+                'end_date': until_date
+            }
+        }
+
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to get thread usage for account {account_id}: {str(e)}")
+        logger.exception("Exception in get_credit_usage_by_thread")
+        raise HTTPException(status_code=500, detail="Failed to retrieve thread usage")
 
 @router.get("/transactions/summary")
 async def get_transactions_summary(
@@ -1138,3 +1401,39 @@ async def get_circuit_breaker_status(
     except Exception as e:
         logger.error(f"Error getting circuit breaker status: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.get("/tier-configurations")
+async def get_tier_configurations() -> Dict:
+    """
+    Get all available subscription tier configurations including price IDs.
+    This endpoint is PUBLIC and does not require authentication.
+    """
+    try:
+        from .config import TIERS
+        
+        tier_configs = []
+        for tier_key, tier in TIERS.items():
+            # Skip 'none' tier as it's not a real subscription tier
+            if tier_key == 'none':
+                continue
+                
+            tier_config = {
+                'tier_key': tier_key,
+                'name': tier.name,
+                'display_name': tier.display_name,
+                'monthly_credits': float(tier.monthly_credits),
+                'can_purchase_credits': tier.can_purchase_credits,
+                'project_limit': tier.project_limit,
+                'price_ids': tier.price_ids,
+            }
+            tier_configs.append(tier_config)
+        
+        return {
+            'success': True,
+            'tiers': tier_configs,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting tier configurations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tier configurations") 

@@ -14,7 +14,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useProjects, useAllThreads } from '@/hooks/react-query';
+import { useProjects, useThreads } from '@/hooks/sidebar/use-sidebar';
 import Link from 'next/link';
 
 // Thread with associated project info for display in sidebar & search
@@ -39,7 +39,7 @@ export function SidebarSearch() {
 
   // Use React Query hooks
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
-  const { data: allThreads = [], isLoading: threadsLoading } = useAllThreads();
+  const { data: allThreads = [], isLoading: threadsLoading } = useThreads();
   const isLoading = projectsLoading || threadsLoading;
 
   // Helper to sort threads by updated_at (most recent first)

@@ -4,8 +4,14 @@ import React, { useEffect, useState } from 'react';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { createClient } from '@/lib/supabase/client';
-import { DeleteOperationProvider } from '@/contexts/DeleteOperationContext';
-import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
+import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
+import { SubscriptionStoreSync } from '@/stores/subscription-store';
+
+// Wrapper component to handle delete operation side effects
+function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode }) {
+    useDeleteOperationEffects();
+    return <>{children}</>;
+}
 
 export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
@@ -35,19 +41,19 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     // If user is logged in, wrap with all necessary providers and show sidebar
     if (isLoggedIn) {
         return (
-            <DeleteOperationProvider>
-                <SubscriptionProvider>
+            <DeleteOperationEffectsWrapper>
+                <SubscriptionStoreSync>
                     <SidebarProvider>
                         <SidebarLeft />
                         <SidebarInset>
                             {children}
                         </SidebarInset>
                     </SidebarProvider>
-                </SubscriptionProvider>
-            </DeleteOperationProvider>
+                </SubscriptionStoreSync>
+            </DeleteOperationEffectsWrapper>
         );
     }
 
-    // Anon user: render children without sidebar, minimal wrapper
+    // Anon user: render children without sidebar or subscription sync (no auth required)
     return <div className="flex-1">{children}</div>;
 }

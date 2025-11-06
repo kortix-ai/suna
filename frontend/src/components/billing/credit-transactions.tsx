@@ -40,8 +40,9 @@ import {
   RefreshCw,
   Info,
 } from 'lucide-react';
-import { useTransactions, useTransactionsSummary } from '@/hooks/react-query/billing/use-transactions';
+import { useTransactions, useTransactionsSummary } from '@/hooks/billing';
 import { cn } from '@/lib/utils';
+import { formatCredits, formatCreditsWithSign } from '@/lib/utils/credit-formatter';
 
 interface Props {
   accountId?: string;
@@ -62,16 +63,6 @@ export default function CreditTransactions({ accountId }: Props) {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const formatAmount = (amount: number) => {
-    const absAmount = Math.abs(amount);
-    const formatted = `$${absAmount.toFixed(2)}`;
-    return amount >= 0 ? `+${formatted}` : `-${formatted}`;
-  };
-
-  const formatBalance = (balance: number) => {
-    return `$${balance.toFixed(2)}`;
   };
 
   const getTransactionIcon = (type: string, amount: number) => {
@@ -157,49 +148,7 @@ export default function CreditTransactions({ accountId }: Props) {
 
   return (
     <div className="space-y-6">
-      {currentBalance && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Current Balance</CardTitle>
-            <CardDescription>Your credit balance breakdown</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <div className="text-2xl font-medium">
-                  {formatBalance(currentBalance.total)}
-                </div>
-                <p className="text-xs text-muted-foreground">Total Balance</p>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-orange-500" />
-                  <span className="text-lg font-semibold">
-                    {formatBalance(currentBalance.expiring)}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">Expiring Credits</p>
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <Infinity className="h-4 w-4 text-blue-500" />
-                  <span className="text-lg font-semibold">
-                    {formatBalance(currentBalance.non_expiring)}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">Non-Expiring Credits</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
       <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
-        <CardHeader className='px-0'>
-          <CardTitle>Transaction History</CardTitle>
-          <CardDescription>
-            All credit additions and deductions
-          </CardDescription>
-        </CardHeader>
         <CardContent className='px-0'>
           {transactions.length === 0 ? (
             <div className="text-center py-8">
@@ -217,8 +166,8 @@ export default function CreditTransactions({ accountId }: Props) {
                       <TableHead>Type</TableHead>
                       <TableHead>Description</TableHead>
                       <TableHead className="text-center">Credit Type</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Balance After</TableHead>
+                      <TableHead className="text-right">Credits</TableHead>
+                      <TableHead className="text-right">Credits After</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -257,10 +206,10 @@ export default function CreditTransactions({ accountId }: Props) {
                           "text-right font-mono font-semibold",
                           tx.amount >= 0 ? "text-green-600" : "text-red-600"
                         )}>
-                          {formatAmount(tx.amount)}
+                          {formatCreditsWithSign(tx.amount, { showDecimals: true })}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {formatBalance(tx.balance_after)}
+                          {formatCredits(tx.balance_after, { showDecimals: true })}
                         </TableCell>
                       </TableRow>
                     ))}

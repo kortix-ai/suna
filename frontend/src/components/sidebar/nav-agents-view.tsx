@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Plus, MoreHorizontal, Trash2, ExternalLink } from 'lucide-react';
 import { useSidebar } from '@/components/ui/sidebar';
-import { useAgents, useDeleteAgent } from '@/hooks/react-query/agents/use-agents';
+import { useAgents, useDeleteAgent } from '@/hooks/agents/use-agents';
 import { cn } from '@/lib/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { formatDateForList } from '@/lib/utils/date-formatting';
@@ -21,7 +21,7 @@ import {
 import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmationDialog";
 import { toast } from "sonner";
 import { useQueryClient } from '@tanstack/react-query';
-import { agentKeys } from '@/hooks/react-query/agents/keys';
+import { agentKeys } from '@/hooks/agents/keys';
 
 // Component for date group headers (reusing the style from nav-agents)
 const DateGroupHeader: React.FC<{ title: string; count: number }> = ({ title, count }) => {
