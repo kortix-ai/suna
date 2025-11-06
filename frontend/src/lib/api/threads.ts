@@ -171,113 +171,148 @@ export const getThread = async (threadId: string): Promise<Thread> => {
 export const createThread = async (projectId: string): Promise<Thread> => {
   const supabase = createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
+  // If user is not logged in, redirect to login
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
     throw new Error('You must be logged in to create a thread');
   }
 
-  const { data, error } = await supabase
-    .from('threads')
-    .insert({
-      project_id: projectId,
-      account_id: user.id,
-    })
-    .select()
-    .single();
+  const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-  if (error) {
-    handleApiError(error, { operation: 'create thread', resource: 'thread' });
-    throw error;
+  // Use backend API endpoint - it handles project creation as well
+  const response = await fetch(`${API_URL}/threads`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ project_id: projectId }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    handleApiError(new Error(errorText), { operation: 'create thread', resource: 'thread' });
+    throw new Error(errorText);
   }
+
+  const data = await response.json();
   return data;
 };
+
+export class NoAccessTokenAvailableError extends Error {
+  constructor() {
+    super('No access token available');
+    this.name = 'NoAccessTokenAvailableError';
+  }
+}
 
 export const addUserMessage = async (
   threadId: string,
   content: string,
 ): Promise<void> => {
-  const supabase = createClient();
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
 
-  const message = {
-    role: 'user',
-    content: content,
-  };
+    if (!session?.access_token) {
+      throw new NoAccessTokenAvailableError();
+    }
 
-  const { error } = await supabase.from('messages').insert({
-    thread_id: threadId,
-    type: 'user',
-    is_llm_message: true,
-    content: JSON.stringify(message),
-  });
+    const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-  if (error) {
-    console.error('Error adding user message:', error);
+    // Use backend API endpoint with auth handling
+    const response = await fetch(`${API_URL}/threads/${threadId}/messages/add`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ message: content }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('Error adding user message:', errorText);
+      handleApiError(new Error(errorText), { operation: 'add message', resource: 'message' });
+      throw new Error(`Error adding message: ${errorText}`);
+    }
+  } catch (error) {
+    if (error instanceof NoAccessTokenAvailableError) {
+      throw error;
+    }
+    console.error('Failed to add user message:', error);
     handleApiError(error, { operation: 'add message', resource: 'message' });
-    throw new Error(`Error adding message: ${error.message}`);
+    throw error;
   }
 };
 
 export const getMessages = async (threadId: string): Promise<Message[]> => {
-  const supabase = createClient();
-
-  let allMessages: Message[] = [];
-  let from = 0;
-  const batchSize = 1000;
-  let hasMore = true;
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from('messages')
-      .select(`
-        *,
-        agents:agent_id (
-          name
-        )
-      `)
-      .eq('thread_id', threadId)
-      .neq('type', 'cost')
-      .neq('type', 'summary')
-      .order('created_at', { ascending: true })
-      .range(from, from + batchSize - 1);
-
-    if (error) {
-      console.error('Error fetching messages:', error);
-      handleApiError(error, { operation: 'load messages', resource: `messages for thread ${threadId}` });
-      throw new Error(`Error getting messages: ${error.message}`);
-    }
-
-    if (data && data.length > 0) {
-      allMessages = allMessages.concat(data);
-      from += batchSize;
-      hasMore = data.length === batchSize;
-    } else {
-      hasMore = false;
-    }
-  }
-
   try {
-    const llmResponseEndMessages = allMessages.filter(msg => msg.type === 'llm_response_end');
-    
-    if (llmResponseEndMessages.length > 0) {
-      const latestMsg = llmResponseEndMessages[llmResponseEndMessages.length - 1];
-      try {
-        const content = typeof latestMsg.content === 'string' ? JSON.parse(latestMsg.content) : latestMsg.content;
-        if (content?.usage?.total_tokens) {
-          const { useContextUsageStore } = await import('@/stores/context-usage-store');
-          useContextUsageStore.getState().setUsage(threadId, {
-            current_tokens: content.usage.total_tokens
-          });
-        }
-      } catch (e) {
-        console.warn('Failed to parse llm_response_end message:', e);
-      }
-    }
-  } catch (e) {
-    console.warn('Failed to extract context_usage from llm_response_end:', e);
-  }
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
 
-  return allMessages;
+    const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+    // Build headers with optional auth token
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
+    // Use backend API endpoint with auth handling
+    // Backend handles batching internally and returns all messages
+    const response = await fetch(`${API_URL}/threads/${threadId}/messages?order=asc`, {
+      headers,
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error('Error fetching messages:', errorText);
+      handleApiError(new Error(errorText), { operation: 'load messages', resource: `messages for thread ${threadId}` });
+      throw new Error(`Error getting messages: ${errorText}`);
+    }
+
+    const data = await response.json();
+    const allMessages = data.messages || [];
+
+    // Filter out cost and summary messages (backend doesn't filter these)
+    const filteredMessages = allMessages.filter(
+      (msg: Message) => msg.type !== 'cost' && msg.type !== 'summary'
+    );
+
+    // Extract context_usage from the latest llm_response_end message
+    try {
+      const llmResponseEndMessages = filteredMessages.filter((msg: Message) => msg.type === 'llm_response_end');
+      
+      // Find the most recent llm_response_end message
+      if (llmResponseEndMessages.length > 0) {
+        const latestMsg = llmResponseEndMessages[llmResponseEndMessages.length - 1];
+        try {
+          const content = typeof latestMsg.content === 'string' ? JSON.parse(latestMsg.content) : latestMsg.content;
+          if (content?.usage?.total_tokens) {
+            // Store context usage
+            const { useContextUsageStore } = await import('@/stores/context-usage-store');
+            useContextUsageStore.getState().setUsage(threadId, {
+              current_tokens: content.usage.total_tokens
+            });
+          }
+        } catch (e) {
+          console.warn('Failed to parse llm_response_end message:', e);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to extract context_usage from llm_response_end:', e);
+    }
+
+    return filteredMessages;
+  } catch (error) {
+    console.error('Failed to get messages:', error);
+    handleApiError(error, { operation: 'load messages', resource: `messages for thread ${threadId}` });
+    throw error;
+  }
 };
 
