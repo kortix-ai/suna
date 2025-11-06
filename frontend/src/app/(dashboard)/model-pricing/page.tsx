@@ -20,7 +20,7 @@ import {
 // Models now fetched via useModelSelection hook
 import type { Model } from '@/lib/api';
 import { useMemo, useState } from 'react';
-import { useModelSelection } from '@/hooks/use-model-selection';
+import { useModelSelection } from '@/hooks/agents';
 
 // Example task data with token usage
 const exampleTasks = [
