@@ -14,7 +14,6 @@ export default function HelpCenterPage() {
       <div className="mb-8">
         <h1 className="text-4xl font-bold mb-2">Help Center</h1>
         <p className="text-lg text-muted-foreground">
-          Get answers to common questions and learn more about Kortix
         </p>
       </div>
 
