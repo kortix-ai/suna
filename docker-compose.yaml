@@ -27,8 +27,10 @@
 services:
   redis:
     image: redis:7-alpine
+    env_file:
+      - ./.env
     ports:
-      - "6380:6379"
+      - "${REDIS_PORT_HOST:-6380}:6379"
     volumes:
       - redis_data:/data
       - ./backend/services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -52,10 +54,10 @@ services:
     volumes:
       - ./.env:/app/.env:ro
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_SSL=False
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_SSL=${REDIS_SSL:-False}
     depends_on:
       redis:
         condition: service_healthy
@@ -74,10 +76,10 @@ services:
     volumes:
       - ./.env:/app/.env:ro
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_SSL=False
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_SSL=${REDIS_SSL:-False}
     depends_on:
       redis:
         condition: service_healthy

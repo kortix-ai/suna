@@ -8,6 +8,8 @@ import re
 import json
 import secrets
 import base64
+import urllib.request
+import urllib.error
 
 # --- Constants ---
 IS_WINDOWS = platform.system() == "Windows"
@@ -323,7 +325,7 @@ class SetupWizard:
             else:
                 self.env_vars[key] = value
 
-        self.total_steps = 17
+        self.total_steps = 18
 
     def show_current_config(self):
         """Shows the current configuration status."""
@@ -536,7 +538,8 @@ class SetupWizard:
             self.run_step(13, self.configure_env_files)
             self.run_step(14, self.setup_supabase_database)
             self.run_step(15, self.install_dependencies)
-            self.run_step(16, self.start_suna)
+            self.run_step_optional(16, self.create_initial_admin_user, "Создание первого админ‑пользователя (необязательно)")
+            self.run_step(17, self.start_suna)
 
             self.final_instructions()
 
@@ -1142,6 +1145,18 @@ class SetupWizard:
                 )
                 self.env_vars["llm"][key] = api_key
 
+                # Дополнительно спросим Base URL для OpenAI‑совместимого провайдера
+                if key == "OPENAI_COMPATIBLE_API_KEY":
+                    existing_base = self.env_vars["llm"].get("OPENAI_COMPATIBLE_API_BASE", "")
+                    base_url = self._get_input(
+                        "Введите Base URL для OpenAI‑совместимого API (например, https://api.openrouter.ai/v1): ",
+                        validate_url,
+                        "Некорректный URL. Пример: https://api.your-llm.com/v1",
+                        allow_empty=False,
+                        default_value=existing_base,
+                    )
+                    self.env_vars["llm"]["OPENAI_COMPATIBLE_API_BASE"] = base_url
+
         # Validate that at least one LLM provider is configured
         configured_providers = [k for k in self.env_vars["llm"] if self.env_vars["llm"][k]]
         if configured_providers:
@@ -1568,6 +1583,51 @@ class SetupWizard:
         for key, value in mobile_env.items():
             mobile_env_content += f"{key}={value or ''}\n"
 
+        # --- Root .env for Docker Compose ---
+        # Создаём корневой .env, который использует docker-compose.yaml
+        # Это устраняет ошибки вида: "env file ./\.env not found" и предупреждения о NEXT_PUBLIC_*.
+        if self.env_vars["setup_method"] == "docker":
+            root_env = {
+                # Системные настройки
+                "ENV_MODE": "local",
+                "FRONTEND_URL": "http://localhost:3000",
+                "BACKEND_URL": "http://localhost:8000",
+
+                # Supabase (обязательные)
+                "SUPABASE_URL": self.env_vars["supabase"].get("SUPABASE_URL", ""),
+                "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
+                "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
+                "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
+
+                # Redis
+                "REDIS_HOST": "redis",
+                "REDIS_PORT": "6379",
+                "REDIS_PORT_HOST": "6379",
+                "REDIS_PASSWORD": "",
+                "REDIS_SSL": "false",
+
+                # Безопасность
+                "KORTIX_ADMIN_API_KEY": self.env_vars["kortix"].get("KORTIX_ADMIN_API_KEY", ""),
+                # Если API_KEY_SECRET не задан, оставим пустым — бэкенд имеет дефолт
+                "API_KEY_SECRET": self.env_vars.get("security", {}).get("API_KEY_SECRET", ""),
+
+                # Публичные переменные для Next.js (используются на этапе билда контейнера)
+                "NEXT_PUBLIC_ENV_MODE": "local",
+                "NEXT_PUBLIC_URL": "http://localhost:3000",
+                # В Docker фронтенд должен обращаться к бэкенду по имени сервиса внутри сети
+                "NEXT_PUBLIC_BACKEND_URL": "http://backend:8000/api",
+                "NEXT_PUBLIC_SUPABASE_URL": self.env_vars["supabase"].get("NEXT_PUBLIC_SUPABASE_URL", ""),
+                "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
+            }
+
+            root_env_content = "# Сгенерировано скриптом установки Suna для Docker Compose\n\n"
+            for key, value in root_env.items():
+                root_env_content += f"{key}={value or ''}\n"
+
+            with open(".env", "w") as f:
+                f.write(root_env_content)
+            print_success("Создан корневой .env для docker-compose.yaml.")
+
         with open(os.path.join("apps", "mobile", ".env"), "w") as f:
             f.write(mobile_env_content)
         print_success("Создан apps/mobile/.env.")
@@ -1764,6 +1824,123 @@ class SetupWizard:
                 "Установите зависимости вручную и запустите скрипт снова.")
             sys.exit(1)
 
+    def create_initial_admin_user(self):
+        """Creates the initial admin user via Supabase Admin API and assigns 'admin' role."""
+        print_step(16, self.total_steps, "Создание первого админ‑пользователя")
+
+        supabase_url = self.env_vars.get("supabase", {}).get("SUPABASE_URL")
+        service_key = self.env_vars.get("supabase", {}).get("SUPABASE_SERVICE_ROLE_KEY")
+
+        if not supabase_url or not service_key:
+            print_warning("SUPABASE_URL или SUPABASE_SERVICE_ROLE_KEY не заданы. Пропускаем создание админа.")
+            return
+
+        def email_validator(val, allow_empty=False):
+            if allow_empty and (val is None or val.strip() == ""):
+                return True
+            return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", val or ""))
+
+        def password_validator(val, allow_empty=False):
+            if allow_empty and (val is None or val.strip() == ""):
+                return True
+            return isinstance(val, str) and len(val) >= 8
+
+        admin_email = self._get_input(
+            "Введите email первого администратора: ",
+            email_validator,
+            "Введите корректный email",
+            allow_empty=False,
+            default_value=self.env_vars.get("supabase", {}).get("INITIAL_ADMIN_EMAIL", "")
+        )
+
+        admin_password = self._get_input(
+            "Введите пароль для администратора (мин. 8 символов): ",
+            password_validator,
+            "Пароль должен быть не короче 8 символов",
+            allow_empty=False,
+        )
+
+        # Create user via Supabase Admin API
+        create_url = f"{supabase_url}/auth/v1/admin/users"
+        headers = {
+            "Authorization": f"Bearer {service_key}",
+            "apikey": service_key,
+            "Content-Type": "application/json",
+        }
+        body = json.dumps({
+            "email": admin_email,
+            "password": admin_password,
+            "email_confirm": True
+        }).encode("utf-8")
+
+        user_id = None
+        try:
+            req = urllib.request.Request(create_url, data=body, headers=headers, method="POST")
+            with urllib.request.urlopen(req) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+                user_id = payload.get("id") or payload.get("user", {}).get("id")
+                if user_id:
+                    print_success(f"Пользователь создан: {admin_email}")
+        except urllib.error.HTTPError as e:
+            # If user already exists, fetch by email
+            if e.code in (409, 422):
+                print_warning("Пользователь уже существует, пробуем найти его ID по email…")
+                try:
+                    lookup_url = f"{supabase_url}/rest/v1/auth.users?email=eq.{admin_email}"
+                    lookup_req = urllib.request.Request(lookup_url, headers=headers, method="GET")
+                    with urllib.request.urlopen(lookup_req) as resp:
+                        rows = json.loads(resp.read().decode("utf-8"))
+                        if isinstance(rows, list) and rows:
+                            user_id = rows[0].get("id")
+                            print_success(f"Найден существующий пользователь с ID: {user_id}")
+                        else:
+                            print_error("Не удалось найти пользователя по email.")
+                except Exception as le:
+                    print_error(f"Ошибка при поиске пользователя: {le}")
+            else:
+                print_error(f"Ошибка создания пользователя: {e}")
+        except Exception as e:
+            print_error(f"Ошибка сети при создании пользователя: {e}")
+
+        if not user_id:
+            print_warning("Пропускаем назначение роли: не удалось получить ID пользователя.")
+            return
+
+        # Assign admin role via PostgREST
+        roles_url = f"{supabase_url}/rest/v1/user_roles"
+        roles_body = json.dumps({
+            "user_id": user_id,
+            "role": "admin"
+        }).encode("utf-8")
+        roles_headers = {
+            **headers,
+            "Prefer": "return=representation",
+        }
+        try:
+            rreq = urllib.request.Request(roles_url, data=roles_body, headers=roles_headers, method="POST")
+            with urllib.request.urlopen(rreq) as resp:
+                _ = json.loads(resp.read().decode("utf-8"))
+                print_success("Роль 'admin' назначена пользователю успешно.")
+        except urllib.error.HTTPError as e:
+            if e.code == 409:
+                # Conflict implies role already exists; try update
+                print_warning("Роль уже назначена, пробуем обновить роль…")
+                try:
+                    update_url = f"{roles_url}?user_id=eq.{user_id}"
+                    ureq = urllib.request.Request(update_url, data=roles_body, headers=roles_headers, method="PATCH")
+                    with urllib.request.urlopen(ureq) as resp:
+                        _ = json.loads(resp.read().decode("utf-8"))
+                        print_success("Роль 'admin' обновлена для пользователя.")
+                except Exception as ue:
+                    print_error(f"Не удалось обновить роль пользователя: {ue}")
+            else:
+                print_error(f"Ошибка назначения роли: {e}")
+        except Exception as e:
+            print_error(f"Ошибка сети при назначении роли: {e}")
+
+        # Save email for reference in final instructions
+        self.env_vars.setdefault("supabase", {})["INITIAL_ADMIN_EMAIL"] = admin_email
+
     def start_suna(self):
         """Starts Suna using Docker Compose or shows instructions for manual startup."""
         print_step(17, self.total_steps, "Запуск Suna")
@@ -1825,6 +2002,8 @@ class SetupWizard:
 
         if self.env_vars["setup_method"] == "docker":
             print_info("Ваш экземпляр Suna готов к использованию!")
+            if self.env_vars.get("supabase", {}).get("INITIAL_ADMIN_EMAIL"):
+                print_info(f"Создан админ‑пользователь: {self.env_vars['supabase']['INITIAL_ADMIN_EMAIL']}")
             
             # Important limitation for local Supabase with Docker
             if self.env_vars.get("supabase_setup_method") == "local":
@@ -1870,6 +2049,8 @@ class SetupWizard:
             print_info(
                 "Чтобы запустить Suna, выполните следующие команды в отдельных терминалах:"
             )
+            if self.env_vars.get("supabase", {}).get("INITIAL_ADMIN_EMAIL"):
+                print_info(f"Создан админ‑пользователь: {self.env_vars['supabase']['INITIAL_ADMIN_EMAIL']}")
             
             # Show Supabase start command for local setup
             step_num = 1
