@@ -1,47 +1,48 @@
-# Agent Sandbox
+# Песочница агента
 
-This directory contains the agent sandbox implementation - a Docker-based virtual environment that agents use as their own computer to execute tasks, access the web, and manipulate files.
+Этот каталог содержит реализацию песочницы агента — виртуальной среды на базе Docker, которую агенты используют как собственный компьютер для выполнения задач, доступа к вебу и работы с файлами.
 
-## Overview
+## Обзор
 
-The sandbox provides a complete containerized Linux environment with:
-- Chrome browser for web interactions
-- VNC server for accessing the Web User
-- Web server for serving content (port 8080) -> loading html files from the /workspace directory
-- Full file system access
-- Full sudo access
+Песочница предоставляет полноценную контейнеризованную Linux‑среду со следующими компонентами:
+- Браузер Chrome для веб‑взаимодействий
+- Сервер VNC для доступа к Web User
+- Веб‑сервер для отдачи контента (порт 8080) → загрузка HTML‑файлов из директории /workspace
+- Полный доступ к файловой системе
+- Полный доступ sudo
 
-## Customizing the Sandbox
+## Настройка песочницы
 
-You can modify the sandbox environment for development or to add new capabilities:
+Вы можете изменять среду песочницы для разработки или добавления новых возможностей:
 
-1. Edit files in the `docker/` directory
-2. Build a custom image:
+1. Редактируйте файлы в директории `docker/`
+2. Соберите кастомный образ:
    ```
    cd backend/sandbox/docker
    docker compose build
    docker push kortix/suna:0.1.3.24
    ```
-3. Test your changes locally using docker-compose
+3. Протестируйте изменения локально с помощью docker-compose
 
-## Using a Custom Snapshot
+## Использование собственного снапшота
 
-To use your custom sandbox snapshot:
+Чтобы использовать свой собственный снапшот песочницы:
 
-1. Change the `image` parameter in `docker-compose.yml` (that defines the image name `kortix/suna:___`)
-2. Build and create a snapshot in Daytona with the same name
-3. Update the snapshot name in `backend/sandbox/sandbox.py` in the `create_sandbox` function
-4. If using Daytona for deployment, update the snapshot reference there as well
+1. Измените параметр `image` в `docker-compose.yml` (там задаётся имя образа `kortix/suna:___`)
+2. Соберите и создайте снапшот в Daytona с тем же именем
+3. Обновите имя снапшота в `backend/sandbox/sandbox.py` в функции `create_sandbox`
+4. Если используете Daytona для деплоя, обновите ссылку на снапшот и там
 
-## Publishing New Versions
+## Публикация новых версий
 
-When publishing a new version of the sandbox:
+При публикации новой версии песочницы:
 
-1. Update the version number in `docker-compose.yml` (e.g., from `0.1.2` to `0.1.3`)
-2. Build the new image: `docker compose build`
-3. Push the new version: `docker push kortix/suna:0.1.3`
-4. Create a new snapshot in Daytona with the same name
-5. Update all references to the snapshot version in:
+1. Обновите номер версии в `docker-compose.yml` (например, с `0.1.2` на `0.1.3`)
+2. Соберите новый образ: `docker compose build`
+3. Отправьте новую версию: `docker push kortix/suna:0.1.3`
+4. Создайте новый снапшот в Daytona с тем же именем
+5. Обновите все ссылки на версию снапшота в:
    - `backend/utils/config.py`
-   - Daytona snapshots
-   - Any other services using this snapshot
+   - снапшотах Daytona
+   - любых других сервисах, использующих этот снапшот
+
