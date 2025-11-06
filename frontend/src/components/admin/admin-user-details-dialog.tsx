@@ -48,6 +48,7 @@ import {
   useAdminUserTransactions,
 } from '@/hooks/billing';
 import type { UserSummary } from '@/hooks/admin/use-admin-users';
+import { formatCredits, dollarsToCredits, formatCreditsWithSign } from '@/lib/utils/credit-formatter';
 
 interface AdminUserDetailsDialogProps {
   user: UserSummary | null;
@@ -102,10 +103,6 @@ export function AdminUserDetailsDialog({
     });
   };
 
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-
   const handleAdjustCredits = async () => {
     if (!user || !adjustAmount || !adjustReason) {
       toast.error('Please fill in all fields');
@@ -122,7 +119,7 @@ export function AdminUserDetailsDialog({
       });
 
       toast.success(
-        `Credits adjusted successfully. New balance: ${formatCurrency(result.new_balance)}`
+        `Credits adjusted successfully. New balance: ${formatCredits(dollarsToCredits(result.new_balance))}`
       );
 
       refetchBilling();
@@ -151,7 +148,7 @@ export function AdminUserDetailsDialog({
       });
 
       toast.success(
-        `Refund processed. New balance: ${formatCurrency(result.new_balance)}`
+        `Refund processed. New balance: ${formatCredits(dollarsToCredits(result.new_balance))}`
       );
 
       refetchBilling();
@@ -281,17 +278,17 @@ export function AdminUserDetailsDialog({
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">Current Balance</p>
                         <p className="text-2xl font-medium text-green-600">
-                          {formatCurrency(user.credit_balance)}
+                          {formatCredits(dollarsToCredits(user.credit_balance))}
                         </p>
                       </div>
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <p className="text-muted-foreground">Purchased</p>
-                          <p className="font-medium">{formatCurrency(user.total_purchased)}</p>
+                          <p className="font-medium">{formatCredits(dollarsToCredits(user.total_purchased))}</p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">Used</p>
-                          <p className="font-medium">{formatCurrency(user.total_used)}</p>
+                          <p className="font-medium">{formatCredits(dollarsToCredits(user.total_used))}</p>
                         </div>
                       </div>
                       <div>
@@ -427,11 +424,10 @@ export function AdminUserDetailsDialog({
                             </div>
                             <div className="text-right">
                               <p className={`font-semibold ${getTransactionColor(transaction.type)}`}>
-                                {transaction.amount > 0 ? '+' : ''}
-                                {formatCurrency(Math.abs(transaction.amount))}
+                                {formatCreditsWithSign(dollarsToCredits(transaction.amount), { showDecimals: true })}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                Balance: {formatCurrency(transaction.balance_after)}
+                                Balance: {formatCredits(dollarsToCredits(transaction.balance_after), { showDecimals: true })}
                               </p>
                             </div>
                           </div>
@@ -511,7 +507,7 @@ export function AdminUserDetailsDialog({
                             {activity.credit_cost > 0 && (
                               <div className="text-right ml-2">
                                 <p className="text-sm font-medium text-muted-foreground">
-                                  {formatCurrency(activity.credit_cost)}
+                                  {formatCredits(dollarsToCredits(activity.credit_cost), { showDecimals: true })}
                                 </p>
                               </div>
                             )}

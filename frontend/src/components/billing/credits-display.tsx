@@ -72,7 +72,7 @@ export function CreditsDisplay() {
       <button
         onClick={handleClick}
         className={cn(
-          "group flex items-center gap-2.5 border-[1.5px] rounded-full pl-3.5 pr-2.5 py-2 h-[41px]",
+          "group flex items-center gap-2.5 border-[1.5px] rounded-full pl-3.5 pr-1 py-2 h-[41px]",
           "bg-background dark:bg-background",
           "border-border/60 dark:border-border",
           "hover:bg-accent/30 dark:hover:bg-accent/20 hover:border-border dark:hover:border-border/80",
@@ -88,27 +88,19 @@ export function CreditsDisplay() {
           isLocal={isLocal} 
         />
 
-        {/* Divider - Only show if tier badge exists (non-Basic plans) */}
-        {planName && planName !== 'Basic' && (
-          <div className="h-5 w-[1px] bg-border/40 dark:bg-border/60" />
-        )}
-
         {/* Credits amount */}
-        <div className="flex items-baseline gap-1.5 min-w-0">
+        <div className="flex items-baseline gap-1.5 min-w-0 flex-shrink-0">
           <span className="text-[15px] font-medium text-foreground dark:text-foreground leading-none tabular-nums">
             {formattedCredits}
           </span>
-          <span className="text-[13px] font-medium text-muted-foreground/50 dark:text-muted-foreground/60 leading-none whitespace-nowrap">
+          <span className="text-[13px] font-medium text-muted-foreground dark:text-muted-foreground/60 leading-none whitespace-nowrap">
             Credits
           </span>
         </div>
 
-        {/* Divider before Plus */}
-        <div className="h-5 w-[1px] bg-border/40 dark:bg-border/60 ml-0.5" />
-
-        {/* Plus Icon */}
-        <div className="flex items-center justify-center h-[32px] w-[32px] rounded-full bg-accent/20 dark:bg-accent/30 group-hover:bg-accent/40 dark:group-hover:bg-accent/50 transition-colors">
-          <Plus className="h-4 w-4 text-foreground/70 dark:text-foreground/80 group-hover:text-foreground transition-colors" />
+        {/* Plus Icon - Smaller, dark background with white + in light mode, white background with black + in dark mode */}
+        <div className="flex items-center justify-center h-[24px] w-[24px] rounded-full bg-black dark:bg-white group-hover:bg-black/90 dark:group-hover:bg-white/90 transition-colors flex-shrink-0 mr-0.5">
+          <Plus className="h-3 w-3 text-white dark:text-black font-bold stroke-[2.5]" />
         </div>
       </button>
 

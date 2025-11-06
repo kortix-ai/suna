@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { useTransactions, useTransactionsSummary } from '@/hooks/billing';
 import { cn } from '@/lib/utils';
+import { formatCredits, formatCreditsWithSign } from '@/lib/utils/credit-formatter';
 
 interface Props {
   accountId?: string;
@@ -62,16 +63,6 @@ export default function CreditTransactions({ accountId }: Props) {
       hour: '2-digit',
       minute: '2-digit',
     });
-  };
-
-  const formatAmount = (amount: number) => {
-    const absAmount = Math.abs(amount);
-    const formatted = absAmount.toFixed(1);
-    return amount >= 0 ? `+${formatted}` : `-${formatted}`;
-  };
-
-  const formatBalance = (balance: number) => {
-    return balance.toFixed(1);
   };
 
   const getTransactionIcon = (type: string, amount: number) => {
@@ -215,10 +206,10 @@ export default function CreditTransactions({ accountId }: Props) {
                           "text-right font-mono font-semibold",
                           tx.amount >= 0 ? "text-green-600" : "text-red-600"
                         )}>
-                          {formatAmount(tx.amount)}
+                          {formatCreditsWithSign(tx.amount, { showDecimals: true })}
                         </TableCell>
                         <TableCell className="text-right font-mono">
-                          {formatBalance(tx.balance_after)}
+                          {formatCredits(tx.balance_after, { showDecimals: true })}
                         </TableCell>
                       </TableRow>
                     ))}

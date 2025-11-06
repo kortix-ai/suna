@@ -142,7 +142,7 @@ export function CreditPurchaseModal({
 
                 {currentBalance > 0 && (
                     <div className="text-sm text-muted-foreground">
-                        Current balance: ${currentBalance.toFixed(2)}
+                        Current balance: {formatCredits(currentBalance, { showDecimals: true })}
                     </div>
                 )}
 

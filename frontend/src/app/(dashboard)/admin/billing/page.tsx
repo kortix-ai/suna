@@ -38,10 +38,6 @@ export default function AdminBillingPage() {
     refreshUserStats();
   };
 
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-
   const calculateActivityRate = () => {
     if (!stats || stats.total_users === 0) return 0;
     return Math.round((stats.active_users_30d / stats.total_users) * 100);

@@ -20,6 +20,7 @@ import {
   Heart,
   Zap,
   ShoppingCart,
+  Lightbulb,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -808,7 +809,7 @@ export function PricingSection({
         {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
         {isAuthenticated && 
          currentSubscription?.credits?.can_purchase_credits && (
-          <div className="w-full max-w-6xl mt-12 flex justify-center">
+          <div className="w-full max-w-6xl mt-12 flex flex-col items-center gap-4">
             <Button
               onClick={() => setShowCreditPurchaseModal(true)}
               variant="outline"
@@ -817,6 +818,29 @@ export function PricingSection({
             >
               <ShoppingCart className="h-5 w-5" />
               Get Additional Credits
+            </Button>
+            {/* Credits Explained Link */}
+            <Button
+              variant="link"
+              onClick={() => window.open('/help/credits', '_blank')}
+              className="text-muted-foreground hover:text-foreground h-auto p-0"
+            >
+              <Lightbulb className="h-3.5 w-3.5 mr-2" />
+              <span className="text-sm">Credits explained</span>
+            </Button>
+          </div>
+        )}
+
+        {/* Credits Explained Link - Show when not authenticated or when credits purchase is not available */}
+        {(!isAuthenticated || !currentSubscription?.credits?.can_purchase_credits) && (
+          <div className="w-full max-w-6xl mt-8 flex justify-center">
+            <Button
+              variant="link"
+              onClick={() => window.open('/help/credits', '_blank')}
+              className="text-muted-foreground hover:text-foreground h-auto p-0"
+            >
+              <Lightbulb className="h-3.5 w-3.5 mr-2" />
+              <span className="text-sm">Credits explained</span>
             </Button>
           </div>
         )}

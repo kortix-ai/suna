@@ -806,7 +806,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                     className="text-muted-foreground hover:text-foreground h-auto p-0"
                 >
                     <Lightbulb className="h-3.5 w-3.5 mr-2" />
-                    <span className="text-sm">See how Model Pricing works</span>
+                    <span className="text-sm">Credits explained</span>
                 </Button>
             </div>
 

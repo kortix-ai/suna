@@ -256,9 +256,9 @@ export function DashboardContent() {
         creditsExhausted={creditsExhausted}
       />
 
-      <div className="flex flex-col h-screen w-full overflow-hidden">
-        {/* Credits Display - Centered at the top */}
-        <div className="flex justify-center pt-6 pb-2">
+      <div className="flex flex-col h-screen w-full overflow-hidden relative">
+        {/* Credits Display - Top right corner */}
+        <div className="absolute top-4 right-4 z-10">
           <CreditsDisplay />
         </div>
 
@@ -304,15 +304,13 @@ export function DashboardContent() {
             
 
             {/* Centered content area */}
-            <div className="flex-1 flex items-start justify-center pt-[24vh]">
+            <div className="flex-1 flex items-start justify-center pt-[30vh]">
               {/* Super Worker View - Suna only */}
               {viewMode === 'super-worker' && (
                 <div className="w-full animate-in fade-in-0 duration-300">
-                  {/* Title, Credits Display, and chat input - Fixed position */}
+                  {/* Title and chat input - Fixed position */}
                   <div className="px-4 py-8">
                     <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-6 md:space-y-8">
-                      {/* Credits Display - Centered */}
-
                       <div className="flex flex-col items-center text-center w-full">
                         <p
                           className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
