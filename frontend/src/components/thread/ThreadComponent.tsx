@@ -36,7 +36,8 @@ import {
   useThreadKeyboardShortcuts,
 } from '@/hooks/threads/page';
 import { ThreadError, ThreadLayout } from '@/components/thread/layout';
-import { ThreadUpgradeDialog } from '@/components/billing';
+import { PlanSelectionModal } from '@/components/billing/pricing';
+import { useBillingModal } from '@/hooks/billing/use-billing-modal';
 
 import {
   useThreadAgent,
@@ -69,8 +70,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [filePathList, setFilePathList] = useState<string[] | undefined>(
     undefined,
   );
-  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
+  const debugMode = useState(false)[0];
+  const setDebugMode = useState(false)[1];
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
     useState(false);
   // Use Zustand store for agent selection persistence
@@ -142,13 +143,18 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
 
   const {
-    showBillingAlert,
-    setShowBillingAlert,
-    billingData,
-    setBillingData,
+    showModal: showBillingModal,
+    creditsExhausted,
+    openModal: openBillingModal,
+    closeModal: closeBillingModal,
+  } = useBillingModal();
+
+  const {
     checkBillingLimits,
     billingStatusQuery,
-  } = useThreadBilling(null, agentStatus, initialLoadCompleted);
+  } = useThreadBilling(null, agentStatus, initialLoadCompleted, () => {
+    openBillingModal();
+  });
 
   // Real-time project updates (for sandbox creation)
   useProjectRealtime(projectId);
@@ -410,6 +416,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     const isExpected =
       lower.includes('not found') || lower.includes('agent run is not running');
 
+    // Check if this is a billing error
+    const isBillingError = 
+      lower.includes('insufficient credits') ||
+      lower.includes('credit') ||
+      lower.includes('balance') ||
+      lower.includes('out of credits') ||
+      lower.includes('no credits');
+
+    if (isBillingError) {
+      console.error(`[PAGE] Agent stopped due to billing error: ${errorMessage}`);
+      // Create a BillingError to pass to the modal
+      const billingError = new BillingError(402, {
+        message: errorMessage,
+      });
+      openBillingModal(billingError);
+      pendingMessageRef.current = null;
+      return;
+    }
+
     // Downgrade log level for expected/benign cases (opening old conversations)
     if (isExpected) {
       console.info(`[PAGE] Stream skipped for inactive run: ${errorMessage}`);
@@ -421,7 +446,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     
     // Clear pending message on error
     pendingMessageRef.current = null;
-  }, []);
+  }, [openBillingModal]);
 
   const handleStreamClose = useCallback(() => { }, []);
 
@@ -490,15 +515,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           pendingMessageRef.current = null;
 
           if (error instanceof BillingError) {
-            setBillingData({
-              currentUsage: error.detail.currentUsage as number | undefined,
-              limit: error.detail.limit as number | undefined,
-              message:
-                error.detail.message ||
-                'Monthly usage limit reached. Please upgrade.',
-              accountId: null,
-            });
-            setShowBillingAlert(true);
+            openBillingModal(error);
             return;
           }
 
@@ -514,15 +531,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           }
 
           if (error instanceof ProjectLimitError) {
-            setBillingData({
-              currentUsage: error.detail.current_count as number,
-              limit: error.detail.limit as number,
-              message:
-                error.detail.message ||
-                `You've reached your project limit (${error.detail.current_count}/${error.detail.limit}). Please upgrade to create more projects.`,
-              accountId: null,
-            });
-            setShowBillingAlert(true);
+            openBillingModal(error);
             return;
           }
 
@@ -550,8 +559,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       addUserMessageMutation,
       startAgentMutation,
       setMessages,
-      setBillingData,
-      setShowBillingAlert,
+      openBillingModal,
       setAgentRunId,
     ],
   );
@@ -775,15 +783,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       );
       const isFreeTier = subscriptionStatus === 'no_subscription';
       if (!hasSeenUpgradeDialog && isFreeTier && !isLocalMode()) {
-        setShowUpgradeDialog(true);
+        openBillingModal(); // Open without error for free tier prompt
       }
     }
-  }, [subscriptionData, subscriptionStatus, initialLoadCompleted]);
+  }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
 
-  const handleDismissUpgradeDialog = () => {
-    setShowUpgradeDialog(false);
-    localStorage.setItem('suna_upgrade_dialog_displayed', 'true');
-  };
 
   useEffect(() => {
     if (streamingToolCall) {
@@ -860,9 +864,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
         isLoading={!initialLoadCompleted || isLoading}
-        showBillingAlert={showBillingAlert}
-        billingData={billingData}
-        onDismissBilling={() => setShowBillingAlert(false)}
         debugMode={debugMode}
         isMobile={isMobile}
         initialLoadCompleted={initialLoadCompleted}
@@ -904,9 +905,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           renderAssistantMessage={toolViewAssistant}
           renderToolResult={toolViewResult}
           isLoading={!initialLoadCompleted || isLoading}
-          showBillingAlert={showBillingAlert}
-          billingData={billingData}
-          onDismissBilling={() => setShowBillingAlert(false)}
           debugMode={debugMode}
           isMobile={isMobile}
           initialLoadCompleted={initialLoadCompleted}
@@ -982,10 +980,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           </div>
         </ThreadLayout>
 
-        <ThreadUpgradeDialog
-          open={showUpgradeDialog}
-          onOpenChange={setShowUpgradeDialog}
-          onDismiss={handleDismissUpgradeDialog}
+        <PlanSelectionModal
+          open={showBillingModal}
+          onOpenChange={closeBillingModal}
+          creditsExhausted={creditsExhausted}
         />
 
         {agentLimitData && (
@@ -1032,9 +1030,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
         isLoading={!initialLoadCompleted || isLoading}
-        showBillingAlert={showBillingAlert}
-        billingData={billingData}
-        onDismissBilling={() => setShowBillingAlert(false)}
         debugMode={debugMode}
         isMobile={isMobile}
         initialLoadCompleted={initialLoadCompleted}
@@ -1115,10 +1110,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         </div>
       </ThreadLayout>
 
-      <ThreadUpgradeDialog
-        open={showUpgradeDialog}
-        onOpenChange={setShowUpgradeDialog}
-        onDismiss={handleDismissUpgradeDialog}
+      <PlanSelectionModal
+        open={showBillingModal}
+        onOpenChange={closeBillingModal}
+        creditsExhausted={creditsExhausted}
       />
 
       {agentLimitData && (

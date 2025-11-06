@@ -75,13 +75,6 @@ export interface StreamingToolCall {
   xml_tag_name?: string;
 }
 
-export interface BillingData {
-  currentUsage?: number;
-  limit?: number;
-  message?: string;
-  accountId?: string | null;
-}
-
 export type AgentStatus = 'idle' | 'running' | 'connecting' | 'error';
 
 // Re-export existing types

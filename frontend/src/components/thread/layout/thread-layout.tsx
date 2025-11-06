@@ -2,9 +2,8 @@ import React from 'react';
 import { SiteHeader } from '@/components/thread/thread-site-header';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { ToolCallSidePanel } from '@/components/thread/tool-call-side-panel';
-import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
 import { Project } from '@/lib/api';
-import { ApiMessageType, BillingData } from '@/components/thread/types';
+import { ApiMessageType } from '@/components/thread/types';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
 import { useIsMobile } from '@/hooks/utils';
 
@@ -33,9 +32,6 @@ interface ThreadLayoutProps {
   renderAssistantMessage: (assistantContent?: string, toolContent?: string) => React.ReactNode;
   renderToolResult: (toolContent?: string, isSuccess?: boolean) => React.ReactNode;
   isLoading: boolean;
-  showBillingAlert: boolean;
-  billingData: BillingData;
-  onDismissBilling: () => void;
   debugMode: boolean;
   isMobile: boolean;
   initialLoadCompleted: boolean;
@@ -69,9 +65,6 @@ export function ThreadLayout({
   renderAssistantMessage,
   renderToolResult,
   isLoading,
-  showBillingAlert,
-  billingData,
-  onDismissBilling,
   debugMode,
   isMobile,
   initialLoadCompleted,
@@ -132,15 +125,6 @@ export function ThreadLayout({
               filePathList={filePathList}
             />
           )}
-
-          <BillingErrorAlert
-            message={billingData.message}
-            currentUsage={billingData.currentUsage}
-            limit={billingData.limit}
-            accountId={billingData.accountId}
-            onDismiss={onDismissBilling}
-            isOpen={showBillingAlert}
-          />
         </div>
       </>
     );
@@ -203,15 +187,6 @@ export function ThreadLayout({
           filePathList={filePathList}
         />
       )}
-
-      <BillingErrorAlert
-        message={billingData.message}
-        currentUsage={billingData.currentUsage}
-        limit={billingData.limit}
-        accountId={billingData.accountId}
-        onDismiss={onDismissBilling}
-        isOpen={showBillingAlert}
-      />
     </div>
   );
 }

@@ -21,7 +21,7 @@ export {
 } from './use-subscription-v2';
 
 // Billing Error Handling
-export { useBillingError } from './use-billing-error';
+export { useBillingModal } from './use-billing-modal';
 
 // Credit & Thread Usage
 export { useCreditUsage } from './use-credit-usage';

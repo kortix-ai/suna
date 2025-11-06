@@ -12,15 +12,13 @@ import {
   ProjectLimitError,
 } from '@/lib/api';
 import { useIsMobile } from '@/hooks/utils';
-import { useBillingError } from '@/hooks/billing';
-import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
-import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
 
 import { useAgents } from '@/hooks/agents/use-agents';
 import { PlanSelectionModal } from '@/components/billing/pricing';
+import { useBillingModal } from '@/hooks/billing/use-billing-modal';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { SunaModesPanel } from './suna-modes-panel';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
@@ -64,8 +62,6 @@ export function DashboardContent() {
     getCurrentAgent
   } = useAgentSelection();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-  const { billingError, handleBillingError, clearBillingError } =
-    useBillingError();
   const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
   const [agentLimitData, setAgentLimitData] = useState<{
     runningCount: number;
@@ -75,11 +71,14 @@ export function DashboardContent() {
   const searchParams = useSearchParams();
   const isMobile = useIsMobile();
   const { user } = useAuth();
-  const { data: accounts } = useAccounts({ enabled: !!user });
-  const personalAccount = accounts?.find((account) => account.personal_account);
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const {
+    showModal: showBillingModal,
+    creditsExhausted,
+    openModal: openBillingModal,
+    closeModal: closeBillingModal,
+  } = useBillingModal();
 
   // Feature flag for custom agents section
 
@@ -187,7 +186,7 @@ export function DashboardContent() {
     } catch (error: any) {
       console.error('Error during submission process:', error);
       if (error instanceof BillingError) {
-        setShowPaymentModal(true);
+        openBillingModal(error);
       } else if (error instanceof AgentRunLimitError) {
         const { running_thread_ids, running_count } = error.detail;
         setAgentLimitData({
@@ -196,7 +195,7 @@ export function DashboardContent() {
         });
         setShowAgentLimitDialog(true);
       } else if (error instanceof ProjectLimitError) {
-        setShowPaymentModal(true);
+        openBillingModal(error);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
@@ -233,8 +232,9 @@ export function DashboardContent() {
   return (
     <>
       <PlanSelectionModal
-        open={showPaymentModal}
-        onOpenChange={setShowPaymentModal}
+        open={showBillingModal}
+        onOpenChange={closeBillingModal}
+        creditsExhausted={creditsExhausted}
       />
 
       <div className="flex flex-col h-screen w-full overflow-hidden">
@@ -365,15 +365,6 @@ export function DashboardContent() {
               )}
             </div>
           </div>
-
-          <BillingErrorAlert
-            message={billingError?.message}
-            currentUsage={billingError?.currentUsage}
-            limit={billingError?.limit}
-            accountId={personalAccount?.account_id}
-            onDismiss={clearBillingError}
-            isOpen={!!billingError}
-          />
         </div>
       </div>
 

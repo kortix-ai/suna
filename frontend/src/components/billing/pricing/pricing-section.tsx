@@ -623,6 +623,7 @@ interface PricingSectionProps {
   insideDialog?: boolean;
   noPadding?: boolean;
   onSubscriptionUpdate?: () => void;
+  customTitle?: string;
 }
 
 export function PricingSection({
@@ -632,6 +633,7 @@ export function PricingSection({
   insideDialog = false,
   noPadding = false,
   onSubscriptionUpdate,
+  customTitle,
 }: PricingSectionProps) {
   const { user } = useAuth();
   const isUserAuthenticated = !!user;
@@ -697,7 +699,7 @@ export function PricingSection({
         {showTitleAndTabs && (
           <div className="w-full flex justify-center mb-6">
             <h2 className="text-3xl md:text-4xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl">
-              Pick the plan that works for you.
+              {customTitle || 'Pick the plan that works for you.'}
             </h2>
           </div>
         )}

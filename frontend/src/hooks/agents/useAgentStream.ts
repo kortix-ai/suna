@@ -338,6 +338,27 @@ export function useAgentStream(
           callbacks.onError?.(errorMessage);
           return;
         }
+        // Check for stopped status with billing error message
+        if (jsonData.status === 'stopped' && jsonData.message) {
+          const message = jsonData.message.toLowerCase();
+          const isBillingError = 
+            message.includes('insufficient credits') ||
+            message.includes('credit') ||
+            message.includes('balance') ||
+            message.includes('out of credits') ||
+            message.includes('no credits');
+          
+          if (isBillingError) {
+            console.error(
+              '[useAgentStream] Agent stopped due to billing error:',
+              jsonData.message,
+            );
+            setError(jsonData.message);
+            callbacks.onError?.(jsonData.message);
+            finalizeStream('stopped', currentRunIdRef.current);
+            return;
+          }
+        }
       } catch (jsonError) {
         // Not JSON or could not parse as JSON, continue processing
       }
@@ -547,6 +568,28 @@ export function useAgentStream(
           setError('Stream closed unexpectedly while agent was running.');
           finalizeStream('error', runId); // Finalize as error for now
           toast.warning('Stream disconnected. Agent might still be running.');
+        } else if (agentStatus.status === 'stopped') {
+          // Check if agent stopped due to billing error
+          const errorMessage = agentStatus.error || '';
+          const lower = errorMessage.toLowerCase();
+          const isBillingError = 
+            lower.includes('insufficient credits') ||
+            lower.includes('credit') ||
+            lower.includes('balance') ||
+            lower.includes('out of credits') ||
+            lower.includes('no credits');
+          
+          if (isBillingError && errorMessage) {
+            console.error(
+              `[useAgentStream] Agent stopped due to billing error: ${errorMessage}`,
+            );
+            setError(errorMessage);
+            callbacks.onError?.(errorMessage);
+          }
+          
+          // Map backend terminal status to hook terminal status
+          const finalStatus = mapAgentStatus(agentStatus.status);
+          finalizeStream(finalStatus, runId);
         } else {
           // Map backend terminal status to hook terminal status
           const finalStatus = mapAgentStatus(agentStatus.status);

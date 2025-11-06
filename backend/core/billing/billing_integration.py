@@ -9,17 +9,25 @@ from core.services.supabase import DBConnection
 class BillingIntegration:
     @staticmethod
     async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
+        """
+        Check if user can start a new request.
+        - If balance is positive: Allow (can go slightly negative during this request)
+        - If balance is already negative: Block (prevent infinite debt)
+        
+        This allows a single request to push balance negative, but prevents further requests.
+        """
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
         
         balance_info = await credit_manager.get_balance(account_id)
         balance = Decimal(str(balance_info.get('total', 0)))
         
-        estimated_cost = Decimal('0.10')
+        # Block if already in debt
+        if balance < 0:
+            return False, f"Insufficient credits. Your balance is ${balance:.2f}. Please add credits to continue.", None
         
-        if balance < estimated_cost:
-            return False, f"Insufficient credits. Balance: ${balance:.2f}, Required: ~${estimated_cost:.2f}", None
-        
+        # Allow if balance is positive (even if small)
+        # The deduction can push it negative, but only for this one request
         return True, f"Credits available: ${balance:.2f}", None
     
     @staticmethod

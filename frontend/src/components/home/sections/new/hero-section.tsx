@@ -22,9 +22,6 @@ import {
     DialogTitle,
     DialogOverlay,
 } from '@/components/ui/dialog';
-import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
-import { useBillingError } from '@/hooks/billing';
-import { useAccounts } from '@/hooks/account';
 import { isLocalMode, config, isStagingMode } from '@/lib/config';
 import { toast } from 'sonner';
 import { PlanSelectionModal } from '@/components/billing/pricing';
@@ -76,10 +73,6 @@ export function HeroSection() {
     } = useSunaModePersistence();
     const router = useRouter();
     const { user, isLoading } = useAuth();
-    const { billingError, handleBillingError, clearBillingError } =
-        useBillingError();
-    const { data: accounts } = useAccounts();
-    const personalAccount = accounts?.find((account) => account.personal_account);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const initiateAgentMutation = useInitiateAgentMutation();
     const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
@@ -397,16 +390,6 @@ export function HeroSection() {
                     </div>
                 </DialogContent>
             </Dialog>
-
-            {/* Add Billing Error Alert here */}
-            <BillingErrorAlert
-                message={billingError?.message}
-                currentUsage={billingError?.currentUsage}
-                limit={billingError?.limit}
-                accountId={personalAccount?.account_id}
-                onDismiss={clearBillingError}
-                isOpen={!!billingError}
-            />
 
             {agentLimitData && (
                 <AgentRunLimitDialog

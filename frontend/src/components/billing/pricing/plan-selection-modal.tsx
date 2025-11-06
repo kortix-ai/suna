@@ -16,12 +16,14 @@ interface PlanSelectionModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     returnUrl?: string;
+    creditsExhausted?: boolean;
 }
 
 export function PlanSelectionModal({
     open,
     onOpenChange,
     returnUrl,
+    creditsExhausted = false,
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? window.location.href : '/';
 
@@ -37,7 +39,7 @@ export function PlanSelectionModal({
             >
                 {/* Visually hidden title for accessibility */}
                 <DialogTitle className="sr-only">
-                    Select a Plan
+                    {creditsExhausted ? 'You\'re out of credits' : 'Select a Plan'}
                 </DialogTitle>
                 
                 {/* Header with Logo and Close Button */}
@@ -72,6 +74,7 @@ export function PlanSelectionModal({
                             showTitleAndTabs={true}
                             insideDialog={false}
                             noPadding={true}
+                            customTitle={creditsExhausted ? "You ran out of credits. Upgrade now." : undefined}
                             onSubscriptionUpdate={() => {
                                 // Optionally close modal after successful subscription update
                                 // onOpenChange(false);
