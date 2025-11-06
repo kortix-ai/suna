@@ -451,6 +451,7 @@ async def delete_message(
 @router.patch("/threads/{thread_id}", summary="Update Thread", operation_id="update_thread")
 async def update_thread(
     thread_id: str,
+    request: Request,
     title: Optional[str] = Body(None, embed=True),
     is_public: Optional[bool] = Body(None, embed=True),
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
@@ -512,7 +513,7 @@ async def update_thread(
         logger.debug(f"Successfully updated thread: {thread_id}")
         
         # Return the updated thread with project data
-        return await get_thread(thread_id, auth)
+        return await get_thread(thread_id, request)
         
     except HTTPException:
         raise
