@@ -11,9 +11,9 @@ import { BillingError, AgentRunLimitError, ProjectLimitError } from '@/lib/api';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/thread/chat-input/chat-input';
 import { useSidebar } from '@/components/ui/sidebar';
-import { useAgentStream } from '@/hooks/useAgentStream';
+import { useAgentStream } from '@/hooks/agents';
 import { cn } from '@/lib/utils';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { isLocalMode } from '@/lib/config';
 import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
@@ -47,7 +47,7 @@ import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { threadKeys } from '@/hooks/threads/keys';
 import { fileQueryKeys } from '@/hooks/files';
-import { useProjectRealtime } from '@/hooks/useProjectRealtime';
+import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 
 interface ThreadComponentProps {

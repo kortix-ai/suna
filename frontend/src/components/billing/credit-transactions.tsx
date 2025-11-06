@@ -40,7 +40,7 @@ import {
   RefreshCw,
   Info,
 } from 'lucide-react';
-import { useTransactions, useTransactionsSummary } from '@/hooks/billing/use-transactions';
+import { useTransactions, useTransactionsSummary } from '@/hooks/billing';
 import { cn } from '@/lib/utils';
 
 interface Props {

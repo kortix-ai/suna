@@ -1,23 +1,23 @@
-import { createMutationHook, createQueryHook } from "@/hooks/use-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { threadKeys } from "./keys";
-import { BillingError, AgentRunLimitError, getAgentRuns, unifiedAgentStart, stopAgent } from "@/lib/api";
+import { BillingError, AgentRunLimitError, getAgentRuns, unifiedAgentStart, stopAgent, type AgentRun } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
-export const useAgentRunsQuery = (threadId: string) =>
-  createQueryHook(
-    threadKeys.agentRuns(threadId),
-    () => getAgentRuns(threadId),
-    {
-      enabled: !!threadId,
-      retry: 1,
-    }
-  )();
+export const useAgentRunsQuery = (threadId: string, options?) => {
+  return useQuery<AgentRun[]>({
+    queryKey: threadKeys.agentRuns(threadId),
+    queryFn: () => getAgentRuns(threadId),
+    enabled: !!threadId,
+    retry: 1,
+    ...options,
+  });
+};
 
 export const useStartAgentMutation = () => {
   const queryClient = useQueryClient();
   
-  return createMutationHook(
-    ({
+  return useMutation({
+    mutationFn: ({
       threadId,
       options,
     }: {
@@ -31,31 +31,27 @@ export const useStartAgentMutation = () => {
       model_name: options?.model_name,
       agent_id: options?.agent_id,
     }),
-    {
-      onSuccess: () => {
-        // Invalidate active agent runs to update the sidebar status indicators
-        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
-      },
-      onError: (error) => {
-        // Only silently handle BillingError - let AgentRunLimitError bubble up to be handled by the page component
-        if (!(error instanceof BillingError)) {
-          throw error;
-        }
-      },
-    }
-  )();
+    onSuccess: () => {
+      // Invalidate active agent runs to update the sidebar status indicators
+      queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
+    },
+    onError: (error) => {
+      // Only silently handle BillingError - let AgentRunLimitError bubble up to be handled by the page component
+      if (!(error instanceof BillingError)) {
+        throw error;
+      }
+    },
+  });
 };
 
 export const useStopAgentMutation = () => {
   const queryClient = useQueryClient();
   
-  return createMutationHook(
-    (agentRunId: string) => stopAgent(agentRunId),
-    {
-      onSuccess: () => {
-        // Invalidate active agent runs to update the sidebar status indicators
-        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
-      },
-    }
-  )();
+  return useMutation({
+    mutationFn: (agentRunId: string) => stopAgent(agentRunId),
+    onSuccess: () => {
+      // Invalidate active agent runs to update the sidebar status indicators
+      queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
+    },
+  });
 };

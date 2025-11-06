@@ -24,7 +24,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { 
     useAccountDeletionStatus, 

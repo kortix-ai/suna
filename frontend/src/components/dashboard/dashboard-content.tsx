@@ -11,10 +11,10 @@ import {
   AgentRunLimitError,
   ProjectLimitError,
 } from '@/lib/api';
-import { useIsMobile } from '@/hooks/use-mobile';
-import { useBillingError } from '@/hooks/useBillingError';
+import { useIsMobile } from '@/hooks/utils';
+import { useBillingError } from '@/hooks/billing';
 import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
-import { useAccounts } from '@/hooks/use-accounts';
+import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
@@ -238,8 +238,8 @@ export function DashboardContent() {
       />
 
       <div className="flex flex-col h-screen w-full overflow-hidden">
-        {/* Navbar with Credits Display */}
-        <div className="absolute top-[27px] right-[32px] z-50">
+        {/* Credits Display - Centered at the top */}
+        <div className="flex justify-center pt-6 pb-2">
           <CreditsDisplay />
         </div>
 
@@ -282,15 +282,18 @@ export function DashboardContent() {
                 </div>
               </div>
             )} */}
+            
 
             {/* Centered content area */}
-            <div className="flex-1 flex items-start justify-center pt-[30vh]">
+            <div className="flex-1 flex items-start justify-center pt-[24vh]">
               {/* Super Worker View - Suna only */}
               {viewMode === 'super-worker' && (
                 <div className="w-full animate-in fade-in-0 duration-300">
-                  {/* Title and chat input - Fixed position */}
+                  {/* Title, Credits Display, and chat input - Fixed position */}
                   <div className="px-4 py-8">
-                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-4 md:space-y-6">
+                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-6 md:space-y-8">
+                      {/* Credits Display - Centered */}
+
                       <div className="flex flex-col items-center text-center w-full">
                         <p
                           className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"

@@ -17,7 +17,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useModelSelection } from '@/hooks/use-model-selection';
+import { useModelSelection } from '@/hooks/agents';
 import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';

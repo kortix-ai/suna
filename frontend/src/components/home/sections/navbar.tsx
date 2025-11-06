@@ -11,7 +11,7 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/components/AuthProvider';
-import { useGitHubStars } from '@/hooks/use-github-stars';
+import { useGitHubStars } from '@/hooks/utils';
 import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 

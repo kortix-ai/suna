@@ -46,7 +46,7 @@ import {
   useAdjustCredits,
   useProcessRefund,
   useAdminUserTransactions,
-} from '@/hooks/admin/use-admin-billing';
+} from '@/hooks/billing';
 import type { UserSummary } from '@/hooks/admin/use-admin-users';
 
 interface AdminUserDetailsDialogProps {

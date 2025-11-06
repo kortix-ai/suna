@@ -1,53 +1,68 @@
-import { createMutationHook, createQueryHook } from "@/hooks/use-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { threadKeys } from "./keys";
 import { Thread, updateThread, toggleThreadPublicStatus, deleteThread, getThread } from "./utils";
 import { getThreads } from "@/lib/api";
 
-export const useThreadQuery = (threadId: string) =>
-  createQueryHook(
-    threadKeys.details(threadId),
-    () => getThread(threadId),
-    {
-      enabled: !!threadId,
-      retry: 1,
-    }
-)();
+export const useThreadQuery = (threadId: string, options?) => {
+  return useQuery<Thread>({
+    queryKey: threadKeys.details(threadId),
+    queryFn: () => getThread(threadId),
+    enabled: !!threadId,
+    retry: 1,
+    ...options,
+  });
+};
 
-export const useToggleThreadPublicStatus = () =>
-  createMutationHook(
-    ({
+export const useThreads = (options?) => {
+  return useQuery<Thread[]>({
+    queryKey: threadKeys.lists(),
+    queryFn: async () => {
+      const data = await getThreads();
+      return data as Thread[];
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    ...options,
+  });
+};
+
+export const useToggleThreadPublicStatus = () => {
+  return useMutation<Thread, Error, { threadId: string; isPublic: boolean }>({
+    mutationFn: ({
       threadId,
       isPublic,
     }: {
       threadId: string;
       isPublic: boolean;
     }) => toggleThreadPublicStatus(threadId, isPublic)
-)();
+  });
+};
 
-export const useUpdateThreadMutation = () =>
-  createMutationHook(
-    ({
+export const useUpdateThreadMutation = () => {
+  return useMutation<Thread, Error, { threadId: string; data: Partial<Thread> }>({
+    mutationFn: ({
       threadId,
       data,
     }: {
       threadId: string;
-      data: Partial<Thread>,
+      data: Partial<Thread>;
     }) => updateThread(threadId, data)
-  )()
-
-export const useDeleteThreadMutation = () =>
-  createMutationHook(
-    ({ threadId }: { threadId: string }) => deleteThread(threadId)
-)()
-
-
-export const useThreadsForProject = (projectId: string) => {
-  return createQueryHook(
-    threadKeys.byProject(projectId),
-    () => getThreads(projectId),
-    {
-      enabled: !!projectId,
-      retry: 1,
-    }
-  )();
+  });
 };
+
+export const useDeleteThreadMutation = () => {
+  return useMutation<void, Error, { threadId: string }>({
+    mutationFn: ({ threadId }: { threadId: string }) => deleteThread(threadId)
+  });
+};
+
+export const useThreadsForProject = (projectId: string, options?) => {
+  return useQuery<Thread[]>({
+    queryKey: threadKeys.byProject(projectId),
+    queryFn: () => getThreads(projectId),
+    enabled: !!projectId,
+    retry: 1,
+    ...options,
+  });
+};
+

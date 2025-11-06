@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { SidebarLeft, FloatingMobileMenuButton } from '@/components/sidebar/sidebar-left';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { useAccounts } from '@/hooks/use-accounts';
+import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useRouter } from 'next/navigation';
@@ -12,10 +12,10 @@ import { useApiHealth } from '@/hooks/usage/use-health';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
 import { StatusOverlay } from '@/components/ui/status-overlay';
-import { useAdminRole } from '@/hooks/use-admin-role';
+import { useAdminRole } from '@/hooks/admin';
 
 import { useProjects, useThreads } from '@/hooks/sidebar/use-sidebar';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { SubscriptionStoreSync } from '@/stores/subscription-store';
 import { PresentationViewerWrapper } from '@/stores/presentation-viewer-store';

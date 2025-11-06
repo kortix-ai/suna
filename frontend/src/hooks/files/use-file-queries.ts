@@ -3,9 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { listSandboxFiles, type FileInfo } from '@/lib/api';
 
-// Re-export FileCache utilities for compatibility
-export { FileCache } from '@/hooks/use-cached-file';
-
 /**
  * Normalize a file path to ensure consistent caching
  */

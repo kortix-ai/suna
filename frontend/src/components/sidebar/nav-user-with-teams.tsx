@@ -28,8 +28,8 @@ import {
   BarChart3,
   FileText,
 } from 'lucide-react';
-import { useAccounts } from '@/hooks/use-accounts';
-import { useSubscription } from '@/hooks/use-billing-v2';
+import { useAccounts } from '@/hooks/account';
+import { useSubscription } from '@/hooks/billing';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';

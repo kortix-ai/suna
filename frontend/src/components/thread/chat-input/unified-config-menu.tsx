@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow } from 'lucide-react';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import type { ModelOption } from '@/hooks/use-model-selection';
+import type { ModelOption } from '@/hooks/agents';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 

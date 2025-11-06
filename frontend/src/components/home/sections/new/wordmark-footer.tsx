@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 
 export function WordmarkFooter() {
     const containerRef = useRef<HTMLDivElement>(null);

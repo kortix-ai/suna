@@ -1,8 +1,7 @@
-import { createMutationHook, createQueryHook } from '@/hooks/use-query';
-import { useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { agentKeys } from './keys';
-import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, getThreadAgent, updateAgent } from './utils';
+import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, getThreadAgent, updateAgent, ThreadAgentResponse } from './utils';
 import { useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -13,59 +12,55 @@ export const useAgents = (
     'queryKey' | 'queryFn'
   >,
 ) => {
-  return createQueryHook(
-    agentKeys.list(params),
-    () => getAgents(params),
-    {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-    }
-  )(customOptions);
+  return useQuery({
+    queryKey: agentKeys.list(params),
+    queryFn: () => getAgents(params),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    ...customOptions,
+  });
 };
 
-export const useAgent = (agentId: string) => {
-  return createQueryHook(
-    agentKeys.detail(agentId),
-    () => getAgent(agentId),
-    {
-      enabled: !!agentId,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      refetchOnMount: 'always',
-      refetchOnWindowFocus: true,
-    }
-  )();
+export const useAgent = (agentId: string, options?) => {
+  return useQuery<Agent>({
+    queryKey: agentKeys.detail(agentId),
+    queryFn: () => getAgent(agentId),
+    enabled: !!agentId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    ...options,
+  });
 };
 
 export const useCreateAgent = () => {
   const queryClient = useQueryClient();
   
-  return createMutationHook(
-    createAgent,
-    {
-      onSuccess: (data) => {
-        queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
-        queryClient.setQueryData(agentKeys.detail(data.agent_id), data);
-        toast.success('Agent created successfully');
-      },
-      onError: async (error) => {
-        const { AgentCountLimitError } = await import('@/lib/api');
-        if (error instanceof AgentCountLimitError) {
-          return;
-        }
-        console.error('Error creating agent:', error);
-        toast.error(error instanceof Error ? error.message : 'Failed to create agent');
-      },
-    }
-  )();
+  return useMutation<Agent, Error, AgentUpdateRequest>({
+    mutationFn: createAgent,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+      queryClient.setQueryData(agentKeys.detail(data.agent_id), data);
+      toast.success('Agent created successfully');
+    },
+    onError: async (error) => {
+      const { AgentCountLimitError } = await import('@/lib/api');
+      if (error instanceof AgentCountLimitError) {
+        return;
+      }
+      console.error('Error creating agent:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create agent');
+    },
+  });
 };
 
 export const useCreateNewAgent = () => {
   const router = useRouter();
   const createAgentMutation = useCreateAgent();
   
-  return createMutationHook(
-    async (_: void) => {
+  return useMutation({
+    mutationFn: async (_: void) => {
       const defaultAgentData = {
         name: 'New Worker',
         description: 'A newly created worker, open for configuration',
@@ -80,84 +75,78 @@ export const useCreateNewAgent = () => {
       const newAgent = await createAgentMutation.mutateAsync(defaultAgentData);
       return newAgent;
     },
-    {
-      onSuccess: (newAgent) => {
-      },
-      onError: (error) => {
-        console.error('Error creating agent:', error);
-        toast.error('Failed to create agent. Please try again.');
-      },
-    }
-  )();
+    onSuccess: (newAgent) => {
+    },
+    onError: (error) => {
+      console.error('Error creating agent:', error);
+      toast.error('Failed to create agent. Please try again.');
+    },
+  });
 };
 
 export const useUpdateAgent = () => {
   const queryClient = useQueryClient();
   
-  return createMutationHook(
-    ({ agentId, ...data }: { agentId: string } & AgentUpdateRequest) => 
+  return useMutation<Agent, Error, { agentId: string } & AgentUpdateRequest>({
+    mutationFn: ({ agentId, ...data }: { agentId: string } & AgentUpdateRequest) => 
       updateAgent(agentId, data),
-    {
-      onSuccess: (data, variables) => {
-        // Update the cache optimistically
-        queryClient.setQueryData(agentKeys.detail(variables.agentId), data);
-        // Invalidate to ensure all dependent queries are refreshed
-        queryClient.invalidateQueries({ queryKey: agentKeys.detail(variables.agentId) });
-        queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
-      },
-    }
-  )();
+    onSuccess: (data, variables) => {
+      // Update the cache optimistically
+      queryClient.setQueryData(agentKeys.detail(variables.agentId), data);
+      // Invalidate to ensure all dependent queries are refreshed
+      queryClient.invalidateQueries({ queryKey: agentKeys.detail(variables.agentId) });
+      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+    },
+  });
 };
 
 export const useDeleteAgent = () => {
   const queryClient = useQueryClient();
   
-  return createMutationHook(
-    deleteAgent,
-    {
-      onMutate: async (agentId) => {
-        // Cancel any outgoing refetches
-        await queryClient.cancelQueries({ queryKey: agentKeys.lists() });
+  return useMutation<void, Error, string, { previousAgents: Array<[any, any]> }>({
+    mutationFn: deleteAgent,
+    onMutate: async (agentId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: agentKeys.lists() });
+      
+      // Snapshot the previous value
+      const previousAgents = queryClient.getQueriesData({ queryKey: agentKeys.lists() });
+      
+      // Optimistically update to remove the agent
+      queryClient.setQueriesData({ queryKey: agentKeys.lists() }, (old: any) => {
+        if (!old || !old.agents) return old;
         
-        // Snapshot the previous value
-        const previousAgents = queryClient.getQueriesData({ queryKey: agentKeys.lists() });
-        
-        // Optimistically update to remove the agent
-        queryClient.setQueriesData({ queryKey: agentKeys.lists() }, (old: any) => {
-          if (!old || !old.agents) return old;
-          
-          return {
-            ...old,
-            agents: old.agents.filter((agent: any) => agent.agent_id !== agentId),
-            pagination: old.pagination ? {
-              ...old.pagination,
-              total: Math.max(0, old.pagination.total - 1)
-            } : undefined
-          };
+        return {
+          ...old,
+          agents: old.agents.filter((agent: any) => agent.agent_id !== agentId),
+          pagination: old.pagination ? {
+            ...old.pagination,
+            total: Math.max(0, old.pagination.total - 1)
+          } : undefined
+        };
+      });
+      
+      return { previousAgents };
+    },
+    onError: (err, agentId, context) => {
+      // Revert the optimistic update on error
+      if (context?.previousAgents) {
+        context.previousAgents.forEach(([queryKey, data]) => {
+          queryClient.setQueryData(queryKey, data);
         });
-        
-        return { previousAgents };
-      },
-      onError: (err, agentId, context) => {
-        // Revert the optimistic update on error
-        if (context?.previousAgents) {
-          context.previousAgents.forEach(([queryKey, data]) => {
-            queryClient.setQueryData(queryKey, data);
-          });
-        }
-        toast.error('Failed to delete agent. Please try again.');
-      },
-      onSuccess: (_, agentId) => {
-        // Remove the individual agent query
-        queryClient.removeQueries({ queryKey: agentKeys.detail(agentId) });
-        toast.success('Agent deleted successfully');
-      },
-      onSettled: () => {
-        // Always invalidate to ensure consistency
-        queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
-      },
-    }
-  )();
+      }
+      toast.error('Failed to delete agent. Please try again.');
+    },
+    onSuccess: (_, agentId) => {
+      // Remove the individual agent query
+      queryClient.removeQueries({ queryKey: agentKeys.detail(agentId) });
+      toast.success('Agent deleted successfully');
+    },
+    onSettled: () => {
+      // Always invalidate to ensure consistency
+      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+    },
+  });
 };
 
 interface DeleteMultipleAgentsVariables {
@@ -168,8 +157,8 @@ interface DeleteMultipleAgentsVariables {
 export const useDeleteMultipleAgents = () => {
   const queryClient = useQueryClient();
   
-  return createMutationHook(
-    async ({ agentIds, onProgress }: DeleteMultipleAgentsVariables) => {
+  return useMutation({
+    mutationFn: async ({ agentIds, onProgress }: DeleteMultipleAgentsVariables) => {
       let completedCount = 0;
       const results = await Promise.all(
         agentIds.map(async (agentId) => {
@@ -189,12 +178,10 @@ export const useDeleteMultipleAgents = () => {
         failed: results.filter(r => !r.success).map(r => r.agentId),
       };
     },
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
-      },
-    }
-  )();
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+    },
+  });
 };
 
 export const useOptimisticAgentUpdate = () => {
@@ -244,16 +231,15 @@ export const useAgentDeletionState = () => {
   };
 };
 
-export const useThreadAgent = (threadId: string) => {
-  return createQueryHook(
-    agentKeys.threadAgent(threadId),
-    () => getThreadAgent(threadId),
-    {
-      enabled: !!threadId,
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-    }
-  )();
+export const useThreadAgent = (threadId: string, options?) => {
+  return useQuery<ThreadAgentResponse>({
+    queryKey: agentKeys.threadAgent(threadId),
+    queryFn: () => getThreadAgent(threadId),
+    enabled: !!threadId,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    ...options,
+  });
 };
 
 /**

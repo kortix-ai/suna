@@ -11,7 +11,7 @@ import {
   useListFactors,
   useGetAAL,
   useUnenrollFactor,
-} from '@/hooks/phone-verification';
+} from '@/hooks/auth';
 import { signOut } from '@/app/auth/actions';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { Button } from '@/components/ui/button';

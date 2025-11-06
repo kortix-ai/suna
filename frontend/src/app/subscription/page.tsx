@@ -13,8 +13,8 @@ import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
-import { useAdminRole } from '@/hooks/use-admin-role';
-import { useSubscription } from '@/hooks/use-billing-v2';
+import { useAdminRole } from '@/hooks/admin';
+import { useSubscription } from '@/hooks/billing';
 
 export default function SubscriptionRequiredPage() {
   const router = useRouter();

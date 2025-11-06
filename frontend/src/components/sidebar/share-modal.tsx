@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Copy, Link, Link2Off, Check, Globe, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useThreadQuery, useUpdateThreadMutation } from "@/hooks/threads/use-threads";
-import { useUpdateProject } from "@/hooks/sidebar/use-project-mutations";
+import { useUpdateProject } from "@/hooks/threads/use-project";
 import type { JSX } from "react"
 import { Skeleton } from "../ui/skeleton"
 

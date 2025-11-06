@@ -1,26 +1,31 @@
-// Core React Query file hooks
+/**
+ * File Hooks
+ */
+export { useCachedFile, FileCache, getCachedFile, fetchFileContent } from './use-cached-file';
+export { useVncPreloader, type VncStatus } from './useVncPreloader';
+export { usePresentationViewer } from './use-presentation-viewer';
+
+// Export file query hooks and utilities
 export {
   useFileContentQuery,
   useDirectoryQuery,
   useFilePreloader,
-  useCachedFile,
   fileQueryKeys,
-  FileCache,
+  fetchFileContent as fetchFileContentFromQuery,
+  getCachedFile as getCachedFileFromQuery,
 } from './use-file-queries';
 
-// Specialized content hooks
-export { useFileContent } from './use-file-content';
-export { useImageContent } from './use-image-content';
+// Alias for backward compatibility
+export { useFileContentQuery as useFileContent } from './use-file-queries';
 
-// File mutation hooks
+// Export file mutations
 export {
   useFileUpload,
   useFileDelete,
   useFileCreate,
 } from './use-file-mutations';
 
-// Utility functions for compatibility
-export {
-  getCachedFile,
-  fetchFileContent,
-} from './use-file-queries'; 
+// Export image content hook
+export { useImageContent } from './use-image-content';
+
+

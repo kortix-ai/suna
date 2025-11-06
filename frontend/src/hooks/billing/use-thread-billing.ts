@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isLocalMode } from '@/lib/config';
-import { useBillingStatusQuery } from '@/hooks/threads/use-billing-status';
+import { useBillingStatusQuery } from './use-billing-status';
 import { BillingData, AgentStatus } from '@/components/thread/types';
 
 interface UseThreadBillingReturn {

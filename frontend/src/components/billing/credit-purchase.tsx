@@ -112,13 +112,13 @@ export function CreditPurchaseModal({
                     <DialogHeader>
                         <DialogTitle>Credits Not Available</DialogTitle>
                         <DialogDescription>
-                            Credit purchases are only available for users on the highest subscription tier ($1000/month).
+                            Credit purchases are only available for users on the $200/month subscription tier.
                         </DialogDescription>
                     </DialogHeader>
                     <Alert>
                         <AlertCircle className="h-4 w-4" />
                         <AlertDescription>
-                            Please upgrade your subscription to the highest tier to unlock credit purchases for unlimited usage.
+                            Please upgrade your subscription to the $200/month tier to unlock credit purchases for unlimited usage.
                         </AlertDescription>
                     </Alert>
                     <div className="flex justify-end">

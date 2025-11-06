@@ -26,7 +26,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
 import { cn } from '@/lib/utils';
-import { useModelSelection } from '@/hooks/use-model-selection';
+import { useModelSelection } from '@/hooks/agents';
 import { useFileDelete } from '@/hooks/files';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolCallInput } from './floating-tool-preview';

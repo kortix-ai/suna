@@ -56,8 +56,8 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ThreadWithProject, GroupedThreads } from '@/hooks/sidebar/use-sidebar';
 import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, useProjects, groupThreadsByDate } from '@/hooks/sidebar/use-sidebar';
-import { projectKeys, threadKeys } from '@/hooks/sidebar/keys';
-import { useThreadAgentStatuses } from '@/hooks/use-thread-agent-status';
+import { projectKeys, threadKeys } from '@/hooks/threads/keys';
+import { useThreadAgentStatuses } from '@/hooks/threads';
 import { formatDateForList } from '@/lib/utils/date-formatting';
 import { Thread, getThreadsPaginated } from '@/lib/api';
 import { useQuery } from '@tanstack/react-query';

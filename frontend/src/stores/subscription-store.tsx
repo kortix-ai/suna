@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { SubscriptionInfo, CreditBalance } from '@/lib/api/billing-v2';
-import { useSubscription, useCreditBalance } from '@/hooks/use-billing-v2';
+import { useSubscription, useCreditBalance } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import React from 'react';
 

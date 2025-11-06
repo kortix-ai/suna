@@ -1,86 +1,13 @@
 'use client';
 
-import { createMutationHook } from "@/hooks/use-query";
-import { getProjects, getThreads, Project, Thread } from "@/lib/api";
-import { createQueryHook } from '@/hooks/use-query';
-import { threadKeys } from "./keys";
-import { projectKeys } from "./keys";
-import { deleteThread } from "../threads/utils";
+import { Project, Thread } from "@/lib/api";
 
-export const useProjects = createQueryHook(
-  projectKeys.lists(),
-  async () => {
-    const data = await getProjects();
-    return data as Project[];
-  },
-  {
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  }
-);
+// Re-export hooks from their proper locations for backward compatibility
+export { useProjects, usePublicProjectsQuery, useCreateProject, useUpdateProject, useDeleteProject } from '../threads/use-project';
+export { useThreads } from '../threads/use-threads';
+export { useDeleteThread, useDeleteMultipleThreads } from '../threads/use-thread-mutations';
 
-export const useThreads = createQueryHook(
-  threadKeys.lists(),
-  async () => {
-    const data = await getThreads();
-    return data as Thread[];
-  },
-  {
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  }
-);
-
-interface DeleteThreadVariables {
-  threadId: string;
-  sandboxId?: string;
-  isNavigateAway?: boolean;
-}
-
-export const useDeleteThread = createMutationHook(
-  async ({ threadId, sandboxId }: DeleteThreadVariables) => {
-    return await deleteThread(threadId, sandboxId);
-  },
-  {
-    onSuccess: () => {
-    },
-  }
-);
-
-interface DeleteMultipleThreadsVariables {
-  threadIds: string[];
-  threadSandboxMap?: Record<string, string>;
-  onProgress?: (completed: number, total: number) => void;
-}
-
-export const useDeleteMultipleThreads = createMutationHook(
-  async ({ threadIds, threadSandboxMap, onProgress }: DeleteMultipleThreadsVariables) => {
-    let completedCount = 0;
-    const results = await Promise.all(
-      threadIds.map(async (threadId) => {
-        try {
-          const sandboxId = threadSandboxMap?.[threadId];
-          const result = await deleteThread(threadId, sandboxId);
-          completedCount++;
-          onProgress?.(completedCount, threadIds.length);
-          return { success: true, threadId };
-        } catch (error) {
-          return { success: false, threadId, error };
-        }
-      })
-    );
-    
-    return {
-      successful: results.filter(r => r.success).map(r => r.threadId),
-      failed: results.filter(r => !r.success).map(r => r.threadId),
-    };
-  },
-  {
-    onSuccess: () => {
-    },
-  }
-);
-
+// Sidebar-specific utility types and functions
 export type ThreadWithProject = {
   threadId: string;
   projectId: string;

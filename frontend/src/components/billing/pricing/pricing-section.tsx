@@ -25,14 +25,13 @@ import { SubscriptionInfo } from '@/lib/api/billing-v2';
 import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
-import { useSubscription } from '@/hooks/use-billing-v2';
+import { useSubscription } from '@/hooks/billing';
 import { useSubscriptionCommitment } from '@/hooks/subscriptions/use-subscriptions';
 import { useAuth } from '@/components/AuthProvider';
 import posthog from 'posthog-js';
 import { Badge } from '@/components/ui/badge';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 import { TierBadge } from '@/components/billing/tier-badge';
-import { getPlanIcon } from '@/components/billing/plan-utils';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {

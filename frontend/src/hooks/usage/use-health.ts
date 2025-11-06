@@ -1,18 +1,18 @@
 'use client';
 
-import { createQueryHook } from '@/hooks/use-query';
-import { checkApiHealth } from '@/lib/api';
+import { useQuery } from '@tanstack/react-query';
+import { checkApiHealth, type HealthCheckResponse } from '@/lib/api';
 import { healthKeys } from '../files/keys';
 
-export const useApiHealth = createQueryHook(
-  healthKeys.api(),
-  checkApiHealth,
-  {
+export const useApiHealth = (options?) => {
+  return useQuery<HealthCheckResponse>({
+    queryKey: healthKeys.api(),
+    queryFn: checkApiHealth,
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
     retry: 3,
-    // Add placeholder data to prevent maintenance page flash on navigation
     placeholderData: { status: 'ok', timestamp: '', instance_id: '' },
-  }
-); 
+    ...options,
+  });
+}; 

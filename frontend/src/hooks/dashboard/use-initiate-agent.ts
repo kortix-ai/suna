@@ -1,33 +1,33 @@
 'use client';
 
 import { unifiedAgentStart, UnifiedAgentStartResponse, BillingError, AgentRunLimitError } from "@/lib/api";
-import { createMutationHook } from "@/hooks/use-query";
+import { useMutation } from "@tanstack/react-query";
 import { handleApiSuccess, handleApiError } from "@/lib/error-handler";
 import { dashboardKeys } from "./keys";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { projectKeys, threadKeys } from "../sidebar/keys";
+import { projectKeys, threadKeys } from "../threads/keys";
 
-export const useInitiateAgentMutation = createMutationHook<
-  UnifiedAgentStartResponse, 
-  FormData
->(
-  async (formData: FormData) => {
-    // Extract FormData fields
-    const prompt = formData.get('prompt') as string;
-    const model_name = formData.get('model_name') as string | undefined;
-    const agent_id = formData.get('agent_id') as string | undefined;
-    const files = formData.getAll('files') as File[];
-    
-    return await unifiedAgentStart({
-      prompt,
-      model_name,
-      agent_id,
-      files: files.length > 0 ? files : undefined,
-    });
-  },
-  {
-    errorContext: { operation: 'initiate agent', resource: 'AI assistant' },
+export const useInitiateAgentMutation = () => {
+  return useMutation<
+    UnifiedAgentStartResponse, 
+    Error,
+    FormData
+  >({
+    mutationFn: async (formData: FormData) => {
+      // Extract FormData fields
+      const prompt = formData.get('prompt') as string;
+      const model_name = formData.get('model_name') as string | undefined;
+      const agent_id = formData.get('agent_id') as string | undefined;
+      const files = formData.getAll('files') as File[];
+      
+      return await unifiedAgentStart({
+        prompt,
+        model_name,
+        agent_id,
+        files: files.length > 0 ? files : undefined,
+      });
+    },
     onSuccess: (data) => {
       handleApiSuccess("Agent initiated successfully", "Your AI assistant is ready to help");
     },
@@ -41,12 +41,15 @@ export const useInitiateAgentMutation = createMutationHook<
       }
       handleApiError(error, { operation: 'initiate agent', resource: 'AI assistant' });
     }
-  }
-);
+  });
+};
 
 export const useInitiateAgentWithInvalidation = () => {
   const queryClient = useQueryClient();
-  return useInitiateAgentMutation({
+  const baseMutation = useInitiateAgentMutation();
+  
+  return useMutation({
+    mutationFn: baseMutation.mutateAsync,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.all });
       queryClient.invalidateQueries({ queryKey: threadKeys.all });

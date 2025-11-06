@@ -5,7 +5,7 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import GoogleSignIn from '@/components/GoogleSignIn';
-import { useMediaQuery } from '@/hooks/use-media-query';
+import { useMediaQuery } from '@/hooks/utils';
 import { useState, useEffect, Suspense } from 'react';
 import { signIn, signUp, forgotPassword } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';

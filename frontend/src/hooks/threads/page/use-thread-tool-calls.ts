@@ -5,7 +5,7 @@ import { UnifiedMessage, ParsedMetadata, StreamingToolCall, AgentStatus } from '
 import { safeJsonParse } from '@/components/thread/utils';
 import { ParsedContent } from '@/components/thread/types';
 import { extractToolName } from '@/components/thread/tool-views/xml-parser';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { extractAskData } from '@/components/thread/tool-views/ask-tool/_utils';
 
 interface UseToolCallsReturn {

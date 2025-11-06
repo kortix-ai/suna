@@ -76,7 +76,7 @@ export function TierBadge({
   
   // Debug logging
   React.useEffect(() => {
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
       console.log('[TierBadge]', { 
         planName, 
         planIcon,
@@ -87,7 +87,7 @@ export function TierBadge({
         isLocal,
         willRender: !!planIcon || (!iconOnly && variant !== 'circle')
       });
-    }
+  }
   }, [planName, planIcon, size, variant, iconOnly, isLocal, config.height]);
 
   // If no icon (e.g., Basic tier), return null or text only

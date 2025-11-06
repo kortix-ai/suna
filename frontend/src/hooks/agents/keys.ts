@@ -1,8 +1,6 @@
-import { createQueryKeys } from "@/hooks/use-query";
-
 const agentKeysBase = ['agents'] as const;
 
-export const agentKeys = createQueryKeys({
+export const agentKeys = {
   all: agentKeysBase,
   lists: () => [...agentKeysBase, 'list'] as const,
   list: (filters?: Record<string, any>) => [...agentKeysBase, 'list', filters] as const,
@@ -10,7 +8,7 @@ export const agentKeys = createQueryKeys({
   detail: (id: string) => [...agentKeysBase, 'detail', id] as const,
   threadAgents: () => [...agentKeysBase, 'thread-agent'] as const,
   threadAgent: (threadId: string) => [...agentKeysBase, 'thread-agent', threadId] as const,
-});
+} as const;
 
 export const versionKeys = {
   all: ['versions'] as const,

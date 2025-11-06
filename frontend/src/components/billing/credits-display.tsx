@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useCreditBalance, useSubscription } from '@/hooks/use-billing-v2';
+import { Plus } from 'lucide-react';
+import { useCreditBalance, useSubscription, billingKeys } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isLocalMode } from '@/lib/config';
@@ -9,12 +10,14 @@ import { getPlanName } from '@/components/billing/plan-utils';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { cn } from '@/lib/utils';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function CreditsDisplay() {
   const { user } = useAuth();
   const { data: balance, isLoading: balanceLoading } = useCreditBalance(!!user);
   const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscription(!!user);
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const queryClient = useQueryClient();
   const isLocal = isLocalMode();
   const isLoading = balanceLoading || subscriptionLoading;
   
@@ -38,8 +41,8 @@ export function CreditsDisplay() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 border-[1.5px] border-border rounded-full px-4 py-2 h-[41px]">
-        <Skeleton className="h-4 w-20" />
+      <div className="flex items-center gap-2 border-[1.5px] border-border/60 dark:border-border rounded-full px-3.5 py-2 h-[41px] bg-background">
+        <Skeleton className="h-4 w-24 bg-muted/50 dark:bg-muted" />
       </div>
     );
   }
@@ -51,60 +54,67 @@ export function CreditsDisplay() {
     setShowPlanModal(true);
   };
 
+  const handleModalClose = (open: boolean) => {
+    setShowPlanModal(open);
+    
+    // When modal closes, refetch billing data to get latest credits
+    if (!open) {
+      console.log('[CreditsDisplay] Modal closed - refetching billing data');
+      queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+    }
+  };
+
   return (
     <>
+      {/* Unified Credits Display with Plus Button */}
       <button
         onClick={handleClick}
         className={cn(
-          "flex items-center gap-2 border-[1.5px] border-border rounded-full px-4 py-2.5 h-[41px]",
-          "hover:bg-accent/50 transition-colors cursor-pointer",
+          "group flex items-center gap-2.5 border-[1.5px] rounded-full pl-3.5 pr-2.5 py-2 h-[41px]",
+          "bg-background dark:bg-background",
+          "border-border/60 dark:border-border",
+          "hover:bg-accent/30 dark:hover:bg-accent/20 hover:border-border dark:hover:border-border/80",
+          "transition-all duration-200 cursor-pointer",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         )}
       >
-        {/* Kortix Icon with glow */}
-        <div className="relative h-[12.9px] w-[15.48px] flex-shrink-0">
-          <div className="absolute h-[12.9px] left-0 top-0 w-[15.48px]">
-            <img
-              src="/kortix-icon.svg"
-              alt="Kortix"
-              className="w-full h-full object-contain"
-            />
-          </div>
-          <div
-            className="absolute blur-[1.387px] filter h-[10.4px] left-[1.5px] mix-blend-color-dodge opacity-50 top-[1.25px] w-[12.48px]"
-          >
-            <img
-              src="/kortix-icon.svg"
-              alt=""
-              className="w-full h-full object-contain"
-            />
-          </div>
-        </div>
+        {/* Tier Badge - Left side */}
+        <TierBadge 
+          planName={planName} 
+          variant="default" 
+          size="md" 
+          isLocal={isLocal} 
+        />
+
+        {/* Divider - Only show if tier badge exists (non-Basic plans) */}
+        {planName && planName !== 'Basic' && (
+          <div className="h-5 w-[1px] bg-border/40 dark:bg-border/60" />
+        )}
 
         {/* Credits amount */}
-        <div className="flex items-baseline gap-1">
-          <span className="text-[14px] font-medium text-foreground leading-none">
+        <div className="flex items-baseline gap-1.5 min-w-0">
+          <span className="text-[15px] font-semibold text-foreground dark:text-foreground leading-none tabular-nums">
             {formattedCredits}
           </span>
-          <span className="text-[14px] font-medium text-muted-foreground/25 leading-none">
+          <span className="text-[13px] font-medium text-muted-foreground/50 dark:text-muted-foreground/60 leading-none whitespace-nowrap">
             credits
           </span>
         </div>
 
-        {/* Tier Badge - TierBadge handles its own visibility based on plan */}
-        <TierBadge 
-          planName={planName} 
-          variant="circle" 
-          size="sm" 
-          iconOnly 
-          isLocal={isLocal} 
-        />
+        {/* Divider before Plus */}
+        <div className="h-5 w-[1px] bg-border/40 dark:bg-border/60 ml-0.5" />
+
+        {/* Plus Icon */}
+        <div className="flex items-center justify-center h-[32px] w-[32px] rounded-full bg-accent/20 dark:bg-accent/30 group-hover:bg-accent/40 dark:group-hover:bg-accent/50 transition-colors">
+          <Plus className="h-4 w-4 text-foreground/70 dark:text-foreground/80 group-hover:text-foreground transition-colors" />
+        </div>
       </button>
 
       {/* Plan Selection Modal */}
       <PlanSelectionModal
         open={showPlanModal}
-        onOpenChange={setShowPlanModal}
+        onOpenChange={handleModalClose}
         returnUrl={typeof window !== 'undefined' ? window.location.href : '/'}
       />
     </>

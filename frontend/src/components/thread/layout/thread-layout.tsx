@@ -6,7 +6,7 @@ import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
 import { Project } from '@/lib/api';
 import { ApiMessageType, BillingData } from '@/components/thread/types';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 
 interface ThreadLayoutProps {
   children: React.ReactNode;

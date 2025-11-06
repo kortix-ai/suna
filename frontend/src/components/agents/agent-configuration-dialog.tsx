@@ -48,7 +48,7 @@ import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-import { useAgentVersionData } from '@/hooks/use-agent-version-data';
+import { useAgentVersionData } from '@/hooks/agents';
 import { useUpdateAgent, useAgents } from '@/hooks/agents/use-agents';
 import { useUpdateAgentMCPs } from '@/hooks/agents/use-update-agent-mcps';
 import { useExportAgent } from '@/hooks/agents/use-agent-export-import';

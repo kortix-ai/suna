@@ -1,6 +1,6 @@
 'use client';
 
-import { createMutationHook, createQueryHook } from '@/hooks/use-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   getSubscription,
   getSubscriptionCommitment,
@@ -9,20 +9,20 @@ import {
   CommitmentInfo,
 } from '@/lib/api';
 import { subscriptionKeys } from './keys';
-import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 
-export const useSubscription = createQueryHook(
-  subscriptionKeys.details(),
-  getSubscription,
-  {
+export const useSubscription = (options?) => {
+  return useQuery({
+    queryKey: subscriptionKeys.details(),
+    queryFn: getSubscription,
     staleTime: 1000 * 60 * 10,
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: true,
-  },
-);
+    ...options,
+  });
+};
 
 export const useSubscriptionWithStreaming = (isStreaming: boolean = false) => {
   const [isVisible, setIsVisible] = useState(true);
@@ -52,16 +52,16 @@ export const useSubscriptionWithStreaming = (isStreaming: boolean = false) => {
   });
 };
 
-export const useCreatePortalSession = createMutationHook(
-  (params: { return_url: string }) => createPortalSession(params),
-  {
+export const useCreatePortalSession = () => {
+  return useMutation({
+    mutationFn: (params: { return_url: string }) => createPortalSession(params),
     onSuccess: (data) => {
       if (data?.url) {
         window.location.href = data.url;
       }
     },
-  },
-);
+  });
+};
 
 export const useSubscriptionCommitment = (subscriptionId?: string, enabled = true) => {
   return useQuery({
