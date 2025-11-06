@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
-import { UnifiedMessage, ParsedMetadata, StreamingToolCall, AgentStatus } from '../_types';
+import { UnifiedMessage, ParsedMetadata, StreamingToolCall, AgentStatus } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
 import { ParsedContent } from '@/components/thread/types';
 import { extractToolName } from '@/components/thread/tool-views/xml-parser';

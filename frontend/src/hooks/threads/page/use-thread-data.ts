@@ -5,7 +5,7 @@ import { useThreadQuery } from '@/hooks/threads/use-threads';
 import { useMessagesQuery } from '@/hooks/threads/use-messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
-import { ApiMessageType, UnifiedMessage, AgentStatus } from '../_types';
+import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
 
 interface UseThreadDataReturn {
   messages: UnifiedMessage[];

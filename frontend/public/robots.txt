@@ -11,7 +11,5 @@ Disallow: /_next/
 Disallow: /admin/
 
 # Allow crawling of public pages
-Allow: /templates/
-Allow: /share/
-Allow: /docs/
+Allow: /suna/
 

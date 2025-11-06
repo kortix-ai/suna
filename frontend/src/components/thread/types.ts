@@ -66,5 +66,23 @@ export interface ApiMessageType extends Omit<BaseApiMessageType, 'type'> {
   type?: string;
 }
 
+// Thread page-specific types
+export interface StreamingToolCall {
+  id?: string;
+  name?: string;
+  arguments?: string;
+  index?: number;
+  xml_tag_name?: string;
+}
+
+export interface BillingData {
+  currentUsage?: number;
+  limit?: number;
+  message?: string;
+  accountId?: string | null;
+}
+
+export type AgentStatus = 'idle' | 'running' | 'connecting' | 'error';
+
 // Re-export existing types
 export type { Project };

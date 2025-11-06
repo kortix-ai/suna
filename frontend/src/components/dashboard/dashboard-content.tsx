@@ -30,6 +30,7 @@ import { CustomAgentsSection } from './custom-agents-section';
 import { toast } from 'sonner';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
+import { CreditsDisplay } from '@/components/billing/credits-display';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -237,7 +238,10 @@ export function DashboardContent() {
       />
 
       <div className="flex flex-col h-screen w-full overflow-hidden">
-
+        {/* Navbar with Credits Display */}
+        <div className="absolute top-[27px] right-[32px] z-50">
+          <CreditsDisplay />
+        </div>
 
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">

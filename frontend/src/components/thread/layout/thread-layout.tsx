@@ -4,7 +4,7 @@ import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { ToolCallSidePanel } from '@/components/thread/tool-call-side-panel';
 import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
 import { Project } from '@/lib/api';
-import { ApiMessageType, BillingData } from '../_types';
+import { ApiMessageType, BillingData } from '@/components/thread/types';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -214,4 +214,5 @@ export function ThreadLayout({
       />
     </div>
   );
-} 
+}
+

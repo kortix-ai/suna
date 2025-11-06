@@ -8,7 +8,7 @@ interface UseKeyboardShortcutsProps {
   userClosedPanelRef: React.MutableRefObject<boolean>;
 }
 
-export function useKeyboardShortcuts({
+export function useThreadKeyboardShortcuts({
   isSidePanelOpen,
   setIsSidePanelOpen,
   leftSidebarState,
@@ -50,4 +50,5 @@ export function useKeyboardShortcuts({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSidePanelOpen, leftSidebarState, setLeftSidebarOpen, setIsSidePanelOpen, userClosedPanelRef]);
-} 
+}
+

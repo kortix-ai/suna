@@ -31,6 +31,8 @@ import { useAuth } from '@/components/AuthProvider';
 import posthog from 'posthog-js';
 import { Badge } from '@/components/ui/badge';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { TierBadge } from '@/components/billing/tier-badge';
+import { getPlanIcon } from '@/components/billing/plan-utils';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -68,17 +70,6 @@ interface PricingTierProps {
   returnUrl: string;
   insideDialog?: boolean;
   billingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment';
-}
-
-// Helper function to get plan icon
-function getPlanIcon(planName: string, isLocal: boolean = false) {
-  if (isLocal) return '/plan-icons/ultra.svg';
-
-  const plan = planName?.toLowerCase();
-  if (plan?.includes('ultra')) return '/plan-icons/ultra.svg';
-  if (plan?.includes('pro')) return '/plan-icons/pro.svg';
-  if (plan?.includes('plus')) return '/plan-icons/plus.svg';
-  return '/plan-icons/plus.svg'; // default
 }
 
 // Feature icon mapping
@@ -531,24 +522,7 @@ function PricingTier({
             // For Basic plan, just show plain text
             <span className="text-lg font-semibold">Basic</span>
           ) : (
-            <>
-              <div className="bg-black dark:hidden rounded-full px-2 py-1 flex items-center justify-center w-fit">
-                <NextImage
-                  src={getPlanIcon(tier.name)}
-                  alt={tier.name}
-                  width={24}
-                  height={24}
-                  className="h-[24px] w-auto"
-                />
-              </div>
-              <NextImage
-                src={getPlanIcon(tier.name)}
-                alt={tier.name}
-                width={24}
-                height={24}
-                className="h-[24px] w-auto hidden dark:block"
-              />
-            </>
+            <TierBadge planName={tier.name} size="lg" variant="default" />
           )}
           <div className="flex items-center gap-2">
             {tier.isPopular && (

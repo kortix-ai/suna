@@ -59,7 +59,7 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
-import { getPlanIcon, getPlanName } from '../sidebar/sidebar-left';
+import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 
 type TabId = 'general' | 'billing' | 'env-manager';
 
@@ -314,7 +314,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                 </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-border">
+            <div className="flex justify-end gap-2 pt-4">
                 <Button
                     variant="outline"
                     onClick={onClose}
@@ -331,21 +331,23 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             {!isLocalMode() && (
                 <>
-                    <div className="pt-6 border-t border-border">
-                        <h3 className="text-lg font-semibold mb-1 text-destructive">Danger Zone</h3>
-                        <p className="text-sm text-muted-foreground mb-4">
-                            Permanently delete your account and all associated data
-                        </p>
+                    <div className="pt-8 space-y-4">
+                        <div>
+                            <h3 className="text-base font-medium mb-1">Delete Account</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Permanently remove your account and all associated data
+                            </p>
+                        </div>
 
                         {deletionStatus?.has_pending_deletion ? (
-                            <Alert variant="destructive" className="shadow-none">
-                                <AlertTriangle className="h-4 w-4" />
+                            <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
+                                <Clock className="h-4 w-4 text-amber-600" />
                                 <AlertDescription>
                                     <div className="text-sm">
-                                        <strong>Account Deletion Scheduled</strong>
-                                        <p className="mt-1">
-                                            Your account and all data will be permanently deleted on{' '}
-                                            <strong>{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
+                                        <strong className="text-foreground">Deletion Scheduled</strong>
+                                        <p className="mt-1 text-muted-foreground">
+                                            Your account will be permanently deleted on{' '}
+                                            <strong className="text-foreground">{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
                                         </p>
                                         <p className="mt-2 text-muted-foreground">
                                             You can cancel this request anytime before the deletion date.
@@ -359,21 +361,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         onClick={() => setShowCancelDialog(true)}
                                         disabled={cancelDeletion.isPending}
                                     >
-                                        Cancel Deletion
+                                        Cancel Deletion Request
                                     </Button>
                                 </div>
                             </Alert>
                         ) : (
-                            <>
-                                <Button
-                                    variant="destructive"
-                                    onClick={() => setShowDeleteDialog(true)}
-                                    className="w-full sm:w-auto"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete Account
-                                </Button>
-                            </>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowDeleteDialog(true)}
+                                className="text-muted-foreground hover:text-foreground"
+                            >
+                                Delete Account
+                            </Button>
                         )}
                     </div>
 
@@ -386,23 +385,25 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 <DialogTitle>Delete Account</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
-                                <Alert variant="destructive" className="shadow-none">
-                                    <AlertTriangle className="h-4 w-4" />
+                                <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
+                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
                                     <AlertDescription>
-                                        <strong>This action cannot be undone after 30 days</strong>
+                                        <strong className="text-foreground">This action cannot be undone after 30 days</strong>
                                     </AlertDescription>
                                 </Alert>
-                                <p className="text-sm text-muted-foreground">
-                                    When you delete your account:
-                                </p>
-                                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-                                    <li>All your agents and agent versions will be deleted</li>
-                                    <li>All your threads and conversations will be deleted</li>
-                                    <li>All your credentials and integrations will be removed</li>
-                                    <li>Your subscription will be cancelled</li>
-                                    <li>All billing data will be removed</li>
-                                    <li>Your account will be scheduled for deletion in 30 days</li>
-                                </ul>
+                                <div>
+                                    <p className="text-sm font-medium mb-2">
+                                        When you delete your account:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
+                                        <li>All your agents and agent versions will be deleted</li>
+                                        <li>All your threads and conversations will be deleted</li>
+                                        <li>All your credentials and integrations will be removed</li>
+                                        <li>Your subscription will be cancelled</li>
+                                        <li>All billing data will be removed</li>
+                                        <li>Your account will be scheduled for deletion in 30 days</li>
+                                    </ul>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                     You can cancel this request anytime within the 30-day grace period.
                                     After 30 days, all your data will be permanently deleted and cannot be recovered.

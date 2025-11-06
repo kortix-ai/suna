@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isLocalMode } from '@/lib/config';
 import { useBillingStatusQuery } from '@/hooks/threads/use-billing-status';
-import { BillingData, AgentStatus } from '../_types';
+import { BillingData, AgentStatus } from '@/components/thread/types';
 
-interface UseBillingReturn {
+interface UseThreadBillingReturn {
   showBillingAlert: boolean;
   setShowBillingAlert: React.Dispatch<React.SetStateAction<boolean>>;
   billingData: BillingData;
@@ -12,11 +12,11 @@ interface UseBillingReturn {
   billingStatusQuery: ReturnType<typeof useBillingStatusQuery>;
 }
 
-export function useBilling(
+export function useThreadBilling(
   projectAccountId: string | null | undefined,
   agentStatus: AgentStatus,
   initialLoadCompleted: boolean
-): UseBillingReturn {
+): UseThreadBillingReturn {
   const [showBillingAlert, setShowBillingAlert] = useState(false);
   const [billingData, setBillingData] = useState<BillingData>({});
   const previousAgentStatus = useRef<AgentStatus>('idle');
@@ -70,4 +70,5 @@ export function useBilling(
     checkBillingLimits,
     billingStatusQuery,
   };
-} 
+}
+

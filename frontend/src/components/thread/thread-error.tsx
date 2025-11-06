@@ -26,4 +26,5 @@ export function ThreadError({ error }: ThreadErrorProps) {
       </div>
     </div>
   );
-} 
+}
+

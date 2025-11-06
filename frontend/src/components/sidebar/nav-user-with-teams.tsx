@@ -67,6 +67,7 @@ import { isLocalMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { PlanSelectionModal } from '@/components/billing/pricing';
+import { TierBadge } from '@/components/billing/tier-badge';
 
 export function NavUserWithTeams({
   user,
@@ -200,7 +201,7 @@ export function NavUserWithTeams({
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border p-3 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!w-10 group-data-[collapsible=icon]:border-0"
+                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border h-[64px] p-3 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!w-10 group-data-[collapsible=icon]:border-0"
               >
                 <Avatar className="h-10 w-10 rounded-full flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
@@ -208,31 +209,10 @@ export function NavUserWithTeams({
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col justify-center gap-0.5 flex-1 min-w-0 group-data-[collapsible=icon]:hidden ml-3">
+                <div className="flex flex-col justify-between flex-1 min-w-0 h-10 group-data-[collapsible=icon]:hidden">
                   <span className="truncate font-medium text-sm leading-tight">{user.name}</span>
                   {user.planName ? (
-                    user.planIcon ? (
-                      <div className="flex items-center">
-                        <>
-                          <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
-                            <img
-                              src={user.planIcon}
-                              alt={user.planName}
-                              className="flex-shrink-0 h-[10px] w-auto"
-                            />
-                          </div>
-                          <img
-                            src={user.planIcon}
-                            alt={user.planName}
-                            className="flex-shrink-0 h-[10px] w-auto hidden dark:block"
-                          />
-                        </>
-                      </div>
-                    ) : (
-                      <div className='flex items-center'>
-                        <span className="text-[13px] font-medium text-muted-foreground leading-tight">Basic</span>
-                      </div>
-                    )
+                    <TierBadge planName={user.planName} size="xxs" variant="default" />
                   ) : (
                     <span className="truncate text-xs text-muted-foreground leading-tight">{user.email}</span>
                   )}
@@ -436,8 +416,9 @@ export function NavUserWithTeams({
             <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden">
               <Button
                 onClick={() => setShowPlanModal(true)}
-                className="w-full bg-black dark:bg-white hover:bg-black/90 dark:hover:bg-white/90 text-white dark:text-black font-semibold"
-                size="sm"
+                variant="default"
+                size="lg"
+                className="w-full"
               >
                 Upgrade
               </Button>

@@ -56,51 +56,7 @@ import Image from 'next/image';
 import { isLocalMode } from '@/lib/config';
 import { KortixProcessModal } from './kortix-enterprise-modal';
 
-// Helper function to get plan icon - maps frontend tier names from cloudPricingItems
-export function getPlanIcon(planName: string, isLocal: boolean = false) {
-  if (isLocal) return '/plan-icons/ultra.svg';
-
-  const plan = planName?.toLowerCase();
-
-  if (plan?.includes('free')) {
-    return null;
-  }
-
-  // Ultra tier
-  if (plan?.includes('ultra')) {
-    return '/plan-icons/ultra.svg';
-  }
-
-  // Pro tier (Pro, Business, Enterprise, Scale, Max)
-  if (plan?.includes('pro') || plan?.includes('business') || plan?.includes('enterprise') || plan?.includes('scale') || plan?.includes('max')) {
-    return '/plan-icons/pro.svg';
-  }
-
-  // Plus tier
-  if (plan?.includes('plus')) {
-    return '/plan-icons/plus.svg';
-  }
-
-  // Default to plus
-  return '/plan-icons/plus.svg';
-}
-
-// Helper function to get plan name - uses tier_key to match cloudPricingItems tier name
-export function getPlanName(subscriptionData: any, isLocal: boolean = false): string {
-  if (isLocal) return 'Ultra';
-
-  if (subscriptionData?.tier?.name === 'free') {
-    return 'Basic';
-  }
-
-  // Match tier_key to cloudPricingItems to get the frontend tier name
-  const currentTier = siteConfig.cloudPricingItems.find(
-    (p) => p.tierKey === subscriptionData?.tier_key || p.tierKey === subscriptionData?.tier?.name || p.tierKey === subscriptionData?.plan_name
-  );
-
-  // Return the frontend tier name (Plus, Pro, Ultra, etc.) or fallback to backend display name
-  return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || '';
-}
+import { getPlanIcon, getPlanName } from '@/components/billing/plan-utils';
 
 // Helper function to get user initials
 function getInitials(name: string) {
@@ -462,7 +418,7 @@ export function SidebarLeft({
       </SidebarContent>
 
       {/* Enterprise Demo Card - Only show when expanded */}
-      {
+      {/* {
         state !== 'collapsed' && showEnterpriseCard && (
           <div className="absolute bottom-[86px] left-6 right-6 z-10">
             <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
@@ -490,7 +446,7 @@ export function SidebarLeft({
             </div>
           </div>
         )
-      }
+      } */}
 
       <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
         <UserProfileSection user={user} />

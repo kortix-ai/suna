@@ -3,13 +3,13 @@ import { Brain, Clock, Crown, Sparkles, Zap } from 'lucide-react';
 import { UpgradeDialog as UnifiedUpgradeDialog } from '@/components/ui/upgrade-dialog';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 
-interface UpgradeDialogProps {
+interface ThreadUpgradeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDismiss: () => void;
 }
 
-export function UpgradeDialog({ open, onOpenChange, onDismiss }: UpgradeDialogProps) {
+export function ThreadUpgradeDialog({ open, onOpenChange, onDismiss }: ThreadUpgradeDialogProps) {
   const [showPlanSelectionModal, setShowPlanSelectionModal] = useState(false);
 
   const handleUpgradeClick = () => {
@@ -96,4 +96,5 @@ export function UpgradeDialog({ open, onOpenChange, onDismiss }: UpgradeDialogPr
       />
     </>
   );
-} 
+}
+

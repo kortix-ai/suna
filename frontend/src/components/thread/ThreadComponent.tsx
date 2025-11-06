@@ -27,17 +27,16 @@ export type SubscriptionStatus = 'no_subscription' | 'active';
 
 import {
   UnifiedMessage,
+  ApiMessageType,
 } from '@/components/thread/types';
 import {
-  ApiMessageType,
-} from '@/app/(dashboard)/projects/[projectId]/thread/_types';
-import {
   useThreadData,
-  useToolCalls,
-  useBilling,
-  useKeyboardShortcuts,
-} from '@/app/(dashboard)/projects/[projectId]/thread/_hooks';
-import { ThreadError, UpgradeDialog, ThreadLayout } from '@/app/(dashboard)/projects/[projectId]/thread/_components';
+  useThreadToolCalls,
+  useThreadBilling,
+  useThreadKeyboardShortcuts,
+} from '@/hooks/threads/page';
+import { ThreadError, ThreadLayout } from '@/components/thread/layout';
+import { ThreadUpgradeDialog } from '@/components/billing';
 
 import {
   useThreadAgent,
@@ -140,7 +139,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     toggleSidePanel,
     handleSidePanelNavigate,
     userClosedPanelRef,
-  } = useToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
+  } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
 
   const {
     showBillingAlert,
@@ -149,13 +148,13 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     setBillingData,
     checkBillingLimits,
     billingStatusQuery,
-  } = useBilling(null, agentStatus, initialLoadCompleted);
+  } = useThreadBilling(null, agentStatus, initialLoadCompleted);
 
   // Real-time project updates (for sandbox creation)
   useProjectRealtime(projectId);
 
   // Keyboard shortcuts
-  useKeyboardShortcuts({
+  useThreadKeyboardShortcuts({
     isSidePanelOpen,
     setIsSidePanelOpen,
     leftSidebarState,
@@ -983,7 +982,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           </div>
         </ThreadLayout>
 
-        <UpgradeDialog
+        <ThreadUpgradeDialog
           open={showUpgradeDialog}
           onOpenChange={setShowUpgradeDialog}
           onDismiss={handleDismissUpgradeDialog}
@@ -1116,7 +1115,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         </div>
       </ThreadLayout>
 
-      <UpgradeDialog
+      <ThreadUpgradeDialog
         open={showUpgradeDialog}
         onOpenChange={setShowUpgradeDialog}
         onDismiss={handleDismissUpgradeDialog}
