@@ -19,7 +19,7 @@ RUN apk add --no-cache \
 # Install Python dependencies with caching
 COPY backend/pyproject.toml backend/uv.lock ./
 ENV UV_LINK_MODE=copy
-RUN --mount=type=cache,target=/root/.cache/uv \
+RUN --mount=type=cache,id=uv-backend,target=/root/.cache/uv \
     uv sync --locked --quiet
 
 # Copy application code
