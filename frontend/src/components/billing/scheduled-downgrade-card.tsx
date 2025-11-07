@@ -5,11 +5,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
   Calendar,
-  ArrowDown,
+  ArrowRight,
   X
 } from 'lucide-react';
 import { useCancelScheduledChange } from '@/hooks/billing';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
+import { TierBadge } from './tier-badge';
+import { siteConfig } from '@/lib/home';
 
 interface ScheduledDowngradeCardProps {
   scheduledChange: {
@@ -37,6 +39,14 @@ export function ScheduledDowngradeCard({
 
   const effectiveDate = new Date(scheduledChange.effective_date);
 
+  const getFrontendTierName = (tierKey: string) => {
+    const tier = siteConfig.cloudPricingItems.find(p => p.tierKey === tierKey);
+    return tier?.name || 'Basic';
+  };
+
+  const currentTierName = getFrontendTierName(scheduledChange.current_tier.name);
+  const targetTierName = getFrontendTierName(scheduledChange.target_tier.name);
+
   const formatDate = (date: Date) => {
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
@@ -62,39 +72,25 @@ export function ScheduledDowngradeCard({
 
   return (
     <>
-      <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-blue-700 dark:text-blue-400">
-              <ArrowDown className="h-4 w-4" />
-              <span>Scheduled Plan Change</span>
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="text-sm text-muted-foreground">
-                {scheduledChange.current_tier.display_name}
-              </div>
-              <ArrowDown className="h-3 w-3 text-muted-foreground" />
-              <div className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-                {scheduledChange.target_tier.display_name}
+      <Card className="border-border">
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <TierBadge planName={currentTierName} size="md" variant="default" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                <div className="opacity-60">
+                  <TierBadge planName={targetTierName} size="md" variant="default" />
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-sm mt-3">
-              <Calendar className="h-4 w-4 text-blue-600" />
+            
+            <div className="flex items-center gap-2 text-sm">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-muted-foreground">
-                Your plan will change on:
+                {formatDate(effectiveDate)}
               </span>
             </div>
-            <p className="text-lg font-semibold text-blue-700 dark:text-blue-500">
-              {formatDate(effectiveDate)}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              ({daysRemaining} {daysRemaining === 1 ? 'day' : 'days'} remaining)
-            </p>
-          </div>
-          <div className="pt-2 border-t">
-            <p className="text-sm text-muted-foreground mb-3">
-              You'll continue to have access to your current plan's features and credits until the scheduled change date.
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -104,7 +100,7 @@ export function ScheduledDowngradeCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel Scheduled Change</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to cancel the scheduled plan change? Your current plan will continue without any changes.
+              Your current plan will continue without any changes.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -112,13 +108,13 @@ export function ScheduledDowngradeCard({
               variant="outline"
               onClick={() => setShowConfirmDialog(false)}
             >
-              No, Keep Change Scheduled
+              Keep Scheduled
             </Button>
             <Button
               onClick={handleCancelChange}
               disabled={cancelScheduledChangeMutation.isPending}
             >
-              {cancelScheduledChangeMutation.isPending ? 'Cancelling...' : 'Yes, Cancel Change'}
+              {cancelScheduledChangeMutation.isPending ? 'Cancelling...' : 'Cancel Change'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

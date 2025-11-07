@@ -449,108 +449,109 @@ class SubscriptionService:
             return {'success': False, 'message': f'Stripe error: {str(e)}'}
 
     async def cancel_subscription(self, account_id: str, feedback: Optional[str] = None) -> Dict:
-        db = DBConnection()
-        client = await db.client
-        
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, commitment_type, commitment_start_date, commitment_end_date'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
-            raise HTTPException(status_code=404, detail="No subscription found")
-        
-        subscription_id = credit_result.data[0]['stripe_subscription_id']
-        commitment_type = credit_result.data[0].get('commitment_type')
-        commitment_end_date = credit_result.data[0].get('commitment_end_date')
-        
-        if commitment_type == 'yearly_commitment' and commitment_end_date:
-            end_date = datetime.fromisoformat(commitment_end_date.replace('Z', '+00:00'))
-            if datetime.now(timezone.utc) < end_date:
-                logger.info(f"Scheduling cancellation for commitment end date: {end_date.date()} for account {account_id}")
-                
-                try:
-                    subscription = await StripeAPIWrapper.modify_subscription(
-                        subscription_id,
-                        cancel_at=int(end_date.timestamp()),
-                        metadata={'cancellation_feedback': feedback, 'scheduled_commitment_cancel': 'true'} if feedback else {'scheduled_commitment_cancel': 'true'}
-                    )
-                    
-                    try:
-                        commitment_start = credit_result.data[0].get('commitment_start_date')
-                        if commitment_start:
-                            await client.from_('commitment_history').insert({
-                                'account_id': account_id,
-                                'commitment_type': commitment_type,
-                                'start_date': commitment_start,
-                                'end_date': commitment_end_date,
-                                'stripe_subscription_id': subscription_id,
-                                'cancelled_at': datetime.now(timezone.utc).isoformat(),
-                                'cancellation_reason': feedback or f'Scheduled cancellation for {end_date.date()}'
-                            }).execute()
-                    except Exception as e:
-                        logger.warning(f"Failed to log commitment history: {e}, but cancellation was scheduled successfully")
-                    
-                    months_remaining = (end_date.year - datetime.now(timezone.utc).year) * 12 + \
-                                     (end_date.month - datetime.now(timezone.utc).month)
-                    
-                    return {
-                        'success': True,
-                        'scheduled': True,
-                        'message': f'Your subscription is scheduled to cancel on {end_date.date()} at the end of your commitment period',
-                        'cancel_at': subscription.cancel_at,
-                        'months_remaining': max(0, months_remaining),
-                        'commitment_end_date': commitment_end_date
-                    }
-                    
-                except stripe.error.StripeError as e:
-                    logger.error(f"Error scheduling cancellation for subscription {subscription_id}: {e}")
-                    raise HTTPException(status_code=500, detail=f"Failed to schedule cancellation: {str(e)}")
+        logger.info(f"[CANCEL] Processing cancellation for {account_id} - will downgrade to free tier at period end")
         
         try:
-            subscription = await StripeAPIWrapper.modify_subscription(
-                subscription_id,
-                cancel_at_period_end=True,
-                metadata={'cancellation_feedback': feedback} if feedback else {}
+            result = await self.schedule_tier_downgrade(
+                account_id=account_id,
+                target_tier_key='free',
+                commitment_type='monthly'
             )
+            
+            logger.info(f"[CANCEL] Successfully scheduled downgrade to free tier for {account_id}")
+            
+            if feedback:
+                db = DBConnection()
+                client = await db.client
+                credit_result = await client.from_('credit_accounts').select(
+                    'stripe_subscription_id'
+                ).eq('account_id', account_id).execute()
                 
-            if commitment_type:
-                await client.from_('commitment_history').insert({
-                    'account_id': account_id,
-                    'commitment_type': commitment_type,
-                    'start_date': credit_result.data[0].get('commitment_start_date'),
-                    'end_date': commitment_end_date,
-                    'stripe_subscription_id': subscription_id,
-                    'cancelled_at': datetime.now(timezone.utc).isoformat(),
-                    'cancellation_reason': feedback or 'User cancelled'
-                }).execute()
+                if credit_result.data and credit_result.data[0].get('stripe_subscription_id'):
+                    subscription_id = credit_result.data[0]['stripe_subscription_id']
+                    try:
+                        await StripeAPIWrapper.modify_subscription(
+                            subscription_id,
+                            metadata={'cancellation_feedback': feedback}
+                        )
+                        logger.info(f"[CANCEL] Saved cancellation feedback for {account_id}")
+                    except Exception as e:
+                        logger.warning(f"[CANCEL] Could not save feedback: {e}")
             
             return {
                 'success': True,
-                'message': 'Subscription will be cancelled at the end of the current period',
-                'period_end': subscription.current_period_end
+                'message': result.get('message', 'Your plan will be downgraded to the free tier at the end of your current billing period'),
+                'scheduled_date': result.get('scheduled_date'),
+                'downgrade_to_free': True
             }
             
-        except stripe.error.StripeError as e:
-            logger.error(f"Error cancelling subscription {subscription_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            logger.error(f"Error cancelling subscription for {account_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to cancel subscription: {str(e)}")
 
     async def reactivate_subscription(self, account_id: str) -> Dict:
         db = DBConnection()
         client = await db.client
         
         credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id'
+            'stripe_subscription_id, scheduled_tier_change, scheduled_price_id'
         ).eq('account_id', account_id).execute()
         
         if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
             raise HTTPException(status_code=404, detail="No subscription found")
         
         subscription_id = credit_result.data[0]['stripe_subscription_id']
+        scheduled_tier = credit_result.data[0].get('scheduled_tier_change')
         
         try:
-            subscription = await StripeAPIWrapper.modify_subscription(
+            subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+            
+            if scheduled_tier:
+                logger.info(f"[REACTIVATE] Found scheduled downgrade to {scheduled_tier}, cancelling it")
+                
+                schedule_id = subscription.get('schedule')
+                if schedule_id:
+                    try:
+                        schedule = await StripeAPIWrapper.safe_stripe_call(
+                            stripe.SubscriptionSchedule.retrieve_async,
+                            schedule_id
+                        )
+                        
+                        if schedule.get('status') in ['active', 'not_started']:
+                            await StripeAPIWrapper.safe_stripe_call(
+                                stripe.SubscriptionSchedule.release_async,
+                                schedule_id
+                            )
+                            logger.info(f"[REACTIVATE] Released schedule {schedule_id}")
+                    except stripe.error.StripeError as e:
+                        logger.warning(f"[REACTIVATE] Could not release schedule: {e}")
+                
+                await StripeAPIWrapper.modify_subscription(
+                    subscription_id,
+                    metadata={
+                        'downgrade': None,
+                        'previous_tier': None,
+                        'target_tier': None,
+                        'scheduled_by': None,
+                        'scheduled_at': None,
+                        'scheduled_price_id': None
+                    }
+                )
+                
+                await client.from_('credit_accounts').update({
+                    'scheduled_tier_change': None,
+                    'scheduled_tier_change_date': None,
+                    'scheduled_price_id': None
+                }).eq('account_id', account_id).execute()
+                
+                logger.info(f"[REACTIVATE] Cleared scheduled downgrade for {account_id}")
+            
+            await StripeAPIWrapper.modify_subscription(
                 subscription_id,
-                cancel_at_period_end=False
+                cancel_at_period_end=False,
+                cancel_at=None
             )
             
             return {
@@ -1528,67 +1529,6 @@ class SubscriptionService:
                 'effective_date': scheduled_date
             }
         }
-
-    async def cancel_scheduled_change(self, account_id: str) -> Dict:
-        db = DBConnection()
-        client = await db.client
-        
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, tier, scheduled_tier_change'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
-            raise HTTPException(status_code=404, detail="No active subscription found")
-        
-        subscription_id = credit_result.data[0]['stripe_subscription_id']
-        scheduled_tier = credit_result.data[0].get('scheduled_tier_change')
-        current_tier_name = credit_result.data[0].get('tier')
-        
-        if not scheduled_tier:
-            raise HTTPException(status_code=404, detail="No scheduled change found")
-        
-        try:
-            subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
-            
-            if subscription.get('schedule'):
-                logger.info(f"[DOWNGRADE] Cancelling subscription schedule {subscription['schedule']} for {account_id}")
-                try:
-                    await StripeAPIWrapper.safe_stripe_call(
-                        stripe.SubscriptionSchedule.release_async,
-                        subscription['schedule']
-                    )
-                    logger.info(f"[DOWNGRADE] Released subscription schedule {subscription['schedule']}")
-                except stripe.error.StripeError as e:
-                    logger.warning(f"[DOWNGRADE] Could not release schedule: {e}")
-            
-            await StripeAPIWrapper.modify_subscription(
-                subscription_id,
-                metadata={
-                    'downgrade': None,
-                    'previous_tier': None,
-                    'target_tier': None,
-                    'scheduled_by': None,
-                    'scheduled_at': None,
-                    'scheduled_price_id': None
-                }
-            )
-            
-            await client.from_('credit_accounts').update({
-                'scheduled_tier_change': None,
-                'scheduled_tier_change_date': None,
-                'scheduled_price_id': None
-            }).eq('account_id', account_id).execute()
-            
-            logger.info(f"[DOWNGRADE] Cancelled scheduled downgrade for {account_id}")
-            
-            return {
-                'success': True,
-                'message': 'Scheduled plan change has been cancelled. Your current plan will continue.'
-            }
-            
-        except stripe.error.StripeError as e:
-            logger.error(f"Error cancelling scheduled change for subscription {subscription_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to cancel scheduled change: {str(e)}")
 
 
 subscription_service = SubscriptionService()

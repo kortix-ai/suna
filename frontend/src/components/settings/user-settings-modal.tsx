@@ -693,10 +693,9 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                     <div className="flex items-center gap-2 text-right">
                         {planIcon && (
                             <>
-                                <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center">
-                                    <img src={planIcon} alt={planName} className="h-4 w-auto" />
+                                <div className="rounded-full py-0.5 flex items-center justify-center">
+                                    <img src={planIcon} alt={planName} className="h-6 w-auto" />
                                 </div>
-                                <img src={planIcon} alt={planName} className="h-4 w-auto hidden dark:block" />
                             </>
                         )}
                         {subscription?.current_period_end && (

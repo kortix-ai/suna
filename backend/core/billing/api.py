@@ -653,20 +653,6 @@ async def get_scheduled_changes(
         logger.error(f"Error getting scheduled changes: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/cancel-scheduled-change")
-async def cancel_scheduled_change(
-    account_id: str = Depends(verify_and_get_user_id_from_jwt)
-) -> Dict:
-    try:
-        result = await subscription_service.cancel_scheduled_change(account_id)
-        await Cache.invalidate(f"subscription_tier:{account_id}")
-        return result
-        
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logger.error(f"Error cancelling scheduled change: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/transactions")
 async def get_my_transactions(
