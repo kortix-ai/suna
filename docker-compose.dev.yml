@@ -1,0 +1,121 @@
+# ========================================
+# Docker Compose для локальной разработки Suna AI
+# ========================================
+# Использование: docker-compose -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  # Redis для кэширования и очередей
+  redis:
+    image: redis:7-alpine
+    container_name: suna-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # PostgreSQL (если не используете Supabase)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: suna-postgres
+  #   environment:
+  #     POSTGRES_DB: suna
+  #     POSTGRES_USER: suna
+  #     POSTGRES_PASSWORD: suna_password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U suna"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 3
+  #   restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: suna-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Загрузка из .env файла
+      - ENV_MODE=${ENV_MODE:-local}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_SSL=false
+      # LLM провайдеры
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      # Другие сервисы
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - RAPID_API_KEY=${RAPID_API_KEY}
+    volumes:
+      - ./backend:/app
+      - backend-cache:/app/.cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    command: uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend Next.js
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=development
+    container_name: suna-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_ENV_MODE=${NEXT_PUBLIC_ENV_MODE:-local}
+      - NEXT_PUBLIC_URL=http://localhost:3000
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000/api
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NODE_OPTIONS=--max-old-space-size=4096
+      - NEXT_TELEMETRY_DISABLED=1
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    command: npm run dev
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  backend-cache:
+    driver: local
+
+networks:
+  default:
+    name: suna-network
