@@ -17,6 +17,7 @@ export const useAgents = (
     queryFn: () => getAgents(params),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    enabled: true, // Default to enabled, can be overridden
     ...customOptions,
   });
 };

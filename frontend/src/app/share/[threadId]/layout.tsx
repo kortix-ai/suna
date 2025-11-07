@@ -62,5 +62,9 @@ export async function generateMetadata({ params }): Promise<Metadata> {
 }
 
 export default async function ThreadLayout({ children }) {
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+    </>
+  );
 }

@@ -391,7 +391,7 @@ class SandboxPresentationTool(SandboxToolsBase):
             if presentation_path:
                 safe_name = self._sanitize_filename(presentation_name)
                 response_data["presentation_path"] = f"{self.presentations_dir}/{safe_name}"
-                response_data["presentation_name"] = presentation_name
+                response_data["presentation_name"] = presentation_name.lower()
                 response_data["copied_to_workspace"] = True
                 response_data["note"] = f"Template copied to /workspace/{self.presentations_dir}/{safe_name}/. **CRITICAL**: Use full_file_rewrite to edit slides. ONLY change text content - preserve ALL CSS, styling, colors, fonts, and HTML structure 100% exactly. The template's visual design must remain identical. This template provides ALL slides and extracted design patterns in one response."
                 response_data["usage_instructions"] = {

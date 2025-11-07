@@ -3,7 +3,7 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body
+from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Request
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess
 from core.utils.logger import logger
@@ -141,15 +141,20 @@ async def get_user_threads(
 @router.get("/threads/{thread_id}", summary="Get Thread", operation_id="get_thread")
 async def get_thread(
     thread_id: str,
-    auth: AuthorizedThreadAccess = Depends(require_thread_access)
+    request: Request
 ):
-    """Get a specific thread by ID with complete related data."""
+    """Get a specific thread by ID with complete related data.
+    Supports both authenticated and anonymous access (for public threads)."""
     logger.debug(f"Fetching thread: {thread_id}")
     client = await utils.db.client
-    user_id = auth.user_id  # Already authenticated and authorized!
+    
+    # Try to get user_id from JWT (optional for public threads)
+    from core.utils.auth_utils import get_optional_user_id
+    user_id = await get_optional_user_id(request)
     
     try:
-        # No need for manual authorization - it's already done in the dependency!
+        # Verify access (handles both authenticated and public thread access)
+        await verify_and_authorize_thread_access(client, thread_id, user_id)
         
         # Get the thread data
         thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
@@ -325,12 +330,19 @@ async def create_thread(
 @router.get("/threads/{thread_id}/messages", summary="Get Thread Messages", operation_id="get_thread_messages")
 async def get_thread_messages(
     thread_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    request: Request,
     order: str = Query("desc", description="Order by created_at: 'asc' or 'desc'")
 ):
-    """Get all messages for a thread, fetching in batches of 1000 from the DB to avoid large queries."""
+    """Get all messages for a thread, fetching in batches of 1000 from the DB to avoid large queries.
+    Supports both authenticated and anonymous access (for public threads)."""
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await utils.db.client
+    
+    # Try to get user_id from JWT (optional for public threads)
+    from core.utils.auth_utils import get_optional_user_id
+    user_id = await get_optional_user_id(request)
+    
+    # Verify access (handles both authenticated and public thread access)
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
         batch_size = 1000
@@ -439,6 +451,7 @@ async def delete_message(
 @router.patch("/threads/{thread_id}", summary="Update Thread", operation_id="update_thread")
 async def update_thread(
     thread_id: str,
+    request: Request,
     title: Optional[str] = Body(None, embed=True),
     is_public: Optional[bool] = Body(None, embed=True),
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
@@ -500,7 +513,7 @@ async def update_thread(
         logger.debug(f"Successfully updated thread: {thread_id}")
         
         # Return the updated thread with project data
-        return await get_thread(thread_id, auth)
+        return await get_thread(thread_id, request)
         
     except HTTPException:
         raise

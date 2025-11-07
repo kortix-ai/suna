@@ -73,25 +73,26 @@ export function TierBadge({
 }: TierBadgeProps) {
   const planIcon = getPlanIcon(planName, isLocal);
   const config = sizeConfig[size];
-  
+
   // Debug logging
   React.useEffect(() => {
-  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-      console.log('[TierBadge]', { 
-        planName, 
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.log('[TierBadge]', {
+        planName,
         planIcon,
-        size, 
-        height: config.height, 
+        size,
+        height: config.height,
         variant,
         iconOnly,
         isLocal,
         willRender: !!planIcon || (!iconOnly && variant !== 'circle')
       });
-  }
+    }
   }, [planName, planIcon, size, variant, iconOnly, isLocal, config.height]);
 
   // If no icon (e.g., Basic tier), return null or text only
   if (!planIcon) {
+    console.log('[TierBadge] No icon found for plan:', planName);
     if (iconOnly || variant === 'circle') {
       if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
         console.log('[TierBadge] Returning null - no icon for plan:', planName);
@@ -130,31 +131,13 @@ export function TierBadge({
   // Black background in light mode, transparent in dark mode
   return (
     <div className="flex items-center">
-      {/* Light mode - black background */}
-      <div
-        className={cn(
-          'bg-black dark:hidden rounded-full flex items-center justify-center w-fit',
-          config.padding,
-          className
-        )}
-      >
-        <NextImage
-          src={planIcon}
-          alt={planName}
-          width={config.height}
-          height={config.height}
-          style={{ height: `${config.height}px`, width: 'auto' }}
-          className={cn("w-auto object-contain", className)}
-        />
-      </div>
-      {/* Dark mode - transparent background */}
       <NextImage
         src={planIcon}
         alt={planName}
         width={config.height}
         height={config.height}
         style={{ height: `${config.height}px`, width: 'auto' }}
-        className={cn('flex-shrink-0 w-auto hidden dark:block object-contain', className)}
+        className={cn("w-auto object-contain", className)}
       />
     </div>
   );

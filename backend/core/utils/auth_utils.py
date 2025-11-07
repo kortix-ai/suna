@@ -278,43 +278,57 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         structlog.error(f"Error verifying agent access for agent {agent_id}, user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to verify agent access")
 
-async def verify_and_authorize_thread_access(client, thread_id: str, user_id: str):
+async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Optional[str]):
+    """
+    Verify that a user has access to a thread.
+    Supports both authenticated and anonymous access (for public threads).
     
+    Args:
+        client: Supabase client
+        thread_id: Thread ID to check
+        user_id: User ID (can be None for anonymous users accessing public threads)
+    """
     try:
-        # Check if user is an admin first (admins have access to all threads)
-        admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
-        if admin_result.data and len(admin_result.data) > 0:
-            role = admin_result.data[0].get('role')
-            if role in ('admin', 'super_admin'):
-                structlog.get_logger().debug(f"Admin access granted for thread {thread_id}", user_role=role)
-                # Just verify thread exists
-                thread_check = await client.table('threads').select('thread_id').eq('thread_id', thread_id).execute()
-                if not thread_check.data:
-                    raise HTTPException(status_code=404, detail="Thread not found")
-                return True
-        
+        # Get thread data first
         thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
 
         if not thread_result.data or len(thread_result.data) == 0:
             raise HTTPException(status_code=404, detail="Thread not found")
         
         thread_data = thread_result.data[0]
-
-        if thread_data['account_id'] == user_id:
-            return True
         
+        # Check if thread's project is public - allow anonymous access
         project_id = thread_data.get('project_id')
         if project_id:
             project_result = await client.table('projects').select('is_public').eq('project_id', project_id).execute()
             if project_result.data and len(project_result.data) > 0:
                 if project_result.data[0].get('is_public'):
+                    structlog.get_logger().debug(f"Public thread access granted: {thread_id}")
                     return True
-            
+        
+        # If not public, user must be authenticated
+        if not user_id:
+            raise HTTPException(status_code=403, detail="Authentication required for private threads")
+        
+        # Check if user is an admin (admins have access to all threads)
+        admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
+        if admin_result.data and len(admin_result.data) > 0:
+            role = admin_result.data[0].get('role')
+            if role in ('admin', 'super_admin'):
+                structlog.get_logger().debug(f"Admin access granted for thread {thread_id}", user_role=role)
+                return True
+        
+        # Check if user owns the thread
+        if thread_data['account_id'] == user_id:
+            return True
+        
+        # Check if user is a team member of the account
         account_id = thread_data.get('account_id')
         if account_id:
             account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
             if account_user_result.data and len(account_user_result.data) > 0:
                 return True
+        
         raise HTTPException(status_code=403, detail="Not authorized to access this thread")
     except HTTPException:
         raise
