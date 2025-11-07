@@ -213,7 +213,7 @@ export function NavUserWithTeams({
                 <div className="flex flex-col justify-between flex-1 min-w-0 h-10 group-data-[collapsible=icon]:hidden">
                   <span className="truncate font-medium text-sm leading-tight">{user.name}</span>
                   {user.planName ? (
-                    <TierBadge planName={user.planName} size="xxs" variant="default" />
+                    <TierBadge planName={user.planName} size="xs" variant="default" />
                   ) : (
                     <span className="truncate text-xs text-muted-foreground leading-tight">{user.email}</span>
                   )}
