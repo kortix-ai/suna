@@ -28,7 +28,7 @@ import { SubscriptionInfo } from '@/lib/api/billing';
 import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api/billing';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
-import { useSubscription } from '@/hooks/billing';
+import { useSubscription, useScheduleDowngrade } from '@/hooks/billing';
 import { useSubscriptionCommitment } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -218,8 +218,9 @@ function PricingTier({
 
   const displayPrice = getDisplayPrice();
 
-  // Handle subscription/trial start
-  const handleSubscribe = async (tierKey: string) => {
+  const scheduleDowngradeMutation = useScheduleDowngrade();
+
+  const handleSubscribe = async (tierKey: string, isDowngrade = false) => {
     if (!isAuthenticated) {
       window.location.href = '/auth?mode=signup';
       return;
@@ -234,6 +235,20 @@ function PricingTier({
       const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' :
         billingPeriod === 'yearly' ? 'yearly' :
           'monthly';
+
+      if (isDowngrade) {
+        scheduleDowngradeMutation.mutate({
+          target_tier_key: tierKey,
+          commitment_type: commitmentType,
+        }, {
+          onSuccess: () => {
+            posthog.capture('plan_downgrade_scheduled');
+            queryClient.invalidateQueries({ queryKey: billingKeys.all });
+            if (onSubscriptionUpdate) onSubscriptionUpdate();
+          }
+        });
+        return;
+      }
 
       const response: CreateCheckoutSessionResponse =
         await createCheckoutSession({
@@ -344,6 +359,7 @@ function PricingTier({
   let ringClass = '';
   let statusBadge = null;
   let buttonClassName = '';
+  let isDowngradeAction = false;
 
   const planChangeValidation = { allowed: true }; 
 
@@ -460,11 +476,10 @@ function PricingTier({
             buttonClassName = 'bg-primary hover:bg-primary/90 text-primary-foreground';
           }
         } else if (targetAmount < currentAmount || isSameTierDowngradeToShorterTerm) {
-          // Prevent downgrades and downgrades to shorter terms
-          buttonText = 'Not Available';
-          buttonDisabled = true;
-          buttonVariant = 'secondary';
-          buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
+          buttonText = 'Downgrade';
+          buttonVariant = 'outline';
+          buttonClassName = '';
+          isDowngradeAction = true;
         } else {
           buttonText = 'Select Plan';
           buttonVariant = tier.buttonColor as ButtonVariant;
@@ -624,7 +639,7 @@ function PricingTier({
         insideDialog ? "px-3 pt-1 pb-3" : "px-4 pt-2 pb-4"
       )}>
         <Button
-          onClick={() => handleSubscribe(tier.tierKey)}
+          onClick={() => handleSubscribe(tier.tierKey, isDowngradeAction)}
           disabled={buttonDisabled}
           variant={buttonVariant || 'default'}
           className={cn(

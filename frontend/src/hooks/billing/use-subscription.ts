@@ -10,6 +10,8 @@ import {
   CreateCheckoutSessionRequest,
   PurchaseCreditsRequest,
   TokenUsage,
+  ScheduleDowngradeRequest,
+  ScheduledChangesResponse,
 } from '@/lib/api/billing';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -23,6 +25,7 @@ export const billingKeys = {
     [...billingKeys.all, 'transactions', { limit, offset }] as const,
   usageHistory: (days?: number) => 
     [...billingKeys.all, 'usage-history', { days }] as const,
+  scheduledChanges: () => [...billingKeys.all, 'scheduled-changes'] as const,
 };
 
 // Export billingKeys as subscriptionKeys for backward compatibility
@@ -261,6 +264,70 @@ export const useTriggerTestRenewal = () => {
     mutationFn: () => billingApi.triggerTestRenewal(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: billingKeys.all });
+    },
+  });
+};
+
+/**
+ * Hook to schedule a tier downgrade
+ */
+export const useScheduleDowngrade = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.scheduledChanges() });
+      if (response.success) {
+        toast.success(response.message);
+      } else {
+        toast.error(response.message);
+      }
+    },
+    onError: (error: any) => {
+      console.error('Error scheduling downgrade:', error);
+      toast.error(error.message || 'Failed to schedule downgrade');
+    },
+  });
+};
+
+/**
+ * Hook to fetch scheduled tier changes
+ */
+export const useScheduledChanges = (enabled = true) => {
+  return useQuery<ScheduledChangesResponse>({
+    queryKey: billingKeys.scheduledChanges(),
+    queryFn: () => billingApi.getScheduledChanges(),
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: true,
+    enabled,
+  });
+};
+
+/**
+ * Hook to cancel a scheduled tier change
+ */
+export const useCancelScheduledChange = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => billingApi.cancelScheduledChange(),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+      queryClient.invalidateQueries({ queryKey: billingKeys.scheduledChanges() });
+      if (response.success) {
+        toast.success(response.message);
+      } else {
+        toast.error(response.message);
+      }
+    },
+    onError: (error: any) => {
+      console.error('Error cancelling scheduled change:', error);
+      toast.error(error.message || 'Failed to cancel scheduled change');
     },
   });
 };

@@ -40,6 +40,7 @@ import { SubscriptionInfo } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { PlanSelectionModal, PricingSection } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
+import { ScheduledDowngradeCard } from '@/components/billing/scheduled-downgrade-card';
 import { 
     useSubscription, 
     useSubscriptionCommitment, 
@@ -47,6 +48,7 @@ import {
     useCancelSubscription,
     useReactivateSubscription,
     useCreditBalance,
+    useScheduledChanges,
     billingKeys
 } from '@/hooks/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -523,7 +525,11 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         refetch: refetchBalance
     } = useCreditBalance(!!session && !authLoading);
 
-    // Mutations
+    const {
+        data: scheduledChangesData,
+        refetch: refetchScheduledChanges
+    } = useScheduledChanges(!!session && !authLoading);
+
     const createPortalSessionMutation = useCreatePortalSession();
     const cancelSubscriptionMutation = useCancelSubscription();
     const reactivateSubscriptionMutation = useReactivateSubscription();
@@ -729,8 +735,8 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                             <div className="text-2xl leading-none font-medium mb-1">{formatCredits(expiringCredits)}</div>
                             <p className="text-xs text-muted-foreground">
                                 {daysUntilRefresh !== null 
-                                    ? `Refresh in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
-                                    : 'No refresh scheduled'
+                                    ? `Renewal in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
+                                    : 'No renewal scheduled'
                                 }
                             </p>
                         </div>
@@ -793,6 +799,16 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                         </p>
                     </AlertDescription>
                 </Alert>
+            )}
+
+            {scheduledChangesData?.has_scheduled_change && scheduledChangesData.scheduled_change && (
+                <ScheduledDowngradeCard
+                    scheduledChange={scheduledChangesData.scheduled_change}
+                    onCancel={() => {
+                        refetchSubscription();
+                        refetchScheduledChanges();
+                    }}
+                />
             )}
 
             {isCancelled && (

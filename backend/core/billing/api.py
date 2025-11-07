@@ -612,10 +612,60 @@ async def reactivate_subscription(
         return result
         
     except HTTPException as e:
-        # Re-raise HTTP exceptions as-is
         raise e
     except Exception as e:
         logger.error(f"Error reactivating subscription: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ScheduleDowngradeRequest(BaseModel):
+    target_tier_key: str
+    commitment_type: Optional[str] = None
+
+@router.post("/schedule-downgrade")
+async def schedule_downgrade(
+    request: ScheduleDowngradeRequest,
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        result = await subscription_service.schedule_tier_downgrade(
+            account_id=account_id,
+            target_tier_key=request.target_tier_key,
+            commitment_type=request.commitment_type
+        )
+        await Cache.invalidate(f"subscription_tier:{account_id}")
+        return result
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error scheduling downgrade: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/scheduled-changes")
+async def get_scheduled_changes(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        result = await subscription_service.get_scheduled_changes(account_id)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting scheduled changes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/cancel-scheduled-change")
+async def cancel_scheduled_change(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        result = await subscription_service.cancel_scheduled_change(account_id)
+        await Cache.invalidate(f"subscription_tier:{account_id}")
+        return result
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error cancelling scheduled change: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/transactions")

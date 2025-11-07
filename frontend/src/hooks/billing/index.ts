@@ -20,6 +20,9 @@ export {
   usePurchaseCredits,
   useDeductTokenUsage,
   useTriggerTestRenewal,
+  useScheduleDowngrade,
+  useScheduledChanges,
+  useCancelScheduledChange,
   isPlan,
 } from './use-subscription';
 
