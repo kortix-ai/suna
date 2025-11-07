@@ -191,20 +191,18 @@ const STAGING_TIERS: SubscriptionTiers = {
 } as const;
 
 function getEnvironmentMode(): EnvMode {
-  const envMode = process.env.NEXT_PUBLIC_ENV_MODE.toUpperCase();
-  switch (envMode) {
+  const raw = process.env.NEXT_PUBLIC_ENV_MODE?.toUpperCase();
+  switch (raw) {
     case 'LOCAL':
       return EnvMode.LOCAL;
     case 'STAGING':
       return EnvMode.STAGING;
     case 'PRODUCTION':
       return EnvMode.PRODUCTION;
-  //   default:
-  //     if (process.env.NODE_ENV === 'development') {
-  //       return EnvMode.LOCAL;
-  //     } else {
-  //       return EnvMode.PRODUCTION;
-  //     }
+    default:
+      // Безопасный дефолт: локальный режим для разработки,
+      // чтобы сборка не падала при отсутствии переменной
+      return EnvMode.LOCAL;
   }
 }
 
