@@ -90,6 +90,54 @@ export interface CommitmentInfo {
   commitment_end_date?: string | null;
 }
 
+export interface ScheduleDowngradeRequest {
+  target_tier_key: string;
+  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
+}
+
+export interface ScheduleDowngradeResponse {
+  success: boolean;
+  message: string;
+  scheduled_date: string;
+  current_tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+  };
+  target_tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+  };
+  billing_change: boolean;
+  current_billing_period: string;
+  target_billing_period: string;
+  change_description: string;
+}
+
+export interface ScheduledChangesResponse {
+  has_scheduled_change: boolean;
+  scheduled_change: {
+    type: 'downgrade';
+    current_tier: {
+      name: string;
+      display_name: string;
+      monthly_credits?: number;
+    };
+    target_tier: {
+      name: string;
+      display_name: string;
+      monthly_credits?: number;
+    };
+    effective_date: string;
+  } | null;
+}
+
+export interface CancelScheduledChangeResponse {
+  success: boolean;
+  message: string;
+}
+
 export interface TokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -500,16 +548,39 @@ export const billingApi = {
 
   async getAvailableModels() {
     const response = await backendApi.get<AvailableModelsResponse>('/billing/available-models', {
-      showErrors: false, // Don't show errors for 401 - handled by enabled check in hook
+      showErrors: false,
     });
-    // Don't throw 401 errors - they're expected when not authenticated
     if (response.error && response.error.status !== 401) {
       throw response.error;
     }
-    // Return empty data structure if unauthorized or error
     if (response.error) {
       return { models: [], subscription_tier: 'none', total_models: 0 };
     }
+    return response.data!;
+  },
+
+  async scheduleDowngrade(request: ScheduleDowngradeRequest) {
+    const response = await backendApi.post<ScheduleDowngradeResponse>(
+      '/billing/schedule-downgrade',
+      request
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async getScheduledChanges() {
+    const response = await backendApi.get<ScheduledChangesResponse>(
+      '/billing/scheduled-changes'
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async cancelScheduledChange() {
+    const response = await backendApi.post<CancelScheduledChangeResponse>(
+      '/billing/cancel-scheduled-change'
+    );
+    if (response.error) throw response.error;
     return response.data!;
   }
 };

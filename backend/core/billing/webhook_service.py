@@ -82,6 +82,9 @@ class WebhookService:
             elif event.type == 'customer.subscription.trial_will_end':
                 await self._handle_trial_will_end(event, client)
             
+            elif event.type in ['subscription_schedule.updated', 'subscription_schedule.completed', 'subscription_schedule.released']:
+                await self._handle_subscription_schedule_event(event, client)
+            
             elif event.type in ['charge.refunded', 'payment_intent.refunded']:
                 await self._handle_refund(event, client)
             
@@ -377,7 +380,7 @@ class WebhookService:
                         logger.info(f"[WEBHOOK] ✅ Trial activated for account {account_id} via checkout.session.completed - granted ${TRIAL_CREDITS} credits")
                     finally:
                         await lock.release()
-                    return  # Only return if we handled the trial
+                    return
                 else:
                     logger.info(f"[WEBHOOK] Subscription status: {subscription.status}, not trialing")
     
@@ -742,6 +745,119 @@ class WebhookService:
                 prev_status = previous_attributes.get('status')
                 current_status = subscription.get('status')
                 
+                account_id = subscription.get('metadata', {}).get('account_id')
+                if not account_id:
+                    customer_id = subscription.get('customer')
+                    customer_result = await client.schema('basejump').from_('billing_customers')\
+                        .select('account_id')\
+                        .eq('id', customer_id)\
+                        .execute()
+                    if customer_result.data:
+                        account_id = customer_result.data[0].get('account_id')
+                
+                if account_id and current_price_id and prev_price_id and current_price_id != prev_price_id:
+                    check_scheduled = await client.from_('credit_accounts').select(
+                        'scheduled_tier_change, scheduled_price_id, tier'
+                    ).eq('account_id', account_id).execute()
+                    
+                    if check_scheduled.data:
+                        scheduled_tier = check_scheduled.data[0].get('scheduled_tier_change')
+                        scheduled_price_id = check_scheduled.data[0].get('scheduled_price_id')
+                        current_db_tier = check_scheduled.data[0].get('tier')
+                        
+                        if scheduled_tier and scheduled_price_id and current_price_id == scheduled_price_id:
+                            logger.info(f"[DOWNGRADE APPLIED] ✅ Stripe schedule changed price: {prev_price_id} → {current_price_id}")
+                            logger.info(f"[DOWNGRADE APPLIED] Account: {account_id}, DB tier: {current_db_tier}, Target: {scheduled_tier}")
+                            
+                            lock_key = f"downgrade_tier_update:{account_id}:{current_price_id}"
+                            tier_lock = DistributedLock(lock_key, timeout_seconds=30)
+                            
+                            acquired = await tier_lock.acquire(wait=True, wait_timeout=15)
+                            if acquired:
+                                try:
+                                    logger.info(f"[DOWNGRADE APPLIED] 🔒 Acquired lock to update tier")
+                                    
+                                    recheck = await client.from_('credit_accounts').select(
+                                        'scheduled_tier_change, scheduled_price_id, tier'
+                                    ).eq('account_id', account_id).execute()
+                                    
+                                    if not recheck.data or not recheck.data[0].get('scheduled_price_id'):
+                                        logger.info(f"[DOWNGRADE APPLIED] Already processed by another instance")
+                                    elif recheck.data[0].get('scheduled_price_id') == scheduled_price_id:
+                                        new_tier_info = get_tier_by_price_id(current_price_id)
+                                        if new_tier_info:
+                                            billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                                            next_grant = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                                            
+                                            update_data = {
+                                                'tier': new_tier_info.name,
+                                                'scheduled_tier_change': None,
+                                                'scheduled_tier_change_date': None,
+                                                'scheduled_price_id': None,
+                                                'billing_cycle_anchor': billing_anchor.isoformat(),
+                                                'next_credit_grant': next_grant.isoformat()
+                                            }
+                                            
+                                            if is_commitment_price_id(current_price_id):
+                                                commitment_duration = get_commitment_duration_months(current_price_id)
+                                                if commitment_duration > 0:
+                                                    commitment_start = billing_anchor
+                                                    commitment_end = commitment_start + timedelta(days=365) if commitment_duration == 12 else commitment_start + timedelta(days=commitment_duration * 30)
+                                                    
+                                                    update_data.update({
+                                                        'commitment_type': 'yearly_commitment',
+                                                        'commitment_start_date': commitment_start.isoformat(),
+                                                        'commitment_end_date': commitment_end.isoformat(),
+                                                        'commitment_price_id': current_price_id,
+                                                        'can_cancel_after': commitment_end.isoformat()
+                                                    })
+                                                    
+                                                    try:
+                                                        await client.from_('commitment_history').insert({
+                                                            'account_id': account_id,
+                                                            'commitment_type': 'yearly_commitment',
+                                                            'price_id': current_price_id,
+                                                            'start_date': commitment_start.isoformat(),
+                                                            'end_date': commitment_end.isoformat(),
+                                                            'stripe_subscription_id': subscription['id']
+                                                        }).execute()
+                                                        logger.info(f"[DOWNGRADE APPLIED] New tier has commitment - tracked in commitment_history until {commitment_end.date()}")
+                                                    except Exception as e:
+                                                        logger.warning(f"[DOWNGRADE APPLIED] Could not insert commitment_history (may already exist): {e}")
+                                            else:
+                                                update_data.update({
+                                                    'commitment_type': None,
+                                                    'commitment_start_date': None,
+                                                    'commitment_end_date': None,
+                                                    'commitment_price_id': None,
+                                                    'can_cancel_after': None
+                                                })
+                                                logger.info(f"[DOWNGRADE APPLIED] New tier has no commitment - clearing commitment fields")
+                                            
+                                            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                                            
+                                            from core.utils.cache import Cache
+                                            await Cache.invalidate(f"subscription_tier:{account_id}")
+                                            
+                                            logger.info(f"[DOWNGRADE APPLIED] ✅ Tier updated: {current_db_tier} → {new_tier_info.name}")
+                                            logger.info(f"[DOWNGRADE APPLIED] Scheduled fields and commitment details updated")
+                                finally:
+                                    await tier_lock.release()
+                
+                if subscription.get('metadata', {}).get('downgrade') == 'true':
+                    account_id = subscription.get('metadata', {}).get('account_id')
+                    if not account_id:
+                        customer_id = subscription.get('customer')
+                        customer_result = await client.schema('basejump').from_('billing_customers')\
+                            .select('account_id')\
+                            .eq('id', customer_id)\
+                            .execute()
+                        if customer_result.data:
+                            account_id = customer_result.data[0].get('account_id')
+                    
+                    if account_id:
+                        logger.info(f"[DOWNGRADE] Downgrade metadata found for {account_id}")
+                
                 if current_price_id and prev_price_id and current_price_id == prev_price_id:
                     if not (prev_status == 'incomplete' and current_status == 'active'):
                         return
@@ -847,6 +963,7 @@ class WebhookService:
                                 if account_id:
                                     await self._track_commitment(account_id, price_id, subscription, client)
                             if not is_tier_upgrade:
+                                logger.info(f"[WEBHOOK] Period changed but not upgrade - returning early")
                                 return
             
             from .subscription_service import subscription_service
@@ -1540,6 +1657,49 @@ class WebhookService:
     async def _handle_trial_will_end(self, event, client):
         subscription = event.data.object
         account_id = subscription.metadata.get('account_id')
+    
+    async def _handle_subscription_schedule_event(self, event, client):
+        schedule = event.data.object
+        subscription_id = schedule.get('subscription')
+        schedule_id = schedule.id
+        
+        logger.info(f"[SCHEDULE] Processing {event.type} for schedule {schedule_id}, subscription {subscription_id}")
+        
+        if event.type == 'subscription_schedule.completed':
+            account_id = schedule.get('metadata', {}).get('account_id')
+            scheduled_tier = schedule.get('metadata', {}).get('target_tier')
+            
+            if account_id and scheduled_tier and schedule.get('metadata', {}).get('downgrade') == 'true':
+                logger.info(f"[SCHEDULE COMPLETED] Downgrade schedule completed for {account_id}")
+                
+                downgrade_lock_key = f"schedule_complete_cleanup:{account_id}:{schedule_id}"
+                downgrade_lock = DistributedLock(downgrade_lock_key, timeout_seconds=30)
+                
+                acquired = await downgrade_lock.acquire(wait=True, wait_timeout=15)
+                if acquired:
+                    try:
+                        logger.info(f"[SCHEDULE COMPLETED] 🔒 Acquired lock for cleanup")
+                        
+                        recheck = await client.from_('credit_accounts').select(
+                            'scheduled_tier_change, tier'
+                        ).eq('account_id', account_id).execute()
+                        
+                        if recheck.data and recheck.data[0].get('scheduled_tier_change'):
+                            await client.from_('credit_accounts').update({
+                                'scheduled_tier_change': None,
+                                'scheduled_tier_change_date': None,
+                                'scheduled_price_id': None
+                            }).eq('account_id', account_id).execute()
+                            
+                            from core.utils.cache import Cache
+                            await Cache.invalidate(f"subscription_tier:{account_id}")
+                            
+                            logger.info(f"[SCHEDULE COMPLETED] ✅ Cleared scheduled change fields for {account_id}")
+                    finally:
+                        await downgrade_lock.release()
+        
+        elif event.type == 'subscription_schedule.released':
+            logger.info(f"[SCHEDULE RELEASED] Schedule {schedule_id} released (likely cancelled)")
     
     async def _handle_refund(self, event, client):
         refund_obj = event.data.object
