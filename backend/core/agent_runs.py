@@ -135,9 +135,10 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
     
     if not can_proceed:
         if context.get("error_type") == "model_access_denied":
-            raise HTTPException(status_code=403, detail={
+            raise HTTPException(status_code=402, detail={
                 "message": error_message, 
-                "allowed_models": context.get("allowed_models", [])
+                "tier_name": context.get("tier_name"),
+                "error_code": "MODEL_ACCESS_DENIED"
             })
         elif context.get("error_type") == "insufficient_credits":
             raise HTTPException(status_code=402, detail={"message": error_message})
@@ -150,13 +151,14 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         limit_check = await check_agent_run_limit(client, account_id)
         if not limit_check['can_start']:
             error_detail = {
-                "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
+                "message": f"Maximum of {limit_check['limit']} concurrent agent runs allowed. You currently have {limit_check['running_count']} running.",
                 "running_thread_ids": limit_check['running_thread_ids'],
                 "running_count": limit_check['running_count'],
-                "limit": config.MAX_PARALLEL_AGENT_RUNS
+                "limit": limit_check['limit'],
+                "error_code": "AGENT_RUN_LIMIT_EXCEEDED"
             }
-            logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
-            raise HTTPException(status_code=429, detail=error_detail)
+            logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']}/{limit_check['limit']} running agents")
+            raise HTTPException(status_code=402, detail=error_detail)
 
         # Check project limit if creating new thread
         if check_project_limit:
@@ -576,8 +578,22 @@ async def unified_agent_start(
             # Load agent configuration
             agent_config = await _load_agent_config(client, agent_id, account_id, user_id, is_new_thread=True)
             
-            # Check billing and limits (including project limit)
+            # Check billing and limits (including project and thread limits)
             await _check_billing_and_limits(client, account_id, model_name, check_project_limit=True)
+            
+            if config.ENV_MODE != EnvMode.LOCAL:
+                from core.utils.limits_checker import check_thread_limit
+                thread_limit_check = await check_thread_limit(client, account_id)
+                if not thread_limit_check['can_create']:
+                    error_detail = {
+                        "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                        "current_count": thread_limit_check['current_count'],
+                        "limit": thread_limit_check['limit'],
+                        "tier_name": thread_limit_check['tier_name'],
+                        "error_code": "THREAD_LIMIT_EXCEEDED"
+                    }
+                    logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                    raise HTTPException(status_code=402, detail=error_detail)
             
             # Get effective model
             effective_model = await _get_effective_model(model_name, agent_config, client, account_id)

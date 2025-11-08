@@ -43,7 +43,7 @@ export const useCreateAgent = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
       queryClient.setQueryData(agentKeys.detail(data.agent_id), data);
-      toast.success('Agent created successfully');
+      toast.success('Worker created successfully');
     },
     onError: async (error) => {
       const { AgentCountLimitError } = await import('@/lib/api/errors');
@@ -75,12 +75,6 @@ export const useCreateNewAgent = () => {
 
       const newAgent = await createAgentMutation.mutateAsync(defaultAgentData);
       return newAgent;
-    },
-    onSuccess: (newAgent) => {
-    },
-    onError: (error) => {
-      console.error('Error creating agent:', error);
-      toast.error('Failed to create agent. Please try again.');
     },
   });
 };

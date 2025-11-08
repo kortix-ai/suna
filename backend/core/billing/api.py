@@ -243,6 +243,147 @@ async def get_project_limits(account_id: str = Depends(verify_and_get_user_id_fr
             'percent_used': 0
         }
 
+@router.get("/tier-limits")
+async def get_tier_limits(account_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        from .subscription_service import subscription_service
+        tier_info = await subscription_service.get_user_subscription_tier(account_id)
+        
+        projects_result = await client.table('projects').select('project_id').eq('account_id', account_id).execute()
+        projects_count = len(projects_result.data or [])
+        
+        threads_result = await client.table('threads').select('thread_id').eq('account_id', account_id).execute()
+        threads_count = len(threads_result.data or [])
+        
+        agents_result = await client.table('agents').select('agent_id, metadata').eq('account_id', account_id).execute()
+        agents_list = agents_result.data or []
+        
+        agents_count = 0
+        for agent in agents_list:
+            metadata = agent.get('metadata', {}) or {}
+            is_suna_default = metadata.get('is_suna_default', False)
+            if not is_suna_default:
+                agents_count += 1
+        
+        scheduled_triggers_count = 0
+        app_triggers_count = 0
+        workers_count = 0
+        
+        if agents_list:
+            agent_ids = [agent['agent_id'] for agent in agents_list]
+            version_ids = []
+            
+            for agent in agents_list:
+                if agent.get('current_version_id'):
+                    version_ids.append(agent['current_version_id'])
+            
+            from core.utils.query_utils import batch_query_in
+            
+            if version_ids:
+                versions = await batch_query_in(
+                    client=client,
+                    table_name='agent_versions',
+                    select_fields='version_id, config',
+                    in_field='version_id',
+                    in_values=version_ids,
+                    additional_filters={}
+                )
+                
+                for version in versions:
+                    config_data = version.get('config', {})
+                    tools = config_data.get('tools', {})
+                    custom_mcps = tools.get('custom_mcp', [])
+                    workers_count += len(custom_mcps)
+            
+            all_triggers = await batch_query_in(
+                client=client,
+                table_name='agent_triggers',
+                select_fields='trigger_id, trigger_type',
+                in_field='agent_id',
+                in_values=agent_ids,
+                additional_filters={}
+            )
+            
+            for trigger in all_triggers:
+                ttype = trigger.get('trigger_type', '')
+                if ttype == 'scheduled':
+                    scheduled_triggers_count += 1
+                elif ttype in ['webhook', 'app']:
+                    app_triggers_count += 1
+        
+        from datetime import timedelta
+        twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+        twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
+        
+        concurrent_runs_count = 0
+        if threads_result.data:
+            thread_ids = [thread['thread_id'] for thread in threads_result.data]
+            from core.utils.query_utils import batch_query_in
+            
+            running_runs = await batch_query_in(
+                client=client,
+                table_name='agent_runs',
+                select_fields='id',
+                in_field='thread_id',
+                in_values=thread_ids,
+                additional_filters={
+                    'status': 'running',
+                    'started_at_gte': twenty_four_hours_ago_iso
+                }
+            )
+            concurrent_runs_count = len(running_runs)
+        
+        return {
+            'tier': {
+                'name': tier_info['name'],
+                'display_name': tier_info['display_name'],
+                'is_trial': tier_info.get('is_trial', False)
+            },
+            'limits': {
+                'agents': {
+                    'limit': tier_info['custom_workers_limit'],
+                    'current': agents_count,
+                    'can_create': agents_count < tier_info['custom_workers_limit']
+                },
+                'projects': {
+                    'limit': tier_info['project_limit'],
+                    'current': projects_count,
+                    'can_create': projects_count < tier_info['project_limit']
+                },
+                'threads': {
+                    'limit': tier_info['thread_limit'],
+                    'current': threads_count,
+                    'can_create': threads_count < tier_info['thread_limit']
+                },
+                'concurrent_runs': {
+                    'limit': tier_info['concurrent_runs'],
+                    'current': concurrent_runs_count,
+                    'can_start': concurrent_runs_count < tier_info['concurrent_runs']
+                },
+                'custom_workers': {
+                    'limit': tier_info['custom_workers_limit'],
+                    'current': workers_count,
+                    'can_create': workers_count < tier_info['custom_workers_limit']
+                },
+                'scheduled_triggers': {
+                    'limit': tier_info['scheduled_triggers_limit'],
+                    'current': scheduled_triggers_count,
+                    'can_create': scheduled_triggers_count < tier_info['scheduled_triggers_limit']
+                },
+                'app_triggers': {
+                    'limit': tier_info['app_triggers_limit'],
+                    'current': app_triggers_count,
+                    'can_create': app_triggers_count < tier_info['app_triggers_limit']
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting tier limits: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/deduct")
 async def deduct_token_usage(
     usage: TokenUsageRequest,

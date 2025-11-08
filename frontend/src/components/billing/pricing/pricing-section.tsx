@@ -800,7 +800,7 @@ export function PricingSection({
       <div className="w-full mx-auto px-6 flex flex-col items-center">
         {showTitleAndTabs && (
           <div className="w-full flex justify-center mb-6">
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl">
+            <h2 className="text-3xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl">
               {customTitle || 'Pick the plan that works for you.'}
             </h2>
           </div>

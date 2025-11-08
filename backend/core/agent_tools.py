@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Body
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config
 
 from . import core_utils as utils
 from .core_utils import _get_version_service
@@ -151,6 +152,21 @@ async def update_custom_mcp_tools_for_agent(
                     break
         
         if not updated:
+            if config.ENV_MODE != config.EnvMode.LOCAL:
+                from core.utils.limits_checker import check_custom_worker_limit
+                limit_check = await check_custom_worker_limit(client, user_id)
+                
+                if not limit_check['can_create']:
+                    error_detail = {
+                        "message": f"Maximum of {limit_check['limit']} custom workers allowed for your current plan. You have {limit_check['current_count']} custom workers.",
+                        "current_count": limit_check['current_count'],
+                        "limit": limit_check['limit'],
+                        "tier_name": limit_check['tier_name'],
+                        "error_code": "CUSTOM_WORKER_LIMIT_EXCEEDED"
+                    }
+                    logger.warning(f"Custom worker limit exceeded for account {user_id}: {limit_check['current_count']}/{limit_check['limit']}")
+                    raise HTTPException(status_code=402, detail=error_detail)
+            
             if mcp_type == 'composio':
                 try:
                     from core.composio_integration.composio_profile_service import ComposioProfileService
@@ -240,6 +256,29 @@ async def update_agent_custom_mcps(
         
         tools = agent_config.get('tools', {})
         existing_custom_mcps = tools.get('custom_mcp', [])
+        
+        if config.ENV_MODE != config.EnvMode.LOCAL:
+            new_count = len(new_custom_mcps)
+            existing_count = len(existing_custom_mcps)
+            
+            if new_count > existing_count:
+                additional_workers_needed = new_count - existing_count
+                
+                from core.utils.limits_checker import check_custom_worker_limit
+                limit_check = await check_custom_worker_limit(client, user_id)
+                
+                total_after_adding = limit_check['current_count'] + additional_workers_needed
+                
+                if total_after_adding > limit_check['limit']:
+                    error_detail = {
+                        "message": f"Maximum of {limit_check['limit']} custom workers allowed for your current plan. You currently have {limit_check['current_count']} and are trying to add {additional_workers_needed} more.",
+                        "current_count": limit_check['current_count'],
+                        "limit": limit_check['limit'],
+                        "tier_name": limit_check['tier_name'],
+                        "error_code": "CUSTOM_WORKER_LIMIT_EXCEEDED"
+                    }
+                    logger.warning(f"Custom worker limit would be exceeded for account {user_id}: {limit_check['current_count']} + {additional_workers_needed} > {limit_check['limit']}")
+                    raise HTTPException(status_code=402, detail=error_detail)
         
         updated = False
         for new_mcp in new_custom_mcps:

@@ -1066,6 +1066,12 @@ class SubscriptionService:
             'can_purchase_credits': tier_obj.can_purchase_credits,
             'models': tier_obj.models,
             'project_limit': tier_obj.project_limit,
+            'thread_limit': tier_obj.thread_limit,
+            'concurrent_runs': tier_obj.concurrent_runs,
+            'custom_workers_limit': tier_obj.custom_workers_limit,
+            'scheduled_triggers_limit': tier_obj.scheduled_triggers_limit,
+            'app_triggers_limit': tier_obj.app_triggers_limit,
+            'agent_limit': tier_obj.custom_workers_limit,
             'is_trial': trial_status == 'active'
         }
         
@@ -1075,6 +1081,7 @@ class SubscriptionService:
     async def get_allowed_models_for_user(self, user_id: str, client=None) -> List[str]:
         try:
             from core.ai_models import model_manager
+            from core.billing.config import is_model_allowed
 
             tier_info = await self.get_user_subscription_tier(user_id)
             tier_name = tier_info['name']
@@ -1088,8 +1095,16 @@ class SubscriptionService:
                 return allowed_model_ids
             
             elif tier_info.get('models'):
-                logger.debug(f"[ALLOWED_MODELS] User {user_id} has specific models: {tier_info['models']}")
-                return tier_info['models']
+                all_models = model_manager.list_available_models(include_disabled=False)
+                allowed_model_ids = []
+                
+                for model_data in all_models:
+                    model_id = model_data["id"]
+                    if is_model_allowed(tier_name, model_id):
+                        allowed_model_ids.append(model_id)
+                
+                logger.debug(f"[ALLOWED_MODELS] User {user_id} has access to {len(allowed_model_ids)} models: {[m for m in allowed_model_ids]}")
+                return allowed_model_ids
             
             else:
                 logger.debug(f"[ALLOWED_MODELS] User {user_id} has no model access (tier: {tier_name})")

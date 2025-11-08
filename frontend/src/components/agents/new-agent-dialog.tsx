@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useCreateNewAgent } from '@/hooks/agents/use-agents';
 import { JsonImportDialog } from './json-import-dialog';
-import { AgentCountLimitDialog } from './agent-count-limit-dialog';
 import { AgentCountLimitError } from '@/lib/api/errors';
 import { toast } from 'sonner';
 import { AgentCreationModal } from './agent-creation-modal';
@@ -49,8 +48,6 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
 export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgentDialogProps) {
   const [showJsonImport, setShowJsonImport] = useState(false);
   const [jsonImportText, setJsonImportText] = useState('');
-  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
-  const [agentLimitError, setAgentLimitError] = useState<AgentCountLimitError | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createNewAgentMutation = useCreateNewAgent();
@@ -63,8 +60,6 @@ export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgent
       },
       onError: (error) => {
         if (error instanceof AgentCountLimitError) {
-          setAgentLimitError(error);
-          setShowAgentLimitDialog(true);
           onOpenChange(false);
         } else {
           toast.error(error instanceof Error ? error.message : 'Failed to create agent');
@@ -179,15 +174,6 @@ export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgent
         }}
       />
 
-      {agentLimitError && (
-        <AgentCountLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
-          currentCount={agentLimitError.detail.current_count}
-          limit={agentLimitError.detail.limit}
-          tierName={agentLimitError.detail.tier_name}
-        />
-      )}
     </AlertDialog>
   );
 }

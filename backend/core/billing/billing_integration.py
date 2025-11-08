@@ -131,7 +131,9 @@ class BillingIntegration:
                 return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", {
                     "allowed_models": available_models,
                     "tier_info": tier_info,
-                    "error_type": "model_access_denied"
+                    "tier_name": tier_name,
+                    "error_type": "model_access_denied",
+                    "error_code": "MODEL_ACCESS_DENIED"
                 }
             
             # Check billing/credits

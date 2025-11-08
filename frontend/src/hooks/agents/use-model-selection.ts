@@ -117,9 +117,9 @@ export const useModelSelection = () => {
     selectedModel,
     setSelectedModel: handleModelChange,
     availableModels: accessibleModels,
-    allModels: availableModels, // For compatibility
+    allModels: accessibleModels,
     isLoading,
-    modelsData, // Expose raw API data for components that need it
+    modelsData,
     subscriptionStatus: (subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing') ? 'active' as const : 'no_subscription' as const,
     canAccessModel: (modelId: string) => {
       return accessibleModels.some(m => m.id === modelId);
@@ -129,17 +129,14 @@ export const useModelSelection = () => {
       return model?.requiresSubscription || false;
     },
     
-    // Compatibility stubs for custom models (not needed with API-driven approach)
     handleModelChange,
-    customModels: [] as any[], // Empty array since we're not using custom models
-    addCustomModel: (_model: any) => {}, // No-op
-    updateCustomModel: (_id: string, _model: any) => {}, // No-op
-    removeCustomModel: (_id: string) => {}, // No-op
+    customModels: [] as any[],
+    addCustomModel: (_model: any) => {},
+    updateCustomModel: (_id: string, _model: any) => {},
+    removeCustomModel: (_id: string) => {},
     
-    // Get the actual model ID to send to the backend (no transformation needed now)
     getActualModelId: (modelId: string) => modelId,
     
-    // Refresh function for compatibility (no-op since we use API)
     refreshCustomModels: () => {},
   };
 };
