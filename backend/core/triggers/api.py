@@ -14,6 +14,7 @@ from core.utils.logger import logger
 from core.utils.config import config
 # Billing checks now handled by billing_integration.check_model_and_billing_access
 from core.billing.billing_integration import billing_integration
+from core.billing.config import get_trigger_limit
 
 from .trigger_service import get_trigger_service, TriggerType
 from .provider_service import get_provider_service
@@ -96,9 +97,46 @@ def initialize(database: DBConnection):
 async def verify_and_authorize_trigger_agent_access(agent_id: str, user_id: str):
     client = await db.client
     result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-    
+
     if not result.data:
         raise HTTPException(status_code=404, detail="Agent not found or access denied")
+
+
+async def check_trigger_limit(user_id: str):
+    """Check if user has exceeded their trigger limit based on their plan"""
+    client = await db.client
+
+    # Get user's current plan
+    user_result = await client.table('user_billing_info').select('tier_key').eq('account_id', user_id).execute()
+    tier_key = 'free'  # default to free tier
+    if user_result.data:
+        tier_key = user_result.data[0].get('tier_key', 'free')
+
+    # Get trigger limit for this tier
+    trigger_limit = get_trigger_limit(tier_key)
+
+    # Count existing triggers for this user (unlimited if limit is -1)
+    if trigger_limit == -1:
+        return True
+
+    # Get all agents for this user
+    agents_result = await client.table('agents').select('agent_id').eq('account_id', user_id).execute()
+    if not agents_result.data:
+        return True  # No agents, so no triggers
+
+    agent_ids = [agent['agent_id'] for agent in agents_result.data]
+
+    # Count triggers across all user's agents
+    triggers_result = await client.table('agent_triggers').select('trigger_id').in_('agent_id', agent_ids).execute()
+    current_trigger_count = len(triggers_result.data) if triggers_result.data else 0
+
+    if current_trigger_count >= trigger_limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You've reached your trigger limit of {trigger_limit} for your current plan. Upgrade to add more triggers."
+        )
+
+    return True
 
 
 async def sync_triggers_to_version_config(agent_id: str):
@@ -342,9 +380,12 @@ async def create_agent_trigger(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Create a new trigger for an agent"""
-        
+
     await verify_and_authorize_trigger_agent_access(agent_id, user_id)
-    
+
+    # Check trigger limit before creating
+    await check_trigger_limit(user_id)
+
     try:
         trigger_service = get_trigger_service(db)
         
