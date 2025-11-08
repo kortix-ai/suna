@@ -39,6 +39,19 @@ export interface AgentIconGenerationResponse {
   icon_background: string;
 }
 
+export interface AgentSetupFromChatRequest {
+  description: string;
+}
+
+export interface AgentSetupFromChatResponse {
+  agent_id: string;
+  name: string;
+  system_prompt: string;
+  icon_name: string;
+  icon_color: string;
+  icon_background: string;
+}
+
 export interface ActiveAgentRun {
   id: string;
   thread_id: string;
@@ -273,6 +286,28 @@ export const generateAgentIcon = async (request: AgentIconGenerationRequest): Pr
   } catch (error) {
     console.error('[API] Failed to generate agent icon:', error);
     handleApiError(error, { operation: 'generate agent icon', resource: 'agent icon generation' });
+    throw error;
+  }
+};
+
+export const setupAgentFromChat = async (request: AgentSetupFromChatRequest): Promise<AgentSetupFromChatResponse> => {
+  try {
+    const response = await backendApi.post<AgentSetupFromChatResponse>(
+      '/agents/setup-from-chat',
+      request,
+      { showErrors: true, timeout: 20000 } // 20 seconds (single optimized LLM call)
+    );
+
+    if (response.error) {
+      throw new Error(
+        `Error setting up agent from chat: ${response.error.message} (${response.error.status})`,
+      );
+    }
+
+    return response.data!;
+  } catch (error) {
+    console.error('[API] Failed to setup agent from chat:', error);
+    handleApiError(error, { operation: 'setup agent from chat', resource: 'agent setup' });
     throw error;
   }
 };
