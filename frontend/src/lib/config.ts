@@ -18,9 +18,6 @@ export interface SubscriptionTiers {
   TIER_6_50: SubscriptionTierData;
   TIER_12_100: SubscriptionTierData;
   TIER_25_200: SubscriptionTierData;
-  TIER_50_400: SubscriptionTierData;
-  TIER_125_800: SubscriptionTierData;
-  TIER_200_1000: SubscriptionTierData;
 }
 
 // Configuration object
@@ -35,35 +32,23 @@ interface Config {
 const TIERS: SubscriptionTiers = {
   FREE_TIER: {
     tierKey: 'free',
-    name: 'Basic/$0',
+    name: 'Free/$0',
   },
   TIER_2_20: {
     tierKey: 'tier_2_20',
-    name: 'Plus/$20',
+    name: 'Starter/$29',
   },
   TIER_6_50: {
     tierKey: 'tier_6_50',
-    name: 'Pro/$50',
+    name: 'Professional/$79',
   },
   TIER_12_100: {
     tierKey: 'tier_12_100',
-    name: 'Business/$100',
+    name: 'Business/$199',
   },
   TIER_25_200: {
     tierKey: 'tier_25_200',
-    name: 'Ultra/$200',
-  },
-  TIER_50_400: {
-    tierKey: 'tier_50_400',
-    name: 'Enterprise/$400',
-  },
-  TIER_125_800: {
-    tierKey: 'tier_125_800',
-    name: 'Scale/$800',
-  },
-  TIER_200_1000: {
-    tierKey: 'tier_200_1000',
-    name: 'Max/$1000',
+    name: 'Enterprise/$499',
   },
 } as const;
 
