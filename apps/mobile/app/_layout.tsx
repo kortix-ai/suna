@@ -17,6 +17,7 @@ import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+import { BillingGuard } from '@/components/billing/BillingGuard';
 
 // Configure Reanimated logger to disable strict mode warnings
 // These warnings appear during theme changes and are overly sensitive
@@ -115,8 +116,8 @@ export default function RootLayout() {
                     <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                       <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
                       <AuthProtection>
-                        <Stack 
-                          screenOptions={{ 
+                        <Stack
+                          screenOptions={{
                             headerShown: false,
                             animation: 'fade',
                           }}
@@ -126,15 +127,16 @@ export default function RootLayout() {
                           <Stack.Screen name="home" />
                           <Stack.Screen name="auth" />
                           <Stack.Screen name="trigger-detail" />
-                          <Stack.Screen 
-                            name="tool-modal" 
-                            options={{ 
+                          <Stack.Screen
+                            name="tool-modal"
+                            options={{
                               presentation: 'modal',
                               animation: 'slide_from_bottom',
-                            }} 
+                            }}
                           />
                         </Stack>
                       </AuthProtection>
+                      <BillingGuard />
                       <PortalHost />
                     </ThemeProvider>
                   </BottomSheetModalProvider>

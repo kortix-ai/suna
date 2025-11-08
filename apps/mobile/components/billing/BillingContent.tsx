@@ -11,6 +11,7 @@ import { Text } from '@/components/ui/text';
 import { PRICING_TIERS, BillingPeriod, getDisplayPrice, startPlanCheckout, startTrialCheckout } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import { TrialCard } from './TrialCard';
+import { FreeTierCard } from './FreeTierCard';
 import { PricingTierCard } from './PricingTierCard';
 import { BillingPeriodSelector } from './BillingPeriodSelector';
 
@@ -24,6 +25,7 @@ interface BillingContentProps {
   showStatusMessage?: boolean;
   statusMessage?: string;
   simplified?: boolean; // Show fewer tiers for onboarding
+  showFreeTier?: boolean; // Show free tier card for comparison
   t: (key: string, defaultValue?: string) => string;
 }
 
@@ -37,6 +39,7 @@ export function BillingContent({
   showStatusMessage = false,
   statusMessage,
   simplified = false,
+  showFreeTier = false,
   t,
 }: BillingContentProps) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('yearly_commitment');
@@ -124,6 +127,17 @@ export function BillingContent({
             {statusMessage}
           </Text>
         </View>
+      )}
+
+      {/* Free Tier Showcase */}
+      {showFreeTier && (
+        <FreeTierCard
+          onGetStarted={() => {
+            // Could navigate to home or show a success message
+            onSuccess?.();
+          }}
+          t={t}
+        />
       )}
 
       {/* Free Trial Option */}

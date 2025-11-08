@@ -12,6 +12,7 @@ export { PricingCarousel } from './PricingCarousel';
 
 // Atomic components (for custom layouts)
 export { TrialCard } from './TrialCard';
+export { FreeTierCard } from './FreeTierCard';
 export { PricingTierCard } from './PricingTierCard';
 export { BillingPeriodSelector } from './BillingPeriodSelector';
 export { CurrentPlanCard } from './CurrentPlanCard';

@@ -32,10 +32,11 @@ import { useLanguage } from '@/contexts';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useAgent } from '@/contexts/AgentContext';
-import { 
-  TrialCard, 
-  PricingTierCard, 
-  BillingPeriodSelector 
+import {
+  TrialCard,
+  FreeTierCard,
+  PricingTierCard,
+  BillingPeriodSelector
 } from '@/components/billing';
 import { 
   PRICING_TIERS, 
@@ -608,20 +609,32 @@ function BillingSlide({
       <Animated.View style={animatedStyle} className="items-center max-w-sm mx-auto w-full">
         <ScrollView showsVerticalScrollIndicator={false} className="w-full">
           {/* Title */}
-          <View className="mb-8">
+          <View className="mb-6">
             <Text className="text-[28px] font-roobert-semibold text-foreground text-center mb-2 leading-tight tracking-tight">
-              {canStartTrial 
-                ? 'Start Free Trial' 
+              {canStartTrial
+                ? 'Choose Your Journey'
                 : t('billing.subscription.title', 'Choose Your Plan')
               }
             </Text>
             <Text className="text-[15px] font-roobert text-muted-foreground text-center opacity-70">
               {canStartTrial
-                ? 'Experience all features for 7 days'
+                ? 'Start with our free tier or try premium features'
                 : t('billing.subtitle', 'Select a plan to get started')
               }
             </Text>
           </View>
+
+          {/* Free Tier Card */}
+          {canStartTrial && (
+            <FreeTierCard
+              onGetStarted={() => {
+                // Skip to home with free tier
+                handleComplete();
+              }}
+              showGetStarted={true}
+              t={t}
+            />
+          )}
 
           {/* Free Trial Card - Ultra Minimal */}
           {canStartTrial && (
@@ -669,45 +682,45 @@ function BillingSlide({
                 </Text>
               </View>
               
-              {/* Benefits - Minimal List */}
+              {/* Benefits - Enhanced List */}
               <View className="space-y-3 mb-6">
                 <View className="flex-row items-start gap-3">
-                  <View 
-                    className="w-1 h-1 rounded-full mt-2" 
-                    style={{ 
-                      backgroundColor: colorScheme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.4)' 
-                        : 'rgba(0, 0, 0, 0.4)' 
+                  <View
+                    className="w-1 h-1 rounded-full mt-2"
+                    style={{
+                      backgroundColor: colorScheme === 'dark'
+                        ? 'rgba(255, 255, 255, 0.4)'
+                        : 'rgba(0, 0, 0, 0.4)'
                     }}
                   />
                   <Text className="text-[14px] font-roobert text-foreground/80 flex-1 leading-relaxed">
-                    Full access to all features
+                    Unlimited premium AI models (GPT-4, Claude, etc.)
                   </Text>
                 </View>
                 <View className="flex-row items-start gap-3">
-                  <View 
-                    className="w-1 h-1 rounded-full mt-2" 
-                    style={{ 
-                      backgroundColor: colorScheme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.4)' 
-                        : 'rgba(0, 0, 0, 0.4)' 
+                  <View
+                    className="w-1 h-1 rounded-full mt-2"
+                    style={{
+                      backgroundColor: colorScheme === 'dark'
+                        ? 'rgba(255, 255, 255, 0.4)'
+                        : 'rgba(0, 0, 0, 0.4)'
                     }}
                   />
                   <Text className="text-[14px] font-roobert text-foreground/80 flex-1 leading-relaxed">
-                    Unlimited agents and automations
+                    Advanced automation tools and integrations
                   </Text>
                 </View>
                 <View className="flex-row items-start gap-3">
-                  <View 
-                    className="w-1 h-1 rounded-full mt-2" 
-                    style={{ 
-                      backgroundColor: colorScheme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.4)' 
-                        : 'rgba(0, 0, 0, 0.4)' 
+                  <View
+                    className="w-1 h-1 rounded-full mt-2"
+                    style={{
+                      backgroundColor: colorScheme === 'dark'
+                        ? 'rgba(255, 255, 255, 0.4)'
+                        : 'rgba(0, 0, 0, 0.4)'
                     }}
                   />
                   <Text className="text-[14px] font-roobert text-foreground/80 flex-1 leading-relaxed">
-                    Priority support
+                    Priority support and faster processing
                   </Text>
                 </View>
               </View>

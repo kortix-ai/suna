@@ -3,7 +3,7 @@ import { Text } from '@/components/ui/text';
 import { TierBadge } from '@/components/menu/TierBadge';
 import * as React from 'react';
 import { Pressable, View, Dimensions } from 'react-native';
-import { Menu } from 'lucide-react-native';
+import { Menu, Sparkles } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -68,13 +68,17 @@ export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
   // Check if user needs upgrade (not Pro or higher)
   const currentTier = subscriptionData?.tier?.name || 'free';
   const needsUpgrade = currentTier !== 'pro' && currentTier !== 'business' && currentTier !== 'ultra';
+  const isFreeTier = currentTier === 'free' || currentTier === 'none';
 
   // Calculate button width dynamically based on content
   const buttonWidth = React.useMemo(() => {
-    // Approximate width: "Upgrade" text (~70px) + gap (8px) + badge (12px icon + 4px gap + ~30px "Pro" text)
-    // Total: ~124px, but using 163px from Figma design spec for consistency
+    if (isFreeTier) {
+      // "Get Plus" text (~70px) + gap (8px) + badge (12px icon + 4px gap + ~30px "Pro" text)
+      return 180;
+    }
+    // "Upgrade" text (~70px) + gap (8px) + badge (12px icon + 4px gap + ~30px "Pro" text)
     return 163;
-  }, []);
+  }, [isFreeTier]);
 
   return (
     <View className="absolute top-[62px] left-0 right-0 flex-row items-center h-[41px] px-0 z-50">
@@ -124,22 +128,25 @@ export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 8,
+              gap: 6,
               overflow: 'visible', // Ensure content isn't clipped
             }
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Upgrade to Plus"
+          accessibilityLabel={isFreeTier ? "Get Plus Plan" : "Upgrade Plan"}
         >
-          <Text 
+          {isFreeTier && (
+            <Icon as={Sparkles} size={14} className="text-primary" strokeWidth={2} />
+          )}
+          <Text
             className="text-[14px] font-roobert-medium"
-            style={{ 
+            style={{
               color: colorScheme === 'dark' ? '#f8f8f8' : '#121215',
               includeFontPadding: false,
               lineHeight: 17, // Match font size + 3px for proper spacing
             }}
           >
-            Upgrade
+            {isFreeTier ? 'Get Plus' : 'Upgrade'}
           </Text>
           <TierBadge tier="Plus" size="small" />
         </AnimatedPressable>
