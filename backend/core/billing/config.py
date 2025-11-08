@@ -25,6 +25,7 @@ class Tier:
     can_purchase_credits: bool
     models: List[str]
     project_limit: int
+    trigger_limit: int
 
 TIERS: Dict[str, Tier] = {
     'none': Tier(
@@ -34,16 +35,18 @@ TIERS: Dict[str, Tier] = {
         display_name='No Plan',
         can_purchase_credits=False,
         models=[],
-        project_limit=0
+        project_limit=0,
+        trigger_limit=0
     ),
     'free': Tier(
         name='free',
         price_ids=[config.STRIPE_FREE_TIER_ID],
         monthly_credits=FREE_TIER_INITIAL_CREDITS,
-        display_name='Basic',
+        display_name='Free',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=1
+        project_limit=1,
+        trigger_limit=1
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
@@ -52,11 +55,12 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_2_20_YEARLY_ID,
             config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('20.00'),
+        monthly_credits=Decimal('29.00'),
         display_name='Starter',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=100
+        project_limit=10,
+        trigger_limit=5
     ),
     'tier_6_50': Tier(
         name='tier_6_50',
@@ -65,11 +69,12 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_6_50_YEARLY_ID,
             config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('50.00'),
+        monthly_credits=Decimal('79.00'),
         display_name='Professional',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=500
+        project_limit=50,
+        trigger_limit=25
     ),
     'tier_12_100': Tier(
         name='tier_12_100',
@@ -77,11 +82,12 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_12_100_ID,
             config.STRIPE_TIER_12_100_YEARLY_ID
         ],
-        monthly_credits=Decimal('100.00'),
-        display_name='Team',
-        can_purchase_credits=False,
+        monthly_credits=Decimal('199.00'),
+        display_name='Business',
+        can_purchase_credits=True,
         models=['all'],
-        project_limit=1000
+        project_limit=200,
+        trigger_limit=100
     ),
     'tier_25_200': Tier(
         name='tier_25_200',
@@ -90,47 +96,12 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_25_200_YEARLY_ID,
             config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('200.00'),
-        display_name='Business',
+        monthly_credits=Decimal('499.00'),
+        display_name='Enterprise',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=2500
-    ),
-    'tier_50_400': Tier(
-        name='tier_50_400',
-        price_ids=[
-            config.STRIPE_TIER_50_400_ID,
-            config.STRIPE_TIER_50_400_YEARLY_ID
-        ],
-        monthly_credits=Decimal('400.00'),
-        display_name='Enterprise',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=5000
-    ),
-    'tier_125_800': Tier(
-        name='tier_125_800',
-        price_ids=[
-            config.STRIPE_TIER_125_800_ID,
-            config.STRIPE_TIER_125_800_YEARLY_ID
-        ],
-        monthly_credits=Decimal('800.00'),
-        display_name='Enterprise Plus',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=10000
-    ),
-    'tier_200_1000': Tier(
-        name='tier_200_1000',
-        price_ids=[
-            config.STRIPE_TIER_200_1000_ID,
-            config.STRIPE_TIER_200_1000_YEARLY_ID
-        ],
-        monthly_credits=Decimal('1000.00'),
-        display_name='Ultimate',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=25000
+        project_limit=1000,
+        trigger_limit=-1  # Unlimited
     ),
 }
 
@@ -176,11 +147,15 @@ def get_project_limit(tier_name: str) -> int:
     tier = TIERS.get(tier_name)
     return tier.project_limit if tier else 3
 
+def get_trigger_limit(tier_name: str) -> int:
+    tier = TIERS.get(tier_name)
+    return tier.trigger_limit if tier else 0
+
 def is_commitment_price_id(price_id: str) -> bool:
     commitment_price_ids = [
-        config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID,
-        config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID,
-        config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
+        config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID,  # tier_2_20 (starter)
+        config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID,  # tier_6_50 (professional)
+        config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID # tier_25_200 (enterprise)
     ]
     return price_id in commitment_price_ids
 
@@ -194,13 +169,10 @@ def get_price_type(price_id: str) -> str:
         return 'yearly_commitment'
     
     yearly_price_ids = [
-        config.STRIPE_TIER_2_20_YEARLY_ID,
-        config.STRIPE_TIER_6_50_YEARLY_ID,
-        config.STRIPE_TIER_12_100_YEARLY_ID,
-        config.STRIPE_TIER_25_200_YEARLY_ID,
-        config.STRIPE_TIER_50_400_YEARLY_ID,
-        config.STRIPE_TIER_125_800_YEARLY_ID,
-        config.STRIPE_TIER_200_1000_YEARLY_ID
+        config.STRIPE_TIER_2_20_YEARLY_ID,    # tier_2_20 (starter)
+        config.STRIPE_TIER_6_50_YEARLY_ID,    # tier_6_50 (professional)
+        config.STRIPE_TIER_12_100_YEARLY_ID,  # tier_12_100 (business)
+        config.STRIPE_TIER_25_200_YEARLY_ID,  # tier_25_200 (enterprise)
     ]
     
     if price_id in yearly_price_ids:
