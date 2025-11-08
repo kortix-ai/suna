@@ -8,24 +8,24 @@ import { siteConfig } from '@/lib/home';
  * @returns The display name of the plan (e.g., 'Basic', 'Plus', 'Pro', 'Ultra')
  */
 export function getPlanName(subscriptionData: any, isLocal: boolean = false): string {
-  if (isLocal) return 'Ultra';
+  if (isLocal) return 'Enterprise';
 
   // Handle null/undefined subscription data
   if (!subscriptionData) {
     if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
       console.warn('[getPlanName] No subscription data provided');
     }
-    return 'Basic';
+    return 'Free';
   }
 
   // Handle free tier explicitly
   if (subscriptionData?.tier?.name === 'free' || subscriptionData?.tier_key === 'free') {
-    return 'Basic';
+    return 'Free';
   }
 
   // Try to match tier_key to cloudPricingItems to get the frontend tier name
   const tierKey = subscriptionData?.tier_key || subscriptionData?.tier?.name || subscriptionData?.plan_name;
-  
+
   const currentTier = siteConfig.cloudPricingItems.find(
     (p) => p.tierKey === tierKey
   );
@@ -39,8 +39,8 @@ export function getPlanName(subscriptionData: any, isLocal: boolean = false): st
     });
   }
 
-  // Return the frontend tier name (Plus, Pro, Ultra, etc.) or fallback to backend display name
-  return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || 'Basic';
+  // Return the frontend tier name (Starter, Professional, Business, Enterprise, etc.) or fallback to backend display name
+  return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || 'Free';
 }
 
 /**
@@ -51,28 +51,33 @@ export function getPlanName(subscriptionData: any, isLocal: boolean = false): st
  * @returns The path to the plan icon SVG, or null if no icon exists (e.g., Basic tier)
  */
 export function getPlanIcon(planName: string, isLocal: boolean = false): string | null {
-  if (isLocal) return '/plan-icons/ultra.svg';
+  if (isLocal) return '/plan-icons/pro.svg';
 
   const plan = planName?.toLowerCase();
 
-  // Basic/Free tier - no icon
-  if (plan?.includes('free') || plan?.includes('basic')) {
+  // Free tier
+  if (plan?.includes('free')) {
     return '/plan-icons/basic.svg';
   }
 
-  // Ultra tier
-  if (plan?.includes('ultra')) {
-    return '/plan-icons/ultra.svg';
+  // Starter tier
+  if (plan?.includes('starter')) {
+    return '/plan-icons/plus.svg';
   }
 
-  // Pro tier (Pro, Business, Enterprise, Scale, Max)
-  if (plan?.includes('pro') || plan?.includes('business') || plan?.includes('enterprise') || plan?.includes('scale') || plan?.includes('max')) {
+  // Professional tier
+  if (plan?.includes('professional')) {
     return '/plan-icons/pro.svg';
   }
 
-  // Plus tier
-  if (plan?.includes('plus')) {
-    return '/plan-icons/plus.svg';
+  // Business tier
+  if (plan?.includes('business')) {
+    return '/plan-icons/pro.svg';
+  }
+
+  // Enterprise tier
+  if (plan?.includes('enterprise')) {
+    return '/plan-icons/ultra.svg';
   }
 
   // Default to null for any unrecognized plans
