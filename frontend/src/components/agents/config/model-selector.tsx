@@ -275,6 +275,22 @@ export function AgentModelSelector({
     }
   };
 
+  const formatCost = (cost: number | null | undefined) => {
+    if (cost === null || cost === undefined) return null;
+    return `$${cost.toFixed(2)}`;
+  };
+
+  const formatContextWindow = (context: number | null | undefined) => {
+    if (!context) return null;
+    if (context >= 1_000_000) {
+      return `${(context / 1_000_000).toFixed(context % 1_000_000 === 0 ? 0 : 1)}M`;
+    }
+    if (context >= 1_000) {
+      return `${(context / 1_000).toFixed(context % 1_000 === 0 ? 0 : 1)}K`;
+    }
+    return context.toString();
+  };
+
   const renderModelOption = (model: any, index: number) => {
     const isCustom = Boolean(model.isCustom) || 
       (isLocalMode() && customModels.some(m => m.id === model.id));
@@ -285,13 +301,9 @@ export function AgentModelSelector({
     const isRecommended = false; // Remove recommended badges
 
     // Format cost display
-    const formatCost = (cost: number | null | undefined) => {
-      if (cost === null || cost === undefined) return null;
-      return `$${cost.toFixed(2)}`;
-    };
-
     const inputCost = formatCost(model.inputCostPerMillionTokens);
     const outputCost = formatCost(model.outputCostPerMillionTokens);
+    const contextWindow = formatContextWindow(model.contextWindow);
 
     return (
       <Tooltip key={`model-${model.id}-${index}`}>
@@ -317,7 +329,10 @@ export function AgentModelSelector({
                 <div className="w-16 text-right text-xs text-muted-foreground">
                   {outputCost || '—'}
                 </div>
-                <div className="w-8 flex items-center justify-center">
+                <div className="w-20 text-right text-xs text-muted-foreground">
+                  {contextWindow ? `${contextWindow} ctx` : '—'}
+                </div>
+                <div className="w-9 flex items-center justify-center">
                   {isLowQuality && (
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                   )}
@@ -411,7 +426,7 @@ export function AgentModelSelector({
         </Tooltip>
         <DropdownMenuContent
           align={variant === 'menu-item' ? 'end' : 'start'}
-          className="w-80 p-0 overflow-hidden"
+          className="w-[420px] p-0 overflow-hidden"
           sideOffset={variant === 'menu-item' ? 8 : 4}
         >
           <div className="max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent w-full">
@@ -475,7 +490,8 @@ export function AgentModelSelector({
                   <div className="flex-1 pl-2">Model</div>
                   <div className="w-16 text-right pr-2">Input</div>
                   <div className="w-16 text-right pr-2">Output</div>
-                  <div className="w-8"></div>
+                  <div className="w-20 text-right pr-2">Context</div>
+                  <div className="w-9"></div>
                 </div>
               </div>
               
@@ -499,7 +515,8 @@ export function AgentModelSelector({
                             <div className="flex-1 pl-2">Model</div>
                             <div className="w-16 text-right pr-2">Input</div>
                             <div className="w-16 text-right pr-2">Output</div>
-                            <div className="w-8"></div>
+                            <div className="w-20 text-right pr-2">Context</div>
+                            <div className="w-9"></div>
                           </div>
                         </div>
                         <div className="relative overflow-hidden" style={{ maxHeight: subscriptionStatus === 'active' ? 'none' : '160px' }}>
@@ -507,14 +524,9 @@ export function AgentModelSelector({
                             const canAccess = isLocalMode() || canAccessModel(model.id);
                             const isRecommended = false; // Remove recommended badges
                             
-                            // Format cost display
-                            const formatCost = (cost: number | null | undefined) => {
-                              if (cost === null || cost === undefined) return null;
-                              return `$${cost.toFixed(2)}`;
-                            };
-
                             const inputCost = formatCost(model.inputCostPerMillionTokens);
                             const outputCost = formatCost(model.outputCostPerMillionTokens);
+                            const contextWindow = formatContextWindow(model.contextWindow);
                             
                             return (
                               <Tooltip key={`premium-${model.id}-${index}`}>
@@ -538,7 +550,10 @@ export function AgentModelSelector({
                                         <div className="w-16 text-right text-xs text-muted-foreground pr-2">
                                           {outputCost || '—'}
                                         </div>
-                                        <div className="w-8 flex items-center justify-center">
+                                        <div className="w-20 text-right text-xs text-muted-foreground pr-2">
+                                          {contextWindow ? `${contextWindow} ctx` : '—'}
+                                        </div>
+                                        <div className="w-9 flex items-center justify-center">
                                           {!canAccess && <Crown className="h-3.5 w-3.5 text-muted-foreground" />}
                                         </div>
                                       </DropdownMenuItem>
