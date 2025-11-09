@@ -76,6 +76,9 @@ async def lifespan(app: FastAPI):
         template_api.initialize(db)
         composio_api.initialize(db)
         
+        from core import limits_api
+        limits_api.initialize(db)
+        
         yield
         
         logger.debug("Cleaning up agent resources")

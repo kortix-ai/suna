@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow } from 'lucide-react';
+import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow, Lock } from 'lucide-react';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/agents';
@@ -32,6 +32,7 @@ import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AgentModelSelector } from '@/components/agents/config/model-selector';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 type UnifiedConfigMenuProps = {
     isLoggedIn?: boolean;
@@ -47,7 +48,6 @@ type UnifiedConfigMenuProps = {
     subscriptionStatus: SubscriptionStatus;
     canAccessModel: (modelId: string) => boolean;
     refreshCustomModels?: () => void;
-    onUpgradeRequest?: () => void;
 };
 
 const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMenu({
@@ -59,7 +59,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     modelOptions,
     canAccessModel,
     subscriptionStatus,
-    onUpgradeRequest,
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -353,30 +352,62 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                         <div className="space-y-0.5">
                                             {modelOptions.map((model) => {
                                                 const isActive = selectedModel === model.id;
-                                                return (
+                                                const canAccess = canAccessModel(model.id);
+                                                const modelItem = (
                                                     <SpotlightCard
                                                         key={model.id}
-                                                        className="transition-colors cursor-pointer bg-transparent"
+                                                        className={cn(
+                                                            "transition-colors cursor-pointer bg-transparent",
+                                                            !canAccess && "opacity-60"
+                                                        )}
                                                     >
                                                         <div
-                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 relative"
                                                             onClick={() => {
-                                                                onModelChange(model.id);
-                                                                setIsOpen(false);
+                                                                if (canAccess) {
+                                                                    onModelChange(model.id);
+                                                                    setIsOpen(false);
+                                                                } else {
+                                                                    setIsOpen(false);
+                                                                    usePricingModalStore.getState().openPricingModal({ 
+                                                                        isAlert: true, 
+                                                                        alertTitle: 'Upgrade to access this AI model' 
+                                                                    });
+                                                                }
                                                             }}
                                                         >
                                                             <ModelProviderIcon
                                                                 modelId={model.id}
                                                                 size={32}
-                                                                className="flex-shrink-0"
+                                                                className={cn("flex-shrink-0", !canAccess && "opacity-50")}
                                                             />
-                                                            <span className="flex-1 truncate font-medium">{model.label}</span>
-                                                            {isActive && (
+                                                            <span className={cn("flex-1 truncate font-medium", !canAccess && "text-muted-foreground")}>{model.label}</span>
+                                                            {!canAccess && (
+                                                                <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                                            )}
+                                                            {isActive && canAccess && (
                                                                 <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
                                                             )}
                                                         </div>
                                                     </SpotlightCard>
                                                 );
+
+                                                if (!canAccess) {
+                                                    return (
+                                                        <TooltipProvider key={model.id}>
+                                                            <Tooltip>
+                                                                <TooltipTrigger asChild>
+                                                                    {modelItem}
+                                                                </TooltipTrigger>
+                                                                <TooltipContent side="left" className="text-xs">
+                                                                    <p>Upgrade to access this model</p>
+                                                                </TooltipContent>
+                                                            </Tooltip>
+                                                        </TooltipProvider>
+                                                    );
+                                                }
+
+                                                return modelItem;
                                             })}
                                         </div>
                                     </DropdownMenuSubContent>

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError, handleNetworkError, ErrorContext, ApiError } from './error-handler';
+import { parseTierRestrictionError } from './api/errors';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -15,7 +16,6 @@ export interface ApiResponse<T = any> {
   success: boolean;
 }
 
-// Internal request handler
 async function makeRequest<T = any>(
   url: string,
   options: RequestInit & ApiClientOptions = {}
@@ -80,18 +80,26 @@ async function makeRequest<T = any>(
         errorData = await response.json();
         if (errorData.message) {
           errorMessage = errorData.message;
+        } else if (errorData.detail?.message) {
+          errorMessage = errorData.detail.message;
         }
       } catch {
       }
 
-      const error: ApiError = Object.assign(Object.create(Error.prototype), {
+      let error: ApiError | Error = Object.assign(Object.create(Error.prototype), {
         message: errorMessage,
         name: 'ApiError',
         status: response.status,
         response: response,
         details: errorData || undefined,
-        code: errorData?.code || response.status.toString()
+        data: errorData,
+        detail: errorData?.detail,
+        code: errorData?.code || errorData?.error_code || errorData?.detail?.error_code || response.status.toString()
       });
+
+      if (response.status === 402) {
+        error = parseTierRestrictionError(error);
+      }
 
       if (showErrors) {
         handleApiError(error, errorContext);

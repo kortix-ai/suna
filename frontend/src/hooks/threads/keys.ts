@@ -1,6 +1,7 @@
 export const threadKeys = {
   all: ['threads'] as const,
   lists: () => ['threads', 'list'] as const,
+  limit: () => ['thread-limit'] as const,
   details: (threadId: string) => ['thread', threadId] as const,
   messages: (threadId: string) => ['thread', threadId, 'messages'] as const,
   project: (projectId: string) => ['project', projectId] as const,

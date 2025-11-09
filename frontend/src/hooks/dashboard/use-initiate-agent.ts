@@ -1,13 +1,23 @@
 'use client';
 
 import { unifiedAgentStart, UnifiedAgentStartResponse } from "@/lib/api/agents";
-import { AgentRunLimitError, BillingError } from "@/lib/api/errors";
-import { useMutation } from "@tanstack/react-query";
+import { 
+  AgentRunLimitError, 
+  BillingError, 
+  ProjectLimitError, 
+  ThreadLimitError,
+  AgentCountLimitError,
+  TriggerLimitError,
+  CustomWorkerLimitError,
+  ModelAccessDeniedError
+} from "@/lib/api/errors";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { handleApiSuccess, handleApiError } from "@/lib/error-handler";
 import { dashboardKeys } from "./keys";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { projectKeys, threadKeys } from "../threads/keys";
+import { backendApi } from "@/lib/api-client";
 
 export const useInitiateAgentMutation = () => {
   return useMutation<
@@ -47,8 +57,16 @@ export const useInitiateAgentMutation = () => {
       handleApiSuccess("Agent initiated successfully", "Your AI assistant is ready to help");
     },
     onError: (error) => {
-      // Let BillingError and AgentRunLimitError bubble up to be handled by components
-      if (error instanceof BillingError || error instanceof AgentRunLimitError) {
+      // Let all limit/billing errors bubble up to be handled by components
+      // This ensures a single source of truth for error handling
+      if (error instanceof BillingError || 
+          error instanceof AgentRunLimitError ||
+          error instanceof ProjectLimitError ||
+          error instanceof ThreadLimitError ||
+          error instanceof AgentCountLimitError ||
+          error instanceof TriggerLimitError ||
+          error instanceof CustomWorkerLimitError ||
+          error instanceof ModelAccessDeniedError) {
         throw error;
       }
       if (error instanceof Error && error.message.toLowerCase().includes("payment required")) {
@@ -58,6 +76,18 @@ export const useInitiateAgentMutation = () => {
     }
   });
 };
+
+export const useThreadLimit = () => {
+  return useQuery({
+    queryKey: threadKeys.limit(),
+    queryFn: async () => {
+      const response = await backendApi.get('/limits?type=thread_count');
+      return response.data.thread_count || response.data;
+    },
+    staleTime: 30000,
+    refetchOnWindowFocus: false,
+  });
+}
 
 export const useInitiateAgentWithInvalidation = () => {
   const queryClient = useQueryClient();
@@ -71,13 +101,19 @@ export const useInitiateAgentWithInvalidation = () => {
       queryClient.invalidateQueries({ queryKey: dashboardKeys.agents });
     },
     onError: (error) => {
-      if (error instanceof AgentRunLimitError || error instanceof BillingError) {
+      if (error instanceof BillingError || 
+          error instanceof AgentRunLimitError ||
+          error instanceof ProjectLimitError ||
+          error instanceof ThreadLimitError ||
+          error instanceof AgentCountLimitError ||
+          error instanceof TriggerLimitError ||
+          error instanceof CustomWorkerLimitError ||
+          error instanceof ModelAccessDeniedError) {
         throw error;
       }
       if (error instanceof Error) {
         const errorMessage = error.message;
         if (errorMessage.toLowerCase().includes("payment required")) {
-          // Throw BillingError so components can handle it consistently
           throw new BillingError(402, { message: "Payment required to continue" });
         }
       }

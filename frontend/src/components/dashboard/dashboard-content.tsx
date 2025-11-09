@@ -8,15 +8,24 @@ import {
   ChatInput,
   ChatInputHandles,
 } from '@/components/thread/chat-input/chat-input';
-import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
+import { 
+  AgentRunLimitError, 
+  ProjectLimitError, 
+  BillingError,
+  ThreadLimitError,
+  AgentCountLimitError,
+  TriggerLimitError,
+  CustomWorkerLimitError,
+  ModelAccessDeniedError
+} from '@/lib/api/errors';
 import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
-import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
+import { useInitiateAgentWithInvalidation, useThreadLimit } from '@/hooks/dashboard/use-initiate-agent';
 
 import { useAgents } from '@/hooks/agents/use-agents';
 import { PlanSelectionModal } from '@/components/billing/pricing';
-import { useBillingModal } from '@/hooks/billing/use-billing-modal';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { SunaModesPanel } from './suna-modes-panel';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
@@ -27,6 +36,11 @@ import { toast } from 'sonner';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { CreditsDisplay } from '@/components/billing/credits-display';
+import { Button } from '../ui/button';
+import { Info, X } from 'lucide-react';
+import { useLimits } from '@/hooks/dashboard/use-limits';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Progress } from '../ui/progress';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -72,16 +86,8 @@ export function DashboardContent() {
   const { user } = useAuth();
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
-  const {
-    showModal: showBillingModal,
-    creditsExhausted,
-    openModal: openBillingModal,
-    closeModal: closeBillingModal,
-  } = useBillingModal();
+  const pricingModalStore = usePricingModalStore();
 
-  // Feature flag for custom agents section
-
-  // Fetch agents to get the selected agent's name
   const { data: agentsResponse } = useAgents({
     limit: 100,
     sort_by: 'name',
@@ -97,6 +103,12 @@ export function DashboardContent() {
   const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
+  const { data: threadLimit } = useThreadLimit();
+  const { data: limits } = useLimits();
+  const canCreateThread = threadLimit?.can_create || false;
+  
+  const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';
+  const showAlert = !canCreateThread && !isDismissed;
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -217,15 +229,35 @@ export function DashboardContent() {
 
       if (result.thread_id) {
         setInitiatedThreadId(result.thread_id);
-        // Don't reset isSubmitting here - keep loading until redirect happens
       } else {
         throw new Error('Agent initiation did not return a thread_id.');
       }
       chatInputRef.current?.clearPendingFiles();
     } catch (error: any) {
       console.error('Error during submission process:', error);
-      if (error instanceof BillingError) {
-        openBillingModal(error);
+      if (error instanceof ProjectLimitError) {
+        pricingModalStore.openPricingModal({ 
+          isAlert: true,
+          alertTitle: `Upgrade to create more projects (currently ${error.detail.current_count}/${error.detail.limit})` 
+        });
+      } else if (error instanceof ThreadLimitError) {
+        pricingModalStore.openPricingModal({ 
+          isAlert: true,
+          alertTitle: `Upgrade to create more threads (currently ${error.detail.current_count}/${error.detail.limit})` 
+        });
+      } else if (error instanceof BillingError) {
+        const message = error.detail?.message?.toLowerCase() || '';
+        const isCreditsExhausted = 
+          message.includes('credit') ||
+          message.includes('balance') ||
+          message.includes('insufficient') ||
+          message.includes('out of credits') ||
+          message.includes('no credits');
+        
+        pricingModalStore.openPricingModal({ 
+          isAlert: true,
+          alertTitle: isCreditsExhausted ? 'You ran out of credits. Upgrade now.' : 'Pick the plan that works for you.'
+        });
       } else if (error instanceof AgentRunLimitError) {
         const { running_thread_ids, running_count } = error.detail;
         setAgentLimitData({
@@ -233,14 +265,14 @@ export function DashboardContent() {
           runningThreadIds: running_thread_ids,
         });
         setShowAgentLimitDialog(true);
-      } else if (error instanceof ProjectLimitError) {
-        openBillingModal(error);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
       }
-      // Only reset loading state if there was an error or no thread_id was returned
+      setInputValue('');
+      chatInputRef.current?.clearPendingFiles();
       setIsSubmitting(false);
+      setIsRedirecting(false);
     }
   };
 
@@ -270,16 +302,66 @@ export function DashboardContent() {
 
   return (
     <>
-      <PlanSelectionModal
-        open={showBillingModal}
-        onOpenChange={closeBillingModal}
-        creditsExhausted={creditsExhausted}
-      />
+      <PlanSelectionModal />
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
         {/* Credits Display - Top right corner */}
-        <div className="absolute top-4 right-4 z-10">
+        <div className="absolute flex items-center gap-2 top-4 right-4 z-10">
           <CreditsDisplay />
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size='icon' variant='outline'>
+                <Info className='h-4 w-4'/>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align='end' className="w-70">
+              <div>
+                <h2 className="text-lg font-semibold mb-4">Usage Limits</h2>
+                <div className="space-y-2">
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Threads</span>
+                      <span className="font-medium">{limits?.thread_count?.current_count || 0} / {limits?.thread_count?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.thread_count?.current_count || 0) / (limits?.thread_count?.limit || 1)) * 100} 
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Custom Workers</span>
+                      <span className="font-medium">{limits?.agent_count?.current_count || 0} / {limits?.agent_count?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.agent_count?.current_count || 0) / (limits?.agent_count?.limit || 1)) * 100} 
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Scheduled Triggers</span>
+                      <span className="font-medium">{limits?.trigger_count?.scheduled?.current_count || 0} / {limits?.trigger_count?.scheduled?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.trigger_count?.scheduled?.current_count || 0) / (limits?.trigger_count?.scheduled?.limit || 1)) * 100} 
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">App Triggers</span>
+                      <span className="font-medium">{limits?.trigger_count?.app?.current_count || 0} / {limits?.trigger_count?.app?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.trigger_count?.app?.current_count || 0) / (limits?.trigger_count?.app?.limit || 1)) * 100} 
+                    />
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -323,12 +405,9 @@ export function DashboardContent() {
             )} */}
             
 
-            {/* Centered content area */}
             <div className="flex-1 flex items-start justify-center pt-[30vh]">
-              {/* Super Worker View - Suna only */}
               {viewMode === 'super-worker' && (
                 <div className="w-full animate-in fade-in-0 duration-300">
-                  {/* Title and chat input - Fixed position */}
                   <div className="px-4 py-8">
                     <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-6 md:space-y-8">
                       <div className="flex flex-col items-center text-center w-full">
@@ -339,7 +418,7 @@ export function DashboardContent() {
                         </p>
                       </div>
 
-                      <div className="w-full">
+                      <div className="w-full flex flex-col items-center">
                         <ChatInput
                           ref={chatInputRef}
                           onSubmit={handleSubmit}
@@ -362,6 +441,37 @@ export function DashboardContent() {
                           selectedOutputFormat={selectedOutputFormat}
                           selectedTemplate={selectedTemplate}
                         />
+                        {!showAlert && (
+                          <div 
+                            className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
+                            style={{
+                              marginTop: '-32px',
+                              transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
+                            }}
+                          >
+                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>You ran out of limits. Upgrade your plan to chat more.</span>
+                            <div className='flex items-center -mb-3.5'>
+                              <Button 
+                                size='sm' 
+                                className='h-6 text-xs'
+                                onClick={() => pricingModalStore.openPricingModal()}
+                              >
+                                  Upgrade
+                                </Button>
+                              {/* <Button 
+                                size='icon' 
+                                variant='ghost' 
+                                className='h-6 text-muted-foreground'
+                                onClick={() => {
+                                  sessionStorage.setItem('threadLimitAlertDismissed', 'true');
+                                  window.dispatchEvent(new Event('storage'));
+                                }}
+                              >
+                                <X/>
+                              </Button> */}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

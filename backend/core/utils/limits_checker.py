@@ -1,11 +1,3 @@
-"""
-Subscription limit checking utilities.
-
-Handles checking various limits based on user tier:
-- Agent run limits
-- Agent count limits  
-- Project count limits
-"""
 from typing import Dict, Any
 from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger
@@ -14,26 +6,22 @@ from core.utils.cache import Cache
 
 
 async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
-    """
-    Check if the account has reached the limit of parallel agent runs within the past 24 hours.
-    
-    Args:
-        client: Database client
-        account_id: Account ID to check
-        
-    Returns:
-        Dict with 'can_start' (bool), 'running_count' (int), 'running_thread_ids' (list)
-        
-    Note: This function does not use caching to ensure real-time limit checks.
-    """
     try:
-        # Calculate 24 hours ago
         twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
         twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
         
         logger.debug(f"Checking agent run limit for account {account_id} since {twenty_four_hours_ago_iso}")
         
-        # Get all threads for this account
+        try:
+            from core.billing import subscription_service
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
+            logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit}")
+        except Exception as billing_error:
+            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, using global default")
+            concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
+        
         threads_result = await client.table('threads').select('thread_id').eq('account_id', account_id).execute()
         
         if not threads_result.data:
@@ -41,13 +29,13 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
             return {
                 'can_start': True,
                 'running_count': 0,
-                'running_thread_ids': []
+                'running_thread_ids': [],
+                'limit': concurrent_runs_limit
             }
         
         thread_ids = [thread['thread_id'] for thread in threads_result.data]
         logger.debug(f"Found {len(thread_ids)} threads for account {account_id}")
         
-        # Query for running agent runs within the past 24 hours for these threads
         from core.utils.query_utils import batch_query_in
         
         running_runs = await batch_query_in(
@@ -65,53 +53,36 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         running_count = len(running_runs)
         running_thread_ids = [run['thread_id'] for run in running_runs]
         
-        logger.debug(f"Account {account_id} has {running_count} running agent runs in the past 24 hours")
+        logger.debug(f"Account {account_id} has {running_count}/{concurrent_runs_limit} running agent runs")
         
         result = {
-            'can_start': running_count < config.MAX_PARALLEL_AGENT_RUNS,
+            'can_start': running_count < concurrent_runs_limit,
             'running_count': running_count,
-            'running_thread_ids': running_thread_ids
+            'running_thread_ids': running_thread_ids,
+            'limit': concurrent_runs_limit
         }
         return result
 
     except Exception as e:
         logger.error(f"Error checking agent run limit for account {account_id}: {str(e)}")
-        # In case of error, allow the run to proceed but log the error
         return {
             'can_start': True,
             'running_count': 0,
-            'running_thread_ids': []
+            'running_thread_ids': [],
+            'limit': 1
         }
 
 
 async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
-    """
-    Check if a user can create more agents based on their subscription tier.
-    
-    Args:
-        client: Database client
-        account_id: Account ID to check
-        
-    Returns:
-        Dict containing:
-        - can_create: bool - whether user can create another agent
-        - current_count: int - current number of custom agents (excluding Suna defaults)
-        - limit: int - maximum agents allowed for this tier
-        - tier_name: str - subscription tier name
-    
-    Note: This function does not use caching to ensure real-time agent counts.
-    """
     try:
-        # In local mode, allow practically unlimited custom agents
         if config.ENV_MODE.value == "local":
             return {
                 'can_create': True,
-                'current_count': 0,  # Return 0 to avoid showing any limit warnings
-                'limit': 999999,     # Practically unlimited
+                'current_count': 0,
+                'limit': 999999,
                 'tier_name': 'local'
             }
         
-        # Always query fresh data from database to avoid stale cache issues
         agents_result = await client.table('agents').select('agent_id, metadata').eq('account_id', account_id).execute()
         
         non_suna_agents = []
@@ -128,12 +99,12 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
             from core.billing import subscription_service
             tier_info = await subscription_service.get_user_subscription_tier(account_id)
             tier_name = tier_info['name']
-            logger.debug(f"Account {account_id} subscription tier: {tier_name}")
+            agent_limit = tier_info.get('custom_workers_limit', 1)
+            logger.debug(f"Account {account_id} subscription tier: {tier_name}, agent/worker limit: {agent_limit}")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
             tier_name = 'free'
-        
-        agent_limit = config.AGENT_LIMITS.get(tier_name, config.AGENT_LIMITS['free'])
+            agent_limit = 1
         
         can_create = current_count < agent_limit
         
@@ -153,36 +124,18 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
         return {
             'can_create': True,
             'current_count': 0,
-            'limit': config.AGENT_LIMITS['free'],
+            'limit': 1,
             'tier_name': 'free'
         }
 
 
 async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
-    """
-    Check if a user can create more projects based on their subscription tier.
-    
-    Args:
-        client: Database client
-        account_id: Account ID to check
-        
-    Returns:
-        Dict containing:
-        - can_create: bool - whether user can create another project
-        - current_count: int - current number of projects
-        - limit: int - maximum projects allowed for this tier
-        - tier_name: str - subscription tier name
-    
-    Note: This function does not use caching to ensure real-time project counts,
-    preventing issues where deleted projects aren't immediately reflected in limits.
-    """
     try:
-        # In local mode, allow practically unlimited projects
         if config.ENV_MODE.value == "local":
             return {
                 'can_create': True,
-                'current_count': 0,  # Return 0 to avoid showing any limit warnings
-                'limit': 999999,     # Practically unlimited
+                'current_count': 0,
+                'limit': 999999,
                 'tier_name': 'local'
             }
         
@@ -225,7 +178,6 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         
         logger.debug(f"Account {account_id} has {current_count}/{project_limit} projects (tier: {tier_name}) - can_create: {can_create}")
         
-        # Cache for 1 minute - balance between staleness and DB load
         try:
             await Cache.set(f"project_count_limit:{account_id}", result, ttl=60)
         except Exception as cache_error:
@@ -240,6 +192,248 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
             'can_create': True,
             'current_count': 0,
             'limit': get_project_limit('free'),
+            'tier_name': 'free'
+        }
+
+
+async def check_trigger_limit(client, account_id: str, agent_id: str = None, trigger_type: str = None) -> Dict[str, Any]:
+    try:
+        if agent_id is None or trigger_type is None:
+            logger.debug(f"Checking aggregate trigger limits for account {account_id}")
+            
+            agents_result = await client.table('agents').select('agent_id').eq('account_id', account_id).execute()
+            
+            if not agents_result.data:
+                logger.debug(f"No agents found for account {account_id}")
+                return {
+                    'scheduled': {'current_count': 0, 'limit': 1},
+                    'app': {'current_count': 0, 'limit': 2},
+                    'tier_name': 'free'
+                }
+            
+            agent_ids = [agent['agent_id'] for agent in agents_result.data]
+            
+            from core.utils.query_utils import batch_query_in
+            
+            triggers = await batch_query_in(
+                client=client,
+                table_name='agent_triggers',
+                select_fields='trigger_id, trigger_type',
+                in_field='agent_id',
+                in_values=agent_ids,
+                additional_filters={}
+            )
+            
+            scheduled_count = 0
+            app_count = 0
+            
+            for trigger in triggers:
+                ttype = trigger.get('trigger_type', '')
+                if ttype == 'schedule':
+                    scheduled_count += 1
+                elif ttype in ['webhook', 'app', 'event']:
+                    app_count += 1
+            
+            try:
+                from core.billing import subscription_service
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                scheduled_limit = tier_info.get('scheduled_triggers_limit', 1)
+                app_limit = tier_info.get('app_triggers_limit', 2)
+                logger.debug(f"Account {account_id} tier: {tier_name}, scheduled limit: {scheduled_limit}, app limit: {app_limit}")
+            except Exception as billing_error:
+                logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+                tier_name = 'free'
+                scheduled_limit = 1
+                app_limit = 2
+            
+            return {
+                'scheduled': {
+                    'current_count': scheduled_count,
+                    'limit': scheduled_limit
+                },
+                'app': {
+                    'current_count': app_count,
+                    'limit': app_limit
+                },
+                'tier_name': tier_name
+            }
+        
+        logger.debug(f"Checking trigger limit for account {account_id}, agent {agent_id}, type {trigger_type}")
+        
+        agent_result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', account_id).execute()
+        
+        if not agent_result.data:
+            logger.warning(f"Agent {agent_id} not found or access denied for account {account_id}")
+            return {
+                'can_create': False,
+                'current_count': 0,
+                'limit': 0,
+                'tier_name': 'free',
+                'error': 'Agent not found or access denied'
+            }
+        
+        triggers_result = await client.table('agent_triggers').select('trigger_id, trigger_type').eq('agent_id', agent_id).execute()
+        
+        scheduled_count = 0
+        app_count = 0
+        
+        if triggers_result.data:
+            for trigger in triggers_result.data:
+                ttype = trigger.get('trigger_type', '')
+                if ttype == 'schedule':
+                    scheduled_count += 1
+                elif ttype in ['webhook', 'app', 'event']:
+                    app_count += 1
+        
+        try:
+            from core.billing import subscription_service
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            scheduled_limit = tier_info.get('scheduled_triggers_limit', 1)
+            app_limit = tier_info.get('app_triggers_limit', 2)
+            logger.debug(f"Account {account_id} tier: {tier_name}, scheduled limit: {scheduled_limit}, app limit: {app_limit}")
+        except Exception as billing_error:
+            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+            tier_name = 'free'
+            scheduled_limit = 1
+            app_limit = 2
+        
+        if trigger_type == 'scheduled':
+            can_create = scheduled_count < scheduled_limit
+            current_count = scheduled_count
+            limit = scheduled_limit
+        else:
+            can_create = app_count < app_limit
+            current_count = app_count
+            limit = app_limit
+        
+        result = {
+            'can_create': can_create,
+            'current_count': current_count,
+            'limit': limit,
+            'tier_name': tier_name
+        }
+        
+        logger.debug(f"Agent {agent_id} has {current_count}/{limit} {trigger_type} triggers (tier: {tier_name}) - can_create: {can_create}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking trigger limit for account {account_id}: {str(e)}", exc_info=True)
+        return {
+            'can_create': True,
+            'current_count': 0,
+            'limit': 1,
+            'tier_name': 'free'
+        }
+
+
+async def check_custom_worker_limit(client, account_id: str) -> Dict[str, Any]:
+    try:
+        logger.debug(f"Checking custom worker limit for account {account_id}")
+        
+        agents_result = await client.table('agents').select('agent_id, current_version_id').eq('account_id', account_id).execute()
+        
+        total_custom_mcps = 0
+        
+        if agents_result.data:
+            version_ids = [agent['current_version_id'] for agent in agents_result.data if agent.get('current_version_id')]
+            
+            if version_ids:
+                from core.utils.query_utils import batch_query_in
+                
+                versions = await batch_query_in(
+                    client=client,
+                    table_name='agent_versions',
+                    select_fields='version_id, config',
+                    in_field='version_id',
+                    in_values=version_ids,
+                    additional_filters={}
+                )
+                
+                for version in versions:
+                    config = version.get('config', {})
+                    tools = config.get('tools', {})
+                    custom_mcps = tools.get('custom_mcp', [])
+                    total_custom_mcps += len(custom_mcps)
+        
+        logger.debug(f"Account {account_id} has {total_custom_mcps} custom workers (MCPs)")
+        
+        try:
+            from core.billing import subscription_service
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            worker_limit = tier_info.get('custom_workers_limit', 0)
+            logger.debug(f"Account {account_id} tier: {tier_name}, custom workers limit: {worker_limit}")
+        except Exception as billing_error:
+            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+            tier_name = 'free'
+            worker_limit = 0
+        
+        can_create = total_custom_mcps < worker_limit
+        
+        result = {
+            'can_create': can_create,
+            'current_count': total_custom_mcps,
+            'limit': worker_limit,
+            'tier_name': tier_name
+        }
+        
+        logger.debug(f"Account {account_id} has {total_custom_mcps}/{worker_limit} custom workers (tier: {tier_name}) - can_create: {can_create}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking custom worker limit for account {account_id}: {str(e)}", exc_info=True)
+        return {
+            'can_create': True,
+            'current_count': 0,
+            'limit': 0,
+            'tier_name': 'free'
+        }
+
+
+async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
+    try:
+        logger.debug(f"Checking thread limit for account {account_id}")
+        
+        threads_result = await client.table('threads').select('thread_id', count='exact').eq('account_id', account_id).execute()
+        
+        current_count = threads_result.count if hasattr(threads_result, 'count') else (len(threads_result.data) if threads_result.data else 0)
+        
+        logger.debug(f"Account {account_id} has {current_count} threads")
+        
+        try:
+            from core.billing import subscription_service
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            thread_limit = tier_info.get('thread_limit', 10)
+            logger.debug(f"Account {account_id} tier: {tier_name}, thread limit: {thread_limit}")
+        except Exception as billing_error:
+            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+            tier_name = 'free'
+            thread_limit = 10
+        
+        can_create = current_count < thread_limit
+        
+        result = {
+            'can_create': can_create,
+            'current_count': current_count,
+            'limit': thread_limit,
+            'tier_name': tier_name
+        }
+        
+        logger.debug(f"Account {account_id} has {current_count}/{thread_limit} threads (tier: {tier_name}) - can_create: {can_create}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking thread limit for account {account_id}: {str(e)}", exc_info=True)
+        return {
+            'can_create': True,
+            'current_count': 0,
+            'limit': 10,
             'tier_name': 'free'
         }
 

@@ -13,7 +13,6 @@ import { useCreateNewAgent } from '@/hooks/agents/use-agents';
 import { useKortixTeamTemplates } from '@/hooks/secure-mcp/use-secure-mcp';
 import { AgentCountLimitError } from '@/lib/api/errors';
 import { toast } from 'sonner';
-import { AgentCountLimitDialog } from './agent-count-limit-dialog';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import type { BaseAgentData } from '@/components/ui/unified-agent-card';
 import type { MarketplaceTemplate } from './installation/types';
@@ -29,8 +28,6 @@ interface AgentCreationModalProps {
 
 export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreationModalProps) {
   const router = useRouter();
-  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
-  const [agentLimitError, setAgentLimitError] = useState<any>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<MarketplaceTemplate | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedOption, setSelectedOption] = useState<'scratch' | 'chat' | 'template' | null>(null);
@@ -50,8 +47,6 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
       },
       onError: (error) => {
         if (error instanceof AgentCountLimitError) {
-          setAgentLimitError(error.detail);
-          setShowAgentLimitDialog(true);
           onOpenChange(false);
         } else {
           toast.error(error instanceof Error ? error.message : 'Failed to create agent');
@@ -302,16 +297,6 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
         onInstall={handlePreviewInstall}
         isInstalling={false}
       />
-
-      {showAgentLimitDialog && agentLimitError && (
-        <AgentCountLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
-          currentCount={agentLimitError.current_count}
-          limit={agentLimitError.limit}
-          tierName={agentLimitError.tier_name}
-        />
-      )}
     </>
   );
 }

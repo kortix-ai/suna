@@ -516,22 +516,6 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
             onOpenChange(false);
         } catch (e: any) {
-            let errorMessage = isEditMode ? 'Failed to update trigger' : 'Failed to create trigger';
-            if (e?.details?.detail?.error?.message) {
-                errorMessage = e.details.detail.error.message;
-            } else if (e?.details?.message) {
-                errorMessage = e.details.message;
-            } else if (e?.details?.detail?.message) {
-                errorMessage = e.details.detail.message;
-            } else if (e?.message && e.message !== 'HTTP 400: Bad Request') {
-                errorMessage = e.message;
-            } else if (e?.response?.data?.detail?.error?.message) {
-                errorMessage = e.response.data.detail.error.message;
-            } else if (e?.response?.data?.message) {
-                errorMessage = e.response.data.message;
-            }
-
-            toast.error(errorMessage);
         }
     };
 

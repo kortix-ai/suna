@@ -11,7 +11,6 @@ import { useRouter } from 'next/navigation';
 import { MarketplaceAgentPreviewDialog } from '@/components/agents/marketplace-agent-preview-dialog';
 import { StreamlinedInstallDialog } from '@/components/agents/installation/streamlined-install-dialog';
 import { toast } from 'sonner';
-import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dialog';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { AgentCountLimitError } from '@/lib/api/errors';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
@@ -238,8 +237,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   const [selectedTemplate, setSelectedTemplate] = React.useState<MarketplaceTemplate | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
   const [showInstallDialog, setShowInstallDialog] = React.useState(false);
-  const [showAgentLimitDialog, setShowAgentLimitDialog] = React.useState(false);
-  const [agentLimitError, setAgentLimitError] = React.useState<any>(null);
   const [installingItemId, setInstallingItemId] = React.useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
   const [selectedFilter, setSelectedFilter] = React.useState<string | null>(null);
@@ -379,8 +376,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       console.error('Installation error:', error);
 
       if (error instanceof AgentCountLimitError) {
-        setAgentLimitError(error.detail);
-        setShowAgentLimitDialog(true);
         setShowInstallDialog(false);
         return;
       }
@@ -577,16 +572,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         isInstalling={installingItemId === selectedTemplate?.id}
       />
 
-      {/* Agent Limit Dialog */}
-      {showAgentLimitDialog && agentLimitError && (
-        <AgentCountLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
-          currentCount={agentLimitError.current_count}
-          limit={agentLimitError.limit}
-          tierName={agentLimitError.tier_name}
-        />
-      )}
     </>
   );
 } 

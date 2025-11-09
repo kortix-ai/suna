@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Reques
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
+from core.utils.config import config
 
 from .api_models import CreateThreadResponse, MessageCreateRequest
 from . import core_utils as utils
@@ -238,10 +239,36 @@ async def create_thread(
         name = "New Project"
     logger.debug(f"Creating new thread with name: {name}")
     client = await utils.db.client
-    account_id = user_id  # In Basejump, personal account_id is the same as user_id
+    account_id = user_id
     
     try:
-        # 1. Create Project
+        if config.ENV_MODE != config.EnvMode.LOCAL:
+            from core.utils.limits_checker import check_thread_limit, check_project_count_limit
+            
+            thread_limit_check = await check_thread_limit(client, account_id)
+            if not thread_limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                    "current_count": thread_limit_check['current_count'],
+                    "limit": thread_limit_check['limit'],
+                    "tier_name": thread_limit_check['tier_name'],
+                    "error_code": "THREAD_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                raise HTTPException(status_code=402, detail=error_detail)
+            
+            project_limit_check = await check_project_count_limit(client, account_id)
+            if not project_limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
+                    "current_count": project_limit_check['current_count'],
+                    "limit": project_limit_check['limit'],
+                    "tier_name": project_limit_check['tier_name'],
+                    "error_code": "PROJECT_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']}")
+                raise HTTPException(status_code=402, detail=error_detail)
+        
         project_name = name or "New Project"
         project = await client.table('projects').insert({
             "project_id": str(uuid.uuid4()), 
