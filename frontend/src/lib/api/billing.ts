@@ -200,6 +200,7 @@ export interface CreateCheckoutSessionResponse {
   checkout_url?: string;
   effective_date?: string;
   message?: string;
+  redirect_to_dashboard?: boolean;
   details?: {
     is_upgrade?: boolean;
     effective_date?: string;

@@ -514,17 +514,31 @@ async def create_checkout_session(
     try:
         # Resolve tier_key to price_id
         from .config import get_tier_by_name
+        from .free_tier_service import free_tier_service
         tier = get_tier_by_name(request.tier_key)
         if not tier:
             raise HTTPException(status_code=400, detail=f"Invalid tier_key: {request.tier_key}")
         
-        # Select the appropriate price_id based on commitment_type
         if request.commitment_type == 'yearly_commitment' and len(tier.price_ids) >= 3:
-            price_id = tier.price_ids[2]  # Yearly commitment is usually 3rd
+            price_id = tier.price_ids[2]
         elif request.commitment_type == 'yearly' and len(tier.price_ids) >= 2:
-            price_id = tier.price_ids[1]  # Yearly is usually 2nd
+            price_id = tier.price_ids[1]
         else:
-            price_id = tier.price_ids[0]  # Monthly is always first
+            price_id = tier.price_ids[0]
+        
+        if price_id == config.STRIPE_FREE_TIER_ID:
+            logger.info(f"[FREE TIER] Creating free tier subscription for {account_id}")
+            result = await free_tier_service.auto_subscribe_to_free_tier(account_id)
+            
+            if not result.get('success'):
+                raise HTTPException(status_code=500, detail=result.get('error', 'Failed to create free tier subscription'))
+            
+            return {
+                'status': 'updated',
+                'subscription_id': result.get('subscription_id'),
+                'message': 'Free tier subscription created successfully',
+                'redirect_to_dashboard': True
+            }
         
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
