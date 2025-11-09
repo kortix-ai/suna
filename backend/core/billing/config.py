@@ -54,11 +54,11 @@ TIERS: Dict[str, Tier] = {
         can_purchase_credits=False,
         models=['haiku'],
         project_limit=1,
-        thread_limit=10,
+        thread_limit=1,
         concurrent_runs=1,
         custom_workers_limit=1,
         scheduled_triggers_limit=1,
-        app_triggers_limit=2
+        app_triggers_limit=1
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
