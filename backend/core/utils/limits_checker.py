@@ -196,8 +196,69 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_trigger_limit(client, account_id: str, agent_id: str, trigger_type: str) -> Dict[str, Any]:
+async def check_trigger_limit(client, account_id: str, agent_id: str = None, trigger_type: str = None) -> Dict[str, Any]:
     try:
+        if agent_id is None or trigger_type is None:
+            logger.debug(f"Checking aggregate trigger limits for account {account_id}")
+            
+            agents_result = await client.table('agents').select('agent_id').eq('account_id', account_id).execute()
+            
+            if not agents_result.data:
+                logger.debug(f"No agents found for account {account_id}")
+                return {
+                    'scheduled': {'current_count': 0, 'limit': 1},
+                    'app': {'current_count': 0, 'limit': 2},
+                    'tier_name': 'free'
+                }
+            
+            agent_ids = [agent['agent_id'] for agent in agents_result.data]
+            
+            from core.utils.query_utils import batch_query_in
+            
+            triggers = await batch_query_in(
+                client=client,
+                table_name='agent_triggers',
+                select_fields='trigger_id, trigger_type',
+                in_field='agent_id',
+                in_values=agent_ids,
+                additional_filters={}
+            )
+            
+            scheduled_count = 0
+            app_count = 0
+            
+            for trigger in triggers:
+                ttype = trigger.get('trigger_type', '')
+                if ttype == 'schedule':
+                    scheduled_count += 1
+                elif ttype in ['webhook', 'app', 'event']:
+                    app_count += 1
+            
+            try:
+                from core.billing import subscription_service
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                scheduled_limit = tier_info.get('scheduled_triggers_limit', 1)
+                app_limit = tier_info.get('app_triggers_limit', 2)
+                logger.debug(f"Account {account_id} tier: {tier_name}, scheduled limit: {scheduled_limit}, app limit: {app_limit}")
+            except Exception as billing_error:
+                logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+                tier_name = 'free'
+                scheduled_limit = 1
+                app_limit = 2
+            
+            return {
+                'scheduled': {
+                    'current_count': scheduled_count,
+                    'limit': scheduled_limit
+                },
+                'app': {
+                    'current_count': app_count,
+                    'limit': app_limit
+                },
+                'tier_name': tier_name
+            }
+        
         logger.debug(f"Checking trigger limit for account {account_id}, agent {agent_id}, type {trigger_type}")
         
         agent_result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', account_id).execute()

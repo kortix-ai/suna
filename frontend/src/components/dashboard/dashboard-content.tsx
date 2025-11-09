@@ -37,7 +37,10 @@ import { AgentConfigurationDialog } from '@/components/agents/agent-configuratio
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { CreditsDisplay } from '@/components/billing/credits-display';
 import { Button } from '../ui/button';
-import { X } from 'lucide-react';
+import { Info, X } from 'lucide-react';
+import { useLimits } from '@/hooks/dashboard/use-limits';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { Progress } from '../ui/progress';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -101,6 +104,7 @@ export function DashboardContent() {
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
   const { data: threadLimit } = useThreadLimit();
+  const { data: limits } = useLimits();
   const canCreateThread = threadLimit?.can_create || false;
   
   const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';
@@ -302,8 +306,62 @@ export function DashboardContent() {
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
         {/* Credits Display - Top right corner */}
-        <div className="absolute top-4 right-4 z-10">
+        <div className="absolute flex items-center gap-2 top-4 right-4 z-10">
           <CreditsDisplay />
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size='icon' variant='outline'>
+                <Info className='h-4 w-4'/>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align='end' className="w-70">
+              <div>
+                <h2 className="text-lg font-semibold mb-4">Usage Limits</h2>
+                <div className="space-y-2">
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Threads</span>
+                      <span className="font-medium">{limits?.thread_count?.current_count || 0} / {limits?.thread_count?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.thread_count?.current_count || 0) / (limits?.thread_count?.limit || 1)) * 100} 
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Custom Workers</span>
+                      <span className="font-medium">{limits?.agent_count?.current_count || 0} / {limits?.agent_count?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.agent_count?.current_count || 0) / (limits?.agent_count?.limit || 1)) * 100} 
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Scheduled Triggers</span>
+                      <span className="font-medium">{limits?.trigger_count?.scheduled?.current_count || 0} / {limits?.trigger_count?.scheduled?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.trigger_count?.scheduled?.current_count || 0) / (limits?.trigger_count?.scheduled?.limit || 1)) * 100} 
+                    />
+                  </div>
+                  <div className='space-y-2'>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">App Triggers</span>
+                      <span className="font-medium">{limits?.trigger_count?.app?.current_count || 0} / {limits?.trigger_count?.app?.limit || 0}</span>
+                    </div>
+                    <Progress 
+                      className='h-1'
+                      value={((limits?.trigger_count?.app?.current_count || 0) / (limits?.trigger_count?.app?.limit || 1)) * 100} 
+                    />
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -361,37 +419,6 @@ export function DashboardContent() {
                       </div>
 
                       <div className="w-full flex flex-col items-center">
-                        {showAlert && (
-                          <div 
-                            className='w-full md:w-[95%] h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-t-3xl flex items-center justify-between overflow-hidden'
-                            style={{
-                              marginBottom: '-40px',
-                              transition: 'margin-bottom 300ms ease-in-out, opacity 300ms ease-in-out',
-                            }}
-                          >
-                            <span className='-mt-3.5 dark:text-amber-500 text-amber-700 text-sm'>You ran out of limits. Upgrade your plan to chat more.</span>
-                            <div className='flex items-center -mt-3.5'>
-                              <Button 
-                                size='sm' 
-                                className='h-6 text-xs'
-                                onClick={() => pricingModalStore.openPricingModal()}
-                              >
-                                  Upgrade
-                                </Button>
-                              <Button 
-                                size='icon' 
-                                variant='ghost' 
-                                className='h-6 text-muted-foreground'
-                                onClick={() => {
-                                  sessionStorage.setItem('threadLimitAlertDismissed', 'true');
-                                  window.dispatchEvent(new Event('storage'));
-                                }}
-                              >
-                                <X/>
-                              </Button>
-                            </div>
-                          </div>
-                        )}
                         <ChatInput
                           ref={chatInputRef}
                           onSubmit={handleSubmit}
@@ -414,6 +441,37 @@ export function DashboardContent() {
                           selectedOutputFormat={selectedOutputFormat}
                           selectedTemplate={selectedTemplate}
                         />
+                        {!showAlert && (
+                          <div 
+                            className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
+                            style={{
+                              marginTop: '-32px',
+                              transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
+                            }}
+                          >
+                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>You ran out of limits. Upgrade your plan to chat more.</span>
+                            <div className='flex items-center -mb-3.5'>
+                              <Button 
+                                size='sm' 
+                                className='h-6 text-xs'
+                                onClick={() => pricingModalStore.openPricingModal()}
+                              >
+                                  Upgrade
+                                </Button>
+                              {/* <Button 
+                                size='icon' 
+                                variant='ghost' 
+                                className='h-6 text-muted-foreground'
+                                onClick={() => {
+                                  sessionStorage.setItem('threadLimitAlertDismissed', 'true');
+                                  window.dispatchEvent(new Event('storage'));
+                                }}
+                              >
+                                <X/>
+                              </Button> */}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
