@@ -18,6 +18,7 @@ export interface PricingTier {
   features: string[];
   isPopular?: boolean;
   buttonText: string;
+  hidden?: boolean;
 }
 
 export const PRICING_TIERS: PricingTier[] = [
@@ -37,6 +38,7 @@ export const PRICING_TIERS: PricingTier[] = [
     ],
     isPopular: false,
     buttonText: 'Select',
+    hidden: false,
   },
   {
     id: 'tier_2_20',
@@ -50,11 +52,14 @@ export const PRICING_TIERS: PricingTier[] = [
       '2,000 credits/m',
       '5 custom agents',
       'Private projects',
+      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
+      'Advanced AI Capabilities',
     ],
     isPopular: true,
     buttonText: 'Get Started',
+    hidden: false,
   },
   {
     id: 'tier_6_50',
@@ -68,10 +73,14 @@ export const PRICING_TIERS: PricingTier[] = [
       '5,000 credits/m',
       '20 custom agents',
       'Private projects',
+      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
+      'Advanced AI Capabilities',
     ],
+    isPopular: false,
     buttonText: 'Get Started',
+    hidden: false,
   },
   {
     id: 'tier_12_100',
@@ -83,13 +92,38 @@ export const PRICING_TIERS: PricingTier[] = [
     credits: 100,
     features: [
       '10,000 credits/m',
-      'Unlimited custom agents',
+      '20 custom agents',
       'Private projects',
+      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
-      'Priority support',
+      'Advanced AI Capabilities',
     ],
+    isPopular: false,
     buttonText: 'Get Started',
+    hidden: true, // Hidden by default, matching frontend
+  },
+  {
+    id: 'tier_25_200',
+    name: 'Ultra',
+    displayName: 'Ultra',
+    price: '$200',
+    priceMonthly: 200,
+    priceYearly: 170, // 15% off = $170/month billed yearly
+    credits: 200,
+    features: [
+      '20,000 credits/m',
+      '100 custom agents',
+      'Private projects',
+      'Custom abilities',
+      '100+ integrations',
+      'Premium AI Models',
+      'Priority Support',
+      'Advanced AI Capabilities',
+    ],
+    isPopular: false,
+    buttonText: 'Get Started',
+    hidden: false,
   },
 ];
 

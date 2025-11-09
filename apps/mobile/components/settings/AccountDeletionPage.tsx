@@ -9,7 +9,7 @@ import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Trash2, AlertTriangle, Calendar, XCircle } from 'lucide-react-native';
+import { Trash2, Calendar, XCircle } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { 
@@ -55,7 +55,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
   };
 
   const handleRequestDeletion = async () => {
-    if (confirmText !== 'delete') {
+    if (confirmText !== 'DELETE') {
       return;
     }
 
@@ -132,87 +132,78 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
             disabled={isLoading}
           />
 
-          <View className="px-6 gap-6">
+          <View className="px-6 gap-6 pb-6">
             {hasPendingDeletion ? (
               <>
-                <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4">
-                  <View className="flex-row items-center gap-3 mb-3">
-                    <Icon as={AlertTriangle} size={24} className="text-destructive" strokeWidth={2} />
-                    <Text className="text-lg font-roobert-semibold text-destructive">
-                      Account Deletion Scheduled
+                <View className="mt-2">
+                  <View className="bg-secondary/50 rounded-2xl p-5">
+                    <View className="flex-row items-center gap-3 mb-4">
+                      <Icon as={Calendar} size={20} className="text-foreground/60" strokeWidth={2} />
+                      <Text className="text-lg font-roobert-semibold text-foreground">
+                        Deletion Scheduled
+                      </Text>
+                    </View>
+                    
+                    <Text className="text-sm font-roobert text-muted-foreground mb-3">
+                      Your account and all data will be permanently deleted on:
                     </Text>
-                  </View>
-                  
-                  <Text className="text-sm font-roobert text-foreground mb-2">
-                    Your account and all data will be permanently deleted on:
-                  </Text>
-                  
-                  <View className="flex-row items-center gap-2 mb-3">
-                    <Icon as={Calendar} size={16} className="text-foreground/60" strokeWidth={2} />
-                    <Text className="text-base font-roobert-semibold text-foreground">
+                    
+                    <Text className="text-base font-roobert-semibold text-foreground mb-4">
                       {formatDate(deletionStatus?.deletion_scheduled_for)}
                     </Text>
+                    
+                    <Text className="text-sm font-roobert text-muted-foreground">
+                      You can cancel this request anytime before the deletion date.
+                    </Text>
                   </View>
-                  
-                  <Text className="text-sm font-roobert text-muted-foreground">
-                    You can cancel this request anytime before the deletion date.
-                  </Text>
                 </View>
 
                 <ActionButton
                   onPress={handleCancelDeletion}
                   disabled={isLoading}
                   isLoading={cancelDeletion.isPending}
-                  variant="default"
                   icon={XCircle}
                   label="Cancel Deletion"
                 />
               </>
             ) : (
               <>
-                <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4">
-                  <View className="flex-row items-center gap-3 mb-3">
-                    <Icon as={AlertTriangle} size={24} className="text-destructive" strokeWidth={2} />
-                    <Text className="text-lg font-roobert-semibold text-destructive">
-                      Danger Zone
-                    </Text>
-                  </View>
-                  
-                  <Text className="text-sm font-roobert text-foreground mb-3">
-                    Permanently delete your account and all associated data.
+                <View className="mt-2">
+                  <Text className="text-base font-roobert text-foreground mb-6 leading-6">
+                    Permanently delete your account and all associated data. This action cannot be undone.
                   </Text>
                   
-                  <Text className="text-sm font-roobert-medium text-foreground mb-2">
-                    When you delete your account:
-                  </Text>
-                  
-                  <View className="gap-2">
-                    <BulletPoint text="All your agents and agent versions will be deleted" />
-                    <BulletPoint text="All your threads and conversations will be deleted" />
-                    <BulletPoint text="All your credentials and integrations will be removed" />
-                    <BulletPoint text="Your subscription will be cancelled" />
-                    <BulletPoint text="All billing data will be removed" />
-                    <BulletPoint text="Your account will be scheduled for deletion in 30 days" />
-                  </View>
-                  
-                  <View className="bg-background/50 rounded-xl p-3 mt-4">
-                    <Text className="text-sm font-roobert text-muted-foreground">
-                      You can cancel this request anytime within the 30-day grace period. After 30 days, all your data will be permanently deleted and cannot be recovered.
+                  <View className="bg-secondary/50 rounded-2xl p-5 mb-6">
+                    <Text className="text-sm font-roobert-medium text-foreground mb-3">
+                      What will be deleted:
                     </Text>
+                    
+                    <View className="gap-2.5">
+                      <BulletPoint text="All your agents and agent versions" />
+                      <BulletPoint text="All your threads and conversations" />
+                      <BulletPoint text="All your credentials and integrations" />
+                      <BulletPoint text="Your subscription and billing data" />
+                    </View>
+                    
+                    <View className="mt-4 pt-4 border-t border-foreground/10">
+                      <Text className="text-xs font-roobert text-muted-foreground leading-5">
+                        Your account will be scheduled for deletion in 30 days. You can cancel this request anytime during the grace period.
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
                 <View>
-                  <Text className="text-sm font-roobert-medium text-foreground mb-2">
-                    Type <Text className="font-roobert-semibold">delete</Text> to confirm
+                  <Text className="text-sm font-roobert-medium text-foreground mb-3">
+                    Type <Text className="font-roobert-semibold">DELETE</Text> to confirm
                   </Text>
                   <TextInput
                     value={confirmText}
-                    onChangeText={setConfirmText}
-                    placeholder="delete"
+                    onChangeText={(text) => setConfirmText(text.toUpperCase())}
+                    placeholder="DELETE"
                     placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                    className="h-12 px-4 bg-secondary rounded-2xl text-foreground font-roobert text-base"
-                    autoCapitalize="none"
+                    className="h-14 px-4 bg-secondary rounded-2xl text-foreground font-roobert-medium text-base tracking-wide"
+                    autoCapitalize="characters"
                     autoCorrect={false}
                     returnKeyType="done"
                   />
@@ -220,9 +211,8 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
 
                 <ActionButton
                   onPress={handleRequestDeletion}
-                  disabled={isLoading || confirmText !== 'delete'}
+                  disabled={isLoading || confirmText !== 'DELETE'}
                   isLoading={requestDeletion.isPending}
-                  variant="destructive"
                   icon={Trash2}
                   label="Delete Account"
                 />
@@ -239,9 +229,9 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
 
 function BulletPoint({ text }: { text: string }) {
   return (
-    <View className="flex-row items-start gap-2">
-      <Text className="text-foreground/60 text-sm font-roobert mt-0.5">•</Text>
-      <Text className="text-sm font-roobert text-foreground/80 flex-1">
+    <View className="flex-row items-start gap-3">
+      <View className="w-1.5 h-1.5 rounded-full bg-foreground/40 mt-2" />
+      <Text className="text-sm font-roobert text-foreground/70 flex-1 leading-5">
         {text}
       </Text>
     </View>
@@ -252,12 +242,11 @@ interface ActionButtonProps {
   onPress: () => void;
   disabled: boolean;
   isLoading: boolean;
-  variant: 'destructive' | 'default';
   icon: any;
   label: string;
 }
 
-function ActionButton({ onPress, disabled, isLoading, variant, icon, label }: ActionButtonProps) {
+function ActionButton({ onPress, disabled, isLoading, icon, label }: ActionButtonProps) {
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
 
@@ -277,14 +266,10 @@ function ActionButton({ onPress, disabled, isLoading, variant, icon, label }: Ac
 
   const bgColor = disabled
     ? 'bg-muted'
-    : variant === 'destructive'
-    ? 'bg-destructive'
     : 'bg-primary';
 
   const textColor = disabled
     ? 'text-muted-foreground'
-    : variant === 'destructive'
-    ? 'text-destructive-foreground'
     : 'text-primary-foreground';
 
   return (
@@ -299,7 +284,7 @@ function ActionButton({ onPress, disabled, isLoading, variant, icon, label }: Ac
       {isLoading ? (
         <ActivityIndicator 
           size="small" 
-          color={colorScheme === 'dark' ? '#FFFFFF' : '#000000'} 
+          color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} 
         />
       ) : (
         <Icon 
