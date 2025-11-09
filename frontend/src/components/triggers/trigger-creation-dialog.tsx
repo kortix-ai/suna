@@ -16,6 +16,8 @@ import { ScheduleTriggerConfig } from '@/components/agents/triggers/types';
 import { useCreateTrigger, useUpdateTrigger } from '@/hooks/triggers';
 import { toast } from 'sonner';
 import { AgentSelector } from '@/components/agents/agent-selector';
+import { TriggerLimitError } from '@/lib/api/errors';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 interface TriggerCreationDialogProps {
   open: boolean;
@@ -47,6 +49,7 @@ export function TriggerCreationDialog({
   });
   const createTriggerMutation = useCreateTrigger();
   const updateTriggerMutation = useUpdateTrigger();
+  const pricingModalStore = usePricingModalStore();
 
   // Initialize form for edit mode or pre-selected agent
   React.useEffect(() => {
@@ -85,7 +88,6 @@ export function TriggerCreationDialog({
 
     try {
       if (isEditMode && existingTrigger) {
-        // Update existing trigger
         await updateTriggerMutation.mutateAsync({
           triggerId: existingTrigger.trigger_id,
           name: data.name || 'Scheduled Trigger',
@@ -116,6 +118,13 @@ export function TriggerCreationDialog({
 
       handleClose();
     } catch (error: any) {
+      if (error instanceof TriggerLimitError) {
+        const triggerType = error.detail.trigger_type === 'scheduled' ? 'scheduled' : 'app-based';
+        const upgradeMessage = `Upgrade to create more ${triggerType} triggers`;
+        pricingModalStore.openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+        handleClose();
+        return;
+      }
       toast.error(error.message || `Failed to ${isEditMode ? 'update' : 'create'} schedule trigger`);
       console.error(`Error ${isEditMode ? 'updating' : 'creating'} schedule trigger:`, error);
     }

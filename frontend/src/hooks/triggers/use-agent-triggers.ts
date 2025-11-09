@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TriggerConfiguration } from '@/components/agents/triggers/types';
 import { createClient } from '@/lib/supabase/client';
+import { TriggerLimitError } from '@/lib/api/errors';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -43,8 +44,14 @@ const createTrigger = async (data: {
   });
   
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to create trigger');
+    const errorData = await response.json();
+    const detail = errorData.detail || errorData;
+    
+    if (response.status === 402 && detail.error_code === 'TRIGGER_LIMIT_EXCEEDED') {
+      throw new TriggerLimitError(response.status, detail);
+    }
+    
+    throw new Error(detail.message || errorData.detail || 'Failed to create trigger');
   }
   
   return response.json();
@@ -115,6 +122,7 @@ export const useCreateTrigger = () => {
     onSuccess: (newTrigger) => {
       queryClient.invalidateQueries({ queryKey: ['agent-upcoming-runs', newTrigger.agent_id] });
       queryClient.invalidateQueries({ queryKey: ['all-triggers'] });
+      queryClient.invalidateQueries({ queryKey: ['tier-limits'] });
       queryClient.setQueryData(
         ['agent-triggers', newTrigger.agent_id],
         (old: TriggerConfiguration[] | undefined) => {

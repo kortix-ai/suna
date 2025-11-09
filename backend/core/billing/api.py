@@ -309,9 +309,9 @@ async def get_tier_limits(account_id: str = Depends(verify_and_get_user_id_from_
             
             for trigger in all_triggers:
                 ttype = trigger.get('trigger_type', '')
-                if ttype == 'scheduled':
+                if ttype == 'schedule':
                     scheduled_triggers_count += 1
-                elif ttype in ['webhook', 'app']:
+                elif ttype in ['webhook', 'app', 'event']:
                     app_triggers_count += 1
         
         from datetime import timedelta

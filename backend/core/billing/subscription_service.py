@@ -1088,13 +1088,7 @@ class SubscriptionService:
             
             logger.debug(f"[ALLOWED_MODELS] User {user_id} tier: {tier_name}")
 
-            if 'all' in tier_info.get('models', []):
-                all_models = model_manager.list_available_models(include_disabled=False)
-                allowed_model_ids = [model_data["id"] for model_data in all_models]
-                logger.debug(f"[ALLOWED_MODELS] User {user_id} has access to all {len(allowed_model_ids)} models")
-                return allowed_model_ids
-            
-            elif tier_info.get('models'):
+            if tier_info.get('models'):
                 all_models = model_manager.list_available_models(include_disabled=False)
                 allowed_model_ids = []
                 

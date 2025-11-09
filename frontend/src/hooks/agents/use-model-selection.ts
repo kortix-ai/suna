@@ -18,22 +18,18 @@ export interface ModelOption {
   contextWindow?: number;
 }
 
-// Helper function to get default model from API data
 const getDefaultModel = (models: ModelOption[], hasActiveSubscription: boolean): string => {
   if (hasActiveSubscription) {
-    // For premium users, find the first recommended model
     const recommendedModel = models.find(m => m.recommended);
     if (recommendedModel) return recommendedModel.id;
   }
   
-  // For free users, find the first non-subscription model with highest priority
   const freeModels = models.filter(m => !m.requiresSubscription);
   if (freeModels.length > 0) {
     const sortedFreeModels = freeModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
     return sortedFreeModels[0].id;
   }
-  
-  // Fallback to first available model
+
   return models.length > 0 ? models[0].id : '';
 };
 
@@ -117,12 +113,13 @@ export const useModelSelection = () => {
     selectedModel,
     setSelectedModel: handleModelChange,
     availableModels: accessibleModels,
-    allModels: accessibleModels,
+    allModels: availableModels,
     isLoading,
     modelsData,
     subscriptionStatus: (subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing') ? 'active' as const : 'no_subscription' as const,
     canAccessModel: (modelId: string) => {
-      return accessibleModels.some(m => m.id === modelId);
+      const model = availableModels.find(m => m.id === modelId);
+      return model ? !model.requiresSubscription : false;
     },
     isSubscriptionRequired: (modelId: string) => {
       const model = availableModels.find(m => m.id === modelId);

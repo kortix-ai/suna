@@ -218,6 +218,7 @@ def can_purchase_credits(tier_name: str) -> bool:
 
 def is_model_allowed(tier_name: str, model: str) -> bool:
     tier = TIERS.get(tier_name, TIERS['none'])
+    
     if 'all' in tier.models:
         return True
     

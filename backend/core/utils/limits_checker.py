@@ -220,9 +220,9 @@ async def check_trigger_limit(client, account_id: str, agent_id: str, trigger_ty
         if triggers_result.data:
             for trigger in triggers_result.data:
                 ttype = trigger.get('trigger_type', '')
-                if ttype == 'scheduled':
+                if ttype == 'schedule':
                     scheduled_count += 1
-                elif ttype in ['webhook', 'app']:
+                elif ttype in ['webhook', 'app', 'event']:
                     app_count += 1
         
         try:
