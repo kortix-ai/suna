@@ -1,58 +1,78 @@
-import { useEffect, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { useAuthContext } from '@/contexts';
 import { API_URL, getAuthHeaders } from '@/api/config';
 
+/**
+ * Account Initialization Hook
+ * 
+ * Matches frontend implementation using React Query mutation.
+ * Should be called explicitly when account initialization is needed.
+ * 
+ * @example
+ * const initializeMutation = useAccountInitialization();
+ * initializeMutation.mutate(undefined, {
+ *   onSuccess: () => console.log('Account initialized'),
+ *   onError: (error) => console.error('Failed:', error),
+ * });
+ */
 export function useAccountInitialization() {
-  const { isAuthenticated, session } = useAuthContext();
-  const [isInitializing, setIsInitializing] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { session } = useAuthContext();
 
-  useEffect(() => {
-    const initializeAccount = async () => {
-      if (!isAuthenticated || !session?.user || isInitializing || isInitialized) {
-        return;
+  return useMutation({
+    mutationFn: async (): Promise<{ success: boolean; message: string; subscription_id?: string }> => {
+      if (!session) {
+        throw new Error('You must be logged in to initialize account');
       }
 
-      try {
-        console.log('🚀 Checking if account needs initialization...');
-        setIsInitializing(true);
+      console.log('🚀 Initializing account...');
+      const headers = await getAuthHeaders();
+      
+      const response = await fetch(`${API_URL}/setup/initialize`, {
+        method: 'POST',
+        headers,
+      });
 
-        const headers = await getAuthHeaders();
-        const response = await fetch(`${API_URL}/setup/initialize`, {
-          method: 'POST',
-          headers,
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          console.log('✅ Account initialized successfully');
-          setIsInitialized(true);
-        } else {
-          if (data.message?.includes('Already subscribed')) {
-            console.log('✅ Account already initialized');
-            setIsInitialized(true);
-          } else {
-            console.error('❌ Account initialization failed:', data.message);
-            setError(data.message || 'Initialization failed');
+      // Handle non-OK responses
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
           }
+        } catch {
+          // If response is not JSON, use status text
         }
-      } catch (err) {
-        console.error('❌ Account initialization error:', err);
-        setError(err instanceof Error ? err.message : 'Unknown error');
-      } finally {
-        setIsInitializing(false);
+        throw new Error(errorMessage);
       }
-    };
 
-    initializeAccount();
-  }, [isAuthenticated, session, isInitializing, isInitialized]);
+      const data = await response.json();
+      console.log('📦 Account initialization response:', data);
 
-  return {
-    isInitializing,
-    isInitialized,
-    error,
-  };
+      // Check if initialization was successful
+      if (data.success) {
+        console.log('✅ Account initialized successfully');
+        return {
+          success: true,
+          message: data.message || 'Account initialized successfully',
+          subscription_id: data.subscription_id,
+        };
+      } else {
+        // Handle "already initialized" case
+        if (data.message?.includes('Already subscribed') || data.message?.includes('already')) {
+          console.log('✅ Account already initialized');
+          return {
+            success: true,
+            message: 'Account already initialized',
+            subscription_id: data.subscription_id,
+          };
+        }
+        
+        throw new Error(data.message || 'Failed to initialize account');
+      }
+    },
+  });
 }
 

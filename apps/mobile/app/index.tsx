@@ -4,7 +4,6 @@ import { useRouter, Stack } from 'expo-router';
 import { KortixLoader } from '@/components/ui';
 import { useAuthContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
-import { useAccountInitialization } from '@/hooks/useAccountInitialization';
 
 /**
  * Splash Screen
@@ -17,16 +16,17 @@ import { useAccountInitialization } from '@/hooks/useAccountInitialization';
  * 
  * Note: Onboarding is shown every time user logs in (per user, per device)
  * If user has active billing, onboarding auto-completes after showing features
+ * 
+ * Account initialization is handled automatically in AgentContext when agents are fetched
  */
 export default function SplashScreen() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
-  const { isInitializing } = useAccountInitialization();
 
   // Route user once we have all the info
   React.useEffect(() => {
-    if (!authLoading && !onboardingLoading && !isInitializing) {
+    if (!authLoading && !onboardingLoading) {
       // Small delay for smooth transition
       const timeoutId = setTimeout(() => {
         if (!isAuthenticated) {
@@ -43,7 +43,7 @@ export default function SplashScreen() {
 
       return () => clearTimeout(timeoutId);
     }
-  }, [authLoading, onboardingLoading, isInitializing, isAuthenticated, hasCompletedOnboarding, router]);
+  }, [authLoading, onboardingLoading, isAuthenticated, hasCompletedOnboarding, router]);
 
   return (
     <>

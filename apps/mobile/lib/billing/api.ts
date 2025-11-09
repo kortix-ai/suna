@@ -26,9 +26,6 @@ export interface CreditBalance {
   lifetime_granted?: number;
   lifetime_purchased?: number;
   lifetime_used?: number;
-  is_trial?: boolean;
-  trial_status?: string;
-  trial_ends_at?: string;
 }
 
 export interface SubscriptionInfo {
@@ -36,22 +33,14 @@ export interface SubscriptionInfo {
   plan_name: string;
   display_plan_name?: string;
   tier_key: string;  // Backend tier key
-  is_trial?: boolean;
-  trial_status?: string;
-  trial_ends_at?: string;
+  billing_period?: 'monthly' | 'yearly' | 'yearly_commitment' | null;  // Billing period from price_id
   subscription: {
-    id: string | null;
+    id: string;
     status: string;
     tier_key: string;  // Backend tier key
-    current_period_end: string | null;
-    cancel_at?: string;
-    canceled_at?: string;
-    is_trial?: boolean;
-    trial_tier?: string;
-    trial_end?: string;
-    trial_ends_at?: string;
-    metadata?: any;
-    created?: string | null;
+    current_period_end: string | number;  // Unix timestamp (seconds) or ISO string
+    cancel_at?: string | number | null;
+    canceled_at?: string | number | null;
     cancel_at_period_end?: boolean;
   } | null;
   tier: {
@@ -81,24 +70,6 @@ export interface BillingStatus {
   message: string;
 }
 
-export interface TrialStatus {
-  has_trial: boolean;
-  trial_status?: 'none' | 'active' | 'expired' | 'converted' | 'cancelled' | 'used';
-  trial_started_at?: string;
-  trial_ends_at?: string;
-  trial_mode?: string;
-  remaining_days?: number;
-  credits_remaining?: number;
-  tier?: string;
-  can_start_trial?: boolean;
-  message?: string;
-  trial_history?: {
-    started_at?: string;
-    ended_at?: string;
-    converted_to_paid?: boolean;
-  };
-}
-
 export interface CreateCheckoutSessionRequest {
   tier_key: string;  // Backend tier key like 'tier_2_20', 'free', etc.
   success_url: string;
@@ -107,15 +78,37 @@ export interface CreateCheckoutSessionRequest {
 }
 
 export interface CreateCheckoutSessionResponse {
+  status:
+    | 'upgraded'
+    | 'downgrade_scheduled'
+    | 'checkout_created'
+    | 'no_change'
+    | 'new'
+    | 'updated'
+    | 'scheduled'
+    | 'commitment_created'
+    | 'commitment_blocks_downgrade';
+  subscription_id?: string;
+  schedule_id?: string;
+  session_id?: string;
+  url?: string;
   checkout_url?: string;
   fe_checkout_url?: string;  // Kortix-branded embedded checkout
-  url?: string;
-  session_id?: string;
-  client_secret?: string;
-  success?: boolean;
-  subscription_id?: string;
+  effective_date?: string;
   message?: string;
-  status?: string;
+  details?: {
+    is_upgrade?: boolean;
+    effective_date?: string;
+    current_price?: number;
+    new_price?: number;
+    commitment_end_date?: string;
+    months_remaining?: number;
+    invoice?: {
+      id: string;
+      amount: number;
+      currency: string;
+    };
+  };
 }
 
 export interface PurchaseCreditsRequest {
@@ -126,28 +119,6 @@ export interface PurchaseCreditsRequest {
 
 export interface PurchaseCreditsResponse {
   checkout_url: string;
-}
-
-export interface TrialStartRequest {
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface TrialStartResponse {
-  checkout_url: string;
-  fe_checkout_url?: string; 
-  session_id: string;
-  client_secret?: string;  // For embedded checkout
-}
-
-export interface TrialCheckoutRequest {
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface TrialCheckoutResponse {
-  checkout_url: string;
-  session_id: string;
 }
 
 export interface CancelSubscriptionRequest {
@@ -173,6 +144,70 @@ export interface UsageHistory {
   }>;
   total_period_usage: number;
   total_period_credits: number;
+}
+
+export interface CommitmentInfo {
+  has_commitment: boolean;
+  can_cancel: boolean;
+  commitment_type?: string | null;
+  months_remaining?: number | null;
+  commitment_end_date?: string | null;
+}
+
+export interface ScheduleDowngradeRequest {
+  target_tier_key: string;
+  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
+}
+
+export interface ScheduleDowngradeResponse {
+  success: boolean;
+  message: string;
+  scheduled_date: string;
+  current_tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+  };
+  target_tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+  };
+  billing_change: boolean;
+  current_billing_period: string;
+  target_billing_period: string;
+  change_description: string;
+}
+
+export interface ScheduledChangesResponse {
+  has_scheduled_change: boolean;
+  scheduled_change: {
+    type: 'downgrade';
+    current_tier: {
+      name: string;
+      display_name: string;
+      monthly_credits?: number;
+    };
+    target_tier: {
+      name: string;
+      display_name: string;
+      monthly_credits?: number;
+    };
+    effective_date: string;
+  } | null;
+}
+
+export interface CancelScheduledChangeResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface CreatePortalSessionRequest {
+  return_url: string;
+}
+
+export interface CreatePortalSessionResponse {
+  portal_url: string;
 }
 
 // ============================================================================
@@ -220,8 +255,8 @@ export const billingApi = {
   },
 
   async checkBillingStatus(): Promise<BillingStatus> {
-    return fetchApi<BillingStatus>('/billing/check', {
-      method: 'POST',
+    return fetchApi<BillingStatus>('/billing/check-status', {
+      method: 'GET',
     });
   },
 
@@ -244,48 +279,6 @@ export const billingApi = {
     );
   },
 
-  async purchaseCredits(
-    request: PurchaseCreditsRequest
-  ): Promise<PurchaseCreditsResponse> {
-    return fetchApi<PurchaseCreditsResponse>('/billing/purchase-credits', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async getTrialStatus(): Promise<TrialStatus> {
-    // console.log('🔄 Fetching trial status...');
-    const data = await fetchApi<TrialStatus>('/billing/trial/status');
-    // console.log('✅ Trial status received:', JSON.stringify(data, null, 2));
-    return data;
-  },
-
-  async startTrial(request: TrialStartRequest): Promise<TrialStartResponse> {
-    return fetchApi<TrialStartResponse>('/billing/trial/start', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async createTrialCheckout(
-    request: TrialCheckoutRequest
-  ): Promise<TrialCheckoutResponse> {
-    return fetchApi<TrialCheckoutResponse>('/billing/trial/create-checkout', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async cancelTrial(): Promise<{
-    success: boolean;
-    message: string;
-    subscription_status: string;
-  }> {
-    return fetchApi('/billing/trial/cancel', {
-      method: 'POST',
-    });
-  },
-
   async cancelSubscription(
     request?: CancelSubscriptionRequest
   ): Promise<{ success: boolean; cancel_at: number; message: string }> {
@@ -304,17 +297,32 @@ export const billingApi = {
     });
   },
 
-  async getTransactions(
-    limit = 50,
-    offset = 0
-  ): Promise<{ transactions: Transaction[]; count: number }> {
-    return fetchApi(
-      `/billing/transactions?limit=${limit}&offset=${offset}`
-    );
+  async getSubscriptionCommitment(subscriptionId: string): Promise<CommitmentInfo> {
+    return fetchApi(`/billing/subscription-commitment/${subscriptionId}`);
   },
 
-  async getUsageHistory(days = 30): Promise<UsageHistory> {
-    return fetchApi(`/billing/usage-history?days=${days}`);
+  async scheduleDowngrade(request: ScheduleDowngradeRequest): Promise<ScheduleDowngradeResponse> {
+    return fetchApi('/billing/schedule-downgrade', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  },
+
+  async getScheduledChanges(): Promise<ScheduledChangesResponse> {
+    return fetchApi('/billing/scheduled-changes');
+  },
+
+  async cancelScheduledChange(): Promise<CancelScheduledChangeResponse> {
+    return fetchApi('/billing/cancel-scheduled-change', {
+      method: 'POST',
+    });
+  },
+
+  async createPortalSession(request: CreatePortalSessionRequest): Promise<CreatePortalSessionResponse> {
+    return fetchApi('/billing/create-portal-session', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   },
 };
 

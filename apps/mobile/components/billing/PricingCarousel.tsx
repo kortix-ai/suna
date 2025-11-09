@@ -129,10 +129,14 @@ export function PricingCarousel({
                 tier={tier}
                 displayPrice={displayPrice}
                 billingPeriod={billingPeriod}
-                isSelected={selectedPlan === tier.id}
-                onSelect={() => onSelectPlan(tier)}
-                disabled={selectedPlan === tier.id}
-                simplified={false}
+                currentSubscription={null}
+                isLoading={false}
+                isFetchingPlan={false}
+                onPlanSelect={() => {}}
+                onSubscribe={(tierKey) => onSelectPlan(tier)}
+                isAuthenticated={false}
+                currentBillingPeriod={null}
+                insideDialog={false}
                 t={t}
               />
             </View>

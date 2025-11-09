@@ -14,8 +14,6 @@ import {
   type CreateCheckoutSessionRequest,
   type CreateCheckoutSessionResponse,
   type PurchaseCreditsRequest,
-  type TrialStartRequest,
-  type TrialStartResponse,
 } from './api';
 
 // Import the API functions we need
@@ -70,19 +68,6 @@ const checkoutApi = {
     console.log('✅ Backend returned checkout URLs:', {
       checkout_url: response.checkout_url,
       fe_checkout_url: response.fe_checkout_url,
-    });
-    return response;
-  },
-  
-  async startTrial(request: TrialStartRequest): Promise<TrialStartResponse> {
-    console.log('🔄 Starting trial via backend...');
-    const response = await fetchApi<TrialStartResponse>('/billing/trial/start', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-    console.log('✅ Backend returned trial checkout URLs:', {
-      fe_checkout_url: response.fe_checkout_url,
-      checkout_url: response.checkout_url,
     });
     return response;
   },
@@ -184,44 +169,6 @@ export async function openExternalUrl(url: string): Promise<void> {
 // These initiate checkout flows by calling our backend to get checkout URLs,
 // then opening them in the in-app browser
 // ============================================================================
-
-/**
- * Start trial activation flow
- * 
- * 1. Calls backend /billing/trial/start
- * 2. Backend returns checkout URL (should be kortix.com masked)
- * 3. Opens URL in in-app browser
- * 4. User completes checkout
- * 5. Redirects back to app via deep link
- */
-export async function startTrialCheckout(
-  onSuccess?: () => void,
-  onCancel?: () => void
-): Promise<void> {
-  console.log('🎁 Starting trial activation...');
-
-  try {
-    const request: TrialStartRequest = {
-      success_url: buildSuccessUrl('trial'),
-      cancel_url: buildCancelUrl(),
-    };
-
-    const response = await checkoutApi.startTrial(request);
-
-    // Use fe_checkout_url for Apple compliance, fallback to checkout_url
-    const checkoutUrl = response.fe_checkout_url || response.checkout_url;
-    
-    if (checkoutUrl) {
-      console.log('🌐 Opening checkout URL:', checkoutUrl);
-      await openCheckoutInBrowser(checkoutUrl, onSuccess, onCancel);
-    } else {
-      throw new Error('Backend did not return a checkout URL');
-    }
-  } catch (error) {
-    console.error('❌ Trial activation error:', error);
-    throw error;
-  }
-}
 
 /**
  * Start subscription plan checkout flow

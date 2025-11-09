@@ -2,20 +2,19 @@
  * Billing Content Component
  * 
  * Reusable component for displaying billing/pricing options
- * Uses standardized components: TrialCard, PricingTierCard, BillingPeriodSelector
+ * Uses standardized components: PricingTierCard, BillingPeriodSelector
  */
 
 import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { PRICING_TIERS, BillingPeriod, getDisplayPrice, startPlanCheckout, startTrialCheckout } from '@/lib/billing';
+import { PRICING_TIERS, BillingPeriod, getDisplayPrice, startPlanCheckout } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
-import { TrialCard } from './TrialCard';
 import { PricingTierCard } from './PricingTierCard';
 import { BillingPeriodSelector } from './BillingPeriodSelector';
+import { useState } from 'react';
 
 interface BillingContentProps {
-  canStartTrial: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
   showTitle?: boolean;
@@ -28,7 +27,6 @@ interface BillingContentProps {
 }
 
 export function BillingContent({
-  canStartTrial,
   onSuccess,
   onCancel,
   showTitle = true,
@@ -40,59 +38,29 @@ export function BillingContent({
   t,
 }: BillingContentProps) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('yearly_commitment');
-  const [selectedPlan, setSelectedPlan] = React.useState<string | null>(null);
+  const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
 
-  const handleStartTrial = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedPlan('trial');
-    
-    try {
-      await startTrialCheckout(
-        () => {
-          // Success callback
-          setSelectedPlan(null);
-          onSuccess?.();
-        },
-        () => {
-          // Cancel callback
-          setSelectedPlan(null);
-          onCancel?.();
-        }
-      );
-    } catch (error) {
-      console.error('❌ Error starting trial:', error);
-      setSelectedPlan(null);
-    }
-  };
-
-  const handleSelectPlan = async (tier: typeof PRICING_TIERS[0]) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedPlan(tier.name);
-
-    if (!tier.id) {
-      console.error('❌ No tier ID found for tier:', tier.name);
-      setSelectedPlan(null);
-      return;
-    }
+  const handleSubscribe = async (tierKey: string) => {
+    setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: true }));
 
     try {
       await startPlanCheckout(
-        tier.id,  // Use tier.id (tier_key) instead of priceId
+        tierKey,
         billingPeriod,
         () => {
           // Success callback
-          setSelectedPlan(null);
+          setPlanLoadingStates({});
           onSuccess?.();
         },
         () => {
           // Cancel callback
-          setSelectedPlan(null);
+          setPlanLoadingStates({});
           onCancel?.();
         }
       );
     } catch (error) {
       console.error('❌ Error starting checkout:', error);
-      setSelectedPlan(null);
+      setPlanLoadingStates({});
     }
   };
 
@@ -104,10 +72,7 @@ export function BillingContent({
       {showTitle && (
         <View className="mb-6">
           <Text className="text-2xl font-roobert-semibold text-foreground text-center mb-2">
-            {titleText || (canStartTrial 
-              ? t('billing.trial.title', 'Start Your Free Trial') 
-              : t('billing.subscription.title', 'Choose Your Plan')
-            )}
+            {titleText || t('billing.subscription.title', 'Choose Your Plan')}
           </Text>
           {subtitleText && (
             <Text className="text-[15px] text-muted-foreground text-center">
@@ -126,47 +91,37 @@ export function BillingContent({
         </View>
       )}
 
-      {/* Free Trial Option */}
-      {canStartTrial && (
-        <TrialCard
-          onPress={handleStartTrial}
-          disabled={selectedPlan === 'trial'}
-          t={t}
-        />
-      )}
-
       {/* Period Selector */}
-      {!canStartTrial && (
-        <BillingPeriodSelector
-          selected={billingPeriod}
-          onChange={setBillingPeriod}
-          t={t}
-        />
-      )}
+      <BillingPeriodSelector
+        selected={billingPeriod}
+        onChange={setBillingPeriod}
+        t={t}
+      />
 
       {/* Pricing Tiers */}
-      {!canStartTrial && (
-        <View>
+      <View>
           {tiersToShow.map((tier) => {
             const displayPrice = getDisplayPrice(tier, billingPeriod);
-            const isSelected = selectedPlan === tier.name;
+            const isLoading = planLoadingStates[tier.id] || false;
 
             return (
               <PricingTierCard
-                key={tier.name}
+                key={tier.id}
                 tier={tier}
                 displayPrice={displayPrice}
                 billingPeriod={billingPeriod}
-                isSelected={isSelected}
-                onSelect={() => handleSelectPlan(tier)}
-                disabled={isSelected}
-                simplified={simplified}
+                currentSubscription={null}
+                isLoading={isLoading}
+                isFetchingPlan={false}
+                onPlanSelect={(planId) => setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }))}
+                onSubscribe={handleSubscribe}
+                isAuthenticated={false}
+                currentBillingPeriod={null}
                 t={t}
               />
             );
           })}
         </View>
-      )}
 
       {/* Footer Message */}
       <View className="mt-6 p-4 bg-muted/50 rounded-2xl">

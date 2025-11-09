@@ -33,7 +33,6 @@ import { useBillingContext } from '@/contexts/BillingContext';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useAgent } from '@/contexts/AgentContext';
 import { 
-  TrialCard, 
   PricingTierCard, 
   BillingPeriodSelector 
 } from '@/components/billing';
@@ -41,8 +40,7 @@ import {
   PRICING_TIERS, 
   BillingPeriod, 
   getDisplayPrice, 
-  startPlanCheckout, 
-  startTrialCheckout 
+  startPlanCheckout
 } from '@/lib/billing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -66,13 +64,13 @@ interface OnboardingSlide {
  * 
  * Protected by root layout AuthProtection - requires authentication
  * Welcome flow shown every time user logs in on this device
- * Shows key features and ends with billing/trial (skips trial if already subscribed)
+ * Shows key features and ends with billing (skips billing if already subscribed)
  */
 export default function OnboardingScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  const { trialStatus, refetchAll, hasActiveTrial, hasActiveSubscription } = useBillingContext();
+  const { hasActiveSubscription } = useBillingContext();
   const { signOut, session } = useAuthContext();
   const { loadAgents } = useAgent();
   const [currentSlide, setCurrentSlide] = React.useState(0);
@@ -82,15 +80,13 @@ export default function OnboardingScreen() {
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
 
-  const canStartTrial = trialStatus?.can_start_trial ?? false;
-  
   // If user already has active billing, skip directly to completion (no billing slide needed)
   React.useEffect(() => {
-    if (hasActiveTrial || hasActiveSubscription) {
+    if (hasActiveSubscription) {
       console.log('✅ User already has active billing, auto-completing onboarding');
       handleComplete();
     }
-  }, [hasActiveTrial, hasActiveSubscription]);
+  }, [hasActiveSubscription]);
 
   const slides: OnboardingSlide[] = [
     {
@@ -162,7 +158,7 @@ export default function OnboardingScreen() {
       
       // Refetch billing data and agents before routing
       console.log('🔄 Refetching billing data and agents after onboarding completion...');
-      refetchAll();
+      // Note: refetchAll removed - billing context will refetch automatically
       await loadAgents();
       
       console.log(`✅ Onboarding completed for user: ${userId}`);
@@ -171,7 +167,7 @@ export default function OnboardingScreen() {
       console.error('Failed to save onboarding status:', error);
       router.replace('/home');
     }
-  }, [refetchAll, loadAgents, router, session?.user?.id]);
+  }, [loadAgents, router, session?.user?.id]);
 
   const handleLogout = React.useCallback(async () => {
     try {
@@ -271,7 +267,6 @@ export default function OnboardingScreen() {
           <BillingSlide
             index={slides.length}
             scrollX={scrollX}
-            canStartTrial={canStartTrial}
             onSuccess={handleComplete}
             t={t}
           />
@@ -500,7 +495,6 @@ function ContinueButton({ onPress, isLast, t }: ContinueButtonProps) {
 interface BillingSlideProps {
   index: number;
   scrollX: SharedValue<number>;
-  canStartTrial: boolean;
   onSuccess: () => void;
   t: (key: string, defaultValue?: string) => string;
 }
@@ -508,61 +502,33 @@ interface BillingSlideProps {
 function BillingSlide({
   index,
   scrollX,
-  canStartTrial,
   onSuccess,
   t,
 }: BillingSlideProps) {
   const { colorScheme } = useColorScheme();
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('yearly_commitment');
-  const [selectedPlan, setSelectedPlan] = React.useState<string | null>(null);
+  const [planLoadingStates, setPlanLoadingStates] = React.useState<Record<string, boolean>>({});
   const cardScale = useSharedValue(1);
   const cardOpacity = useSharedValue(1);
 
-  const handleStartTrial = async () => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedPlan('trial');
-    
-    try {
-      await startTrialCheckout(
-        () => {
-          setSelectedPlan(null);
-          onSuccess();
-        },
-        () => {
-          setSelectedPlan(null);
-        }
-      );
-    } catch (error) {
-      console.error('❌ Error starting trial:', error);
-      setSelectedPlan(null);
-    }
-  };
-
-  const handleSelectPlan = async (tier: typeof PRICING_TIERS[0]) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedPlan(tier.name);
-
-    if (!tier.id) {
-      console.error('❌ No tier ID found for tier:', tier.name);
-      setSelectedPlan(null);
-      return;
-    }
+  const handleSubscribe = async (tierKey: string) => {
+    setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: true }));
 
     try {
       await startPlanCheckout(
-        tier.id,  // Use tier.id (tier_key) instead of priceId
+        tierKey,
         billingPeriod,
         () => {
-          setSelectedPlan(null);
+          setPlanLoadingStates({});
           onSuccess();
         },
         () => {
-          setSelectedPlan(null);
+          setPlanLoadingStates({});
         }
       );
     } catch (error) {
       console.error('❌ Error starting checkout:', error);
-      setSelectedPlan(null);
+      setPlanLoadingStates({});
     }
   };
 
@@ -610,175 +576,44 @@ function BillingSlide({
           {/* Title */}
           <View className="mb-8">
             <Text className="text-[28px] font-roobert-semibold text-foreground text-center mb-2 leading-tight tracking-tight">
-              {canStartTrial 
-                ? 'Start Free Trial' 
-                : t('billing.subscription.title', 'Choose Your Plan')
-              }
+              {t('billing.subscription.title', 'Choose Your Plan')}
             </Text>
             <Text className="text-[15px] font-roobert text-muted-foreground text-center opacity-70">
-              {canStartTrial
-                ? 'Experience all features for 7 days'
-                : t('billing.subtitle', 'Select a plan to get started')
-              }
+              {t('billing.subtitle', 'Select a plan to get started')}
             </Text>
           </View>
 
-          {/* Free Trial Card - Ultra Minimal */}
-          {canStartTrial && (
-            <AnimatedPressable
-              onPress={handleStartTrial}
-              disabled={selectedPlan === 'trial'}
-              onPressIn={() => {
-                cardScale.value = withSpring(0.98, { damping: 20, stiffness: 400 });
-              }}
-              onPressOut={() => {
-                cardScale.value = withSpring(1, { damping: 20, stiffness: 400 });
-              }}
-              style={[
-                cardAnimatedStyle,
-                {
-                  borderWidth: 1,
-                  borderColor: colorScheme === 'dark' 
-                    ? 'rgba(255, 255, 255, 0.1)' 
-                    : 'rgba(0, 0, 0, 0.08)',
-                }
-              ]}
-              className={`p-6 bg-card rounded-xl mb-6 ${selectedPlan === 'trial' ? 'opacity-50' : ''}`}
-            >
-              {/* Header with subtle badge */}
-              <View className="mb-6">
-                <View className="flex-row items-center gap-2 mb-3">
-                  <View 
-                    className="px-2 py-1 rounded-md"
-                    style={{
-                      backgroundColor: colorScheme === 'dark'
-                        ? 'rgba(255, 255, 255, 0.06)'
-                        : 'rgba(0, 0, 0, 0.04)',
-                    }}
-                  >
-                    <Text className="text-[11px] font-roobert-medium text-foreground/60 uppercase tracking-wide">
-                      Trial
-                    </Text>
-                  </View>
-                </View>
-                <Text className="text-[24px] font-roobert-semibold text-foreground leading-tight mb-1">
-                  7 days free
-                </Text>
-                <Text className="text-[14px] font-roobert text-muted-foreground/80">
-                  Then $20/month, cancel anytime
-                </Text>
-              </View>
-              
-              {/* Benefits - Minimal List */}
-              <View className="space-y-3 mb-6">
-                <View className="flex-row items-start gap-3">
-                  <View 
-                    className="w-1 h-1 rounded-full mt-2" 
-                    style={{ 
-                      backgroundColor: colorScheme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.4)' 
-                        : 'rgba(0, 0, 0, 0.4)' 
-                    }}
-                  />
-                  <Text className="text-[14px] font-roobert text-foreground/80 flex-1 leading-relaxed">
-                    Full access to all features
-                  </Text>
-                </View>
-                <View className="flex-row items-start gap-3">
-                  <View 
-                    className="w-1 h-1 rounded-full mt-2" 
-                    style={{ 
-                      backgroundColor: colorScheme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.4)' 
-                        : 'rgba(0, 0, 0, 0.4)' 
-                    }}
-                  />
-                  <Text className="text-[14px] font-roobert text-foreground/80 flex-1 leading-relaxed">
-                    Unlimited agents and automations
-                  </Text>
-                </View>
-                <View className="flex-row items-start gap-3">
-                  <View 
-                    className="w-1 h-1 rounded-full mt-2" 
-                    style={{ 
-                      backgroundColor: colorScheme === 'dark' 
-                        ? 'rgba(255, 255, 255, 0.4)' 
-                        : 'rgba(0, 0, 0, 0.4)' 
-                    }}
-                  />
-                  <Text className="text-[14px] font-roobert text-foreground/80 flex-1 leading-relaxed">
-                    Priority support
-                  </Text>
-                </View>
-              </View>
-
-              {/* CTA Section */}
-              <View 
-                className="pt-4 border-t"
-                style={{
-                  borderTopColor: colorScheme === 'dark'
-                    ? 'rgba(255, 255, 255, 0.06)'
-                    : 'rgba(0, 0, 0, 0.06)',
-                }}
-              >
-                <View className="flex-row items-center justify-between">
-                  <Text className="text-[14px] font-roobert-medium text-foreground/60">
-                    {selectedPlan === 'trial' ? 'Starting trial...' : 'Start free trial'}
-                  </Text>
-                  <View className="w-5 h-5 rounded-full bg-foreground items-center justify-center">
-                    <Icon 
-                      as={ArrowRight} 
-                      size={14} 
-                      className="text-background"
-                      strokeWidth={2.5}
-                    />
-                  </View>
-                </View>
-              </View>
-            </AnimatedPressable>
-          )}
-
-          {/* Period Selector - Only if no trial */}
-          {!canStartTrial && (
-            <BillingPeriodSelector
-              selected={billingPeriod}
-              onChange={setBillingPeriod}
-              t={t}
-            />
-          )}
+          {/* Period Selector */}
+          <BillingPeriodSelector
+            selected={billingPeriod}
+            onChange={setBillingPeriod}
+            t={t}
+          />
 
           {/* Pricing Tiers - Only top 2 for onboarding */}
-          {!canStartTrial && (
-            <View className="space-y-3">
+          <View className="space-y-3">
               {tiersToShow.map((tier) => {
                 const displayPrice = getDisplayPrice(tier, billingPeriod);
-                const isSelected = selectedPlan === tier.name;
+                const isLoading = planLoadingStates[tier.id] || false;
 
                 return (
                   <PricingTierCard
-                    key={tier.name}
+                    key={tier.id}
                     tier={tier}
                     displayPrice={displayPrice}
                     billingPeriod={billingPeriod}
-                    isSelected={isSelected}
-                    onSelect={() => handleSelectPlan(tier)}
-                    disabled={isSelected}
-                    simplified={true}
+                    currentSubscription={null}
+                    isLoading={isLoading}
+                    isFetchingPlan={false}
+                    onPlanSelect={(planId) => setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }))}
+                    onSubscribe={handleSubscribe}
+                    isAuthenticated={false}
+                    currentBillingPeriod={null}
                     t={t}
                   />
                 );
               })}
             </View>
-          )}
-
-          {/* Minimal Footer Note */}
-          {canStartTrial && (
-            <View className="mt-3">
-              <Text className="text-[12px] font-roobert text-center text-muted-foreground/50">
-                No credit card required
-              </Text>
-            </View>
-          )}
         </ScrollView>
       </Animated.View>
     </View>

@@ -15,6 +15,7 @@ import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
 import { startCreditPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
+import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
 
 interface CreditsPurchasePageProps {
   visible: boolean;
@@ -78,7 +79,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
                     {t('billing.balance') || 'Current Balance'}
                   </Text>
                   <Text className="text-3xl font-roobert-bold text-foreground">
-                    ${creditBalance.balance.toFixed(2)}
+                    {formatCredits(dollarsToCredits(creditBalance.balance))}
                   </Text>
                 </View>
                 <Icon as={Coins} size={32} className="text-primary" />
@@ -95,7 +96,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
                       </Text>
                     </View>
                     <Text className="text-sm font-roobert-semibold text-foreground">
-                      ${creditBalance.expiring_credits.toFixed(2)}
+                      {formatCredits(dollarsToCredits(creditBalance.expiring_credits))}
                     </Text>
                   </View>
                   <View className="flex-row items-center justify-between">
@@ -106,7 +107,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
                       </Text>
                     </View>
                     <Text className="text-sm font-roobert-semibold text-foreground">
-                      ${creditBalance.non_expiring_credits.toFixed(2)}
+                      {formatCredits(dollarsToCredits(creditBalance.non_expiring_credits))}
                     </Text>
                   </View>
                 </View>

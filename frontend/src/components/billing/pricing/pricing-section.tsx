@@ -282,10 +282,13 @@ function PricingTier({
             : 'Subscription updated successfully';
           toast.success(upgradeMessage);
           posthog.capture('plan_upgraded');
-          // Invalidate all billing queries immediately after upgrade
           queryClient.invalidateQueries({ queryKey: billingKeys.all });
-          // Trigger subscription update callback to refetch data
           if (onSubscriptionUpdate) onSubscriptionUpdate();
+          if (response.redirect_to_dashboard) {
+            setTimeout(() => {
+              window.location.href = '/dashboard';
+            }, 1000);
+          }
           break;
         case 'commitment_blocks_downgrade':
           toast.warning(response.message || 'Cannot downgrade during commitment period');
