@@ -512,7 +512,9 @@ async def create_checkout_session(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
-        # Resolve tier_key to price_id
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+            
         from .config import get_tier_by_name
         from .free_tier_service import free_tier_service
         tier = get_tier_by_name(request.tier_key)
