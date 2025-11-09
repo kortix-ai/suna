@@ -117,19 +117,7 @@ export const unifiedAgentStart = async (options: {
       const status = response.error.status || 500;
       
       if (status === 402) {
-        const detail = response.error.details?.detail || {};
-        
-        if (detail.error_code === 'PROJECT_LIMIT_EXCEEDED') {
-          throw new ProjectLimitError(status, {
-            message: detail.message || 'Project limit exceeded',
-            current_count: detail.current_count || 0,
-            limit: detail.limit || 0,
-            tier_name: detail.tier_name || 'none',
-            error_code: detail.error_code
-          });
-        }
-        
-        throw new BillingError(status, detail);
+        throw response.error;
       }
 
       if (status === 429) {

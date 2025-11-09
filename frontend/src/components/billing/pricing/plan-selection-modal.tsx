@@ -37,7 +37,7 @@ export function PlanSelectionModal({
     const searchParams = useSearchParams();
     const router = useRouter();
     
-    const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal } = usePricingModalStore();
+    const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle } = usePricingModalStore();
     
     const isOpen = controlledOpen !== undefined ? controlledOpen : storeIsOpen;
     const onOpenChange = controlledOnOpenChange || ((open: boolean) => !open && closePricingModal());
@@ -90,7 +90,7 @@ export function PlanSelectionModal({
                 <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 pointer-events-none bg-transparent">
                     <div className="flex-1" />
                     
-                    <div className="absolute top-8 left-8 pointer-events-none">
+                    <div className="absolute -translate-y-1/2 top-1/2 left-1/2 -translate-x-1/2 pointer-events-none">
                         <KortixLogo size={20} variant="logomark" />
                     </div>
                     
@@ -107,13 +107,15 @@ export function PlanSelectionModal({
                     </div>
                 </div>
                 <div className="w-full h-full flex items-center justify-center overflow-hidden bg-background pt-[67px]">
-                    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-center">
+                    <div className="xl:scale-90 2xl:scale-100 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-center">
                         <PricingSection
                             returnUrl={returnUrl || defaultReturnUrl}
                             showTitleAndTabs={true}
                             insideDialog={false}
                             noPadding={true}
                             customTitle={displayReason || (creditsExhausted ? "You ran out of credits. Upgrade now." : undefined)}
+                            isAlert={storeIsAlert}
+                            alertTitle={storeAlertTitle}
                             onSubscriptionUpdate={handleSubscriptionUpdate}
                         />
                     </div>

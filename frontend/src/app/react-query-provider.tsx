@@ -5,7 +5,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
 import { isLocalMode } from '@/lib/config';
-import { AgentRunLimitError, BillingError } from '@/lib/api/errors';
+import { 
+  AgentRunLimitError, 
+  BillingError, 
+  ProjectLimitError, 
+  ThreadLimitError,
+  AgentCountLimitError,
+  TriggerLimitError,
+  CustomWorkerLimitError,
+  ModelAccessDeniedError
+} from '@/lib/api/errors';
 
 export function ReactQueryProvider({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -13,33 +22,33 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 20 * 1000, // 20 seconds
-            gcTime: 2 * 60 * 1000, // 2 minutes (formerly cacheTime)
+            staleTime: 20 * 1000,
+            gcTime: 2 * 60 * 1000,
             retry: (failureCount, error: any) => {
-              // Don't retry client errors (4xx)
               if (error?.status >= 400 && error?.status < 500) return false;
-              // Don't retry 404s
               if (error?.status === 404) return false;
-              // Retry up to 3 times for other errors
               return failureCount < 3;
             },
             refetchOnMount: true,
-            refetchOnWindowFocus: false, // Avoid annoying refetches
-            refetchOnReconnect: 'always', // Good for real-time apps
+            refetchOnWindowFocus: false,
+            refetchOnReconnect: 'always',
           },
           mutations: {
             retry: (failureCount, error: any) => {
-              // Don't retry client errors (4xx)
               if (error?.status >= 400 && error?.status < 500) return false;
-              // Retry once for network errors
               return failureCount < 1;
             },
             onError: (error: any) => {
-              // Let components handle specific errors
-              if (error instanceof BillingError || error instanceof AgentRunLimitError) {
+              if (error instanceof BillingError || 
+                  error instanceof AgentRunLimitError ||
+                  error instanceof ProjectLimitError ||
+                  error instanceof ThreadLimitError ||
+                  error instanceof AgentCountLimitError ||
+                  error instanceof TriggerLimitError ||
+                  error instanceof CustomWorkerLimitError ||
+                  error instanceof ModelAccessDeniedError) {
                 return;
               }
-              // Global error handler for mutations
               handleApiError(error, {
                 operation: 'perform action',
                 silent: false,

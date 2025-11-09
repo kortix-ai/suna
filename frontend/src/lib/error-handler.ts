@@ -168,38 +168,38 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
 
   if (error instanceof AgentRunLimitError) {
     const upgradeMessage = `Upgrade to run more agents concurrently (currently ${error.detail.running_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof ProjectLimitError) {
     const upgradeMessage = `Upgrade to create more projects (currently ${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof ThreadLimitError) {
     const upgradeMessage = `Upgrade to create more threads (currently ${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof AgentCountLimitError) {
     const upgradeMessage = `Upgrade to create more workers (currently ${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof TriggerLimitError) {
     const triggerType = error.detail.trigger_type === 'scheduled' ? 'scheduled' : 'app-based';
     const upgradeMessage = `Upgrade to create more ${triggerType} triggers (currently ${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof ModelAccessDeniedError) {
     const upgradeMessage = 'Upgrade to access premium AI models';
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 

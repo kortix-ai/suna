@@ -51,8 +51,10 @@ export const useDeleteThread = () => {
     mutationFn: async ({ threadId, sandboxId }: DeleteThreadVariables) => {
       return await deleteThread(threadId, sandboxId);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
+      await queryClient.invalidateQueries({ queryKey: threadKeys.limit() });
+      await queryClient.refetchQueries({ queryKey: threadKeys.limit() });
     },
   });
 };
@@ -88,8 +90,10 @@ export const useDeleteMultipleThreads = () => {
         failed: results.filter(r => !r.success).map(r => r.threadId),
       };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
+      await queryClient.invalidateQueries({ queryKey: threadKeys.limit() });
+      await queryClient.refetchQueries({ queryKey: threadKeys.limit() });
     },
   });
 };

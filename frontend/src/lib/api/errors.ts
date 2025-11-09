@@ -233,7 +233,7 @@ export class NoAccessTokenAvailableError extends Error {
 export function parseTierRestrictionError(error: any): Error {
   const status = error.response?.status || error.status;
   const errorData = error.response?.data || error.data || error.detail || {};
-  const errorCode = errorData?.error_code || errorData?.detail?.error_code;
+  const errorCode = errorData?.detail?.error_code || errorData?.error_code;
 
   if (status !== 402 || !errorCode) {
     return error;

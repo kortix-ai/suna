@@ -4,6 +4,8 @@ import { agentKeys } from './keys';
 import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, getThreadAgent, updateAgent, ThreadAgentResponse } from './utils';
 import { useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { AgentCountLimitError, CustomWorkerLimitError } from '@/lib/api/errors';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 export const useAgents = (
   params: AgentsParams = {},
@@ -59,7 +61,8 @@ export const useCreateAgent = () => {
 export const useCreateNewAgent = () => {
   const router = useRouter();
   const createAgentMutation = useCreateAgent();
-  
+  const pricingModalStore = usePricingModalStore();
+
   return useMutation({
     mutationFn: async (_: void) => {
       const defaultAgentData = {
@@ -72,9 +75,16 @@ export const useCreateNewAgent = () => {
         icon_color: '#000000',
         icon_background: '#F3F4F6',
       };
-
       const newAgent = await createAgentMutation.mutateAsync(defaultAgentData);
       return newAgent;
+    },
+    onError: (error) => {
+      if (error instanceof AgentCountLimitError || error instanceof CustomWorkerLimitError) {
+        pricingModalStore.openPricingModal({ 
+          isAlert: true,
+          alertTitle: `Upgrade to create more workers (currently ${error.detail.current_count}/${error.detail.limit})` 
+        });
+      }
     },
   });
 };
