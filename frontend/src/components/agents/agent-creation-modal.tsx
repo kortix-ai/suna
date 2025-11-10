@@ -124,8 +124,6 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
         },
         onError: (error) => {
           if (error instanceof AgentCountLimitError) {
-            setAgentLimitError(error.detail);
-            setShowAgentLimitDialog(true);
             onOpenChange(false);
           } else {
             toast.error(error instanceof Error ? error.message : 'Failed to create agent');
@@ -162,10 +160,7 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
 
     } catch (error: any) {
       toast.error('Failed to create agent', { id: 'agent-setup' });
-
       if (error?.detail?.error_code === 'AGENT_LIMIT_EXCEEDED') {
-        setAgentLimitError(error.detail);
-        setShowAgentLimitDialog(true);
         onOpenChange(false);
       } else {
         console.error('Error creating agent from chat:', error);
