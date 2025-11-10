@@ -441,6 +441,7 @@ export function DashboardContent() {
                           selectedOutputFormat={selectedOutputFormat}
                           selectedTemplate={selectedTemplate}
                         />
+                        
                         {showAlert && (
                           <div 
                             className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
