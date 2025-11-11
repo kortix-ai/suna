@@ -122,6 +122,7 @@ export default function RootLayout() {
                           }}
                         >
                           <Stack.Screen name="index" options={{ animation: 'none' }} />
+                          <Stack.Screen name="setting-up" />
                           <Stack.Screen name="onboarding" />
                           <Stack.Screen name="home" />
                           <Stack.Screen name="auth" />

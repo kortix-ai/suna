@@ -43,6 +43,7 @@ import {
   startPlanCheckout
 } from '@/lib/billing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAccountSetup } from '@/hooks/useAccountSetup';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ONBOARDING_KEY_PREFIX = '@onboarding_completed_';
@@ -73,6 +74,7 @@ export default function OnboardingScreen() {
   const { hasActiveSubscription } = useBillingContext();
   const { signOut, session } = useAuthContext();
   const { loadAgents } = useAgent();
+  const { markSetupComplete } = useAccountSetup();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const scrollX = useSharedValue(0);
@@ -80,7 +82,6 @@ export default function OnboardingScreen() {
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
 
-  // If user already has active billing, skip directly to completion (no billing slide needed)
   React.useEffect(() => {
     if (hasActiveSubscription) {
       console.log('✅ User already has active billing, auto-completing onboarding');
@@ -149,16 +150,15 @@ export default function OnboardingScreen() {
 
   const handleComplete = React.useCallback(async () => {
     try {
-      // Save onboarding completion for this specific user on this device
       const userId = session?.user?.id || 'anonymous';
       const onboardingKey = `${ONBOARDING_KEY_PREFIX}${userId}`;
       await AsyncStorage.setItem(onboardingKey, 'true');
       
+      await markSetupComplete();
+      
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Refetch billing data and agents before routing
       console.log('🔄 Refetching billing data and agents after onboarding completion...');
-      // Note: refetchAll removed - billing context will refetch automatically
       await loadAgents();
       
       console.log(`✅ Onboarding completed for user: ${userId}`);
@@ -167,7 +167,7 @@ export default function OnboardingScreen() {
       console.error('Failed to save onboarding status:', error);
       router.replace('/home');
     }
-  }, [loadAgents, router, session?.user?.id]);
+  }, [loadAgents, router, session?.user?.id, markSetupComplete]);
 
   const handleLogout = React.useCallback(async () => {
     try {

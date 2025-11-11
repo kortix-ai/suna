@@ -469,7 +469,7 @@ export default function AuthScreen() {
                   <TextInput
                     ref={emailInputRef}
                     value={email}
-                    onChangeText={setEmail}
+                    onChangeText={(text) => setEmail(text.replace(/\s/g, ''))}
                     placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
                     keyboardType="email-address"
@@ -594,7 +594,7 @@ export default function AuthScreen() {
                   <TextInput
                     ref={emailInputRef}
                     value={email}
-                    onChangeText={setEmail}
+                    onChangeText={(text) => setEmail(text.replace(/\s/g, ''))}
                     placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
                     keyboardType="email-address"
@@ -618,8 +618,8 @@ export default function AuthScreen() {
                     onChangeText={setPassword}
                     placeholder={t('auth.passwordPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
-                    textContentType="newPassword"
-                    autoComplete="password-new"
+                    textContentType="oneTimeCode"
+                    autoComplete="off"
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -638,8 +638,8 @@ export default function AuthScreen() {
                     onChangeText={setConfirmPassword}
                     placeholder={t('auth.confirmPasswordPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
-                    textContentType="newPassword"
-                    autoComplete="password-new"
+                    textContentType="oneTimeCode"
+                    autoComplete="off"
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -825,7 +825,7 @@ export default function AuthScreen() {
                   <TextInput
                     ref={emailInputRef}
                     value={email}
-                    onChangeText={setEmail}
+                    onChangeText={(text) => setEmail(text.replace(/\s/g, ''))}
                     placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
                     keyboardType="email-address"
@@ -840,15 +840,11 @@ export default function AuthScreen() {
                     className="flex-1 text-foreground text-[15px]"
                   />
                 </View>
-
-                {/* Error Message */}
                 {error && (
                   <Text className="text-destructive text-sm font-roobert mb-4 text-center">
                     {error}
                   </Text>
                 )}
-
-                {/* Reset Password Button */}
                 <Pressable
                   onPress={handleResetPassword}
                   disabled={isLoading}
