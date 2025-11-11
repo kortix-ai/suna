@@ -10,6 +10,7 @@ import {
   isNewXmlFormat,
   parseToolMessage,
   formatToolOutput,
+  HIDE_STREAMING_XML_TAGS,
 } from '@/lib/utils/tool-parser';
 import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 import { useColorScheme } from 'nativewind';
@@ -23,6 +24,7 @@ import {
 } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
 import { CircleDashed, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { StreamingToolCard } from './StreamingToolCard';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -108,7 +110,32 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
   const { colorScheme } = useColorScheme();
   
   const processedContent = useMemo(() => {
-    return preprocessTextOnlyToolsLocal(content);
+    let processed = preprocessTextOnlyToolsLocal(content);
+    
+    processed = processed.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '');
+    
+    const oldFormatToolTags = [
+      'execute-command', 'check-command-output', 'terminate-command',
+      'create-file', 'delete-file', 'str-replace', 'edit-file', 'full-file-rewrite',
+      'read-file', 'create-tasks', 'update-tasks',
+      'browser-navigate-to', 'browser-act', 'browser-extract-content', 'browser-screenshot',
+      'browser-click-element', 'browser-close-tab', 'browser-input-text',
+      'web-search', 'crawl-webpage', 'scrape-webpage',
+      'expose-port', 'call-data-provider', 'get-data-provider-endpoints',
+      'create-sheet', 'update-sheet', 'view-sheet',
+      'execute-code', 'make-phone-call', 'end-call',
+      'designer-create-or-edit', 'image-edit-or-generate',
+    ];
+    
+    for (const tag of oldFormatToolTags) {
+      const regex = new RegExp(`<${tag}[^>]*>.*?<\\/${tag}>|<${tag}[^>]*\\/>`, 'gis');
+      processed = processed.replace(regex, '');
+    }
+    
+    processed = processed.replace(/^\s*\n/gm, '');
+    processed = processed.trim();
+    
+    return processed;
   }, [content]);
 
   if (isNewXmlFormat(processedContent)) {
@@ -762,61 +789,56 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                 {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
                   <View className="mt-3">
                     {(() => {
-                      let textToRender = preprocessTextOnlyToolsLocal(streamingTextContent || '');
-
-                      let detectedTag: string | null = null;
-                      let tagStartIndex = -1;
-                      if (textToRender) {
-                        const functionCallsIndex = textToRender.indexOf('<function_calls>');
-                        if (functionCallsIndex !== -1) {
-                          detectedTag = 'function_calls';
-                          tagStartIndex = functionCallsIndex;
-                        } else {
-                          const partialXmlMatch = textToRender.match(/<[a-zA-Z_:][a-zA-Z0-9_:]*$|<$/);
-                          if (partialXmlMatch) {
-                            detectedTag = 'partial';
-                            tagStartIndex = partialXmlMatch.index!;
-                          }
-                        }
-                      }
-                      const textBeforeTag = detectedTag && tagStartIndex >= 0 ? textToRender.substring(0, tagStartIndex) : textToRender;
-
-                      if (!textToRender) {
+                      const rawContent = streamingTextContent || '';
+                      
+                      if (!rawContent) {
                         return <AgentLoader />;
                       }
 
+                      let detectedTag: string | null = null;
+                      let tagStartIndex = -1;
+                      
+                      const functionCallsIndex = rawContent.indexOf('<function_calls>');
+                      if (functionCallsIndex !== -1) {
+                        detectedTag = 'function_calls';
+                        tagStartIndex = functionCallsIndex;
+                      } else {
+                        for (const tag of HIDE_STREAMING_XML_TAGS) {
+                          const openingTagPattern = `<${tag}`;
+                          const index = rawContent.indexOf(openingTagPattern);
+                          if (index !== -1) {
+                            detectedTag = tag;
+                            tagStartIndex = index;
+                            break;
+                          }
+                        }
+                      }
+                      
+                      const textBeforeTag = detectedTag && tagStartIndex >= 0 ? rawContent.substring(0, tagStartIndex) : rawContent;
+                      const processedTextBeforeTag = preprocessTextOnlyToolsLocal(textBeforeTag);
+
                       return (
-                        <Markdown
-                          style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                          onLinkPress={(url) => {
-                            Linking.openURL(url).catch(console.error);
-                            return false;
-                          }}
-                        >
-                          {textBeforeTag}
-                        </Markdown>
+                        <View className="gap-3">
+                          {processedTextBeforeTag.trim() && (
+                            <Markdown
+                              style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                              onLinkPress={(url) => {
+                                Linking.openURL(url).catch(console.error);
+                                return false;
+                              }}
+                            >
+                              {processedTextBeforeTag}
+                            </Markdown>
+                          )}
+                          {detectedTag && (
+                            <StreamingToolCard content={rawContent.substring(tagStartIndex)} />
+                          )}
+                        </View>
                       );
                     })()}
                   </View>
                 )}
                 
-                {groupIndex === groupedMessages.length - 1 && streamingToolCall && (() => {
-                  const toolName = streamingToolCall.function_name || streamingToolCall.name || '';
-                  const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
-                  
-                  if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
-                    return null;
-                  }
-                  
-                  return (
-                    <View className="mt-3">
-                      <ToolCard 
-                        isLoading 
-                        toolCall={streamingToolCall}
-                      />
-                    </View>
-                  );
-                })()}
               </View>
             </View>
           );
