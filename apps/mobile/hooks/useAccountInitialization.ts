@@ -21,6 +21,7 @@ export function useAccountInitialization() {
   return useMutation({
     mutationFn: async (): Promise<{ success: boolean; message: string; subscription_id?: string }> => {
       if (!session) {
+        console.error('❌ No session available for initialization');
         throw new Error('You must be logged in to initialize account');
       }
 
@@ -32,9 +33,13 @@ export function useAccountInitialization() {
         headers,
       });
 
-      // Handle non-OK responses
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        
+        if (response.status === 401 || response.status === 403) {
+          errorMessage = 'Authentication error - please try signing in again';
+        }
+        
         try {
           const errorData = await response.json();
           if (errorData.detail) {
@@ -43,15 +48,15 @@ export function useAccountInitialization() {
             errorMessage = errorData.message;
           }
         } catch {
-          // If response is not JSON, use status text
         }
+        
+        console.error(`❌ Initialization failed: ${errorMessage}`);
         throw new Error(errorMessage);
       }
 
       const data = await response.json();
       console.log('📦 Account initialization response:', data);
 
-      // Check if initialization was successful
       if (data.success) {
         console.log('✅ Account initialized successfully');
         return {
@@ -60,7 +65,6 @@ export function useAccountInitialization() {
           subscription_id: data.subscription_id,
         };
       } else {
-        // Handle "already initialized" case
         if (data.message?.includes('Already subscribed') || data.message?.includes('already')) {
           console.log('✅ Account already initialized');
           return {

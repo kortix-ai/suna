@@ -14,16 +14,26 @@ import * as Haptics from 'expo-haptics';
 
 export default function SettingUpScreen() {
   const router = useRouter();
-  const { user } = useAuthContext();
+  const { user, isAuthenticated } = useAuthContext();
   const { colorScheme } = useColorScheme();
   const [status, setStatus] = React.useState<'initializing' | 'success' | 'error'>('initializing');
   const { initializeAccount } = useAccountSetup();
+  const initializationAttempted = React.useRef(false);
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
 
   React.useEffect(() => {
-    if (user && status === 'initializing') {
+    if (!isAuthenticated) {
+      console.log('⚠️  User not authenticated in setup screen, redirecting...');
+      router.replace('/auth');
+      return;
+    }
+
+    if (user && status === 'initializing' && !initializationAttempted.current) {
+      initializationAttempted.current = true;
+      
       const performInitialization = async () => {
+        console.log('🔧 Starting account initialization...');
         const success = await initializeAccount();
         
         if (success) {
@@ -34,6 +44,7 @@ export default function SettingUpScreen() {
             router.replace('/onboarding');
           }, 1500);
         } else {
+          console.log('⚠️  Initialization failed, but allowing user to continue');
           setStatus('error');
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
@@ -41,7 +52,7 @@ export default function SettingUpScreen() {
 
       performInitialization();
     }
-  }, [user, status]);
+  }, [user, status, isAuthenticated]);
 
   const handleContinue = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

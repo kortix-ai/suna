@@ -12,7 +12,7 @@ import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
@@ -159,16 +159,19 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
+  const hasRedirected = React.useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // User is not authenticated and not in auth screens, redirect to auth
+    if (!isAuthenticated && !inAuthGroup && !hasRedirected.current) {
       console.log('🚫 User not authenticated, redirecting to /auth');
+      hasRedirected.current = true;
       router.replace('/auth');
+    } else if (isAuthenticated && hasRedirected.current) {
+      hasRedirected.current = false;
     }
   }, [isAuthenticated, isLoading, segments, router]);
 
