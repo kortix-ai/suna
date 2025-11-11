@@ -25,7 +25,7 @@ import { LoadingState } from '../shared/LoadingState';
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { extractDiscoverMcpToolsData } from './_utils';
-import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
+import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 export function DiscoverMcpToolsForAgentToolView({
   name = 'discover-mcp-tools-for-agent',

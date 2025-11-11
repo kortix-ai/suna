@@ -31,7 +31,7 @@ import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { FileNameValidator, useNameValidation } from '@/lib/validation';
 import { cn } from '@/lib/utils';
-import { type Folder } from '@/hooks/react-query/knowledge-base/use-folders';
+import { type Folder } from '@/hooks/knowledge-base/use-folders';
 
 interface FileUploadStatus {
     file: File;

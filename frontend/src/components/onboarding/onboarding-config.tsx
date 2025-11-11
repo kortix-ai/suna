@@ -1,6 +1,6 @@
 'use client';
 
-import { OnboardingStep } from '@/hooks/use-onboarding';
+import { OnboardingStep } from '@/hooks/onboarding';
 import { CEOIntroStep } from './steps/ceo-intro-step';
 import { UserTypeStep } from './steps/user-type-step';
 import { SmartContextStep } from './steps/smart-context-step';

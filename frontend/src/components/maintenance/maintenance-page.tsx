@@ -3,11 +3,11 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { useApiHealth } from '@/hooks/react-query';
+import { useApiHealth } from '@/hooks/usage/use-health';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { isLocalMode } from '@/lib/config';
-import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { AnimatedBg } from '@/components/ui/animated-bg';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export function MaintenancePage() {

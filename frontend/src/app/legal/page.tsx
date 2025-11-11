@@ -216,7 +216,7 @@ function LegalContent() {
                         </li>
                         <li>
                           "Notice Address" refers to the contact address for the
-                          Company, specifically legal@kortix.ai
+                          Company, specifically legal@kortix.com
                         </li>
                         <li>
                           "Privacy Policy" refers to the document outlining how

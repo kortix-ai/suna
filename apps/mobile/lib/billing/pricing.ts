@@ -1,29 +1,45 @@
 /**
  * Pricing Configuration
  * 
- * Defines subscription tiers with environment-specific Stripe price IDs
+ * Defines subscription tiers with backend tier keys
  * Matches backend and frontend pricing configuration
  */
 
 import { useProductionStripeIds, ENV_MODE } from '@/lib/utils/env-config';
 
 export interface PricingTier {
-  id: string;
+  id: string;  // Backend tier key (e.g., 'free', 'tier_2_20')
   name: string;
   displayName: string;
   price: string;
   priceMonthly: number;
   priceYearly?: number;
-  stripePriceId: string;
-  stripeYearlyPriceId?: string;
-  stripeYearlyCommitmentPriceId?: string;
   credits: number;
   features: string[];
   isPopular?: boolean;
   buttonText: string;
+  hidden?: boolean;
 }
 
 export const PRICING_TIERS: PricingTier[] = [
+  {
+    id: 'free',
+    name: 'Basic',
+    displayName: 'Basic',
+    price: '$0',
+    priceMonthly: 0,
+    priceYearly: 0,
+    credits: 2,
+    features: [
+      '200 credits/m',
+      '1 custom Worker',
+      '1 private project',
+      '1 custom trigger',
+    ],
+    isPopular: false,
+    buttonText: 'Select',
+    hidden: false,
+  },
   {
     id: 'tier_2_20',
     name: 'Plus',
@@ -31,25 +47,19 @@ export const PRICING_TIERS: PricingTier[] = [
     price: '$20',
     priceMonthly: 20,
     priceYearly: 17, // 15% off = $17/month billed yearly
-    stripePriceId: useProductionStripeIds
-      ? 'price_1RILb4G6l1KZGqIrhomjgDnO'      // Production monthly
-      : 'price_1RIGvuG6l1KZGqIrCRu0E4Gi',      // Staging/Local monthly
-    stripeYearlyPriceId: useProductionStripeIds
-      ? 'price_1ReHB5G6l1KZGqIrD70I1xqM'      // Production yearly
-      : 'price_1ReGogG6l1KZGqIrEyBTmtPk',      // Staging/Local yearly
-    stripeYearlyCommitmentPriceId: useProductionStripeIds
-      ? 'price_1RqtqiG6l1KZGqIrhjVPtE1s'      // Production commitment
-      : 'price_1RqYGaG6l1KZGqIrIzcdPzeQ',      // Staging/Local commitment
     credits: 20,
     features: [
-      '$20 AI token credits/m',
+      '2,000 credits/m',
       '5 custom agents',
       'Private projects',
+      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
+      'Advanced AI Capabilities',
     ],
     isPopular: true,
     buttonText: 'Get Started',
+    hidden: false,
   },
   {
     id: 'tier_6_50',
@@ -58,24 +68,19 @@ export const PRICING_TIERS: PricingTier[] = [
     price: '$50',
     priceMonthly: 50,
     priceYearly: 42.5, // 15% off = $42.50/month billed yearly
-    stripePriceId: useProductionStripeIds
-      ? 'price_1RILb4G6l1KZGqIr5q0sybWn'      // Production monthly
-      : 'price_1RIGvuG6l1KZGqIrvjlz5p5V',      // Staging/Local monthly
-    stripeYearlyPriceId: useProductionStripeIds
-      ? 'price_1ReHAsG6l1KZGqIrlAog487C'      // Production yearly
-      : 'price_1ReGoJG6l1KZGqIr0DJWtoOc',      // Staging/Local yearly
-    stripeYearlyCommitmentPriceId: useProductionStripeIds
-      ? 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi'      // Production commitment
-      : 'price_1RqYH1G6l1KZGqIrWDKh8xIU',      // Staging/Local commitment
     credits: 50,
     features: [
-      '$50 AI token credits/m',
+      '5,000 credits/m',
       '20 custom agents',
       'Private projects',
+      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
+      'Advanced AI Capabilities',
     ],
+    isPopular: false,
     buttonText: 'Get Started',
+    hidden: false,
   },
   {
     id: 'tier_12_100',
@@ -84,39 +89,45 @@ export const PRICING_TIERS: PricingTier[] = [
     price: '$100',
     priceMonthly: 100,
     priceYearly: 85, // 15% off = $85/month billed yearly
-    stripePriceId: useProductionStripeIds
-      ? 'price_1RILb4G6l1KZGqIr5Y20ZLHm'      // Production monthly
-      : 'price_1RIGvuG6l1KZGqIrT6UfgblC',      // Staging/Local monthly
-    stripeYearlyPriceId: useProductionStripeIds
-      ? 'price_1ReHAWG6l1KZGqIrBHer2PQc'      // Production yearly
-      : 'price_1ReGnZG6l1KZGqIr0ThLEl5S',      // Staging/Local yearly
     credits: 100,
     features: [
-      '$100 AI token credits/m',
-      'Unlimited custom agents',
+      '10,000 credits/m',
+      '20 custom agents',
       'Private projects',
+      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
-      'Priority support',
+      'Advanced AI Capabilities',
     ],
+    isPopular: false,
     buttonText: 'Get Started',
+    hidden: true, // Hidden by default, matching frontend
+  },
+  {
+    id: 'tier_25_200',
+    name: 'Ultra',
+    displayName: 'Ultra',
+    price: '$200',
+    priceMonthly: 200,
+    priceYearly: 170, // 15% off = $170/month billed yearly
+    credits: 200,
+    features: [
+      '20,000 credits/m',
+      '100 custom agents',
+      'Private projects',
+      'Custom abilities',
+      '100+ integrations',
+      'Premium AI Models',
+      'Priority Support',
+      'Advanced AI Capabilities',
+    ],
+    isPopular: false,
+    buttonText: 'Get Started',
+    hidden: false,
   },
 ];
 
 export type BillingPeriod = 'monthly' | 'yearly_commitment';
-
-/**
- * Get the appropriate price ID based on billing period
- */
-export function getPriceId(
-  tier: PricingTier,
-  period: BillingPeriod
-): string {
-  if (period === 'yearly_commitment' && tier.stripeYearlyCommitmentPriceId) {
-    return tier.stripeYearlyCommitmentPriceId;
-  }
-  return tier.stripePriceId;
-}
 
 /**
  * Get the display price based on billing period

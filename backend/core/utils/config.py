@@ -80,8 +80,8 @@ class Configuration:
     
     # Environment mode
     ENV_MODE: Optional[EnvMode] = EnvMode.LOCAL
-    
-    
+
+
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
     STRIPE_TIER_2_20_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrhomjgDnO'
@@ -496,9 +496,9 @@ class Configuration:
         if self.ENV_MODE == EnvMode.PRODUCTION:
             return 'https://kortix.com'
         elif self.ENV_MODE == EnvMode.STAGING:
-            return 'https://staging.kortix.com'
+            return 'http://localhost:3000'
+            # return 'https://staging.suna.so'
         else:
-            # Local mode
             return 'http://localhost:3000'
     
     def _generate_admin_api_key(self) -> str:

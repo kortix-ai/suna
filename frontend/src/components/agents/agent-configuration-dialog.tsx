@@ -48,10 +48,10 @@ import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
-import { useAgentVersionData } from '@/hooks/use-agent-version-data';
-import { useUpdateAgent, useAgents } from '@/hooks/react-query/agents/use-agents';
-import { useUpdateAgentMCPs } from '@/hooks/react-query/agents/use-update-agent-mcps';
-import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-import';
+import { useAgentVersionData } from '@/hooks/agents';
+import { useUpdateAgent, useAgents } from '@/hooks/agents/use-agents';
+import { useUpdateAgentMCPs } from '@/hooks/agents/use-update-agent-mcps';
+import { useExportAgent } from '@/hooks/agents/use-agent-export-import';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentModelSelector } from './config/model-selector';
 import { GranularToolConfiguration } from './tools/granular-tool-configuration';

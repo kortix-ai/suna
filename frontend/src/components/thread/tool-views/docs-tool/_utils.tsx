@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { extractToolData } from '../utils';
-import { useFileContentQuery, useDirectoryQuery } from '@/hooks/react-query/files/use-file-queries';
+import { useFileContentQuery, useDirectoryQuery } from '@/hooks/files/use-file-queries';
 import { Editor } from '@/components/agents/docs-agent/editor';
 import { createClient } from '@/lib/supabase/client';
 

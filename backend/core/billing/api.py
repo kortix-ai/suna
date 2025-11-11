@@ -14,7 +14,8 @@ from core.ai_models import model_manager
 from .config import (
     TOKEN_PRICE_MULTIPLIER, 
     get_tier_by_name,
-    TIERS
+    TIERS,
+    CREDITS_PER_DOLLAR
 )
 from .credit_manager import credit_manager
 from .webhook_service import webhook_service
@@ -29,7 +30,7 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 stripe.api_key = config.STRIPE_SECRET_KEY
 
 class CreateCheckoutSessionRequest(BaseModel):
-    price_id: str
+    tier_key: str  # Backend tier key like 'tier_2_20', 'free', etc.
     success_url: str
     cancel_url: str
     commitment_type: Optional[str] = None
@@ -185,21 +186,23 @@ async def check_status(
             "is_trial": is_trial
         }
         
+        from .config import CREDITS_PER_DOLLAR
+        
         return {
             "can_run": can_run,
             "message": "Sufficient credits" if can_run else "Insufficient credits - please add more credits",
             "subscription": subscription,
-            "credit_balance": float(balance),
+            "credit_balance": float(balance) * CREDITS_PER_DOLLAR,
             "can_purchase_credits": tier.get('can_purchase_credits', False),
             "tier_info": tier,
             "is_trial": is_trial,
             "trial_status": trial_status,
             "trial_ends_at": trial_ends_at,
             "credits_summary": {
-                "balance": float(balance),
-                "lifetime_granted": summary['lifetime_granted'],
-                "lifetime_purchased": summary['lifetime_purchased'],
-                "lifetime_used": summary['lifetime_used']
+                "balance": float(balance) * CREDITS_PER_DOLLAR,
+                "lifetime_granted": summary['lifetime_granted'] * CREDITS_PER_DOLLAR,
+                "lifetime_purchased": summary['lifetime_purchased'] * CREDITS_PER_DOLLAR,
+                "lifetime_used": summary['lifetime_used'] * CREDITS_PER_DOLLAR
             }
         }
         
@@ -240,6 +243,147 @@ async def get_project_limits(account_id: str = Depends(verify_and_get_user_id_fr
             'percent_used': 0
         }
 
+@router.get("/tier-limits")
+async def get_tier_limits(account_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        from .subscription_service import subscription_service
+        tier_info = await subscription_service.get_user_subscription_tier(account_id)
+        
+        projects_result = await client.table('projects').select('project_id').eq('account_id', account_id).execute()
+        projects_count = len(projects_result.data or [])
+        
+        threads_result = await client.table('threads').select('thread_id').eq('account_id', account_id).execute()
+        threads_count = len(threads_result.data or [])
+        
+        agents_result = await client.table('agents').select('agent_id, metadata').eq('account_id', account_id).execute()
+        agents_list = agents_result.data or []
+        
+        agents_count = 0
+        for agent in agents_list:
+            metadata = agent.get('metadata', {}) or {}
+            is_suna_default = metadata.get('is_suna_default', False)
+            if not is_suna_default:
+                agents_count += 1
+        
+        scheduled_triggers_count = 0
+        app_triggers_count = 0
+        workers_count = 0
+        
+        if agents_list:
+            agent_ids = [agent['agent_id'] for agent in agents_list]
+            version_ids = []
+            
+            for agent in agents_list:
+                if agent.get('current_version_id'):
+                    version_ids.append(agent['current_version_id'])
+            
+            from core.utils.query_utils import batch_query_in
+            
+            if version_ids:
+                versions = await batch_query_in(
+                    client=client,
+                    table_name='agent_versions',
+                    select_fields='version_id, config',
+                    in_field='version_id',
+                    in_values=version_ids,
+                    additional_filters={}
+                )
+                
+                for version in versions:
+                    config_data = version.get('config', {})
+                    tools = config_data.get('tools', {})
+                    custom_mcps = tools.get('custom_mcp', [])
+                    workers_count += len(custom_mcps)
+            
+            all_triggers = await batch_query_in(
+                client=client,
+                table_name='agent_triggers',
+                select_fields='trigger_id, trigger_type',
+                in_field='agent_id',
+                in_values=agent_ids,
+                additional_filters={}
+            )
+            
+            for trigger in all_triggers:
+                ttype = trigger.get('trigger_type', '')
+                if ttype == 'schedule':
+                    scheduled_triggers_count += 1
+                elif ttype in ['webhook', 'app', 'event']:
+                    app_triggers_count += 1
+        
+        from datetime import timedelta
+        twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
+        twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
+        
+        concurrent_runs_count = 0
+        if threads_result.data:
+            thread_ids = [thread['thread_id'] for thread in threads_result.data]
+            from core.utils.query_utils import batch_query_in
+            
+            running_runs = await batch_query_in(
+                client=client,
+                table_name='agent_runs',
+                select_fields='id',
+                in_field='thread_id',
+                in_values=thread_ids,
+                additional_filters={
+                    'status': 'running',
+                    'started_at_gte': twenty_four_hours_ago_iso
+                }
+            )
+            concurrent_runs_count = len(running_runs)
+        
+        return {
+            'tier': {
+                'name': tier_info['name'],
+                'display_name': tier_info['display_name'],
+                'is_trial': tier_info.get('is_trial', False)
+            },
+            'limits': {
+                'agents': {
+                    'limit': tier_info['custom_workers_limit'],
+                    'current': agents_count,
+                    'can_create': agents_count < tier_info['custom_workers_limit']
+                },
+                'projects': {
+                    'limit': tier_info['project_limit'],
+                    'current': projects_count,
+                    'can_create': projects_count < tier_info['project_limit']
+                },
+                'threads': {
+                    'limit': tier_info['thread_limit'],
+                    'current': threads_count,
+                    'can_create': threads_count < tier_info['thread_limit']
+                },
+                'concurrent_runs': {
+                    'limit': tier_info['concurrent_runs'],
+                    'current': concurrent_runs_count,
+                    'can_start': concurrent_runs_count < tier_info['concurrent_runs']
+                },
+                'custom_workers': {
+                    'limit': tier_info['custom_workers_limit'],
+                    'current': workers_count,
+                    'can_create': workers_count < tier_info['custom_workers_limit']
+                },
+                'scheduled_triggers': {
+                    'limit': tier_info['scheduled_triggers_limit'],
+                    'current': scheduled_triggers_count,
+                    'can_create': scheduled_triggers_count < tier_info['scheduled_triggers_limit']
+                },
+                'app_triggers': {
+                    'limit': tier_info['app_triggers_limit'],
+                    'current': app_triggers_count,
+                    'can_create': app_triggers_count < tier_info['app_triggers_limit']
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting tier limits: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/deduct")
 async def deduct_token_usage(
     usage: TokenUsageRequest,
@@ -277,6 +421,8 @@ async def deduct_token_usage(
 async def get_credit_balance(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
+    from .config import CREDITS_PER_DOLLAR
+    
     db = DBConnection()
     client = await db.client
     
@@ -293,10 +439,14 @@ async def get_credit_balance(
         
         is_trial = trial_status == 'active'
         
+        balance_dollars = float(account.get('balance', 0))
+        expiring_dollars = float(account.get('expiring_credits', 0))
+        non_expiring_dollars = float(account.get('non_expiring_credits', 0))
+        
         return {
-            'balance': float(account.get('balance', 0)),
-            'expiring_credits': float(account.get('expiring_credits', 0)),
-            'non_expiring_credits': float(account.get('non_expiring_credits', 0)),
+            'balance': balance_dollars * CREDITS_PER_DOLLAR,
+            'expiring_credits': expiring_dollars * CREDITS_PER_DOLLAR,
+            'non_expiring_credits': non_expiring_dollars * CREDITS_PER_DOLLAR,
             'tier': tier_name,
             'tier_display_name': tier_info.display_name if tier_info else 'No Plan',
             'is_trial': is_trial,
@@ -305,16 +455,16 @@ async def get_credit_balance(
             'can_purchase_credits': tier_info.can_purchase_credits if tier_info else False,
             'next_credit_grant': account.get('next_credit_grant'),
             'breakdown': {
-                'expiring': float(account.get('expiring_credits', 0)),
-                'non_expiring': float(account.get('non_expiring_credits', 0)),
-                'total': float(account.get('balance', 0))
+                'expiring': expiring_dollars * CREDITS_PER_DOLLAR,
+                'non_expiring': non_expiring_dollars * CREDITS_PER_DOLLAR,
+                'total': balance_dollars * CREDITS_PER_DOLLAR
             }
         }
     
     return {
-        'balance': 0.0,
-        'expiring_credits': 0.0,
-        'non_expiring_credits': 0.0,
+        'balance': 0,
+        'expiring_credits': 0,
+        'non_expiring_credits': 0,
         'tier': 'none',
         'tier_display_name': 'No Plan',
         'is_trial': False,
@@ -323,9 +473,9 @@ async def get_credit_balance(
         'can_purchase_credits': False,
         'next_credit_grant': None,
         'breakdown': {
-            'expiring': 0.0,
-            'non_expiring': 0.0,
-            'total': 0.0
+            'expiring': 0,
+            'non_expiring': 0,
+            'total': 0
         }
     }
 
@@ -380,27 +530,36 @@ async def get_subscription(
             display_plan_name = tier_info.get('display_name', tier_info['name'])
             is_trial = False
         
+        from .config import CREDITS_PER_DOLLAR, get_price_type
+        
+        # Determine billing period from price_id
+        billing_period = None
+        if subscription_info.get('price_id'):
+            billing_period = get_price_type(subscription_info['price_id'])
+        
         return {
             'status': status,
             'plan_name': tier_info['name'],
+            'tier_key': tier_info['name'],  # Explicit tier_key for frontend
             'display_plan_name': display_plan_name,
             'price_id': subscription_info['price_id'],
+            'billing_period': billing_period,  # 'monthly', 'yearly', or 'yearly_commitment'
             'subscription': subscription_data,
             'subscription_id': subscription_data['id'] if subscription_data else None,
-            'current_usage': float(summary['lifetime_used']),
-            'cost_limit': tier_info['credits'],
-            'credit_balance': float(balance),
+            'current_usage': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
+            'cost_limit': tier_info['credits'] * CREDITS_PER_DOLLAR,
+            'credit_balance': float(balance) * CREDITS_PER_DOLLAR,
             'can_purchase_credits': TIERS.get(tier_info['name'], TIERS['none']).can_purchase_credits,
             'tier': tier_info,
             'is_trial': is_trial,
             'trial_status': trial_status,
             'trial_ends_at': trial_ends_at,
             'credits': {
-                'balance': float(balance),
-                'tier_credits': tier_info['credits'],
-                'lifetime_granted': float(summary['lifetime_granted']),
-                'lifetime_purchased': float(summary['lifetime_purchased']),
-                'lifetime_used': float(summary['lifetime_used']),
+                'balance': float(balance) * CREDITS_PER_DOLLAR,
+                'tier_credits': tier_info['credits'] * CREDITS_PER_DOLLAR,
+                'lifetime_granted': float(summary['lifetime_granted']) * CREDITS_PER_DOLLAR,
+                'lifetime_purchased': float(summary['lifetime_purchased']) * CREDITS_PER_DOLLAR,
+                'lifetime_used': float(summary['lifetime_used']) * CREDITS_PER_DOLLAR,
                 'can_purchase_credits': TIERS.get(tier_info['name'], TIERS['none']).can_purchase_credits
             }
         }
@@ -416,8 +575,10 @@ async def get_subscription(
         return {
             'status': 'no_subscription',
             'plan_name': 'none',
+            'tier_key': 'none',  # Explicit tier_key for frontend
             'display_plan_name': 'No Plan',
             'price_id': None,
+            'billing_period': None,
             'subscription': None,
             'subscription_id': None,
             'current_usage': 0,
@@ -492,15 +653,47 @@ async def create_checkout_session(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+            
+        from .config import get_tier_by_name
+        from .free_tier_service import free_tier_service
+        tier = get_tier_by_name(request.tier_key)
+        if not tier:
+            raise HTTPException(status_code=400, detail=f"Invalid tier_key: {request.tier_key}")
+        
+        if request.commitment_type == 'yearly_commitment' and len(tier.price_ids) >= 3:
+            price_id = tier.price_ids[2]
+        elif request.commitment_type == 'yearly' and len(tier.price_ids) >= 2:
+            price_id = tier.price_ids[1]
+        else:
+            price_id = tier.price_ids[0]
+        
+        if price_id == config.STRIPE_FREE_TIER_ID:
+            logger.info(f"[FREE TIER] Creating free tier subscription for {account_id}")
+            result = await free_tier_service.auto_subscribe_to_free_tier(account_id)
+            
+            if not result.get('success'):
+                raise HTTPException(status_code=500, detail=result.get('error', 'Failed to create free tier subscription'))
+            
+            return {
+                'status': 'updated',
+                'subscription_id': result.get('subscription_id'),
+                'message': 'Free tier subscription created successfully',
+                'redirect_to_dashboard': True
+            }
+        
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
-            price_id=request.price_id,
+            price_id=price_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url,
             commitment_type=request.commitment_type
         )
         return result
             
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error creating checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -576,11 +769,47 @@ async def reactivate_subscription(
         return result
         
     except HTTPException as e:
-        # Re-raise HTTP exceptions as-is
         raise e
     except Exception as e:
         logger.error(f"Error reactivating subscription: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class ScheduleDowngradeRequest(BaseModel):
+    target_tier_key: str
+    commitment_type: Optional[str] = None
+
+@router.post("/schedule-downgrade")
+async def schedule_downgrade(
+    request: ScheduleDowngradeRequest,
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        result = await subscription_service.schedule_tier_downgrade(
+            account_id=account_id,
+            target_tier_key=request.target_tier_key,
+            commitment_type=request.commitment_type
+        )
+        await Cache.invalidate(f"subscription_tier:{account_id}")
+        return result
+        
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error scheduling downgrade: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/scheduled-changes")
+async def get_scheduled_changes(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        result = await subscription_service.get_scheduled_changes(account_id)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting scheduled changes: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/transactions")
 async def get_my_transactions(
@@ -618,14 +847,21 @@ async def get_my_transactions(
             transactions.append({
                 'id': tx.get('id'),
                 'created_at': tx.get('created_at'),
-                'amount': float(tx.get('amount', 0)),
-                'balance_after': float(tx.get('balance_after', 0)),
+                'amount': float(tx.get('amount', 0)) * CREDITS_PER_DOLLAR,
+                'balance_after': float(tx.get('balance_after', 0)) * CREDITS_PER_DOLLAR,
                 'type': tx.get('type'),
                 'description': tx.get('description'),
                 'is_expiring': tx.get('is_expiring', False),
                 'expires_at': tx.get('expires_at'),
                 'metadata': tx.get('metadata', {})
             })
+        
+        balance_info_credits = {
+            'total': balance_info.get('total', 0) * CREDITS_PER_DOLLAR,
+            'expiring': balance_info.get('expiring', 0) * CREDITS_PER_DOLLAR,
+            'non_expiring': balance_info.get('non_expiring', 0) * CREDITS_PER_DOLLAR,
+            'tier': balance_info.get('tier', 'none')
+        }
         
         return {
             'transactions': transactions,
@@ -635,12 +871,242 @@ async def get_my_transactions(
                 'offset': offset,
                 'has_more': offset + limit < total_count
             },
-            'current_balance': balance_info
+            'current_balance': balance_info_credits
         }
         
     except Exception as e:
         logger.error(f"Failed to get transactions for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve transactions")
+
+@router.get("/credit-usage")
+async def get_credit_usage(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    limit: int = Query(50, ge=1, le=100, description="Number of usage records to fetch"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back")
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        
+        query = client.from_('credit_ledger')\
+            .select('*')\
+            .eq('account_id', account_id)\
+            .lt('amount', 0)\
+            .gte('created_at', since_date)\
+            .order('created_at', desc=True)
+        
+        count_query = client.from_('credit_ledger')\
+            .select('*', count='exact')\
+            .eq('account_id', account_id)\
+            .lt('amount', 0)\
+            .gte('created_at', since_date)
+        count_result = await count_query.execute()
+        total_count = count_result.count or 0
+        
+        if offset:
+            query = query.range(offset, offset + limit - 1)
+        else:
+            query = query.limit(limit)
+        
+        result = await query.execute()
+        
+        usage_records = []
+        total_usage = 0
+        for tx in result.data or []:
+            amount_dollars = float(tx.get('amount', 0))
+            amount_credits = abs(amount_dollars) * CREDITS_PER_DOLLAR
+            total_usage += amount_credits
+            
+            usage_records.append({
+                'id': tx.get('id'),
+                'created_at': tx.get('created_at'),
+                'credits_used': amount_credits,
+                'balance_after': float(tx.get('balance_after', 0)) * CREDITS_PER_DOLLAR,
+                'type': tx.get('type'),
+                'description': tx.get('description'),
+                'metadata': tx.get('metadata', {})
+            })
+        
+        return {
+            'usage_records': usage_records,
+            'pagination': {
+                'total': total_count,
+                'limit': limit,
+                'offset': offset,
+                'has_more': offset + limit < total_count
+            },
+            'summary': {
+                'total_credits_used': total_usage,
+                'period_days': days,
+                'since_date': since_date
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get credit usage for account {account_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve credit usage")
+
+@router.get("/credit-usage-by-thread")
+async def get_credit_usage_by_thread(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    limit: int = Query(50, ge=1, le=100, description="Number of threads to fetch"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    days: Optional[int] = Query(None, ge=1, le=365, description="Number of days to look back"),
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)")
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        if start_date and end_date:
+            since_date = start_date
+            until_date = end_date
+        elif days:
+            since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            until_date = datetime.utcnow().isoformat()
+        else:
+            since_date = (datetime.utcnow() - timedelta(days=30)).isoformat()
+            until_date = datetime.utcnow().isoformat()
+        
+        ledger_result = await client.from_('credit_ledger')\
+            .select('metadata, amount, created_at')\
+            .eq('account_id', account_id)\
+            .lt('amount', 0)\
+            .gte('created_at', since_date)\
+            .lte('created_at', until_date)\
+            .execute()
+        
+        message_ids_to_lookup = []
+        for entry in ledger_result.data or []:
+            metadata = entry.get('metadata', {})
+            thread_id = metadata.get('thread_id') if metadata else None
+            message_id = metadata.get('message_id') if metadata else None
+            
+            if not thread_id and message_id:
+                message_ids_to_lookup.append(message_id)
+        
+        message_to_thread_map = {}
+        if message_ids_to_lookup:
+            batch_size = 100
+            for i in range(0, len(message_ids_to_lookup), batch_size):
+                batch = message_ids_to_lookup[i:i + batch_size]
+                messages_result = await client.from_('messages')\
+                    .select('message_id, thread_id')\
+                    .in_('message_id', batch)\
+                    .execute()
+                
+                for msg in messages_result.data or []:
+                    message_to_thread_map[msg['message_id']] = msg['thread_id']
+            
+        
+        thread_usage = {}
+        thread_dates = {}
+        
+        for entry in ledger_result.data or []:
+            metadata = entry.get('metadata', {})
+            thread_id = metadata.get('thread_id') if metadata else None
+            message_id = metadata.get('message_id') if metadata else None
+            
+            if not thread_id and message_id:
+                thread_id = message_to_thread_map.get(message_id)
+            
+            if not thread_id:
+                continue
+            
+            amount_dollars = abs(float(entry.get('amount', 0)))
+            amount_credits = amount_dollars * CREDITS_PER_DOLLAR
+            created_at = entry.get('created_at')
+            
+            if thread_id not in thread_usage:
+                thread_usage[thread_id] = 0
+                thread_dates[thread_id] = created_at
+            
+            thread_usage[thread_id] += amount_credits
+            
+            if created_at > thread_dates[thread_id]:
+                thread_dates[thread_id] = created_at
+
+        sorted_threads = sorted(
+            thread_usage.items(),
+            key=lambda x: thread_dates[x[0]],
+            reverse=True
+        )
+        
+        total_threads = len(sorted_threads)
+        paginated_threads = sorted_threads[offset:offset + limit]
+        
+        thread_ids = [t[0] for t in paginated_threads]
+        
+        threads_info = {}
+        if thread_ids:
+            threads_result = await client.from_('threads')\
+                .select('thread_id, project_id, created_at')\
+                .in_('thread_id', thread_ids)\
+                .execute()
+            
+            
+            for thread in threads_result.data or []:
+                threads_info[thread['thread_id']] = thread
+            
+            project_ids = list(set([t.get('project_id') for t in threads_result.data or [] if t.get('project_id')]))
+            projects_info = {}
+            
+            if project_ids:
+                projects_result = await client.from_('projects')\
+                    .select('project_id, name, icon_name')\
+                    .in_('project_id', project_ids)\
+                    .execute()
+                
+                for project in projects_result.data or []:
+                    projects_info[project['project_id']] = project
+        
+        thread_records = []
+        total_usage = 0
+        
+        for thread_id, credits_used in paginated_threads:
+            thread_info = threads_info.get(thread_id, {})
+            project_id = thread_info.get('project_id')
+            project_info = projects_info.get(project_id, {}) if project_id else {}
+            project_name = project_info.get('name', 'Unnamed Project')
+            
+            total_usage += credits_used
+            
+            thread_records.append({
+                'thread_id': thread_id,
+                'project_id': project_id,
+                'project_name': project_name,
+                'credits_used': credits_used,
+                'last_used': thread_dates[thread_id],
+                'created_at': thread_info.get('created_at')
+            })
+        
+        result = {
+            'thread_usage': thread_records,
+            'pagination': {
+                'total': total_threads,
+                'limit': limit,
+                'offset': offset,
+                'has_more': offset + limit < total_threads
+            },
+            'summary': {
+                'total_credits_used': total_usage,
+                'total_threads': total_threads,
+                'period_days': days,
+                'start_date': since_date,
+                'end_date': until_date
+            }
+        }
+
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to get thread usage for account {account_id}: {str(e)}")
+        logger.exception("Exception in get_credit_usage_by_thread")
+        raise HTTPException(status_code=500, detail="Failed to retrieve thread usage")
 
 @router.get("/transactions/summary")
 async def get_transactions_summary(
@@ -1128,3 +1594,39 @@ async def get_circuit_breaker_status(
     except Exception as e:
         logger.error(f"Error getting circuit breaker status: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 
+
+@router.get("/tier-configurations")
+async def get_tier_configurations() -> Dict:
+    """
+    Get all available subscription tier configurations including price IDs.
+    This endpoint is PUBLIC and does not require authentication.
+    """
+    try:
+        from .config import TIERS
+        
+        tier_configs = []
+        for tier_key, tier in TIERS.items():
+            # Skip 'none' tier as it's not a real subscription tier
+            if tier_key == 'none':
+                continue
+                
+            tier_config = {
+                'tier_key': tier_key,
+                'name': tier.name,
+                'display_name': tier.display_name,
+                'monthly_credits': float(tier.monthly_credits),
+                'can_purchase_credits': tier.can_purchase_credits,
+                'project_limit': tier.project_limit,
+                'price_ids': tier.price_ids,
+            }
+            tier_configs.append(tier_config)
+        
+        return {
+            'success': True,
+            'tiers': tier_configs,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting tier configurations: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get tier configurations") 

@@ -2,7 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useOnboarding } from '@/hooks/use-onboarding';
+import { useOnboarding } from '@/hooks/onboarding';
 import { onboardingSteps } from '@/components/onboarding/onboarding-config';
 import { PageHeader } from '@/components/ui/page-header';
 import { RotateCcw, Play, Eye, Sparkles } from 'lucide-react';

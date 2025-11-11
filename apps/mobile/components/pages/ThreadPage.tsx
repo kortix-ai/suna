@@ -548,6 +548,7 @@ export function ThreadPage({
         attachments={chat.attachments}
         onRemoveAttachment={chat.removeAttachment}
         selectedQuickAction={chat.selectedQuickAction}
+        selectedQuickActionOption={chat.selectedQuickActionOption}
         onClearQuickAction={chat.clearQuickAction}
         isAuthenticated={isAuthenticated}
         onOpenAuthDrawer={onOpenAuthDrawer}

@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-import { useCustomMCPToolsData } from '@/hooks/react-query/agents/use-custom-mcp-tools';
+import { useCustomMCPToolsData } from '@/hooks/agents/use-custom-mcp-tools';
 import { ToolsLoader } from './tools-loader';
 
 interface BaseToolsManagerProps {

@@ -71,7 +71,8 @@ def _generate_tool_name(class_name: str) -> str:
     """Generate a tool name from class name.
     
     Converts CamelCase class names to snake_case tool names.
-    Example: SandboxFilesTool -> sb_files_tool
+    This is a fallback - normally we use the module file name instead.
+    Example: SandboxFilesTool -> sandbox_files_tool
     
     Args:
         class_name: Name of the tool class
@@ -119,25 +120,19 @@ def _generate_display_name(name: str) -> str:
 
 
 def discover_tools() -> Dict[str, Type[Tool]]:
-    """Discover all available Tool subclasses.
+    """Discover all available tools from the centralized tool registry.
+    
+    Tool names and their corresponding classes are defined in the centralized registry
+    (core.tools.tool_registry), which is also used for runtime tool registration.
+    This ensures tool names are always consistent between runtime and UI metadata,
+    eliminating naming mismatches.
     
     Returns:
-        Dict mapping tool names to tool classes
+        Dict mapping tool names (str) to tool classes (Type[Tool])
+        Example: {'web_search_tool': SandboxWebSearchTool, 'browser_tool': BrowserTool, ...}
     """
-    # Ensure all tool modules are loaded
-    _ensure_tools_imported()
-    
-    # Get all Tool subclasses
-    tool_classes = _get_all_tool_subclasses()
-    
-    tools_map = {}
-    for tool_class in tool_classes:
-        tool_name = _generate_tool_name(tool_class.__name__)
-        tools_map[tool_name] = tool_class
-        # logger.debug(f"Discovered tool: {tool_name} ({tool_class.__name__})")
-    
-    # logger.info(f"Discovered {len(tools_map)} tools")
-    return tools_map
+    from core.tools.tool_registry import get_all_tools
+    return get_all_tools()
 
 
 def _extract_tool_metadata(tool_name: str, tool_class: Type[Tool]) -> Dict[str, Any]:

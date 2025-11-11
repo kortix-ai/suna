@@ -82,6 +82,9 @@ class WebhookService:
             elif event.type == 'customer.subscription.trial_will_end':
                 await self._handle_trial_will_end(event, client)
             
+            elif event.type in ['subscription_schedule.updated', 'subscription_schedule.completed', 'subscription_schedule.released']:
+                await self._handle_subscription_schedule_event(event, client)
+            
             elif event.type in ['charge.refunded', 'payment_intent.refunded']:
                 await self._handle_refund(event, client)
             
@@ -217,20 +220,23 @@ class WebhookService:
                     price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                     tier_info = get_tier_by_price_id(price_id)
                     
-                    if tier_info:
-                        await client.from_('credit_accounts').update({
-                            'trial_status': 'converted',
-                            'tier': tier_info.name,
-                            'stripe_subscription_id': subscription['id']
-                        }).eq('account_id', account_id).execute()
-                        
-                        await client.from_('trial_history').update({
-                            'ended_at': datetime.now(timezone.utc).isoformat(),
-                            'converted_to_paid': True,
-                            'status': 'converted'
-                        }).eq('account_id', account_id).is_('ended_at', 'null').execute()
-                        
-                        return  # MOVED INSIDE - only return if we converted an active trial
+                    if not tier_info:
+                        logger.error(f"[WEBHOOK CHECKOUT] Cannot process checkout - price_id {price_id} not recognized")
+                        raise ValueError(f"Unrecognized price_id: {price_id}")
+                    
+                    await client.from_('credit_accounts').update({
+                        'trial_status': 'converted',
+                        'tier': tier_info.name,
+                        'stripe_subscription_id': subscription['id']
+                    }).eq('account_id', account_id).execute()
+                    
+                    await client.from_('trial_history').update({
+                        'ended_at': datetime.now(timezone.utc).isoformat(),
+                        'converted_to_paid': True,
+                        'status': 'converted'
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    
+                    return
 
         logger.info(f"[WEBHOOK CHECKOUT] Checking converting_from_trial metadata: {session.get('metadata', {}).get('converting_from_trial')}")
         if session.get('metadata', {}).get('converting_from_trial') == 'true':
@@ -247,7 +253,8 @@ class WebhookService:
                 tier_info = get_tier_by_price_id(price_id)
                 
                 if not tier_info:
-                    return
+                    logger.error(f"[TRIAL CONVERSION] Cannot process trial conversion - price_id {price_id} not recognized")
+                    raise ValueError(f"Unrecognized price_id: {price_id}")
                 
                 lock_key = f"credit_grant:trial_conversion:{account_id}"
                 lock = DistributedLock(lock_key, timeout_seconds=60)
@@ -373,7 +380,7 @@ class WebhookService:
                         logger.info(f"[WEBHOOK] ✅ Trial activated for account {account_id} via checkout.session.completed - granted ${TRIAL_CREDITS} credits")
                     finally:
                         await lock.release()
-                    return  # Only return if we handled the trial
+                    return
                 else:
                     logger.info(f"[WEBHOOK] Subscription status: {subscription.status}, not trialing")
     
@@ -408,17 +415,14 @@ class WebhookService:
                     logger.warning(f"[WEBHOOK] Unknown price_id {price_id} for subscription {subscription_id}")
                     return
                 
-                # Check current credit account status
                 credit_account = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
                 
                 if credit_account.data:
                     current = credit_account.data[0]
-                    # Only process if this is truly a new subscription (not already set up)
                     if current.get('stripe_subscription_id') == subscription_id and current.get('tier') == tier_info.name:
                         logger.info(f"[WEBHOOK] Subscription already set up for {account_id}, skipping")
                         return
                     
-                    # Handle cancelled trial users resubscribing
                     if current.get('trial_status') == 'cancelled':
                         logger.info(f"[WEBHOOK DEFAULT] User {account_id} with cancelled trial is subscribing - handling as new subscription")
                 
@@ -435,6 +439,17 @@ class WebhookService:
                     
                     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                    
+                    from decimal import Decimal
+                    await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=Decimal(str(tier_info.monthly_credits)),
+                        is_expiring=True,
+                        description=f"Initial {tier_info.display_name} subscription credits (checkout.session.completed)",
+                        expires_at=next_grant_date
+                    )
+                    
+                    logger.info(f"[WEBHOOK DEFAULT] Granted {tier_info.monthly_credits} credits to {account_id}")
                     
                     update_data = {
                         'tier': tier_info.name,
@@ -453,10 +468,83 @@ class WebhookService:
     
     async def _handle_subscription_created_or_updated(self, event, client):
         subscription = event.data.object
+        subscription_id = subscription.get('id')
+        subscription_status = subscription.get('status')
+        
+        logger.info(f"[SUBSCRIPTION HANDLER] Event: {event.type}, Subscription: {subscription_id}, Status: {subscription_status}")
         
         if event.type == 'customer.subscription.updated':
             previous_attributes = event.data.get('previous_attributes', {})
             await self._handle_subscription_updated(event, subscription, client)
+        
+        if event.type == 'customer.subscription.created':
+            logger.info(f"[SUBSCRIPTION.CREATED] Processing subscription.created for {subscription_id}")
+            account_id = subscription.get('metadata', {}).get('account_id')
+            customer_id = subscription.get('customer')
+            price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+            
+            logger.info(f"[SUBSCRIPTION.CREATED] account_id={account_id}, customer_id={customer_id}, price_id={price_id}")
+            
+            if not account_id and customer_id:
+                customer_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id')\
+                    .eq('id', customer_id)\
+                    .execute()
+                if customer_result.data:
+                    account_id = customer_result.data[0].get('account_id')
+                    logger.info(f"[SUBSCRIPTION.CREATED] Found account_id from billing_customers: {account_id}")
+            
+            if account_id and customer_id:
+                canceled_subs = []
+                new_price = subscription['items']['data'][0]['price']
+                new_amount = new_price.get('unit_amount', 0) or 0
+                
+                logger.info(f"[SUBSCRIPTION CLEANUP] New subscription {subscription_id} created with amount ${new_amount/100:.2f}, checking for duplicates...")
+                
+                previous_subscription_id = subscription.get('metadata', {}).get('previous_subscription_id')
+                if previous_subscription_id:
+                    try:
+                        logger.info(f"[UPGRADE CLEANUP] Immediately canceling previous subscription {previous_subscription_id} for {account_id}")
+                        await StripeAPIWrapper.cancel_subscription(previous_subscription_id)
+                        canceled_subs.append(previous_subscription_id)
+                        logger.info(f"[UPGRADE CLEANUP] ✅ Canceled previous subscription {previous_subscription_id}")
+                    except stripe.error.StripeError as e:
+                        logger.warning(f"[UPGRADE CLEANUP] Could not cancel previous subscription {previous_subscription_id}: {e}")
+                
+                try:
+                    logger.info(f"[SUBSCRIPTION CLEANUP] Fetching all active subscriptions for customer {customer_id}")
+                    customer_subs = await self.stripe.Subscription.list_async(
+                        customer=customer_id,
+                        status='active',
+                        limit=10
+                    )
+                    
+                    logger.info(f"[SUBSCRIPTION CLEANUP] Found {len(customer_subs.data)} active subscriptions for customer")
+                    
+                    for old_sub in customer_subs.data:
+                        if old_sub.id != subscription_id and old_sub.id not in canceled_subs:
+                            old_price = old_sub['items']['data'][0]['price']
+                            old_amount = old_price.get('unit_amount', 0) or 0
+                            
+                            logger.info(f"[SUBSCRIPTION CLEANUP] Checking subscription {old_sub.id} with amount ${old_amount/100:.2f}")
+                            
+                            if old_amount == 0 and new_amount > 0:
+                                logger.info(f"[DUPLICATE CLEANUP] New subscription is PAID (${new_amount/100:.2f}), canceling old FREE subscription {old_sub.id}")
+                                await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                canceled_subs.append(old_sub.id)
+                                logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled old $0 subscription {old_sub.id}")
+                            elif old_amount == 0 and new_amount == 0:
+                                logger.info(f"[DUPLICATE CLEANUP] Both are $0, keeping newer subscription {subscription_id}, canceling old {old_sub.id}")
+                                await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                canceled_subs.append(old_sub.id)
+                                logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled duplicate $0 subscription {old_sub.id}")
+                    
+                    if canceled_subs:
+                        logger.info(f"[CLEANUP SUMMARY] ✅ Canceled {len(canceled_subs)} old subscriptions: {canceled_subs}")
+                    else:
+                        logger.info(f"[CLEANUP SUMMARY] No duplicate subscriptions found to cancel")
+                except stripe.error.StripeError as e:
+                    logger.error(f"[DUPLICATE CLEANUP] Error checking for duplicate subscriptions: {e}")
         
         if subscription.status in ['active', 'trialing']:
             if subscription.status == 'trialing' and not subscription.get('metadata', {}).get('account_id'):
@@ -477,55 +565,104 @@ class WebhookService:
                         logger.error(f"[WEBHOOK] Failed to update subscription metadata: {e}")
             
             if event.type == 'customer.subscription.created':
+                logger.info(f"[SUBSCRIPTION.CREATED] Processing subscription.created event for subscription {subscription.get('id')}")
                 account_id = subscription.get('metadata', {}).get('account_id')
                 price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                 commitment_type = subscription.get('metadata', {}).get('commitment_type')
+                customer_id = subscription.get('customer')
+                
+                logger.info(f"[SUBSCRIPTION.CREATED] account_id={account_id}, customer_id={customer_id}, price_id={price_id}")
                 
                 if not account_id:
                     customer_result = await client.schema('basejump').from_('billing_customers')\
                         .select('account_id')\
-                        .eq('id', subscription['customer'])\
+                        .eq('id', customer_id)\
                         .execute()
                     if customer_result.data:
                         account_id = customer_result.data[0].get('account_id')
                 
-                if account_id:
+                if account_id and customer_id:
+                    canceled_subs = []
+                    new_price = subscription['items']['data'][0]['price']
+                    new_amount = new_price.get('unit_amount', 0) or 0
+                    
+                    logger.info(f"[SUBSCRIPTION CLEANUP] New subscription {subscription.id} created with amount ${new_amount/100:.2f}, checking for duplicates...")
+                    
+                    previous_subscription_id = subscription.get('metadata', {}).get('previous_subscription_id')
+                    if previous_subscription_id:
+                        try:
+                            logger.info(f"[UPGRADE CLEANUP] Immediately canceling previous subscription {previous_subscription_id} for {account_id}")
+                            await StripeAPIWrapper.cancel_subscription(previous_subscription_id)
+                            canceled_subs.append(previous_subscription_id)
+                            logger.info(f"[UPGRADE CLEANUP] ✅ Canceled previous subscription {previous_subscription_id}")
+                        except stripe.error.StripeError as e:
+                            logger.warning(f"[UPGRADE CLEANUP] Could not cancel previous subscription {previous_subscription_id}: {e}")
+                    
+                    try:
+                        logger.info(f"[SUBSCRIPTION CLEANUP] Fetching all active subscriptions for customer {customer_id}")
+                        customer_subs = await self.stripe.Subscription.list_async(
+                            customer=customer_id,
+                            status='active',
+                            limit=10
+                        )
+                        
+                        logger.info(f"[SUBSCRIPTION CLEANUP] Found {len(customer_subs.data)} active subscriptions for customer")
+                        
+                        for old_sub in customer_subs.data:
+                            if old_sub.id != subscription.id and old_sub.id not in canceled_subs:
+                                old_price = old_sub['items']['data'][0]['price']
+                                old_amount = old_price.get('unit_amount', 0) or 0
+                                
+                                logger.info(f"[SUBSCRIPTION CLEANUP] Checking subscription {old_sub.id} with amount ${old_amount/100:.2f}")
+                                
+                                if old_amount == 0 and new_amount > 0:
+                                    logger.info(f"[DUPLICATE CLEANUP] New subscription is PAID (${new_amount/100:.2f}), canceling old FREE subscription {old_sub.id}")
+                                    await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                    canceled_subs.append(old_sub.id)
+                                    logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled old $0 subscription {old_sub.id}")
+                                elif old_amount == 0 and new_amount == 0:
+                                    logger.info(f"[DUPLICATE CLEANUP] Both are $0, keeping newer subscription {subscription.id}, canceling old {old_sub.id}")
+                                    await StripeAPIWrapper.cancel_subscription(old_sub.id)
+                                    canceled_subs.append(old_sub.id)
+                                    logger.info(f"[DUPLICATE CLEANUP] ✅ Canceled duplicate $0 subscription {old_sub.id}")
+                        
+                        if canceled_subs:
+                            logger.info(f"[CLEANUP SUMMARY] ✅ Canceled {len(canceled_subs)} old subscriptions: {canceled_subs}")
+                        else:
+                            logger.info(f"[CLEANUP SUMMARY] No duplicate subscriptions found to cancel")
+                    except stripe.error.StripeError as e:
+                        logger.error(f"[DUPLICATE CLEANUP] Error checking for duplicate subscriptions: {e}")
+                    
                     trial_check = await client.from_('credit_accounts').select(
-                        'trial_status, tier'
+                        'trial_status, tier, stripe_subscription_id'
                     ).eq('account_id', account_id).execute()
                     
                     if trial_check.data:
                         trial_status = trial_check.data[0].get('trial_status')
+                        current_tier = trial_check.data[0].get('tier')
+                        current_subscription_id = trial_check.data[0].get('stripe_subscription_id')
                         
-                        if trial_status == 'active':
+                        if current_tier in ['free', 'none']:
                             tier_info = get_tier_by_price_id(price_id)
-                            if tier_info:
+                            if not tier_info:
+                                logger.error(f"[WEBHOOK] Cannot process subscription - price_id {price_id} not recognized")
+                                raise ValueError(f"Unrecognized price_id: {price_id}")
+                            
+                            billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                            next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                            
+                            if subscription.status == 'incomplete':
+                                logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to {tier_info.name} (payment pending)")
                                 await client.from_('credit_accounts').update({
-                                    'trial_status': 'converted',
-                                    'tier': tier_info.name,
-                                    'stripe_subscription_id': subscription['id']
-                                }).eq('account_id', account_id).execute()
-                                
-                                await client.from_('trial_history').update({
-                                    'ended_at': datetime.now(timezone.utc).isoformat(),
-                                    'converted_to_paid': True
-                                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
-                        
-                        elif trial_status == 'cancelled' and subscription.status == 'active':
-                            logger.info(f"[WEBHOOK] User {account_id} with cancelled trial is subscribing again")
-                            tier_info = get_tier_by_price_id(price_id)
-                            if tier_info:
-                                billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
-                                next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
-                                
-                                await client.from_('credit_accounts').update({
-                                    'trial_status': 'none',
                                     'tier': tier_info.name,
                                     'stripe_subscription_id': subscription['id'],
                                     'billing_cycle_anchor': billing_anchor.isoformat(),
-                                    'next_credit_grant': next_grant_date.isoformat(),
-                                    'last_grant_date': billing_anchor.isoformat()
+                                    'next_credit_grant': next_grant_date.isoformat()
                                 }).eq('account_id', account_id).execute()
+                                logger.info(f"[WEBHOOK] Updated tier to {tier_info.name}, waiting for payment to grant credits")
+                                
+                            elif subscription.status == 'active':
+                                logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to paid")
                                 
                                 from decimal import Decimal
                                 await credit_manager.add_credits(
@@ -536,7 +673,62 @@ class WebhookService:
                                     expires_at=next_grant_date
                                 )
                                 
-                                logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for new subscription after cancelled trial")
+                                logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from {current_tier} tier")
+                                
+                                await client.from_('credit_accounts').update({
+                                    'tier': tier_info.name,
+                                    'stripe_subscription_id': subscription['id'],
+                                    'billing_cycle_anchor': billing_anchor.isoformat(),
+                                    'next_credit_grant': next_grant_date.isoformat(),
+                                    'last_grant_date': billing_anchor.isoformat()
+                                }).eq('account_id', account_id).execute()
+                        
+                        elif trial_status == 'active':
+                            tier_info = get_tier_by_price_id(price_id)
+                            if not tier_info:
+                                logger.error(f"[WEBHOOK] Cannot process trial conversion - price_id {price_id} not recognized")
+                                raise ValueError(f"Unrecognized price_id: {price_id}")
+                            
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'converted',
+                                'tier': tier_info.name,
+                                'stripe_subscription_id': subscription['id']
+                            }).eq('account_id', account_id).execute()
+                            
+                            await client.from_('trial_history').update({
+                                'ended_at': datetime.now(timezone.utc).isoformat(),
+                                'converted_to_paid': True
+                            }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                        
+                        elif trial_status == 'cancelled' and subscription.status == 'active':
+                            logger.info(f"[WEBHOOK] User {account_id} with cancelled trial is subscribing again")
+                            tier_info = get_tier_by_price_id(price_id)
+                            if not tier_info:
+                                logger.error(f"[WEBHOOK] Cannot process cancelled trial resubscription - price_id {price_id} not recognized")
+                                raise ValueError(f"Unrecognized price_id: {price_id}")
+                            
+                            billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                            next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                            
+                            from decimal import Decimal
+                            await credit_manager.add_credits(
+                                account_id=account_id,
+                                amount=Decimal(str(tier_info.monthly_credits)),
+                                is_expiring=True,
+                                description=f"Initial {tier_info.display_name} subscription credits",
+                                expires_at=next_grant_date
+                            )
+                            
+                            logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for new subscription after cancelled trial")
+                            
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'none',
+                                'tier': tier_info.name,
+                                'stripe_subscription_id': subscription['id'],
+                                'billing_cycle_anchor': billing_anchor.isoformat(),
+                                'next_credit_grant': next_grant_date.isoformat(),
+                                'last_grant_date': billing_anchor.isoformat()
+                            }).eq('account_id', account_id).execute()
                 
                 if account_id and price_id and (
                     is_commitment_price_id(price_id) or 
@@ -550,8 +742,177 @@ class WebhookService:
                 current_price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                 prev_price_id = previous_attributes.get('items', {}).get('data', [{}])[0].get('price', {}).get('id') if previous_attributes.get('items') else None
                 
+                prev_status = previous_attributes.get('status')
+                current_status = subscription.get('status')
+                
+                account_id = subscription.get('metadata', {}).get('account_id')
+                if not account_id:
+                    customer_id = subscription.get('customer')
+                    customer_result = await client.schema('basejump').from_('billing_customers')\
+                        .select('account_id')\
+                        .eq('id', customer_id)\
+                        .execute()
+                    if customer_result.data:
+                        account_id = customer_result.data[0].get('account_id')
+                
+                if account_id and current_price_id and prev_price_id and current_price_id != prev_price_id:
+                    check_scheduled = await client.from_('credit_accounts').select(
+                        'scheduled_tier_change, scheduled_price_id, tier'
+                    ).eq('account_id', account_id).execute()
+                    
+                    if check_scheduled.data:
+                        scheduled_tier = check_scheduled.data[0].get('scheduled_tier_change')
+                        scheduled_price_id = check_scheduled.data[0].get('scheduled_price_id')
+                        current_db_tier = check_scheduled.data[0].get('tier')
+                        
+                        if scheduled_tier and scheduled_price_id and current_price_id == scheduled_price_id:
+                            logger.info(f"[DOWNGRADE APPLIED] ✅ Stripe schedule changed price: {prev_price_id} → {current_price_id}")
+                            logger.info(f"[DOWNGRADE APPLIED] Account: {account_id}, DB tier: {current_db_tier}, Target: {scheduled_tier}")
+                            
+                            lock_key = f"downgrade_tier_update:{account_id}:{current_price_id}"
+                            tier_lock = DistributedLock(lock_key, timeout_seconds=30)
+                            
+                            acquired = await tier_lock.acquire(wait=True, wait_timeout=15)
+                            if acquired:
+                                try:
+                                    logger.info(f"[DOWNGRADE APPLIED] 🔒 Acquired lock to update tier")
+                                    
+                                    recheck = await client.from_('credit_accounts').select(
+                                        'scheduled_tier_change, scheduled_price_id, tier'
+                                    ).eq('account_id', account_id).execute()
+                                    
+                                    if not recheck.data or not recheck.data[0].get('scheduled_price_id'):
+                                        logger.info(f"[DOWNGRADE APPLIED] Already processed by another instance")
+                                    elif recheck.data[0].get('scheduled_price_id') == scheduled_price_id:
+                                        new_tier_info = get_tier_by_price_id(current_price_id)
+                                        if new_tier_info:
+                                            billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                                            next_grant = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                                            
+                                            update_data = {
+                                                'tier': new_tier_info.name,
+                                                'scheduled_tier_change': None,
+                                                'scheduled_tier_change_date': None,
+                                                'scheduled_price_id': None,
+                                                'billing_cycle_anchor': billing_anchor.isoformat(),
+                                                'next_credit_grant': next_grant.isoformat()
+                                            }
+                                            
+                                            if is_commitment_price_id(current_price_id):
+                                                commitment_duration = get_commitment_duration_months(current_price_id)
+                                                if commitment_duration > 0:
+                                                    commitment_start = billing_anchor
+                                                    commitment_end = commitment_start + timedelta(days=365) if commitment_duration == 12 else commitment_start + timedelta(days=commitment_duration * 30)
+                                                    
+                                                    update_data.update({
+                                                        'commitment_type': 'yearly_commitment',
+                                                        'commitment_start_date': commitment_start.isoformat(),
+                                                        'commitment_end_date': commitment_end.isoformat(),
+                                                        'commitment_price_id': current_price_id,
+                                                        'can_cancel_after': commitment_end.isoformat()
+                                                    })
+                                                    
+                                                    try:
+                                                        await client.from_('commitment_history').insert({
+                                                            'account_id': account_id,
+                                                            'commitment_type': 'yearly_commitment',
+                                                            'price_id': current_price_id,
+                                                            'start_date': commitment_start.isoformat(),
+                                                            'end_date': commitment_end.isoformat(),
+                                                            'stripe_subscription_id': subscription['id']
+                                                        }).execute()
+                                                        logger.info(f"[DOWNGRADE APPLIED] New tier has commitment - tracked in commitment_history until {commitment_end.date()}")
+                                                    except Exception as e:
+                                                        logger.warning(f"[DOWNGRADE APPLIED] Could not insert commitment_history (may already exist): {e}")
+                                            else:
+                                                update_data.update({
+                                                    'commitment_type': None,
+                                                    'commitment_start_date': None,
+                                                    'commitment_end_date': None,
+                                                    'commitment_price_id': None,
+                                                    'can_cancel_after': None
+                                                })
+                                                logger.info(f"[DOWNGRADE APPLIED] New tier has no commitment - clearing commitment fields")
+                                            
+                                            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                                            
+                                            from core.utils.cache import Cache
+                                            await Cache.invalidate(f"subscription_tier:{account_id}")
+                                            
+                                            logger.info(f"[DOWNGRADE APPLIED] ✅ Tier updated: {current_db_tier} → {new_tier_info.name}")
+                                            logger.info(f"[DOWNGRADE APPLIED] Scheduled fields and commitment details updated")
+                                finally:
+                                    await tier_lock.release()
+                
+                if subscription.get('metadata', {}).get('downgrade') == 'true':
+                    account_id = subscription.get('metadata', {}).get('account_id')
+                    if not account_id:
+                        customer_id = subscription.get('customer')
+                        customer_result = await client.schema('basejump').from_('billing_customers')\
+                            .select('account_id')\
+                            .eq('id', customer_id)\
+                            .execute()
+                        if customer_result.data:
+                            account_id = customer_result.data[0].get('account_id')
+                    
+                    if account_id:
+                        logger.info(f"[DOWNGRADE] Downgrade metadata found for {account_id}")
+                
                 if current_price_id and prev_price_id and current_price_id == prev_price_id:
-                    return
+                    if not (prev_status == 'incomplete' and current_status == 'active'):
+                        return
+                    else:
+                        logger.info(f"[WEBHOOK] Subscription {subscription['id']} changed from incomplete→active with same price_id, need to grant initial credits")
+                        
+                        account_id = subscription.get('metadata', {}).get('account_id')
+                        if not account_id:
+                            customer_id = subscription.get('customer')
+                            customer_result = await client.schema('basejump').from_('billing_customers')\
+                                .select('account_id')\
+                                .eq('id', customer_id)\
+                                .execute()
+                            if customer_result.data:
+                                account_id = customer_result.data[0].get('account_id')
+                        
+                        if account_id:
+                            trial_check = await client.from_('credit_accounts').select(
+                                'trial_status, tier'
+                            ).eq('account_id', account_id).execute()
+                            
+                            if trial_check.data:
+                                current_tier = trial_check.data[0].get('tier')
+                                
+                                if current_tier in ['free', 'none']:
+                                    tier_info = get_tier_by_price_id(current_price_id)
+                                    if not tier_info:
+                                        logger.error(f"[WEBHOOK] Cannot process incomplete→active transition - price_id {current_price_id} not recognized")
+                                        raise ValueError(f"Unrecognized price_id: {current_price_id}")
+                                    
+                                    billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                                    next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                                    
+                                    logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} via incomplete→active transition to {tier_info.name}")
+                                    
+                                    from decimal import Decimal
+                                    await credit_manager.add_credits(
+                                        account_id=account_id,
+                                        amount=Decimal(str(tier_info.monthly_credits)),
+                                        is_expiring=True,
+                                        description=f"Initial {tier_info.display_name} subscription credits (incomplete→active)",
+                                        expires_at=next_grant_date
+                                    )
+                                    
+                                    logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for incomplete→active upgrade")
+                                    
+                                    await client.from_('credit_accounts').update({
+                                        'tier': tier_info.name,
+                                        'stripe_subscription_id': subscription['id'],
+                                        'billing_cycle_anchor': billing_anchor.isoformat(),
+                                        'next_credit_grant': next_grant_date.isoformat(),
+                                        'last_grant_date': billing_anchor.isoformat()
+                                    }).eq('account_id', account_id).execute()
+                                    
+                                    return
 
                 current_tier_info = get_tier_by_price_id(current_price_id) if current_price_id else None
                 prev_tier_info = get_tier_by_price_id(prev_price_id) if prev_price_id else None
@@ -587,7 +948,9 @@ class WebhookService:
                         now = datetime.now(timezone.utc).timestamp()
                         time_since_period = now - current_period_start
                         
-                        if 0 <= time_since_period < 1800:
+                        is_incomplete_to_active = prev_status == 'incomplete' and current_status == 'active'
+                        
+                        if 0 <= time_since_period < 1800 and not is_incomplete_to_active:
                             return
 
                     if 'current_period_start' in previous_attributes:
@@ -600,6 +963,7 @@ class WebhookService:
                                 if account_id:
                                     await self._track_commitment(account_id, price_id, subscription, client)
                             if not is_tier_upgrade:
+                                logger.info(f"[WEBHOOK] Period changed but not upgrade - returning early")
                                 return
             
             from .subscription_service import subscription_service
@@ -743,8 +1107,31 @@ class WebhookService:
         if not account_id:
             return
         
+        customer_id = subscription.get('customer')
+        if customer_id:
+            try:
+                active_subs = await self.stripe.Subscription.list_async(
+                    customer=customer_id,
+                    status='all',
+                    limit=10
+                )
+                
+                other_active_subs = [
+                    sub for sub in active_subs.data 
+                    if sub.id != subscription.id and sub.status in ['active', 'trialing', 'incomplete']
+                ]
+                
+                if other_active_subs:
+                    logger.info(f"[SUBSCRIPTION DELETED] User {account_id} has {len(other_active_subs)} other active subscriptions - skipping credit removal (likely an upgrade)")
+                    logger.info(f"[SUBSCRIPTION DELETED] Other subscriptions: {[s.id for s in other_active_subs]}")
+                    return
+                else:
+                    logger.info(f"[SUBSCRIPTION DELETED] No other active subscriptions found for {account_id} - proceeding with cancellation cleanup")
+            except Exception as e:
+                logger.error(f"[SUBSCRIPTION DELETED] Error checking for other subscriptions: {e}")
+        
         current_account = await client.from_('credit_accounts').select(
-            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits'
+            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id'
         ).eq('account_id', account_id).execute()
         
         if not current_account.data:
@@ -757,6 +1144,11 @@ class WebhookService:
         current_balance = account_data.get('balance', 0)
         expiring_credits = account_data.get('expiring_credits', 0)
         non_expiring_credits = account_data.get('non_expiring_credits', 0)
+        current_subscription_id = account_data.get('stripe_subscription_id')
+        
+        if current_subscription_id and current_subscription_id != subscription.id:
+            logger.info(f"[SUBSCRIPTION DELETED] Account {account_id} already has different subscription {current_subscription_id} - skipping cleanup")
+            return
         
         if current_trial_status == 'active' and subscription.status == 'trialing':
             await client.from_('credit_accounts').update({
@@ -1052,12 +1444,28 @@ class WebhookService:
                     trial_status = 'converted'
                     logger.info(f"[RENEWAL] Trial status updated to 'converted' for account {account_id}")
                 
-                price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') and subscription['items']['data'] else None
+                
+                if not price_id:
+                    logger.warning(f"[RENEWAL] No price_id from subscription, attempting to extract from invoice")
+                    if invoice.get('lines', {}).get('data'):
+                        for line in invoice['lines']['data']:
+                            if line.get('price') and line.get('price', {}).get('id'):
+                                price_id = line['price']['id']
+                                logger.info(f"[RENEWAL] Found price_id from invoice line: {price_id}")
+                                break
+                
                 if price_id:
                     tier_info = get_tier_by_price_id(price_id)
                     if tier_info:
                         tier = tier_info.name
-                        logger.info(f"[RENEWAL] Updated tier from subscription price_id: {tier}")
+                        logger.info(f"[RENEWAL] Updated tier from price_id {price_id}: {tier}")
+                    else:
+                        logger.error(f"[RENEWAL] Price ID {price_id} not recognized in tier configuration - cannot process invoice")
+                        raise ValueError(f"Unrecognized price_id: {price_id}")
+                else:
+                    logger.error(f"[RENEWAL] Could not determine price_id from subscription or invoice - cannot process invoice")
+                    raise ValueError("Could not determine price_id from subscription or invoice")
                 
                 if trial_status == 'cancelled' and billing_reason == 'subscription_create':
                     logger.info(f"[RENEWAL] Cancelled trial user subscribing - resetting trial status to 'none'")
@@ -1067,13 +1475,38 @@ class WebhookService:
                 logger.info(f"[RENEWAL] invoice_id={invoice_id}, billing_reason={billing_reason}, monthly_credits={monthly_credits}, tier={tier}")
                 
                 if monthly_credits <= 0:
-                    logger.info(f"[RENEWAL] No credits to grant for tier {tier}, skipping")
-                    await client.from_('credit_accounts').update({
-                        'last_processed_invoice_id': invoice_id
-                    }).eq('account_id', account_id).execute()
-                    return
+                    logger.error(f"[RENEWAL] No credits configured for tier {tier} - cannot process invoice")
+                    raise ValueError(f"No credits configured for tier: {tier}")
                 
                 is_true_renewal = billing_reason == 'subscription_cycle'
+                is_initial_subscription = billing_reason == 'subscription_create'
+                
+                if is_initial_subscription:
+                    last_grant = account.get('last_grant_date')
+                    current_db_tier = account.get('tier')
+                    
+                    if last_grant and current_db_tier == tier:
+                        last_grant_dt = datetime.fromisoformat(last_grant.replace('Z', '+00:00'))
+                        seconds_since_grant = (datetime.now(timezone.utc) - last_grant_dt).total_seconds()
+                        
+                        if seconds_since_grant < 60:
+                            logger.info(f"[INITIAL GRANT SKIP] Credits already granted {seconds_since_grant:.0f}s ago for tier {tier}, skipping duplicate grant")
+                            update_data = {
+                                'last_processed_invoice_id': invoice_id,
+                                'tier': tier,
+                                'stripe_subscription_id': subscription_id,
+                                'billing_cycle_anchor': period_start_dt.isoformat(),
+                                'next_credit_grant': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+                            }
+                            if trial_status != account.get('trial_status'):
+                                update_data['trial_status'] = trial_status
+                            
+                            logger.info(f"[INITIAL GRANT SKIP] Updating metadata for tier {tier}")
+                            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                            return
+                    elif last_grant and current_db_tier != tier:
+                        logger.info(f"[TIER CHANGE DETECTED] Last grant was for tier {current_db_tier}, but invoice is for tier {tier} - will grant credits for new tier")
+                
                 if is_true_renewal:
                     logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id} (TRUE RENEWAL)")
                     result = await client.rpc('atomic_grant_renewal_credits', {
@@ -1224,6 +1657,49 @@ class WebhookService:
     async def _handle_trial_will_end(self, event, client):
         subscription = event.data.object
         account_id = subscription.metadata.get('account_id')
+    
+    async def _handle_subscription_schedule_event(self, event, client):
+        schedule = event.data.object
+        subscription_id = schedule.get('subscription')
+        schedule_id = schedule.id
+        
+        logger.info(f"[SCHEDULE] Processing {event.type} for schedule {schedule_id}, subscription {subscription_id}")
+        
+        if event.type == 'subscription_schedule.completed':
+            account_id = schedule.get('metadata', {}).get('account_id')
+            scheduled_tier = schedule.get('metadata', {}).get('target_tier')
+            
+            if account_id and scheduled_tier and schedule.get('metadata', {}).get('downgrade') == 'true':
+                logger.info(f"[SCHEDULE COMPLETED] Downgrade schedule completed for {account_id}")
+                
+                downgrade_lock_key = f"schedule_complete_cleanup:{account_id}:{schedule_id}"
+                downgrade_lock = DistributedLock(downgrade_lock_key, timeout_seconds=30)
+                
+                acquired = await downgrade_lock.acquire(wait=True, wait_timeout=15)
+                if acquired:
+                    try:
+                        logger.info(f"[SCHEDULE COMPLETED] 🔒 Acquired lock for cleanup")
+                        
+                        recheck = await client.from_('credit_accounts').select(
+                            'scheduled_tier_change, tier'
+                        ).eq('account_id', account_id).execute()
+                        
+                        if recheck.data and recheck.data[0].get('scheduled_tier_change'):
+                            await client.from_('credit_accounts').update({
+                                'scheduled_tier_change': None,
+                                'scheduled_tier_change_date': None,
+                                'scheduled_price_id': None
+                            }).eq('account_id', account_id).execute()
+                            
+                            from core.utils.cache import Cache
+                            await Cache.invalidate(f"subscription_tier:{account_id}")
+                            
+                            logger.info(f"[SCHEDULE COMPLETED] ✅ Cleared scheduled change fields for {account_id}")
+                    finally:
+                        await downgrade_lock.release()
+        
+        elif event.type == 'subscription_schedule.released':
+            logger.info(f"[SCHEDULE RELEASED] Schedule {schedule_id} released (likely cancelled)")
     
     async def _handle_refund(self, event, client):
         refund_obj = event.data.object

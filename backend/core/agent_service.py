@@ -268,7 +268,7 @@ class AgentService:
         if version_data:
             self.loader._apply_version_config(agent, version_data)
         elif agent.is_suna_default:
-            self.loader._load_suna_config(agent)
+            await self.loader._load_suna_config(agent, agent.account_id)
         else:
             # No config available, use empty defaults for filtering
             agent.configured_mcps = []
@@ -311,14 +311,15 @@ class AgentService:
         agents: List[Dict[str, Any]], 
         version_map: Dict[str, Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        def get_tools_count(agent_row):
+        agent_tool_counts = []
+        for agent_row in agents:
             agent = self.loader._row_to_agent_data(agent_row)
             version_data = version_map.get(agent.agent_id)
             
             if version_data:
                 self.loader._apply_version_config(agent, version_data)
             elif agent.is_suna_default:
-                self.loader._load_suna_config(agent)
+                await self.loader._load_suna_config(agent, agent.account_id)
             
             configured_mcps = agent.configured_mcps or []
             agentpress_tools = agent.agentpress_tools or {}
@@ -329,9 +330,11 @@ class AgentService:
                 if tool_data and isinstance(tool_data, dict) and tool_data.get('enabled', False)
             ) if agentpress_tools else 0
             
-            return mcp_count + agentpress_count
+            tools_count = mcp_count + agentpress_count
+            agent_tool_counts.append((agent_row, tools_count))
         
-        return sorted(agents, key=get_tools_count, reverse=True)
+        agent_tool_counts.sort(key=lambda x: x[1], reverse=True)
+        return [agent_row for agent_row, _ in agent_tool_counts]
     
     async def _load_agents_with_configs(
         self,
@@ -358,7 +361,7 @@ class AgentService:
                 self.loader._apply_version_config(agent, version_data)
                 agent.config_loaded = True
             elif agent.is_suna_default:
-                self.loader._load_suna_config(agent)
+                await self.loader._load_suna_config(agent, agent.account_id)
                 agent.config_loaded = True
             
             agent_datas.append(agent.to_dict())

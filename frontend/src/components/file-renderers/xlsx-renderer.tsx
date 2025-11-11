@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/components/AuthProvider';
-import { fetchFileContent } from '@/hooks/react-query/files/use-file-queries';
+import { fetchFileContent } from '@/hooks/files/use-file-queries';
 import {
   DropdownMenu,
   DropdownMenuContent,

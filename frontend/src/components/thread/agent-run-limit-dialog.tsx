@@ -1,19 +1,21 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { AlertTriangle, ExternalLink, X, Square, Loader2 } from 'lucide-react';
+import { AlertTriangle, ExternalLink, X, Square, Loader2, Zap, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UpgradeDialog } from '@/components/ui/upgrade-dialog';
 import Link from 'next/link';
-import { useStopAgentMutation } from '@/hooks/react-query/threads/use-agent-run';
-import { AgentRun, getAgentRuns } from '@/lib/api';
+import { useStopAgentMutation } from '@/hooks/threads/use-agent-run';
+import { AgentRun, getAgentRuns } from '@/lib/api/agents';
 import { toast } from 'sonner';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { getThread, getProject } from '@/hooks/react-query/threads/utils';
-import { threadKeys } from '@/hooks/react-query/threads/keys';
+import { getThread, getProject } from '@/hooks/threads/utils';
+import { threadKeys } from '@/hooks/threads/keys';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 interface RunningThreadInfo {
   threadId: string;
@@ -152,8 +154,8 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
   runningThreadIds,
   projectId,
 }) => {
-  // Use the exact same query keys as existing hooks for perfect cache consistency with sidebar
-  // This means data fetched by the sidebar is immediately available here without additional requests
+  const pricingModalStore = usePricingModalStore();
+  
   const threadQueries = useQueries({
     queries: runningThreadIds.map(threadId => ({
       queryKey: threadKeys.details(threadId),
@@ -165,14 +167,13 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
 
   const agentRunQueries = useQueries({
     queries: runningThreadIds.map(threadId => ({
-      queryKey: threadKeys.agentRuns(threadId), // This matches useAgentRunsQuery exactly
+      queryKey: threadKeys.agentRuns(threadId),
       queryFn: () => getAgentRuns(threadId),
       enabled: open && !!threadId,
       retry: 1,
     }))
   });
 
-  // Use the same query keys as useProjectQuery for cache consistency
   const projectQueries = useQueries({
     queries: runningThreadIds.map(threadId => {
       const threadQuery = threadQueries.find((_, index) => runningThreadIds[index] === threadId);
@@ -187,7 +188,6 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
     })
   });
 
-  // Process the React Query results into our thread info structure
   const runningThreadsInfo: RunningThreadInfo[] = useMemo(() => {
     return runningThreadIds.map((threadId, index) => {
       const threadQuery = threadQueries[index];
@@ -197,10 +197,8 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
       const isLoading = threadQuery.isLoading || agentRunQuery.isLoading || projectQuery.isLoading;
       const hasError = threadQuery.isError || agentRunQuery.isError || projectQuery.isError;
       
-      // Find the running agent run for this thread
       const runningAgentRun = agentRunQuery.data?.find((run: AgentRun) => run.status === 'running') || null;
       
-      // Get thread name from first user message if available
       let threadName = '';
       if (threadQuery.data?.messages?.length > 0) {
         const firstUserMessage = threadQuery.data.messages.find((msg: any) => msg.type === 'user');
@@ -210,7 +208,6 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
         }
       }
 
-      // Get project information
       const projectId = threadQuery.data?.project_id || null;
       const projectName = projectQuery.data?.name || '';
 
@@ -233,8 +230,13 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
   };
 
   const handleThreadStopped = () => {
-    // No need to close the dialog - the queries will automatically refetch
-    // and update the UI to show the current running state
+  };
+
+  const handleUpgrade = () => {
+    pricingModalStore.openPricingModal({
+      title: 'Upgrade to run more agents in parallel'
+    });
+    onOpenChange(false);
   };
 
   return (
@@ -254,6 +256,32 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
         }
       ]}
     >
+      <Card className="border-primary/20 bg-primary/5 mb-4">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Rocket className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <CardTitle className="text-sm">Need more parallel runs?</CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Upgrade your plan to run multiple agents simultaneously and boost your productivity.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardFooter>
+          <Button 
+            onClick={handleUpgrade}
+            size="sm"
+            className="w-full"
+          >
+            <Zap className="h-4 w-4" />
+            Upgrade Plan
+          </Button>
+        </CardFooter>
+      </Card>
+
       {(runningThreadIds.length > 0 || runningCount > 0) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -304,6 +332,18 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
           <li className="flex items-start gap-2">
             <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground mt-2 flex-shrink-0" />
             <span>Wait for an agent to complete automatically</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
+            <div className="flex flex-wrap items-center gap-1">
+              <button 
+                onClick={handleUpgrade}
+                className="text-primary hover:underline font-medium"
+              >
+                Upgrade your plan
+              </button>
+              <span>for more parallel runs</span>
+            </div>
           </li>
         </ul>
       </div>

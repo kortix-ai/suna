@@ -5,7 +5,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
-import { useCreateTemplate, useUnpublishTemplate } from '@/hooks/react-query/secure-mcp/use-secure-mcp';
+import { useCreateTemplate, useUnpublishTemplate } from '@/hooks/secure-mcp/use-secure-mcp';
 import { toast } from 'sonner';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import { AgentAvatar } from '../thread/content/agent-avatar';

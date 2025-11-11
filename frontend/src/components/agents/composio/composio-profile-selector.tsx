@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Plus, Calendar, User } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
-import type { ComposioToolkit, ComposioProfile } from '@/hooks/react-query/composio/utils';
+import type { ComposioToolkit, ComposioProfile } from '@/hooks/composio/utils';
 
 interface ComposioProfileSelectorProps {
   open: boolean;

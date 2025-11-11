@@ -1,5 +1,6 @@
 import { Metadata } from 'next';
-import { getThread, getProject } from '@/lib/api-server';
+import { getThread } from '@/lib/api/threads';
+import { getProject } from '@/lib/api/projects';
 
 export async function generateMetadata({ params }): Promise<Metadata> {
   const { threadId } = await params;
@@ -61,5 +62,9 @@ export async function generateMetadata({ params }): Promise<Metadata> {
 }
 
 export default async function ThreadLayout({ children }) {
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+    </>
+  );
 }

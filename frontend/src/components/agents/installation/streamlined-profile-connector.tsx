@@ -13,11 +13,11 @@ import {
 import { toast } from 'sonner';
 import { ComposioCredentialProfileSelector } from '@/components/agents/composio/composio-credential-profile-selector';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
-import { useCreateCredentialProfile, useCredentialProfiles, type CreateCredentialProfileRequest } from '@/hooks/react-query/mcp/use-credential-profiles';
-import { useMCPServerDetails } from '@/hooks/react-query/mcp/use-mcp-servers';
+import { useCreateCredentialProfile, useCredentialProfiles, type CreateCredentialProfileRequest } from '@/hooks/mcp/use-credential-profiles';
+import { useMCPServerDetails } from '@/hooks/mcp/use-mcp-servers';
 
-import { useCredentialProfilesForMcp } from '@/hooks/react-query/mcp/use-credential-profiles';
-import { useComposioToolkits } from '@/hooks/react-query/composio/use-composio';
+import { useCredentialProfilesForMcp } from '@/hooks/mcp/use-credential-profiles';
+import { useComposioToolkits } from '@/hooks/composio/use-composio';
 import type { SetupStep } from './types';
 
 interface ProfileConnectorProps {

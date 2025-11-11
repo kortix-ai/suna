@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useOnboarding } from '@/hooks/use-onboarding';
+import { useOnboarding } from '@/hooks/onboarding';
 import { NewOnboardingPage } from './new-onboarding-page';
 
 interface OnboardingProviderProps {

@@ -15,7 +15,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useCreateAgentVersion } from '@/lib/versioning';
+import { useCreateAgentVersion } from '@/hooks/agents/use-agent-versions';
 import { toast } from 'sonner';
 
 interface CreateVersionButtonProps {

@@ -236,6 +236,7 @@ class ResponseProcessor:
         continuous_state: Optional[Dict[str, Any]] = None,
         generation = None,
         estimated_total_tokens: Optional[int] = None,
+        cancellation_event: Optional[asyncio.Event] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a streaming LLM response, handling tool calls and execution.
         
@@ -253,6 +254,10 @@ class ResponseProcessor:
             Complete message objects matching the DB schema, except for content chunks.
         """
         logger.info(f"Starting streaming response processing for thread {thread_id}")
+        
+        # Initialize cancellation event if not provided
+        if cancellation_event is None:
+            cancellation_event = asyncio.Event()
         
         # Initialize from continuous state if provided (for auto-continue)
         continuous_state = continuous_state or {}
@@ -322,6 +327,12 @@ class ResponseProcessor:
 
             chunk_count = 0
             async for chunk in llm_response:
+                # Check for cancellation before processing each chunk
+                if cancellation_event.is_set():
+                    logger.info(f"Cancellation signal received for thread {thread_id} - stopping LLM stream processing")
+                    finish_reason = "cancelled"
+                    break
+                
                 chunk_count += 1
                 
                 # Track timing
@@ -490,41 +501,10 @@ class ResponseProcessor:
                                 tool_index += 1
 
                 if finish_reason == "xml_tool_limit_reached":
-                    logger.info("XML tool limit reached - draining remaining stream to capture usage data")
-                    self.trace.event(name="xml_tool_limit_draining_stream", level="DEFAULT", status_message=(f"XML tool limit reached - draining remaining stream to capture usage data"))
-                    
-                    drain_timeout = 5.0
-                    drain_start_time = datetime.now(timezone.utc).timestamp()
-                    chunks_drained = 0
-                    max_drain_chunks = 100
-                    
-                    try:
-                        async for remaining_chunk in llm_response:
-                            chunk_count += 1
-                            chunks_drained += 1
-
-                            current_drain_time = datetime.now(timezone.utc).timestamp()
-                            last_chunk_time = current_drain_time
-
-                            if hasattr(remaining_chunk, 'usage') and remaining_chunk.usage and final_llm_response is None:
-                                final_llm_response = remaining_chunk
-                                logger.info(f"✅ Captured usage data after tool limit: {remaining_chunk.usage}")
-                                break
-
-                            if hasattr(remaining_chunk, 'choices') and remaining_chunk.choices:
-                                if hasattr(remaining_chunk.choices[0], 'finish_reason') and remaining_chunk.choices[0].finish_reason:
-                                    if not finish_reason:
-                                        finish_reason = remaining_chunk.choices[0].finish_reason
-                            
-                            if (current_drain_time - drain_start_time) > drain_timeout:
-                                break
-                            
-                            if chunks_drained >= max_drain_chunks:
-                                break
-                                
-                    except Exception as drain_error:
-                        logger.warning(f"Error draining stream after tool limit: {drain_error}")
-                    
+                    logger.info("XML tool limit reached - stopping immediately without draining stream")
+                    self.trace.event(name="xml_tool_limit_reached_immediate_stop", level="DEFAULT", status_message=(f"XML tool limit reached - stopping immediately to prevent further LLM token generation"))
+                    # Immediately break from the loop to stop consuming chunks
+                    # This prevents the LLM from continuing to generate tokens in the background
                     break
 
             logger.info(f"Stream complete. Total chunks: {chunk_count}")
@@ -616,7 +596,9 @@ class ResponseProcessor:
 
             should_auto_continue = (can_auto_continue and finish_reason == 'length')
 
-            if accumulated_content and not should_auto_continue:
+            # Don't save partial response if user stopped (cancelled)
+            # But do save for other early stops like XML limit reached
+            if accumulated_content and not should_auto_continue and finish_reason != "cancelled":
                 # ... (Truncate accumulated_content logic) ...
                 if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls and xml_chunks_buffer:
                     last_xml_chunk = xml_chunks_buffer[-1]
@@ -965,6 +947,36 @@ class ResponseProcessor:
         finally:
             # IMPORTANT: Finally block runs even when stream is stopped (GeneratorExit)
             # We MUST NOT yield here - just save to DB silently for billing/usage tracking
+            
+            # Phase 3: Resource Cleanup - Cancel pending tasks and close generator
+            try:
+                # Cancel all pending tool execution tasks when stopping
+                if pending_tool_executions:
+                    logger.info(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")
+                    for execution in pending_tool_executions:
+                        task = execution.get("task")
+                        if task and not task.done():
+                            try:
+                                task.cancel()
+                            except Exception as cancel_err:
+                                logger.warning(f"Error cancelling tool execution task: {cancel_err}")
+                
+                # Try to close the LLM response generator if it supports aclose()
+                # This helps stop the underlying HTTP connection from continuing
+                if hasattr(llm_response, 'aclose'):
+                    try:
+                        await llm_response.aclose()
+                        logger.debug(f"Closed LLM response generator for thread {thread_id}")
+                    except Exception as close_err:
+                        logger.debug(f"Error closing LLM response generator (may not support aclose): {close_err}")
+                elif hasattr(llm_response, 'close'):
+                    try:
+                        llm_response.close()
+                        logger.debug(f"Closed LLM response generator (sync close) for thread {thread_id}")
+                    except Exception as close_err:
+                        logger.debug(f"Error closing LLM response generator (sync): {close_err}")
+            except Exception as cleanup_err:
+                logger.warning(f"Error during resource cleanup: {cleanup_err}")
             
             if not llm_response_end_saved and last_assistant_message_object:
                 try:

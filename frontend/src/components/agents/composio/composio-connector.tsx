@@ -6,10 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Check, AlertCircle, Plus, ExternalLink, ChevronRight, Search, Save, Loader2, User, Settings, Info, Eye, Zap, Wrench, X, Shield } from 'lucide-react';
-import { useCreateComposioProfile, useComposioTools, useCheckProfileNameAvailability } from '@/hooks/react-query/composio/use-composio';
-import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
-import { useComposioToolkitDetails } from '@/hooks/react-query/composio/use-composio';
-import type { ComposioToolkit, ComposioProfile, AuthConfigField } from '@/hooks/react-query/composio/utils';
+import { useCreateComposioProfile, useComposioTools, useCheckProfileNameAvailability } from '@/hooks/composio/use-composio';
+import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
+import { useComposioToolkitDetails } from '@/hooks/composio/use-composio';
+import type { ComposioToolkit, ComposioProfile, AuthConfigField } from '@/hooks/composio/utils';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { backendApi } from '@/lib/api-client';
-import { composioApi } from '@/hooks/react-query/composio/utils';
+import { composioApi } from '@/hooks/composio/utils';
 import { ComposioToolsSelector } from './composio-tools-selector';
 
 interface ComposioConnectorProps {
@@ -237,7 +237,7 @@ const InitiationFieldInput = ({ field, value, onChange, error }: {
   );
 };
 
-import type { ComposioTool } from '@/hooks/react-query/composio/utils';
+import type { ComposioTool } from '@/hooks/composio/utils';
 
 const CUSTOM_OAUTH_REQUIRED_APPS = [
   'zendesk',

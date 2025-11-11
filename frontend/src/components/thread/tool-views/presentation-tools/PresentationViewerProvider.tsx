@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from 'react';
-import { usePresentationViewer } from '@/hooks/use-presentation-viewer';
+import { usePresentationViewer } from '@/hooks/files';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
 
 interface PresentationViewerContextType {

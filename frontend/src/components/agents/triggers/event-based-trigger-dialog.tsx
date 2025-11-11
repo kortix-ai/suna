@@ -12,10 +12,10 @@ import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Search, ArrowLeft, Info, Zap, ChevronRight, Plus, Sparkles, CheckCircle2, Link2 } from 'lucide-react';
-import { useComposioAppsWithTriggers, useComposioAppTriggers, useCreateComposioEventTrigger, ComposioTriggerType } from '@/hooks/react-query/composio/use-composio-triggers';
-import { useUpdateTrigger } from '@/hooks/react-query/triggers';
-import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
-import { useComposioToolkitDetails } from '@/hooks/react-query/composio/use-composio';
+import { useComposioAppsWithTriggers, useComposioAppTriggers, useCreateComposioEventTrigger, ComposioTriggerType } from '@/hooks/composio/use-composio-triggers';
+import { useUpdateTrigger } from '@/hooks/triggers';
+import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
+import { useComposioToolkitDetails } from '@/hooks/composio/use-composio';
 import { toast } from 'sonner';
 import { cn, truncateString } from '@/lib/utils';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
@@ -516,22 +516,6 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
             onOpenChange(false);
         } catch (e: any) {
-            let errorMessage = isEditMode ? 'Failed to update trigger' : 'Failed to create trigger';
-            if (e?.details?.detail?.error?.message) {
-                errorMessage = e.details.detail.error.message;
-            } else if (e?.details?.message) {
-                errorMessage = e.details.message;
-            } else if (e?.details?.detail?.message) {
-                errorMessage = e.details.detail.message;
-            } else if (e?.message && e.message !== 'HTTP 400: Bad Request') {
-                errorMessage = e.message;
-            } else if (e?.response?.data?.detail?.error?.message) {
-                errorMessage = e.response.data.detail.error.message;
-            } else if (e?.response?.data?.message) {
-                errorMessage = e.response.data.message;
-            }
-
-            toast.error(errorMessage);
         }
     };
 

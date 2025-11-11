@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from uuid import uuid4
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_current_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config, EnvMode
 from core.services.supabase import DBConnection
 from datetime import datetime
 import os
@@ -681,6 +682,22 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         if not agent_check.data:
             raise HTTPException(status_code=404, detail="Agent not found or access denied")
 
+        if config.ENV_MODE != EnvMode.LOCAL:
+            from core.utils.limits_checker import check_trigger_limit
+            limit_check = await check_trigger_limit(client_db, current_user_id, req.agent_id, 'app')
+            
+            if not limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {limit_check['limit']} app triggers allowed for your current plan. You have {limit_check['current_count']} app triggers.",
+                    "current_count": limit_check['current_count'],
+                    "limit": limit_check['limit'],
+                    "tier_name": limit_check['tier_name'],
+                    "trigger_type": "app",
+                    "error_code": "TRIGGER_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Trigger limit exceeded for account {current_user_id}: {limit_check['current_count']}/{limit_check['limit']} app triggers")
+                raise HTTPException(status_code=402, detail=error_detail)
+
         profile_service = ComposioProfileService(db)
         profile_config = await profile_service.get_profile_config(req.profile_id)
         composio_user_id = profile_config.get("user_id")
@@ -856,8 +873,9 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to create Composio trigger: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e) if e else "Unknown error"
+        logger.error(f"Failed to create Composio trigger: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @router.post("/webhook")

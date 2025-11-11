@@ -48,7 +48,7 @@ import {
   APIKeyCreateRequest,
   APIKeyResponse,
   APIKeyCreateResponse,
-} from '@/lib/api-client';
+} from '@/lib/api/api-keys';
 
 interface NewAPIKeyData {
   title: string;

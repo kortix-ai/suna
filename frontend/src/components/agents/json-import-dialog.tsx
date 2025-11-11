@@ -10,9 +10,8 @@ import { toast } from 'sonner';
 import { ProfileConnector } from './installation/streamlined-profile-connector';
 import { CustomServerStep } from './installation/custom-server-step';
 import type { SetupStep } from './installation/types';
-import { useAnalyzeJsonForImport, useImportAgentFromJson, type JsonAnalysisResult, type JsonImportResult } from '@/hooks/react-query/agents/use-json-import';
-import { AgentCountLimitDialog } from './agent-count-limit-dialog';
-import { AgentCountLimitError } from '@/lib/api';
+import { useAnalyzeJsonForImport, useImportAgentFromJson, type JsonAnalysisResult, type JsonImportResult } from '@/hooks/agents/use-json-import';
+import { AgentCountLimitError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils';
 
 interface JsonImportDialogProps {
@@ -36,8 +35,6 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
   const [currentStep, setCurrentStep] = useState(0);
   const [profileMappings, setProfileMappings] = useState<Record<string, string>>({});
   const [customMcpConfigs, setCustomMcpConfigs] = useState<Record<string, Record<string, any>>>({});
-  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
-  const [agentLimitError, setAgentLimitError] = useState<AgentCountLimitError | null>(null);
 
   const analyzeJsonMutation = useAnalyzeJsonForImport();
   const importJsonMutation = useImportAgentFromJson();
@@ -51,8 +48,6 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
     setCurrentStep(0);
     setProfileMappings({});
     setCustomMcpConfigs({});
-    setShowAgentLimitDialog(false);
-    setAgentLimitError(null);
   }, []);
 
   useEffect(() => {
@@ -224,8 +219,6 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
         },
         onError: (error) => {
           if (error instanceof AgentCountLimitError) {
-            setAgentLimitError(error);
-            setShowAgentLimitDialog(true);
             onOpenChange(false);
           }
         }
@@ -431,15 +424,6 @@ export const JsonImportDialog: React.FC<JsonImportDialogProps> = ({
         {step === 'setup' && renderSetupStep()}
         {step === 'importing' && renderImportingStep()}
       </DialogContent>
-      {agentLimitError && (
-        <AgentCountLimitDialog
-          open={showAgentLimitDialog}
-          onOpenChange={setShowAgentLimitDialog}
-          currentCount={agentLimitError.detail.current_count}
-          limit={agentLimitError.detail.limit}
-          tierName={agentLimitError.detail.tier_name}
-        />
-      )}
     </Dialog>
   );
 }; 

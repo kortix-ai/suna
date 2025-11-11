@@ -1,12 +1,9 @@
 import * as React from 'react';
 import { View } from 'react-native';
-import { Text } from '@/components/ui/text';
-import { LinearGradient } from 'expo-linear-gradient';
-import MaskedView from '@react-native-masked-view/masked-view';
+import BasicSvg from '@/assets/brand/tiers/basic.svg';
 import PlusSvg from '@/assets/brand/tiers/plus.svg';
 import ProSvg from '@/assets/brand/tiers/pro.svg';
 import UltraSvg from '@/assets/brand/tiers/ultra.svg';
-import { useColorScheme } from 'nativewind';
 import type { TierType } from './types';
 
 interface TierBadgeProps {
@@ -17,75 +14,49 @@ interface TierBadgeProps {
 /**
  * TierBadge Component
  * 
- * Displays tier badge with Kortix brandmark and tier name.
- * Three variants: Plus (pink gradient), Pro (orange gradient), Ultra (rainbow gradient).
+ * Displays tier badge SVG which includes both icon and tier name.
+ * Four variants: Basic (gray), Plus (pink gradient), Pro (orange gradient), Ultra (rainbow gradient).
  * 
- * Design Specifications (Figma: 89-8016):
- * - Small size: 12x10px icon, 13.33px text (for profile cards)
- * - Large size: 104x87px icon, 116px text (for showcase)
- * - Font: Roobert-Medium
- * - Gap: 4px (small), 35px (large)
- * - Ultra has gradient text with linear gradient
- * - Plus & Pro have white text
+ * The SVG badges are pre-designed and contain:
+ * - Kortix icon
+ * - Tier name text
+ * - Background styling
+ * 
+ * Size variants:
+ * - Small: Height 20px (for pricing cards, billing page)
+ * - Large: Height 24px (for larger displays)
  */
 export function TierBadge({ tier, size = 'small' }: TierBadgeProps) {
-  const { colorScheme } = useColorScheme();
   const isSmall = size === 'small';
-  // Figma specs: Small size: 12x10px icon, 13.33px text
-  const iconSize = isSmall ? { width: 12, height: 10 } : { width: 104, height: 87 };
-  const textSize = isSmall ? 'text-[13.33px]' : 'text-[116px]';
-  const gapSize = isSmall ? 'gap-1' : 'gap-[35px]';
-
+  
+  // SVG badges have fixed aspect ratios:
+  // Basic: 50x24, Plus: 59x24, Pro: 55x24, Ultra: 63x24
+  // Scale based on desired height
+  const height = isSmall ? 20 : 24;
+  
   // Select appropriate SVG component
-  const TierIcon = tier === 'Plus' ? PlusSvg : tier === 'Pro' ? ProSvg : UltraSvg;
+  const TierIcon = 
+    tier === 'Basic' ? BasicSvg :
+    tier === 'Plus' ? PlusSvg : 
+    tier === 'Pro' ? ProSvg : 
+    UltraSvg;
 
-  // Text color adapts to color scheme for visibility
-  // In dark mode: white text, in light mode: dark text for contrast
-  const textColor = colorScheme === 'dark' ? '#f8f8f8' : '#121215';
+  // Calculate width based on original SVG aspect ratio
+  const getWidth = () => {
+    const aspectRatios = {
+      Basic: 50 / 24,
+      Plus: 59 / 24,
+      Pro: 55 / 24,
+      Ultra: 63 / 24,
+    };
+    return Math.round(height * aspectRatios[tier]);
+  };
+
+  const width = getWidth();
 
   return (
-    <View className={`flex-row items-center ${gapSize}`}>
-      {/* Tier Icon */}
-      <View style={iconSize}>
-        <TierIcon width={iconSize.width} height={iconSize.height} />
-      </View>
-
-      {/* Tier Text */}
-      {tier === 'Ultra' ? (
-        // Ultra with gradient text using MaskedView
-        <MaskedView
-          maskElement={
-            <Text 
-              className={`${textSize} font-roobert-medium`}
-              style={{ backgroundColor: 'transparent' }}
-            >
-              {tier}
-            </Text>
-          }
-        >
-          <LinearGradient
-            colors={['#23D3FF', '#FDF5E0', '#FFC78C', '#FF1B07']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            locations={[0.073, 0.545, 0.919, 1.0]}
-          >
-            <Text 
-              className={`${textSize} font-roobert-medium`}
-              style={{ opacity: 0 }}
-            >
-              {tier}
-            </Text>
-          </LinearGradient>
-        </MaskedView>
-      ) : (
-        // Plus & Pro with adaptive text color
-        <Text 
-          className={`${textSize} font-roobert-medium`}
-          style={{ color: textColor }}
-        >
-          {tier}
-        </Text>
-      )}
+    <View style={{ height, width }}>
+      <TierIcon width={width} height={height} />
     </View>
   );
 }

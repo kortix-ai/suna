@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
+import { useThreadQuery } from '@/hooks/threads/use-threads';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 
 interface RedirectPageProps {

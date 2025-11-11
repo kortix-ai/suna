@@ -43,6 +43,7 @@ interface ChatInputProps extends ViewProps {
   attachments?: Attachment[];
   onRemoveAttachment?: (index: number) => void;
   selectedQuickAction?: string | null;
+  selectedQuickActionOption?: string | null;
   onClearQuickAction?: () => void;
   isAuthenticated?: boolean;
   onOpenAuthDrawer?: () => void;
@@ -85,6 +86,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   attachments = [],
   onRemoveAttachment,
   selectedQuickAction,
+  selectedQuickActionOption,
   onClearQuickAction,
   isAuthenticated = true,
   onOpenAuthDrawer,

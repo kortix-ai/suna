@@ -11,7 +11,7 @@ import hmac
 from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 # Billing checks now handled by billing_integration.check_model_and_billing_access
 from core.billing.billing_integration import billing_integration
 
@@ -341,11 +341,31 @@ async def create_agent_trigger(
     request: TriggerCreateRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Create a new trigger for an agent"""
-        
     await verify_and_authorize_trigger_agent_access(agent_id, user_id)
     
     try:
+        if config.ENV_MODE != EnvMode.LOCAL:
+            client = await db.client
+            
+            provider_service = get_provider_service(db)
+            provider_trigger_type = await provider_service.get_provider_trigger_type(request.provider_id)
+            trigger_type_str = 'scheduled' if provider_trigger_type.value == 'schedule' else 'app'
+            
+            from core.utils.limits_checker import check_trigger_limit
+            limit_check = await check_trigger_limit(client, user_id, agent_id, trigger_type_str)
+            
+            if not limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {limit_check['limit']} {trigger_type_str} triggers allowed for your current plan. You have {limit_check['current_count']} {trigger_type_str} triggers.",
+                    "current_count": limit_check['current_count'],
+                    "limit": limit_check['limit'],
+                    "tier_name": limit_check['tier_name'],
+                    "trigger_type": trigger_type_str,
+                    "error_code": "TRIGGER_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Trigger limit exceeded for account {user_id}: {limit_check['current_count']}/{limit_check['limit']} {trigger_type_str} triggers")
+                raise HTTPException(status_code=402, detail=error_detail)
+        
         trigger_service = get_trigger_service(db)
         
         trigger = await trigger_service.create_trigger(
@@ -356,7 +376,6 @@ async def create_agent_trigger(
             description=request.description
         )
         
-        # Sync triggers to version config after creation
         await sync_triggers_to_version_config(agent_id)
         
         return TriggerResponse(
@@ -375,6 +394,8 @@ async def create_agent_trigger(
         
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating trigger: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

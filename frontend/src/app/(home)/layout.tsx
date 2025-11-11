@@ -1,6 +1,6 @@
 'use client';
 
-import { Navbar } from '@/components/home/sections/navbar';
+import { Navbar } from '@/components/home/navbar';
 import { isLocalMode } from '@/lib/config';
 import { usePathname } from 'next/navigation';
 

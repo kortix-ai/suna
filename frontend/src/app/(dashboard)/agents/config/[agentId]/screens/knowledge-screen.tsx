@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { KnowledgeBaseManager } from '@/components/knowledge-base/knowledge-base-manager';
-import { useAgent } from '@/hooks/react-query/agents/use-agents';
+import { useAgent } from '@/hooks/agents/use-agents';
 
 interface KnowledgeScreenProps {
     agentId: string;

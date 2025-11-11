@@ -2,7 +2,7 @@
  * Billing Context
  * 
  * Global billing state management
- * Combines subscription, credit balance, billing status, and trial information
+ * Combines subscription, credit balance, and billing status
  */
 
 import React, { createContext, useContext, useCallback, ReactNode } from 'react';
@@ -10,12 +10,10 @@ import {
   useSubscription,
   useCreditBalance,
   useBillingStatus,
-  useTrialStatus,
   billingKeys,
   type SubscriptionInfo,
   type CreditBalance,
   type BillingStatus,
-  type TrialStatus,
 } from '@/lib/billing';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthContext } from './AuthContext';
@@ -29,14 +27,12 @@ export interface BillingContextType {
   subscriptionData: SubscriptionInfo | null;
   creditBalance: CreditBalance | null;
   billingStatus: BillingStatus | null;
-  trialStatus: TrialStatus | null;
   
   // Loading states
   isLoading: boolean;
   subscriptionLoading: boolean;
   balanceLoading: boolean;
   statusLoading: boolean;
-  trialLoading: boolean;
   
   // Errors
   error: Error | null;
@@ -46,12 +42,11 @@ export interface BillingContextType {
   refetchSubscription: () => void;
   refetchBalance: () => void;
   refetchStatus: () => void;
-  refetchTrial: () => void;
   checkBillingStatus: () => Promise<boolean>;
   
   // Computed states
   hasActiveSubscription: boolean;
-  hasActiveTrial: boolean;
+  hasFreeTier: boolean;
   needsSubscription: boolean;
 }
 
@@ -101,25 +96,15 @@ export function BillingProvider({ children }: BillingProviderProps) {
     enabled: isAuthenticated,
   });
 
-  const {
-    data: trialStatus,
-    isLoading: trialLoading,
-    error: trialError,
-    refetch: refetchTrial,
-  } = useTrialStatus({
-    enabled: isAuthenticated,
-  });
-
   // Combine loading states
   const isLoading =
-    subscriptionLoading || balanceLoading || statusLoading || trialLoading;
+    subscriptionLoading || balanceLoading || statusLoading;
 
   // Combine errors (first error encountered)
   const error =
     (subscriptionError ||
       balanceError ||
-      statusError ||
-      trialError) as Error | null;
+      statusError) as Error | null;
 
   // Refetch all billing data
   const refetchAll = useCallback(() => {
@@ -156,16 +141,15 @@ export function BillingProvider({ children }: BillingProviderProps) {
   // Computed states for easier access
   const hasActiveSubscription = Boolean(
     subscriptionData?.tier && 
-    subscriptionData.tier.name !== 'none' && 
-    subscriptionData.tier.name !== 'free'
+    subscriptionData.tier.name !== 'none'
   );
 
-  const hasActiveTrial = Boolean(
-    trialStatus?.has_trial && 
-    trialStatus?.trial_status === 'active'
+  const hasFreeTier = Boolean(
+    subscriptionData?.tier && 
+    subscriptionData.tier.name === 'free'
   );
 
-  const needsSubscription = !hasActiveSubscription && !hasActiveTrial;
+  const needsSubscription = !hasActiveSubscription;
 
   // Context value
   const value: BillingContextType = {
@@ -173,14 +157,12 @@ export function BillingProvider({ children }: BillingProviderProps) {
     subscriptionData: subscriptionData || null,
     creditBalance: creditBalance || null,
     billingStatus: billingStatus || null,
-    trialStatus: trialStatus || null,
 
     // Loading states
     isLoading,
     subscriptionLoading,
     balanceLoading,
     statusLoading,
-    trialLoading,
 
     // Errors
     error,
@@ -190,12 +172,11 @@ export function BillingProvider({ children }: BillingProviderProps) {
     refetchSubscription,
     refetchBalance,
     refetchStatus,
-    refetchTrial,
     checkBillingStatus,
     
     // Computed states
     hasActiveSubscription,
-    hasActiveTrial,
+    hasFreeTier,
     needsSubscription,
   };
 

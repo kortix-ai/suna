@@ -24,8 +24,8 @@ import {
   Pause
 } from 'lucide-react';
 import Link from 'next/link';
-import { TriggerWithAgent } from '@/hooks/react-query/triggers/use-all-triggers';
-import { useDeleteTrigger, useToggleTrigger, useUpdateTrigger } from '@/hooks/react-query/triggers';
+import { TriggerWithAgent } from '@/hooks/triggers/use-all-triggers';
+import { useDeleteTrigger, useToggleTrigger, useUpdateTrigger } from '@/hooks/triggers';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';

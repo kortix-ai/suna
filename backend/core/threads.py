@@ -3,11 +3,12 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body
+from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Request
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
+from core.utils.config import config
 
 from .api_models import CreateThreadResponse, MessageCreateRequest
 from . import core_utils as utils
@@ -26,10 +27,11 @@ async def get_user_threads(
     try:
         offset = (page - 1) * limit
         
-        # First, get threads for the user
-        threads_result = await client.table('threads').select('*').eq('account_id', user_id).order('created_at', desc=True).execute()
+        # Get total count first (efficient count query)
+        count_result = await client.table('threads').select('*', count='exact').eq('account_id', user_id).execute()
+        total_count = count_result.count or 0
         
-        if not threads_result.data:
+        if total_count == 0:
             logger.debug(f"No threads found for user: {user_id}")
             return {
                 "threads": [],
@@ -41,10 +43,15 @@ async def get_user_threads(
                 }
             }
         
-        total_count = len(threads_result.data)
+        # Fetch only the requested page using database-level pagination
+        threads_result = await client.table('threads')\
+            .select('*')\
+            .eq('account_id', user_id)\
+            .order('created_at', desc=True)\
+            .range(offset, offset + limit - 1)\
+            .execute()
         
-        # Apply pagination to threads
-        paginated_threads = threads_result.data[offset:offset + limit]
+        paginated_threads = threads_result.data
         
         # Extract unique project IDs from threads that have them
         project_ids = [
@@ -66,12 +73,12 @@ async def get_user_threads(
                 in_values=unique_project_ids
             )
             
-            logger.debug(f"[API] Retrieved {len(projects_data)} projects")
+            # logger.debug(f"[API] Retrieved {len(projects_data)} projects")
             
             # DEBUG: Log first project to see if icon_name exists
-            if projects_data and len(projects_data) > 0:
-                logger.debug(f"[API] FIRST PROJECT RAW FROM DB: {projects_data[0]}")
-                logger.debug(f"[API] FIRST PROJECT ICON_NAME: {projects_data[0].get('icon_name', 'NOT FOUND')}")
+            # if projects_data and len(projects_data) > 0:
+            #     logger.debug(f"[API] FIRST PROJECT RAW FROM DB: {projects_data[0]}")
+            #     logger.debug(f"[API] FIRST PROJECT ICON_NAME: {projects_data[0].get('icon_name', 'NOT FOUND')}")
             
             # Create a lookup map of projects by ID
             projects_by_id = {
@@ -87,7 +94,7 @@ async def get_user_threads(
                 project = projects_by_id[thread['project_id']]
                 
                 # DEBUG: Log what we're getting from the project
-                logger.debug(f"[API] Mapping project {project['project_id']}: icon_name = {project.get('icon_name', 'MISSING')}")
+                # logger.debug(f"[API] Mapping project {project['project_id']}: icon_name = {project.get('icon_name', 'MISSING')}")
                 
                 project_data = {
                     "project_id": project['project_id'],
@@ -101,7 +108,7 @@ async def get_user_threads(
                 }
                 
                 # DEBUG: Log the mapped project_data
-                logger.debug(f"[API] Mapped project_data: {project_data}")
+                # logger.debug(f"[API] Mapped project_data: {project_data}")
             
             mapped_thread = {
                 "thread_id": thread['thread_id'],
@@ -116,7 +123,7 @@ async def get_user_threads(
         
         total_pages = (total_count + limit - 1) // limit if total_count else 0
         
-        logger.debug(f"[API] Mapped threads for frontend: {len(mapped_threads)} threads, {len(projects_by_id)} unique projects")
+        # logger.debug(f"[API] Mapped threads for frontend: {len(mapped_threads)} threads, {len(projects_by_id)} unique projects")
         
         return {
             "threads": mapped_threads,
@@ -135,15 +142,20 @@ async def get_user_threads(
 @router.get("/threads/{thread_id}", summary="Get Thread", operation_id="get_thread")
 async def get_thread(
     thread_id: str,
-    auth: AuthorizedThreadAccess = Depends(require_thread_access)
+    request: Request
 ):
-    """Get a specific thread by ID with complete related data."""
+    """Get a specific thread by ID with complete related data.
+    Supports both authenticated and anonymous access (for public threads)."""
     logger.debug(f"Fetching thread: {thread_id}")
     client = await utils.db.client
-    user_id = auth.user_id  # Already authenticated and authorized!
+    
+    # Try to get user_id from JWT (optional for public threads)
+    from core.utils.auth_utils import get_optional_user_id
+    user_id = await get_optional_user_id(request)
     
     try:
-        # No need for manual authorization - it's already done in the dependency!
+        # Verify access (handles both authenticated and public thread access)
+        await verify_and_authorize_thread_access(client, thread_id, user_id)
         
         # Get the thread data
         thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
@@ -160,7 +172,7 @@ async def get_thread(
             
             if project_result.data:
                 project = project_result.data[0]
-                logger.debug(f"[API] Raw project from DB for thread {thread_id}")
+                # logger.debug(f"[API] Raw project from DB for thread {thread_id}")
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
@@ -204,7 +216,7 @@ async def get_thread(
             "recent_agent_runs": agent_runs_data
         }
         
-        logger.debug(f"[API] Mapped thread for frontend: {thread_id} with {message_count} messages and {len(agent_runs_data)} recent runs")
+        # logger.debug(f"[API] Mapped thread for frontend: {thread_id} with {message_count} messages and {len(agent_runs_data)} recent runs")
         return mapped_thread
         
     except HTTPException:
@@ -227,10 +239,36 @@ async def create_thread(
         name = "New Project"
     logger.debug(f"Creating new thread with name: {name}")
     client = await utils.db.client
-    account_id = user_id  # In Basejump, personal account_id is the same as user_id
+    account_id = user_id
     
     try:
-        # 1. Create Project
+        if config.ENV_MODE != config.EnvMode.LOCAL:
+            from core.utils.limits_checker import check_thread_limit, check_project_count_limit
+            
+            thread_limit_check = await check_thread_limit(client, account_id)
+            if not thread_limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                    "current_count": thread_limit_check['current_count'],
+                    "limit": thread_limit_check['limit'],
+                    "tier_name": thread_limit_check['tier_name'],
+                    "error_code": "THREAD_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                raise HTTPException(status_code=402, detail=error_detail)
+            
+            project_limit_check = await check_project_count_limit(client, account_id)
+            if not project_limit_check['can_create']:
+                error_detail = {
+                    "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
+                    "current_count": project_limit_check['current_count'],
+                    "limit": project_limit_check['limit'],
+                    "tier_name": project_limit_check['tier_name'],
+                    "error_code": "PROJECT_LIMIT_EXCEEDED"
+                }
+                logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']}")
+                raise HTTPException(status_code=402, detail=error_detail)
+        
         project_name = name or "New Project"
         project = await client.table('projects').insert({
             "project_id": str(uuid.uuid4()), 
@@ -319,12 +357,19 @@ async def create_thread(
 @router.get("/threads/{thread_id}/messages", summary="Get Thread Messages", operation_id="get_thread_messages")
 async def get_thread_messages(
     thread_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    request: Request,
     order: str = Query("desc", description="Order by created_at: 'asc' or 'desc'")
 ):
-    """Get all messages for a thread, fetching in batches of 1000 from the DB to avoid large queries."""
+    """Get all messages for a thread, fetching in batches of 1000 from the DB to avoid large queries.
+    Supports both authenticated and anonymous access (for public threads)."""
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await utils.db.client
+    
+    # Try to get user_id from JWT (optional for public threads)
+    from core.utils.auth_utils import get_optional_user_id
+    user_id = await get_optional_user_id(request)
+    
+    # Verify access (handles both authenticated and public thread access)
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
         batch_size = 1000
@@ -433,6 +478,7 @@ async def delete_message(
 @router.patch("/threads/{thread_id}", summary="Update Thread", operation_id="update_thread")
 async def update_thread(
     thread_id: str,
+    request: Request,
     title: Optional[str] = Body(None, embed=True),
     is_public: Optional[bool] = Body(None, embed=True),
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
@@ -494,7 +540,7 @@ async def update_thread(
         logger.debug(f"Successfully updated thread: {thread_id}")
         
         # Return the updated thread with project data
-        return await get_thread(thread_id, auth)
+        return await get_thread(thread_id, request)
         
     except HTTPException:
         raise

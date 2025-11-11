@@ -24,6 +24,7 @@ from core import api as core_api
 
 from core.sandbox import api as sandbox_api
 from core.billing.api import router as billing_router
+from core.billing.setup_api import router as setup_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
 from core.admin.master_password_api import router as master_password_router
@@ -74,6 +75,9 @@ async def lifespan(app: FastAPI):
         credentials_api.initialize(db)
         template_api.initialize(db)
         composio_api.initialize(db)
+        
+        from core import limits_api
+        limits_api.initialize(db)
         
         yield
         
@@ -168,6 +172,7 @@ api_router = APIRouter()
 api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
+api_router.include_router(setup_router)
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)

@@ -112,7 +112,7 @@ def is_suna_default_agent(agent_data: Dict[str, Any]) -> bool:
 def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
     from core.utils.logger import logger
     
-    logger.debug(f"Formatting template {template.template_id}: usage_examples = {template.usage_examples}")
+    # logger.debug(f"Formatting template {template.template_id}: usage_examples = {template.usage_examples}")
     
     response = {
         'template_id': template.template_id,
@@ -139,7 +139,7 @@ def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
         'config': template.config,
     }
     
-    logger.debug(f"Response for {template.template_id} includes usage_examples: {response.get('usage_examples')}")
+    # logger.debug(f"Response for {template.template_id} includes usage_examples: {response.get('usage_examples')}")
     
     return response
 

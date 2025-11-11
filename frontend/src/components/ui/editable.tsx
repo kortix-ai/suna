@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Textarea } from "./textarea";
 import { Input } from "./input";
-import { Button } from "../home/ui/button";
 import { cn, truncateString } from "@/lib/utils";
 import { Edit2 } from "lucide-react";
 

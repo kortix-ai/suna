@@ -17,12 +17,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useModelSelection } from '@/hooks/use-model-selection';
-import { formatModelName } from '@/lib/stores/model-store';
+import { useModelSelection } from '@/hooks/agents';
+import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
-import { PaywallDialog } from '@/components/payment/paywall-dialog';
-import { BillingModal } from '@/components/billing/billing-modal';
+import { PlanSelectionModal } from '@/components/billing/pricing';
 import Link from 'next/link';
 
 interface CustomModel {
@@ -62,9 +61,7 @@ export function AgentModelSelector({
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
-  const [paywallOpen, setPaywallOpen] = useState(false);
-  const [lockedModel, setLockedModel] = useState<string | null>(null);
-  const [billingModalOpen, setBillingModalOpen] = useState(false);
+  const [planModalOpen, setPlanSelectionModalOpen] = useState(false);
   
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<CustomModelFormData>({ id: '', label: '' });
@@ -182,18 +179,13 @@ export function AgentModelSelector({
       onChange(modelId);
       setIsOpen(false);
     } else {
-      setLockedModel(modelId);
-      setPaywallOpen(true);
+      // If user doesn't have access, open plan selection modal
+      setPlanSelectionModalOpen(true);
     }
   };
 
   const handleUpgradeClick = () => {
-    setBillingModalOpen(true);
-  };
-
-  const closePaywallDialog = () => {
-    setPaywallOpen(false);
-    setLockedModel(null);
+    setPlanSelectionModalOpen(true);
   };
 
   const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -622,25 +614,9 @@ export function AgentModelSelector({
           mode={dialogMode}
         />
       )}
-      {paywallOpen && (
-        <PaywallDialog
-          open={true}
-          onDialogClose={closePaywallDialog}
-          title="Premium Model"
-          description={
-            lockedModel
-              ? `Subscribe to access ${enhancedModelOptions.find(
-                  (m) => m.id === lockedModel
-                )?.label}`
-              : 'Subscribe to access premium models with enhanced capabilities'
-          }
-          ctaText="Subscribe Now"
-          cancelText="Maybe Later"
-        />
-      )}
-      <BillingModal
-        open={billingModalOpen}
-        onOpenChange={setBillingModalOpen}
+      <PlanSelectionModal
+        open={planModalOpen}
+        onOpenChange={setPlanSelectionModalOpen}
       />
     </div>
   );

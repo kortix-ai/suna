@@ -16,6 +16,8 @@ import { useOnboarding } from '@/hooks/useOnboarding';
  * 
  * Note: Onboarding is shown every time user logs in (per user, per device)
  * If user has active billing, onboarding auto-completes after showing features
+ * 
+ * Account initialization is handled automatically in AgentContext when agents are fetched
  */
 export default function SplashScreen() {
   const router = useRouter();

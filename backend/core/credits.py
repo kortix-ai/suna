@@ -6,6 +6,7 @@ from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.config import config, EnvMode
 from core.billing.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
+import asyncio
 
 class CreditService:
     def __init__(self):
@@ -63,56 +64,33 @@ class CreditService:
                     'balance_after': '0'
                 }).execute()
             else:
-                trial_mode = TRIAL_ENABLED
-                logger.info(f"Creating new user {user_id} with free tier (trial migration will handle conversion)")
+                logger.info(f"Creating new user {user_id} - will auto-subscribe to free tier")
                 
-                if trial_mode == TRIAL_ENABLED:
-                    account_data = {
-                        'account_id': user_id,
-                        'balance': str(FREE_TIER_INITIAL_CREDITS),
-                        'tier': 'free'
-                    }
+                account_data = {
+                    'account_id': user_id,
+                    'balance': '0',
+                    'tier': 'none',
+                    'trial_status': 'none'
+                }
+                
+                try:
+                    logger.info(f"Creating account for new user {user_id} with tier='none'")
                     
                     try:
-                        logger.info(f"Creating FREE TIER account for new user {user_id}")
-                        
-                        try:
-                            test_data = {**account_data, 'last_grant_date': datetime.now(timezone.utc).isoformat()}
-                            await client.from_('credit_accounts').insert(test_data).execute()
-                            logger.info(f"Successfully created FREE TIER account for user {user_id}")
-                        except Exception as e1:
-                            logger.warning(f"Creating account without last_grant_date: {e1}")
-                            await client.from_('credit_accounts').insert(account_data).execute()
-                            logger.info(f"Successfully created minimal FREE TIER account for user {user_id}")
-                            
-                    except Exception as e:
-                        logger.error(f"Failed to create FREE TIER account for user {user_id}: {e}")
-                        raise
-                    
-                    balance = FREE_TIER_INITIAL_CREDITS
-                    
-                    await client.from_('credit_ledger').insert({
-                        'account_id': user_id,
-                        'amount': str(FREE_TIER_INITIAL_CREDITS),
-                        'type': 'tier_grant',
-                        'description': 'Welcome to Suna! Free tier initial credits',
-                        'balance_after': str(FREE_TIER_INITIAL_CREDITS)
-                    }).execute()
-                else:
-                    account_data = {
-                        'account_id': user_id,
-                        'balance': '0',
-                        'tier': 'free'
-                    }
-                    try:
-                        logger.info(f"Creating TRIAL PENDING account for new user {user_id}")
+                        test_data = {**account_data, 'last_grant_date': datetime.now(timezone.utc).isoformat()}
+                        await client.from_('credit_accounts').insert(test_data).execute()
+                        logger.info(f"Successfully created account for user {user_id}")
+                    except Exception as e1:
+                        logger.warning(f"Creating account without last_grant_date: {e1}")
                         await client.from_('credit_accounts').insert(account_data).execute()
-                        logger.info(f"Successfully created TRIAL PENDING account for user {user_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to create TRIAL PENDING account for user {user_id}: {e}")
-                        raise
+                        logger.info(f"Successfully created minimal account for user {user_id}")
                     
-                    balance = Decimal('0')
+                        
+                except Exception as e:
+                    logger.error(f"Failed to create account for user {user_id}: {e}")
+                    raise
+                
+                balance = Decimal('0')
         
         if self.cache:
             await self.cache.set(cache_key, str(balance), ttl=300)

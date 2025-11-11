@@ -10,6 +10,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Coins, ChevronRight } from 'lucide-react-native';
 import type { CreditBalance } from '@/lib/billing/api';
+import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
 
 interface CreditsCardProps {
   creditBalance: CreditBalance | null;
@@ -42,11 +43,11 @@ export function CreditsCard({
       <View className="flex-row items-center justify-between">
         <View className="flex-1">
           <Text className="text-lg font-roobert-semibold text-foreground">
-            ${creditBalance?.balance.toFixed(2) || '0.00'}
+            {formatCredits(dollarsToCredits(creditBalance?.balance || 0))}
           </Text>
           {creditBalance && (creditBalance.expiring_credits > 0 || creditBalance.non_expiring_credits > 0) && (
             <Text className="text-xs font-roobert text-muted-foreground mt-0.5">
-              ${creditBalance.expiring_credits.toFixed(2)} plan • ${creditBalance.non_expiring_credits.toFixed(2)} purchased
+              {formatCredits(dollarsToCredits(creditBalance.expiring_credits))} plan • {formatCredits(dollarsToCredits(creditBalance.non_expiring_credits))} purchased
             </Text>
           )}
         </View>

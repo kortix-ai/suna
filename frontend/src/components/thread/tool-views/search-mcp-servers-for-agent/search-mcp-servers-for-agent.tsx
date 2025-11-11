@@ -24,7 +24,7 @@ import { LoadingState } from '../shared/LoadingState';
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { extractSearchMcpServersData } from './_utils';
-import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
+import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 export function SearchMcpServersForAgentToolView({
   name = 'search-mcp-servers-for-agent',

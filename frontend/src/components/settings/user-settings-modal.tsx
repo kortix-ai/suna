@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     Dialog,
     DialogContent,
@@ -16,35 +16,41 @@ import {
     CreditCard,
     KeyRound,
     X,
-    User,
     Trash2,
+    TrendingDown,
+    ExternalLink,
+    Info,
+    FileText,
+    Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
-import { useIsMobile } from '@/hooks/use-mobile';
+import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { useQueryClient } from '@tanstack/react-query';
 import { 
     useAccountDeletionStatus, 
     useRequestAccountDeletion, 
     useCancelAccountDeletion 
-} from '@/hooks/react-query/account/use-account-deletion';
-import { backendApi } from '@/lib/api-client';
-
-// Import billing modal content components
-import {
-    getSubscription,
-    createPortalSession,
-    cancelSubscription,
-    reactivateSubscription,
-    SubscriptionStatus,
-} from '@/lib/api';
+} from '@/hooks/account/use-account-deletion';
+import { SubscriptionInfo } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
-import { PricingSection } from '@/components/home/sections/pricing-section';
+import { PlanSelectionModal, PricingSection } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
-import { useSubscriptionCommitment } from '@/hooks/react-query/subscriptions/use-subscriptions';
+import { ScheduledDowngradeCard } from '@/components/billing/scheduled-downgrade-card';
+import { 
+    useSubscription, 
+    useSubscriptionCommitment, 
+    useCreatePortalSession,
+    useCancelSubscription,
+    useReactivateSubscription,
+    useCreditBalance,
+    useScheduledChanges,
+    billingKeys
+} from '@/hooks/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -55,12 +61,17 @@ import {
     Shield,
     CheckCircle,
     RotateCcw,
-    Clock
+    Clock,
+    Infinity,
+    ShoppingCart,
+    Lightbulb
 } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
+import { getPlanName, getPlanIcon } from '../billing/plan-utils';
+import ThreadUsage from '@/components/billing/thread-usage';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
-type TabId = 'general' | 'plan' | 'billing' | 'env-manager';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations';
 
 interface Tab {
     id: TabId;
@@ -69,7 +80,7 @@ interface Tab {
     disabled?: boolean;
 }interface UserSettingsModalProps {
     open: boolean;
-    onOpenChange: (open: boolean) => void;
+    onOpenChange: (open: boolean) => void; 
     defaultTab?: TabId;
     returnUrl?: string;
 }
@@ -82,18 +93,33 @@ export function UserSettingsModal({
 }: UserSettingsModalProps) {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
+    const [showPlanModal, setShowPlanModal] = useState(false);
     const isLocal = isLocalMode();
-
-    // Build tabs array based on local mode
     const tabs: Tab[] = [
         { id: 'general', label: 'General', icon: Settings },
         { id: 'plan', label: 'Plan', icon: Zap },
         { id: 'billing', label: 'Billing', icon: CreditCard },
+        { id: 'usage', label: 'Usage', icon: TrendingDown },
+        { id: 'knowledge-base', label: 'Knowledge Base', icon: FileText },
+        { id: 'integrations', label: 'Integrations', icon: Plug },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
-    ];    // Update active tab when defaultTab changes
+    ];
+    
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
+
+    const handleTabClick = (tabId: TabId) => {
+        if (tabId === 'plan') {
+            setShowPlanModal(true);
+        } else if (tabId === 'knowledge-base') {
+            window.open('/knowledge', '_blank');
+        } else if (tabId === 'integrations') {
+            window.open('/settings/credentials', '_blank');
+        } else {
+            setActiveTab(tabId);
+        }
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -104,10 +130,7 @@ export function UserSettingsModal({
                 )}
                 hideCloseButton={true}
             >
-                {/* Hidden title for accessibility */}
                 <DialogTitle className="sr-only">Settings</DialogTitle>
-
-                {/* Header - only on mobile */}
                 {isMobile && (
                     <DialogHeader className="p-4 border-b border-border">
                         <div className="flex items-center justify-between">
@@ -122,13 +145,12 @@ export function UserSettingsModal({
                             </Button>
                         </div>
                     </DialogHeader>
-                )}                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[700px]")}>
-                    {/* Sidebar */}
+                )}                
+                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[700px]")}>
                     <div className={cn(
                         "bg-background",
                         isMobile ? "p-2" : "w-56 p-4"
                     )}>
-                        {/* Custom Close Button - Desktop only */}
                         {!isMobile && (
                             <div className="flex justify-start mb-3">
                                 <Button
@@ -158,7 +180,7 @@ export function UserSettingsModal({
                                         )}
                                     >
                                         <button
-                                            onClick={() => setActiveTab(tab.id)}
+                                            onClick={() => handleTabClick(tab.id)}
                                             disabled={tab.disabled}
                                             className={cn(
                                                 "w-full flex items-center gap-3 px-4 py-3 text-sm",
@@ -175,21 +197,27 @@ export function UserSettingsModal({
                             })}
                         </div>
                     </div>
-
-                    {/* Content */}
                     <div className="flex-1 overflow-y-auto">
                         {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                        {activeTab === 'plan' && <PlanTab returnUrl={returnUrl} />}
-                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} />}
+                        {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} onOpenPlanModal={() => setShowPlanModal(true)} isActive={activeTab === 'billing'} />}
+                        {activeTab === 'usage' && <UsageTab />}
                         {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
+                        {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
+                        {activeTab === 'integrations' && <IntegrationsTab />}
                     </div>
                 </div>
+
+                {/* Full-screen Plan Selection Modal */}
+                <PlanSelectionModal
+                    open={showPlanModal}
+                    onOpenChange={setShowPlanModal}
+                    returnUrl={returnUrl}
+                />
             </DialogContent>
         </Dialog>
     );
 }
 
-// General Tab Component
 function GeneralTab({ onClose }: { onClose: () => void }) {
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
@@ -307,7 +335,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                 </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4 border-t border-border">
+            <div className="flex justify-end gap-2 pt-4">
                 <Button
                     variant="outline"
                     onClick={onClose}
@@ -324,21 +352,23 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             {!isLocalMode() && (
                 <>
-                    <div className="pt-6 border-t border-border">
-                        <h3 className="text-lg font-semibold mb-1 text-destructive">Danger Zone</h3>
-                        <p className="text-sm text-muted-foreground mb-4">
-                            Permanently delete your account and all associated data
-                        </p>
+                    <div className="pt-8 space-y-4">
+                        <div>
+                            <h3 className="text-base font-medium mb-1">Delete Account</h3>
+                            <p className="text-sm text-muted-foreground">
+                                Permanently remove your account and all associated data
+                            </p>
+                        </div>
 
                         {deletionStatus?.has_pending_deletion ? (
-                            <Alert variant="destructive" className="shadow-none">
-                                <AlertTriangle className="h-4 w-4" />
+                            <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
+                                <Clock className="h-4 w-4 text-amber-600" />
                                 <AlertDescription>
                                     <div className="text-sm">
-                                        <strong>Account Deletion Scheduled</strong>
-                                        <p className="mt-1">
-                                            Your account and all data will be permanently deleted on{' '}
-                                            <strong>{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
+                                        <strong className="text-foreground">Deletion Scheduled</strong>
+                                        <p className="mt-1 text-muted-foreground">
+                                            Your account will be permanently deleted on{' '}
+                                            <strong className="text-foreground">{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
                                         </p>
                                         <p className="mt-2 text-muted-foreground">
                                             You can cancel this request anytime before the deletion date.
@@ -352,44 +382,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         onClick={() => setShowCancelDialog(true)}
                                         disabled={cancelDeletion.isPending}
                                     >
-                                        Cancel Deletion
+                                        Cancel Deletion Request
                                     </Button>
                                 </div>
                             </Alert>
                         ) : (
-                            <>
-                                <Button
-                                    variant="destructive"
-                                    onClick={() => setShowDeleteDialog(true)}
-                                    className="w-full sm:w-auto"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete Account
-                                </Button>
-                                
-                                {isLocalMode() && (
-                                    <Button
-                                        variant="destructive"
-                                        onClick={async () => {
-                                            if (confirm('⚠️ TEST MODE: This will IMMEDIATELY delete your account. Continue?')) {
-                                                try {
-                                                    const response = await backendApi.delete('/account/delete-immediately');
-                                                    if (response.success) {
-                                                        toast.success('Account deleted immediately (test mode)');
-                                                        setTimeout(() => window.location.href = '/login', 1000);
-                                                    }
-                                                } catch (error) {
-                                                    toast.error('Failed to delete account');
-                                                }
-                                            }
-                                        }}
-                                        className="w-full sm:w-auto mt-2"
-                                        size="sm"
-                                    >
-                                        🧪 Test: Delete Immediately
-                                    </Button>
-                                )}
-                            </>
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowDeleteDialog(true)}
+                                className="text-muted-foreground hover:text-foreground"
+                            >
+                                Delete Account
+                            </Button>
                         )}
                     </div>
 
@@ -402,23 +406,25 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 <DialogTitle>Delete Account</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
-                                <Alert variant="destructive" className="shadow-none">
-                                    <AlertTriangle className="h-4 w-4" />
+                                <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
+                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
                                     <AlertDescription>
-                                        <strong>This action cannot be undone after 30 days</strong>
+                                        <strong className="text-foreground">This action cannot be undone after 30 days</strong>
                                     </AlertDescription>
                                 </Alert>
-                                <p className="text-sm text-muted-foreground">
-                                    When you delete your account:
-                                </p>
-                                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-                                    <li>All your agents and agent versions will be deleted</li>
-                                    <li>All your threads and conversations will be deleted</li>
-                                    <li>All your credentials and integrations will be removed</li>
-                                    <li>Your subscription will be cancelled</li>
-                                    <li>All billing data will be removed</li>
-                                    <li>Your account will be scheduled for deletion in 30 days</li>
-                                </ul>
+                                <div>
+                                    <p className="text-sm font-medium mb-2">
+                                        When you delete your account:
+                                    </p>
+                                    <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
+                                        <li>All your agents and agent versions will be deleted</li>
+                                        <li>All your threads and conversations will be deleted</li>
+                                        <li>All your credentials and integrations will be removed</li>
+                                        <li>Your subscription will be cancelled</li>
+                                        <li>All billing data will be removed</li>
+                                        <li>Your account will be scheduled for deletion in 30 days</li>
+                                    </ul>
+                                </div>
                                 <p className="text-sm text-muted-foreground">
                                     You can cancel this request anytime within the 30-day grace period.
                                     After 30 days, all your data will be permanently deleted and cannot be recovered.
@@ -487,67 +493,103 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     );
 }
 
-function PlanTab({ returnUrl }: { returnUrl: string }) {
-    return (
-        <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
-            <PricingSection
-                returnUrl={returnUrl}
-                showTitleAndTabs={false}
-                showInfo={false}
-                insideDialog={false}
-                noPadding={false}
-            />
-        </div>
-    );
-}
-
 // Billing Tab Component - Usage, credits, subscription management
-function BillingTab({ returnUrl }: { returnUrl: string }) {
+function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: string; onOpenPlanModal: () => void; isActive: boolean }) {
     const { session, isLoading: authLoading } = useAuth();
-    const queryClient = useQueryClient();
-    const [subscriptionData, setSubscriptionData] = useState<SubscriptionStatus | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [isManaging, setIsManaging] = useState(false);
     const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
-    const [isCancelling, setIsCancelling] = useState(false);
+    const queryClient = useQueryClient();
+
+    const isLocal = isLocalMode();
+
+    // Use React Query hooks for subscription data
+    const {
+        data: subscriptionData,
+        isLoading: isLoadingSubscription,
+        error: subscriptionError,
+        refetch: refetchSubscription
+    } = useSubscription({
+        enabled: !!session && !authLoading,
+    });
 
     const {
         data: commitmentInfo,
         isLoading: commitmentLoading,
         error: commitmentError,
         refetch: refetchCommitment
-    } = useSubscriptionCommitment(subscriptionData?.subscription?.id || null);
+    } = useSubscriptionCommitment(subscriptionData?.subscription?.id, !!subscriptionData?.subscription?.id);
 
-    const fetchSubscriptionData = async () => {
-        if (!session) return;
+    const {
+        data: creditBalance,
+        isLoading: isLoadingBalance,
+        refetch: refetchBalance
+    } = useCreditBalance(!!session && !authLoading);
 
-        try {
-            setIsLoading(true);
-            const data = await getSubscription();
-            setSubscriptionData(data);
-            setError(null);
-            return data;
-        } catch (err) {
-            console.error('Failed to get subscription:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load subscription data');
-        } finally {
-            setIsLoading(false);
-        }
+    const {
+        data: scheduledChangesData,
+        refetch: refetchScheduledChanges
+    } = useScheduledChanges(!!session && !authLoading);
+
+    const createPortalSessionMutation = useCreatePortalSession();
+    const cancelSubscriptionMutation = useCancelSubscription();
+    const reactivateSubscriptionMutation = useReactivateSubscription();
+
+    const planName = getPlanName(subscriptionData, isLocal);
+    const planIcon = getPlanIcon(planName, isLocal);
+
+    // Calculate days until refresh
+    const getDaysUntilRefresh = () => {
+        if (!creditBalance?.next_credit_grant) return null;
+        const nextGrant = new Date(creditBalance.next_credit_grant);
+        const now = new Date();
+        const diffTime = nextGrant.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays > 0 ? diffDays : null;
     };
 
-    useEffect(() => {
-        if (authLoading || !session) return;
-        fetchSubscriptionData();
-    }, [session, authLoading]);
+    const daysUntilRefresh = getDaysUntilRefresh();
+    const expiringCredits = creditBalance?.expiring_credits || 0;
+    const nonExpiringCredits = creditBalance?.non_expiring_credits || 0;
+    const totalCredits = creditBalance?.balance || 0;
 
-    const formatDate = (timestamp: number) => {
+    // Refetch billing info whenever the billing tab becomes active (only once per activation)
+    const prevIsActiveRef = useRef(false);
+    useEffect(() => {
+        // Only refetch if tab just became active (not on every render)
+        if (isActive && !prevIsActiveRef.current && session && !authLoading) {
+            console.log('🔄 Billing tab activated, refetching billing info...');
+            // Use queryClient to invalidate instead of individual refetches to avoid cascading
+            // This will trigger refetches but React Query will dedupe concurrent requests
+            queryClient.invalidateQueries({ queryKey: billingKeys.all });
+        }
+        prevIsActiveRef.current = isActive;
+        // Only depend on isActive, session, and authLoading - not the refetch functions
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isActive, session, authLoading]);
+
+    const formatDate = (dateString: string) => {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+        });
+    };
+
+    const formatDateFromTimestamp = (timestamp: number) => {
         return new Date(timestamp * 1000).toLocaleDateString('en-US', {
             year: 'numeric',
             month: 'long',
             day: 'numeric',
         });
+    };
+
+    const formatDateFlexible = (dateValue: string | number) => {
+        if (typeof dateValue === 'number') {
+            // If it's a number, treat it as Unix timestamp (seconds)
+            return formatDateFromTimestamp(dateValue);
+        }
+        // Otherwise treat it as ISO string
+        return formatDate(dateValue);
     };
 
     const formatEndDate = (dateString: string) => {
@@ -564,97 +606,35 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
 
     const getEffectiveCancellationDate = () => {
         if (subscriptionData?.subscription?.cancel_at) {
-            return formatDate(subscriptionData.subscription.cancel_at);
+            const cancelAt = subscriptionData.subscription.cancel_at;
+            if (typeof cancelAt === 'number') {
+                return formatDateFromTimestamp(cancelAt);
+            }
+            return formatDate(cancelAt);
         }
-        return formatDate(subscriptionData?.subscription?.current_period_end || 0);
+        if (subscriptionData?.subscription?.current_period_end) {
+            return formatDateFlexible(subscriptionData.subscription.current_period_end);
+        }
+        return 'N/A';
     };
 
-    const handleManageSubscription = async () => {
-        try {
-            setIsManaging(true);
-            const { url } = await createPortalSession({ return_url: returnUrl });
-            window.location.href = url;
-        } catch (err) {
-            console.error('Failed to create portal session:', err);
-            setError(err instanceof Error ? err.message : 'Failed to create portal session');
-        } finally {
-            setIsManaging(false);
-        }
+    const handleManageSubscription = () => {
+        createPortalSessionMutation.mutate({ return_url: returnUrl });
     };
 
-    const handleCancel = async () => {
-        setIsCancelling(true);
-        const originalState = subscriptionData;
-
-        try {
-            setShowCancelDialog(false);
-
-            if (subscriptionData?.subscription) {
-                const optimisticState = {
-                    ...subscriptionData,
-                    subscription: {
-                        ...subscriptionData.subscription,
-                        cancel_at_period_end: true,
-                        ...(commitmentInfo?.has_commitment && commitmentInfo.commitment_end_date ? {
-                            cancel_at: Math.floor(new Date(commitmentInfo.commitment_end_date).getTime() / 1000)
-                        } : {})
-                    }
-                };
-                setSubscriptionData(optimisticState);
-            }
-
-            const response = await cancelSubscription();
-
-            if (response.success) {
-                toast.success(response.message);
-            } else {
-                setSubscriptionData(originalState);
-                toast.error(response.message);
-            }
-        } catch (error: any) {
-            console.error('Error cancelling subscription:', error);
-            setSubscriptionData(originalState);
-            toast.error(error.message || 'Failed to cancel subscription');
-        } finally {
-            setIsCancelling(false);
-        }
+    const handleCancel = () => {
+        setShowCancelDialog(false);
+        cancelSubscriptionMutation.mutate(undefined);
     };
 
-    const handleReactivate = async () => {
-        setIsCancelling(true);
-        const originalState = subscriptionData;
-
-        try {
-            if (subscriptionData?.subscription) {
-                const optimisticState = {
-                    ...subscriptionData,
-                    subscription: {
-                        ...subscriptionData.subscription,
-                        cancel_at_period_end: false,
-                        cancel_at: undefined
-                    }
-                };
-                setSubscriptionData(optimisticState);
-            }
-
-            const response = await reactivateSubscription();
-
-            if (response.success) {
-                toast.success(response.message);
-            } else {
-                setSubscriptionData(originalState);
-                toast.error(response.message);
-            }
-        } catch (error: any) {
-            console.error('Error reactivating subscription:', error);
-            setSubscriptionData(originalState);
-            toast.error(error.message || 'Failed to reactivate subscription');
-        } finally {
-            setIsCancelling(false);
-        }
+    const handleReactivate = () => {
+        reactivateSubscriptionMutation.mutate();
     };
 
-    if (isLoading || authLoading) {
+    const isLoading = isLoadingSubscription || isLoadingBalance || authLoading;
+    const error = subscriptionError ? (subscriptionError instanceof Error ? subscriptionError.message : 'Failed to load subscription data') : null;
+
+    if (isLoading) {
         return (
             <div className="p-6 space-y-6">
                 <Skeleton className="h-8 w-32" />
@@ -694,156 +674,307 @@ function BillingTab({ returnUrl }: { returnUrl: string }) {
     }
 
     const isSubscribed = subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing';
+    const isFreeTier = subscriptionData?.tier?.name === 'free';
     const subscription = subscriptionData?.subscription;
-    const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at;
+    const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at || subscription?.canceled_at;
+    const canPurchaseCredits = subscriptionData?.credits?.can_purchase_credits || false;
 
     return (
-        <div className="p-6 space-y-6">
-            {/* Current Subscription Status */}
-            {isSubscribed && subscription && (
-                <Card className="shadow-none">
-                    <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg">Current Plan</CardTitle>
-                            {isCancelled ? (
-                                <Badge variant="outline" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
-                                    <Clock className="h-3 w-3 mr-1" />
-                                    Cancelling
-                                </Badge>
-                            ) : (
-                                <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Active
-                                </Badge>
-                            )}
-                        </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Plan</p>
-                                <p className="font-medium">{subscriptionData.plan_name || 'Premium'}</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-sm text-muted-foreground">
-                                    {subscription.current_period_end && `Next billing date`}
-                                </p>
-                                <p className="font-medium">
-                                    {subscription.current_period_end && formatDate(subscription.current_period_end)}
-                                </p>
-                            </div>
-                        </div>
+        <div className="p-6 space-y-8">
+            {/* Header with Plan Badge on Right */}
+            <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-medium tracking-tight">Billing Status</h1>
+                    <p className="text-sm text-muted-foreground">Manage your credits and subscription</p>
+                </div>
 
-                        {/* Commitment info */}
-                        {commitmentInfo?.has_commitment && (
-                            <Alert className="border-blue-500/50 bg-blue-500/10 shadow-none">
-                                <Shield className="h-4 w-4 text-blue-500" />
-                                <AlertDescription>
-                                    <div className="text-sm">
-                                        <strong>Annual Commitment Active</strong>
-                                        <p className="text-muted-foreground mt-1">
-                                            Your commitment ends on {formatEndDate(commitmentInfo.commitment_end_date)}
-                                        </p>
-                                    </div>
-                                </AlertDescription>
-                            </Alert>
+                {/* Plan Badge with Renewal Info - Right aligned */}
+                {!isFreeTier && planName && (
+                    <div className="flex items-center gap-2 text-right">
+                        {planIcon && (
+                            <>
+                                <div className="rounded-full py-0.5 flex items-center justify-center">
+                                    <img src={planIcon} alt={planName} className="h-6 w-auto" />
+                                </div>
+                            </>
                         )}
-
-                        {/* Cancellation notice */}
-                        {isCancelled && (
-                            <Alert variant="destructive" className="shadow-none">
-                                <AlertTriangle className="h-4 w-4" />
-                                <AlertDescription>
-                                    <div className="text-sm">
-                                        Your subscription will be cancelled on {getEffectiveCancellationDate()}
-                                    </div>
-                                </AlertDescription>
-                            </Alert>
+                        {subscription?.current_period_end && (
+                            <span className="text-xs text-muted-foreground">
+                                Renews {formatDateFlexible(subscription.current_period_end)}
+                            </span>
                         )}
+                    </div>
+                )}
+            </div>
 
-                        <div className="flex gap-2 pt-2">
-                            {isCancelled ? (
-                                <Button
-                                    onClick={handleReactivate}
-                                    disabled={isCancelling}
-                                    className="flex-1"
-                                >
-                                    <RotateCcw className="h-4 w-4 mr-2" />
-                                    {isCancelling ? 'Reactivating...' : 'Reactivate Subscription'}
-                                </Button>
-                            ) : (
-                                <>
-                                    <Button
-                                        onClick={handleManageSubscription}
-                                        disabled={isManaging}
-                                        variant="outline"
-                                        className="flex-1"
-                                    >
-                                        {isManaging ? 'Loading...' : 'Manage Subscription'}
-                                    </Button>
-                                    <Button
-                                        onClick={() => setShowCancelDialog(true)}
-                                        variant="outline"
-                                        className="flex-1 text-destructive hover:text-destructive"
-                                    >
-                                        Cancel Plan
-                                    </Button>
-                                </>
-                            )}
+            {/* Credit Breakdown - 3 Boxes Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Total Available Credits */}
+                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Total Available Credits</span>
                         </div>
-                    </CardContent>
-                </Card>
+                        <div>
+                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(totalCredits)}</div>
+                            <p className="text-xs text-muted-foreground">All credits</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Monthly Credits */}
+                <div className="relative overflow-hidden rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-6">
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                            <Clock className="h-4 w-4 text-orange-500" />
+                            <span className="text-sm text-muted-foreground">Monthly Credits</span>
+                        </div>
+                        <div>
+                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(expiringCredits)}</div>
+                            <p className="text-xs text-muted-foreground">
+                                {daysUntilRefresh !== null 
+                                    ? `Renewal in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
+                                    : 'No renewal scheduled'
+                                }
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Extra Credits */}
+                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                            <Infinity className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">Extra Credits</span>
+                        </div>
+                        <div>
+                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(nonExpiringCredits)}</div>
+                            <p className="text-xs text-muted-foreground">Non-expiring</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Action Buttons - Clean Layout */}
+            <div className="flex items-center gap-3">
+                <Button
+                    onClick={handleManageSubscription}
+                    disabled={createPortalSessionMutation.isPending}
+                    className="h-10"
+                >
+                    {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage Subscription'}
+                </Button>
+                {canPurchaseCredits && (
+                    <Button
+                        onClick={() => setShowCreditPurchaseModal(true)}
+                        variant="outline"
+                        className="h-10"
+                    >
+                        <ShoppingCart className="h-4 w-4 mr-2" />
+                        Get Additional Credits
+                    </Button>
+                )}
+                {!isFreeTier && planName && (
+                    <Button
+                        onClick={onOpenPlanModal}
+                        variant="outline"
+                        className="h-10"
+                    >
+                        Change Plan
+                    </Button>
+                )}
+            </div>
+
+            {/* Commitment or Cancellation Alerts */}
+            {commitmentInfo?.has_commitment && (
+                <Alert className="border-blue-500/20 bg-blue-500/5 rounded-[18px]">
+                    <Shield className="h-4 w-4 text-blue-500" />
+                    <AlertDescription>
+                        <strong className="text-sm">Annual Commitment</strong>
+                        <p className="text-sm text-muted-foreground mt-1">
+                            Active until {formatEndDate(commitmentInfo.commitment_end_date || '')}
+                        </p>
+                    </AlertDescription>
+                </Alert>
             )}
 
-            {/* Credit Balance */}
-            <div>
-                <CreditBalanceDisplay
-                    balance={subscriptionData?.credit_balance || 0}
-                    canPurchase={subscriptionData?.can_purchase_credits || false}
-                    onPurchaseClick={() => setShowCreditPurchaseModal(true)}
+            {scheduledChangesData?.has_scheduled_change && scheduledChangesData.scheduled_change && (
+                <ScheduledDowngradeCard
+                    scheduledChange={scheduledChangesData.scheduled_change}
+                    onCancel={() => {
+                        refetchSubscription();
+                        refetchScheduledChanges();
+                    }}
                 />
-            </div>            {/* Cancel Dialog */}
+            )}
+
+            {isCancelled && (
+                <Alert variant="destructive" className="rounded-[18px]">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                        Your subscription will be cancelled on {getEffectiveCancellationDate()}
+                        {!isCancelled && (
+                            <Button
+                                onClick={handleReactivate}
+                                variant="outline"
+                                size="sm"
+                                className="ml-4"
+                            >
+                                Reactivate
+                            </Button>
+                        )}
+                    </AlertDescription>
+                </Alert>
+            )}
+
+            {/* Help Link - Subtle */}
+            <div className="flex items-center justify-center pt-6 border-t border-border/50">
+                <Button
+                    variant="link"
+                    onClick={() => window.open('/credits-explained', '_blank')}
+                    className="text-muted-foreground hover:text-foreground h-auto p-0"
+                >
+                    <Lightbulb className="h-3.5 w-3.5 mr-2" />
+                    <span className="text-sm">Credits explained</span>
+                </Button>
+            </div>
+
+            {/* Cancel Plan Button - Subtle Placement */}
+            {!isFreeTier && !isCancelled && (
+                <div className="flex justify-center">
+                    <Button
+                        onClick={() => setShowCancelDialog(true)}
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground hover:text-destructive h-auto p-2 text-xs"
+                    >
+                        Cancel Plan
+                    </Button>
+                </div>
+            )}
+
+            {isCancelled && (
+                <div className="flex justify-center">
+                    <Button
+                        onClick={handleReactivate}
+                        disabled={reactivateSubscriptionMutation.isPending}
+                        variant="outline"
+                        size="sm"
+                    >
+                        <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                        {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate Subscription'}
+                    </Button>
+                </div>
+            )}
             <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                <DialogContent>
+                <DialogContent className="max-w-md">
                     <DialogHeader>
                         <DialogTitle>Cancel Subscription</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4">
                         <p className="text-sm text-muted-foreground">
                             Are you sure you want to cancel your subscription? You'll continue to have access until{' '}
-                            {subscription?.current_period_end && formatDate(subscription.current_period_end)}.
+                            {subscription?.current_period_end && formatDateFlexible(subscription.current_period_end)}.
                         </p>
                         <div className="flex gap-2 justify-end">
                             <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
                                 Keep Subscription
                             </Button>
-                            <Button variant="destructive" onClick={handleCancel} disabled={isCancelling}>
-                                {isCancelling ? 'Cancelling...' : 'Cancel Plan'}
+                            <Button 
+                                variant="destructive" 
+                                onClick={handleCancel} 
+                                disabled={cancelSubscriptionMutation.isPending}
+                            >
+                                {cancelSubscriptionMutation.isPending ? 'Cancelling...' : 'Cancel Plan'}
                             </Button>
                         </div>
                     </div>
                 </DialogContent>
             </Dialog>
-
-            {/* Credit Purchase Modal */}
             <CreditPurchaseModal
                 open={showCreditPurchaseModal}
                 onOpenChange={setShowCreditPurchaseModal}
-                currentBalance={subscriptionData?.credit_balance || 0}
-                canPurchase={subscriptionData?.can_purchase_credits || false}
+                currentBalance={totalCredits / 100}
+                canPurchase={canPurchaseCredits}
                 onPurchaseComplete={() => {
-                    fetchSubscriptionData();
+                    refetchSubscription();
+                    refetchBalance();
                 }}
             />
         </div>
     );
 }
 
-// Env Manager Tab Component
+function CreditsHelpAlert() {
+  return (
+    <Alert>
+      <AlertDescription>
+        <div className="flex items-center">
+          <Info className="h-4 w-4" />
+          <Button
+            variant="link"
+            size="sm"
+            className="h-7 text-muted-foreground"
+            onClick={() => window.open('/help/credits', '_blank')}
+          >
+            Learn More about Credits
+          </Button>
+        </div>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function UsageTab() {
+  return (
+      <div className="p-6 space-y-6">
+        <ThreadUsage />
+      </div>
+  );
+}
+
 function EnvManagerTab() {
     return (
         <div className="p-6">
             <LocalEnvManager />
+        </div>
+    );
+}
+
+function KnowledgeBaseTab() {
+    useEffect(() => {
+        window.open('/knowledge', '_blank');
+    }, []);
+    
+    return (
+        <div className="p-6 space-y-4">
+            <div className="text-center py-8">
+                <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Opening Knowledge Base</h3>
+                <p className="text-sm text-muted-foreground">
+                    Redirecting to Knowledge Base page...
+                </p>
+            </div>
+        </div>
+    );
+}
+
+function IntegrationsTab() {
+    useEffect(() => {
+        window.open('/settings/credentials', '_blank');
+    }, []);
+    
+    return (
+        <div className="p-6 space-y-4">
+            <div className="text-center py-8">
+                <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Opening Integrations</h3>
+                <p className="text-sm text-muted-foreground">
+                    Redirecting to Integrations page...
+                </p>
+            </div>
         </div>
     );
 }

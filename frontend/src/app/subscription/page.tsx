@@ -1,58 +1,51 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useEffect } from 'react';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PricingSection } from '@/components/home/sections/pricing-section';
-import { AlertTriangle, Clock, CreditCard, LogOut } from 'lucide-react';
+import { PricingSection } from '@/components/billing/pricing';
+import { LogOut } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useRouter } from 'next/navigation';
-import { apiClient, backendApi } from '@/lib/api-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
-import { MaintenanceAlert } from '@/components/maintenance-alert';
+import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
+import { MaintenancePage } from '@/components/maintenance/maintenance-page';
+import { useAdminRole } from '@/hooks/admin';
+import { useSubscription } from '@/hooks/billing';
 
 export default function SubscriptionRequiredPage() {
-  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
-  const [billingStatus, setBillingStatus] = useState<any>(null);
   const router = useRouter();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
+  const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
+  const { data: subscriptionData, isLoading: isLoadingSubscription, refetch: refetchSubscription } = useSubscription({ enabled: true });
+  const isAdmin = adminRoleData?.isAdmin ?? false;
 
   useEffect(() => {
-    checkBillingStatus();
-  }, []);
+    if (!isLoadingSubscription && subscriptionData) {
+      const hasActiveSubscription = subscriptionData.subscription &&
+        subscriptionData.subscription.status === 'active' &&
+        !(subscriptionData.subscription as any).cancel_at_period_end;
 
-  const checkBillingStatus = async () => {
-    try {
-      const response = await backendApi.get('/billing/subscription');
-      setBillingStatus(response.data);
-      const hasActiveSubscription = response.data.subscription &&
-        response.data.subscription.status === 'active' &&
-        !response.data.subscription.cancel_at_period_end;
+      const hasActiveTrial = (subscriptionData as any).trial_status === 'active';
+      
+      // ✅ Use tier_key for consistency
+      const tierKey = subscriptionData.tier_key || subscriptionData.tier?.name;
+      const hasValidTier = tierKey && tierKey !== 'none';
+      const isFreeTier = tierKey === 'free';
 
-      const hasActiveTrial = response.data.trial_status === 'active';
-      const hasActiveTier = response.data.tier &&
-        response.data.tier.name !== 'none' &&
-        response.data.tier.name !== 'free';
-
-      if ((hasActiveSubscription && hasActiveTier) || (hasActiveTrial && hasActiveTier)) {
+      // Redirect to dashboard if user has valid subscription/trial/free tier
+      if ((hasActiveSubscription && hasValidTier) || (hasActiveTrial && hasValidTier) || isFreeTier) {
         router.push('/dashboard');
       }
-    } catch (error) {
-      console.error('Error checking billing status:', error);
-    } finally {
-      setIsCheckingStatus(false);
     }
-  };
+  }, [subscriptionData, isLoadingSubscription, router]);
 
   const handleSubscriptionUpdate = () => {
     setTimeout(() => {
-      checkBillingStatus();
+      refetchSubscription();
     }, 1000);
   };
 
@@ -63,7 +56,7 @@ export default function SubscriptionRequiredPage() {
     router.push('/auth');
   };
 
-  const isMaintenanceLoading = maintenanceLoading;
+  const isMaintenanceLoading = maintenanceLoading || isCheckingAdminRole;
 
   if (isMaintenanceLoading) {
     return (
@@ -73,14 +66,11 @@ export default function SubscriptionRequiredPage() {
     );
   }
 
-  if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
+  if (maintenanceNotice?.enabled && !isAdmin) {
+    return <MaintenancePage/>;
   }
 
-
-  const isLoading = isCheckingStatus;
-
-  if (isLoading) {
+  if (isLoadingSubscription) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
         <Card className="w-full max-w-6xl">
@@ -100,9 +90,9 @@ export default function SubscriptionRequiredPage() {
     );
   }
 
-  const isTrialExpired = billingStatus?.trial_status === 'expired' ||
-    billingStatus?.trial_status === 'cancelled' ||
-    billingStatus?.trial_status === 'used';
+  const isTrialExpired = (subscriptionData as any)?.trial_status === 'expired' ||
+    (subscriptionData as any)?.trial_status === 'cancelled' ||
+    (subscriptionData as any)?.trial_status === 'used';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 py-12 px-4">
@@ -136,17 +126,16 @@ export default function SubscriptionRequiredPage() {
           returnUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/dashboard?subscription=activated`}
           showTitleAndTabs={false}
           onSubscriptionUpdate={handleSubscriptionUpdate}
-          showInfo={false}
         />
         <div className="text-center text-sm text-muted-foreground -mt-10">
           <p>
             Questions? Contact us at{' '}
-            <a href="mailto:support@kortix.ai" className="underline hover:text-primary">
-              support@kortix.ai
+            <a href="mailto:support@kortix.com" className="underline hover:text-primary">
+              support@kortix.com
             </a>
           </p>
         </div>
       </div>
     </div>
   );
-} 
+}

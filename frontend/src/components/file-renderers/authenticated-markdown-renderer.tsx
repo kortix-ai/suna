@@ -8,7 +8,7 @@ import rehypeSanitize from 'rehype-sanitize';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { CodeRenderer } from './code-renderer';
-import { useImageContent } from '@/hooks/use-image-content';
+import { useImageContent } from '@/hooks/files';
 import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
 import { isMermaidCode } from '@/lib/mermaid-utils';
 import type { FileRendererProject } from './index';

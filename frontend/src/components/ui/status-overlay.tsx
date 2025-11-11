@@ -1,6 +1,6 @@
 import React from 'react';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
-import { useDeleteOperation } from '@/contexts/DeleteOperationContext';
+import { useDeleteOperation } from '@/stores/delete-operation-store';
 
 export function StatusOverlay() {
   const { state } = useDeleteOperation();

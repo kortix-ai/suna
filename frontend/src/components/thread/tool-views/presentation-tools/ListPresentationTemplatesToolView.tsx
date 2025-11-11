@@ -32,6 +32,7 @@ export function ListPresentationTemplatesToolView({
   const toolTitle = getToolTitle(name)
   const { toolResult } = extractToolData(toolContent)
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
+  const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set())
 
   const handleTemplateClick = (templateId: string) => {
     setSelectedTemplate(templateId)
@@ -39,6 +40,10 @@ export function ListPresentationTemplatesToolView({
 
   const handleBack = () => {
     setSelectedTemplate(null)
+  }
+
+  const handleImageLoad = (templateId: string) => {
+    setLoadedImages(prev => new Set(prev).add(templateId))
   }
 
   let templatesData: TemplatesData | null = null
@@ -201,6 +206,7 @@ export function ListPresentationTemplatesToolView({
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {templates.map((template) => {
                   const imageUrl = getImageUrl(template.id, template.has_image)
+                  const isLoaded = loadedImages.has(template.id)
 
                   return (
                     <div
@@ -210,14 +216,30 @@ export function ListPresentationTemplatesToolView({
                     >
                       <div className="relative rounded-t-lg overflow-hidden bg-muted">
                         {imageUrl ? (
-                          <Image
-                            src={imageUrl}
-                            alt={template.name}
-                            width={400}
-                            height={192}
-                            className="w-full h-full object-contain"
-                            unoptimized
-                          />
+                          <>
+                            {/* Loading skeleton */}
+                            {!isLoaded && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 animate-pulse">
+                                <div className="flex flex-col items-center gap-2">
+                                  <Loader2 className="h-8 w-8 text-zinc-400 dark:text-zinc-600 animate-spin" />
+                                  <span className="text-xs text-zinc-400 dark:text-zinc-600">Loading...</span>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Image with fade-in transition */}
+                            <Image
+                              src={imageUrl}
+                              alt={template.name}
+                              width={400}
+                              height={192}
+                              className={`w-full h-full object-contain transition-opacity duration-300 ${
+                                isLoaded ? 'opacity-100' : 'opacity-0'
+                              }`}
+                              onLoad={() => handleImageLoad(template.id)}
+                              unoptimized
+                            />
+                          </>
                         ) : (
                           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
                             <Sparkles className="h-12 w-12 text-primary/40" />

@@ -11,7 +11,7 @@ import { Search, ChevronDown, ChevronRight, Settings2, Wrench, Loader2 } from 'l
 import { icons } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useToolsMetadata } from '@/hooks/react-query/tools/use-tools-metadata';
+import { useToolsMetadata } from '@/hooks/tools/use-tools-metadata';
 import {
   getToolGroup,
   hasGranularControl,

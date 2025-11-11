@@ -1,5 +1,15 @@
 import { toast } from 'sonner';
-import { BillingError, AgentRunLimitError, ProjectLimitError } from './api';
+import { 
+  AgentRunLimitError, 
+  ProjectLimitError, 
+  BillingError,
+  TriggerLimitError,
+  ModelAccessDeniedError,
+  CustomWorkerLimitError,
+  ThreadLimitError,
+  AgentCountLimitError
+} from './api/errors';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 export interface ApiError extends Error {
   status?: number;
@@ -58,6 +68,26 @@ const extractErrorMessage = (error: any): string => {
     return error.detail?.message || error.message || 'Project limit exceeded';
   }
 
+  if (error instanceof AgentCountLimitError) {
+    return error.detail?.message || error.message || 'Agent limit exceeded';
+  }
+
+  if (error instanceof TriggerLimitError) {
+    return error.detail?.message || error.message || 'Trigger limit exceeded';
+  }
+
+  if (error instanceof ModelAccessDeniedError) {
+    return error.detail?.message || error.message || 'Model access denied';
+  }
+
+  if (error instanceof CustomWorkerLimitError) {
+    return error.detail?.message || error.message || 'Custom worker limit exceeded';
+  }
+
+  if (error instanceof ThreadLimitError) {
+    return error.detail?.message || error.message || 'Thread limit exceeded';
+  }
+
   if (error instanceof Error) {
     return error.message;
   }
@@ -91,9 +121,6 @@ const shouldShowError = (error: any, context?: ErrorContext): boolean => {
     return false;
   }
   if (error instanceof BillingError) {
-    return false;
-  }
-  if (error instanceof AgentRunLimitError) {
     return false;
   }
 
@@ -138,6 +165,49 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
 
   const rawMessage = extractErrorMessage(error);
   const formattedMessage = formatErrorMessage(rawMessage, context);
+
+  if (error instanceof AgentRunLimitError) {
+    const upgradeMessage = `Upgrade to run more agents concurrently (currently ${error.detail.running_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof ProjectLimitError) {
+    const upgradeMessage = `Upgrade to create more projects (currently ${error.detail.current_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof ThreadLimitError) {
+    const upgradeMessage = `Upgrade to create more threads (currently ${error.detail.current_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof AgentCountLimitError) {
+    const upgradeMessage = `Upgrade to create more workers (currently ${error.detail.current_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof TriggerLimitError) {
+    const triggerType = error.detail.trigger_type === 'scheduled' ? 'scheduled' : 'app-based';
+    const upgradeMessage = `Upgrade to create more ${triggerType} triggers (currently ${error.detail.current_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof ModelAccessDeniedError) {
+    const upgradeMessage = 'Upgrade to access premium AI models';
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof CustomWorkerLimitError) {
+    const upgradeMessage = `Upgrade to create more custom workers (currently ${error.detail.current_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    return;
+  }
 
   if (error?.status >= 500) {
     toast.error(formattedMessage, {

@@ -238,14 +238,6 @@ class SubscriptionService:
             new_tier_info = get_tier_by_price_id(price_id)
             tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
 
-            try:
-                cancelled_trial = await StripeAPIWrapper.cancel_subscription(existing_subscription_id)
-                logger.info(f"[TRIAL CONVERSION] Cancelled trial subscription {existing_subscription_id}")
-            except stripe.error.InvalidRequestError as e:
-                logger.warning(f"[TRIAL CONVERSION] Could not cancel trial subscription: {e}")
-            except stripe.error.StripeError as e:
-                logger.error(f"[TRIAL CONVERSION] Failed to cancel trial subscription: {e}")
-
             session = await StripeAPIWrapper.create_checkout_session(
                 customer=customer_id,
                 payment_method_types=['card'],
@@ -253,12 +245,14 @@ class SubscriptionService:
                 mode='subscription',
                 ui_mode='embedded',
                 return_url=success_url,
+                allow_promotion_codes=True,
                 subscription_data={
                     'metadata': {
                         'account_id': account_id,
                         'account_type': 'personal',
                         'converting_from_trial': 'true',
                         'previous_tier': current_tier or 'trial',
+                        'previous_subscription_id': existing_subscription_id,
                         'commitment_type': commitment_type or 'none'
                     }
                 },
@@ -289,6 +283,57 @@ class SubscriptionService:
 
         elif existing_subscription_id and trial_status != 'active':
             subscription = await StripeAPIWrapper.retrieve_subscription(existing_subscription_id)
+            
+            current_price = subscription['items']['data'][0]['price']
+            current_amount = current_price.get('unit_amount', 0) or 0
+            
+            if current_amount == 0 or current_tier == 'free':
+                logger.info(f"[FREE TIER UPGRADE] User {account_id} upgrading from free tier to paid plan")
+                
+                new_tier_info = get_tier_by_price_id(price_id)
+                tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
+                
+                session = await StripeAPIWrapper.create_checkout_session(
+                    customer=customer_id,
+                    payment_method_types=['card'],
+                    line_items=[{'price': price_id, 'quantity': 1}],
+                    mode='subscription',
+                    ui_mode='embedded',
+                    return_url=success_url,
+                    allow_promotion_codes=True,
+                    subscription_data={
+                        'metadata': {
+                            'account_id': account_id,
+                            'account_type': 'personal',
+                            'converting_from_free': 'true',
+                            'previous_tier': current_tier or 'free',
+                            'previous_subscription_id': existing_subscription_id,
+                            'commitment_type': commitment_type or 'none'
+                        }
+                    },
+                    idempotency_key=idempotency_key
+                )
+                
+                logger.info(f"[FREE TIER UPGRADE] Created checkout session for user {account_id}")
+                
+                frontend_url = config.FRONTEND_URL
+                client_secret = getattr(session, 'client_secret', None)
+                checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
+                fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
+                
+                return {
+                    'checkout_url': fe_checkout_url,
+                    'fe_checkout_url': fe_checkout_url,
+                    'session_id': session.id,
+                    'client_secret': client_secret,
+                    'converting_from_free': True,
+                    'message': f'Upgrading from free tier to {tier_display_name}. Your free tier will end and the new plan will begin immediately upon payment.',
+                    'tier_info': {
+                        'name': new_tier_info.name if new_tier_info else price_id,
+                        'display_name': tier_display_name,
+                        'monthly_credits': float(new_tier_info.monthly_credits) if new_tier_info else 0
+                    }
+                }
             
             logger.info(f"Updating subscription {existing_subscription_id} to price {price_id}")
             
@@ -337,6 +382,7 @@ class SubscriptionService:
                 mode='subscription',
                 ui_mode='embedded',
                 return_url=success_url,
+                allow_promotion_codes=True,
                 subscription_data={
                     'metadata': {
                         'account_id': account_id,
@@ -403,108 +449,109 @@ class SubscriptionService:
             return {'success': False, 'message': f'Stripe error: {str(e)}'}
 
     async def cancel_subscription(self, account_id: str, feedback: Optional[str] = None) -> Dict:
-        db = DBConnection()
-        client = await db.client
-        
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, commitment_type, commitment_start_date, commitment_end_date'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
-            raise HTTPException(status_code=404, detail="No subscription found")
-        
-        subscription_id = credit_result.data[0]['stripe_subscription_id']
-        commitment_type = credit_result.data[0].get('commitment_type')
-        commitment_end_date = credit_result.data[0].get('commitment_end_date')
-        
-        if commitment_type == 'yearly_commitment' and commitment_end_date:
-            end_date = datetime.fromisoformat(commitment_end_date.replace('Z', '+00:00'))
-            if datetime.now(timezone.utc) < end_date:
-                logger.info(f"Scheduling cancellation for commitment end date: {end_date.date()} for account {account_id}")
-                
-                try:
-                    subscription = await StripeAPIWrapper.modify_subscription(
-                        subscription_id,
-                        cancel_at=int(end_date.timestamp()),
-                        metadata={'cancellation_feedback': feedback, 'scheduled_commitment_cancel': 'true'} if feedback else {'scheduled_commitment_cancel': 'true'}
-                    )
-                    
-                    try:
-                        commitment_start = credit_result.data[0].get('commitment_start_date')
-                        if commitment_start:
-                            await client.from_('commitment_history').insert({
-                                'account_id': account_id,
-                                'commitment_type': commitment_type,
-                                'start_date': commitment_start,
-                                'end_date': commitment_end_date,
-                                'stripe_subscription_id': subscription_id,
-                                'cancelled_at': datetime.now(timezone.utc).isoformat(),
-                                'cancellation_reason': feedback or f'Scheduled cancellation for {end_date.date()}'
-                            }).execute()
-                    except Exception as e:
-                        logger.warning(f"Failed to log commitment history: {e}, but cancellation was scheduled successfully")
-                    
-                    months_remaining = (end_date.year - datetime.now(timezone.utc).year) * 12 + \
-                                     (end_date.month - datetime.now(timezone.utc).month)
-                    
-                    return {
-                        'success': True,
-                        'scheduled': True,
-                        'message': f'Your subscription is scheduled to cancel on {end_date.date()} at the end of your commitment period',
-                        'cancel_at': subscription.cancel_at,
-                        'months_remaining': max(0, months_remaining),
-                        'commitment_end_date': commitment_end_date
-                    }
-                    
-                except stripe.error.StripeError as e:
-                    logger.error(f"Error scheduling cancellation for subscription {subscription_id}: {e}")
-                    raise HTTPException(status_code=500, detail=f"Failed to schedule cancellation: {str(e)}")
+        logger.info(f"[CANCEL] Processing cancellation for {account_id} - will downgrade to free tier at period end")
         
         try:
-            subscription = await StripeAPIWrapper.modify_subscription(
-                subscription_id,
-                cancel_at_period_end=True,
-                metadata={'cancellation_feedback': feedback} if feedback else {}
+            result = await self.schedule_tier_downgrade(
+                account_id=account_id,
+                target_tier_key='free',
+                commitment_type='monthly'
             )
+            
+            logger.info(f"[CANCEL] Successfully scheduled downgrade to free tier for {account_id}")
+            
+            if feedback:
+                db = DBConnection()
+                client = await db.client
+                credit_result = await client.from_('credit_accounts').select(
+                    'stripe_subscription_id'
+                ).eq('account_id', account_id).execute()
                 
-            if commitment_type:
-                await client.from_('commitment_history').insert({
-                    'account_id': account_id,
-                    'commitment_type': commitment_type,
-                    'start_date': credit_result.data[0].get('commitment_start_date'),
-                    'end_date': commitment_end_date,
-                    'stripe_subscription_id': subscription_id,
-                    'cancelled_at': datetime.now(timezone.utc).isoformat(),
-                    'cancellation_reason': feedback or 'User cancelled'
-                }).execute()
+                if credit_result.data and credit_result.data[0].get('stripe_subscription_id'):
+                    subscription_id = credit_result.data[0]['stripe_subscription_id']
+                    try:
+                        await StripeAPIWrapper.modify_subscription(
+                            subscription_id,
+                            metadata={'cancellation_feedback': feedback}
+                        )
+                        logger.info(f"[CANCEL] Saved cancellation feedback for {account_id}")
+                    except Exception as e:
+                        logger.warning(f"[CANCEL] Could not save feedback: {e}")
             
             return {
                 'success': True,
-                'message': 'Subscription will be cancelled at the end of the current period',
-                'period_end': subscription.current_period_end
+                'message': result.get('message', 'Your plan will be downgraded to the free tier at the end of your current billing period'),
+                'scheduled_date': result.get('scheduled_date'),
+                'downgrade_to_free': True
             }
             
-        except stripe.error.StripeError as e:
-            logger.error(f"Error cancelling subscription {subscription_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            logger.error(f"Error cancelling subscription for {account_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to cancel subscription: {str(e)}")
 
     async def reactivate_subscription(self, account_id: str) -> Dict:
         db = DBConnection()
         client = await db.client
         
         credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id'
+            'stripe_subscription_id, scheduled_tier_change, scheduled_price_id'
         ).eq('account_id', account_id).execute()
         
         if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
             raise HTTPException(status_code=404, detail="No subscription found")
         
         subscription_id = credit_result.data[0]['stripe_subscription_id']
+        scheduled_tier = credit_result.data[0].get('scheduled_tier_change')
         
         try:
-            subscription = await StripeAPIWrapper.modify_subscription(
+            subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+            
+            if scheduled_tier:
+                logger.info(f"[REACTIVATE] Found scheduled downgrade to {scheduled_tier}, cancelling it")
+                
+                schedule_id = subscription.get('schedule')
+                if schedule_id:
+                    try:
+                        schedule = await StripeAPIWrapper.safe_stripe_call(
+                            stripe.SubscriptionSchedule.retrieve_async,
+                            schedule_id
+                        )
+                        
+                        if schedule.get('status') in ['active', 'not_started']:
+                            await StripeAPIWrapper.safe_stripe_call(
+                                stripe.SubscriptionSchedule.release_async,
+                                schedule_id
+                            )
+                            logger.info(f"[REACTIVATE] Released schedule {schedule_id}")
+                    except stripe.error.StripeError as e:
+                        logger.warning(f"[REACTIVATE] Could not release schedule: {e}")
+                
+                await StripeAPIWrapper.modify_subscription(
+                    subscription_id,
+                    metadata={
+                        'downgrade': None,
+                        'previous_tier': None,
+                        'target_tier': None,
+                        'scheduled_by': None,
+                        'scheduled_at': None,
+                        'scheduled_price_id': None
+                    }
+                )
+                
+                await client.from_('credit_accounts').update({
+                    'scheduled_tier_change': None,
+                    'scheduled_tier_change_date': None,
+                    'scheduled_price_id': None
+                }).eq('account_id', account_id).execute()
+                
+                logger.info(f"[REACTIVATE] Cleared scheduled downgrade for {account_id}")
+            
+            await StripeAPIWrapper.modify_subscription(
                 subscription_id,
-                cancel_at_period_end=False
+                cancel_at_period_end=False,
+                cancel_at=None
             )
             
             return {
@@ -620,9 +667,24 @@ class SubscriptionService:
             seconds_since_period_start = (now - billing_anchor).total_seconds()
             
             if 0 <= seconds_since_period_start < 1800:
-                is_renewal = True
-                logger.warning(f"[RENEWAL DETECTION] We're only {seconds_since_period_start:.0f}s after period start")
-                logger.warning(f"[RENEWAL DETECTION] This is almost certainly a renewal - BLOCKING subscription.updated credits")
+                current_tier_name = current_account.data[0].get('tier') if current_account.data else 'none'
+                old_subscription_id = current_account.data[0].get('stripe_subscription_id') if current_account.data else None
+                new_tier_info = get_tier_by_price_id(price_id)
+                
+                is_new_subscription = (old_subscription_id is None or 
+                                      old_subscription_id == '' or 
+                                      old_subscription_id != subscription.get('id'))
+                
+                is_free_to_paid_upgrade = (current_tier_name in ['free', 'none'] and 
+                                          new_tier_info and 
+                                          new_tier_info.name not in ['free', 'none'])
+                
+                if is_new_subscription or is_free_to_paid_upgrade:
+                    logger.info(f"[RENEWAL DETECTION] Within 30min BUT new subscription (old_sub={old_subscription_id}, new_sub={subscription.get('id')}) or free-to-paid upgrade ({current_tier_name} → {new_tier_info.name if new_tier_info else 'unknown'}) - NOT blocking")
+                else:
+                    is_renewal = True
+                    logger.warning(f"[RENEWAL DETECTION] We're only {seconds_since_period_start:.0f}s after period start")
+                    logger.warning(f"[RENEWAL DETECTION] This is almost certainly a renewal - BLOCKING subscription.updated credits")
         
         if not is_renewal and not is_upgrade and previous_attributes and 'current_period_start' in previous_attributes:
             prev_period_start = previous_attributes.get('current_period_start')
@@ -1004,6 +1066,12 @@ class SubscriptionService:
             'can_purchase_credits': tier_obj.can_purchase_credits,
             'models': tier_obj.models,
             'project_limit': tier_obj.project_limit,
+            'thread_limit': tier_obj.thread_limit,
+            'concurrent_runs': tier_obj.concurrent_runs,
+            'custom_workers_limit': tier_obj.custom_workers_limit,
+            'scheduled_triggers_limit': tier_obj.scheduled_triggers_limit,
+            'app_triggers_limit': tier_obj.app_triggers_limit,
+            'agent_limit': tier_obj.custom_workers_limit,
             'is_trial': trial_status == 'active'
         }
         
@@ -1013,21 +1081,24 @@ class SubscriptionService:
     async def get_allowed_models_for_user(self, user_id: str, client=None) -> List[str]:
         try:
             from core.ai_models import model_manager
+            from core.billing.config import is_model_allowed
 
             tier_info = await self.get_user_subscription_tier(user_id)
             tier_name = tier_info['name']
             
             logger.debug(f"[ALLOWED_MODELS] User {user_id} tier: {tier_name}")
 
-            if 'all' in tier_info.get('models', []):
+            if tier_info.get('models'):
                 all_models = model_manager.list_available_models(include_disabled=False)
-                allowed_model_ids = [model_data["id"] for model_data in all_models]
-                logger.debug(f"[ALLOWED_MODELS] User {user_id} has access to all {len(allowed_model_ids)} models")
+                allowed_model_ids = []
+                
+                for model_data in all_models:
+                    model_id = model_data["id"]
+                    if is_model_allowed(tier_name, model_id):
+                        allowed_model_ids.append(model_id)
+                
+                logger.debug(f"[ALLOWED_MODELS] User {user_id} has access to {len(allowed_model_ids)} models: {[m for m in allowed_model_ids]}")
                 return allowed_model_ids
-            
-            elif tier_info.get('models'):
-                logger.debug(f"[ALLOWED_MODELS] User {user_id} has specific models: {tier_info['models']}")
-                return tier_info['models']
             
             else:
                 logger.debug(f"[ALLOWED_MODELS] User {user_id} has no model access (tier: {tier_name})")
@@ -1140,6 +1211,332 @@ class SubscriptionService:
             'commitment_type': data['commitment_type'],
             'months_remaining': max(1, months_remaining),
             'commitment_end_date': data['commitment_end_date']
+        }
+
+    async def schedule_tier_downgrade(self, account_id: str, target_tier_key: str, commitment_type: Optional[str] = None) -> Dict:
+        db = DBConnection()
+        client = await db.client
+        
+        credit_result = await client.from_('credit_accounts').select(
+            'stripe_subscription_id, tier, commitment_type, commitment_end_date'
+        ).eq('account_id', account_id).execute()
+        
+        if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
+            raise HTTPException(status_code=404, detail="No active subscription found")
+        
+        subscription_id = credit_result.data[0]['stripe_subscription_id']
+        current_tier_name = credit_result.data[0].get('tier', 'none')
+        user_commitment_type = credit_result.data[0].get('commitment_type')
+        commitment_end_date = credit_result.data[0].get('commitment_end_date')
+        
+        current_tier = get_tier_by_name(current_tier_name)
+        target_tier = get_tier_by_name(target_tier_key)
+        
+        if not target_tier:
+            raise HTTPException(status_code=400, detail=f"Invalid target tier: {target_tier_key}")
+        
+        if not current_tier:
+            raise HTTPException(status_code=400, detail="Could not determine current tier")
+        
+        if target_tier.monthly_credits >= current_tier.monthly_credits:
+            raise HTTPException(
+                status_code=400, 
+                detail="Target tier must be lower than current tier. Use the upgrade flow for tier increases."
+            )
+        
+        try:
+            subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+            
+            if user_commitment_type == 'yearly_commitment' and commitment_end_date:
+                commitment_end_dt = datetime.fromisoformat(commitment_end_date.replace('Z', '+00:00'))
+                if datetime.now(timezone.utc) < commitment_end_dt:
+                    logger.info(f"[DOWNGRADE] User has active commitment until {commitment_end_dt.date()}")
+                    current_period_end = int(commitment_end_dt.timestamp())
+                    current_period_end_date = commitment_end_dt
+                    logger.info(f"[DOWNGRADE] Scheduling downgrade for commitment end date: {commitment_end_date}")
+                else:
+                    current_period_end = subscription['current_period_end']
+                    current_period_end_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+            else:
+                current_period_end = subscription['current_period_end']
+                current_period_end_date = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
+            
+            if commitment_type and len(target_tier.price_ids) >= 3:
+                target_price_id = target_tier.price_ids[2] if commitment_type == 'yearly_commitment' else target_tier.price_ids[0]
+            elif commitment_type == 'yearly' and len(target_tier.price_ids) >= 2:
+                target_price_id = target_tier.price_ids[1]
+            else:
+                target_price_id = target_tier.price_ids[0]
+            
+            current_price_type = get_price_type(subscription['items']['data'][0]['price']['id'])
+            target_price_type = get_price_type(target_price_id)
+            
+            schedule_metadata = {
+                'account_id': account_id,
+                'downgrade': 'true',
+                'previous_tier': current_tier_name,
+                'target_tier': target_tier_key,
+                'scheduled_by': 'user',
+                'scheduled_at': datetime.now(timezone.utc).isoformat(),
+                'scheduled_price_id': target_price_id
+            }
+            
+            try:
+                existing_schedule_id = subscription.get('schedule')
+                schedule = None
+                
+                if existing_schedule_id:
+                    logger.info(f"[DOWNGRADE] Found existing schedule {existing_schedule_id}, checking status")
+                    try:
+                        existing_schedule = await StripeAPIWrapper.safe_stripe_call(
+                            stripe.SubscriptionSchedule.retrieve_async,
+                            existing_schedule_id
+                        )
+                        
+                        schedule_status = existing_schedule.get('status')
+                        logger.info(f"[DOWNGRADE] Existing schedule status: {schedule_status}")
+                        
+                        if schedule_status in ['active', 'not_started']:
+                            logger.info(f"[DOWNGRADE] Updating active schedule {existing_schedule_id}")
+                            await StripeAPIWrapper.safe_stripe_call(
+                                stripe.SubscriptionSchedule.modify_async,
+                                existing_schedule_id,
+                                phases=[
+                                    {
+                                        'items': [{
+                                            'price': subscription['items']['data'][0]['price']['id'],
+                                            'quantity': 1,
+                                        }],
+                                        'start_date': subscription['current_period_start'],
+                                        'end_date': current_period_end,
+                                        'proration_behavior': 'none',
+                                    },
+                                    {
+                                        'items': [{
+                                            'price': target_price_id,
+                                            'quantity': 1,
+                                        }],
+                                        'iterations': None,
+                                        'proration_behavior': 'none',
+                                    }
+                                ],
+                                end_behavior='release',
+                                metadata=schedule_metadata
+                            )
+                            logger.info(f"[DOWNGRADE] Updated existing schedule {existing_schedule_id}")
+                            schedule = existing_schedule
+                        else:
+                            logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} is {schedule_status}, releasing and creating new")
+                            await StripeAPIWrapper.safe_stripe_call(
+                                stripe.SubscriptionSchedule.release_async,
+                                existing_schedule_id
+                            )
+                            logger.info(f"[DOWNGRADE] Released completed/canceled schedule {existing_schedule_id}")
+                            
+                            import asyncio
+                            await asyncio.sleep(1)
+                            
+                            subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+                            existing_schedule_id = None
+                            
+                    except stripe.error.InvalidRequestError as e:
+                        if 'No such subscription_schedule' in str(e):
+                            logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} no longer exists, creating new")
+                            existing_schedule_id = None
+                        else:
+                            raise
+                
+                if not existing_schedule_id:
+                    schedule = await StripeAPIWrapper.safe_stripe_call(
+                        stripe.SubscriptionSchedule.create_async,
+                        from_subscription=subscription_id,
+                    )
+                    
+                    await StripeAPIWrapper.safe_stripe_call(
+                        stripe.SubscriptionSchedule.modify_async,
+                        schedule.id,
+                        phases=[
+                            {
+                                'items': [{
+                                    'price': subscription['items']['data'][0]['price']['id'],
+                                    'quantity': 1,
+                                }],
+                                'start_date': subscription['current_period_start'],
+                                'end_date': current_period_end,
+                                'proration_behavior': 'none',
+                            },
+                            {
+                                'items': [{
+                                    'price': target_price_id,
+                                    'quantity': 1,
+                                }],
+                                'iterations': None,
+                                'proration_behavior': 'none',
+                            }
+                        ],
+                        end_behavior='release',
+                        metadata=schedule_metadata
+                    )
+                    
+                    logger.info(f"[DOWNGRADE] Created new Stripe subscription schedule {schedule.id} for {account_id}")
+                
+                await client.from_('credit_accounts').update({
+                    'scheduled_tier_change': target_tier_key,
+                    'scheduled_tier_change_date': current_period_end_date.isoformat(),
+                    'scheduled_price_id': target_price_id
+                }).eq('account_id', account_id).execute()
+                
+            except stripe.error.StripeError as e:
+                logger.error(f"Error creating subscription schedule: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to schedule downgrade in Stripe: {str(e)}")
+            
+            logger.info(f"[DOWNGRADE] Scheduled downgrade for {account_id} from {current_tier_name} to {target_tier_key} at {current_period_end_date.isoformat()}")
+            
+            if user_commitment_type == 'yearly_commitment' and commitment_end_date:
+                commitment_end_dt = datetime.fromisoformat(commitment_end_date.replace('Z', '+00:00'))
+                if datetime.now(timezone.utc) < commitment_end_dt:
+                    period_description = "annual commitment period"
+                    message = f'Your plan will be downgraded to {target_tier.display_name} at the end of your annual commitment on {commitment_end_dt.strftime("%B %d, %Y")}'
+                else:
+                    period_description = "billing period"
+                    message = f'Your plan will be downgraded to {target_tier.display_name} at the end of your current billing period'
+            elif current_price_type == 'yearly' or current_price_type == 'yearly_commitment':
+                period_description = "yearly billing period"
+                message = f'Your plan will be downgraded to {target_tier.display_name} at the end of your current yearly billing period'
+            elif current_price_type == 'monthly':
+                period_description = "monthly billing period"
+                message = f'Your plan will be downgraded to {target_tier.display_name} at the end of your current monthly billing period'
+            else:
+                period_description = "billing period"
+                message = f'Your plan will be downgraded to {target_tier.display_name} at the end of your current billing period'
+            
+            change_description = f"{current_tier.display_name} to {target_tier.display_name}"
+            if current_price_type != target_price_type:
+                if current_price_type == 'yearly' or current_price_type == 'yearly_commitment':
+                    change_description += f" (switching from yearly to {target_price_type} billing)"
+                else:
+                    change_description += f" (switching from {current_price_type} to {target_price_type} billing)"
+            
+            return {
+                'success': True,
+                'message': message,
+                'scheduled_date': current_period_end_date.isoformat(),
+                'current_tier': {
+                    'name': current_tier.name,
+                    'display_name': current_tier.display_name,
+                    'monthly_credits': float(current_tier.monthly_credits)
+                },
+                'target_tier': {
+                    'name': target_tier.name,
+                    'display_name': target_tier.display_name,
+                    'monthly_credits': float(target_tier.monthly_credits)
+                },
+                'billing_change': current_price_type != target_price_type,
+                'current_billing_period': current_price_type,
+                'target_billing_period': target_price_type,
+                'change_description': change_description,
+                'is_commitment': user_commitment_type == 'yearly_commitment' and commitment_end_date is not None
+            }
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"Error scheduling downgrade for subscription {subscription_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to schedule downgrade: {str(e)}")
+
+    async def get_scheduled_changes(self, account_id: str) -> Dict:
+        db = DBConnection()
+        client = await db.client
+        
+        credit_result = await client.from_('credit_accounts').select(
+            'stripe_subscription_id, tier, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id'
+        ).eq('account_id', account_id).execute()
+        
+        if not credit_result.data:
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
+        
+        data = credit_result.data[0]
+        scheduled_tier = data.get('scheduled_tier_change')
+        scheduled_date = data.get('scheduled_tier_change_date')
+        current_tier_name = data.get('tier')
+        
+        if scheduled_tier and current_tier_name == scheduled_tier:
+            logger.info(f"[SCHEDULED_CHANGES] Scheduled tier {scheduled_tier} matches current tier - downgrade already completed, clearing fields")
+            await client.from_('credit_accounts').update({
+                'scheduled_tier_change': None,
+                'scheduled_tier_change_date': None,
+                'scheduled_price_id': None
+            }).eq('account_id', account_id).execute()
+            
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
+        
+        if not scheduled_tier or not scheduled_date:
+            subscription_id = data.get('stripe_subscription_id')
+            if subscription_id:
+                try:
+                    subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+                    
+                    if subscription.get('metadata', {}).get('downgrade') == 'true':
+                        target_tier_name = subscription['metadata'].get('target_tier')
+                        if target_tier_name:
+                            if current_tier_name == target_tier_name:
+                                logger.info(f"[SCHEDULED_CHANGES] Stripe metadata tier {target_tier_name} matches current tier - downgrade already completed")
+                                return {
+                                    'has_scheduled_change': False,
+                                    'scheduled_change': None
+                                }
+                            
+                            target_tier = get_tier_by_name(target_tier_name)
+                            current_tier = get_tier_by_name(current_tier_name)
+                            
+                            return {
+                                'has_scheduled_change': True,
+                                'scheduled_change': {
+                                    'type': 'downgrade',
+                                    'current_tier': {
+                                        'name': current_tier.name if current_tier else 'none',
+                                        'display_name': current_tier.display_name if current_tier else 'Unknown'
+                                    },
+                                    'target_tier': {
+                                        'name': target_tier.name if target_tier else target_tier_name,
+                                        'display_name': target_tier.display_name if target_tier else target_tier_name
+                                    },
+                                    'effective_date': datetime.fromtimestamp(
+                                        subscription['current_period_end'], tz=timezone.utc
+                                    ).isoformat()
+                                }
+                            }
+                except Exception as e:
+                    logger.error(f"Error checking Stripe subscription for scheduled changes: {e}")
+            
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
+        
+        current_tier = get_tier_by_name(data.get('tier', 'none'))
+        target_tier = get_tier_by_name(scheduled_tier)
+        
+        return {
+            'has_scheduled_change': True,
+            'scheduled_change': {
+                'type': 'downgrade',
+                'current_tier': {
+                    'name': current_tier.name if current_tier else 'none',
+                    'display_name': current_tier.display_name if current_tier else 'Unknown',
+                    'monthly_credits': float(current_tier.monthly_credits) if current_tier else 0
+                },
+                'target_tier': {
+                    'name': target_tier.name if target_tier else scheduled_tier,
+                    'display_name': target_tier.display_name if target_tier else scheduled_tier,
+                    'monthly_credits': float(target_tier.monthly_credits) if target_tier else 0
+                },
+                'effective_date': scheduled_date
+            }
         }
 
 

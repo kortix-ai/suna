@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { ChevronDownIcon, LayoutGridIcon, Plus } from 'lucide-react';
-import { useEditorStore } from '@/lib/stores/use-editor-store';
+import { useEditorStore } from '@/stores/use-editor-store';
 
 interface TableDropdownProps {
   setDropdownOpen: (open: boolean) => void;

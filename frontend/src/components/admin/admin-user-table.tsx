@@ -20,8 +20,9 @@ import {
   Users,
   Activity
 } from 'lucide-react';
-import { useAdminUserList, useAdminUserStats } from '@/hooks/react-query/admin/use-admin-users';
-import type { UserSummary } from '@/hooks/react-query/admin/use-admin-users';
+import { useAdminUserList, useAdminUserStats } from '@/hooks/admin/use-admin-users';
+import type { UserSummary } from '@/hooks/admin/use-admin-users';
+import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
 
 interface AdminUserTableProps {
   onUserSelect?: (user: UserSummary) => void;
@@ -56,10 +57,6 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
 
     return () => clearTimeout(timer);
   }, [searchEmail]);
-
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -111,7 +108,7 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
       cell: (user) => (
         <div className="text-start">
           <div className="font-medium text-green-600">
-            {formatCurrency(user.credit_balance)}
+            {formatCredits(dollarsToCredits(user.credit_balance))}
           </div>
         </div>
       ),

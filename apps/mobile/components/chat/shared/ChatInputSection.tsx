@@ -34,6 +34,7 @@ export interface ChatInputSectionProps {
   
   // Quick actions
   selectedQuickAction: string | null;
+  selectedQuickActionOption?: string | null;
   onClearQuickAction: () => void;
   
   // Agent running state
@@ -85,6 +86,7 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
   audioLevel,
   audioLevels,
   selectedQuickAction,
+  selectedQuickActionOption,
   onClearQuickAction,
   isAgentRunning,
   onStopAgentRun,
@@ -162,6 +164,7 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
           attachments={attachments}
           onRemoveAttachment={onRemoveAttachment}
           selectedQuickAction={selectedQuickAction}
+          selectedQuickActionOption={selectedQuickActionOption}
           onClearQuickAction={onClearQuickAction}
           isAuthenticated={isAuthenticated}
           onOpenAuthDrawer={onOpenAuthDrawer}

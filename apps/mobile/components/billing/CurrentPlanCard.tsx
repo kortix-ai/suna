@@ -1,25 +1,23 @@
 /**
  * Current Plan Card Component
  * 
- * Displays user's current subscription plan and trial status
+ * Displays user's current subscription plan
  */
 
 import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CreditCard, Clock } from 'lucide-react-native';
+import { CreditCard } from 'lucide-react-native';
 
 interface CurrentPlanCardProps {
   displayPlan: string;
-  hasActiveTrial: boolean;
   isFreePlan: boolean;
   t: (key: string) => string;
 }
 
 export function CurrentPlanCard({
   displayPlan,
-  hasActiveTrial,
   isFreePlan,
   t,
 }: CurrentPlanCardProps) {
@@ -39,17 +37,9 @@ export function CurrentPlanCard({
           <Text className="text-lg font-roobert-semibold text-foreground">
             {displayPlan}
           </Text>
-          {hasActiveTrial && (
-            <View className="flex-row items-center gap-1.5 mt-1">
-              <Icon as={Clock} size={14} className="text-primary" strokeWidth={2} />
-              <Text className="text-xs font-roobert-medium text-primary">
-                {t('billing.trialActive')}
-              </Text>
-            </View>
-          )}
         </View>
         
-        {isFreePlan && !hasActiveTrial && (
+        {isFreePlan && (
           <View className="bg-primary px-3 py-1.5 rounded-full">
             <Text className="text-xs font-roobert-medium text-primary-foreground">
               {t('billing.upgradePlan')}

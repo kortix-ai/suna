@@ -4,6 +4,7 @@ import { X, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isLocalMode } from '@/lib/config';
 import { Button } from '@/components/ui/button';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 export interface UsagePreviewProps {
     type: 'tokens' | 'upgrade';
@@ -30,10 +31,6 @@ export const UsagePreview: React.FC<UsagePreviewProps> = ({
 }) => {
     if (isLocalMode()) return null;
 
-    const formatCurrency = (amount: number) => {
-        return `$${amount.toFixed(2)}`;
-    };
-
     const getUsageDisplay = () => {
         if (!subscriptionData) return 'Loading usage...';
 
@@ -43,7 +40,7 @@ export const UsagePreview: React.FC<UsagePreviewProps> = ({
         if (limit === 0) return 'No usage limit set';
 
         const isOverLimit = current > limit;
-        const usageText = `${formatCurrency(current)} / ${formatCurrency(limit)}`;
+        const usageText = `${formatCredits(current, { showDecimals: true })} / ${formatCredits(limit, { showDecimals: true })}`;
 
         if (isOverLimit) {
             return `${usageText} (over limit)`;

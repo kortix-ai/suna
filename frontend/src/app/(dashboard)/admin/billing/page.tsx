@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
-import { useAdminUserStats, useRefreshUserData } from '@/hooks/react-query/admin/use-admin-users';
-import type { UserSummary } from '@/hooks/react-query/admin/use-admin-users';
+import { useAdminUserStats, useRefreshUserData } from '@/hooks/admin/use-admin-users';
+import type { UserSummary } from '@/hooks/admin/use-admin-users';
 import { 
   Users,
   Shield,
@@ -36,10 +36,6 @@ export default function AdminBillingPage() {
   const handleRefreshData = () => {
     refreshUserList();
     refreshUserStats();
-  };
-
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
   };
 
   const calculateActivityRate = () => {

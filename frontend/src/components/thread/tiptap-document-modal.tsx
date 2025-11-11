@@ -16,7 +16,7 @@ import { Editor } from '@/components/agents/docs-agent/editor';
 import { AdvancedToolbar } from '@/components/agents/docs-agent/advanced-toolbar';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
 import { KortixLogo } from '../sidebar/kortix-logo';
-import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 
 interface TipTapDocumentModalProps {
   open: boolean;

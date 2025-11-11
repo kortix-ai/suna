@@ -246,6 +246,16 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleBeta}
             />
             
+            {/* Delete Account - Regular Menu Item */}
+            {!isGuest && (
+              <SettingsItem
+                icon={Trash2}
+                label={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
+                onPress={handleAccountDeletion}
+                showBadge={deletionStatus?.has_pending_deletion}
+              />
+            )}
+
             {/* Sign Out - Regular Menu Item */}
             {!isGuest && (
               <SettingsItem
@@ -253,21 +263,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 label={t('settings.signOut')}
                 onPress={handleSignOut}
               />
-            )}
-
-            {!isGuest && (
-              <View className="mt-4">
-                <Text className="text-xs font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
-                  Danger Zone
-                </Text>
-                <SettingsItem
-                  icon={Trash2}
-                  label={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
-                  onPress={handleAccountDeletion}
-                  destructive
-                  showBadge={deletionStatus?.has_pending_deletion}
-                />
-              </View>
             )}
           </View>
           

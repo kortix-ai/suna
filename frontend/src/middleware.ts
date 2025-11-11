@@ -18,12 +18,14 @@ const PUBLIC_ROUTES = [
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
+  '/suna', // Suna rebrand page should be public for SEO
 ];
 
-// Routes that require authentication but are related to billing/trials
+// Routes that require authentication but are related to billing/trials/setup
 const BILLING_ROUTES = [
   '/activate-trial',
   '/subscription',
+  '/setting-up',
 ];
 
 // Routes that require authentication and active subscription
@@ -143,26 +145,21 @@ export async function middleware(request: NextRequest) {
         }
       }
 
-      const hasTier = creditAccount.tier && creditAccount.tier !== 'none' && creditAccount.tier !== 'free';
+      const hasPaidTier = creditAccount.tier && creditAccount.tier !== 'none' && creditAccount.tier !== 'free';
+      const hasFreeTier = creditAccount.tier === 'free';
       const hasActiveTrial = creditAccount.trial_status === 'active';
       const trialExpired = creditAccount.trial_status === 'expired' || creditAccount.trial_status === 'cancelled';
       const trialConverted = creditAccount.trial_status === 'converted';
       
-      if (hasTier && (trialConverted || !trialExpired)) {
+      if (hasPaidTier || hasFreeTier) {
         return supabaseResponse;
       }
 
-      if (!hasTier && !hasActiveTrial && !trialConverted) {
-        if (hasUsedTrial || trialExpired || creditAccount.trial_status === 'cancelled') {
-          const url = request.nextUrl.clone();
-          url.pathname = '/subscription';
-          return NextResponse.redirect(url);
-        } else {
-          const url = request.nextUrl.clone();
-          url.pathname = '/activate-trial';
-          return NextResponse.redirect(url);
-        }
-      } else if ((trialExpired || trialConverted) && !hasTier) {
+      if (!hasPaidTier && !hasFreeTier && !hasActiveTrial && !trialConverted) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/subscription';
+        return NextResponse.redirect(url);
+      } else if ((trialExpired || trialConverted) && !hasPaidTier && !hasFreeTier) {
         const url = request.nextUrl.clone();
         url.pathname = '/subscription';
         return NextResponse.redirect(url);
