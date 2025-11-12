@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Pressable, View, Switch } from 'react-native';
+import { Pressable, View, Switch, ScrollView } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Layers } from 'lucide-react-native';
+import { Layers, Sparkles, Zap, AlertCircle } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 
@@ -14,16 +14,6 @@ interface BetaPageProps {
   onClose: () => void;
 }
 
-/**
- * BetaPage Component
- * 
- * Beta features settings page for enabling experimental features.
- * 
- * Features:
- * - Advanced Features toggle
- * - Description of what beta features include
- * - Clean, minimal design matching other pages
- */
 export function BetaPage({ visible, onClose }: BetaPageProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
@@ -37,7 +27,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
   
   const handleToggle = React.useCallback(async () => {
     console.log('🎯 Advanced features toggle pressed');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await toggleAdvancedFeatures();
   }, [toggleAdvancedFeatures]);
   
@@ -45,75 +35,142 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
   
   return (
     <View className="absolute inset-0 z-50">
-      {/* Backdrop */}
       <Pressable
         onPress={handleClose}
         className="absolute inset-0 bg-black/50"
       />
       
-      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <View className="flex-1">
-          {/* Header */}
+        <ScrollView 
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+        >
           <SettingsHeader
-            title={t('settings.beta') || 'Beta'}
+            title="Beta Features"
             onClose={handleClose}
           />
           
-          {/* Beta Features Toggle */}
-          <View className="px-6 mb-6">
-            <View className="rounded-2xl bg-secondary border-2 border-transparent">
-              <View className="px-4 py-4 flex-row items-center justify-between">
-                <View className="flex-row items-center gap-3 flex-1">
-                  <View className={`w-10 h-10 rounded-full items-center justify-center ${
-                    advancedFeaturesEnabled ? 'bg-primary/10' : 'bg-secondary'
-                  }`}>
-                    <Icon 
-                      as={Layers} 
-                      size={20} 
-                      className={advancedFeaturesEnabled ? 'text-primary' : 'text-foreground/40'} 
-                      strokeWidth={2} 
-                    />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-base font-roobert-medium text-foreground">
-                      {t('settings.advancedFeatures') || 'Advanced Features'}
-                    </Text>
-                  </View>
-                </View>
-                
-                <Switch
-                  value={advancedFeaturesEnabled}
-                  onValueChange={handleToggle}
-                  trackColor={{ 
-                    false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
-                    true: colorScheme === 'dark' ? '#34C759' : '#34C759' 
-                  }}
-                  thumbColor={colorScheme === 'dark' ? '#FFFFFF' : '#FFFFFF'}
-                  ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
-                />
+          <View className="px-6 pb-8">
+            <View className="mb-8 items-center pt-4">
+              <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                <Icon as={Sparkles} size={28} className="text-primary" strokeWidth={2} />
               </View>
-              
-              {/* Description */}
-              <View className="px-4 pb-4 pt-0">
-                <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                  {t('settings.betaDescription') || 'Experimental features and advanced tools'}
-                </Text>
-              </View>
-            </View>
-          </View>
-          
-          {/* Info Box */}
-          <View className="px-6 mt-4 mb-6">
-            <View className="p-4 bg-secondary/50 rounded-2xl">
-              <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                {t('settings.betaWarning') || 'Beta features may be unstable and could change without notice. Use at your own discretion.'}
+              <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
+                Experimental Features
+              </Text>
+              <Text className="text-sm font-roobert text-muted-foreground text-center">
+                Get early access to new capabilities
               </Text>
             </View>
+
+            <View className="mb-6">
+              <View className="bg-card border border-border/40 rounded-2xl p-5">
+                <View className="flex-row items-center justify-between mb-4">
+                  <View className="flex-row items-center gap-3 flex-1">
+                    <View className={`h-11 w-11 rounded-full items-center justify-center ${
+                      advancedFeaturesEnabled ? 'bg-primary' : 'bg-primary/10'
+                    }`}>
+                      <Icon 
+                        as={Layers} 
+                        size={20} 
+                        className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-primary'} 
+                        strokeWidth={2.5} 
+                      />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-base font-roobert-semibold text-foreground mb-0.5">
+                        Advanced Features
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <Switch
+                    value={advancedFeaturesEnabled}
+                    onValueChange={handleToggle}
+                    trackColor={{ 
+                      false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
+                      true: colorScheme === 'dark' ? '#34C759' : '#34C759' 
+                    }}
+                    thumbColor="#FFFFFF"
+                    ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
+                  />
+                </View>
+                
+                <View className="pt-3 border-t border-border/40">
+                  <Text className="text-sm font-roobert text-muted-foreground leading-5">
+                    Access experimental features and advanced tools before they're released to everyone
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {advancedFeaturesEnabled && (
+              <View className="mb-6">
+                <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+                  What's Included
+                </Text>
+                <View className="gap-3">
+                  <FeatureCard
+                    icon={Zap}
+                    title="Experimental Tools"
+                    description="Try out new capabilities before official release"
+                  />
+                  <FeatureCard
+                    icon={Layers}
+                    title="Advanced Settings"
+                    description="Fine-tune your experience with power user options"
+                  />
+                </View>
+              </View>
+            )}
+
+            <View className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5">
+              <View className="flex-row items-start gap-3 mb-3">
+                <View className="h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+                  <Icon as={AlertCircle} size={18} className="text-destructive" strokeWidth={2.5} />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-sm font-roobert-semibold text-foreground mb-1">
+                    Please Note
+                  </Text>
+                  <Text className="text-sm font-roobert text-muted-foreground leading-5">
+                    Beta features may be unstable and could change without notice. Use at your own discretion.
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
-        </View>
+
+          <View className="h-20" />
+        </ScrollView>
       </View>
     </View>
   );
 }
 
+interface FeatureCardProps {
+  icon: any;
+  title: string;
+  description: string;
+}
+
+function FeatureCard({ icon: IconComponent, title, description }: FeatureCardProps) {
+  return (
+    <View className="bg-primary/5 rounded-2xl p-4">
+      <View className="flex-row items-center gap-3">
+        <View className="h-10 w-10 rounded-full bg-primary/10 items-center justify-center">
+          <Icon as={IconComponent} size={18} className="text-primary" strokeWidth={2.5} />
+        </View>
+        <View className="flex-1">
+          <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
+            {title}
+          </Text>
+          <Text className="text-xs font-roobert text-muted-foreground">
+            {description}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}

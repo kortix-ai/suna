@@ -6,7 +6,8 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Pressable, Linking, ScrollView } from 'react-native';
+import { View, Pressable, Linking, ScrollView, ActivityIndicator, useColorScheme } from 'react-native';
+import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
@@ -14,12 +15,17 @@ import {
   Clock, 
   Infinity,
   ShoppingCart,
-  Lightbulb,
   Shield,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  ArrowUpDown,
+  Wallet,
+  HelpCircle,
+  TrendingDown,
+  ChevronRight
 } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
+import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { PlanSelectionModal } from '@/components/billing/PlanSelectionModal';
 import { CreditsPurchasePage } from './CreditsPurchasePage';
 import { 
@@ -30,6 +36,7 @@ import {
   useCreatePortalSession,
   useCancelSubscription,
   useReactivateSubscription,
+  useThreadUsage,
   billingKeys
 } from '@/lib/billing';
 import { useQueryClient } from '@tanstack/react-query';
@@ -100,9 +107,10 @@ interface BillingPageProps {
   visible: boolean;
   onClose: () => void;
   onOpenCredits: () => void;
+  onOpenUsage: () => void;
 }
 
-export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProps) {
+export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage }: BillingPageProps) {
   const { t } = useLanguage();
   const { user } = useAuthContext();
   const queryClient = useQueryClient();
@@ -112,14 +120,14 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
   const [showCreditsModal, setShowCreditsModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
 
-  // Use React Query hooks for subscription data (matching frontend exactly)
+  // Use React Query hooks for subscription data - only when visible and authenticated
   const {
     data: subscriptionData,
     isLoading: isLoadingSubscription,
     error: subscriptionError,
     refetch: refetchSubscription
   } = useSubscription({
-    enabled: isAuthenticated,
+    enabled: visible && isAuthenticated,
   });
 
   const {
@@ -128,7 +136,7 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
     error: commitmentError,
     refetch: refetchCommitment
   } = useSubscriptionCommitment(subscriptionData?.subscription?.id, {
-    enabled: !!subscriptionData?.subscription?.id
+    enabled: visible && !!subscriptionData?.subscription?.id
   });
 
   const {
@@ -136,80 +144,95 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
     isLoading: isLoadingBalance,
     refetch: refetchBalance
   } = useCreditBalance({
-    enabled: isAuthenticated
+    enabled: visible && isAuthenticated
   });
 
   const {
     data: scheduledChangesData,
     refetch: refetchScheduledChanges
   } = useScheduledChanges({
-    enabled: isAuthenticated
+    enabled: visible && isAuthenticated
   });
 
   const createPortalSessionMutation = useCreatePortalSession();
   const cancelSubscriptionMutation = useCancelSubscription();
   const reactivateSubscriptionMutation = useReactivateSubscription();
 
-  const planName = getPlanName(subscriptionData);
+  // Memoize expensive calculations - only recalculate when data changes
+  const planName = React.useMemo(() => getPlanName(subscriptionData), [subscriptionData]);
   
-  // Get TierType for TierBadge component
-  const getTierType = (): TierType => {
+  const tierType = React.useMemo((): TierType => {
     const name = planName.toLowerCase();
     if (name === 'plus') return 'Plus';
     if (name === 'pro' || name === 'business') return 'Pro';
     if (name === 'ultra') return 'Ultra';
-    return 'Basic'; // Default to Basic
-  };
-  
-  const tierType = getTierType();
+    return 'Basic';
+  }, [planName]);
 
-  // Calculate days until refresh
-  const getDaysUntilRefresh = () => {
+  const daysUntilRefresh = React.useMemo(() => {
     if (!creditBalance?.next_credit_grant) return null;
     const nextGrant = new Date(creditBalance.next_credit_grant);
     const now = new Date();
     const diffTime = nextGrant.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays > 0 ? diffDays : null;
-  };
+  }, [creditBalance?.next_credit_grant]);
 
-  const daysUntilRefresh = getDaysUntilRefresh();
-  // Convert dollar amounts to credits (balance comes in dollars, need to convert to credits)
-  const expiringCredits = dollarsToCredits(creditBalance?.expiring_credits || 0);
-  const nonExpiringCredits = dollarsToCredits(creditBalance?.non_expiring_credits || 0);
-  const totalCredits = dollarsToCredits(creditBalance?.balance || 0);
+  const expiringCredits = React.useMemo(() => 
+    dollarsToCredits(creditBalance?.expiring_credits || 0), 
+    [creditBalance?.expiring_credits]
+  );
+  
+  const nonExpiringCredits = React.useMemo(() => 
+    dollarsToCredits(creditBalance?.non_expiring_credits || 0), 
+    [creditBalance?.non_expiring_credits]
+  );
+  
+  const totalCredits = React.useMemo(() => 
+    dollarsToCredits(creditBalance?.balance || 0), 
+    [creditBalance?.balance]
+  );
 
-  // Refetch billing info when page becomes visible
-  const prevVisibleRef = useRef(false);
-  useEffect(() => {
-    if (visible && !prevVisibleRef.current && isAuthenticated) {
-      console.log('🔄 Billing page activated, refetching billing info...');
-      queryClient.invalidateQueries({ queryKey: billingKeys.all });
-    }
-    prevVisibleRef.current = visible;
-  }, [visible, isAuthenticated, queryClient]);
-
-  const getEffectiveCancellationDate = () => {
+  // Memoize derived state
+  const cancellationDate = React.useMemo(() => {
     if (subscriptionData?.subscription?.cancel_at) {
       const cancelAt = subscriptionData.subscription.cancel_at;
-      if (typeof cancelAt === 'number') {
-        return formatDate(cancelAt);
-      }
-      return formatDate(cancelAt);
+      return typeof cancelAt === 'number' ? formatDate(cancelAt) : formatDate(cancelAt);
     }
     if (subscriptionData?.subscription?.current_period_end) {
       return formatDateFlexible(subscriptionData.subscription.current_period_end);
     }
     return 'N/A';
-  };
+  }, [subscriptionData?.subscription]);
 
-  const handleClose = () => {
+  const isSubscribed = React.useMemo(() => 
+    subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing',
+    [subscriptionData?.subscription?.status]
+  );
+
+  const isFreeTier = React.useMemo(() => 
+    subscriptionData?.tier?.name === 'free',
+    [subscriptionData?.tier?.name]
+  );
+
+  const isCancelled = React.useMemo(() => {
+    const sub = subscriptionData?.subscription;
+    return !!(sub?.cancel_at_period_end || sub?.cancel_at || sub?.canceled_at);
+  }, [subscriptionData?.subscription]);
+
+  const canPurchaseCredits = React.useMemo(() => 
+    subscriptionData?.credits?.can_purchase_credits || false,
+    [subscriptionData?.credits?.can_purchase_credits]
+  );
+
+  // Memoize handlers to prevent unnecessary re-renders
+  const handleClose = React.useCallback(() => {
     console.log('🎯 Billing page closed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-  };
+  }, [onClose]);
 
-  const handleManageSubscription = async () => {
+  const handleManageSubscription = React.useCallback(async () => {
     const returnUrl = 'https://kortix.com/subscription';
     createPortalSessionMutation.mutate(
       { return_url: returnUrl },
@@ -221,28 +244,28 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
         },
       }
     );
-  };
+  }, [createPortalSessionMutation]);
 
-  const handleChangePlan = () => {
+  const handleChangePlan = React.useCallback(() => {
     console.log('🎯 Change Plan pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowPlanModal(true);
-  };
+  }, []);
 
-  const handlePurchaseCredits = () => {
+  const handlePurchaseCredits = React.useCallback(() => {
     console.log('🎯 Purchase Credits pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowCreditsModal(true);
-  };
+  }, []);
 
-  const handleCancel = () => {
+  const handleCancel = React.useCallback(() => {
     setShowCancelDialog(false);
     cancelSubscriptionMutation.mutate(undefined);
-  };
+  }, [cancelSubscriptionMutation]);
 
-  const handleReactivate = () => {
+  const handleReactivate = React.useCallback(() => {
     reactivateSubscriptionMutation.mutate();
-  };
+  }, [reactivateSubscriptionMutation]);
 
   const isLoading = isLoadingSubscription || isLoadingBalance;
   const error = subscriptionError ? (subscriptionError instanceof Error ? subscriptionError.message : 'Failed to load subscription data') : null;
@@ -278,164 +301,185 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
     );
   }
 
-  const isSubscribed = subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing';
-  const isFreeTier = subscriptionData?.tier?.name === 'free';
   const subscription = subscriptionData?.subscription;
-  const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at || subscription?.canceled_at;
-  const canPurchaseCredits = subscriptionData?.credits?.can_purchase_credits || false;
 
   return (
     <View className="absolute inset-0 z-50">
-      {/* Backdrop */}
       <Pressable
         onPress={handleClose}
         className="absolute inset-0 bg-black/50"
       />
-      
-      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
         <ScrollView 
           className="flex-1" 
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews={false}
+          removeClippedSubviews={true}
         >
-          {/* Header */}
           <SettingsHeader
             title={t('billing.title')}
             onClose={handleClose}
           />
 
           <View className="px-6 pb-8">
-            {/* Header with Plan Badge on Right */}
-            <View className="mb-8 flex-row items-start justify-between gap-4">
-              <View className="flex-1">
-                <Text className="text-2xl font-roobert-semibold text-foreground">
-                  Billing Status
-                </Text>
-                <Text className="text-sm font-roobert text-muted-foreground mt-1">
-                  Manage your credits and subscription
-                </Text>
+            <View className="mb-8 items-center pt-4">
+              <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                <Icon as={CreditCard} size={28} className="text-primary" strokeWidth={2} />
               </View>
-
-              {/* Plan Badge with Renewal Info - Right aligned */}
-              {!isFreeTier && planName && subscription?.current_period_end && (
-                <View className="items-end">
-                  <View className="mb-1">
-                    <TierBadge tier={tierType} size="small" />
-                  </View>
-                  <Text className="text-xs font-roobert text-muted-foreground mt-0.5">
-                    Renews {formatDateFlexible(subscription.current_period_end)}
-                  </Text>
-                </View>
-              )}
+              <Text className="mb-1 text-5xl font-roobert-semibold text-foreground tracking-tight">
+                {formatCredits(totalCredits)}
+              </Text>
+              <Text className="text-sm font-roobert text-muted-foreground">
+                Total Available Credits
+              </Text>
             </View>
-
-            {/* Credit Breakdown - 3 Cards Stack */}
-            <View className="mb-8 gap-4">
-              {/* Total Available Credits */}
-              <View className="bg-card border border-border rounded-[18px] p-6">
-                <View className="mb-4 flex-row items-center gap-2">
-                  <Icon as={CreditCard} size={16} className="text-muted-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-medium text-muted-foreground">
-                    Total Available Credits
+            {canPurchaseCredits && (
+              <View className="mb-6 items-center">
+                <Pressable
+                  onPress={handlePurchaseCredits}
+                  className="w-36 rounded-full bg-primary border border-border/40 rounded-2xl px-4 py-3 flex-row items-center justify-center gap-2 active:opacity-80"
+                >
+                  <Icon as={CreditCard} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+                  <Text className="text-sm font-roobert-medium text-primary-foreground">
+                    Top up
                   </Text>
-                </View>
-                <View>
-                  <Text className="mb-1 text-2xl font-roobert-semibold text-foreground">
-                    {formatCredits(totalCredits)}
-                  </Text>
-                  <Text className="text-xs font-roobert text-muted-foreground">
-                    All credits
-                  </Text>
-                </View>
+                </Pressable>
               </View>
+            )}
 
-              {/* Monthly Credits */}
-              <View className="bg-card border border-orange-500/20 rounded-[18px] p-6">
-                <View className="mb-4 flex-row items-center gap-2">
-                  <Icon as={Clock} size={16} className="text-orange-500" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-medium text-muted-foreground">
-                    Monthly Credits
-                  </Text>
-                </View>
-                <View>
+            <UsageSection visible={visible} onOpenFullUsage={onOpenUsage} />
+
+            <View className="mb-6">
+              <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+                Credit Breakdown
+              </Text>
+              <View className="flex-row gap-3">
+                <View className="flex-1 bg-primary/5 rounded-3xl p-5">
+                  <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
+                    <Icon as={Clock} size={18} className="text-primary-foreground" strokeWidth={2.5} />
+                  </View>
                   <Text className="mb-1 text-2xl font-roobert-semibold text-foreground">
                     {formatCredits(expiringCredits)}
                   </Text>
-                  <Text className="text-xs font-roobert text-muted-foreground">
+                  <Text className="mb-1 text-xs font-roobert-medium text-muted-foreground">
+                    Monthly
+                  </Text>
+                  <Text className="text-[10px] font-roobert text-primary">
                     {daysUntilRefresh !== null 
-                      ? `Renewal in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
-                      : 'No renewal scheduled'
+                      ? `Renews in ${daysUntilRefresh}d`
+                      : 'No renewal'
                     }
                   </Text>
                 </View>
-              </View>
-
-              {/* Extra Credits */}
-              <View className="bg-card border border-border rounded-[18px] p-6">
-                <View className="mb-4 flex-row items-center gap-2">
-                  <Icon as={Infinity} size={16} className="text-muted-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-medium text-muted-foreground">
-                    Extra Credits
-                  </Text>
-                </View>
-                <View>
+                <View className="flex-1 bg-primary/5 rounded-3xl p-5">
+                  <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
+                    <Icon as={Infinity} size={18} className="text-primary-foreground" strokeWidth={2.5} />
+                  </View>
                   <Text className="mb-1 text-2xl font-roobert-semibold text-foreground">
                     {formatCredits(nonExpiringCredits)}
                   </Text>
-                  <Text className="text-xs font-roobert text-muted-foreground">
-                    Non-expiring
+                  <Text className="mb-1 text-xs font-roobert-medium text-muted-foreground">
+                    Extra
+                  </Text>
+                  <Text className="text-[10px] font-roobert text-primary">
+                    Never expires
                   </Text>
                 </View>
               </View>
             </View>
 
-            {/* Action Buttons */}
-            <View className="mb-8 gap-3">
-              <Pressable
-                onPress={handleManageSubscription}
-                disabled={createPortalSessionMutation.isPending}
-                className="h-10 bg-primary rounded-xl items-center justify-center"
-              >
-                <Text className="text-sm font-roobert-medium text-primary-foreground">
-                  {createPortalSessionMutation.isPending ? 'Loading...' : 'Manage Subscription'}
-                </Text>
-              </Pressable>
+            {!isFreeTier && subscription?.current_period_end && (
+              <View className="mb-6 bg-primary/5 rounded-3xl p-4">
+                <View className="flex-row items-center justify-between">
+                  <View>
+                    <Text className="mb-0.5 text-xs font-roobert-medium text-muted-foreground">
+                      Current Plan
+                    </Text>
+                    <View className="mt-1">
+                      <TierBadge tier={tierType} size="small" />
+                    </View>
+                  </View>
+                  <View className="items-end">
+                    <Text className="mb-0.5 text-xs font-roobert-medium text-muted-foreground">
+                      Next Billing
+                    </Text>
+                    <Text className="text-sm font-roobert-medium text-foreground">
+                      {formatDateFlexible(subscription.current_period_end)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
 
-              {canPurchaseCredits && (
-                <Pressable
-                  onPress={handlePurchaseCredits}
-                  className="h-10 border border-border rounded-xl items-center justify-center flex-row gap-2"
-                >
-                  <Icon as={ShoppingCart} size={16} className="text-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-medium text-foreground">
-                    Get Additional Credits
-                  </Text>
-                </Pressable>
-              )}
+            {/* Secondary Actions Grid */}
+            <View className="mb-6">
+              {!isFreeTier && planName ? (
+                <View className="flex-row gap-3">
+                  <Pressable
+                    onPress={handleChangePlan}
+                    className="flex-1 bg-card border border-border/40 rounded-2xl p-4 active:opacity-80"
+                  >
+                    <View className="mb-3 h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+                      <Icon as={ArrowUpDown} size={20} className="text-primary" strokeWidth={2.5} />
+                    </View>
+                    <Text className="text-sm font-roobert-semibold text-foreground mb-1">
+                      Change Plan
+                    </Text>
+                    <Text className="text-xs font-roobert text-muted-foreground">
+                      Upgrade or downgrade
+                    </Text>
+                  </Pressable>
 
-              {!isFreeTier && planName && (
+                  <Pressable
+                    onPress={handleManageSubscription}
+                    disabled={createPortalSessionMutation.isPending}
+                    className="flex-1 bg-card border border-border/40 rounded-2xl p-4 active:opacity-80"
+                  >
+                    <View className="mb-3 h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+                      <Icon as={Wallet} size={20} className="text-muted-foreground" strokeWidth={2.5} />
+                    </View>
+                    <Text className="text-sm font-roobert-semibold text-foreground mb-1">
+                      {createPortalSessionMutation.isPending ? 'Loading...' : 'Billing Portal'}
+                    </Text>
+                    <Text className="text-xs font-roobert text-muted-foreground">
+                      Payment methods
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
                 <Pressable
-                  onPress={handleChangePlan}
-                  className="h-10 border border-border rounded-xl items-center justify-center"
+                  onPress={handleManageSubscription}
+                  disabled={createPortalSessionMutation.isPending}
+                  className="bg-card border border-border/40 rounded-2xl p-4 active:opacity-80"
                 >
-                  <Text className="text-sm font-roobert-medium text-foreground">
-                    Change Plan
-                  </Text>
+                  <View className="flex-row items-center gap-3">
+                    <View className="h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+                      <Icon as={Wallet} size={20} className="text-muted-foreground" strokeWidth={2.5} />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
+                        {createPortalSessionMutation.isPending ? 'Loading...' : 'Billing Portal'}
+                      </Text>
+                      <Text className="text-xs font-roobert text-muted-foreground">
+                        Payment methods
+                      </Text>
+                    </View>
+                  </View>
                 </Pressable>
               )}
             </View>
 
             {/* Commitment Alert */}
             {commitmentInfo?.has_commitment && (
-              <View className="mb-8 bg-blue-500/5 border border-blue-500/20 rounded-[18px] p-4">
-                <View className="flex-row items-start gap-3">
-                  <Icon as={Shield} size={16} className="text-blue-500 mt-0.5" strokeWidth={2} />
+              <View className="mb-6 bg-blue-500/5 border border-blue-500/20 rounded-2xl p-5">
+                <View className="flex-row items-start gap-4">
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-blue-500/10">
+                    <Icon as={Shield} size={18} className="text-blue-500" strokeWidth={2.5} />
+                  </View>
                   <View className="flex-1">
-                    <Text className="mb-1 text-sm font-roobert-medium text-foreground">
+                    <Text className="mb-1 text-sm font-roobert-semibold text-foreground">
                       Annual Commitment
                     </Text>
-                    <Text className="text-sm font-roobert text-muted-foreground">
+                    <Text className="text-xs font-roobert text-muted-foreground">
                       Active until {formatEndDate(commitmentInfo.commitment_end_date || '')}
                     </Text>
                   </View>
@@ -445,7 +489,7 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
 
             {/* Scheduled Changes */}
             {scheduledChangesData?.has_scheduled_change && scheduledChangesData.scheduled_change && (
-              <View className="mb-8">
+              <View className="mb-6">
                 <ScheduledDowngradeCard
                   scheduledChange={scheduledChangesData.scheduled_change}
                   onCancel={() => {
@@ -458,21 +502,25 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
 
             {/* Cancellation Alert */}
             {isCancelled && (
-              <View className="mb-8 bg-destructive/10 border border-destructive/20 rounded-[18px] p-4">
-                <View className="flex-row items-start gap-3">
-                  <Icon as={AlertTriangle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+              <View className="mb-6 bg-destructive/5 border border-destructive/20 rounded-2xl p-5">
+                <View className="flex-row items-start gap-4">
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+                    <Icon as={AlertTriangle} size={18} className="text-destructive" strokeWidth={2.5} />
+                  </View>
                   <View className="flex-1">
-                    <Text className="mb-1 text-sm font-roobert-medium text-destructive">
+                    <Text className="mb-1 text-sm font-roobert-semibold text-destructive">
                       Subscription Cancelled
                     </Text>
-                    <Text className="mb-3 text-sm font-roobert text-muted-foreground">
-                      Your subscription will be cancelled on {getEffectiveCancellationDate()}
+                    <Text className="mb-4 text-xs font-roobert text-muted-foreground">
+                      Your subscription will be cancelled on {cancellationDate}
                     </Text>
                     <Pressable
                       onPress={handleReactivate}
                       disabled={reactivateSubscriptionMutation.isPending}
+                      className="flex-row items-center gap-2 bg-primary rounded-xl px-4 py-2.5 self-start active:opacity-80"
                     >
-                      <Text className="text-sm font-roobert-medium text-primary">
+                      <Icon as={RotateCcw} size={14} className="text-primary-foreground" strokeWidth={2.5} />
+                      <Text className="text-sm font-roobert-medium text-primary-foreground">
                         {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate'}
                       </Text>
                     </Pressable>
@@ -481,35 +529,26 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
               </View>
             )}
 
-            {/* Reactivate Button (if cancelled) */}
-            {isCancelled && (
-              <View className="mb-8 items-center">
-                <Pressable
-                  onPress={handleReactivate}
-                  disabled={reactivateSubscriptionMutation.isPending}
-                  className="h-10 border border-border rounded-xl items-center justify-center flex-row gap-2 px-4"
-                >
-                  <Icon as={RotateCcw} size={14} className="text-foreground" strokeWidth={2} />
-                  <Text className="text-sm font-roobert-medium text-foreground">
-                    {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate Subscription'}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-
-            {/* Help Link */}
-            <View className="mb-6 items-center border-t border-border/50 pt-6">
+            {/* Help & Support */}
+            <View className="mb-6 bg-muted/30 rounded-2xl p-5">
               <Pressable
                 onPress={() => {
                   const url = 'https://kortix.com/credits-explained';
                   Linking.openURL(url);
                 }}
-                className="flex-row items-center gap-2"
+                className="flex-row items-center gap-3 active:opacity-70"
               >
-                <Icon as={Lightbulb} size={14} className="text-muted-foreground" strokeWidth={2} />
-                <Text className="text-sm font-roobert text-muted-foreground">
-                  Credits explained
-                </Text>
+                <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                  <Icon as={HelpCircle} size={18} className="text-muted-foreground" strokeWidth={2.5} />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    How credits work
+                  </Text>
+                  <Text className="text-xs font-roobert text-muted-foreground">
+                    Learn about credit usage
+                  </Text>
+                </View>
               </Pressable>
             </View>
 
@@ -518,9 +557,9 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
               <View className="mb-8 items-center">
                 <Pressable
                   onPress={() => setShowCancelDialog(true)}
-                  className="py-2"
+                  className="py-3 px-4 active:opacity-60"
                 >
-                  <Text className="text-xs font-roobert text-muted-foreground">
+                  <Text className="text-xs font-roobert-medium text-muted-foreground">
                     Cancel Plan
                   </Text>
                 </Pressable>
@@ -540,10 +579,124 @@ export function BillingPage({ visible, onClose, onOpenCredits }: BillingPageProp
       />
 
       {/* Credits Purchase Modal */}
-      <CreditsPurchasePage
-        visible={showCreditsModal}
-        onClose={() => setShowCreditsModal(false)}
-      />
+      <AnimatedPageWrapper visible={showCreditsModal} onClose={() => setShowCreditsModal(false)}>
+        <CreditsPurchasePage
+          visible={showCreditsModal}
+          onClose={() => setShowCreditsModal(false)}
+        />
+      </AnimatedPageWrapper>
+    </View>
+  );
+}
+
+interface UsageSectionProps {
+  visible: boolean;
+  onOpenFullUsage: () => void;
+}
+
+function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
+  const [dateRange] = React.useState({
+    from: new Date(new Date().setDate(new Date().getDate() - 29)),
+    to: new Date(),
+  });
+
+  const { data: usageData, isLoading } = useThreadUsage({
+    limit: 3,
+    offset: 0,
+    startDate: dateRange.from,
+    endDate: dateRange.to,
+    enabled: visible,
+  });
+
+  if (isLoading) {
+    return (
+      <View className="mb-6 bg-muted/5 border border-border/50 rounded-2xl p-5">
+        <View className="flex-row items-center justify-center py-8">
+          <ActivityIndicator size="small" />
+        </View>
+      </View>
+    );
+  }
+
+  if (!usageData || !usageData.summary) {
+    return null;
+  }
+
+  const summary = usageData.summary;
+
+  const graphData = [45, 52, 48, 65, 58, 72, 68, 85, 78, 92, 88, 95, 82, 88, 75, 68, 72, 65, 80, 75];
+
+  const width = 280;
+  const height = 80;
+  const points = graphData.map((value, index) => {
+    const x = (index / (graphData.length - 1)) * width;
+    const y = height - (value / 100) * height;
+    return { x, y };
+  });
+
+  const pathData = points.map((point, index) => {
+    if (index === 0) {
+      return `M ${point.x} ${point.y}`;
+    }
+    const prevPoint = points[index - 1];
+    const controlX = (prevPoint.x + point.x) / 2;
+    return `Q ${controlX} ${prevPoint.y}, ${point.x} ${point.y}`;
+  }).join(' ');
+
+  const strokeColor = isDark ? '#ffffff' : '#000000';
+
+  return (
+    <View className="mb-6">
+      <Pressable 
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onOpenFullUsage();
+        }}
+        className="active:opacity-90 bg-transparent"
+      >
+        <View className="rounded-3xl p-5 overflow-hidden">
+          <View className="absolute inset-0 bg-primary/5 rounded-3xl" />
+          <View className="absolute top-1/3 left-1/2 -translate-x-1/2 w-3/4 h-1/3 bg-primary/10 rounded-full" style={{ filter: 'blur(40px)' }} />
+          <View className="relative">
+            <View className="flex-row items-start justify-between">
+              <View className="h-8 w-8 items-center justify-center rounded-full bg-foreground">
+                <Icon as={TrendingDown} size={20} className="text-background" strokeWidth={2.5} />
+              </View>
+              <View className="absolute right-0 top-0">
+                <Svg width={180} height={60} viewBox={`0 0 ${width} ${height}`}>
+                  <Path
+                    d={pathData}
+                    stroke={strokeColor}
+                    strokeWidth="2.5"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </View>
+            </View>
+
+            <View className="flex-row items-end justify-between mt-4">
+              <View>
+                <Text className="text-sm font-roobert text-muted-foreground">
+                  Usage
+                </Text>
+                <Text className="text-lg font-roobert-medium text-muted-foreground">
+                  Last 30d
+                </Text>
+              </View>
+              <View className="items-end">
+                <Text className="text-4xl font-roobert-semibold text-foreground">
+                  {formatCredits(summary.total_credits_used)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Pressable>
     </View>
   );
 }

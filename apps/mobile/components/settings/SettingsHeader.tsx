@@ -35,7 +35,7 @@ export function SettingsHeader({ title, onClose, disabled = false }: SettingsHea
     >
       <Pressable
         onPress={handleClose}
-        className="w-6 h-6 items-center justify-center"
+        className="w-8 h-8 items-center justify-center bg-primary/10 rounded-full p-2"
         hitSlop={8}
         disabled={disabled}
       >

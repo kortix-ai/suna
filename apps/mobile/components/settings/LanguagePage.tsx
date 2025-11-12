@@ -8,79 +8,81 @@ import Animated, {
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Check, Globe } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+const LANGUAGE_FLAGS: Record<string, string> = {
+  'en': '🇺🇸',
+  'es': '🇪🇸',
+  'fr': '🇫🇷',
+  'de': '🇩🇪',
+  'it': '🇮🇹',
+  'pt': '🇧🇷',
+  'zh': '🇨🇳',
+  'ja': '🇯🇵',
+};
 
 interface LanguagePageProps {
   visible: boolean;
   onClose: () => void;
 }
 
-/**
- * LanguagePage Component
- * 
- * Clean language selector page matching Settings style.
- * 
- * Features:
- * - List of all available languages
- * - Shows native language names
- * - Visual indicator for selected language
- * - Smooth animations
- * - Haptic feedback
- */
 export function LanguagePage({ visible, onClose }: LanguagePageProps) {
   const { currentLanguage, availableLanguages, setLanguage, t } = useLanguage();
   
   const handleLanguageSelect = async (languageCode: string) => {
     console.log('🌍 Language selected:', languageCode);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
     await setLanguage(languageCode);
-    
-    // Close page after a short delay
-    setTimeout(() => {
-      onClose();
-    }, 300);
   };
   
-  const handleClose = () => {
+  const handleClose = React.useCallback(() => {
     console.log('🎯 Language page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-  };
+  }, [onClose]);
   
   if (!visible) return null;
   
   return (
     <View className="absolute inset-0 z-50">
-      {/* Simple Backdrop */}
       <Pressable
         onPress={handleClose}
         className="absolute inset-0 bg-black/50"
       />
       
-      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {/* Header */}
+        <ScrollView 
+          className="flex-1" 
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+        >
           <SettingsHeader
-            title={t('languages.title')}
+            title="Language"
             onClose={handleClose}
           />
           
-          {/* Language List */}
-          <View className="px-6">
-            {availableLanguages.map((language) => (
-              <LanguageItem
-                key={language.code}
-                language={language}
-                isSelected={currentLanguage === language.code}
-                onPress={() => handleLanguageSelect(language.code)}
-              />
-            ))}
+          <View className="px-6 pb-8">
+            <View className="mb-3">
+              <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+                Select Language
+              </Text>
+            </View>
+
+            <View className="gap-3">
+              {availableLanguages.map((language) => (
+                <LanguageItem
+                  key={language.code}
+                  language={language}
+                  isSelected={currentLanguage === language.code}
+                  onPress={() => handleLanguageSelect(language.code)}
+                />
+              ))}
+            </View>
           </View>
           
           <View className="h-20" />
@@ -90,11 +92,6 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
   );
 }
 
-/**
- * LanguageItem Component
- * 
- * Clean language list item with native name and selection indicator.
- */
 interface LanguageItemProps {
   language: {
     code: string;
@@ -107,6 +104,7 @@ interface LanguageItemProps {
 
 function LanguageItem({ language, isSelected, onPress }: LanguageItemProps) {
   const scale = useSharedValue(1);
+  const flag = LANGUAGE_FLAGS[language.code] || '🌐';
   
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -126,32 +124,36 @@ function LanguageItem({ language, isSelected, onPress }: LanguageItemProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="flex-row items-center justify-between py-4"
+      className="bg-primary/5 rounded-3xl p-4 active:opacity-80"
     >
-      <View className="flex-row items-center gap-3">
-        <View className={`w-10 h-10 rounded-full items-center justify-center ${
-          isSelected ? 'bg-primary/10' : 'bg-secondary/50'
-        }`}>
-          <Icon 
-            as={Globe} 
-            size={20} 
-            className={isSelected ? 'text-primary' : 'text-foreground/40'} 
-            strokeWidth={2} 
-          />
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center gap-3 flex-1">
+          <View className={`h-10 w-10 rounded-full items-center justify-center ${
+            isSelected ? 'bg-primary/10' : ''
+          }`}>
+            <Text className="text-2xl">{flag}</Text>
+          </View>
+          <View className="flex-1">
+            <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
+              {language.nativeName}
+            </Text>
+            <Text className="text-xs font-roobert text-muted-foreground">
+              {language.name}
+            </Text>
+          </View>
         </View>
-        <View>
-          <Text className="text-base font-roobert-medium text-foreground">
-            {language.nativeName}
-          </Text>
-          <Text className="text-sm font-roobert text-muted-foreground">
-            {language.name}
-          </Text>
-        </View>
+        
+        {isSelected && (
+          <View className="ml-2 h-5 w-5 items-center justify-center rounded-full bg-primary">
+            <Icon 
+              as={Check} 
+              size={12} 
+              className="text-primary-foreground" 
+              strokeWidth={3} 
+            />
+          </View>
+        )}
       </View>
-      
-      {isSelected && (
-        <Icon as={Check} size={20} className="text-primary" strokeWidth={2.5} />
-      )}
     </AnimatedPressable>
   );
 }

@@ -19,6 +19,7 @@ import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsPage } from '@/components/settings/SettingsPage';
+import { placeholderImageUrl } from '@/components/settings/NameEditPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -29,8 +30,10 @@ import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { useAdvancedFeatures } from '@/hooks';
+import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
 import type { Agent, TriggerWithAgent } from '@/api/types';
+import { ProfilePicture } from '../settings/ProfilePicture';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -125,19 +128,19 @@ function EmptyState({
   
   // All other states
   return (
-    <View className="items-center justify-center py-16 px-8">
-      <View className={`w-16 h-16 rounded-2xl ${iconBgColor} items-center justify-center mb-4`}>
+    <View className="items-center justify-center py-20 px-8">
+      <View className={`w-20 h-20 rounded-full ${iconBgColor} items-center justify-center mb-6`}>
         <Icon 
           as={icon}
-          size={32}
+          size={36}
           color={iconColor}
           strokeWidth={2}
         />
       </View>
-      <Text className="text-foreground text-lg font-roobert-semibold text-center">
+      <Text className="text-foreground text-xl font-roobert-semibold text-center tracking-tight mb-2">
         {title}
       </Text>
-      <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
+      <Text className="text-muted-foreground text-sm font-roobert text-center leading-5">
         {description}
       </Text>
       {actionLabel && onActionPress && (
@@ -146,11 +149,17 @@ function EmptyState({
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           style={animatedStyle}
-          className="mt-6 px-6 py-3 bg-primary rounded-2xl"
+          className="mt-8 px-6 py-3.5 bg-primary rounded-full flex-row items-center gap-2"
           accessibilityRole="button"
           accessibilityLabel={actionLabel}
         >
-          <Text className="text-primary-foreground text-base font-roobert-medium">
+          <Icon 
+            as={Plus}
+            size={18}
+            className="text-primary-foreground"
+            strokeWidth={2.5}
+          />
+          <Text className="text-primary-foreground text-sm font-roobert-medium">
             {actionLabel}
           </Text>
         </AnimatedPressable>
@@ -198,25 +207,22 @@ function BackButton({ onPress }: BackButtonProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="w-10 h-10 items-center justify-center"
+      className="w-10 h-10 rounded-full bg-muted/30 items-center justify-center active:bg-muted/50"
       accessibilityRole="button"
       accessibilityLabel={t('actions.goBack')}
       accessibilityHint={t('actions.returnToHome')}
     >
       <Icon 
         as={X}
-        size={24}
+        size={20}
         className="text-foreground"
-        strokeWidth={2}
+        strokeWidth={2.5}
       />
     </AnimatedPressable>
   );
 }
 
 
-/**
- * BigNewChatButton Component - Uses the standard Button component with Figma design
- */
 interface BigNewChatButtonProps {
   onPress?: () => void;
 }
@@ -227,31 +233,22 @@ function BigNewChatButton({ onPress }: BigNewChatButtonProps) {
   return (
     <Button
       onPress={onPress}
-      variant="outline"
-      size="figma"
-      className="w-full"
+      className="w-full rounded-full bg-primary"
+      size="lg"
     >
       <Icon 
         as={Plus}
         size={20}
         strokeWidth={2}
+        className="text-primary-foreground"
       />
-      <Text>
+      <Text className="text-primary-foreground text-sm font-roobert-medium">
         {t('menu.newChat')}
       </Text>
     </Button>
   );
 }
 
-/**
- * FloatingActionButton Component
- * 
- * Elegant floating action button for creating new items
- * - Circular design: 56x56px
- * - Positioned above bottom navigation
- * - Smooth shadow and haptic feedback
- * - Context-aware (Chat/Worker/Trigger based on active tab)
- */
 interface FloatingActionButtonProps {
   activeTab: 'chats' | 'workers' | 'triggers';
   onChatPress?: () => void;
@@ -300,7 +297,6 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
     return t('actions.createNew', { item });
   };
   
-  // Different background colors based on theme
   const bgColor = colorScheme === 'dark' ? '#FFFFFF' : '#121215';
   const iconColor = colorScheme === 'dark' ? '#121215' : '#FFFFFF';
   
@@ -312,14 +308,14 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
       style={[
         animatedStyle,
         {
-          width: 56,
-          height: 56,
+          width: 60,
+          height: 60,
           backgroundColor: bgColor,
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 8,
+          shadowOffset: { width: 0, height: 6 },
+          shadowOpacity: 0.25,
+          shadowRadius: 12,
+          elevation: 10,
         }
       ]}
       className="absolute bottom-44 right-6 rounded-full items-center justify-center"
@@ -328,7 +324,7 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
     >
       <Icon 
         as={Plus}
-        size={28}
+        size={26}
         color={iconColor}
         strokeWidth={2.5}
       />
@@ -400,6 +396,7 @@ export function MenuPage({
   const { agents } = useAgent();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const scrollY = useSharedValue(0);
+  const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
 
@@ -479,12 +476,25 @@ export function MenuPage({
     scrollY.value = event.nativeEvent.contentOffset.y;
   };
   
+  const profileAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: profileScale.value }],
+  }));
+
   /**
    * Handle profile press - Opens settings drawer
    */
   const handleProfilePress = () => {
     console.log('🎯 Opening settings drawer');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsSettingsVisible(true);
+  };
+
+  const handleProfilePressIn = () => {
+    profileScale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+  };
+
+  const handleProfilePressOut = () => {
+    profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
   
   /**
@@ -534,20 +544,28 @@ export function MenuPage({
       }}
     >
       <SafeAreaView edges={['top', 'bottom']} className="flex-1">
-        {/* Main Content Container */}
         <View className="flex-1 px-6 pt-2">
-          {/* Header: Profile (80%) + Back Button (20%) */}
-          <View className="flex-row items-center justify-between mb-4">
-            <View className="flex-1 mr-4">
-              <ProfileSection
-                profile={profile}
-                onPress={handleProfilePress}
-              />
-            </View>
+          <View className="flex-row items-center justify-between mb-6">
+            <AnimatedPressable 
+              onPress={handleProfilePress}
+              onPressIn={handleProfilePressIn}
+              onPressOut={handleProfilePressOut}
+              style={profileAnimatedStyle}
+              className="flex-row items-center gap-3"
+            >
+              <ProfilePicture imageUrl={placeholderImageUrl} size={12} />
+              <View className="flex-col items-start -mt-1.5">
+                <Text className="text-lg font-roobert-semibold text-foreground">
+                  {profile.name || 'User'}
+                </Text>
+                <Text className="text-sm font-roobert text-muted-foreground">
+                  {profile.email || 'Tap to open settings'}
+                </Text>
+              </View>
+            </AnimatedPressable>
             <BackButton onPress={onClose} />
           </View>
           
-          {/* Search Bar - Sticky below header */}
           <View className="mb-4">
             {activeTab === 'chats' && (
               <SearchBar
@@ -575,7 +593,6 @@ export function MenuPage({
             )}
           </View>
           
-          {/* Scrollable Content Area with Bottom Blur */}
           <View className="flex-1 relative -mx-6">
             <AnimatedScrollView 
               className="flex-1"
@@ -613,14 +630,12 @@ export function MenuPage({
                   ) : (
                     <View className="gap-8">
                       {sections.map((section) => {
-                        // Filter conversations based on search results
                         const filteredConversations = chatsSearch.isSearching 
                           ? section.conversations.filter(conv => 
                               chatsSearch.results.some(result => result.id === conv.id)
                             )
                           : section.conversations;
                         
-                        // Only show section if it has conversations after filtering
                         if (filteredConversations.length === 0 && chatsSearch.isSearching) {
                           return null;
                         }
@@ -637,7 +652,6 @@ export function MenuPage({
                         );
                       })}
                       
-                      {/* Show no results state if searching and no results */}
                       {chatsSearch.isSearching && 
                        sections.every(section => 
                          !section.conversations.some(conv => 
@@ -731,7 +745,6 @@ export function MenuPage({
               )}
             </AnimatedScrollView>
             
-            {/* Bottom Blur Fade Effect - Reduced height for better visibility */}
             <View 
               className="absolute bottom-0 left-0 right-0 pointer-events-none"
               style={{ height: 70 }}
@@ -763,7 +776,6 @@ export function MenuPage({
           </View>
         </View>
         
-        {/* Bottom Section: Navigation or New Chat Button */}
         <View className="px-6 pb-4">
           {advancedFeaturesEnabled ? (
             <BottomNav
@@ -779,11 +791,13 @@ export function MenuPage({
       </SafeAreaView>
       
       {/* Settings Page */}
-      <SettingsPage
-        visible={isSettingsVisible}
-        profile={profile}
-        onClose={handleCloseSettings}
-      />
+      <AnimatedPageWrapper visible={isSettingsVisible} onClose={handleCloseSettings}>
+        <SettingsPage
+          visible={isSettingsVisible}
+          profile={profile}
+          onClose={handleCloseSettings}
+        />
+      </AnimatedPageWrapper>
       
       {/* Floating Action Button */}
       {advancedFeaturesEnabled && (

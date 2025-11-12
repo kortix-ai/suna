@@ -14,6 +14,16 @@ import type { SubscriptionInfo } from '@/lib/billing/api';
 import { TierBadge } from '@/components/menu/TierBadge';
 import type { TierType } from '@/components/menu/types';
 import * as Haptics from 'expo-haptics';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring,
+  FadeIn,
+  withDelay,
+} from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 interface PricingTierCardProps {
   tier: PricingTier;
@@ -29,6 +39,7 @@ interface PricingTierCardProps {
   currentBillingPeriod?: BillingPeriod | null;
   insideDialog?: boolean;
   t: (key: string, defaultValue?: string) => string;
+  index?: number;
 }
 
 export function PricingTierCard({
@@ -45,21 +56,27 @@ export function PricingTierCard({
   currentBillingPeriod = null,
   insideDialog = false,
   t,
+  index = 0,
 }: PricingTierCardProps) {
   const isCurrentPlan = isAuthenticated && 
     currentSubscription?.tier_key === tier.id &&
     currentSubscription?.subscription?.status === 'active';
 
+  const buttonScale = useSharedValue(1);
+
+  const buttonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
   const handlePress = () => {
     if (isLoading || isCurrentPlan) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onPlanSelect?.(tier.id);
     if (onSubscribe) {
       onSubscribe(tier.id);
     }
   };
 
-  // Map tier name to TierType for TierBadge component
   const getTierType = (): TierType | null => {
     const tierName = tier.name.toLowerCase();
     if (tierName === 'basic' || tierName === 'free') return 'Basic';
@@ -72,40 +89,43 @@ export function PricingTierCard({
   const tierType = getTierType();
 
   return (
-    <View className="bg-card border border-border rounded-xl p-4 relative w-full">
-      {/* Popular Badge - Top Right Corner */}
+    <AnimatedView 
+      entering={FadeIn.duration(600).delay(200 + index * 100)}
+      className={`bg-card border ${tier.isPopular ? 'border-primary/30' : 'border-border'} rounded-2xl p-6 relative w-full`}
+    >
       {tier.isPopular && (
-        <View className="absolute top-3 right-3 bg-muted/50 px-2 py-1 rounded-full z-10">
-          <Text className="text-[10px] font-roobert-medium text-muted-foreground uppercase tracking-wide">
+        <View className="absolute top-4 right-4 bg-primary/10 px-3 py-1.5 rounded-full z-10">
+          <Text className="text-[11px] font-roobert-semibold text-primary uppercase tracking-wide">
             Popular
           </Text>
         </View>
       )}
 
-      {/* Tier Badge - Plan Name with Icon */}
-      <View className="mb-3">
+      <View className="mb-4">
         <TierBadge tier={tierType || 'Basic'} size="small" />
       </View>
 
-      {/* Price */}
-      <View className="mb-4">
-        <Text className="text-4xl font-roobert-semibold text-foreground">
-          {displayPrice}
-        </Text>
-        {displayPrice !== '$0' && (
-          <Text className="text-sm text-muted-foreground mt-1">
-            /month
+      <View className="mb-6">
+        <View className="flex-row items-baseline gap-1 mb-1">
+          <Text className="text-5xl font-roobert-semibold text-foreground tracking-tight">
+            {displayPrice}
           </Text>
-        )}
+          {displayPrice !== '$0' && (
+            <Text className="text-base text-muted-foreground font-roobert">
+              /mo
+            </Text>
+          )}
+        </View>
       </View>
 
-      {/* Features */}
       {tier.features && tier.features.length > 0 && (
-        <View className="mb-4 gap-2">
+        <View className="mb-6 gap-3">
           {tier.features.map((feature, idx) => (
-            <View key={idx} className="flex-row items-center gap-2">
-              <Icon as={Check} size={16} className="text-foreground" strokeWidth={2} />
-              <Text className="text-sm text-foreground flex-1">
+            <View key={idx} className="flex-row items-start gap-3">
+              <View className="mt-0.5">
+                <Icon as={Check} size={18} className="text-foreground" strokeWidth={2.5} />
+              </View>
+              <Text className="text-[15px] text-foreground flex-1 font-roobert leading-snug">
                 {feature}
               </Text>
             </View>
@@ -113,28 +133,41 @@ export function PricingTierCard({
         </View>
       )}
 
-      {/* Button */}
-      <Pressable
+      <AnimatedPressable
         onPress={handlePress}
         disabled={isLoading || isCurrentPlan}
-        className={`w-full h-10 rounded-lg items-center justify-center ${
+        onPressIn={() => {
+          if (!isLoading && !isCurrentPlan) {
+            buttonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+          }
+        }}
+        onPressOut={() => {
+          buttonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+        }}
+        style={[
+          buttonAnimatedStyle,
+          {
+            opacity: isCurrentPlan ? 0.6 : 1,
+          }
+        ]}
+        className={`w-full h-14 rounded-2xl items-center justify-center ${
           isCurrentPlan 
-            ? 'bg-muted opacity-50' 
-            : isLoading 
-            ? 'bg-primary opacity-70'
-            : 'bg-primary'
+            ? 'bg-muted' 
+            : tier.isPopular
+            ? 'bg-primary'
+            : 'bg-foreground'
         }`}
       >
         {isLoading ? (
           <ActivityIndicator size="small" color="#fff" />
         ) : (
-          <Text className={`text-sm font-roobert-medium ${
-            isCurrentPlan ? 'text-muted-foreground' : 'text-primary-foreground'
+          <Text className={`text-[15px] font-roobert-semibold ${
+            isCurrentPlan ? 'text-muted-foreground' : tier.isPopular ? 'text-primary-foreground' : 'text-background'
           }`}>
             {isCurrentPlan ? 'Current Plan' : tier.buttonText || 'Select Plan'}
           </Text>
         )}
-      </Pressable>
-    </View>
+      </AnimatedPressable>
+    </AnimatedView>
   );
 }

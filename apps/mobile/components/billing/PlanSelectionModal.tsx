@@ -17,6 +17,15 @@ import { PricingSection } from './PricingSection';
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring,
+  FadeIn,
+} from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -37,7 +46,13 @@ export function PlanSelectionModal({
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
-  const topPadding = Math.max(insets.top, 16) + 20; // Match frontend pt-[67px] ≈ 67px total
+  const topPadding = Math.max(insets.top, 16) + 20;
+
+  const closeButtonScale = useSharedValue(1);
+
+  const closeButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: closeButtonScale.value }],
+  }));
 
   const handleClose = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -45,9 +60,7 @@ export function PlanSelectionModal({
   };
 
   const handleSubscriptionUpdate = () => {
-    // Invalidate all billing queries
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
-    // Close modal after successful upgrade
     setTimeout(() => {
       onOpenChange(false);
     }, 500);
@@ -63,37 +76,41 @@ export function PlanSelectionModal({
       onRequestClose={handleClose}
     >
       <View className="flex-1 bg-background">
-        {/* Header with Logo and Close Button - matches frontend exactly */}
-        <View 
+        <AnimatedView 
+          entering={FadeIn.duration(400)}
           className="absolute top-0 left-0 right-0 z-50 flex-row items-center justify-between px-6 border-b border-border/50 bg-background/95"
           style={{ paddingTop: topPadding, paddingBottom: 20 }}
         >
-          {/* Spacer for centering */}
           <View className="flex-1" />
           
-          {/* Kortix Logo - Dead Center */}
-          <View 
+          <AnimatedView 
+            entering={FadeIn.duration(600).delay(100)}
             style={{ 
               position: 'absolute', 
-              left: SCREEN_WIDTH / 2 - 10, // Center minus half logo width
-              top: topPadding + 10 // Center vertically in header
+              left: SCREEN_WIDTH / 2 - 10,
+              top: topPadding + 10
             }}
           >
             <Logomark width={20} height={20} />
-          </View>
+          </AnimatedView>
           
-          {/* Close button - Right aligned */}
           <View className="flex-1 flex-row justify-end">
-            <Pressable
+            <AnimatedPressable
               onPress={handleClose}
-              className="h-9 w-9 rounded-full bg-background/80 border border-border/50 items-center justify-center"
+              onPressIn={() => {
+                closeButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              }}
+              onPressOut={() => {
+                closeButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
+              style={closeButtonStyle}
+              className="h-9 w-9 rounded-full bg-card border border-border items-center justify-center"
             >
-              <Icon as={X} size={16} className="text-foreground" strokeWidth={2} />
-            </Pressable>
+              <Icon as={X} size={16} className="text-foreground" strokeWidth={2.5} />
+            </AnimatedPressable>
           </View>
-        </View>
+        </AnimatedView>
 
-        {/* Full-screen pricing content */}
         <ScrollView 
           className="flex-1"
           showsVerticalScrollIndicator={false}

@@ -10,6 +10,13 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import type { BillingPeriod } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring,
+} from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface BillingPeriodToggleProps {
   billingPeriod: BillingPeriod;
@@ -21,63 +28,90 @@ export function BillingPeriodToggle({
   setBillingPeriod,
 }: BillingPeriodToggleProps) {
   const isYearly = billingPeriod === 'yearly_commitment';
+  
+  const monthlyScale = useSharedValue(1);
+  const yearlyScale = useSharedValue(1);
+
+  const monthlyStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: monthlyScale.value }],
+  }));
+
+  const yearlyStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: yearlyScale.value }],
+  }));
 
   return (
-    <View className="flex-row items-center gap-2">
-      <Pressable
+    <View className="flex-row items-center gap-3 bg-muted/30 p-1.5 rounded-2xl">
+      <AnimatedPressable
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           setBillingPeriod('monthly');
         }}
-        className={`h-10 px-4 rounded-xl border-[1.5px] items-center justify-center ${
+        onPressIn={() => {
+          monthlyScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+        }}
+        onPressOut={() => {
+          monthlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+        }}
+        style={monthlyStyle}
+        className={`h-11 px-5 rounded-xl items-center justify-center ${
           billingPeriod === 'monthly'
-            ? 'bg-primary border-primary'
-            : 'bg-transparent border-border'
+            ? 'bg-primary'
+            : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-sm font-roobert-medium ${
+          className={`text-[15px] font-roobert-semibold ${
             billingPeriod === 'monthly'
               ? 'text-primary-foreground'
-              : 'text-foreground'
+              : 'text-muted-foreground'
           }`}
         >
           Monthly
         </Text>
-      </Pressable>
+      </AnimatedPressable>
 
-      <Pressable
+      <AnimatedPressable
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           setBillingPeriod('yearly_commitment');
         }}
-        className={`h-10 px-4 rounded-xl border-[1.5px] flex-row items-center gap-1.5 ${
+        onPressIn={() => {
+          yearlyScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+        }}
+        onPressOut={() => {
+          yearlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+        }}
+        style={yearlyStyle}
+        className={`h-11 px-5 rounded-xl flex-row items-center gap-2 ${
           billingPeriod === 'yearly_commitment'
-            ? 'bg-primary border-primary'
-            : 'bg-transparent border-border'
+            ? 'bg-primary'
+            : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-sm font-roobert-medium ${
+          className={`text-[15px] font-roobert-semibold ${
             billingPeriod === 'yearly_commitment'
               ? 'text-primary-foreground'
-              : 'text-foreground'
+              : 'text-muted-foreground'
           }`}
         >
           Yearly
         </Text>
         <View
-          className={`px-1.5 py-0.5 rounded-full ${
+          className={`px-2 py-1 rounded-full ${
             isYearly
               ? 'bg-background/90'
-              : 'bg-muted/80'
+              : 'bg-primary/10'
           }`}
         >
-          <Text className="text-xs font-roobert-medium text-primary">
+          <Text className={`text-[11px] font-roobert-semibold ${
+            isYearly ? 'text-primary' : 'text-primary'
+          }`}>
             15% off
           </Text>
         </View>
-      </Pressable>
+      </AnimatedPressable>
     </View>
   );
 }

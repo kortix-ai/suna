@@ -144,6 +144,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           visible={isBillingPageVisible}
           onClose={handleCloseBilling}
           onOpenCredits={handleOpenCredits}
+          onOpenUsage={() => {}}
         />
         <CreditsPurchasePage
           visible={isCreditsPurchasePageVisible}

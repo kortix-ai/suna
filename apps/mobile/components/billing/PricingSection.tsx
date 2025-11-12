@@ -20,6 +20,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring,
+  FadeIn,
+  withDelay,
+} from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 interface PricingSectionProps {
   returnUrl?: string;
@@ -179,26 +189,43 @@ export function PricingSection({
     (tier) => tier.hidden !== true && (!hideFree || tier.price !== '$0')
   );
 
+  const creditsButtonScale = useSharedValue(1);
+  const creditsLinkScale = useSharedValue(1);
+
+  const creditsButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: creditsButtonScale.value }],
+  }));
+
+  const creditsLinkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: creditsLinkScale.value }],
+  }));
+
   return (
     <View className={`flex-1 ${noPadding ? 'pb-0' : 'pb-12'}`}>
       <View className="w-full flex-col px-4">
         {showTitleAndTabs && (
-          <View className="w-full items-center mb-6">
-            <Text className="text-3xl font-roobert-semibold text-center text-foreground">
+          <AnimatedView 
+            entering={FadeIn.duration(600)} 
+            className="w-full items-center mb-6"
+          >
+            <Text className="text-3xl font-roobert-semibold text-center text-foreground leading-tight">
               {customTitle || 'Pick the plan that works for you.'}
             </Text>
-          </View>
+          </AnimatedView>
         )}
 
-        <View className="w-full items-center mb-8">
+        <AnimatedView 
+          entering={FadeIn.duration(600).delay(100)} 
+          className="w-full items-center mb-8"
+        >
           <BillingPeriodToggle
             billingPeriod={billingPeriod}
             setBillingPeriod={setBillingPeriod}
           />
-        </View>
+        </AnimatedView>
 
         <View className="w-full gap-4">
-          {tiersToShow.map((tier) => {
+          {tiersToShow.map((tier, index) => {
             const displayPrice = getDisplayPrice(tier, billingPeriod);
             const isLoading = planLoadingStates[tier.id] || false;
 
@@ -218,63 +245,88 @@ export function PricingSection({
                 currentBillingPeriod={currentBillingPeriod}
                 insideDialog={insideDialog}
                 t={t}
+                index={index}
               />
             );
           })}
         </View>
 
-        {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
         {isAuthenticated &&
           currentSubscription?.credits?.can_purchase_credits && (
-            <View className="w-full mt-12 flex-col items-center gap-4">
-              <Pressable
+            <AnimatedView 
+              entering={FadeIn.duration(600).delay(400)} 
+              className="w-full mt-12 flex-col items-center gap-4"
+            >
+              <AnimatedPressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setShowCreditPurchaseModal(true);
                 }}
-                className="h-12 border border-border rounded-xl items-center justify-center flex-row gap-2 px-6"
+                onPressIn={() => {
+                  creditsButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                }}
+                onPressOut={() => {
+                  creditsButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                }}
+                style={creditsButtonStyle}
+                className="h-12 border border-border rounded-2xl items-center justify-center flex-row gap-2 px-6 bg-card/50"
               >
-                <Icon as={ShoppingCart} size={20} className="text-foreground" strokeWidth={2} />
+                <Icon as={ShoppingCart} size={20} className="text-foreground" strokeWidth={2.5} />
                 <Text className="text-base font-roobert-medium text-foreground">
                   Get Additional Credits
                 </Text>
-              </Pressable>
-              {/* Credits Explained Link */}
-              <Pressable
+              </AnimatedPressable>
+
+              <AnimatedPressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   Linking.openURL('https://app.agentpress.ai/credits-explained');
                 }}
-                className="flex-row items-center gap-2"
+                onPressIn={() => {
+                  creditsLinkScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+                }}
+                onPressOut={() => {
+                  creditsLinkScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                }}
+                style={creditsLinkStyle}
+                className="flex-row items-center gap-2 px-3 py-2"
               >
                 <Icon as={Lightbulb} size={14} className="text-muted-foreground" strokeWidth={2} />
                 <Text className="text-sm font-roobert text-muted-foreground">
                   Credits explained
                 </Text>
-              </Pressable>
-            </View>
+              </AnimatedPressable>
+            </AnimatedView>
           )}
 
-        {/* Credits Explained Link - Show when not authenticated or when credits purchase is not available */}
         {(!isAuthenticated || !currentSubscription?.credits?.can_purchase_credits) && (
-          <View className="w-full mt-8 flex items-center">
-            <Pressable
+          <AnimatedView 
+            entering={FadeIn.duration(600).delay(400)} 
+            className="w-full mt-8 flex items-center"
+          >
+            <AnimatedPressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 Linking.openURL('https://app.agentpress.ai/credits-explained');
               }}
-              className="flex-row items-center gap-2"
+              onPressIn={() => {
+                creditsLinkScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+              }}
+              onPressOut={() => {
+                creditsLinkScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
+              style={creditsLinkStyle}
+              className="flex-row items-center gap-2 px-3 py-2"
             >
               <Icon as={Lightbulb} size={14} className="text-muted-foreground" strokeWidth={2} />
               <Text className="text-sm font-roobert text-muted-foreground">
                 Credits explained
               </Text>
-            </Pressable>
-          </View>
+            </AnimatedPressable>
+          </AnimatedView>
         )}
       </View>
 
-      {/* Credit Purchase Modal */}
       <CreditPurchaseModal
         open={showCreditPurchaseModal}
         onOpenChange={setShowCreditPurchaseModal}
