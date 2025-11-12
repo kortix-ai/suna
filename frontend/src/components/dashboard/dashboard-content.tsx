@@ -316,7 +316,7 @@ export function DashboardContent() {
             </PopoverTrigger>
             <PopoverContent align='end' className="w-70">
               <div>
-                <h2 className="text-lg font-semibold mb-4">Usage Limits</h2>
+                <h2 className="text-md font-medium mb-4">Usage Limits</h2>
                 <div className="space-y-2">
                   <div className='space-y-2'>
                     <div className="flex justify-between text-xs">
@@ -441,7 +441,8 @@ export function DashboardContent() {
                           selectedOutputFormat={selectedOutputFormat}
                           selectedTemplate={selectedTemplate}
                         />
-                        {!showAlert && (
+
+                        {showAlert && (
                           <div 
                             className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
                             style={{
