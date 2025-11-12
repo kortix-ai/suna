@@ -13,7 +13,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/hooks/billing/use-subscription';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
@@ -34,7 +34,6 @@ export function PlanSelectionModal({
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? window.location.href : '/';
     const queryClient = useQueryClient();
-    const searchParams = useSearchParams();
     const router = useRouter();
     
     const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle } = usePricingModalStore();
@@ -45,7 +44,10 @@ export function PlanSelectionModal({
     const displayReason = controlledUpgradeReason || storeCustomTitle;
 
     useEffect(() => {
-        if (isOpen) {
+        if (isOpen && typeof window !== 'undefined') {
+            // Use URLSearchParams directly from window.location instead of useSearchParams()
+            // This avoids the Suspense boundary requirement
+            const searchParams = new URLSearchParams(window.location.search);
             const checkoutSuccess = searchParams.get('checkout');
             const sessionId = searchParams.get('session_id');
             const clientSecret = searchParams.get('client_secret');
@@ -63,7 +65,7 @@ export function PlanSelectionModal({
                 router.replace(url.pathname + url.search, { scroll: false });
             }
         }
-    }, [isOpen, searchParams, queryClient, router]);
+    }, [isOpen, queryClient, router]);
 
     const handleSubscriptionUpdate = () => {
         // Invalidate all billing queries
