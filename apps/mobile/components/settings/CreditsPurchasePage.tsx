@@ -1,9 +1,3 @@
-/**
- * Credits Purchase Page Component
- * 
- * Allows users to purchase additional credits
- */
-
 import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -15,7 +9,7 @@ import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
 import { startCreditPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
-import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 interface CreditsPurchasePageProps {
   visible: boolean;
@@ -53,9 +47,9 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
 
   if (!visible) return null;
 
-  const expiringCredits = creditBalance ? dollarsToCredits(creditBalance.expiring_credits) : 0;
-  const nonExpiringCredits = creditBalance ? dollarsToCredits(creditBalance.non_expiring_credits) : 0;
-  const totalCredits = creditBalance ? dollarsToCredits(creditBalance.balance) : 0;
+  const expiringCredits = creditBalance?.expiring_credits || 0;
+  const nonExpiringCredits = creditBalance?.non_expiring_credits || 0;
+  const totalCredits = creditBalance?.balance || 0;
 
   return (
     <View className="absolute inset-0 z-50 bg-background">

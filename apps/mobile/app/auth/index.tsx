@@ -4,7 +4,7 @@ import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Eye, EyeOff, Check } from 'lucide-react-native';
+import { Eye, EyeOff, Check, MailCheck, ArrowLeft, Mail, ExternalLink } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,6 +14,7 @@ import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.s
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
+import { openInbox } from 'react-native-email-link';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -138,6 +139,8 @@ export default function AuthScreen() {
   const { hasCompletedOnboarding } = useOnboarding();
   
   const [currentView, setCurrentView] = React.useState<AuthView>('welcome');
+  const [showEmailConfirmation, setShowEmailConfirmation] = React.useState(false);
+  const [registrationEmail, setRegistrationEmail] = React.useState('');
   
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -223,18 +226,13 @@ export default function AuthScreen() {
       return;
     }
 
-    if (!acceptedTerms) {
-      setError('Please accept the Terms and Privacy Policy');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const result = await signUp({ email, password });
 
     if (result.success) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      handleNavigateToHome();
+      setRegistrationEmail(email);
+      setShowEmailConfirmation(true);
     } else {
       setError(result.error?.message || 'Sign up failed. Please try again.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -267,8 +265,9 @@ export default function AuthScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         className="flex-1 bg-background"
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           className="flex-1"
@@ -325,6 +324,22 @@ export default function AuthScreen() {
             emailInputRef={emailInputRef}
             passwordInputRef={passwordInputRef}
             confirmPasswordInputRef={confirmPasswordInputRef}
+          />
+        </AnimatedPageWrapper>
+
+        <AnimatedPageWrapper 
+          visible={showEmailConfirmation} 
+          onClose={() => {
+            setShowEmailConfirmation(false);
+            showWelcome();
+          }}
+        >
+          <EmailConfirmationView
+            email={registrationEmail}
+            onBack={() => {
+              setShowEmailConfirmation(false);
+              showWelcome();
+            }}
           />
         </AnimatedPageWrapper>
       </KeyboardAvoidingView>
@@ -544,9 +559,10 @@ function SignInView({
     <View className="flex-1 bg-background">
       <ScrollView 
         className="flex-1"
-        contentContainerClassName="flex-grow px-8 py-16"
+        contentContainerClassName="px-8 py-16"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
         <View className="flex-row justify-between items-center mb-16">
         <TouchableOpacity
@@ -574,7 +590,7 @@ function SignInView({
         </TouchableOpacity>
       </View>
 
-      <View className="flex-1 justify-center -mt-8">
+      <View className="flex-1">
         <View>
           <View className="-mb-2">
             <KortixLogo variant="logomark" size={64} />
@@ -766,16 +782,16 @@ function SignUpView({
     password.length >= 8 && 
     confirmPassword.length > 0 && 
     passwordsMatch && 
-    acceptedTerms && 
     !isLoading;
 
   return (
     <View className="flex-1 bg-background">
       <ScrollView 
         className="flex-1"
-        contentContainerClassName="flex-grow px-8 py-16"
+        contentContainerClassName="px-8 py-16"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
         <View className="flex-row justify-between items-center mb-16">
         <TouchableOpacity
@@ -803,7 +819,7 @@ function SignUpView({
         </TouchableOpacity>
       </View>
 
-      <View className="flex-1 justify-center -mt-8">
+      <View className="flex-1">
         <View>
           <View className="-mb-2">
             <KortixLogo variant="logomark" size={64} />
@@ -1054,5 +1070,131 @@ function GoogleLogo() {
         fill="#EA4335"
       />
     </Svg>
+  );
+}
+
+function EmailConfirmationView({ 
+  email, 
+  onBack 
+}: { 
+  email: string; 
+  onBack: () => void;
+}) {
+  const { colorScheme } = useColorScheme();
+
+  const handleOpenEmail = async (app?: string) => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (app) {
+        await openInbox({ app });
+      } else {
+        await openInbox({});
+      }
+    } catch (error) {
+      console.error('Failed to open email app:', error);
+    }
+  };
+
+  return (
+    <View className="flex-1 bg-background">
+      <ScrollView 
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+        {/* Header - matching SettingsHeader style */}
+        <View className="px-6 pt-16 pb-6">
+          <View className="flex-row items-center justify-between">
+            <TouchableOpacity
+              onPress={async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onBack();
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              className="w-10 h-10 items-center justify-center"
+            >
+              <Icon as={ArrowLeft} size={24} className="text-foreground" strokeWidth={2} />
+            </TouchableOpacity>
+            <Text className="text-xl font-roobert-semibold text-foreground">
+              Email Sent
+            </Text>
+            <View className="w-10" />
+          </View>
+        </View>
+
+        <View className="px-6 pb-8">
+          <View className="mb-8 items-center pt-4">
+            <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <Icon as={MailCheck} size={28} className="text-primary" strokeWidth={2} />
+            </View>
+            <Text className="mb-1 text-4xl font-roobert-semibold text-foreground tracking-tight text-center">
+              Check your email
+            </Text>
+            <Text className="text-sm font-roobert text-muted-foreground text-center">
+              Confirmation link sent to
+            </Text>
+          </View>
+          <View className="mb-6 bg-primary/5 rounded-3xl p-5">
+            <Text className="text-base font-roobert-medium text-foreground text-center">
+              {email}
+            </Text>
+          </View>
+          <View className="mb-6 items-center">
+            <TouchableOpacity
+              onPress={() => handleOpenEmail()}
+              className="w-full rounded-full bg-primary border border-border/40 px-4 py-3 flex-row items-center justify-center gap-2 active:opacity-80"
+            >
+              <Icon as={Mail} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+              <Text className="text-sm font-roobert-medium text-primary-foreground">
+                Open Email App
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <View className="mb-6">
+            <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
+              Or open in
+            </Text>
+            <View className="flex-row gap-3">
+              <TouchableOpacity
+                onPress={() => handleOpenEmail('gmail')}
+                className="flex-1 bg-primary/5 rounded-3xl p-5 active:opacity-80"
+              >
+                <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
+                  <Icon as={Mail} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+                </View>
+                <Text className="text-xs font-roobert-medium text-foreground">
+                  Gmail
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleOpenEmail('apple-mail')}
+                className="flex-1 bg-primary/5 rounded-3xl p-5 active:opacity-80"
+              >
+                <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
+                  <Icon as={Mail} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+                </View>
+                <Text className="text-xs font-roobert-medium text-foreground">
+                  Mail
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleOpenEmail('outlook')}
+                className="flex-1 bg-primary/5 rounded-3xl p-5 active:opacity-80"
+              >
+                <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-primary">
+                  <Icon as={Mail} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+                </View>
+                <Text className="text-xs font-roobert-medium text-foreground">
+                  Outlook
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View className="h-6" />
+        </View>
+      </ScrollView>
+    </View>
   );
 }

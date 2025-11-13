@@ -6,7 +6,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
 import { useAuthContext } from '@/contexts';
-import { useAccountSetup } from '@/hooks/useAccountSetup';
+import { useAccountInitialization } from '@/hooks/useAccountInitialization';
+import { useBillingContext } from '@/contexts/BillingContext';
 import { useColorScheme } from 'nativewind';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
@@ -16,9 +17,10 @@ export default function SettingUpScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthContext();
   const { colorScheme } = useColorScheme();
+  const { refetchAll, hasActiveSubscription, subscriptionData } = useBillingContext();
   const [status, setStatus] = React.useState<'initializing' | 'success' | 'error'>('initializing');
-  const { initializeAccount } = useAccountSetup();
-  const initializationAttempted = React.useRef(false);
+  const [shouldNavigate, setShouldNavigate] = React.useState(false);
+  const initializeMutation = useAccountInitialization();
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
 
@@ -26,33 +28,43 @@ export default function SettingUpScreen() {
     if (!isAuthenticated) {
       console.log('⚠️  User not authenticated in setup screen, redirecting...');
       router.replace('/auth');
+    }
+  }, [isAuthenticated]);
+
+  React.useEffect(() => {
+    if (!user || initializeMutation.isPending || initializeMutation.isSuccess || initializeMutation.isError) {
       return;
     }
 
-    if (user && status === 'initializing' && !initializationAttempted.current) {
-      initializationAttempted.current = true;
-      
-      const performInitialization = async () => {
-        console.log('🔧 Starting account initialization...');
-        const success = await initializeAccount();
-        
-        if (success) {
-          setStatus('success');
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          
-          setTimeout(() => {
-            router.replace('/onboarding');
-          }, 1500);
-        } else {
-          console.log('⚠️  Initialization failed, but allowing user to continue');
-          setStatus('error');
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        }
-      };
+    console.log('🔧 Starting account initialization...');
+    
+    initializeMutation.mutate(undefined, {
+      onSuccess: async (data) => {
+        console.log('✅ Initialization successful:', data.message);
+        setStatus('success');
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        console.log('🔄 Refetching billing data...');
+        refetchAll();
+        setShouldNavigate(true);
+      },
+      onError: async (error) => {
+        console.error('❌ Initialization failed:', error);
+        setStatus('error');
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      },
+    });
+  }, [user]);
 
-      performInitialization();
+  React.useEffect(() => {
+    if (shouldNavigate && hasActiveSubscription && subscriptionData?.tier?.name === 'free') {
+      console.log('✅ Billing data confirmed fresh - subscription exists!');
+      console.log('🚀 Navigating to onboarding...');
+      
+      setTimeout(() => {
+        router.replace('/onboarding');
+      }, 500);
     }
-  }, [user, status, isAuthenticated]);
+  }, [shouldNavigate, hasActiveSubscription, subscriptionData]);
 
   const handleContinue = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

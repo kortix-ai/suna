@@ -44,7 +44,7 @@ import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
-import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 import { TierBadge } from '@/components/menu/TierBadge';
 import type { TierType } from '@/components/menu/types';
 
@@ -179,17 +179,17 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage }: Bi
   }, [creditBalance?.next_credit_grant]);
 
   const expiringCredits = React.useMemo(() => 
-    dollarsToCredits(creditBalance?.expiring_credits || 0), 
+    creditBalance?.expiring_credits || 0, 
     [creditBalance?.expiring_credits]
   );
   
   const nonExpiringCredits = React.useMemo(() => 
-    dollarsToCredits(creditBalance?.non_expiring_credits || 0), 
+    creditBalance?.non_expiring_credits || 0, 
     [creditBalance?.non_expiring_credits]
   );
   
   const totalCredits = React.useMemo(() => 
-    dollarsToCredits(creditBalance?.balance || 0), 
+    creditBalance?.balance || 0, 
     [creditBalance?.balance]
   );
 

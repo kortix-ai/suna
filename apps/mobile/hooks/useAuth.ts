@@ -124,6 +124,7 @@ export function useAuth() {
             data: {
               full_name: fullName,
             },
+            emailRedirectTo: 'kortix://auth/callback',
           },
         });
 
@@ -401,19 +402,14 @@ export function useAuth() {
       }
     };
 
-    /**
-     * Helper to clear ALL app-specific data
-     * This ensures no user data persists across sign-outs
-     */
     const clearAppData = async () => {
       try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        
-        // Keys to clear (everything except system settings like language)
+        const allKeys = await AsyncStorage.getAllKeys()
         const appDataKeys = allKeys.filter((key: string) => 
           key.startsWith('@') && 
-          !key.includes('language') && // Keep language preference
-          !key.includes('theme') // Keep theme preference
+          !key.includes('language') &&
+          !key.includes('theme') &&
+          !key.includes('onboarding_completed')
         );
         
         console.log(`🧹 Clearing ${appDataKeys.length} app data keys:`, appDataKeys);
@@ -422,15 +418,12 @@ export function useAuth() {
           await AsyncStorage.multiRemove(appDataKeys);
         }
         
-        console.log('✅ All app data cleared (except preferences)');
+        console.log('✅ All app data cleared (except preferences and onboarding status)');
       } catch (error) {
         console.warn('⚠️  Failed to clear app data:', error);
       }
     };
 
-    /**
-     * Helper to force update React state
-     */
     const forceSignOutState = () => {
       setAuthState({
         user: null,
