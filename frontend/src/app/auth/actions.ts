@@ -3,38 +3,7 @@
 import { createTrialCheckout } from '@/lib/api/billing';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-
-async function sendWelcomeEmail(email: string, name?: string) {
-  try {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    const adminApiKey = process.env.KORTIX_ADMIN_API_KEY;
-    
-    if (!adminApiKey) {
-      console.error('KORTIX_ADMIN_API_KEY not configured');
-      return;
-    }
-    
-    const response = await fetch(`${backendUrl}/api/send-welcome-email`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Api-Key': adminApiKey,
-      },
-      body: JSON.stringify({
-        email,
-        name,
-      }),
-    });
-
-    if (response.ok) {
-    } else {
-      const errorData = await response.json().catch(() => ({}));
-      console.error(`Failed to queue welcome email for ${email}:`, errorData);
-    }
-  } catch (error) {
-    console.error('Error sending welcome email:', error);
-  }
-}
+import { sendWelcomeEmail } from '@/lib/email';
 
 
 export async function signIn(prevState: any, formData: FormData) {
@@ -98,16 +67,19 @@ export async function signUp(prevState: any, formData: FormData) {
     return { message: error.message || 'Could not create account' };
   }
 
+  // Send welcome email immediately after signup (don't wait for sign-in)
+  // The email will also be sent when they confirm via callback route, but sending here
+  // ensures it's sent even if they don't need to confirm email
   const userName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  // Don't await - send in background to not block signup flow
+  sendWelcomeEmail(email, userName).catch(err => {
+    console.error('Failed to send welcome email:', err);
+  });
 
   const { error: signInError, data: signInData } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
-
-  if (signInData && signInData.user) {
-    sendWelcomeEmail(email, userName);
-  }
 
   if (signInError) {
     return {
