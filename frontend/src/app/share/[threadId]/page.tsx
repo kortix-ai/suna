@@ -2,12 +2,22 @@
 
 import dynamic from 'next/dynamic';
 import { SharePageWrapper } from './_components/SharePageWrapper';
-import React from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import {
   UnifiedMessage,
   ParsedMetadata,
   ThreadParams,
+  StreamingToolCall,
 } from '@/components/thread/types';
+import { useShareThreadData } from './_hooks/useShareThreadData';
+import { useAgentStream } from '@/hooks/agents';
+import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
+import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
+import { PlaybackControls, PlaybackController } from '@/components/thread/content/PlaybackControls';
+import { safeJsonParse } from '@/components/thread/utils';
+import { extractToolName } from '@/components/thread/tool-views/xml-parser';
+import { ShareThreadLayout } from './_components/ShareThreadLayout';
 
 // Dynamic import to avoid SSR issues with browser-only dependencies
 const ThreadComponent = dynamic(
@@ -22,8 +32,6 @@ export default function ShareThreadPage({
 }) {
   const unwrappedParams = React.use(params);
   const threadId = unwrappedParams.threadId;
-
-  const router = useRouter();
   
   // Use the new share-specific hook
   const {
@@ -530,10 +538,49 @@ export default function ShareThreadPage({
 
   if (error) {
     return (
+      <SharePageWrapper>
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold mb-2">Error loading thread</h1>
+            <p className="text-muted-foreground">{error}</p>
+          </div>
+        </div>
+      </SharePageWrapper>
+    );
+  }
+
+  return (
+    <SharePageWrapper>
       <ShareThreadLayout
         threadId={threadId}
-        isShared={true}
-      />
+        projectId={project?.project_id || ''}
+        projectName={projectName}
+        project={project}
+        sandboxId={sandboxId}
+        isSidePanelOpen={isSidePanelOpen}
+        onToggleSidePanel={toggleSidePanel}
+        onViewFiles={handleOpenFileViewer}
+        fileViewerOpen={fileViewerOpen}
+        setFileViewerOpen={setFileViewerOpen}
+        fileToView={fileToView}
+        toolCalls={toolCalls}
+        messages={messages}
+        externalNavIndex={externalNavIndex}
+        agentStatus={agentStatus}
+        currentToolIndex={currentToolIndex}
+        onSidePanelNavigate={handleSidePanelNavigate}
+        onSidePanelClose={() => {
+          userClosedPanelRef.current = true;
+          setIsSidePanelOpen(false);
+        }}
+        initialLoadCompleted={initialLoadCompleted}
+      >
+        <ThreadComponent
+          projectId={project?.project_id || ''}
+          threadId={threadId}
+          isShared={true}
+        />
+      </ShareThreadLayout>
     </SharePageWrapper>
   );
 }
