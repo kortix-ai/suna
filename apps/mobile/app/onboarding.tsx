@@ -21,28 +21,18 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
   interpolate,
   Extrapolate,
-  LinearTransition,
   SharedValue,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLanguage } from '@/contexts';
-import { useBillingContext } from '@/contexts/BillingContext';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useAgent } from '@/contexts/AgentContext';
-import { 
-  PricingTierCard, 
-  BillingPeriodSelector 
-} from '@/components/billing';
-import { 
-  PRICING_TIERS, 
-  BillingPeriod, 
-  getDisplayPrice, 
-  startPlanCheckout
-} from '@/lib/billing';
+import { useBillingContext } from '@/contexts/BillingContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAccountSetup } from '@/hooks/useAccountSetup';
+import { useQueryClient } from '@tanstack/react-query';
+import { agentKeys } from '@/lib/agents';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ONBOARDING_KEY_PREFIX = '@onboarding_completed_';
@@ -58,35 +48,21 @@ interface OnboardingSlide {
   gradient: [string, string];
   example?: string;
 }
-
-/**
- * Onboarding Screen
- * 
- * Protected by root layout AuthProtection - requires authentication
- * Welcome flow shown every time user logs in on this device
- * Shows key features and ends with billing (skips billing if already subscribed)
- */
 export default function OnboardingScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  const { hasActiveSubscription } = useBillingContext();
   const { signOut, session } = useAuthContext();
   const { loadAgents } = useAgent();
+  const { refetchAll: refetchBilling } = useBillingContext();
+  const { markSetupComplete } = useAccountSetup();
+  const queryClient = useQueryClient();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const scrollX = useSharedValue(0);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
-
-  // If user already has active billing, skip directly to completion (no billing slide needed)
-  React.useEffect(() => {
-    if (hasActiveSubscription) {
-      console.log('✅ User already has active billing, auto-completing onboarding');
-      handleComplete();
-    }
-  }, [hasActiveSubscription]);
 
   const slides: OnboardingSlide[] = [
     {
@@ -145,20 +121,22 @@ export default function OnboardingScreen() {
     },
   ];
 
-  const totalSlides = slides.length + 1; // feature slides + 1 billing slide
+  const totalSlides = slides.length;
 
   const handleComplete = React.useCallback(async () => {
     try {
-      // Save onboarding completion for this specific user on this device
       const userId = session?.user?.id || 'anonymous';
       const onboardingKey = `${ONBOARDING_KEY_PREFIX}${userId}`;
       await AsyncStorage.setItem(onboardingKey, 'true');
       
+      await markSetupComplete();
+      
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Refetch billing data and agents before routing
-      console.log('🔄 Refetching billing data and agents after onboarding completion...');
-      // Note: refetchAll removed - billing context will refetch automatically
+      console.log('🔄 Refetching billing, credits, and agents after onboarding completion...');
+      
+      refetchBilling();
+      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
       await loadAgents();
       
       console.log(`✅ Onboarding completed for user: ${userId}`);
@@ -167,7 +145,7 @@ export default function OnboardingScreen() {
       console.error('Failed to save onboarding status:', error);
       router.replace('/home');
     }
-  }, [loadAgents, router, session?.user?.id]);
+  }, [loadAgents, refetchBilling, queryClient, router, session?.user?.id, markSetupComplete]);
 
   const handleLogout = React.useCallback(async () => {
     try {
@@ -176,9 +154,6 @@ export default function OnboardingScreen() {
       
       console.log('🔓 Logging out from onboarding...');
       await signOut();
-      
-      // Navigation will be handled by AuthProtection in _layout
-      // User will be automatically redirected to /auth
     } catch (error) {
       console.error('❌ Logout error:', error);
     } finally {
@@ -195,19 +170,14 @@ export default function OnboardingScreen() {
         x: nextSlide * SCREEN_WIDTH,
         animated: true,
       });
+    } else {
+      handleComplete();
     }
-    // Don't auto-complete on last slide (billing) - user must select plan
   };
 
   const handleSkip = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Jump to billing slide (last slide)
-    const billingSlideIndex = totalSlides - 1;
-    setCurrentSlide(billingSlideIndex);
-    scrollViewRef.current?.scrollTo({
-      x: billingSlideIndex * SCREEN_WIDTH,
-      animated: true,
-    });
+    handleComplete();
   };
 
   const handleScroll = (event: any) => {
@@ -216,12 +186,10 @@ export default function OnboardingScreen() {
     const newSlide = Math.round(offsetX / SCREEN_WIDTH);
     setCurrentSlide(newSlide);
   };
-
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background">
-        {/* Minimal Header */}
         <View className="pt-16 px-6 pb-4 flex-row justify-between items-center">
           <Logomark width={100} height={20} />
           <View className="flex-row items-center gap-3">
@@ -244,8 +212,6 @@ export default function OnboardingScreen() {
             </Pressable>
           </View>
         </View>
-
-        {/* Slides */}
         <ScrollView
           ref={scrollViewRef}
           horizontal
@@ -263,16 +229,7 @@ export default function OnboardingScreen() {
               scrollX={scrollX}
             />
           ))}
-          {/* Billing Slide */}
-          <BillingSlide
-            index={slides.length}
-            scrollX={scrollX}
-            onSuccess={handleComplete}
-            t={t}
-          />
         </ScrollView>
-
-        {/* Minimal Pagination Dots */}
         <View className="flex-row justify-center gap-1.5 mb-6">
           {Array.from({ length: totalSlides }).map((_, index) => (
             <PaginationDot
@@ -283,25 +240,19 @@ export default function OnboardingScreen() {
             />
           ))}
         </View>
-
-        {/* Next Button - Only show on non-billing slides */}
-        {currentSlide < totalSlides - 1 && (
-          <View className="px-6 pb-8">
-            <ContinueButton
-              onPress={handleNext}
-              isLast={false}
-              t={t}
-            />
-          </View>
-        )}
+        <View className="px-6 pb-8">
+          <ContinueButton
+            onPress={handleNext}
+            isLast={currentSlide === totalSlides - 1}
+            t={t}
+          />
+        </View>
       </View>
     </>
   );
 }
 
-/**
- * Onboarding Slide Component
- */
+
 interface OnboardingSlideProps {
   slide: OnboardingSlide;
   index: number;
@@ -346,7 +297,6 @@ function OnboardingSlide({ slide, index, scrollX }: OnboardingSlideProps) {
       className="flex-1 items-center justify-center px-8"
     >
       <Animated.View style={animatedStyle} className="items-center w-full max-w-sm">
-        {/* Minimalist Icon Container */}
         <View className="w-full mb-12 items-center">
           <View
             className="w-20 h-20 rounded-2xl items-center justify-center mb-4"
@@ -364,17 +314,14 @@ function OnboardingSlide({ slide, index, scrollX }: OnboardingSlideProps) {
           </View>
         </View>
 
-        {/* Title - Clean Typography */}
         <Text className="text-[28px] font-roobert-semibold text-foreground text-center mb-3 leading-tight tracking-tight">
           {slide.title}
         </Text>
 
-        {/* Description - Subtle and Readable */}
         <Text className="text-[15px] font-roobert text-muted-foreground text-center leading-relaxed mb-6 opacity-80">
           {slide.description}
         </Text>
 
-        {/* Minimalist Example Tag */}
         {slide.example && (
           <View 
             className="px-4 py-2 rounded-full border"
@@ -399,9 +346,7 @@ function OnboardingSlide({ slide, index, scrollX }: OnboardingSlideProps) {
   );
 }
 
-/**
- * Pagination Dot Component
- */
+
 interface PaginationDotProps {
   index: number;
   currentIndex: number;
@@ -453,9 +398,6 @@ function PaginationDot({ index, scrollX }: PaginationDotProps) {
   );
 }
 
-/**
- * Continue Button Component
- */
 interface ContinueButtonProps {
   onPress: () => void;
   isLast: boolean;
@@ -488,135 +430,3 @@ function ContinueButton({ onPress, isLast, t }: ContinueButtonProps) {
     </AnimatedPressable>
   );
 }
-
-/**
- * Billing Slide Component - Simplified using BillingContent
- */
-interface BillingSlideProps {
-  index: number;
-  scrollX: SharedValue<number>;
-  onSuccess: () => void;
-  t: (key: string, defaultValue?: string) => string;
-}
-
-function BillingSlide({
-  index,
-  scrollX,
-  onSuccess,
-  t,
-}: BillingSlideProps) {
-  const { colorScheme } = useColorScheme();
-  const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('yearly_commitment');
-  const [planLoadingStates, setPlanLoadingStates] = React.useState<Record<string, boolean>>({});
-  const cardScale = useSharedValue(1);
-  const cardOpacity = useSharedValue(1);
-
-  const handleSubscribe = async (tierKey: string) => {
-    setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: true }));
-
-    try {
-      await startPlanCheckout(
-        tierKey,
-        billingPeriod,
-        () => {
-          setPlanLoadingStates({});
-          onSuccess();
-        },
-        () => {
-          setPlanLoadingStates({});
-        }
-      );
-    } catch (error) {
-      console.error('❌ Error starting checkout:', error);
-      setPlanLoadingStates({});
-    }
-  };
-
-  const animatedStyle = useAnimatedStyle(() => {
-    const inputRange = [
-      (index - 1) * SCREEN_WIDTH,
-      index * SCREEN_WIDTH,
-      (index + 1) * SCREEN_WIDTH,
-    ];
-
-    const scale = interpolate(
-      scrollX.value,
-      inputRange,
-      [0.92, 1, 0.92],
-      Extrapolate.CLAMP
-    );
-
-    const opacity = interpolate(
-      scrollX.value,
-      inputRange,
-      [0.3, 1, 0.3],
-      Extrapolate.CLAMP
-    );
-
-    return {
-      transform: [{ scale }],
-      opacity,
-    };
-  });
-
-  const cardAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: cardScale.value }],
-    opacity: cardOpacity.value,
-  }));
-
-  const tiersToShow = PRICING_TIERS.slice(0, 2);
-
-  return (
-    <View
-      style={{ width: SCREEN_WIDTH }}
-      className="flex-1 px-8 justify-center"
-    >
-      <Animated.View style={animatedStyle} className="items-center max-w-sm mx-auto w-full">
-        <ScrollView showsVerticalScrollIndicator={false} className="w-full">
-          {/* Title */}
-          <View className="mb-8">
-            <Text className="text-[28px] font-roobert-semibold text-foreground text-center mb-2 leading-tight tracking-tight">
-              {t('billing.subscription.title', 'Choose Your Plan')}
-            </Text>
-            <Text className="text-[15px] font-roobert text-muted-foreground text-center opacity-70">
-              {t('billing.subtitle', 'Select a plan to get started')}
-            </Text>
-          </View>
-
-          {/* Period Selector */}
-          <BillingPeriodSelector
-            selected={billingPeriod}
-            onChange={setBillingPeriod}
-            t={t}
-          />
-
-          {/* Pricing Tiers - Only top 2 for onboarding */}
-          <View className="space-y-3">
-              {tiersToShow.map((tier) => {
-                const displayPrice = getDisplayPrice(tier, billingPeriod);
-                const isLoading = planLoadingStates[tier.id] || false;
-
-                return (
-                  <PricingTierCard
-                    key={tier.id}
-                    tier={tier}
-                    displayPrice={displayPrice}
-                    billingPeriod={billingPeriod}
-                    currentSubscription={null}
-                    isLoading={isLoading}
-                    isFetchingPlan={false}
-                    onPlanSelect={(planId) => setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }))}
-                    onSubscribe={handleSubscribe}
-                    isAuthenticated={false}
-                    currentBillingPeriod={null}
-                    t={t}
-                  />
-                );
-              })}
-            </View>
-        </ScrollView>
-      </Animated.View>
-    </View>
-  );
-}
-

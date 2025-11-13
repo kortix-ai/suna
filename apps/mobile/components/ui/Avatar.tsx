@@ -5,7 +5,8 @@ import { useColorScheme } from 'nativewind';
 import { getIconFromName } from '@/lib/utils/icon-mapping';
 import { MessageSquare, Zap, Layers } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import KortixSymbol from '@/assets/brand/Symbol.svg';
+import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
+import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
 type AvatarVariant = 'agent' | 'model' | 'thread' | 'trigger' | 'custom';
 
@@ -135,6 +136,7 @@ export function Avatar({
   };
   
   const IconComponent = getIconComponent();
+  const KortixSymbol = colorScheme === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
 
   return (
     <View 
@@ -155,8 +157,7 @@ export function Avatar({
       {useKortixSymbol ? (
         <KortixSymbol 
           width={symbolSize} 
-          height={symbolSize} 
-          fill={finalIconColor}
+          height={symbolSize}
         />
       ) : IconComponent ? (
         <Icon 

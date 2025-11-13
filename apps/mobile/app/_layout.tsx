@@ -12,11 +12,13 @@ import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect, useState } from 'react';
+import * as Linking from 'expo-linking';
+import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+import { supabase } from '@/api/supabase';
 
 // Configure Reanimated logger to disable strict mode warnings
 // These warnings appear during theme changes and are overly sensitive
@@ -86,12 +88,94 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
-      // Hide the splash screen after the fonts have loaded (or an error was returned)
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
 
-  // Prevent rendering until the fonts have loaded or error, and i18n is initialized
+  useEffect(() => {
+    let isHandlingDeepLink = false;
+
+    const handleDeepLink = async (event: { url: string }) => {
+      if (isHandlingDeepLink) return;
+      isHandlingDeepLink = true;
+
+      console.log('🔗 Deep link received:', event.url);
+      
+      const url = event.url;
+      const parsedUrl = Linking.parse(url);
+      
+      console.log('🔍 Parsed URL:', { hostname: parsedUrl.hostname, path: parsedUrl.path });
+      
+      if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
+        console.log('📧 Email confirmation received, processing...');
+        
+        try {
+          const hashFragment = url.split('#')[1];
+          console.log('🔍 Hash fragment:', hashFragment);
+          
+          if (hashFragment) {
+            const hashParams = new URLSearchParams(hashFragment);
+            const access_token = hashParams.get('access_token');
+            const refresh_token = hashParams.get('refresh_token');
+            
+            console.log('🔑 Tokens found:', { 
+              hasAccessToken: !!access_token, 
+              hasRefreshToken: !!refresh_token 
+            });
+            
+                  if (access_token && refresh_token) {
+                    console.log('✅ Setting session with tokens...');
+
+                    const { data, error } = await supabase.auth.setSession({
+                      access_token,
+                      refresh_token,
+                    });
+
+                    if (error) {
+                      console.error('❌ Failed to set session:', error);
+                      isHandlingDeepLink = false;
+                    } else {
+                      console.log('✅ Session set! User logged in:', data.user?.email);
+
+                      const router = require('expo-router').router;
+                      setTimeout(() => {
+                        console.log('🚀 Navigating to /setting-up');
+                        router.replace('/setting-up');
+                        isHandlingDeepLink = false;
+                      }, 800);
+                    }
+                  } else {
+                    console.log('⚠️ No tokens found in hash params');
+                    isHandlingDeepLink = false;
+                  }
+          } else {
+            console.log('⚠️ No hash fragment in URL');
+            isHandlingDeepLink = false;
+          }
+        } catch (err) {
+          console.error('❌ Error handling email confirmation:', err);
+          isHandlingDeepLink = false;
+        }
+      } else {
+        console.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
+        isHandlingDeepLink = false;
+      }
+    };
+
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        console.log('🔗 Initial URL found:', url);
+        handleDeepLink({ url });
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
@@ -122,6 +206,7 @@ export default function RootLayout() {
                           }}
                         >
                           <Stack.Screen name="index" options={{ animation: 'none' }} />
+                          <Stack.Screen name="setting-up" />
                           <Stack.Screen name="onboarding" />
                           <Stack.Screen name="home" />
                           <Stack.Screen name="auth" />
@@ -158,16 +243,19 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
+  const hasRedirected = React.useRef(false);
 
   useEffect(() => {
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
 
-    if (!isAuthenticated && !inAuthGroup) {
-      // User is not authenticated and not in auth screens, redirect to auth
+    if (!isAuthenticated && !inAuthGroup && !hasRedirected.current) {
       console.log('🚫 User not authenticated, redirecting to /auth');
+      hasRedirected.current = true;
       router.replace('/auth');
+    } else if (isAuthenticated && hasRedirected.current) {
+      hasRedirected.current = false;
     }
   }, [isAuthenticated, isLoading, segments, router]);
 

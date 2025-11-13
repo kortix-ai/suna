@@ -1,21 +1,24 @@
 import * as React from 'react';
-import { Pressable, View, TextInput, ActivityIndicator, Alert, Keyboard } from 'react-native';
+import { Pressable, View, TextInput, Alert, Keyboard, ScrollView } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
-  withSpring 
+  withSpring
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Save } from 'lucide-react-native';
+import { Save, Mail, AlertTriangle } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
+import { KortixLoader } from '@/components/ui';
+import { ProfilePicture } from './ProfilePicture';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
+export const placeholderImageUrl = 'https://i.ibb.co/ksprrY46/Screenshot-2025-11-12-at-2-28-27-AM.png';
+  
 interface NameEditPageProps {
   visible: boolean;
   currentName: string;
@@ -23,20 +26,6 @@ interface NameEditPageProps {
   onNameUpdated?: (newName: string) => void;
 }
 
-/**
- * NameEditPage Component
- * 
- * Clean, elegant page for editing user name.
- * 
- * Features:
- * - Full-screen overlay with backdrop
- * - Text input with current name pre-filled
- * - Save/Cancel buttons
- * - Input validation (non-empty, max length)
- * - Loading state during save
- * - Error handling with user feedback
- * - Uses Supabase RPC call to update account name
- */
 export function NameEditPage({ 
   visible, 
   currentName, 
@@ -52,15 +41,11 @@ export function NameEditPage({
   const [error, setError] = React.useState<string | null>(null);
   const inputRef = React.useRef<TextInput>(null);
   
-  // Reset name when page opens
+
   React.useEffect(() => {
     if (visible) {
       setName(currentName);
       setError(null);
-      // Focus input after a short delay
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 300);
     }
   }, [visible, currentName]);
   
@@ -164,85 +149,108 @@ export function NameEditPage({
   };
   
   if (!visible) return null;
+
+  const hasChanges = name.trim() !== currentName && name.trim().length > 0;
   
   return (
     <View className="absolute inset-0 z-50">
-      {/* Backdrop */}
       <Pressable
         onPress={handleClose}
         className="absolute inset-0 bg-black/50"
       />
       
-      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <View className="flex-1">
-          {/* Header */}
+        <ScrollView 
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+          keyboardShouldPersistTaps="handled"
+        >
           <SettingsHeader
-            title={t('settings.editName') || 'Edit Name'}
+            title="Edit Profile"
             onClose={handleClose}
             disabled={isLoading}
           />
           
-          {/* Form */}
-          <View className="px-6 gap-6">
-            {/* Label */}
-            <View>
-              <Text className="text-sm font-roobert-medium text-muted-foreground mb-2">
-                {t('settings.enterName') || 'Enter your name'}
-              </Text>
-              
-              {/* Input */}
-              <TextInput
-                ref={inputRef}
-                value={name}
-                onChangeText={(text) => {
-                  setName(text);
-                  setError(null);
-                }}
-                placeholder={t('settings.namePlaceholder') || 'Your name'}
-                placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                className="h-12 px-4 bg-secondary rounded-2xl text-foreground font-roobert text-base"
-                editable={!isLoading}
-                maxLength={100}
-                autoCapitalize="words"
-                autoCorrect={false}
-                returnKeyType="done"
-                onSubmitEditing={handleSave}
-              />
-              
-              {/* Error Message */}
-              {error && (
-                <Text className="text-destructive text-sm font-roobert mt-2">
-                  {error}
+          <View className="px-6 pb-8">
+            <View className="mb-8 items-center pt-8">
+              <ProfilePicture imageUrl={placeholderImageUrl} size={24} />
+              <View className="mt-6 w-full">
+                <TextInput
+                  ref={inputRef}
+                  value={name}
+                  onChangeText={(text) => {
+                    setName(text);
+                    setError(null);
+                  }}
+                  placeholder="Your name"
+                  placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                  className="text-3xl font-roobert-semibold text-foreground text-center tracking-tight"
+                  editable={!isLoading}
+                  maxLength={100}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={handleSave}
+                />
+                <Text className="text-sm font-roobert text-muted-foreground text-center mt-2">
+                  Display Name
                 </Text>
-              )}
+              </View>
             </View>
-            
-            {/* Save Button */}
+
+            {error && (
+              <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 mb-6">
+                <View className="flex-row items-start gap-2">
+                  <Icon as={AlertTriangle} size={16} className="text-destructive mt-0.5" strokeWidth={2} />
+                  <Text className="text-sm font-roobert-medium text-destructive flex-1">
+                    {error}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <View className="mb-6">
+              <View className="bg-primary/5 rounded-3xl p-5">
+                <View className="flex-row items-center gap-3">
+                  <View className="h-11 w-11 rounded-full bg-primary/10 items-center justify-center">
+                    <Icon as={Mail} size={20} className="text-primary" strokeWidth={2.5} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
+                      Email Address
+                    </Text>
+                    <Text className="text-sm font-roobert-semibold text-foreground">
+                      {user?.email || 'Not available'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
             <SaveButton
               onPress={handleSave}
-              disabled={isLoading || !name.trim()}
+              disabled={!hasChanges || isLoading}
               isLoading={isLoading}
+              hasChanges={hasChanges}
             />
           </View>
-          
-        </View>
+
+          <View className="h-20" />
+        </ScrollView>
       </View>
     </View>
   );
 }
 
-/**
- * SaveButton Component
- */
 interface SaveButtonProps {
   onPress: () => void;
-  disabled: boolean;
-  isLoading: boolean;
+  disabled?: boolean;
+  isLoading?: boolean;
+  hasChanges?: boolean;
 }
 
-function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
-  const { t } = useLanguage();
+function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProps) {
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
   
@@ -252,7 +260,7 @@ function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
   
   const handlePressIn = () => {
     if (!disabled) {
-      scale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
     }
   };
   
@@ -260,9 +268,9 @@ function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
   
-  const bgColor = disabled 
-    ? 'bg-muted' 
-    : colorScheme === 'dark' ? 'bg-primary' : 'bg-primary';
+  if (!hasChanges && !isLoading) {
+    return null;
+  }
   
   return (
     <AnimatedPressable
@@ -271,27 +279,33 @@ function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
       onPressOut={handlePressOut}
       style={animatedStyle}
       disabled={disabled}
-      className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${bgColor}`}
+      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${
+        disabled ? 'bg-muted/50' : 'bg-primary'
+      }`}
     >
       {isLoading ? (
-        <ActivityIndicator 
-          size="small" 
-          color={colorScheme === 'dark' ? '#121215' : '#FFFFFF'} 
-        />
+        <>
+          <KortixLoader 
+            size="small" 
+            forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
+          />
+          <Text className="text-primary-foreground text-sm font-roobert-medium">
+            Saving...
+          </Text>
+        </>
       ) : (
-        <Icon 
-          as={Save} 
-          size={20} 
-          className="text-primary-foreground" 
-          strokeWidth={2} 
-        />
+        <>
+          <Icon 
+            as={Save} 
+            size={16} 
+            className="text-primary-foreground" 
+            strokeWidth={2.5} 
+          />
+          <Text className="text-primary-foreground text-sm font-roobert-medium">
+            Save Changes
+          </Text>
+        </>
       )}
-      <Text className="text-primary-foreground text-base font-roobert-medium">
-        {isLoading 
-          ? (t('common.saving') || 'Saving...') 
-          : (t('common.save') || 'Save')
-        }
-      </Text>
     </AnimatedPressable>
   );
 }

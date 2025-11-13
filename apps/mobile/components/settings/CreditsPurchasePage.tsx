@@ -1,21 +1,15 @@
-/**
- * Credits Purchase Page Component
- * 
- * Allows users to purchase additional credits
- */
-
 import React from 'react';
-import { View, ScrollView, Pressable } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Coins, Infinity, Clock } from 'lucide-react-native';
+import { Infinity, Clock, Sparkles, Info } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
 import { startCreditPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
-import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 interface CreditsPurchasePageProps {
   visible: boolean;
@@ -53,90 +47,78 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
 
   if (!visible) return null;
 
+  const expiringCredits = creditBalance?.expiring_credits || 0;
+  const nonExpiringCredits = creditBalance?.non_expiring_credits || 0;
+  const totalCredits = creditBalance?.balance || 0;
+
   return (
-    <View className="absolute inset-0 z-50">
-      {/* Backdrop */}
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      
-      {/* Page */}
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <SettingsHeader
-            title={t('billing.purchaseCredits') || 'Purchase Credits'}
-            onClose={handleClose}
-          />
+    <View className="absolute inset-0 z-50 bg-background">
+      <ScrollView 
+        className="flex-1" 
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        contentContainerStyle={{ paddingBottom: 40 }}
+      >
+        <SettingsHeader
+          title="Buy Credits"
+          onClose={handleClose}
+        />
+        
+        <View className="px-6">
+          <View className="mb-4 items-center pt-4">
+            <Text className="mb-2 text-5xl font-roobert-semibold text-foreground tracking-tight">
+              {formatCredits(totalCredits)}
+            </Text>
+            <Text className="text-sm font-roobert text-muted-foreground">
+              Available credits
+            </Text>
+          </View>
 
-          {/* Current Balance */}
-          {creditBalance && (
-            <View className="mx-6 mb-6 p-6 bg-card border border-border rounded-2xl">
-              <View className="flex-row items-center justify-between mb-4">
-                <View>
-                  <Text className="text-sm font-roobert text-muted-foreground mb-1">
-                    {t('billing.balance') || 'Current Balance'}
-                  </Text>
-                  <Text className="text-3xl font-roobert-bold text-foreground">
-                    {formatCredits(dollarsToCredits(creditBalance.balance))}
+          <View className="mb-6">
+            {(expiringCredits > 0 || nonExpiringCredits > 0) && (
+              <View className="flex-row gap-3 pt-5">
+                <View className="flex-1 bg-primary/5 rounded-2xl p-4">
+                  <View className="flex-row items-center gap-2 mb-2">
+                    <Icon as={Clock} size={14} className="text-muted-foreground" strokeWidth={2} />
+                    <Text className="text-xs font-roobert-medium text-muted-foreground">
+                      Monthly
+                    </Text>
+                  </View>
+                  <Text className="text-2xl font-roobert-semibold text-foreground tracking-tight">
+                    {formatCredits(expiringCredits)}
                   </Text>
                 </View>
-                <Icon as={Coins} size={32} className="text-primary" />
+                <View className="flex-1 bg-primary/5 rounded-2xl p-4">
+                  <View className="flex-row items-center gap-2 mb-2">
+                    <Icon as={Infinity} size={14} className="text-primary" strokeWidth={2} />
+                    <Text className="text-xs font-roobert-medium text-primary">
+                      Extra
+                    </Text>
+                  </View>
+                  <Text className="text-2xl font-roobert-semibold text-foreground tracking-tight">
+                    {formatCredits(nonExpiringCredits)}
+                  </Text>
+                </View>
               </View>
-              
-              {/* Breakdown */}
-              {(creditBalance.expiring_credits > 0 || creditBalance.non_expiring_credits > 0) && (
-                <View className="pt-4 border-t border-border space-y-2">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={Clock} size={14} className="text-muted-foreground" />
-                      <Text className="text-sm font-roobert text-muted-foreground">
-                        Plan credits
-                      </Text>
-                    </View>
-                    <Text className="text-sm font-roobert-semibold text-foreground">
-                      {formatCredits(dollarsToCredits(creditBalance.expiring_credits))}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={Infinity} size={14} className="text-green-600" />
-                      <Text className="text-sm font-roobert text-muted-foreground">
-                        Purchased credits
-                      </Text>
-                    </View>
-                    <Text className="text-sm font-roobert-semibold text-foreground">
-                      {formatCredits(dollarsToCredits(creditBalance.non_expiring_credits))}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Info Banner */}
-          <View className="mx-6 mb-6 p-4 bg-primary/10 border border-primary/20 rounded-2xl">
-            <View className="flex-row items-start gap-3">
-              <Icon as={Infinity} size={20} className="text-primary mt-0.5" />
-              <Text className="flex-1 text-sm font-roobert text-foreground/80">
-                {t('billing.neverExpires') || 'Purchased credits never expire'} - They're used after your monthly plan credits are exhausted.
-              </Text>
-            </View>
+            )}
           </View>
 
-          {/* Credit Packages */}
-          <View className="px-6 pb-6">
-            <CreditPackages
-              onPurchase={handlePurchase}
-              purchasing={purchasing}
-              t={t}
-            />
+          <View className="mb-4">
+            <Text className="text-base font-roobert-semibold text-foreground mb-1 tracking-tight">
+              Credit Packages
+            </Text>
+            <Text className="text-xs font-roobert text-muted-foreground">
+              Choose a package and boost your credit balance
+            </Text>
           </View>
-          
-          <View className="h-20" />
-        </ScrollView>
-      </View>
+
+          <CreditPackages
+            onPurchase={handlePurchase}
+            purchasing={purchasing}
+            t={t}
+          />
+        </View>
+      </ScrollView>
     </View>
   );
 }

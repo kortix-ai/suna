@@ -1,38 +1,24 @@
 import * as React from 'react';
 import { useAdvancedFeatures } from '@/hooks';
+import { useAuthContext } from '@/contexts';
 import type { Conversation, UserProfile, ConversationSection } from '@/components/menu/types';
 
 interface UseSideMenuProps {
   onNewChat?: () => void;
 }
 
-/**
- * useSideMenu Hook
- * 
- * Manages state and actions for the side menu
- * 
- * Features:
- * - Menu visibility toggle
- * - Conversation selection
- * - Navigation actions
- * - Profile management
- * - Tab switching (Chats/Workers/Triggers)
- * 
- * Note: Sections/conversations now loaded from backend API in MenuPage
- */
 export function useSideMenu({ onNewChat }: UseSideMenuProps = {}) {
   const [isMenuVisible, setIsMenuVisible] = React.useState(false);
   const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(null);
   const [activeTab, setActiveTab] = React.useState<'chats' | 'workers' | 'triggers'>('chats');
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
+  const { user } = useAuthContext();
   
-  // Mock user profile (will be replaced with real user data later)
-  const [profile] = React.useState<UserProfile>({
-    id: 'user-1',
-    name: 'Marko Kraemer',
-    email: 'marko@kortix.ai',
-    tier: 'Ultra',
-  });
+  const profile: UserProfile = React.useMemo(() => ({
+    id: user?.id || 'guest',
+    name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Guest',
+    email: user?.email || '',
+  }), [user]); 
   
   const openMenu = React.useCallback(() => {
     console.log('🎯 Opening side menu');
@@ -59,7 +45,6 @@ export function useSideMenu({ onNewChat }: UseSideMenuProps = {}) {
     console.log('🎯 Conversation selected:', conversation.title);
     console.log('📊 Conversation data:', conversation);
     setSelectedConversation(conversation);
-    // Navigation handled in app/index.tsx
   }, []);
   
   const handleProfilePress = React.useCallback(() => {

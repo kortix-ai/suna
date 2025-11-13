@@ -27,6 +27,11 @@ import {
   type CreatePortalSessionResponse,
   type CancelSubscriptionRequest,
 } from './api';
+import {
+  usageApi,
+  type ThreadUsageResponse,
+  type UseThreadUsageParams,
+} from './usage-api';
 
 // Re-export types for convenience
 export type {
@@ -43,6 +48,8 @@ export type {
   CreatePortalSessionRequest,
   CreatePortalSessionResponse,
   CancelSubscriptionRequest,
+  ThreadUsageResponse,
+  UseThreadUsageParams,
 };
 
 // ============================================================================
@@ -55,6 +62,7 @@ export const billingKeys = {
   balance: () => [...billingKeys.all, 'balance'] as const,
   status: () => [...billingKeys.all, 'status'] as const,
   scheduledChanges: () => [...billingKeys.all, 'scheduled-changes'] as const,
+  threadUsage: (params: UseThreadUsageParams) => [...billingKeys.all, 'thread-usage', params] as const,
 };
 
 // ============================================================================
@@ -225,3 +233,15 @@ export function useReactivateSubscription(
   });
 }
 
+export function useThreadUsage(params: UseThreadUsageParams) {
+  const { enabled, ...queryParams } = params;
+  return useQuery<ThreadUsageResponse>({
+    queryKey: billingKeys.threadUsage(queryParams),
+    queryFn: () => usageApi.getThreadUsage(queryParams),
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    enabled: enabled ?? true,
+  });
+}

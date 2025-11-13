@@ -16,9 +16,11 @@ export * from './api';
 export * from './hooks';
 export * from './pricing';
 export * from './checkout';
+export * from './usage-api';
 
 // Named exports for convenience
 export { billingApi } from './api';
+export { usageApi } from './usage-api';
 export {
   startPlanCheckout,
   startCreditPurchase,

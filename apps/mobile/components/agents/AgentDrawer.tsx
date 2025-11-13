@@ -89,7 +89,7 @@ export function AgentDrawer({
   
   // Get agents and models from context/API
   const agentContext = useAgent();
-  const { agents, selectedAgentId, selectedModelId, selectAgent, selectModel, isLoading } = agentContext;
+  const { agents, selectedAgentId, selectedModelId, selectAgent, selectModel, isLoading, loadAgents } = agentContext;
   
   // Debug: Log what we're getting from context
   React.useEffect(() => {
@@ -165,6 +165,10 @@ export function AgentDrawer({
       // Ensure keyboard is dismissed when drawer opens
       Keyboard.dismiss();
       
+      // Refetch agents when drawer opens to ensure fresh data
+      console.log('🔄 Refetching agents when drawer opens...');
+      loadAgents();
+      
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       bottomSheetRef.current?.snapToIndex(0);
       setCurrentView('main'); // Reset to main view when opening
@@ -175,7 +179,7 @@ export function AgentDrawer({
       clearAgentSearch();
       clearModelSearch();
     }
-  }, [visible, clearAgentSearch, clearModelSearch]);
+  }, [visible, clearAgentSearch, clearModelSearch, loadAgents]);
 
   // Navigation functions
   const navigateToView = React.useCallback((view: ViewState) => {
