@@ -1473,6 +1473,17 @@ class SetupWizard:
             print_info(
                 "Found existing TRIGGER_WEBHOOK_SECRET. Keeping existing value.")
 
+        # Ensure a Supabase webhook secret exists for database triggers
+        if not self.env_vars["webhook"].get("SUPABASE_WEBHOOK_SECRET"):
+            print_info(
+                "Generating a secure SUPABASE_WEBHOOK_SECRET for Supabase database webhooks...")
+            self.env_vars["webhook"]["SUPABASE_WEBHOOK_SECRET"] = generate_webhook_secret()
+            print_success("Supabase webhook secret generated.")
+            print_info("This secret is used for welcome emails and other Supabase-triggered webhooks.")
+        else:
+            print_info(
+                "Found existing SUPABASE_WEBHOOK_SECRET. Keeping existing value.")
+
         print_success("Webhook configuration saved.")
 
     def configure_env_files(self):
