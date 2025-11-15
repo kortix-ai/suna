@@ -108,9 +108,10 @@ interface BillingPageProps {
   onClose: () => void;
   onOpenCredits: () => void;
   onOpenUsage: () => void;
+  alertTitle?: string;
 }
 
-export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage }: BillingPageProps) {
+export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, alertTitle }: BillingPageProps) {
   const { t } = useLanguage();
   const { user } = useAuthContext();
   const queryClient = useQueryClient();
@@ -321,7 +322,17 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage }: Bi
           />
 
           <View className="px-6 pb-8">
-            <View className="mb-8 items-center pt-4">
+            {alertTitle && (
+              <View className="mb-6 bg-primary/10 border border-primary/20 rounded-2xl p-4">
+                <View className="flex-row items-start gap-3">
+                  <Icon as={AlertTriangle} size={20} className="text-primary mt-0.5" strokeWidth={2} />
+                  <Text className="flex-1 text-sm font-roobert text-foreground">
+                    {alertTitle}
+                  </Text>
+                </View>
+              </View>
+            )}
+            <View className="mb-4 items-center pt-4">
               <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
                 <Icon as={CreditCard} size={28} className="text-primary" strokeWidth={2} />
               </View>
@@ -332,8 +343,20 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage }: Bi
                 Total Available Credits
               </Text>
             </View>
-            {canPurchaseCredits && (
-              <View className="mb-6 items-center">
+            {tierType !== 'Ultra' ? (
+              <View className="mb-4 items-center">
+                <Pressable
+                  onPress={handleChangePlan}
+                  className="w-36 rounded-full bg-primary border border-border/40 rounded-2xl px-4 py-3 flex-row items-center justify-center gap-2 active:opacity-80"
+                >
+                  <Icon as={CreditCard} size={16} className="text-primary-foreground" strokeWidth={2.5} />
+                  <Text className="text-sm font-roobert-medium text-primary-foreground">
+                    Upgrade
+                  </Text>
+                </Pressable>
+              </View>
+            ) : canPurchaseCredits && (
+              <View className="mb-4 items-center">
                 <Pressable
                   onPress={handlePurchaseCredits}
                   className="w-36 rounded-full bg-primary border border-border/40 rounded-2xl px-4 py-3 flex-row items-center justify-center gap-2 active:opacity-80"

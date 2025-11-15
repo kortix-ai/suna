@@ -13,4 +13,7 @@ export { BillingPage } from './BillingPage';
 export { CreditsPurchasePage } from './CreditsPurchasePage';
 export { AccountDeletionPage } from './AccountDeletionPage';
 export { SettingsHeader } from './SettingsHeader';
+export { UsageContent } from './UsageContent';
+export { UsageDrawer } from './UsageDrawer';
+export { UsagePage } from './UsagePage';
 

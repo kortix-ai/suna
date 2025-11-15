@@ -41,29 +41,29 @@ export function BillingPeriodToggle({
   }));
 
   return (
-    <View className="flex-row items-center gap-3 bg-muted/30 p-1.5 rounded-2xl">
+    <View className="flex-row items-center bg-muted/20 p-0.5 rounded-full">
       <AnimatedPressable
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setBillingPeriod('monthly');
         }}
         onPressIn={() => {
-          monthlyScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+          monthlyScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
         }}
         onPressOut={() => {
           monthlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         style={monthlyStyle}
-        className={`h-11 px-5 rounded-xl items-center justify-center ${
+        className={`flex-1 h-7 px-2 rounded-full items-center justify-center ${
           billingPeriod === 'monthly'
-            ? 'bg-primary'
+            ? 'bg-foreground'
             : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-[15px] font-roobert-semibold ${
+          className={`text-xs font-roobert-medium ${
             billingPeriod === 'monthly'
-              ? 'text-primary-foreground'
+              ? 'text-background'
               : 'text-muted-foreground'
           }`}
         >
@@ -73,46 +73,45 @@ export function BillingPeriodToggle({
 
       <AnimatedPressable
         onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setBillingPeriod('yearly_commitment');
         }}
         onPressIn={() => {
-          yearlyScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+          yearlyScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
         }}
         onPressOut={() => {
           yearlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         style={yearlyStyle}
-        className={`h-11 px-5 rounded-xl flex-row items-center gap-2 ${
+        className={`flex-1 h-7 px-2 rounded-full flex-row items-center justify-center gap-1 ${
           billingPeriod === 'yearly_commitment'
-            ? 'bg-primary'
+            ? 'bg-foreground'
             : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-[15px] font-roobert-semibold ${
+          className={`text-xs font-roobert-medium ${
             billingPeriod === 'yearly_commitment'
-              ? 'text-primary-foreground'
+              ? 'text-background'
               : 'text-muted-foreground'
           }`}
         >
           Yearly
         </Text>
         <View
-          className={`px-2 py-1 rounded-full ${
+          className={`px-1 py-0.5 rounded-full ${
             isYearly
-              ? 'bg-background/90'
+              ? 'bg-primary/20'
               : 'bg-primary/10'
           }`}
         >
-          <Text className={`text-[11px] font-roobert-semibold ${
+          <Text className={`text-[9px] font-roobert-semibold ${
             isYearly ? 'text-primary' : 'text-primary'
           }`}>
-            15% off
+            15%
           </Text>
         </View>
       </AnimatedPressable>
     </View>
   );
 }
-

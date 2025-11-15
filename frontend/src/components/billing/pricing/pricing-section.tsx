@@ -86,14 +86,11 @@ const getFeatureIcon = (feature: string) => {
   if (featureLower.includes('token credits') || featureLower.includes('ai token')) {
     return <Clock className="size-4" />;
   }
-  if (featureLower.includes('custom agents') || featureLower.includes('agents')) {
+  if (featureLower.includes('custom workers') || featureLower.includes('agents')) {
     return <Bot className="size-4" />;
   }
   if (featureLower.includes('private projects') || featureLower.includes('public projects')) {
     return <FileText className="size-4" />;
-  }
-  if (featureLower.includes('custom abilities') || featureLower.includes('basic abilities')) {
-    return <Settings className="size-4" />;
   }
   if (featureLower.includes('integrations') || featureLower.includes('100+')) {
     return <Grid3X3 className="size-4" />;

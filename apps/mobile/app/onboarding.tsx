@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable, Dimensions, ScrollView } from 'react-native';
+import { View, Pressable, Dimensions, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -14,8 +14,7 @@ import {
   Zap,
   LogOut 
 } from 'lucide-react-native';
-import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
-import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
+import { KortixLogo } from '@/components/ui/KortixLogo';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -24,20 +23,24 @@ import Animated, {
   interpolate,
   Extrapolate,
   SharedValue,
+  FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
 import { useLanguage } from '@/contexts';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useAgent } from '@/contexts/AgentContext';
 import { useBillingContext } from '@/contexts/BillingContext';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAccountSetup } from '@/hooks/useAccountSetup';
+import { useOnboarding } from '@/hooks/useOnboarding';
 import { useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/lib/agents';
+import { modelKeys } from '@/lib/models';
+import { BackgroundLogo } from '@/components/home';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ONBOARDING_KEY_PREFIX = '@onboarding_completed_';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const AnimatedView = Animated.createAnimatedComponent(View);
 
 interface OnboardingSlide {
   id: string;
@@ -52,17 +55,21 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  const { signOut, session } = useAuthContext();
+  const { signOut } = useAuthContext();
   const { loadAgents } = useAgent();
   const { refetchAll: refetchBilling } = useBillingContext();
   const { markSetupComplete } = useAccountSetup();
+  const { markAsCompleted } = useOnboarding();
   const queryClient = useQueryClient();
   const [currentSlide, setCurrentSlide] = React.useState(0);
   const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const scrollX = useSharedValue(0);
+  const scale2 = useSharedValue(1);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
-  const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
+  const animatedStyle2 = useAnimatedStyle(() => ({
+    transform: [{ scale: scale2.value }],
+  }));
 
   const slides: OnboardingSlide[] = [
     {
@@ -79,8 +86,8 @@ export default function OnboardingScreen() {
       icon: Search,
       title: t('onboarding.research.title'),
       description: t('onboarding.research.description'),
-      color: '#10B981',
-      gradient: ['#10B981', '#14B8A6'],
+      color: '#14B8A6',
+      gradient: ['#10B981', '#10B981'],
       example: t('onboarding.research.example'),
     },
     {
@@ -125,27 +132,23 @@ export default function OnboardingScreen() {
 
   const handleComplete = React.useCallback(async () => {
     try {
-      const userId = session?.user?.id || 'anonymous';
-      const onboardingKey = `${ONBOARDING_KEY_PREFIX}${userId}`;
-      await AsyncStorage.setItem(onboardingKey, 'true');
-      
+      await markAsCompleted();
       await markSetupComplete();
-      
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      console.log('🔄 Refetching billing, credits, and agents after onboarding completion...');
       
       refetchBilling();
       queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: modelKeys.available() });
       await loadAgents();
       
-      console.log(`✅ Onboarding completed for user: ${userId}`);
+      console.log('✅ Onboarding completed successfully! Navigating to home...');
       router.replace('/home');
     } catch (error) {
-      console.error('Failed to save onboarding status:', error);
+      console.error('❌ Failed to complete onboarding:', error);
       router.replace('/home');
     }
-  }, [loadAgents, refetchBilling, queryClient, router, session?.user?.id, markSetupComplete]);
+  }, [loadAgents, refetchBilling, queryClient, router, markSetupComplete, markAsCompleted]);
 
   const handleLogout = React.useCallback(async () => {
     try {
@@ -190,28 +193,26 @@ export default function OnboardingScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background">
-        <View className="pt-16 px-6 pb-4 flex-row justify-between items-center">
-          <Logomark width={100} height={20} />
-          <View className="flex-row items-center gap-3">
-            {currentSlide < totalSlides - 1 && (
-              <Pressable onPress={handleSkip}>
-                <Text className="text-[14px] font-roobert text-muted-foreground">
-                  {t('onboarding.skip')}
-                </Text>
-              </Pressable>
-            )}
-            <Pressable 
+        <View className='absolute inset-0' pointerEvents="none">
+          <BackgroundLogo/>
+        </View>
+        <View className="pt-16 px-8 pb-4 flex-row justify-between items-center">
+          <KortixLogo variant="logomark" size={60} />
+          <View className="flex-row items-center gap-4">
+            <TouchableOpacity 
               onPress={handleLogout}
               disabled={isLoggingOut}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Icon 
                 as={LogOut} 
-                size={18} 
+                size={20} 
                 className={isLoggingOut ? "text-muted-foreground/50" : "text-muted-foreground"} 
               />
-            </Pressable>
+            </TouchableOpacity>
           </View>
         </View>
+        
         <ScrollView
           ref={scrollViewRef}
           horizontal
@@ -230,22 +231,50 @@ export default function OnboardingScreen() {
             />
           ))}
         </ScrollView>
-        <View className="flex-row justify-center gap-1.5 mb-6">
-          {Array.from({ length: totalSlides }).map((_, index) => (
-            <PaginationDot
-              key={index}
-              index={index}
-              currentIndex={currentSlide}
-              scrollX={scrollX}
-            />
-          ))}
-        </View>
-        <View className="px-6 pb-8">
+        
+        <View className="px-8 pb-8">
+          <View className="flex-row gap-2 mb-6">
+            {Array.from({ length: totalSlides }).map((_, index) => (
+              <PaginationDot
+                key={index}
+                index={index}
+                currentIndex={currentSlide}
+                scrollX={scrollX}
+              />
+            ))}
+          </View>
+          
           <ContinueButton
             onPress={handleNext}
             isLast={currentSlide === totalSlides - 1}
             t={t}
           />
+           {currentSlide < totalSlides - 1 && (
+             <AnimatedPressable 
+               onPress={handleComplete}
+               onPressIn={() => {
+                 scale2.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+               }}
+               onPressOut={() => {
+                 scale2.value = withSpring(1, { damping: 15, stiffness: 400 });
+               }}
+               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} 
+               style={[animatedStyle2, { 
+                 backgroundColor: 'transparent',
+                 borderWidth: 1,
+                 borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
+                 height: 56,
+                 borderRadius: 28,
+                 justifyContent: 'center',
+                 alignItems: 'center',
+                 marginTop: 10,
+               }]}
+             >
+               <Text className='text-foreground text-[16px] font-roobert-medium'>
+                 {t('onboarding.skip')}
+               </Text>
+             </AnimatedPressable>
+           )}
         </View>
       </View>
     </>
@@ -269,13 +298,6 @@ function OnboardingSlide({ slide, index, scrollX }: OnboardingSlideProps) {
       (index + 1) * SCREEN_WIDTH,
     ];
 
-    const scale = interpolate(
-      scrollX.value,
-      inputRange,
-      [0.92, 1, 0.92],
-      Extrapolate.CLAMP
-    );
-
     const opacity = interpolate(
       scrollX.value,
       inputRange,
@@ -284,64 +306,65 @@ function OnboardingSlide({ slide, index, scrollX }: OnboardingSlideProps) {
     );
 
     return {
-      transform: [{ scale }],
       opacity,
     };
   });
 
   const IconComponent = slide.icon;
+  const isDark = colorScheme === 'dark';
 
   return (
     <View
       style={{ width: SCREEN_WIDTH }}
-      className="flex-1 items-center justify-center px-8"
+      className="flex-1 justify-end px-8 pb-16"
     >
-      <Animated.View style={animatedStyle} className="items-center w-full max-w-sm">
-        <View className="w-full mb-12 items-center">
+      <AnimatedView 
+        entering={FadeIn.duration(400)}
+        style={animatedStyle} 
+        className="w-full"
+      >
+        <View className="mb-2">
           <View
-            className="w-20 h-20 rounded-2xl items-center justify-center mb-4"
+            className="w-24 h-24 rounded-3xl items-center justify-center mb-6"
             style={{
-              backgroundColor: colorScheme === 'dark' 
-                ? slide.color + '15' 
-                : slide.color + '10',
+              backgroundColor: isDark 
+                ? slide.color
+                : slide.color,
             }}
           >
             <IconComponent
               size={40}
-              color={slide.color}
-              strokeWidth={1.5}
+              color='white'
+              strokeWidth={2}
             />
           </View>
         </View>
 
-        <Text className="text-[28px] font-roobert-semibold text-foreground text-center mb-3 leading-tight tracking-tight">
+        <Text className="text-[36px] font-roobert-semibold text-foreground mb-4 leading-tight tracking-tight">
           {slide.title}
         </Text>
 
-        <Text className="text-[15px] font-roobert text-muted-foreground text-center leading-relaxed mb-6 opacity-80">
+        <Text className="text-[16px] font-roobert text-muted-foreground leading-relaxed mb-6">
           {slide.description}
         </Text>
 
         {slide.example && (
           <View 
-            className="px-4 py-2 rounded-full border"
+            className="px-5 py-3 rounded-full self-start"
             style={{
-              borderColor: colorScheme === 'dark' 
-                ? 'rgba(255, 255, 255, 0.1)' 
-                : 'rgba(0, 0, 0, 0.06)',
-              backgroundColor: colorScheme === 'dark'
-                ? 'rgba(255, 255, 255, 0.03)'
-                : 'rgba(0, 0, 0, 0.02)',
+              backgroundColor: isDark
+                ? 'rgba(255, 255, 255, 0.05)'
+                : 'rgba(0, 0, 0, 0.03)',
             }}
           >
             <Text 
-              className="text-[13px] font-roobert text-center text-muted-foreground"
+              className="text-[14px] font-roobert text-muted-foreground"
             >
               {slide.example}
             </Text>
           </View>
         )}
-      </Animated.View>
+      </AnimatedView>
     </View>
   );
 }
@@ -366,14 +389,14 @@ function PaginationDot({ index, scrollX }: PaginationDotProps) {
     const width = interpolate(
       scrollX.value,
       inputRange,
-      [6, 20, 6],
+      [8, 24, 8],
       Extrapolate.CLAMP
     );
 
     const opacity = interpolate(
       scrollX.value,
       inputRange,
-      [0.25, 1, 0.25],
+      [0.3, 1, 0.3],
       Extrapolate.CLAMP
     );
 
@@ -383,17 +406,20 @@ function PaginationDot({ index, scrollX }: PaginationDotProps) {
     };
   });
 
+  const isDark = colorScheme === 'dark';
+
   return (
-    <Animated.View
+    <AnimatedView
       style={[
         animatedStyle,
         {
-          backgroundColor: colorScheme === 'dark' 
-            ? 'rgba(255, 255, 255, 0.9)' 
-            : 'rgba(0, 0, 0, 0.9)',
+          backgroundColor: isDark 
+            ? '#FFFFFF' 
+            : '#000000',
+          height: 8,
+          borderRadius: 4,
         }
       ]}
-      className="h-1.5 rounded-full"
     />
   );
 }
@@ -405,28 +431,47 @@ interface ContinueButtonProps {
 }
 
 function ContinueButton({ onPress, isLast, t }: ContinueButtonProps) {
+  const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
+  const isDark = colorScheme === 'dark';
+
   return (
     <AnimatedPressable
       onPress={onPress}
       onPressIn={() => {
-        scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+        scale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
       }}
       onPressOut={() => {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
-      style={animatedStyle}
-      className="bg-foreground h-12 rounded-xl flex-row items-center justify-center"
+      style={[animatedStyle, { 
+        backgroundColor: isDark ? '#FFFFFF' : '#000000',
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexDirection: 'row',
+      }]}
     >
-      <Text className="text-[15px] font-roobert-medium text-background">
+      <Text style={{ 
+        color: isDark ? '#000000' : '#FFFFFF',
+        fontSize: 16,
+        fontFamily: 'Roobert-Medium',
+        marginRight: 4,
+      }}>
         {isLast ? t('onboarding.getStarted') : t('onboarding.next')}
       </Text>
-      <Icon as={ArrowRight} size={18} className="text-background ml-1" />
+      <Icon 
+        as={ArrowRight} 
+        size={20} 
+        color={isDark ? '#000000' : '#FFFFFF'} 
+        strokeWidth={2.5}
+      />
     </AnimatedPressable>
   );
 }

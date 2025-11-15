@@ -3,16 +3,16 @@ import { Text } from '@/components/ui/text';
 import { TierBadge } from '@/components/menu/TierBadge';
 import * as React from 'react';
 import { Pressable, View, Dimensions } from 'react-native';
-import { Menu } from 'lucide-react-native';
+import { Menu, Coins, Sparkles } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { ThemeSwitcher } from './ThemeSwitcher';
-import { useSubscription } from '@/lib/billing';
+import { useSubscription, useCreditBalance } from '@/lib/billing';
 import { useColorScheme } from 'nativewind';
+import { formatCredits } from '@/lib/utils/credit-formatter';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -20,13 +20,21 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 interface TopNavProps {
   onMenuPress?: () => void;
   onUpgradePress?: () => void;
+  onCreditsPress?: () => void;
 }
 
-export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
+export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavProps) {
   const { colorScheme } = useColorScheme();
   const { data: subscriptionData } = useSubscription();
+  const { data: creditBalance, refetch: refetchCredits } = useCreditBalance();
   const menuScale = useSharedValue(1);
   const upgradeScale = useSharedValue(1);
+  const creditsScale = useSharedValue(1);
+  const rightUpgradeScale = useSharedValue(1);
+
+  React.useEffect(() => {
+    refetchCredits();
+  }, []);
 
   const menuAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: menuScale.value }],
@@ -34,6 +42,14 @@ export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
 
   const upgradeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: upgradeScale.value }],
+  }));
+
+  const creditsAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: creditsScale.value }],
+  }));
+
+  const rightUpgradeAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: rightUpgradeScale.value }],
   }));
 
   const handleMenuPress = () => {
@@ -47,6 +63,13 @@ export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
     console.log('🎯 Upgrade button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onUpgradePress?.();
+  };
+
+  const handleCreditsPress = () => {
+    console.log('🎯 Credits button pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    refetchCredits();
+    onCreditsPress?.();
   };
 
   const currentTier = subscriptionData?.tier?.name || subscriptionData?.tier_key || 'free';
@@ -122,9 +145,47 @@ export function TopNav({ onMenuPress, onUpgradePress }: TopNavProps) {
         </AnimatedPressable>
       )}
 
-      {/* Theme Switcher - positioned at right */}
-      <View className="absolute right-6">
-        <ThemeSwitcher />
+      <View className="absolute right-6 flex-row items-center gap-2" style={{ top: 8.5 }}>
+        {!isFreeTier && (
+          <AnimatedPressable
+            onPressIn={() => {
+              rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+            }}
+            onPressOut={() => {
+              rightUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+            }}
+            onPress={handleUpgradePress}
+            className="flex-row h-9 px-3 items-center gap-1.5 bg-primary border-[1.5px] border-primary rounded-full"
+            style={rightUpgradeAnimatedStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Upgrade"
+          >
+            <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
+            <Text className="text-xs font-roobert-semibold text-primary-foreground">
+              Upgrade
+            </Text>
+          </AnimatedPressable>
+        )}
+
+        <AnimatedPressable
+          onPressIn={() => {
+            creditsScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+          }}
+          onPressOut={() => {
+            creditsScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+          }}
+          onPress={handleCreditsPress}
+          className="flex-row items-center gap-2 bg-primary/10 border-[1.5px] border-primary/30 rounded-full px-3 py-1.5"
+          style={creditsAnimatedStyle}
+          accessibilityRole="button"
+          accessibilityLabel="View usage"
+          accessibilityHint="Opens usage details"
+        >
+          <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
+          <Text className="text-sm font-roobert-semibold text-primary">
+            {formatCredits(creditBalance?.balance || 0)}
+          </Text>
+        </AnimatedPressable>
       </View>
     </View>
   );
