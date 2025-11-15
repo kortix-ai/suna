@@ -196,7 +196,7 @@ export function CommandToolView({
             filePath={displayText || 'Processing command...'}
             showProgress={true}
           />
-        ) : displayText ? (
+        ) : (displayText || output || toolContent) ? (
           <ScrollArea className="h-full w-full">
             <div className="bg-zinc-100 dark:bg-neutral-900 overflow-hidden">
               <div className="bg-zinc-300 dark:bg-neutral-800 flex items-center justify-between dark:border-zinc-700/50">
@@ -213,18 +213,16 @@ export function CommandToolView({
                 </div>
                 <div className="px-4 py-3 overflow-auto">
                   {/* Command line */}
-                  <div className="py-0.5 bg-transparent font-mono text-xs">
-                      {command && (
-                        <>
-                          <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
-                          <span className="text-zinc-700 dark:text-zinc-300">{command}</span>
-                        </>
-                      )}
+                  {command && (
+                    <div className="py-0.5 bg-transparent font-mono text-xs">
+                      <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
+                      <span className="text-zinc-700 dark:text-zinc-300">{command}</span>
                     </div>
+                  )}
 
                     {/* Terminal output (render as real terminal text, not JSON) */}
                     {formattedOutput.length > 0 && (
-                      <pre className="mt-2 text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-words">
+                      <pre className={`${command ? 'mt-2' : ''} text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-words`}>
                         {linesToShow.map((line, idx) => (
                           <span key={idx}>
                             {line}
@@ -243,6 +241,13 @@ export function CommandToolView({
                       + {formattedOutput.length - 10} more lines
                     </div>
                   )}
+
+                  {/* Fallback: Show raw toolContent if output wasn't extracted but content exists */}
+                  {!output && !formattedOutput.length && toolContent && typeof toolContent === 'string' && (
+                    <div className={`${command ? 'mt-2' : ''} text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-words`}>
+                      {toolContent}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -257,7 +262,7 @@ export function CommandToolView({
               </div>
             )}
 
-            {!output && !isStreaming && !isNonBlockingCommand && (
+            {!output && !isStreaming && !isNonBlockingCommand && !toolContent && (
               <div className="bg-black overflow-hidden p-12 flex items-center justify-center">
                 <div className="text-center">
                   <CircleDashed className="h-8 w-8 text-zinc-500 mx-auto mb-2" />

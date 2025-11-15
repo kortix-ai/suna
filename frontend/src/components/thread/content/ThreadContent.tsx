@@ -732,25 +732,97 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                                                                         const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
 
-                                                                        if (!parsedContent.content) return;
+                                                                        // Check for tool_calls in parsed content
+                                                                        const hasToolCalls = parsedContent.tool_calls && Array.isArray(parsedContent.tool_calls) && parsedContent.tool_calls.length > 0;
+                                                                        const hasContent = parsedContent.content && (typeof parsedContent.content === 'string' ? parsedContent.content.trim() : true);
 
-                                                                        const renderedContent = renderMarkdownContent(
-                                                                            parsedContent.content,
+                                                                        if (!hasContent && !hasToolCalls) return;
+
+                                                                        // Render text content first
+                                                                        const textContent = typeof parsedContent.content === 'string' ? parsedContent.content : '';
+                                                                        const renderedContent = textContent ? renderMarkdownContent(
+                                                                            textContent,
                                                                             handleToolClick,
                                                                             message.message_id,
                                                                             handleOpenFileViewer,
                                                                             sandboxId,
                                                                             project,
                                                                             debugMode
-                                                                        );
+                                                                        ) : null;
 
-                                                                        elements.push(
-                                                                            <div key={msgKey} className={assistantMessageCount > 0 ? "mt-4" : ""}>
-                                                                                <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-hidden">
-                                                                                    {renderedContent}
+                                                                        // Render native tool calls as boxes if they exist
+                                                                        const nativeToolCalls: React.ReactNode[] = [];
+                                                                        if (hasToolCalls) {
+                                                                            parsedContent.tool_calls.forEach((toolCall: any, toolIndex: number) => {
+                                                                                const toolName = (toolCall.function?.name || toolCall.name || '').replace(/_/g, '-');
+                                                                                if (!toolName) return;
+
+                                                                                const IconComponent = getToolIcon(toolName);
+                                                                                
+                                                                                // Extract primary parameter for display from arguments
+                                                                                let paramDisplay = '';
+                                                                                try {
+                                                                                    const args = typeof toolCall.function?.arguments === 'string' 
+                                                                                        ? JSON.parse(toolCall.function.arguments)
+                                                                                        : toolCall.function?.arguments || toolCall.arguments || {};
+                                                                                    
+                                                                                    if (args.file_path) {
+                                                                                        paramDisplay = args.file_path;
+                                                                                    } else if (args.command) {
+                                                                                        paramDisplay = args.command;
+                                                                                    } else if (args.query) {
+                                                                                        paramDisplay = args.query;
+                                                                                    } else if (args.url) {
+                                                                                        paramDisplay = args.url;
+                                                                                    } else if (args.text) {
+                                                                                        paramDisplay = args.text;
+                                                                                    }
+                                                                                } catch (e) {
+                                                                                    // If parsing fails, try to extract from string
+                                                                                    const argsStr = toolCall.function?.arguments || '';
+                                                                                    if (typeof argsStr === 'string') {
+                                                                                        const queryMatch = argsStr.match(/"query"\s*:\s*"([^"]+)"/);
+                                                                                        if (queryMatch) paramDisplay = queryMatch[1];
+                                                                                    }
+                                                                                }
+
+                                                                                nativeToolCalls.push(
+                                                                                    <div
+                                                                                        key={`native-tool-${toolCall.id || toolIndex}`}
+                                                                                        className="my-1"
+                                                                                    >
+                                                                                        <button
+                                                                                            onClick={() => handleToolClick(message.message_id, toolName)}
+                                                                                            className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs bg-card border rounded-lg transition-colors cursor-pointer hover:bg-card/80"
+                                                                                        >
+                                                                                            <div className='border bg-gradient-to-br from-card to-background flex items-center justify-center p-0.5 rounded-sm border-border'>
+                                                                                                <IconComponent className="h-3.5 w-3.5 text-foreground flex-shrink-0" />
+                                                                                            </div>
+                                                                                            <span className="text-xs text-foreground">{getUserFriendlyToolName(toolName)}</span>
+                                                                                            {paramDisplay && <span className="ml-1 text-foreground/60 truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                                                                                        </button>
+                                                                                    </div>
+                                                                                );
+                                                                            });
+                                                                        }
+
+                                                                        // Only render if we have content or tool calls
+                                                                        if (renderedContent || nativeToolCalls.length > 0) {
+                                                                            elements.push(
+                                                                                <div key={msgKey} className={assistantMessageCount > 0 ? "mt-4" : ""}>
+                                                                                    {renderedContent && (
+                                                                                        <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-hidden">
+                                                                                            {renderedContent}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {nativeToolCalls.length > 0 && (
+                                                                                        <div className={renderedContent ? "mt-2" : ""}>
+                                                                                            {nativeToolCalls}
+                                                                                        </div>
+                                                                                    )}
                                                                                 </div>
-                                                                            </div>
-                                                                        );
+                                                                            );
+                                                                        }
 
                                                                         assistantMessageCount++; // Increment after adding the element
                                                                     }

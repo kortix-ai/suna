@@ -1,0 +1,59 @@
+[CreditsDisplay] Balance data: Object
+tier-badge.tsx:80 [TierBadge] Object
+credits-display.tsx:30 [CreditsDisplay] Balance data: Object
+credits-display.tsx:33 [CreditsDisplay] Subscription data: Object
+credits-display.tsx:34 [CreditsDisplay] Computed plan name: Ultra
+credits-display.tsx:35 [CreditsDisplay] Tier key: none
+credits-display.tsx:36 [CreditsDisplay] Tier name: none
+installHook.js:1 [TierBadge] Object
+index.js:11 Uncaught (in promise) Error: Unlisted TLDs in URLs are not supported.
+    at ba (index.js:11:130046)
+    at xa (index.js:11:133660)
+    at index.js:11:134391Understand this error
+installHook.js:1 Error getting projects from threads: Error
+overrideMethod @ installHook.js:1Understand this error
+installHook.js:1 Error getting paginated threads: Error
+overrideMethod @ installHook.js:1Understand this error
+installHook.js:1 API Error: Error Object
+overrideMethod @ installHook.js:1Understand this error
+installHook.js:1 Error getting threads: Error
+overrideMethod @ installHook.js:1Understand this error
+installHook.js:1 API Error: Error Object
+overrideMethod @ installHook.js:1Understand this error
+turbopack-hot-reloader-common.ts:41 [Fast Refresh] rebuilding
+js:1  Failed to load resource: net::ERR_CONNECTION_TIMED_OUTUnderstand this error
+www.googletagmanager.com/gtm.js?id=GTM-PCHSN4M2:1  Failed to load resource: net::ERR_CONNECTION_TIMED_OUTUnderstand this error
+report-hmr-latency.ts:26 [Fast Refresh] done in 6728ms
+turbopack-hot-reloader-common.ts:41 [Fast Refresh] rebuilding
+report-hmr-latency.ts:26 [Fast Refresh] done in 449ms
+turbopack-hot-reloader-common.ts:41 [Fast Refresh] rebuilding
+ThreadComponent.tsx:317 [ThreadComponent] Agent initialization - configuredAgentId: undefined, threadAgentId: undefined, selectedAgentId: e50ae659-f0a9-4652-897f-c1580b29d50e
+installHook.js:1 [ThreadComponent] Agent initialization - configuredAgentId: undefined, threadAgentId: undefined, selectedAgentId: e50ae659-f0a9-4652-897f-c1580b29d50e
+script.debug.js:1 [Vercel Web Analytics] [pageview] http://localhost:3000/projects/756baa30-1ebb-469b-8cc9-384c96443839/thread/3c32416e-5284-4ec9-9e4a-62a44f7b8e77 Object
+3c32416e-5284-4ec9-9e4a-62a44f7b8e77:1 Error while trying to use the following icon from the Manifest: http://localhost:3000/favicon.png (Resource size is not correct - typo in the Manifest?)Understand this warning
+report-hmr-latency.ts:26 [Fast Refresh] done in 610ms
+ThreadComponent.tsx:752 [ThreadComponent] Starting auto stream for runId: 6acbba2a-8a68-4ea3-9ce4-6668f466376b
+useAgentStream.ts:689 [useAgentStream] Starting stream for run ID: 6acbba2a-8a68-4ea3-9ce4-6668f466376b
+useAgentStream.ts:697 [useAgentStream] Checking status for run ID: 6acbba2a-8a68-4ea3-9ce4-6668f466376b
+useAgentStream.ts:739 [useAgentStream] Agent run 6acbba2a-8a68-4ea3-9ce4-6668f466376b is running, creating stream
+useAgentStream.ts:764 [useAgentStream] Stream created successfully for run ID: 6acbba2a-8a68-4ea3-9ce4-6668f466376b
+api.ts:1268 [STREAM] EventSource opened for 6acbba2a-8a68-4ea3-9ce4-6668f466376b
+installHook.js:1 [useAgentStream] Unhandled message type: llm_response_start
+overrideMethod @ installHook.js:1Understand this warning
+useAgentStream.ts:444 [NATIVE TOOL CALL] Tool started: Object
+useAgentStream.ts:444 [NATIVE TOOL CALL] Tool started: Object
+useAgentStream.ts:444 [NATIVE TOOL CALL] Tool started: Object
+useAgentStream.ts:393 [NATIVE TOOL CALL] Assistant message with tool_calls: Object
+useAgentStream.ts:431 [NATIVE TOOL CALL] Tool result received: Object
+useAgentStream.ts:431 [NATIVE TOOL CALL] Tool result received: Object
+useAgentStream.ts:431 [NATIVE TOOL CALL] Tool result received: Objectcontent_preview: "{\"query\": \"{\\\"query\\\":\", \"follow_up_questions\": null, \"answer\": \"A query is a request to retrieve or"has_content: truename: "web_search"tool_call_id: "tooluse_GbUtohPVRcmbi8-2senWDQ"[[Prototype]]: Objectconstructor: ƒ Object()hasOwnProperty: ƒ hasOwnProperty()isPrototypeOf: ƒ isPrototypeOf()propertyIsEnumerable: ƒ propertyIsEnumerable()toLocaleString: ƒ toLocaleString()toString: ƒ toString()valueOf: ƒ valueOf()__defineGetter__: ƒ __defineGetter__()__defineSetter__: ƒ __defineSetter__()__lookupGetter__: ƒ __lookupGetter__()__lookupSetter__: ƒ __lookupSetter__()__proto__: (...)get __proto__: ƒ __proto__()set __proto__: ƒ __proto__()
+t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://webdocs.cs.ualberta.ca&size=128:1  Failed to load resource: the server responded with a status of 404 ()Understand this error
+t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://learn.gqueues.com&size=128:1  Failed to load resource: the server responded with a status of 404 ()Understand this error
+t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://libguides.heinonline.org&size=128:1  Failed to load resource: the server responded with a status of 404 ()Understand this error
+t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=http://ww2.jacksonms.gov&size=128:1  Failed to load resource: the server responded with a status of 404 ()Understand this error
+ThreadComponent.tsx:317 [ThreadComponent] Agent initialization - configuredAgentId: undefined, threadAgentId: e50ae659-f0a9-4652-897f-c1580b29d50e, selectedAgentId: e50ae659-f0a9-4652-897f-c1580b29d50e
+turbopack-hot-reloader-common.ts:41 [Fast Refresh] rebuilding
+report-hmr-latency.ts:26 [Fast Refresh] done in 1643ms
+turbopack-hot-reloader-common.ts:41 [Fast Refresh] rebuilding
+report-hmr-latency.ts:26 [Fast Refresh] done in 160ms
+script.debug.js:1 [Vercel Speed Insights] [vitals] {speed: '4g', metrics: Array(2), scriptVersion: '0.1.3', sdkName: '@vercel/speed-insights/next', sdkVersion: '1.2.0'}

@@ -332,170 +332,59 @@ class MCPManager:
 
 class PromptManager:
     @staticmethod
-    async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
-                                  thread_id: str, 
-                                  mcp_wrapper_instance: Optional[MCPToolWrapper],
-                                  client=None,
-                                  tool_registry=None,
-                                  xml_tool_calling: bool = True) -> dict:
+    async def get_knowledge_base_content(agent_config: Optional[dict], client) -> Optional[str]:
+        """Async helper to fetch knowledge base content separately."""
+        if not agent_config or not client or 'agent_id' not in agent_config:
+            return None
         
-        default_system_content = get_system_prompt()
-        
-        # if "anthropic" not in model_name.lower():
-        #     sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')
-        #     with open(sample_response_path, 'r') as file:
-        #         sample_response = file.read()
-        #     default_system_content = default_system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
-        
-        # Start with agent's normal system prompt or default
-        if agent_config and agent_config.get('system_prompt'):
-            system_content = agent_config['system_prompt'].strip()
-        else:
-            system_content = default_system_content
-        
-        # Check if agent has builder tools enabled - append the full builder prompt
-        if agent_config:
-            agentpress_tools = agent_config.get('agentpress_tools', {})
-            has_builder_tools = any(
-                agentpress_tools.get(tool, False) 
-                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
+        try:
+            logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
+            
+            # Use only agent-based knowledge base context
+            kb_result = await client.rpc('get_agent_knowledge_base_context', {
+                'p_agent_id': agent_config['agent_id']
+            }).execute()
+            
+            if kb_result.data and kb_result.data.strip():
+                logger.debug(f"Found agent knowledge base context (length: {len(kb_result.data)} chars)")
+                return kb_result.data
+            else:
+                logger.debug("No knowledge base context found for this agent")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
+            return None
+    
+    @staticmethod
+    def build_system_message(native_tool_calling: bool, context_data: dict, base_system_content: str = ""):
+        system_content = base_system_content
+
+        if native_tool_calling:
+            tool_names = [
+                (spec or {}).get("function", {}).get("name")
+                for spec in (context_data.get("openapi_schemas") or [])
+                if spec
+            ]
+            tool_text = ", ".join(tool_names) if tool_names else "none"
+            system_content += (
+                "\n\n=== TOOL USE ===\n"
+                "You are an assistant with access to callable tools.\n"
+                "Use tools when appropriate, but do not print JSON or XML.\n"
+                f"Available tools: {tool_text}\n"
             )
-            
-            if has_builder_tools:
-                # Append the full agent builder prompt to the existing system prompt
-                builder_prompt = get_agent_builder_prompt()
-                system_content += f"\n\n{builder_prompt}"
-        
-        # Add agent knowledge base context if available
-        if agent_config and client and 'agent_id' in agent_config:
-            try:
-                logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
-                
-                # Use only agent-based knowledge base context
-                kb_result = await client.rpc('get_agent_knowledge_base_context', {
-                    'p_agent_id': agent_config['agent_id']
-                }).execute()
-                
-                if kb_result.data and kb_result.data.strip():
-                    logger.debug(f"Found agent knowledge base context, adding to system prompt (length: {len(kb_result.data)} chars)")
-                    # logger.debug(f"Knowledge base data object: {kb_result.data[:500]}..." if len(kb_result.data) > 500 else f"Knowledge base data object: {kb_result.data}")
-                    
-                    # Construct a well-formatted knowledge base section
-                    kb_section = f"""
 
-                    === AGENT KNOWLEDGE BASE ===
-                    NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+        if context_data.get("kb_context"):
+            system_content += f"\n\n=== KNOWLEDGE BASE CONTEXT ===\n{context_data['kb_context']}\n"
 
-                    {kb_result.data}
-
-                    === END AGENT KNOWLEDGE BASE ===
-
-                    IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
-                    
-                    system_content += kb_section
-                else:
-                    logger.debug("No knowledge base context found for this agent")
-                    
-            except Exception as e:
-                logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
-                # Continue without knowledge base context rather than failing
-        
-        if agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized:
-            mcp_info = "\n\n--- MCP Tools Available ---\n"
-            mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
-            mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
-            mcp_info += '<function_calls>\n'
-            mcp_info += '<invoke name="{tool_name}">\n'
-            mcp_info += '<parameter name="param1">value1</parameter>\n'
-            mcp_info += '<parameter name="param2">value2</parameter>\n'
-            mcp_info += '</invoke>\n'
-            mcp_info += '</function_calls>\n\n'
-            
-            mcp_info += "Available MCP tools:\n"
-            try:
-                registered_schemas = mcp_wrapper_instance.get_schemas()
-                for method_name, schema_list in registered_schemas.items():
-                    for schema in schema_list:
-                        if schema.schema_type == SchemaType.OPENAPI:
-                            func_info = schema.schema.get('function', {})
-                            description = func_info.get('description', 'No description available')
-                            mcp_info += f"- **{method_name}**: {description}\n"
-                            
-                            params = func_info.get('parameters', {})
-                            props = params.get('properties', {})
-                            if props:
-                                mcp_info += f"  Parameters: {', '.join(props.keys())}\n"
-                                
-            except Exception as e:
-                logger.error(f"Error listing MCP tools: {e}")
-                mcp_info += "- Error loading MCP tool list\n"
-            
-            mcp_info += "\n🚨 CRITICAL MCP TOOL RESULT INSTRUCTIONS 🚨\n"
-            mcp_info += "When you use ANY MCP (Model Context Protocol) tools:\n"
-            mcp_info += "1. ALWAYS read and use the EXACT results returned by the MCP tool\n"
-            mcp_info += "2. For search tools: ONLY cite URLs, sources, and information from the actual search results\n"
-            mcp_info += "3. For any tool: Base your response entirely on the tool's output - do NOT add external information\n"
-            mcp_info += "4. DO NOT fabricate, invent, hallucinate, or make up any sources, URLs, or data\n"
-            mcp_info += "5. If you need more information, call the MCP tool again with different parameters\n"
-            mcp_info += "6. When writing reports/summaries: Reference ONLY the data from MCP tool results\n"
-            mcp_info += "7. If the MCP tool doesn't return enough information, explicitly state this limitation\n"
-            mcp_info += "8. Always double-check that every fact, URL, and reference comes from the MCP tool output\n"
-            mcp_info += "\nIMPORTANT: MCP tool results are your PRIMARY and ONLY source of truth for external data!\n"
-            mcp_info += "NEVER supplement MCP results with your training data or make assumptions beyond what the tools provide.\n"
-            
-            system_content += mcp_info
-        
-        # Add XML tool calling instructions to system prompt if requested
-        if xml_tool_calling and tool_registry:
-            openapi_schemas = tool_registry.get_openapi_schemas()
-            
-            if openapi_schemas:
-                # Convert schemas to JSON string
-                schemas_json = json.dumps(openapi_schemas, indent=2)
-                
-                examples_content = f"""
-
-In this environment you have access to a set of tools you can use to answer the user's question.
-
-You can invoke functions by writing a <function_calls> block like the following as part of your reply to the user:
-
-<function_calls>
-<invoke name="function_name">
-<parameter name="param_name">param_value</parameter>
-...
-</invoke>
-</function_calls>
-
-String and scalar parameters should be specified as-is, while lists and objects should use JSON format.
-
-Here are the functions available in JSON Schema format:
-
-```json
-{schemas_json}
-```
-
-When using the tools:
-- Use the exact function names from the JSON schema above
-- Include all required parameters as specified in the schema
-- Format complex data (objects, arrays) as JSON strings within the parameter tags
-- Boolean values should be "true" or "false" (lowercase)
-"""
-                
-                system_content += examples_content
-                logger.debug("Appended XML tool examples to system prompt")
-
+        import datetime
         now = datetime.datetime.now(datetime.timezone.utc)
-        datetime_info = f"\n\n=== CURRENT DATE/TIME INFORMATION ===\n"
-        datetime_info += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
-        datetime_info += f"Current year: {now.strftime('%Y')}\n"
-        datetime_info += f"Current month: {now.strftime('%B')}\n"
-        datetime_info += f"Current day: {now.strftime('%A')}\n"
-        datetime_info += "Use this information for any time-sensitive tasks, research, or when current date/time context is needed.\n"
-        
-        system_content += datetime_info
+        system_content += (
+            "\n\n=== CURRENT DATE/TIME ===\n"
+            f"{now:%A, %B %d, %Y}\nUse this info for time-sensitive tasks.\n"
+        )
 
-        system_message = {"role": "system", "content": system_content}
-        return system_message
+        return {"role": "system", "content": system_content}
 
 
 
@@ -645,12 +534,45 @@ class AgentRunner:
         await self.setup_tools()
         mcp_wrapper_instance = await self.setup_mcp_tools()
         
-        system_message = await PromptManager.build_system_prompt(
-            self.config.model_name, self.config.agent_config, 
-            self.config.thread_id, 
-            mcp_wrapper_instance, self.client,
-            tool_registry=self.thread_manager.tool_registry,
-            xml_tool_calling=True
+        # Get knowledge base content (async)
+        kb_content = await PromptManager.get_knowledge_base_content(
+            self.config.agent_config, 
+            self.client
+        )
+        
+        # Get base system content
+        default_system_content = get_system_prompt()
+        if self.config.agent_config and self.config.agent_config.get('system_prompt'):
+            base_system_content = self.config.agent_config['system_prompt'].strip()
+        else:
+            base_system_content = default_system_content
+        
+        # Check if agent has builder tools enabled - append the full builder prompt
+        if self.config.agent_config:
+            agentpress_tools = self.config.agent_config.get('agentpress_tools', {})
+            has_builder_tools = any(
+                agentpress_tools.get(tool, False) 
+                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
+            )
+            
+            if has_builder_tools:
+                builder_prompt = get_agent_builder_prompt()
+                base_system_content += f"\n\n{builder_prompt}"
+        
+        # Get openapi schemas for native tool calling
+        openapi_schemas = self.thread_manager.tool_registry.get_openapi_schemas() if self.thread_manager.tool_registry else []
+        
+        # Build context data
+        context_data = {
+            "openapi_schemas": openapi_schemas,
+            "kb_context": kb_content
+        }
+        
+        # Build system message (sync)
+        system_message = PromptManager.build_system_message(
+            native_tool_calling=True,  # Using native tool calling
+            context_data=context_data,
+            base_system_content=base_system_content
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
         logger.debug(f"model_name received: {self.config.model_name}")
@@ -713,8 +635,8 @@ class AgentRunner:
                     temporary_message=temporary_message,
                     latest_user_message_content=latest_user_message_content,
                     processor_config=ProcessorConfig(
-                        xml_tool_calling=True,
-                        native_tool_calling=False,
+                        xml_tool_calling=False,
+                        native_tool_calling=True,
                         execute_tools=True,
                         execute_on_stream=True,
                         tool_execution_strategy="parallel",

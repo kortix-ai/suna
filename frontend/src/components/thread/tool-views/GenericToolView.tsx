@@ -32,6 +32,51 @@ export function GenericToolView({
   const formatContent = (content: any) => {
     if (!content) return null;
 
+    // Handle native tool format: {"role": "tool", "content": "..."}
+    if (typeof content === 'string') {
+      try {
+        const parsed = JSON.parse(content);
+        if (parsed && typeof parsed === 'object' && parsed.role === 'tool' && parsed.content !== undefined) {
+          // Extract the actual content from native tool format
+          const toolContent = parsed.content;
+          if (typeof toolContent === 'string') {
+            // Try to parse as JSON to get structured data
+            try {
+              const innerParsed = JSON.parse(toolContent);
+              if (innerParsed && typeof innerParsed === 'object') {
+                content = innerParsed;
+              } else {
+                content = toolContent;
+              }
+            } catch {
+              content = toolContent;
+            }
+          } else if (typeof toolContent === 'object' && toolContent !== null) {
+            content = toolContent;
+          }
+        }
+      } catch {
+        // Not JSON, continue with original content
+      }
+    } else if (typeof content === 'object' && content !== null && content.role === 'tool' && content.content !== undefined) {
+      // Direct object format with role: "tool"
+      const toolContent = content.content;
+      if (typeof toolContent === 'string') {
+        try {
+          const parsed = JSON.parse(toolContent);
+          if (parsed && typeof parsed === 'object') {
+            content = parsed;
+          } else {
+            content = toolContent;
+          }
+        } catch {
+          content = toolContent;
+        }
+      } else if (typeof toolContent === 'object' && toolContent !== null) {
+        content = toolContent;
+      }
+    }
+
     // Use the new parser for backwards compatibility
     const { toolResult } = extractToolData(content);
 
@@ -209,7 +254,7 @@ export function GenericToolView({
             filePath={name}
             showProgress={true}
           />
-        ) : formattedAssistantContent || formattedToolContent ? (
+        ) : (formattedAssistantContent || formattedToolContent || toolContent || assistantContent) ? (
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-4">
               {formattedAssistantContent && (
@@ -243,7 +288,7 @@ export function GenericToolView({
                 </div>
               )}
 
-              {formattedToolContent && (
+              {formattedToolContent ? (
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
                     <div className="flex items-center">
@@ -272,7 +317,37 @@ export function GenericToolView({
                     </div>
                   </div>
                 </div>
-              )}
+              ) : toolContent ? (
+                // Fallback: Show raw toolContent if formatting didn't produce output
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                    <div className="flex items-center">
+                      Output
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCopyOutput}
+                      disabled={isCopyingOutput}
+                      className="h-6 w-6 p-0"
+                      title="Copy file content"
+                    >
+                      {isCopyingOutput ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="border-muted bg-muted/20 rounded-lg overflow-hidden border">
+                    <div className="p-4">
+                      <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
+                        {typeof toolContent === 'string' ? toolContent : JSON.stringify(toolContent, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </ScrollArea>
         ) : (

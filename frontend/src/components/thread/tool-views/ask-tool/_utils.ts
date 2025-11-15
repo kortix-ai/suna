@@ -69,6 +69,31 @@ const extractFromNewFormat = (content: any): {
     return extractedData;
   }
 
+  // Handle native tool format: {"role": "tool", "content": "..."}
+  if ('role' in parsedContent && parsedContent.role === 'tool' && 'content' in parsedContent) {
+    const toolContent = parsedContent.content;
+    if (typeof toolContent === 'string') {
+      // Try to parse the content as JSON to extract structured data
+      try {
+        const innerParsed = JSON.parse(toolContent);
+        if (innerParsed && typeof innerParsed === 'object') {
+          return extractFromNewFormat(innerParsed);
+        }
+      } catch {
+        // Not JSON, treat as plain text
+        return {
+          text: toolContent,
+          attachments: null,
+          status: null,
+          success: parsedContent.success !== false,
+          timestamp: undefined
+        };
+      }
+    } else if (typeof toolContent === 'object' && toolContent !== null) {
+      return extractFromNewFormat(toolContent);
+    }
+  }
+
   if ('role' in parsedContent && 'content' in parsedContent) {
     return extractFromNewFormat(parsedContent.content);
   }
@@ -175,6 +200,60 @@ export function extractAskData(
     text = assistantLegacy.text || toolLegacy.text;
     attachments = assistantLegacy.attachments || toolLegacy.attachments;
     status = assistantLegacy.status || toolLegacy.status;
+  }
+
+  // Enhanced extraction: Try to extract from raw toolContent if still no data
+  if (!text && !attachments && !status && toolContent) {
+    try {
+      // Handle native tool format directly
+      if (typeof toolContent === 'string') {
+        const parsed = JSON.parse(toolContent);
+        if (parsed && typeof parsed === 'object' && parsed.role === 'tool' && parsed.content) {
+          const content = parsed.content;
+          if (typeof content === 'string') {
+            // Try to parse nested content
+            try {
+              const innerParsed = JSON.parse(content);
+              if (innerParsed && typeof innerParsed === 'object') {
+                const nestedExtract = extractFromNewFormat(innerParsed);
+                if (nestedExtract.text || nestedExtract.attachments) {
+                  text = nestedExtract.text || text;
+                  attachments = nestedExtract.attachments || attachments;
+                  status = nestedExtract.status || status;
+                }
+              }
+            } catch {
+              // Use as plain text
+              text = content;
+            }
+          } else if (typeof content === 'object') {
+            const nestedExtract = extractFromNewFormat(content);
+            if (nestedExtract.text || nestedExtract.attachments) {
+              text = nestedExtract.text || text;
+              attachments = nestedExtract.attachments || attachments;
+              status = nestedExtract.status || status;
+            }
+          }
+        }
+      } else if (typeof toolContent === 'object' && toolContent !== null) {
+        const obj = toolContent as any;
+        if (obj.role === 'tool' && obj.content) {
+          const content = obj.content;
+          if (typeof content === 'string') {
+            text = content;
+          } else if (typeof content === 'object') {
+            const nestedExtract = extractFromNewFormat(content);
+            if (nestedExtract.text || nestedExtract.attachments) {
+              text = nestedExtract.text || text;
+              attachments = nestedExtract.attachments || attachments;
+              status = nestedExtract.status || status;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // If parsing fails, continue with what we have
+    }
   }
   
   return {

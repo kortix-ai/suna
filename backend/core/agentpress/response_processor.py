@@ -64,8 +64,8 @@ class ProcessorConfig:
         max_xml_tool_calls: Maximum number of XML tool calls to process (0 = no limit)
     """
 
-    xml_tool_calling: bool = True  
-    native_tool_calling: bool = False
+    xml_tool_calling: bool = False  
+    native_tool_calling: bool = True
 
     execute_tools: bool = True
     execute_on_stream: bool = False
@@ -75,8 +75,13 @@ class ProcessorConfig:
     
     def __post_init__(self):
         """Validate configuration after initialization."""
-        if self.xml_tool_calling is False and self.native_tool_calling is False and self.execute_tools:
-            raise ValueError("At least one tool calling format (XML or native) must be enabled if execute_tools is True")
+        # XML tool calling is disabled - force it to False
+        if self.xml_tool_calling:
+            logger.warning("XML tool calling is disabled. Forcing xml_tool_calling=False")
+            self.xml_tool_calling = False
+        
+        if not self.native_tool_calling and self.execute_tools:
+            raise ValueError("native_tool_calling must be enabled if execute_tools is True")
             
         if self.xml_adding_strategy not in ["user_message", "assistant_message", "inline_edit"]:
             raise ValueError("xml_adding_strategy must be 'user_message', 'assistant_message', or 'inline_edit'")
@@ -263,6 +268,7 @@ class ResponseProcessor:
         continuous_state = continuous_state or {}
         accumulated_content = continuous_state.get('accumulated_content', "")
         tool_calls_buffer = {}
+        executed_tool_call_indices = set()  # Track which tool call indices have been executed
         current_xml_content = accumulated_content   # equal to accumulated_content if auto-continuing, else blank
         xml_chunks_buffer = []
         pending_tool_executions = []
@@ -283,7 +289,7 @@ class ResponseProcessor:
         last_chunk_time = None
         llm_response_end_saved = False
 
-        logger.debug(f"Streaming Config: XML={config.xml_tool_calling}, Native={config.native_tool_calling}, "
+        logger.debug(f"Streaming Config: Native={config.native_tool_calling}, "
                    f"Execute on stream={config.execute_on_stream}, Strategy={config.tool_execution_strategy}")
 
         # Reuse thread_run_id for auto-continue or create new one
@@ -383,60 +389,24 @@ class ResponseProcessor:
                         # print(chunk_content, end='', flush=True)
                         # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += chunk_content
-                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
-                        current_xml_content += chunk_content
 
-                        if not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
-                            # Yield ONLY content chunk (don't save)
-                            now_chunk = datetime.now(timezone.utc).isoformat()
-                            yield {
-                                "sequence": __sequence,
-                                "message_id": None, "thread_id": thread_id, "type": "assistant",
-                                "is_llm_message": True,
-                                "content": to_json_string({"role": "assistant", "content": chunk_content}),
-                                "metadata": to_json_string({"stream_status": "chunk", "thread_run_id": thread_run_id}),
-                                "created_at": now_chunk, "updated_at": now_chunk
-                            }
-                            __sequence += 1
-                        else:
-                            # logger.debug("XML tool call limit reached - not yielding more content chunks")
-                            self.trace.event(name="xml_tool_call_limit_reached", level="DEFAULT", status_message=(f"XML tool call limit reached - not yielding more content chunks"))
+                        # Yield ONLY content chunk (don't save)
+                        now_chunk = datetime.now(timezone.utc).isoformat()
+                        yield {
+                            "sequence": __sequence,
+                            "message_id": None, "thread_id": thread_id, "type": "assistant",
+                            "is_llm_message": True,
+                            "content": to_json_string({"role": "assistant", "content": chunk_content}),
+                            "metadata": to_json_string({"stream_status": "chunk", "thread_run_id": thread_run_id}),
+                            "created_at": now_chunk, "updated_at": now_chunk
+                        }
+                        __sequence += 1
 
-                        # --- Process XML Tool Calls (if enabled and limit not reached) ---
-                        if config.xml_tool_calling and not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
-                            xml_chunks = self._extract_xml_chunks(current_xml_content)
-                            for xml_chunk in xml_chunks:
-                                current_xml_content = current_xml_content.replace(xml_chunk, "", 1)
-                                xml_chunks_buffer.append(xml_chunk)
-                                result = self._parse_xml_tool_call(xml_chunk)
-                                if result:
-                                    tool_call, parsing_details = result
-                                    xml_tool_call_count += 1
-                                    current_assistant_id = last_assistant_message_object['message_id'] if last_assistant_message_object else None
-                                    context = self._create_tool_context(
-                                        tool_call, tool_index, current_assistant_id, parsing_details
-                                    )
-
-                                    if config.execute_tools and config.execute_on_stream:
-                                        # Save and Yield tool_started status
-                                        started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                        if started_msg_obj: yield format_for_yield(started_msg_obj)
-                                        yielded_tool_indices.add(tool_index) # Mark status as yielded
-
-                                        execution_task = asyncio.create_task(self._execute_tool(tool_call))
-                                        pending_tool_executions.append({
-                                            "task": execution_task, "tool_call": tool_call,
-                                            "tool_index": tool_index, "context": context
-                                        })
-                                        tool_index += 1
-
-                                    if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
-                                        logger.info(f"Reached XML tool call limit ({config.max_xml_tool_calls})")
-                                        finish_reason = "xml_tool_limit_reached"
-                                        break # Stop processing more XML chunks in this delta
+                        # XML tool calling is disabled - only native tool calling is supported
 
                     # --- Process Native Tool Call Chunks ---
                     if config.native_tool_calling and delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
+                        logger.debug(f"🔵 NATIVE TOOL CALL: Received {len(delta.tool_calls)} tool call chunk(s) in delta")
                         for tool_call_chunk in delta.tool_calls:
                             # Yield Native Tool Call Chunk (transient status, not saved)
                             # ... (safe extraction logic for tool_call_data_chunk) ...
@@ -463,26 +433,95 @@ class ResponseProcessor:
                             # --- Buffer and Execute Complete Native Tool Calls ---
                             if not hasattr(tool_call_chunk, 'function'): continue
                             idx = tool_call_chunk.index if hasattr(tool_call_chunk, 'index') else 0
-                            # ... (buffer update logic remains same) ...
-                            # ... (check complete logic remains same) ...
-                            has_complete_tool_call = False # Placeholder
-                            if (tool_calls_buffer.get(idx) and
-                                tool_calls_buffer[idx]['id'] and
+                            
+                            # Initialize buffer entry for this tool call index if it doesn't exist
+                            if idx not in tool_calls_buffer:
+                                tool_calls_buffer[idx] = {
+                                    'id': '',
+                                    'type': 'function',
+                                    'function': {
+                                        'name': '',
+                                        'arguments': ''
+                                    }
+                                }
+                            
+                            # Update buffer with incremental chunks
+                            # Append 'id' if present
+                            if hasattr(tool_call_chunk, 'id') and tool_call_chunk.id:
+                                tool_calls_buffer[idx]['id'] += tool_call_chunk.id
+                            
+                            # Update function name if present
+                            if hasattr(tool_call_chunk, 'function') and hasattr(tool_call_chunk.function, 'name') and tool_call_chunk.function.name:
+                                tool_calls_buffer[idx]['function']['name'] += tool_call_chunk.function.name
+                            
+                            # Append 'arguments' incrementally (they come as partial JSON strings)
+                            if hasattr(tool_call_chunk, 'function') and hasattr(tool_call_chunk.function, 'arguments') and tool_call_chunk.function.arguments:
+                                tool_calls_buffer[idx]['function']['arguments'] += tool_call_chunk.function.arguments
+                            
+                            # Check if tool call is complete (has id, name, and valid JSON arguments)
+                            has_complete_tool_call = False
+                            parsed_args = None  # Initialize outside try block
+                            if (tool_calls_buffer[idx]['id'] and
                                 tool_calls_buffer[idx]['function']['name'] and
                                 tool_calls_buffer[idx]['function']['arguments']):
                                 try:
-                                    safe_json_parse(tool_calls_buffer[idx]['function']['arguments'])
-                                    has_complete_tool_call = True
-                                except json.JSONDecodeError: pass
+                                    # Try to parse arguments as JSON to verify completeness
+                                    # Use json.loads directly - it will raise on incomplete/invalid JSON
+                                    raw_args_str = tool_calls_buffer[idx]['function']['arguments']
+                                    parsed_args = json.loads(raw_args_str)
+                                    
+                                    # CRITICAL: Only mark as complete if we have a valid dict
+                                    # Tool arguments must be a dict, not a string or other type
+                                    if isinstance(parsed_args, dict):
+                                        has_complete_tool_call = True
+                                        logger.info(f"✅ NATIVE TOOL CALL COMPLETE: id={tool_calls_buffer[idx]['id']}, name={tool_calls_buffer[idx]['function']['name']}, args={parsed_args}")
+                                        
+                                        # Check for double-encoded JSON values within the dict
+                                        for key, value in parsed_args.items():
+                                            if isinstance(value, str) and value.startswith('{"'):
+                                                logger.error(f"❌ MALFORMED ARGUMENTS DETECTED: Key '{key}' has double-encoded JSON value: {value[:200]}")
+                                                # Try to fix double-encoding
+                                                try:
+                                                    fixed_value = json.loads(value)
+                                                    parsed_args[key] = fixed_value
+                                                    logger.info(f"✅ FIXED double-encoded argument: {key} = {fixed_value}")
+                                                except json.JSONDecodeError:
+                                                    logger.error(f"❌ Failed to fix double-encoded argument: {key}")
+                                    else:
+                                        # Parsed but not a dict - keep accumulating (might be incomplete)
+                                        logger.debug(f"⏳ Arguments parsed but not a dict (got {type(parsed_args)}), still accumulating...")
+                                        has_complete_tool_call = False
+                                        parsed_args = None  # Don't use incomplete parse
+                                except json.JSONDecodeError as e:
+                                    # JSON incomplete or invalid - keep accumulating
+                                    logger.debug(f"⏳ NATIVE TOOL CALL INCOMPLETE (idx={idx}): JSON parse failed, still accumulating: {str(e)[:100]}")
+                                    logger.debug(f"   Raw arguments so far: {tool_calls_buffer[idx]['function']['arguments'][:200]}")
+                                    has_complete_tool_call = False
+                                    parsed_args = None  # Don't use incomplete parse
 
 
-                            if has_complete_tool_call and config.execute_tools and config.execute_on_stream:
+                            if has_complete_tool_call and config.execute_tools and config.execute_on_stream and idx not in executed_tool_call_indices:
+                                # Safety check: parsed_args must be a dict at this point
+                                if parsed_args is None or not isinstance(parsed_args, dict):
+                                    logger.error(f"❌ CRITICAL: Attempted to execute tool with invalid arguments (parsed_args={parsed_args}, type={type(parsed_args)})")
+                                    logger.error(f"   This should never happen - skipping execution for tool call idx={idx}")
+                                    continue
+                                
+                                # Mark this tool call as executed to prevent duplicate execution
+                                executed_tool_call_indices.add(idx)
+                                
                                 current_tool = tool_calls_buffer[idx]
+                                # Use the parsed_args we already validated and potentially fixed
+                                # At this point, parsed_args is guaranteed to be a valid dict
+                                final_args = parsed_args
                                 tool_call_data = {
                                     "function_name": current_tool['function']['name'],
-                                    "arguments": safe_json_parse(current_tool['function']['arguments']),
+                                    "arguments": final_args,  # Guaranteed to be a dict
                                     "id": current_tool['id']
                                 }
+                                logger.info(f"🚀 NATIVE TOOL CALL EXECUTING: {tool_call_data['function_name']} (id={tool_call_data['id']}, index={idx})")
+                                logger.info(f"🔍 TOOL ARGS DEBUG [EXECUTING]: Final arguments: {final_args}")
+                                
                                 current_assistant_id = last_assistant_message_object['message_id'] if last_assistant_message_object else None
                                 context = self._create_tool_context(
                                     tool_call_data, tool_index, current_assistant_id
@@ -490,7 +529,9 @@ class ResponseProcessor:
 
                                 # Save and Yield tool_started status
                                 started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                if started_msg_obj: 
+                                    logger.debug(f"📤 NATIVE TOOL CALL: Yielding tool_started status for {tool_call_data['function_name']}")
+                                    yield format_for_yield(started_msg_obj)
                                 yielded_tool_indices.add(tool_index) # Mark status as yielded
 
                                 execution_task = asyncio.create_task(self._execute_tool(tool_call_data))
@@ -499,13 +540,6 @@ class ResponseProcessor:
                                     "tool_index": tool_index, "context": context
                                 })
                                 tool_index += 1
-
-                if finish_reason == "xml_tool_limit_reached":
-                    logger.info("XML tool limit reached - stopping immediately without draining stream")
-                    self.trace.event(name="xml_tool_limit_reached_immediate_stop", level="DEFAULT", status_message=(f"XML tool limit reached - stopping immediately to prevent further LLM token generation"))
-                    # Immediately break from the loop to stop consuming chunks
-                    # This prevents the LLM from continuing to generate tokens in the background
-                    break
 
             logger.info(f"Stream complete. Total chunks: {chunk_count}")
             
@@ -584,45 +618,48 @@ class ResponseProcessor:
                         yielded_tool_indices.add(tool_idx)
 
 
-            if finish_reason == "xml_tool_limit_reached":
-                finish_content = {"status_type": "finish", "finish_reason": "xml_tool_limit_reached"}
-                finish_msg_obj = await self.add_message(
-                    thread_id=thread_id, type="status", content=finish_content, 
-                    is_llm_message=False, metadata={"thread_run_id": thread_run_id}
-                )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
-                logger.debug(f"Stream finished with reason: xml_tool_limit_reached after {xml_tool_call_count} XML tool calls")
-                self.trace.event(name="stream_finished_with_reason_xml_tool_limit_reached_after_xml_tool_calls", level="DEFAULT", status_message=(f"Stream finished with reason: xml_tool_limit_reached after {xml_tool_call_count} XML tool calls"))
-
             should_auto_continue = (can_auto_continue and finish_reason == 'length')
 
             # Don't save partial response if user stopped (cancelled)
-            # But do save for other early stops like XML limit reached
             if accumulated_content and not should_auto_continue and finish_reason != "cancelled":
-                # ... (Truncate accumulated_content logic) ...
-                if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls and xml_chunks_buffer:
-                    last_xml_chunk = xml_chunks_buffer[-1]
-                    last_chunk_end_pos = accumulated_content.find(last_xml_chunk) + len(last_xml_chunk)
-                    if last_chunk_end_pos > 0:
-                        accumulated_content = accumulated_content[:last_chunk_end_pos]
-
-                # ... (Extract complete_native_tool_calls logic) ...
+                # Extract complete_native_tool_calls from buffer
                 # Update complete_native_tool_calls from buffer (initialized earlier)
                 if config.native_tool_calling:
+                    logger.info(f"📋 NATIVE TOOL CALL: Extracting complete tool calls from buffer (buffer size: {len(tool_calls_buffer)})")
                     for idx, tc_buf in tool_calls_buffer.items():
                         if tc_buf['id'] and tc_buf['function']['name'] and tc_buf['function']['arguments']:
                             try:
-                                args = safe_json_parse(tc_buf['function']['arguments'])
-                                complete_native_tool_calls.append({
-                                    "id": tc_buf['id'], "type": "function",
-                                    "function": {"name": tc_buf['function']['name'],"arguments": args}
-                                })
-                            except json.JSONDecodeError: continue
+                                # CRITICAL: Keep arguments as JSON string for LiteLLM/Bedrock compatibility
+                                # LiteLLM's Bedrock converter expects arguments to be a JSON string, not a dict
+                                # We parse it to dict only for execution, but save as string for the message
+                                args_string = tc_buf['function']['arguments']
+                                
+                                # Validate it's valid JSON (but keep as string)
+                                # Use json.loads() directly for consistency with accumulation validation (line 471)
+                                json.loads(args_string)  # Raises JSONDecodeError if invalid
+                                
+                                tool_call_obj = {
+                                    "id": tc_buf['id'], 
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc_buf['function']['name'],
+                                        "arguments": args_string  # Keep as JSON string for Bedrock!
+                                    }
+                                }
+                                complete_native_tool_calls.append(tool_call_obj)
+                                logger.info(f"✅ NATIVE TOOL CALL: Added complete tool call to message: {tc_buf['function']['name']} (id={tc_buf['id']})")
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"⚠️ NATIVE TOOL CALL: Failed to parse arguments for tool call idx={idx}: {e}")
+                                continue
+                    logger.info(f"📊 NATIVE TOOL CALL: Total complete tool calls: {len(complete_native_tool_calls)}")
 
                 message_data = { # Dict to be saved in 'content'
                     "role": "assistant", "content": accumulated_content,
-                    "tool_calls": complete_native_tool_calls or None
+                    "tool_calls": complete_native_tool_calls if complete_native_tool_calls else None
                 }
+                
+                if complete_native_tool_calls:
+                    logger.info(f"💾 NATIVE TOOL CALL: Saving assistant message with {len(complete_native_tool_calls)} tool_calls: {[tc['function']['name'] for tc in complete_native_tool_calls]}")
 
                 last_assistant_message_object = await self._add_message_with_agent_info(
                     thread_id=thread_id, type="assistant", content=message_data,
@@ -651,42 +688,33 @@ class ResponseProcessor:
             # --- Process All Tool Results Now ---
             if config.execute_tools:
                 final_tool_calls_to_process = []
-                # ... (Gather final_tool_calls_to_process from native and XML buffers) ...
-                 # Gather native tool calls from buffer
+                # Gather native tool calls from buffer (only if not executed on stream)
                 if config.native_tool_calling and complete_native_tool_calls:
                     for tc in complete_native_tool_calls:
+                        # Skip if this tool call was already executed during streaming
+                        # We can identify it by checking if the id matches any executed tool call
+                        tc_id = tc.get("id")
+                        if config.execute_on_stream and tc_id:
+                            # Check if this tool call was already executed
+                            already_executed = any(
+                                exec_info.get("tool_call", {}).get("id") == tc_id 
+                                for exec_info in pending_tool_executions
+                            )
+                            if already_executed:
+                                continue
+                        
                         final_tool_calls_to_process.append({
                             "function_name": tc["function"]["name"],
                             "arguments": tc["function"]["arguments"], # Already parsed object
                             "id": tc["id"]
                         })
-                 # Gather XML tool calls from buffer (up to limit)
-                parsed_xml_data = []
-                if config.xml_tool_calling:
-                    # Reparse remaining content just in case (should be empty if processed correctly)
-                    xml_chunks = self._extract_xml_chunks(current_xml_content)
-                    xml_chunks_buffer.extend(xml_chunks)
-                    # Process only chunks not already handled in the stream loop
-                    remaining_limit = config.max_xml_tool_calls - xml_tool_call_count if config.max_xml_tool_calls > 0 else len(xml_chunks_buffer)
-                    xml_chunks_to_process = xml_chunks_buffer[:remaining_limit] # Ensure limit is respected
 
-                    for chunk in xml_chunks_to_process:
-                         parsed_result = self._parse_xml_tool_call(chunk)
-                         if parsed_result:
-                             tool_call, parsing_details = parsed_result
-                             # Avoid adding if already processed during streaming
-                             if not any(exec['tool_call'] == tool_call for exec in pending_tool_executions):
-                                 final_tool_calls_to_process.append(tool_call)
-                                 parsed_xml_data.append({'tool_call': tool_call, 'parsing_details': parsing_details})
-
-
+                # XML tool calling is disabled - only native tool calling is supported
                 all_tool_data_map = {} # tool_index -> {'tool_call': ..., 'parsing_details': ...}
-                 # Add native tool data
+                # Add native tool data
                 native_tool_index = 0
                 if config.native_tool_calling and complete_native_tool_calls:
                      for tc in complete_native_tool_calls:
-                         # Find the corresponding entry in final_tool_calls_to_process if needed
-                         # For now, assume order matches if only native used
                          exec_tool_call = {
                              "function_name": tc["function"]["name"],
                              "arguments": tc["function"]["arguments"],
@@ -694,11 +722,6 @@ class ResponseProcessor:
                          }
                          all_tool_data_map[native_tool_index] = {"tool_call": exec_tool_call, "parsing_details": None}
                          native_tool_index += 1
-
-                 # Add XML tool data
-                xml_tool_index_start = native_tool_index
-                for idx, item in enumerate(parsed_xml_data):
-                    all_tool_data_map[xml_tool_index_start + idx] = item
 
 
                 tool_results_map = {} # tool_index -> (tool_call, result, context)
@@ -743,6 +766,11 @@ class ResponseProcessor:
                            self.trace.event(name="could_not_map_result_for_tool_index", level="WARNING", status_message=(f"Could not map result for tool index {current_tool_idx}"))
                        current_tool_idx += 1
 
+
+
+
+
+
                 # Save and Yield each result message
                 if tool_results_map:
                     logger.debug(f"Saving and yielding {len(tool_results_map)} final tool result messages")
@@ -784,11 +812,11 @@ class ResponseProcessor:
                              # Optionally yield error status for saving failure?
 
             # --- Final Finish Status ---
-            if finish_reason and finish_reason != "xml_tool_limit_reached":
+            if finish_reason:
                 finish_content = {"status_type": "finish", "finish_reason": finish_reason}
                 # Add metadata to indicate tools were detected (for auto-continue detection)
                 # Check if tools were actually detected during this run
-                if xml_tool_call_count > 0 or len(complete_native_tool_calls) > 0:
+                if len(complete_native_tool_calls) > 0:
                     finish_content["tools_executed"] = True
                 finish_msg_obj = await self.add_message(
                     thread_id=thread_id, type="status", content=finish_content, 
@@ -1136,20 +1164,7 @@ class ResponseProcessor:
                  if response_message:
                      if hasattr(response_message, 'content') and response_message.content:
                          content = response_message.content
-                         if config.xml_tool_calling:
-                             parsed_xml_data = self._parse_xml_tool_calls(content)
-                             if config.max_xml_tool_calls > 0 and len(parsed_xml_data) > config.max_xml_tool_calls:
-                                 # Truncate content and tool data if limit exceeded
-                                 # ... (Truncation logic similar to streaming) ...
-                                 if parsed_xml_data:
-                                     xml_chunks = self._extract_xml_chunks(content)[:config.max_xml_tool_calls]
-                                     if xml_chunks:
-                                         last_chunk = xml_chunks[-1]
-                                         last_chunk_pos = content.find(last_chunk)
-                                         if last_chunk_pos >= 0: content = content[:last_chunk_pos + len(last_chunk)]
-                                 parsed_xml_data = parsed_xml_data[:config.max_xml_tool_calls]
-                                 finish_reason = "xml_tool_limit_reached"
-                             all_tool_data.extend(parsed_xml_data)
+                         # XML tool calling is disabled - only native tool calling is supported
 
                      if config.native_tool_calling and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
                           for tool_call in response_message.tool_calls:
@@ -1516,8 +1531,24 @@ class ResponseProcessor:
             # Handle arguments - if it's a string, try to parse it, otherwise pass as-is
             if isinstance(arguments, str):
                 logger.debug(f"🔄 Parsing string arguments for {function_name}")
+                logger.info(f"🔍 TOOL ARGS DEBUG [{function_name}]: Raw arguments string: {arguments[:500]}")
                 try:
                     parsed_args = safe_json_parse(arguments)
+                    logger.info(f"🔍 TOOL ARGS DEBUG [{function_name}]: Parsed arguments: {parsed_args}")
+                    
+                    # Check for double-encoded JSON values
+                    if isinstance(parsed_args, dict):
+                        for key, value in parsed_args.items():
+                            if isinstance(value, str) and value.startswith('{"'):
+                                logger.error(f"❌ DOUBLE-ENCODED ARGUMENT DETECTED [{function_name}]: Key '{key}' has JSON string value: {value[:200]}")
+                                # Try to fix it
+                                try:
+                                    fixed_value = json.loads(value)
+                                    parsed_args[key] = fixed_value
+                                    logger.info(f"✅ FIXED double-encoded argument [{function_name}]: {key} = {fixed_value}")
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"❌ Failed to fix double-encoded argument [{function_name}]: {key}, error: {e}")
+                    
                     if isinstance(parsed_args, dict):
                         # logger.debug(f"✅ Parsed arguments as dict: {parsed_args}")
                         result = await tool_fn(**parsed_args)
@@ -1538,6 +1569,7 @@ class ResponseProcessor:
                         result = await tool_fn(arguments)
             else:
                 # logger.debug(f"✅ Arguments are not string, unpacking dict: {type(arguments)}")
+                logger.info(f"🔍 TOOL ARGS DEBUG [{function_name}]: Arguments (non-string): {arguments}")
                 if isinstance(arguments, dict):
                     # logger.debug(f"🔄 Unpacking dict arguments for tool call")
                     result = await tool_fn(**arguments)
@@ -2032,12 +2064,25 @@ class ResponseProcessor:
     async def _yield_and_save_tool_started(self, context: ToolExecutionContext, thread_id: str, thread_run_id: str) -> Optional[Dict[str, Any]]:
         """Formats, saves, and returns a tool started status message."""
         tool_name = context.xml_tag_name or context.function_name
+        tool_call_id = context.tool_call.get("id")
+        
+        # Include arguments for native tool calls (frontend expects this)
+        arguments = None
+        if context.function_name and not context.xml_tag_name:  # Native tool call
+            arguments = context.tool_call.get("arguments")
+            if isinstance(arguments, dict):
+                arguments = json.dumps(arguments)
+        
         content = {
             "role": "assistant", "status_type": "tool_started",
             "function_name": context.function_name, "xml_tag_name": context.xml_tag_name,
             "message": f"Starting execution of {tool_name}", "tool_index": context.tool_index,
-            "tool_call_id": context.tool_call.get("id") # Include tool_call ID if native
+            "tool_call_id": tool_call_id,  # Include tool_call ID if native
+            "arguments": arguments  # Include arguments for native tool calls
         }
+        
+        logger.debug(f"📤 NATIVE TOOL CALL: Creating tool_started status for {context.function_name} (id={tool_call_id}, index={context.tool_index})")
+        
         metadata = {"thread_run_id": thread_run_id}
         saved_message_obj = await self.add_message(
             thread_id=thread_id, type="status", content=content, is_llm_message=False, metadata=metadata
@@ -2094,3 +2139,4 @@ class ResponseProcessor:
             thread_id=thread_id, type="status", content=content, is_llm_message=False, metadata=metadata
         )
         return saved_message_obj
+    

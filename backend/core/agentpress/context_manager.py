@@ -213,6 +213,23 @@ class ContextManager:
                 if not isinstance(existing_metadata, dict):
                     existing_metadata = {}
                 
+                # CRITICAL: Extract and preserve tool_call_id from message content if available
+                # This is needed for proper filtering after compression
+                tool_call_id = None
+                if isinstance(original_content, str):
+                    try:
+                        parsed_content = json.loads(original_content)
+                        if isinstance(parsed_content, dict):
+                            tool_call_id = parsed_content.get('tool_call_id')
+                    except:
+                        pass
+                elif isinstance(original_content, dict):
+                    tool_call_id = original_content.get('tool_call_id')
+                
+                # Preserve tool_call_id in metadata for filtering
+                if tool_call_id:
+                    existing_metadata['tool_call_id'] = tool_call_id
+                
                 existing_metadata.update({
                     'compressed_content': summary_content,
                     'compressed': True

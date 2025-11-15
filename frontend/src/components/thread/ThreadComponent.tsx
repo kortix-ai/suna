@@ -232,6 +232,56 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [threadId, queryClient, isShared]);
 
+  // Expose messages to window for debugging (dev only)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      (window as any).__SUNA_DEBUG__ = {
+        messages,
+        threadId,
+        projectId,
+        agentStatus,
+        agentRunId,
+        // Helper functions
+        getMessages: () => messages,
+        getMessageById: (id: string) => messages.find(m => m.message_id === id),
+        getMessagesByType: (type: string) => messages.filter(m => m.type === type),
+        parseMessageContent: (message: UnifiedMessage) => {
+          try {
+            return JSON.parse(message.content);
+          } catch {
+            return message.content;
+          }
+        },
+        parseMessageMetadata: (message: UnifiedMessage) => {
+          try {
+            return JSON.parse(message.metadata);
+          } catch {
+            return message.metadata;
+          }
+        },
+        // Get all tool results linked to an assistant message
+        getToolResultsForAssistant: (assistantMessageId: string) => {
+          return messages.filter(m => {
+            if (m.type !== 'tool') return false;
+            try {
+              const metadata = JSON.parse(m.metadata);
+              return metadata.assistant_message_id === assistantMessageId;
+            } catch {
+              return false;
+            }
+          });
+        },
+        // Get full message chain (assistant + its tool results)
+        getMessageChain: (assistantMessageId: string) => {
+          const assistant = messages.find(m => m.message_id === assistantMessageId);
+          if (!assistant || assistant.type !== 'assistant') return null;
+          const toolResults = (window as any).__SUNA_DEBUG__.getToolResultsForAssistant(assistantMessageId);
+          return { assistant, toolResults };
+        }
+      };
+    }
+  }, [messages, threadId, projectId, agentStatus, agentRunId]);
+
   // Listen for sandbox-active event to invalidate file caches
   useEffect(() => {
     const handleSandboxActive = (event: Event) => {

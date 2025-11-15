@@ -181,8 +181,72 @@ export function extractCommandData(
       ?.trim() || null;
   }
   
+  // Enhanced output extraction - try multiple sources and formats
   if (!output && toolContent) {
     output = extractCommandOutput(toolContent);
+    
+    // If still no output, try parsing toolContent directly
+    if (!output) {
+      try {
+        // Handle native tool format: {"role": "tool", "content": "..."}
+        if (typeof toolContent === 'string') {
+          const parsed = JSON.parse(toolContent);
+          if (parsed && typeof parsed === 'object') {
+            // Check for nested content
+            if (parsed.role === 'tool' && parsed.content) {
+              const content = parsed.content;
+              if (typeof content === 'string') {
+                // Try to parse the content as JSON to extract output
+                try {
+                  const innerParsed = JSON.parse(content);
+                  if (innerParsed && typeof innerParsed === 'object') {
+                    output = innerParsed.output || innerParsed.result?.output || innerParsed.content || content;
+                  } else {
+                    output = content;
+                  }
+                } catch {
+                  output = content;
+                }
+              } else if (typeof content === 'object' && content !== null) {
+                output = content.output || content.result?.output || content.content || JSON.stringify(content);
+              }
+            } else if (parsed.content && typeof parsed.content === 'string') {
+              output = parsed.content;
+            } else if (parsed.output) {
+              output = typeof parsed.output === 'string' ? parsed.output : JSON.stringify(parsed.output);
+            } else if (parsed.result?.output) {
+              output = typeof parsed.result.output === 'string' ? parsed.result.output : JSON.stringify(parsed.result.output);
+            }
+          }
+        } else if (typeof toolContent === 'object' && toolContent !== null) {
+          // Direct object format
+          const obj = toolContent as any;
+          if (obj.role === 'tool' && obj.content) {
+            const content = obj.content;
+            if (typeof content === 'string') {
+              output = content;
+            } else if (typeof content === 'object') {
+              output = content.output || content.result?.output || content.content || JSON.stringify(content);
+            }
+          } else {
+            output = obj.output || obj.result?.output || obj.content || JSON.stringify(obj);
+          }
+        }
+      } catch (e) {
+        // If parsing fails, use toolContent as string if it's a string
+        if (typeof toolContent === 'string' && toolContent.trim().length > 0) {
+          output = toolContent;
+        }
+      }
+    }
+  }
+  
+  // Also try extracting from assistantContent if still no output
+  if (!output && assistantContent) {
+    const assistantOutput = extractCommandOutput(assistantContent);
+    if (assistantOutput) {
+      output = assistantOutput;
+    }
   }
   
   if (exitCode === null && toolContent) {

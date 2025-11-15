@@ -121,7 +121,95 @@ function parseObjectToolResult(content: any): ParsedToolResult | null {
     }
   }
 
-  // Handle nested format with role and string content
+  // Handle native tool format: {"role": "tool", "tool_call_id": "...", "name": "...", "content": "..."}
+  if ('role' in content && content.role === 'tool' && 'content' in content) {
+    // Extract the actual content from native tool format
+    const toolContent = content.content;
+    const toolName = (content.name || 'unknown').replace(/_/g, '-');
+    
+    // Parse the content (which may be a string or object)
+    if (typeof toolContent === 'string') {
+      // Try to parse as JSON first
+      try {
+        const parsedContent = JSON.parse(toolContent);
+        if (typeof parsedContent === 'object') {
+          // Recursively parse the nested content
+          const nestedResult = parseObjectToolResult(parsedContent);
+          if (nestedResult) {
+            return {
+              ...nestedResult,
+              toolName: toolName || nestedResult.toolName,
+              toolCallId: content.tool_call_id || nestedResult.toolCallId,
+            };
+          }
+          // If parsing didn't return a result but we have an object, extract output directly
+          const output = parsedContent.output || parsedContent.result?.output || parsedContent.content || toolContent;
+          const isSuccess = parsedContent.success !== false && 
+                           parsedContent.result?.success !== false &&
+                           !(String(output).toLowerCase().includes('failed') ||
+                             String(output).toLowerCase().includes('error') ||
+                             String(output).toLowerCase().includes('failure'));
+          return {
+            toolName,
+            functionName: toolName.replace(/-/g, '_'),
+            toolOutput: typeof output === 'string' ? output : JSON.stringify(output),
+            isSuccess,
+            toolCallId: content.tool_call_id,
+          };
+        }
+      } catch {
+        // Not JSON, treat as plain string output
+      }
+      
+      // Check for ToolResult format in string
+      let isSuccess = true;
+      if (toolContent.includes('ToolResult')) {
+        const successMatch = toolContent.match(/success\s*=\s*(True|False|true|false)/i);
+        if (successMatch) {
+          isSuccess = successMatch[1].toLowerCase() === 'true';
+        }
+      } else {
+        const toolContentLower = toolContent.toLowerCase();
+        isSuccess = !(toolContentLower.includes('failed') ||
+          toolContentLower.includes('error') ||
+          toolContentLower.includes('failure'));
+      }
+      
+      return {
+        toolName,
+        functionName: toolName.replace(/-/g, '_'),
+        toolOutput: toolContent,
+        isSuccess,
+        toolCallId: content.tool_call_id,
+      };
+    } else if (typeof toolContent === 'object' && toolContent !== null) {
+      // Content is an object, recursively parse it
+      const nestedResult = parseObjectToolResult(toolContent);
+      if (nestedResult) {
+        return {
+          ...nestedResult,
+          toolName: toolName || nestedResult.toolName,
+          toolCallId: content.tool_call_id || nestedResult.toolCallId,
+        };
+      }
+      // If parsing didn't return a result, extract output directly from object
+      const output = toolContent.output || toolContent.result?.output || toolContent.content || JSON.stringify(toolContent);
+      const isSuccess = toolContent.success !== false && 
+                       toolContent.result?.success !== false &&
+                       !(String(output).toLowerCase().includes('failed') ||
+                         String(output).toLowerCase().includes('error') ||
+                         String(output).toLowerCase().includes('failure'));
+      return {
+        toolName,
+        functionName: toolName.replace(/-/g, '_'),
+        toolOutput: typeof output === 'string' ? output : JSON.stringify(output),
+        isSuccess,
+        toolCallId: content.tool_call_id,
+      };
+    }
+  }
+
+  // Handle nested format with role and string content (legacy)
   if ('role' in content && 'content' in content && typeof content.content === 'string') {
     return parseStringToolResult(content.content);
   }

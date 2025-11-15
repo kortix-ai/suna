@@ -387,6 +387,20 @@ export function useAgentStream(
 
       switch (message.type) {
         case 'assistant':
+          // Handle assistant messages
+          // Log native tool calls if present
+          if (parsedContent.tool_calls && Array.isArray(parsedContent.tool_calls) && parsedContent.tool_calls.length > 0) {
+            console.log('[NATIVE TOOL CALL] ✅ Assistant message with tool_calls:', {
+              count: parsedContent.tool_calls.length,
+              tool_calls: parsedContent.tool_calls.map((tc: any) => ({
+                id: tc.id,
+                function: tc.function?.name || tc.name,
+                arguments: tc.function?.arguments,
+              })),
+              message_id: message.message_id,
+            });
+          }
+          
           if (
             parsedMetadata.stream_status === 'chunk' &&
             parsedContent.content
@@ -411,12 +425,31 @@ export function useAgentStream(
           }
           break;
         case 'tool':
+          // Log tool result messages
+          const toolContent = parsedContent.content || parsedContent;
+          const toolCallId = parsedContent.tool_call_id || parsedContent.toolCallId;
+          const toolName = parsedContent.name || parsedContent.function_name;
+          console.log('[NATIVE TOOL CALL] ✅ Tool result received:', {
+            tool_call_id: toolCallId,
+            name: toolName,
+            has_content: !!toolContent,
+            content_preview: typeof toolContent === 'string' ? toolContent.substring(0, 100) : 'object',
+            message_id: message.message_id,
+          });
+          
           setToolCall(null); // Clear any streaming tool call
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':
           switch (parsedContent.status_type) {
             case 'tool_started':
+              console.log('[NATIVE TOOL CALL] 🚀 Tool started:', {
+                function_name: parsedContent.function_name,
+                tool_call_id: parsedContent.tool_call_id,
+                tool_index: parsedContent.tool_index,
+                arguments: parsedContent.arguments,
+                message_id: message.message_id,
+              });
               setToolCall({
                 role: 'assistant',
                 status_type: 'tool_started',

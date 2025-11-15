@@ -118,7 +118,9 @@ export function useToolCalls(
     const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
 
     assistantMessages.forEach(assistantMsg => {
-      const resultMessage = messages.find(toolMsg => {
+      // Find ALL tool result messages that match this assistant message
+      // (one assistant message can have multiple tool calls)
+      const resultMessages = messages.filter(toolMsg => {
         if (toolMsg.type !== 'tool' || !toolMsg.metadata || !assistantMsg.message_id) return false;
         try {
           const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
@@ -128,9 +130,129 @@ export function useToolCalls(
         }
       });
 
-      if (resultMessage) {
+      // Parse assistant message to get tool_calls array
+      let assistantToolCalls: Array<{ id?: string; function?: { name?: string; arguments?: any }; name?: string }> = [];
+      try {
+        const assistantContentParsed = safeJsonParse<ParsedContent>(assistantMsg.content, {});
+        if (assistantContentParsed.tool_calls && Array.isArray(assistantContentParsed.tool_calls)) {
+          assistantToolCalls = assistantContentParsed.tool_calls;
+        }
+      } catch { }
+
+      // If we have tool calls in the assistant message, match each tool result to its tool call
+      if (assistantToolCalls.length > 0 && resultMessages.length > 0) {
+        // Match tool results to tool calls by tool_call_id
+        assistantToolCalls.forEach((toolCall, toolCallIndex) => {
+          const toolCallId = toolCall.id;
+          const resultMessage = toolCallId 
+            ? resultMessages.find(toolMsg => {
+                try {
+                  const parsedContent = safeJsonParse<ParsedContent>(toolMsg.content, {});
+                  return parsedContent.tool_call_id === toolCallId;
+                } catch {
+                  return false;
+                }
+              })
+            : resultMessages[toolCallIndex]; // Fallback to index-based matching if no ID
+
+          if (resultMessage) {
+            const toolName = (toolCall.function?.name || toolCall.name || 'unknown').replace(/_/g, '-').toLowerCase();
+            let isSuccess = true;
+            let extractedToolContent = resultMessage.content;
+            
+            // Extract actual content from native tool result format
+            // Native tool results are stored as: {"role": "tool", "tool_call_id": "...", "name": "...", "content": "actual output"}
+            try {
+              const parsed = safeJsonParse<ParsedContent>(resultMessage.content, {});
+              // If it's a native tool format with role and content, extract the content
+              if (parsed.role === 'tool' && parsed.content !== undefined) {
+                // The content field contains the actual tool output
+                extractedToolContent = typeof parsed.content === 'string' 
+                  ? parsed.content 
+                  : JSON.stringify(parsed.content);
+              }
+            } catch {
+              // If parsing fails, use original content
+            }
+            
+            // Try to parse tool result content to extract success status
+            try {
+              const toolResultContent = (() => {
+                try {
+                  const parsed = safeJsonParse<ParsedContent>(resultMessage.content, {});
+                  // For native tool format, check the content field
+                  if (parsed.role === 'tool' && parsed.content !== undefined) {
+                    return typeof parsed.content === 'string' ? parsed.content : JSON.stringify(parsed.content);
+                  }
+                  return parsed.content || resultMessage.content;
+                } catch {
+                  return resultMessage.content;
+                }
+              })();
+              
+              // Check for structured format
+              const toolContentParsed = parseToolContent(resultMessage.content);
+              if (toolContentParsed && toolContentParsed.result && typeof toolContentParsed.result === 'object') {
+                isSuccess = toolContentParsed.result.success !== false;
+              } else if (typeof toolResultContent === 'string') {
+                // Check for ToolResult format
+                const toolResultMatch = toolResultContent.match(/ToolResult\s*\(\s*success\s*=\s*(True|False|true|false)/i);
+                if (toolResultMatch) {
+                  isSuccess = toolResultMatch[1].toLowerCase() === 'true';
+                } else {
+                  const toolContent = toolResultContent.toLowerCase();
+                  isSuccess = !(toolContent.includes('failed') ||
+                    toolContent.includes('error') ||
+                    toolContent.includes('failure'));
+                }
+              }
+            } catch { }
+
+            // Check if this ask tool should be filtered out
+            if (shouldFilterAskTool(toolName, assistantMsg.content, extractedToolContent)) {
+              return; // Skip this tool call
+            }
+
+            const toolIndex = historicalToolPairs.length;
+            historicalToolPairs.push({
+              assistantCall: {
+                name: toolName,
+                content: assistantMsg.content,
+                timestamp: assistantMsg.created_at,
+              },
+              toolResult: {
+                content: extractedToolContent, // Use extracted content instead of raw JSON
+                isSuccess: isSuccess,
+                timestamp: resultMessage.created_at,
+              },
+            });
+
+            // Map the assistant message ID to its tool index (use first tool for mapping)
+            if (assistantMsg.message_id && toolCallIndex === 0) {
+              messageIdToIndex.set(assistantMsg.message_id, toolIndex);
+            }
+          }
+        });
+      } else if (resultMessages.length > 0) {
+        // Fallback: No tool_calls array found, use old matching logic (single tool per assistant message)
+        const resultMessage = resultMessages[0];
         let toolName = 'unknown';
         let isSuccess = true;
+        let extractedToolContent = resultMessage.content;
+        
+        // Extract actual content from native tool result format
+        try {
+          const parsed = safeJsonParse<ParsedContent>(resultMessage.content, {});
+          // If it's a native tool format with role and content, extract the content
+          if (parsed.role === 'tool' && parsed.content !== undefined) {
+            // The content field contains the actual tool output
+            extractedToolContent = typeof parsed.content === 'string' 
+              ? parsed.content 
+              : JSON.stringify(parsed.content);
+          }
+        } catch {
+          // If parsing fails, use original content
+        }
         
         // First try to parse the new format from the tool message
         const toolContentParsed = parseToolContent(resultMessage.content);
@@ -178,6 +300,10 @@ export function useToolCalls(
             const toolResultContent = (() => {
               try {
                 const parsed = safeJsonParse<ParsedContent>(resultMessage.content, {});
+                // For native tool format, check the content field
+                if (parsed.role === 'tool' && parsed.content !== undefined) {
+                  return typeof parsed.content === 'string' ? parsed.content : JSON.stringify(parsed.content);
+                }
                 return parsed.content || resultMessage.content;
               } catch {
                 return resultMessage.content;
@@ -199,9 +325,8 @@ export function useToolCalls(
         }
 
         // Check if this ask tool should be filtered out
-        if (shouldFilterAskTool(toolName, assistantMsg.content, resultMessage.content)) {
-          // Skip this tool call - don't add it to historicalToolPairs
-          return;
+        if (shouldFilterAskTool(toolName, assistantMsg.content, extractedToolContent)) {
+          return; // Skip this tool call
         }
 
         const toolIndex = historicalToolPairs.length;
@@ -212,7 +337,7 @@ export function useToolCalls(
             timestamp: assistantMsg.created_at,
           },
           toolResult: {
-            content: resultMessage.content,
+            content: extractedToolContent, // Use extracted content instead of raw JSON
             isSuccess: isSuccess,
             timestamp: resultMessage.created_at,
           },

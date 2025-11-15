@@ -114,101 +114,153 @@ export function AskToolView({
       </CardHeader>
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        <ScrollArea className="h-full w-full">
-          <div className="p-4 space-y-6">
-            {attachments && attachments.length > 0 ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Paperclip className="h-4 w-4" />
-                  Files ({attachments.length})
-                </div>
-
-                <div className={cn(
-                  "grid gap-3",
-                  attachments.length === 1 ? "grid-cols-1" :
-                    attachments.length > 4 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
-                      "grid-cols-1 sm:grid-cols-2"
-                )}>
-                  {attachments
-                    .sort((a, b) => {
-                      const aIsImage = isImageFile(a);
-                      const bIsImage = isImageFile(b);
-                      const aIsPreviewable = isPreviewableFile(a);
-                      const bIsPreviewable = isPreviewableFile(b);
-
-                      if (aIsImage && !bIsImage) return -1;
-                      if (!aIsImage && bIsImage) return 1;
-                      if (aIsPreviewable && !bIsPreviewable) return -1;
-                      if (!aIsPreviewable && bIsPreviewable) return 1;
-                      return 0;
-                    })
-                    .map((attachment, index) => {
-                      const isImage = isImageFile(attachment);
-                      const isPreviewable = isPreviewableFile(attachment);
-                      const shouldSpanFull = (attachments!.length % 2 === 1 &&
-                        attachments!.length > 1 &&
-                        index === attachments!.length - 1);
-
-                      return (
-                        <div
-                          key={index}
-                          className={cn(
-                            "relative group",
-                            isImage ? "flex items-center justify-center h-full" : "",
-                            isPreviewable ? "w-full" : ""
-                          )}
-                          style={(shouldSpanFull || isPreviewable) ? { gridColumn: '1 / -1' } : undefined}
-                        >
-                          <FileAttachment
-                            filepath={attachment}
-                            onClick={handleFileClick}
-                            sandboxId={project?.sandbox?.id}
-                            showPreview={true}
-                            className={cn(
-                              isImage ? "aspect-square w-full" : "w-full",
-                              isImage ? "" :
-                                isPreviewable ? "min-h-full max-h-[400px] overflow-auto" : "h-[54px]"
-                            )}
-                            customStyle={
-                              isImage ? {
-                                width: '100%',
-                                height: '100%',
-                                '--attachment-height': '100%'
-                              } as React.CSSProperties :
-                                isPreviewable ? {
-                                  gridColumn: '1 / -1'
-                                } :
-                                  shouldSpanFull ? {
-                                    gridColumn: '1 / -1'
-                                  } : {
-                                    width: '100%'
-                                  }
-                            }
-                            collapsed={false}
-                            project={project}
-                          />
-                        </div>
-                      );
-                    })}
-                </div>
-
-
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                  <MessageSquare className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h3 className="text-lg font-medium text-foreground mb-2">
-                  Question Asked
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  No files attached to this question
-                </p>
-              </div>
-            )}
+        {isStreaming ? (
+          <div className="flex flex-col items-center justify-center h-full py-12 px-6">
+            <Loader2 className="h-8 w-8 text-blue-500 animate-spin mb-4" />
+            <p className="text-sm text-muted-foreground">Asking user...</p>
           </div>
-        </ScrollArea>
+        ) : (text || attachments?.length || status || toolContent || assistantContent) ? (
+          <ScrollArea className="h-full w-full">
+            <div className="p-4 space-y-6">
+              {/* Display the question text */}
+              {text && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <MessageSquare className="h-4 w-4" />
+                    Question
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <p className="text-sm text-foreground whitespace-pre-wrap break-words">
+                      {text}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Display status if available */}
+              {status && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    Status
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <p className="text-sm text-foreground">{status}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Display attachments */}
+              {attachments && attachments.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <Paperclip className="h-4 w-4" />
+                    Files ({attachments.length})
+                  </div>
+
+                  <div className={cn(
+                    "grid gap-3",
+                    attachments.length === 1 ? "grid-cols-1" :
+                      attachments.length > 4 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
+                        "grid-cols-1 sm:grid-cols-2"
+                  )}>
+                    {attachments
+                      .sort((a, b) => {
+                        const aIsImage = isImageFile(a);
+                        const bIsImage = isImageFile(b);
+                        const aIsPreviewable = isPreviewableFile(a);
+                        const bIsPreviewable = isPreviewableFile(b);
+
+                        if (aIsImage && !bIsImage) return -1;
+                        if (!aIsImage && bIsImage) return 1;
+                        if (aIsPreviewable && !bIsPreviewable) return -1;
+                        if (!aIsPreviewable && bIsPreviewable) return 1;
+                        return 0;
+                      })
+                      .map((attachment, index) => {
+                        const isImage = isImageFile(attachment);
+                        const isPreviewable = isPreviewableFile(attachment);
+                        const shouldSpanFull = (attachments!.length % 2 === 1 &&
+                          attachments!.length > 1 &&
+                          index === attachments!.length - 1);
+
+                        return (
+                          <div
+                            key={index}
+                            className={cn(
+                              "relative group",
+                              isImage ? "flex items-center justify-center h-full" : "",
+                              isPreviewable ? "w-full" : ""
+                            )}
+                            style={(shouldSpanFull || isPreviewable) ? { gridColumn: '1 / -1' } : undefined}
+                          >
+                            <FileAttachment
+                              filepath={attachment}
+                              onClick={handleFileClick}
+                              sandboxId={project?.sandbox?.id}
+                              showPreview={true}
+                              className={cn(
+                                isImage ? "aspect-square w-full" : "w-full",
+                                isImage ? "" :
+                                  isPreviewable ? "min-h-full max-h-[400px] overflow-auto" : "h-[54px]"
+                              )}
+                              customStyle={
+                                isImage ? {
+                                  width: '100%',
+                                  height: '100%',
+                                  '--attachment-height': '100%'
+                                } as React.CSSProperties :
+                                  isPreviewable ? {
+                                    gridColumn: '1 / -1'
+                                  } :
+                                    shouldSpanFull ? {
+                                      gridColumn: '1 / -1'
+                                    } : {
+                                      width: '100%'
+                                    }
+                              }
+                              collapsed={false}
+                              project={project}
+                            />
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback: Show raw toolContent if extraction didn't produce text/attachments but content exists */}
+              {!text && !attachments?.length && !status && (toolContent || assistantContent) && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <MessageSquare className="h-4 w-4" />
+                    Content
+                  </div>
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <pre className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+                      {typeof toolContent === 'string' 
+                        ? toolContent 
+                        : typeof assistantContent === 'string'
+                          ? assistantContent
+                          : JSON.stringify(toolContent || assistantContent, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full py-12 px-6 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
+              <MessageSquare className="h-8 w-8 text-zinc-400 dark:text-zinc-600" />
+            </div>
+            <h3 className="text-lg font-medium text-foreground mb-2">
+              No Content Available
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              This ask tool execution did not produce any content to display.
+            </p>
+          </div>
+        )}
       </CardContent>
 
       <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">

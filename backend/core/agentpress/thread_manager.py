@@ -4,6 +4,7 @@ Simplified conversation thread management system for AgentPress.
 
 import asyncio
 import json
+import re
 from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast
 from core.services.llm import make_llm_api_call, LLMError
 from core.agentpress.prompt_caching import apply_anthropic_caching_strategy, validate_cache_blocks
@@ -202,6 +203,7 @@ class ThreadManager:
                 # Check if this message has a compressed version in metadata
                 content = item['content']
                 metadata = item.get('metadata', {})
+                original_type = item.get('type', 'user')  # Preserve original type from database
                 is_compressed = False
                 
                 # If compressed, use compressed_content for LLM instead of full content
@@ -221,11 +223,58 @@ class ThreadManager:
                     except json.JSONDecodeError:
                         # If compressed, content is a plain string (not JSON) - this is expected
                         if is_compressed:
-                            messages.append({
-                                'role': 'user',
+                            # CRITICAL FIX: Preserve original message type/role from database
+                            # Map database 'type' to LLM 'role'
+                            role_mapping = {
+                                'user': 'user',
+                                'assistant': 'assistant',
+                                'tool': 'tool',  # Preserve tool messages!
+                                'system': 'system'
+                            }
+                            role = role_mapping.get(original_type, 'user')
+                            
+                            # For tool messages, extract tool_call_id from metadata or content
+                            tool_call_id = None
+                            tool_name = None
+                            
+                            if role == 'tool':
+                                # First try metadata
+                                if isinstance(metadata, dict):
+                                    tool_call_id = metadata.get('tool_call_id')
+                                
+                                # If not in metadata, try to extract from content
+                                if not tool_call_id:
+                                    if isinstance(content, str):
+                                        try:
+                                            # Try parsing as JSON (for native tool messages)
+                                            parsed_content = json.loads(content)
+                                            if isinstance(parsed_content, dict):
+                                                tool_call_id = parsed_content.get('tool_call_id')
+                                                tool_name = parsed_content.get('name')
+                                        except:
+                                            # Not JSON, might be compressed - try regex
+                                            tool_id_match = re.search(r'"tool_call_id"\s*:\s*"([^"]+)"', content)
+                                            if tool_id_match:
+                                                tool_call_id = tool_id_match.group(1)
+                                            
+                                            name_match = re.search(r'"name"\s*:\s*"([^"]+)"', content)
+                                            if name_match:
+                                                tool_name = name_match.group(1)
+                            
+                            message_obj = {
+                                'role': role,
                                 'content': content,
                                 'message_id': item['message_id']
-                            })
+                            }
+                            
+                            # Preserve tool_call_id and name for tool messages
+                            if role == 'tool':
+                                if tool_call_id:
+                                    message_obj['tool_call_id'] = tool_call_id
+                                if tool_name:
+                                    message_obj['name'] = tool_name
+                            
+                            messages.append(message_obj)
                         else:
                             logger.error(f"Failed to parse message: {content[:100]}")
                 else:
@@ -298,6 +347,222 @@ class ThreadManager:
             generation, auto_continue_state, temporary_message,
             native_max_auto_continues, latest_user_message_content, cancellation_event
         )
+
+    def _is_cached_block(self, msg: Dict[str, Any]) -> bool:
+        """Check if a message is a cached block from prompt caching.
+        
+        Cached blocks are identified by having cache_control in their content structure.
+        These are validated conversation history and should NOT be filtered.
+        
+        Returns True if the message is a cached block.
+        """
+        content = msg.get('content', '')
+        
+        # Cached blocks have content as a list with cache_control
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict) and block.get('cache_control'):
+                    return True
+        
+        return False
+    
+    def _contains_embedded_tool_result(self, msg: Dict[str, Any]) -> bool:
+        """Check if a USER message contains embedded tool result text that LiteLLM would convert to toolResult blocks.
+        
+        This detects patterns like:
+        - "Tool: {...}"
+        - Tool result JSON structures embedded in text
+        - Compressed tool output summaries
+        
+        Returns True if the message likely contains tool result content.
+        
+        IMPORTANT: This must be conservative - only flag messages that are CLEARLY tool results,
+        not normal user messages that might mention "tool" or "query" in natural language.
+        
+        NOTE: Cached blocks are excluded from this check - they are validated conversation history.
+        """
+        if msg.get('role') != 'user':
+            return False
+        
+        # CRITICAL: Skip cached blocks - they are validated conversation history
+        # and may contain "Tool: {" patterns as part of the cached conversation
+        if self._is_cached_block(msg):
+            return False
+        
+        content = msg.get('content', '')
+        
+        # Handle Anthropic caching format: content is a list of blocks
+        # Format: [{"type": "text", "text": "..."}]
+        if isinstance(content, list):
+            # Extract text from all blocks
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    if block.get('type') == 'text':
+                        text_parts.append(block.get('text', ''))
+            content_text = ' '.join(text_parts)
+        elif isinstance(content, str):
+            content_text = content
+        else:
+            # Try to convert to string
+            content_text = str(content)
+        
+        if not content_text or len(content_text.strip()) == 0:
+            return False
+        
+        # CRITICAL: Be more conservative - only flag if it's CLEARLY a tool result
+        # Check for strong indicators that this is a tool result, not natural language
+        
+        # Pattern 1: Starts with "Tool: {" - very strong indicator
+        if re.match(r'^\s*Tool:\s*\{', content_text, re.IGNORECASE):
+            return True
+        
+        # Pattern 2: Contains tool result JSON structure with specific fields
+        # Look for patterns like: {"query": "...", "answer": "...", "images": [...]}
+        # This is the web_search tool result format
+        if re.search(r'\{\s*"query"\s*:\s*"[^"]*"\s*,\s*"follow_up_questions"', content_text):
+            return True
+        
+        # Pattern 3: Contains explicit tool execution markers
+        if re.search(r'"tool_execution"\s*:', content_text):
+            return True
+        
+        # Pattern 4: Contains tool result markers
+        if re.search(r'"tool_result"\s*:', content_text):
+            return True
+        
+        # Pattern 5: Contains Bedrock-specific tool references
+        if re.search(r'toolUseId\s*[:=]', content_text):
+            return True
+        
+        # Pattern 6: Contains compressed tool output markers
+        if re.search(r'\[Tool output (removed|compressed)', content_text, re.IGNORECASE):
+            return True
+        
+        # Pattern 7: Contains tool_call_id references in JSON context
+        # Only if it's clearly in a JSON structure, not natural language
+        if re.search(r'"tool_call_id"\s*:\s*"tooluse_', content_text):
+            return True
+        
+        return False
+    
+    def _filter_tool_results_for_bedrock(
+        self, 
+        messages: List[Dict[str, Any]], 
+        llm_model: str,
+        stage: str = "unknown"
+    ) -> List[Dict[str, Any]]:
+        """Filter tool results to ensure Bedrock compatibility.
+        
+        Bedrock requires exact 1:1 matching between tool_calls (toolUse blocks) and tool results (toolResult blocks).
+        This function:
+        1. Removes tool results without matching tool calls
+        2. Removes USER messages with embedded tool results that don't have matching tool calls
+        
+        IMPORTANT: This function must NEVER filter out all messages. At minimum, we need at least
+        one non-system message for Bedrock to work.
+        
+        Args:
+            messages: List of messages to filter
+            llm_model: Model name (for logging)
+            stage: Stage name for logging (e.g., "before compression", "after compression")
+            
+        Returns:
+            Filtered list of messages
+        """
+        filtered_messages = []
+        last_assistant_tool_calls = []
+        pending_tool_call_ids = set()  # Track which tool_call_ids we're expecting results for
+        
+        # Track counts for safety check
+        user_message_count = 0
+        filtered_user_count = 0
+        
+        for i, msg in enumerate(messages):
+            role = msg.get('role')
+            if role == 'assistant':
+                tool_calls = msg.get('tool_calls', [])
+                if tool_calls:
+                    last_assistant_tool_calls = tool_calls
+                    # Track all tool_call_ids from this assistant message
+                    pending_tool_call_ids = {tc.get('id') for tc in tool_calls if tc.get('id')}
+                    logger.info(f"🔍 NATIVE TOOL CALLING [{stage}]: Found assistant message at index {i} with {len(tool_calls)} tool_calls: {[tc.get('function', {}).get('name', 'unknown') for tc in tool_calls]}")
+                    logger.info(f"🔍 NATIVE TOOL CALLING [{stage}]: Expecting {len(pending_tool_call_ids)} tool results with IDs: {list(pending_tool_call_ids)}")
+                    filtered_messages.append(msg)
+                else:
+                    # Reset tracking if assistant message has no tool_calls
+                    last_assistant_tool_calls = []
+                    pending_tool_call_ids = set()
+                    filtered_messages.append(msg)
+            elif role == 'tool':
+                tool_call_id = msg.get('tool_call_id')
+                if tool_call_id and tool_call_id in pending_tool_call_ids:
+                    # This tool result matches an expected tool call
+                    matching_call = next((tc for tc in last_assistant_tool_calls if tc.get('id') == tool_call_id), None)
+                    if matching_call:
+                        logger.info(f"✅ NATIVE TOOL CALLING [{stage}]: Tool result at index {i} matches tool_call_id {tool_call_id} (function: {matching_call.get('function', {}).get('name', 'unknown')})")
+                        filtered_messages.append(msg)
+                        pending_tool_call_ids.discard(tool_call_id)  # Remove from pending set
+                    else:
+                        logger.warning(f"⚠️ NATIVE TOOL CALLING [{stage}]: Tool result at index {i} has tool_call_id {tool_call_id} but no matching tool_call found. FILTERING OUT.")
+                elif not pending_tool_call_ids:
+                    logger.warning(f"⚠️ NATIVE TOOL CALLING [{stage}]: Tool result at index {i} appears without a preceding assistant message with tool_calls. FILTERING OUT.")
+                else:
+                    logger.warning(f"⚠️ NATIVE TOOL CALLING [{stage}]: Tool result at index {i} has tool_call_id {tool_call_id} but it's not in pending set. FILTERING OUT.")
+            elif role == 'user':
+                user_message_count += 1
+                
+                # CRITICAL: Skip filtering for cached blocks - they are validated conversation history
+                # Cached blocks may contain "Tool: {" patterns as part of the cached conversation,
+                # but they should be trusted and passed through unchanged
+                if self._is_cached_block(msg):
+                    logger.debug(f"✅ NATIVE TOOL CALLING [{stage}]: Skipping filter for cached block at index {i} (validated conversation history)")
+                    filtered_messages.append(msg)
+                    continue
+                
+                # CRITICAL: Check if USER message contains embedded tool result text
+                # If it does and there's no matching tool call, LiteLLM will convert it to toolResult blocks
+                # which will cause Bedrock to error
+                if self._contains_embedded_tool_result(msg):
+                    if not pending_tool_call_ids:
+                        # No pending tool calls, so this embedded tool result has no match
+                        logger.warning(f"⚠️ NATIVE TOOL CALLING [{stage}]: USER message at index {i} contains embedded tool result text but no matching tool calls exist. FILTERING OUT to prevent Bedrock error.")
+                        logger.debug(f"   Message content preview: {str(msg.get('content', ''))[:200]}")
+                        filtered_user_count += 1
+                    else:
+                        # There are pending tool calls, so this might be valid
+                        # However, we can't match it to a specific tool_call_id, so it's safer to filter it out
+                        logger.warning(f"⚠️ NATIVE TOOL CALLING [{stage}]: USER message at index {i} contains embedded tool result text but cannot be matched to specific tool_call_id. FILTERING OUT to prevent Bedrock error.")
+                        logger.debug(f"   Message content preview: {str(msg.get('content', ''))[:200]}")
+                        filtered_user_count += 1
+                else:
+                    # Normal user message, always include
+                    filtered_messages.append(msg)
+            else:
+                # System, etc. - always include
+                filtered_messages.append(msg)
+        
+        # CRITICAL SAFETY CHECK: Ensure we have at least one non-system message
+        non_system_count = sum(1 for msg in filtered_messages if msg.get('role') != 'system')
+        if non_system_count == 0 and len(messages) > 0:
+            logger.error(f"❌ CRITICAL: Filtering removed ALL non-system messages! This will cause Bedrock error.")
+            logger.error(f"   Original message count: {len(messages)}")
+            logger.error(f"   Filtered message count: {len(filtered_messages)}")
+            logger.error(f"   User messages processed: {user_message_count}, filtered: {filtered_user_count}")
+            
+            # EMERGENCY FALLBACK: Keep the last user message if available
+            # This is better than failing completely
+            for msg in reversed(messages):
+                if msg.get('role') == 'user':
+                    logger.warning(f"⚠️ EMERGENCY: Keeping last user message to prevent Bedrock error")
+                    filtered_messages.append(msg)
+                    break
+        
+        # Log any unmatched tool calls
+        if pending_tool_call_ids:
+            logger.warning(f"⚠️ NATIVE TOOL CALLING [{stage}]: {len(pending_tool_call_ids)} tool calls did not receive results: {list(pending_tool_call_ids)}")
+        
+        return filtered_messages
 
     async def _execute_run(
         self, thread_id: str, system_prompt: Dict[str, Any], llm_model: str,
@@ -438,6 +703,16 @@ class ThreadManager:
             # Fast path just skips compression, not fetching!
             messages = await self.get_llm_messages(thread_id)
             
+            # Validate and filter tool results to match tool calls (for Bedrock compatibility)
+            # Bedrock requires exact 1:1 matching between tool_calls and tool results
+            # This first pass filters before compression (helps reduce token count)
+            original_count = len(messages)
+            messages = self._filter_tool_results_for_bedrock(messages, llm_model, stage="before compression")
+            removed_count = original_count - len(messages)
+            if removed_count > 0:
+                logger.warning(f"⚠️ NATIVE TOOL CALLING: Filtered out {removed_count} tool result(s) that didn't match tool calls (before compression)")
+            logger.info(f"🔍 NATIVE TOOL CALLING: Message count after pre-compression filtering: {len(messages)} (started with {original_count})")
+            
             # Handle auto-continue context
             if auto_continue_state['count'] > 0 and auto_continue_state['continuous_state'].get('accumulated_content'):
                 partial_content = auto_continue_state['continuous_state']['accumulated_content']
@@ -472,6 +747,19 @@ class ThreadManager:
                     )
                     messages = compressed_messages
 
+            # CRITICAL: Filter AFTER compression to catch embedded tool results in USER messages
+            # Compression may:
+            # 1. Embed tool results into USER messages as text
+            # 2. Remove assistant messages with tool_calls
+            # 3. Create orphaned tool results
+            # This post-compression filter removes all of these problematic cases
+            original_count = len(messages)
+            messages = self._filter_tool_results_for_bedrock(messages, llm_model, stage="after compression")
+            removed_count = original_count - len(messages)
+            if removed_count > 0:
+                logger.warning(f"⚠️ NATIVE TOOL CALLING: Filtered out {removed_count} message(s) after compression (orphaned tool results or embedded tool results without matching tool calls)")
+            logger.info(f"🔍 NATIVE TOOL CALLING: Final message count after post-compression filtering: {len(messages)} (started with {original_count})")
+
             # Check if cache needs rebuild due to compression
             force_rebuild = False
             if ENABLE_PROMPT_CACHING:
@@ -501,13 +789,57 @@ class ThreadManager:
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
             else:
                 prepared_messages = [system_prompt] + messages
+            
+            # CRITICAL: Filter AGAIN after caching because cached blocks may contain problematic messages
+            # Caching can load previously cached blocks that have embedded tool results in USER messages
+            # or orphaned tool results without matching tool calls
+            if ENABLE_PROMPT_CACHING:
+                original_prepared_count = len(prepared_messages)
+                # Filter out system prompt for filtering (we'll add it back)
+                system_msg = None
+                messages_to_filter = []
+                for msg in prepared_messages:
+                    if msg.get('role') == 'system':
+                        system_msg = msg
+                    else:
+                        messages_to_filter.append(msg)
+                
+                # Apply filtering to non-system messages
+                filtered_messages = self._filter_tool_results_for_bedrock(messages_to_filter, llm_model, stage="after caching")
+                
+                # Reconstruct with system prompt
+                if system_msg:
+                    prepared_messages = [system_msg] + filtered_messages
+                else:
+                    prepared_messages = filtered_messages
+                
+                removed_after_cache = original_prepared_count - len(prepared_messages)
+                if removed_after_cache > 0:
+                    logger.warning(f"⚠️ NATIVE TOOL CALLING: Filtered out {removed_after_cache} message(s) after caching (embedded tool results or orphaned tool results)")
+                    logger.info(f"🔍 NATIVE TOOL CALLING: Final message count after post-caching filtering: {len(prepared_messages)} (started with {original_prepared_count})")
 
             # Get tool schemas for LLM API call (after compression)
-            openapi_tool_schemas = self.tool_registry.get_openapi_schemas() if config.native_tool_calling else None
+            # Always pass tools for native tool calling
+            openapi_tool_schemas = self.tool_registry.get_openapi_schemas() if self.tool_registry else None
+            
+            if openapi_tool_schemas:
+                logger.info(f"🔧 NATIVE TOOL CALLING: Passing {len(openapi_tool_schemas)} tools to LLM: {[t.get('function', {}).get('name', 'unknown') for t in openapi_tool_schemas[:5]]}{'...' if len(openapi_tool_schemas) > 5 else ''}")
+            else:
+                logger.warning("⚠️ NATIVE TOOL CALLING: No tools available to pass to LLM")
 
             # Update generation tracking
             if generation:
                 try:
+                    # CRITICAL: Langfuse expects tools as JSON string, not objects
+                    # Convert tool schemas to JSON string for Langfuse compatibility
+                    tools_for_langfuse = None
+                    if openapi_tool_schemas:
+                        try:
+                            tools_for_langfuse = json.dumps(openapi_tool_schemas)
+                        except Exception as json_err:
+                            logger.debug(f"Failed to serialize tools for Langfuse: {json_err}")
+                            tools_for_langfuse = str(openapi_tool_schemas)
+                    
                     generation.update(
                         input=prepared_messages,
                         start_time=datetime.now(timezone.utc),
@@ -516,15 +848,82 @@ class ThreadManager:
                             "max_tokens": llm_max_tokens,
                             "temperature": llm_temperature,
                             "tool_choice": tool_choice,
-                            "tools": openapi_tool_schemas,
+                            "tools": tools_for_langfuse,  # JSON string for Langfuse
                         }
                     )
                 except Exception as e:
                     logger.warning(f"Failed to update Langfuse generation: {e}")
 
+            # CRITICAL FINAL CHECK: Ensure we have at least one non-system message
+            non_system_messages = [msg for msg in prepared_messages if msg.get('role') != 'system']
+            if len(non_system_messages) == 0:
+                logger.error(f"❌ CRITICAL ERROR: No non-system messages to send to LLM! This will cause Bedrock error.")
+                logger.error(f"   Total prepared messages: {len(prepared_messages)}")
+                logger.error(f"   Message roles: {[msg.get('role') for msg in prepared_messages]}")
+                # This is a critical error - we can't proceed
+                return {"type": "status", "status": "error", "message": "No valid messages to send to LLM after filtering. This may indicate all messages were filtered out incorrectly."}
+            
             # Note: We don't log token count here because cached blocks give inaccurate counts
             # The LLM's usage.prompt_tokens (reported after the call) is the accurate source of truth
-            logger.info(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
+            logger.info(f"📤 Sending {len(prepared_messages)} prepared messages to LLM ({len(non_system_messages)} non-system messages)")
+            
+            # Log tool calls and tool results for debugging Bedrock compatibility
+            logger.info(f"🔍 NATIVE TOOL CALLING: Final message breakdown before sending to LLM:")
+            assistant_count = 0
+            tool_result_count = 0
+            tool_call_count = 0
+            import json as json_module
+            for i, msg in enumerate(prepared_messages):
+                role = msg.get('role', 'unknown')
+                if role == 'assistant':
+                    assistant_count += 1
+                    tool_calls = msg.get('tool_calls', [])
+                    if tool_calls:
+                        tool_call_count += len(tool_calls)
+                        tool_call_ids = [tc.get('id', 'no-id') for tc in tool_calls]
+                        logger.info(f"  [{i}] ASSISTANT with {len(tool_calls)} tool_calls:")
+                        logger.info(f"      Functions: {[tc.get('function', {}).get('name', 'unknown') for tc in tool_calls]}")
+                        logger.info(f"      Tool Call IDs: {tool_call_ids}")
+                        # Log full message structure for Bedrock debugging
+                        if 'bedrock' in llm_model.lower() or 'converse' in llm_model.lower():
+                            logger.debug(f"      Full assistant message structure: {json_module.dumps(msg, default=str)[:500]}")
+                    else:
+                        content_preview = str(msg.get('content', ''))[:100]
+                        logger.debug(f"  [{i}] ASSISTANT (no tools): {content_preview}...")
+                        # Check if content contains tool results (Bedrock format)
+                        content = msg.get('content', '')
+                        if isinstance(content, list):
+                            for j, block in enumerate(content):
+                                if isinstance(block, dict) and block.get('toolUse'):
+                                    logger.warning(f"      ⚠️ Found toolUse block in content[{j}]: {block.get('toolUse', {}).get('toolUseId', 'unknown')}")
+                        elif isinstance(content, dict) and 'toolUse' in str(content):
+                            logger.warning(f"      ⚠️ Content dict may contain toolUse: {str(content)[:200]}")
+                elif role == 'tool':
+                    tool_result_count += 1
+                    tool_call_id = msg.get('tool_call_id', 'no-id')
+                    tool_name = msg.get('name', 'unknown')
+                    content = msg.get('content', '')
+                    logger.info(f"  [{i}] TOOL RESULT: tool_call_id={tool_call_id}, name={tool_name}")
+                    # Check content format for Bedrock
+                    if 'bedrock' in llm_model.lower() or 'converse' in llm_model.lower():
+                        if isinstance(content, list):
+                            for j, block in enumerate(content):
+                                if isinstance(block, dict) and block.get('toolResult'):
+                                    logger.debug(f"      Found toolResult block in content[{j}]: toolUseId={block.get('toolResult', {}).get('toolUseId', 'unknown')}")
+                        logger.debug(f"      Full tool message structure: {json_module.dumps(msg, default=str)[:500]}")
+                else:
+                    content_preview = str(msg.get('content', ''))[:100]
+                    logger.debug(f"  [{i}] {role.upper()}: {content_preview}...")
+            
+            logger.info(f"📊 NATIVE TOOL CALLING: Summary - {assistant_count} assistant msgs, {tool_call_count} tool_calls, {tool_result_count} tool results")
+            if tool_call_count != tool_result_count:
+                logger.warning(f"⚠️ NATIVE TOOL CALLING: MISMATCH! tool_calls={tool_call_count} but tool_results={tool_result_count}. This may cause Bedrock errors.")
+            
+            # For Bedrock, log the exact message structure being sent
+            if 'bedrock' in llm_model.lower() or 'converse' in llm_model.lower():
+                logger.info(f"🔍 BEDROCK DEBUG: Full prepared_messages structure (first 3 messages):")
+                for i, msg in enumerate(prepared_messages[:3]):
+                    logger.info(f"  Message {i}: {json_module.dumps(msg, default=str, indent=2)[:1000]}")
 
             # Make LLM call
             try:
@@ -533,7 +932,7 @@ class ThreadManager:
                     temperature=llm_temperature,
                     max_tokens=llm_max_tokens,
                     tools=openapi_tool_schemas,
-                    tool_choice=tool_choice if config.native_tool_calling else "none",
+                    tool_choice=tool_choice,  # Always use tool_choice for native tool calling
                     stream=stream
                 )
             except LLMError as e:
