@@ -202,21 +202,35 @@ export function PricingSection({
 
   return (
     <View className={`flex-1 ${noPadding ? 'pb-0' : 'pb-12'}`}>
-      <View className="w-full flex-col px-4">
-        {showTitleAndTabs && (
+      <View className="w-full flex-col">
+        {showTitleAndTabs && !insideDialog && (
           <AnimatedView 
             entering={FadeIn.duration(600)} 
-            className="w-full items-center mb-6"
+            className="px-6 mb-6"
           >
-            <Text className="text-3xl font-roobert-semibold text-center text-foreground leading-tight">
-              {customTitle || 'Pick the plan that works for you.'}
+            <Text className="text-2xl font-roobert-semibold text-foreground mb-2">
+              {customTitle || 'Choose your plan'}
+            </Text>
+            <Text className="text-sm font-roobert text-muted-foreground">
+              Select the plan that best fits your needs and unlock powerful features.
+            </Text>
+          </AnimatedView>
+        )}
+
+        {showTitleAndTabs && insideDialog && (
+          <AnimatedView 
+            entering={FadeIn.duration(600)} 
+            className="px-6 mb-4"
+          >
+            <Text className="text-xl font-roobert-semibold text-center text-foreground">
+              {customTitle || 'Choose your plan'}
             </Text>
           </AnimatedView>
         )}
 
         <AnimatedView 
           entering={FadeIn.duration(600).delay(100)} 
-          className="w-full items-center mb-8"
+          className="px-6 mb-6"
         >
           <BillingPeriodToggle
             billingPeriod={billingPeriod}
@@ -224,7 +238,7 @@ export function PricingSection({
           />
         </AnimatedView>
 
-        <View className="w-full gap-4">
+        <View className="px-6 gap-4">
           {tiersToShow.map((tier, index) => {
             const displayPrice = getDisplayPrice(tier, billingPeriod);
             const isLoading = planLoadingStates[tier.id] || false;
@@ -255,7 +269,7 @@ export function PricingSection({
           currentSubscription?.credits?.can_purchase_credits && (
             <AnimatedView 
               entering={FadeIn.duration(600).delay(400)} 
-              className="w-full mt-12 flex-col items-center gap-4"
+              className="px-6 mt-8 flex-col items-center gap-4"
             >
               <AnimatedPressable
                 onPress={() => {
@@ -302,7 +316,7 @@ export function PricingSection({
         {(!isAuthenticated || !currentSubscription?.credits?.can_purchase_credits) && (
           <AnimatedView 
             entering={FadeIn.duration(600).delay(400)} 
-            className="w-full mt-8 flex items-center"
+            className="px-6 mt-6 flex items-center"
           >
             <AnimatedPressable
               onPress={() => {

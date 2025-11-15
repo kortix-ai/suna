@@ -58,9 +58,44 @@ export function PricingTierCard({
   t,
   index = 0,
 }: PricingTierCardProps) {
+  // More sophisticated current plan detection
   const isCurrentPlan = isAuthenticated && 
     currentSubscription?.tier_key === tier.id &&
     currentSubscription?.subscription?.status === 'active';
+
+  // Determine if this is an upgrade or downgrade
+  const getCurrentPlanValue = (): number => {
+    if (!currentSubscription?.tier_key) return 0;
+    const tierValues: Record<string, number> = {
+      'free': 0,
+      'tier_2_20': 20,
+      'tier_6_50': 50, 
+      'tier_12_100': 100,
+      'tier_25_200': 200,
+    };
+    return tierValues[currentSubscription.tier_key] || 0;
+  };
+
+  const getTargetPlanValue = (): number => {
+    const tierValues: Record<string, number> = {
+      'free': 0,
+      'tier_2_20': 20,
+      'tier_6_50': 50,
+      'tier_12_100': 100, 
+      'tier_25_200': 200,
+    };
+    return tierValues[tier.id] || 0;
+  };
+
+  const currentPlanValue = getCurrentPlanValue();
+  const targetPlanValue = getTargetPlanValue();
+  const isUpgrade = targetPlanValue > currentPlanValue;
+  const isDowngrade = targetPlanValue < currentPlanValue;
+
+  // Same tier but different billing period check
+  const isSameTierDifferentPeriod = currentSubscription?.tier_key === tier.id && 
+    currentBillingPeriod !== billingPeriod && 
+    currentBillingPeriod !== null;
 
   const buttonScale = useSharedValue(1);
 
@@ -69,11 +104,11 @@ export function PricingTierCard({
   }));
 
   const handlePress = () => {
-    if (isLoading || isCurrentPlan) return;
+    if (isLoading) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onPlanSelect?.(tier.id);
     if (onSubscribe) {
-      onSubscribe(tier.id);
+      onSubscribe(tier.id, isDowngrade);
     }
   };
 
@@ -84,6 +119,78 @@ export function PricingTierCard({
     if (tierName === 'pro' || tierName === 'business') return 'Pro';
     if (tierName === 'ultra') return 'Ultra';
     return null;
+  };
+
+  // Button styling and text logic
+  const getButtonText = (): string => {
+    if (!isAuthenticated) {
+      return tier.buttonText || 'Get Started';
+    }
+    
+    if (isCurrentPlan && !isSameTierDifferentPeriod) {
+      return 'Current Plan';
+    }
+    
+    if (isSameTierDifferentPeriod) {
+      return billingPeriod === 'yearly_commitment' ? 'Upgrade' : 'Switch Plan';
+    }
+    
+    if (isUpgrade) {
+      return 'Upgrade';
+    }
+    
+    if (isDowngrade) {
+      return 'Downgrade';
+    }
+    
+    return tier.buttonText || 'Get Started';
+  };
+
+  const getButtonStyles = (): string => {
+    if (!isAuthenticated) {
+      return tier.isPopular ? 'bg-primary' : 'bg-foreground';
+    }
+    
+    if (isCurrentPlan && !isSameTierDifferentPeriod) {
+      return 'bg-muted/50 dark:bg-muted/30 border border-border/60 dark:border-border/40';
+    }
+    
+    if (isSameTierDifferentPeriod || isUpgrade) {
+      return tier.isPopular ? 'bg-primary' : 'bg-primary';
+    }
+    
+    if (isDowngrade) {
+      return 'bg-background border border-border';
+    }
+    
+    return tier.isPopular ? 'bg-primary' : 'bg-foreground';
+  };
+
+  const getButtonTextColor = (): string => {
+    if (!isAuthenticated) {
+      return tier.isPopular ? 'text-primary-foreground' : 'text-background';
+    }
+    
+    if (isCurrentPlan && !isSameTierDifferentPeriod) {
+      return 'text-muted-foreground/80 dark:text-muted-foreground/70';
+    }
+    
+    if (isSameTierDifferentPeriod || isUpgrade) {
+      return 'text-primary-foreground';
+    }
+    
+    if (isDowngrade) {
+      return 'text-foreground';
+    }
+    
+    return tier.isPopular ? 'text-primary-foreground' : 'text-background';
+  };
+
+  const getLoadingColor = (): string => {
+    const styles = getButtonStyles();
+    if (styles.includes('bg-primary')) return '#fff';
+    if (styles.includes('bg-foreground')) return '#fff';
+    return '#000';
   };
 
   const tierType = getTierType();
@@ -135,9 +242,9 @@ export function PricingTierCard({
 
       <AnimatedPressable
         onPress={handlePress}
-        disabled={isLoading || isCurrentPlan}
+        disabled={isLoading || (isCurrentPlan && !isSameTierDifferentPeriod)}
         onPressIn={() => {
-          if (!isLoading && !isCurrentPlan) {
+          if (!isLoading && !(isCurrentPlan && !isSameTierDifferentPeriod)) {
             buttonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
           }
         }}
@@ -147,24 +254,18 @@ export function PricingTierCard({
         style={[
           buttonAnimatedStyle,
           {
-            opacity: isCurrentPlan ? 0.6 : 1,
+            opacity: (isCurrentPlan && !isSameTierDifferentPeriod) ? 0.6 : 1,
           }
         ]}
-        className={`w-full h-14 rounded-2xl items-center justify-center ${
-          isCurrentPlan 
-            ? 'bg-muted' 
-            : tier.isPopular
-            ? 'bg-primary'
-            : 'bg-foreground'
+        className={`w-full h-12 rounded-3xl items-center justify-center ${
+          getButtonStyles()
         }`}
       >
         {isLoading ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color={getLoadingColor()} />
         ) : (
-          <Text className={`text-[15px] font-roobert-semibold ${
-            isCurrentPlan ? 'text-muted-foreground' : tier.isPopular ? 'text-primary-foreground' : 'text-background'
-          }`}>
-            {isCurrentPlan ? 'Current Plan' : tier.buttonText || 'Select Plan'}
+          <Text className={`text-sm font-roobert-semibold ${getButtonTextColor()}`}>
+            {getButtonText()}
           </Text>
         )}
       </AnimatedPressable>

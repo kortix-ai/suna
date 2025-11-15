@@ -25,6 +25,10 @@ import {
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
 import { useAgentStream } from './useAgentStream';
+import { useAgent } from '@/contexts/AgentContext';
+import { useAvailableModels } from '@/lib/models';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { usePricingModalStore } from '@/stores/billing-modal-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -99,6 +103,10 @@ export interface UseChatReturn {
 export function useChat(): UseChatReturn {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
+  
+  const { selectedModelId, selectedAgentId } = useAgent();
+  const { data: modelsData } = useAvailableModels();
+  const { hasActiveSubscription } = useBillingContext();
 
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>();
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
@@ -117,7 +125,62 @@ export function useChat(): UseChatReturn {
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
 
+  const { selectModel } = useAgent();
   const { data: threadsData = [] } = useThreads();
+  
+  const availableModels = modelsData?.models || [];
+  
+  const accessibleModels = useMemo(() => {
+    return availableModels.filter(model => {
+      if (!model.requires_subscription) return true;
+      return hasActiveSubscription;
+    });
+  }, [availableModels, hasActiveSubscription]);
+  
+  useEffect(() => {
+    if (selectedModelId && accessibleModels.length > 0) {
+      const isModelAccessible = accessibleModels.some(m => m.id === selectedModelId);
+      if (!isModelAccessible) {
+        console.warn('⚠️ [useChat] Selected model is not accessible, clearing selection:', selectedModelId);
+        const recommendedModel = accessibleModels.find(m => m.recommended);
+        const fallbackModel = recommendedModel || accessibleModels[0];
+        if (fallbackModel) {
+          console.log('🔄 [useChat] Auto-selecting accessible model:', fallbackModel.id);
+          selectModel(fallbackModel.id);
+        }
+      }
+    }
+  }, [selectedModelId, accessibleModels, selectModel]);
+  
+  const currentModel = useMemo(() => {
+    console.log('🔍 [useChat] Model selection:', {
+      selectedModelId,
+      hasActiveSubscription,
+      totalModels: availableModels.length,
+      accessibleModels: accessibleModels.length,
+      accessibleModelIds: accessibleModels.map(m => m.id),
+    });
+    
+    if (selectedModelId) {
+      const model = accessibleModels.find(m => m.id === selectedModelId);
+      if (model) {
+        console.log('✅ [useChat] Using selected accessible model:', model.id);
+        return model.id;
+      }
+      console.warn('⚠️ [useChat] Selected model not accessible:', selectedModelId);
+    }
+    
+    const recommendedModel = accessibleModels.find(m => m.recommended);
+    const firstAccessibleModel = accessibleModels[0];
+    const fallbackModel = recommendedModel?.id || firstAccessibleModel?.id;
+    
+    console.log('⚠️ [useChat] Using fallback model:', fallbackModel, {
+      recommended: recommendedModel?.id,
+      firstAccessible: firstAccessibleModel?.id,
+    });
+    
+    return fallbackModel;
+  }, [selectedModelId, accessibleModels, hasActiveSubscription, availableModels.length]);
   
   const shouldFetchThread = !!activeThreadId;
   const shouldFetchMessages = !!activeThreadId;
@@ -496,29 +559,64 @@ export function useChat(): UseChatReturn {
           console.log('[useChat] Appended image style context to new thread:', selectedQuickActionOption);
         }
         
-        const createResult = await unifiedAgentStartMutation.mutateAsync({
-          prompt: messageWithContext,
-          agentId: agentId,
-          modelName: 'claude-sonnet-4',
-          files: formDataFiles as any,
-        });
-        
-        currentThreadId = createResult.thread_id;
-      
-        setActiveThreadId(currentThreadId);
-        
-        queryClient.refetchQueries({ 
-          queryKey: chatKeys.thread(currentThreadId),
-        });
-        
-        if (createResult.agent_run_id) {
-          console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
-          setUserInitiatedRun(true);
-          setAgentRunId(createResult.agent_run_id);
+        if (!currentModel) {
+          console.error('❌ [useChat] No model available! Details:', {
+            totalModels: availableModels.length,
+            accessibleModels: accessibleModels.length,
+            selectedModelId,
+            hasActiveSubscription,
+          });
+          
+          usePricingModalStore.getState().openPricingModal({
+            alertTitle: hasActiveSubscription 
+              ? 'No models are currently available. Please try again later or contact support.'
+              : 'Upgrade to access AI models'
+          });
+          return;
         }
         
-        setInputValue('');
-        setAttachments([]);
+        console.log('🚀 [useChat] Starting agent with accessible model:', currentModel);
+        
+        try {
+          const createResult = await unifiedAgentStartMutation.mutateAsync({
+            prompt: messageWithContext,
+            agentId: agentId,
+            modelName: currentModel,
+            files: formDataFiles as any,
+          });
+          
+          currentThreadId = createResult.thread_id;
+      
+          setActiveThreadId(currentThreadId);
+          
+          queryClient.refetchQueries({ 
+            queryKey: chatKeys.thread(currentThreadId),
+          });
+          
+          if (createResult.agent_run_id) {
+            console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
+            setUserInitiatedRun(true);
+            setAgentRunId(createResult.agent_run_id);
+          }
+          
+          setInputValue('');
+          setAttachments([]);
+        } catch (agentStartError: any) {
+          console.error('[useChat] Error starting agent for new thread:', agentStartError);
+          
+          // Handle specific billing-related errors
+          const errorMessage = agentStartError?.message || '';
+          if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
+            console.log('💳 Project limit exceeded - opening billing modal');
+            usePricingModalStore.getState().openPricingModal({
+              alertTitle: 'Project limit exceeded',
+              creditsExhausted: true
+            });
+            return;
+          }
+          
+          throw agentStartError;
+        }
       } else {
         console.log('[useChat] Sending to existing thread:', currentThreadId);
         
@@ -599,26 +697,58 @@ export function useChat(): UseChatReturn {
           }
         }
         
-        const result = await sendMessageMutation.mutateAsync({
-          threadId: currentThreadId,
-          message: messageContent,
-          modelName: 'claude-sonnet-4',
-        });
-        
-        console.log('[useChat] Message sent, agent run started:', result.agentRunId);
-        
-        if (result.agentRunId) {
-          console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
-          setUserInitiatedRun(true);
-          setAgentRunId(result.agentRunId);
+        if (!currentModel) {
+          console.error('❌ [useChat] No model available for sending message! Details:', {
+            totalModels: availableModels.length,
+            accessibleModels: accessibleModels.length,
+            selectedModelId,
+            hasActiveSubscription,
+          });
+          
+          usePricingModalStore.getState().openPricingModal({
+            alertTitle: hasActiveSubscription 
+              ? 'No models are currently available. Please try again later or contact support.'
+              : 'Upgrade to access AI models'
+          });
+          return;
         }
         
-        setIsNewThreadOptimistic(false);
+        console.log('🚀 [useChat] Sending message with accessible model:', currentModel);
         
-        setInputValue('');
-        setAttachments([]);
+        try {
+          const result = await sendMessageMutation.mutateAsync({
+            threadId: currentThreadId,
+            message: messageContent,
+            modelName: currentModel,
+          });
+          
+          console.log('[useChat] Message sent, agent run started:', result.agentRunId);
+          
+          if (result.agentRunId) {
+            console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
+            setUserInitiatedRun(true);
+            setAgentRunId(result.agentRunId);
+          }
+          
+          setIsNewThreadOptimistic(false);
+          
+          setInputValue('');
+          setAttachments([]);
+        } catch (sendMessageError: any) {
+          console.error('[useChat] Error sending message to existing thread:', sendMessageError);
+          const errorMessage = sendMessageError?.message || '';
+          if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
+            console.log('💳 Project limit exceeded - opening billing modal');
+            usePricingModalStore.getState().openPricingModal({
+              alertTitle: 'Project limit exceeded',
+              creditsExhausted: true
+            });
+            return;
+          }
+          throw sendMessageError;
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('[useChat] Error sending message:', error);
       throw error;
     }
