@@ -31,7 +31,7 @@ export const PRICING_TIERS: PricingTier[] = [
     priceYearly: 0,
     credits: 2,
     features: [
-      '200 credits/m',
+      '200 credits/month',
       '1 custom Worker',
       '1 private project',
       '1 custom trigger',
@@ -49,13 +49,11 @@ export const PRICING_TIERS: PricingTier[] = [
     priceYearly: 17, // 15% off = $17/month billed yearly
     credits: 20,
     features: [
-      '2,000 credits/m',
-      '5 custom agents',
+      '2,000 credits/month',
+      '5 custom workers',
       'Private projects',
-      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
-      'Advanced AI Capabilities',
     ],
     isPopular: true,
     buttonText: 'Get Started',
@@ -70,13 +68,11 @@ export const PRICING_TIERS: PricingTier[] = [
     priceYearly: 42.5, // 15% off = $42.50/month billed yearly
     credits: 50,
     features: [
-      '5,000 credits/m',
-      '20 custom agents',
+      '5,000 credits/month',
+      '20 custom workers',
       'Private projects',
-      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
-      'Advanced AI Capabilities',
     ],
     isPopular: false,
     buttonText: 'Get Started',
@@ -91,13 +87,11 @@ export const PRICING_TIERS: PricingTier[] = [
     priceYearly: 85, // 15% off = $85/month billed yearly
     credits: 100,
     features: [
-      '10,000 credits/m',
-      '20 custom agents',
+      '10,000 credits/month',
+      '20 custom workers',
       'Private projects',
-      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
-      'Advanced AI Capabilities',
     ],
     isPopular: false,
     buttonText: 'Get Started',
@@ -112,14 +106,12 @@ export const PRICING_TIERS: PricingTier[] = [
     priceYearly: 170, // 15% off = $170/month billed yearly
     credits: 200,
     features: [
-      '20,000 credits/m',
-      '100 custom agents',
+      '20,000 credits/month',
+      '100 custom workers',
       'Private projects',
-      'Custom abilities',
       '100+ integrations',
       'Premium AI Models',
       'Priority Support',
-      'Advanced AI Capabilities',
     ],
     isPopular: false,
     buttonText: 'Get Started',

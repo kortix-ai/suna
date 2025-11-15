@@ -1,17 +1,19 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView } from 'react-native';
+import { Modal, Pressable, View, ScrollView, Platform } from 'react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
 
-interface UsagePageProps {
+interface UsageDrawerProps {
   visible: boolean;
   onClose: () => void;
+  onUpgradePress?: () => void;
+  onTopUpPress?: () => void;
 }
 
-export function UsagePage({ visible, onClose }: UsagePageProps) {
+export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: UsageDrawerProps) {
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Usage page closing');
+    console.log('🎯 Usage drawer closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
@@ -21,16 +23,14 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
-  if (!visible) return null;
-
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={handleClose}
+    >
+      <View className="flex-1 bg-background">
         <ScrollView 
           className="flex-1" 
           showsVerticalScrollIndicator={false}
@@ -39,14 +39,19 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
           <SettingsHeader
             title="Usage"
             onClose={handleClose}
+            variant="close"
           />
 
-          <UsageContent onThreadPress={handleThreadPress} />
+          <UsageContent 
+            onThreadPress={handleThreadPress}
+            onUpgradePress={onUpgradePress}
+            onTopUpPress={onTopUpPress}
+          />
 
           <View className="h-20" />
         </ScrollView>
       </View>
-    </View>
+    </Modal>
   );
 }
 

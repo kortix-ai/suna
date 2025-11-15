@@ -5,6 +5,8 @@ import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/compo
 import { QuickActionBar } from '@/components/quick-actions';
 import { BackgroundLogo, TopNav } from '@/components/home';
 import { PlanSelectionModal } from '@/components/billing/PlanSelectionModal';
+import { UsageDrawer } from '@/components/settings/UsageDrawer';
+import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
 import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
@@ -29,6 +31,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   
   const { isOpen: isPricingModalOpen, alertTitle, creditsExhausted, closePricingModal } = usePricingModalStore();
+  const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
+  const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
   
   const chatInputRef = React.useRef<ChatInputSectionRef>(null);
   
@@ -49,6 +53,33 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     closePricingModal();
   }, [closePricingModal]);
 
+  const handleCreditsPress = React.useCallback(() => {
+    console.log('🎯 Credits pressed - opening usage drawer');
+    setIsUsageDrawerOpen(true);
+  }, []);
+
+  const handleCloseUsageDrawer = React.useCallback(() => {
+    console.log('🎯 Usage drawer closed');
+    setIsUsageDrawerOpen(false);
+  }, []);
+
+  const handleTopUpPress = React.useCallback(() => {
+    console.log('🎯 Top up pressed - opening credits purchase');
+    setIsUsageDrawerOpen(false);
+    setIsCreditsPurchaseOpen(true);
+  }, []);
+
+  const handleCloseCreditsPurchase = React.useCallback(() => {
+    console.log('🎯 Credits purchase closed');
+    setIsCreditsPurchaseOpen(false);
+  }, []);
+
+  const handleUpgradeFromUsage = React.useCallback(() => {
+    console.log('🎯 Upgrade from usage - opening pricing modal');
+    setIsUsageDrawerOpen(false);
+    usePricingModalStore.getState().openPricingModal();
+  }, []);
+
 
   return (
     <View className="flex-1 bg-background">
@@ -66,7 +97,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           <View className="flex-1 relative">
             <TopNav 
               onMenuPress={onMenuPress} 
-              onUpgradePress={handleUpgradePress} 
+              onUpgradePress={handleUpgradePress}
+              onCreditsPress={handleCreditsPress}
             />
             <View className="absolute inset-0" pointerEvents="none">
               <BackgroundLogo />
@@ -133,6 +165,16 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           open={isPricingModalOpen}
           onOpenChange={handleClosePricingModal}
           creditsExhausted={creditsExhausted}
+        />
+        <UsageDrawer
+          visible={isUsageDrawerOpen}
+          onClose={handleCloseUsageDrawer}
+          onUpgradePress={handleUpgradeFromUsage}
+          onTopUpPress={handleTopUpPress}
+        />
+        <CreditsPurchasePage
+          visible={isCreditsPurchaseOpen}
+          onClose={handleCloseCreditsPurchase}
         />
       </KeyboardAvoidingView>
     </View>

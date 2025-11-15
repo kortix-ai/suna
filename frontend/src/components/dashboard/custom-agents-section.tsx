@@ -424,7 +424,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       <div className="w-full">
         <TitleSection />
         <div className="text-center py-8">
-          <p className="text-muted-foreground">Failed to load custom agents</p>
+          <p className="text-muted-foreground">Failed to load custom workers</p>
         </div>
       </div>
     );
@@ -443,7 +443,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       <div className="w-full">
         <TitleSection />
         <div className="text-center py-8">
-          <p className="text-muted-foreground">No custom agents available yet</p>
+          <p className="text-muted-foreground">No custom workers available yet</p>
         </div>
       </div>
     );

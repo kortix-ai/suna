@@ -41,7 +41,7 @@ export function BillingPeriodToggle({
   }));
 
   return (
-    <View className="flex-row items-center bg-muted/20 p-1 rounded-full">
+    <View className="flex-row items-center bg-muted/20 p-0.5 rounded-full">
       <AnimatedPressable
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -54,14 +54,14 @@ export function BillingPeriodToggle({
           monthlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         style={monthlyStyle}
-        className={`flex-1 h-9 px-4 rounded-full items-center justify-center ${
+        className={`flex-1 h-7 px-2 rounded-full items-center justify-center ${
           billingPeriod === 'monthly'
             ? 'bg-foreground'
             : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-sm font-roobert-medium ${
+          className={`text-xs font-roobert-medium ${
             billingPeriod === 'monthly'
               ? 'text-background'
               : 'text-muted-foreground'
@@ -83,14 +83,14 @@ export function BillingPeriodToggle({
           yearlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         style={yearlyStyle}
-        className={`flex-1 h-9 px-4 rounded-full flex-row items-center justify-center gap-1.5 ${
+        className={`flex-1 h-7 px-2 rounded-full flex-row items-center justify-center gap-1 ${
           billingPeriod === 'yearly_commitment'
             ? 'bg-foreground'
             : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-sm font-roobert-medium ${
+          className={`text-xs font-roobert-medium ${
             billingPeriod === 'yearly_commitment'
               ? 'text-background'
               : 'text-muted-foreground'
@@ -99,20 +99,19 @@ export function BillingPeriodToggle({
           Yearly
         </Text>
         <View
-          className={`px-1.5 py-0.5 rounded-full ${
+          className={`px-1 py-0.5 rounded-full ${
             isYearly
               ? 'bg-primary/20'
               : 'bg-primary/10'
           }`}
         >
-          <Text className={`text-[10px] font-roobert-semibold ${
+          <Text className={`text-[9px] font-roobert-semibold ${
             isYearly ? 'text-primary' : 'text-primary'
           }`}>
-            15% off
+            15%
           </Text>
         </View>
       </AnimatedPressable>
     </View>
   );
 }
-
