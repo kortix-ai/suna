@@ -38,6 +38,7 @@ import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { ProfilePicture } from './ProfilePicture';
+import { IntegrationsPage } from './IntegrationsPage';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -81,6 +82,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
+  const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
   
   const isGuest = !user;
   
@@ -127,13 +129,8 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleIntegrations = React.useCallback(() => {
     console.log('🎯 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    Alert.alert(
-      t('settings.integrations') || 'Integrations',
-      'Integration management is coming soon! Connect your favorite apps to automate workflows.',
-      [{ text: t('common.ok') || 'OK' }]
-    );
-  }, [t]);
+    setIsIntegrationsPageVisible(true);
+  }, []);
   
   const handleTheme = React.useCallback(() => {
     console.log('🎯 Theme pressed');
@@ -352,6 +349,13 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         <AccountDeletionPage
           visible
           onClose={() => setIsAccountDeletionPageVisible(false)}
+        />
+      </AnimatedPageWrapper>
+
+      <AnimatedPageWrapper visible={isIntegrationsPageVisible} onClose={() => setIsIntegrationsPageVisible(false)}>
+        <IntegrationsPage
+          visible
+          onClose={() => setIsIntegrationsPageVisible(false)}
         />
       </AnimatedPageWrapper>
     </View>
