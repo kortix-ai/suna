@@ -1018,11 +1018,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 onSubmit={handleSubmitMessage}
                 placeholder={`Describe what you need help with...`}
                 loading={isSending}
-                disabled={
-                  isSending ||
-                  agentStatus === 'running' ||
-                  agentStatus === 'connecting'
-                }
+                disabled={isSending}
                 isAgentRunning={
                   agentStatus === 'running' || agentStatus === 'connecting'
                 }
@@ -1165,11 +1161,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 onSubmit={handleSubmitMessage}
                 placeholder={`Describe what you need help with...`}
                 loading={isSending}
-                disabled={
-                  isSending ||
-                  agentStatus === 'running' ||
-                  agentStatus === 'connecting'
-                }
+                disabled={isSending}
                 isAgentRunning={
                   agentStatus === 'running' || agentStatus === 'connecting'
                 }
