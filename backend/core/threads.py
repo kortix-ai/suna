@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Reques
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 
 from .api_models import CreateThreadResponse, MessageCreateRequest
 from . import core_utils as utils
@@ -242,7 +242,7 @@ async def create_thread(
     account_id = user_id
     
     try:
-        if config.ENV_MODE != config.EnvMode.LOCAL:
+        if config.ENV_MODE != EnvMode.LOCAL:
             from core.utils.limits_checker import check_thread_limit, check_project_count_limit
             
             thread_limit_check = await check_thread_limit(client, account_id)

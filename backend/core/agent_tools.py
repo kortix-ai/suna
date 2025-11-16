@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Body
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 
 from . import core_utils as utils
 from .core_utils import _get_version_service
@@ -152,7 +152,7 @@ async def update_custom_mcp_tools_for_agent(
                     break
         
         if not updated:
-            if config.ENV_MODE != config.EnvMode.LOCAL:
+            if config.ENV_MODE != EnvMode.LOCAL:
                 from core.utils.limits_checker import check_custom_worker_limit
                 limit_check = await check_custom_worker_limit(client, user_id)
                 
@@ -257,7 +257,7 @@ async def update_agent_custom_mcps(
         tools = agent_config.get('tools', {})
         existing_custom_mcps = tools.get('custom_mcp', [])
         
-        if config.ENV_MODE != config.EnvMode.LOCAL:
+        if config.ENV_MODE != EnvMode.LOCAL:
             new_count = len(new_custom_mcps)
             existing_count = len(existing_custom_mcps)
             
