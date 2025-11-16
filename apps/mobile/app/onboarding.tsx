@@ -197,7 +197,7 @@ export default function OnboardingScreen() {
           <BackgroundLogo/>
         </View>
         <View className="pt-16 px-8 pb-4 flex-row justify-between items-center">
-          <KortixLogo variant="logomark" size={60} />
+          <KortixLogo variant="logomark" size={60} color={colorScheme === 'dark' ? 'dark' : 'light'} />
           <View className="flex-row items-center gap-4">
             <TouchableOpacity 
               onPress={handleLogout}

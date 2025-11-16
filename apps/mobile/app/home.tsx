@@ -2,7 +2,7 @@ import { MenuPage, HomePage, ThreadPage } from '@/components/pages';
 import type { HomePageRef } from '@/components/pages/HomePage';
 import { useSideMenu, usePageNavigation, useChat, useAgentManager } from '@/hooks';
 import { useAuthContext } from '@/contexts';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { StatusBar as RNStatusBar } from 'react-native';
@@ -30,9 +30,18 @@ export default function AppScreen() {
   const { colorScheme } = useColorScheme();
   const { isAuthenticated } = useAuthContext();
   const router = useRouter();
+  const { threadId } = useLocalSearchParams<{ threadId?: string }>();
   const chat = useChat(); // SINGLE UNIFIED HOOK
   const pageNav = usePageNavigation();
   const homePageRef = React.useRef<HomePageRef>(null);
+  
+  // Handle threadId parameter from URL
+  React.useEffect(() => {
+    if (threadId && threadId !== chat.activeThread?.id) {
+      console.log('🎯 Loading thread from URL parameter:', threadId);
+      chat.loadThread(threadId);
+    }
+  }, [threadId, chat]);
   
   // Handle new chat - starts new chat and closes drawer
   const handleNewChat = React.useCallback(() => {

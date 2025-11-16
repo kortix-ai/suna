@@ -51,12 +51,12 @@ export function QuickActionBar({
   }
 
   return (
-    <View className="mb-4 py-2">
+    <View className="mb-2">
       <ScrollView 
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-        className="flex-row"
+        className="flex-row -mx-4"
       >
         {enhancedActions.map((action) => (
           <QuickActionCard key={action.id} action={action} />

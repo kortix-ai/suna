@@ -24,7 +24,7 @@ export function ConversationSection({
   section, 
   onConversationPress 
 }: ConversationSectionProps) {
-  const { currentLanguage } = useLanguage();
+  const { currentLanguage, t } = useLanguage();
   
   // Format section title based on current locale
   const sectionTitle = React.useMemo(
@@ -34,16 +34,13 @@ export function ConversationSection({
   
   return (
     <View className="gap-3 w-full">
-      {/* Section Title - 14px at 50% opacity, no left padding for cleaner look */}
       <Text className="text-sm font-roobert-medium text-foreground opacity-50">
         {sectionTitle}
       </Text>
-      
-      {/* Conversations List - Using unified EntityList */}
       <EntityList
         entities={section.conversations}
         gap={4}
-        emptyMessage="No conversations in this period"
+        emptyMessage={t('conversations.noConversationsInPeriod', 'No conversations in this period')}
         renderItem={(conversation) => (
           <ConversationItem
             key={conversation.id}

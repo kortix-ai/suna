@@ -56,7 +56,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
   };
 
   const handleRequestDeletion = async () => {
-    if (confirmText !== 'DELETE') {
+    if (confirmText !== t('accountDeletion.deletePlaceholder')) {
       return;
     }
 
@@ -69,15 +69,15 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
       setConfirmText('');
       
       Alert.alert(
-        'Deletion Scheduled',
-        'Your account will be deleted in 30 days. You can cancel this request anytime.',
+        t('accountDeletion.deletionScheduled'),
+        t('accountDeletion.deletionScheduledSuccess'),
         [{ 
-          text: 'OK',
+          text: t('common.ok'),
           onPress: handleClose
         }]
       );
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to request account deletion');
+      Alert.alert(t('common.error'), error.message || t('accountDeletion.failedToRequest'));
     }
   };
 
@@ -85,27 +85,27 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     Alert.alert(
-      'Cancel Account Deletion',
-      'Do you want to cancel the deletion of your account? Your account and all data will be preserved.',
+      t('accountDeletion.cancelDeletionTitle'),
+      t('accountDeletion.cancelDeletionDescription'),
       [
         {
-          text: 'Back',
+          text: t('accountDeletion.back'),
           style: 'cancel',
         },
         {
-          text: 'Cancel Deletion',
+          text: t('accountDeletion.cancelDeletion'),
           onPress: async () => {
             try {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               await cancelDeletion.mutateAsync();
               
               Alert.alert(
-                'Deletion Cancelled',
-                'Your account is safe. The deletion has been cancelled.',
-                [{ text: 'OK' }]
+                t('accountDeletion.deletionCancelled'),
+                t('accountDeletion.deletionCancelledSuccess'),
+                [{ text: t('common.ok') }]
               );
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to cancel account deletion');
+              Alert.alert(t('common.error'), error.message || t('accountDeletion.failedToCancel'));
             }
           },
         },
@@ -133,7 +133,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
           keyboardShouldPersistTaps="handled"
         >
           <SettingsHeader
-            title="Delete Account"
+            title={t('accountDeletion.title')}
             onClose={handleClose}
             disabled={isLoading}
           />
@@ -146,10 +146,10 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                     <Icon as={Calendar} size={28} className="text-destructive" strokeWidth={2} />
                   </View>
                   <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-                    Deletion Scheduled
+                    {t('accountDeletion.deletionScheduled')}
                   </Text>
                   <Text className="text-sm font-roobert text-muted-foreground text-center">
-                    Your account will be permanently deleted
+                    {t('accountDeletion.accountWillBeDeleted')}
                   </Text>
                 </View>
 
@@ -161,7 +161,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                       </View>
                       <View className="flex-1">
                         <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
-                          Scheduled For
+                          {t('accountDeletion.scheduledFor')}
                         </Text>
                         <Text className="text-sm font-roobert-semibold text-foreground">
                           {formatDate(deletionStatus?.deletion_scheduled_for)}
@@ -171,7 +171,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                     
                     <View className="pt-3 border-t border-destructive/20">
                       <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                        You can cancel this request anytime before the deletion date. All your data will be preserved if you cancel.
+                        {t('accountDeletion.cancelRequestDescription')}
                       </Text>
                     </View>
                   </View>
@@ -182,7 +182,7 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                   disabled={isLoading}
                   isLoading={cancelDeletion.isPending}
                   icon={CheckCircle}
-                  label="Cancel Deletion"
+                  label={t('accountDeletion.cancelDeletion')}
                   variant="primary"
                 />
               </>
@@ -193,24 +193,24 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                     <Icon as={Trash2} size={28} className="text-destructive" strokeWidth={2} />
                   </View>
                   <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-                    Delete Your Account
+                    {t('accountDeletion.deleteYourAccount')}
                   </Text>
                   <Text className="text-sm font-roobert text-muted-foreground text-center">
-                    This action cannot be undone
+                    {t('accountDeletion.actionCannotBeUndone')}
                   </Text>
                 </View>
 
                 <View className="mb-6">
                   <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                    What Will Be Deleted
+                    {t('accountDeletion.whatWillBeDeleted')}
                   </Text>
                   
                   <View className="bg-card border border-border/40 rounded-2xl p-5">
                     <View className="gap-3">
-                      <DataItem text="All your agents and agent versions" />
-                      <DataItem text="All your threads and conversations" />
-                      <DataItem text="All your credentials and integrations" />
-                      <DataItem text="Your subscription and billing data" />
+                      <DataItem text={t('accountDeletion.allAgents')} />
+                      <DataItem text={t('accountDeletion.allThreads')} />
+                      <DataItem text={t('accountDeletion.allCredentials')} />
+                      <DataItem text={t('accountDeletion.subscriptionData')} />
                     </View>
                   </View>
                 </View>
@@ -222,10 +222,10 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                     </View>
                     <View className="flex-1">
                       <Text className="text-sm font-roobert-semibold text-foreground mb-1">
-                        30-Day Grace Period
+                        {t('accountDeletion.gracePeriod')}
                       </Text>
                       <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                        Your account will be scheduled for deletion in 30 days. You can cancel this request anytime during the grace period.
+                        {t('accountDeletion.gracePeriodDescription')}
                       </Text>
                     </View>
                   </View>
@@ -233,12 +233,12 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
 
                 <View className="mb-6">
                   <Text className="mb-3 text-sm font-roobert-medium text-foreground">
-                    Type <Text className="font-roobert-semibold">DELETE</Text> to confirm
+                    {t('accountDeletion.typeDeleteToConfirm', { text: t('accountDeletion.deletePlaceholder') })}
                   </Text>
                   <TextInput
                     value={confirmText}
                     onChangeText={(text) => setConfirmText(text.toUpperCase())}
-                    placeholder="DELETE"
+                    placeholder={t('accountDeletion.deletePlaceholder')}
                     placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
                     className="bg-card border border-border/40 rounded-2xl p-4 text-foreground font-roobert-semibold text-base tracking-wide"
                     autoCapitalize="characters"
@@ -249,10 +249,10 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
 
                 <ActionButton
                   onPress={handleRequestDeletion}
-                  disabled={isLoading || confirmText !== 'DELETE'}
+                  disabled={isLoading || confirmText !== t('accountDeletion.deletePlaceholder')}
                   isLoading={requestDeletion.isPending}
                   icon={Trash2}
-                  label="Delete Account"
+                  label={t('accountDeletion.deleteAccount')}
                   variant="destructive"
                 />
               </>
@@ -287,6 +287,7 @@ interface ActionButtonProps {
 }
 
 function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label, variant }: ActionButtonProps) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
 
@@ -332,7 +333,7 @@ function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label
             forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
           />
           <Text className={`${textColor} text-sm font-roobert-medium`}>
-            Processing...
+            {t('accountDeletion.processing')}
           </Text>
         </>
       ) : (

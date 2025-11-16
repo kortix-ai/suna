@@ -41,7 +41,7 @@ export function SearchBar({
   
   return (
     <View 
-      className={`bg-card border-[1.5px] border-border rounded-2xl flex-row items-center px-3 h-12 ${className}`}
+      className={`bg-primary/5 rounded-3xl flex-row items-center px-3 h-12 ${className}`}
     >
       <Icon 
         as={Search}

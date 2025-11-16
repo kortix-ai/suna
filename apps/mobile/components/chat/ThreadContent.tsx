@@ -367,9 +367,9 @@ const ToolCard = React.memo(function ToolCard({
     <Pressable
       onPress={onPress}
       disabled={!onPress}
-      className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-neutral-200 dark:bg-neutral-800 active:opacity-70"
+      className="flex-row items-center gap-3 p-3 rounded-3xl bg-primary/10 active:opacity-70"
     >
-      <View className={`h-8 w-8 rounded-xl items-center border border-neutral-400/50 dark:border-neutral-700 justify-center ${isError ? 'bg-destructive/10' : 'bg-primary/10'}`}>
+      <View className={`h-8 w-8 rounded-xl items-center justify-center ${isError ? 'bg-destructive/10' : 'bg-primary/10'}`}>
         <Icon 
           as={isError ? AlertCircle : IconComponent} 
           size={16} 
@@ -704,10 +704,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
               {cleanContent && (
                 <View className="flex-row justify-end">
                   <View 
-                    className="max-w-[80%] rounded-[20px] px-4 py-3"
+                    className="max-w-[80%] rounded-3xl px-4 py-1.5"
                     style={{
-                      backgroundColor: isDark ? '#18181B' : '#FAFAFA',
-                      borderWidth: 1,
+                      backgroundColor: isDark ? '#1C1D20' : '#ECECEC',
+                      borderWidth: 0,
                       borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
                     }}
                   >

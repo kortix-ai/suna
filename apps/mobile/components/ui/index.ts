@@ -5,4 +5,3 @@ export { Text } from './text';
 export { SearchBar } from './SearchBar';
 export { NativeOnlyAnimatedView } from './native-only-animated-view';
 export { KortixLoader } from './kortix-loader';
-

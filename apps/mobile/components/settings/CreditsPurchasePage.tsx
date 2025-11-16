@@ -60,7 +60,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
         contentContainerStyle={{ paddingBottom: 40 }}
       >
         <SettingsHeader
-          title="Buy Credits"
+          title={t('billing.buyCredits')}
           onClose={handleClose}
         />
         
@@ -70,7 +70,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
               {formatCredits(totalCredits)}
             </Text>
             <Text className="text-sm font-roobert text-muted-foreground">
-              Available credits
+              {t('billing.availableCredits')}
             </Text>
           </View>
 
@@ -81,7 +81,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
                   <View className="flex-row items-center gap-2 mb-2">
                     <Icon as={Clock} size={14} className="text-muted-foreground" strokeWidth={2} />
                     <Text className="text-xs font-roobert-medium text-muted-foreground">
-                      Monthly
+                      {t('billing.monthly')}
                     </Text>
                   </View>
                   <Text className="text-2xl font-roobert-semibold text-foreground tracking-tight">
@@ -92,7 +92,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
                   <View className="flex-row items-center gap-2 mb-2">
                     <Icon as={Infinity} size={14} className="text-primary" strokeWidth={2} />
                     <Text className="text-xs font-roobert-medium text-primary">
-                      Extra
+                      {t('billing.extra')}
                     </Text>
                   </View>
                   <Text className="text-2xl font-roobert-semibold text-foreground tracking-tight">
@@ -105,10 +105,10 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
 
           <View className="mb-4">
             <Text className="text-base font-roobert-semibold text-foreground mb-1 tracking-tight">
-              Credit Packages
+              {t('billing.creditPackages')}
             </Text>
             <Text className="text-xs font-roobert text-muted-foreground">
-              Choose a package and boost your credit balance
+              {t('billing.choosePackageBoost')}
             </Text>
           </View>
 

@@ -11,6 +11,7 @@ import { formatConversationDate } from '@/lib/utils/date';
 import { SelectableListItem } from '@/components/shared/SelectableListItem';
 import { ThreadAvatar } from '@/components/ui/ThreadAvatar';
 import type { Conversation } from './types';
+import { useColorScheme } from 'nativewind';
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -30,8 +31,10 @@ export function ConversationItem({
   showChevron = false 
 }: ConversationItemProps) {
   const { currentLanguage } = useLanguage();
-  
-  // Format date based on current locale
+
+  const { colorScheme } = useColorScheme();
+  const isDarkMode = colorScheme === 'dark';
+
   const formattedDate = React.useMemo(
     () => formatConversationDate(conversation.timestamp, currentLanguage),
     [conversation.timestamp, currentLanguage]
@@ -44,7 +47,11 @@ export function ConversationItem({
           title={conversation.title} 
           icon={conversation.iconName || conversation.icon}
           size={48} 
-          className="bg-primary flex-row items-center justify-center"
+          backgroundColor={isDarkMode ? '#1C1D20' : '#ECECEC'}
+          className="flex-row items-center justify-center"
+          style={{
+            borderWidth: 0,
+          }}
         />
       }
       title={conversation.title}

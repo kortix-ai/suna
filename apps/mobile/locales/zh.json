@@ -22,13 +22,16 @@
     "signIn": "登录",
     "signOut": "退出",
     "signUp": "注册",
+    "logIn": "登录",
     "signingIn": "登录中...",
     "sending": "发送中...",
     "email": "邮箱",
     "emailAddress": "邮箱地址",
-    "emailPlaceholder": "邮箱地址",
+    "emailPlaceholder": "邮箱",
     "password": "密码",
     "passwordPlaceholder": "密码",
+    "confirmPassword": "确认密码",
+    "confirmPasswordPlaceholder": "确认密码",
     "forgotPassword": "忘记密码？",
     "resetPassword": "重置密码",
     "resetPasswordDescription": "输入你的邮箱，我们会发送重置链接给你",
@@ -45,6 +48,7 @@
     "signInWithApple": "Apple 登录",
     "signInWithGoogle": "Google 登录",
     "orEmail": "或邮箱",
+    "or": "或",
     "orContinueWith": "或继续",
     "alreadyHaveAccount": "已有账号？",
     "dontHaveAccount": "还没账号？",
@@ -52,10 +56,87 @@
     "guest": "访客",
     "signOutConfirm": "确定要退出吗？",
     "createFreeAccount": "创建免费账号",
+    "createAccount": "创建账号",
     "enterEmailPassword": "请输入邮箱和密码",
     "enterEmailAddress": "请输入邮箱地址",
     "signInFailed": "登录失败，请检查你的账号信息",
-    "resetFailed": "发送失败，请重试"
+    "signUpFailed": "注册失败，请重试",
+    "resetFailed": "发送失败，请重试",
+    "passwordsDontMatch": "密码不匹配",
+    "passwordTooShort": "密码至少需要8个字符",
+    "welcomeTitle": "雇用 Kortix 来",
+    "rotatingPhrases": {
+      "presentations": "做演示",
+      "writing": "写作",
+      "emails": "处理邮件",
+      "research": "研究",
+      "planning": "规划",
+      "studying": "学习",
+      "anything": "做任何事。"
+    },
+    "agreeTerms": "我同意",
+    "userTerms": "用户条款和条件",
+    "acknowledgePrivacy": "并确认",
+    "privacyNotice": "隐私政策",
+    "confirmationEmailSent": "确认链接已发送至",
+    "openEmailAppBtn": "打开邮件应用",
+    "openGmailBtn": "打开 Gmail 应用",
+    "validationErrors": {
+      "emailPasswordRequired": "请输入邮箱和密码",
+      "passwordsNoMatch": "密码不匹配",
+      "passwordTooShort": "密码至少需要8个字符"
+    }
+  },
+  "onboarding": {
+    "skip": "跳过",
+    "next": "下一步",
+    "getStarted": "开始使用",
+    "slide1": {
+      "title": "与AI聊天",
+      "description": "与强大的AI助手进行自然对话，它们理解上下文并提供有用的回应"
+    },
+    "slide2": {
+      "title": "闪电般快速",
+      "description": "使用最新的AI模型获得即时回应。您的助手随时准备帮助您"
+    },
+    "slide3": {
+      "title": "安全私密",
+      "description": "您的对话经过加密，完全安全。我们尊重您的隐私，绝不分享您的数据"
+    },
+    "slide4": {
+      "title": "自动化任务",
+      "description": "设置触发器和工作者来自动化您的工作流程，提升生产力"
+    },
+    "slides": {
+      "title": "生成演示文稿",
+      "description": "在几秒钟内创建专业演示文稿。从推介材料到商业报告。",
+      "example": "为我的初创公司创建推介材料"
+    },
+    "research": {
+      "title": "深度研究",
+      "description": "全面的网络研究，提供即时洞察、摘要和分析。",
+      "example": "研究医疗保健中的AI趋势"
+    },
+    "data": {
+      "title": "数据分析",
+      "description": "分析数据，创建可视化图表，生成可执行的见解。",
+      "example": "分析季度销售数据"
+    },
+    "docs": {
+      "title": "文档创建",
+      "description": "生成报告，起草电子邮件，在AI协助下创建任何文档。",
+      "example": "起草项目提案"
+    },
+    "automation": {
+      "title": "智能自动化",
+      "description": "设置触发器来自动化工作流程。安排任务并监控事件。",
+      "example": "每天上午9点发送报告"
+    },
+    "superworker": {
+      "title": "您的AI超级工作者",
+      "description": "结合所有功能，为您需要的任何任务构建自定义AI工作者。",
+      "example": "创建客户支持代理"
+    }
   },
   "settings": {
     "title": "设置",
@@ -67,6 +148,8 @@
     "advancedFeatures": "高级功能",
     "signOut": "退出登录",
     "upgrade": "升级到 Pro",
+    "beta": "测试功能",
+    "deleteAccount": "删除账户",
     "unlockFeatures": "解锁全部功能"
   },
   "chat": {
@@ -234,8 +317,119 @@
     "failedToOpenFilePicker": "无法打开文件选择器，请重试"
   },
   "billing": {
+    "title": "计费与订阅",
+    "currentPlan": "当前套餐",
     "credits": "积分",
-    "remaining": "剩余"
+    "remaining": "剩余",
+    "totalAvailableCredits": "可用积分总数",
+    "upgrade": "升级",
+    "topUp": "充值",
+    "creditBreakdown": "积分明细",
+    "renewsInDays": "{{days}}天后续费",
+    "noRenewal": "不续费",
+    "extra": "额外",
+    "nextBilling": "下次计费",
+    "changePlan": "更改套餐",
+    "upgradeOrDowngrade": "升级或降级",
+    "billingPortal": "计费门户",
+    "paymentMethods": "支付方式",
+    "annualCommitment": "年度承诺",
+    "activeUntil": "有效至{{date}}",
+    "subscriptionCancelled": "订阅已取消",
+    "subscriptionCancelledOn": "你的订阅将在{{date}}取消",
+    "reactivate": "重新激活",
+    "reactivating": "正在重新激活...",
+    "howCreditsWork": "积分如何工作",
+    "learnAboutCredits": "了解积分使用",
+    "cancelPlan": "取消套餐",
+    "usage": "使用情况",
+    "last30Days": "近30天",
+    "failedToLoad": "加载订阅数据失败",
+    "buyCredits": "购买积分",
+    "availableCredits": "可用积分",
+    "creditPackages": "积分包",
+    "choosePackageBoost": "选择一个包来提升你的积分余额",
+    "ranOutOfCredits": "你的积分已用完。现在升级。",
+    "choosePlan": "选择你的套餐",
+    "getStarted": "开始使用",
+    "selectPlan": "选择套餐",
+    "upgradeNow": "立即升级",
+    "downgrade": "降级",
+    "switchPlan": "切换套餐",
+    "monthly": "月付",
+    "yearlyCommitment": "年付",
+    "save15Percent": "省 15%",
+    "mostPopular": "最受欢迎",
+    "perMonth": "/月",
+    "billedYearly": "按年计费",
+    "billedMonthly": "按月计费",
+    "creditsIncluded": "每月{{amount}}积分",
+    "unlimitedCredits": "无限积分",
+    "everything": "{{plan}}的所有功能",
+    "plus": "加上",
+    "addCredits": "添加积分",
+    "needMoreCredits": "需要更多积分？",
+    "purchaseAdditional": "随时购买额外积分"
+  },
+  "theme": {
+    "title": "外观",
+    "preview": "预览",
+    "themeOptions": "主题选项",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "系统",
+    "lightDescription": "始终使用浅色主题",
+    "darkDescription": "始终使用深色主题",
+    "systemDescription": "跟随设备设置",
+    "lightMode": "浅色模式",
+    "darkMode": "深色模式"
+  },
+  "language": {
+    "title": "语言",
+    "selectLanguage": "选择语言"
+  },
+  "beta": {
+    "title": "测试功能",
+    "experimentalFeatures": "实验性功能",
+    "earlyAccess": "提前体验新功能",
+    "advancedFeatures": "高级功能",
+    "advancedDescription": "在正式发布给所有人之前，提前体验实验性功能和高级工具",
+    "whatsIncluded": "包含内容",
+    "experimentalTools": "实验性工具",
+    "experimentalToolsDescription": "在正式发布前试用新功能",
+    "advancedSettings": "高级设置",
+    "advancedSettingsDescription": "使用高级用户选项个性化体验",
+    "pleaseNote": "注意事项",
+    "betaWarning": "测试功能可能不稳定，并可能在不通知的情况下发生变化。请谨慎使用。"
+  },
+  "accountDeletion": {
+    "title": "删除账户",
+    "deletionScheduled": "已安排删除",
+    "scheduledFor": "安排日期",
+    "deleteYourAccount": "删除你的账户",
+    "actionCannotBeUndone": "此操作无法撤销",
+    "accountWillBeDeleted": "你的账户将被永久删除",
+    "whatWillBeDeleted": "将被删除的内容",
+    "allAgents": "你的所有智能体和智能体版本",
+    "allThreads": "你的所有对话线程和会话",
+    "allCredentials": "你的所有凭据和集成",
+    "subscriptionData": "你的订阅和计费数据",
+    "gracePeriod": "30天宽限期",
+    "gracePeriodDescription": "你的账户将在30天后被安排删除。你可以在宽限期内随时取消此请求。",
+    "typeDeleteToConfirm": "输入{{text}}确认",
+    "deletePlaceholder": "删除",
+    "deleteAccount": "删除账户",
+    "cancelDeletion": "取消删除",
+    "processing": "处理中...",
+    "deletionScheduledSuccess": "你的账户将在30天后被删除。你可以随时取消此请求。",
+    "cancelDeletionTitle": "取消账户删除",
+    "cancelDeletionDescription": "你想取消删除你的账户吗？你的账户和所有数据将被保留。",
+    "back": "返回",
+    "deletionCancelled": "已取消删除",
+    "deletionCancelledSuccess": "你的账户安全了。删除已被取消。",
+    "failedToRequest": "请求账户删除失败",
+    "failedToCancel": "取消账户删除失败",
+    "cancelRequestDescription": "你可以在删除日期前随时取消此请求。如果取消，你的所有数据将被保留。"
   },
   "models": {
     "selectModel": "选择模型",
@@ -270,5 +464,41 @@
     "returnToHome": "返回主页",
     "createNew": "创建新 {{item}}",
     "openConversation": "打开 Chat：{{title}}"
+  },
+  "usage": {
+    "title": "使用情况",
+    "totalCreditsUsed": "总使用积分",
+    "loadingUsageData": "加载使用数据...",
+    "failedToLoad": "加载数据失败",
+    "usageStats": "使用统计",
+    "conversations": "对话",
+    "avgPerChat": "平均每次对话",
+    "usageTrend": "使用趋势",
+    "lastConversations": "最近 {{count}} 次对话",
+    "conversationBreakdown": "对话明细",
+    "noConversationsYet": "还没有对话",
+    "conversationHistoryAppearHere": "你的对话历史会显示在这里",
+    "showingTopOf": "显示 {{total}} 次对话中的 {{shown}} 次",
+    "credits": "积分",
+    "upgradeYourPlan": "升级你的套餐",
+    "upgradeDescription": "获取更多积分并解锁高级功能",
+    "topUp": "充值",
+    "topUpDescription": "为你的账户充值更多积分",
+    "upgrade": "升级",
+    "upgradeToUltra": "升级到 Ultra",
+    "upgradeToUltraDescription": "获取最高级别享受最大积分"
+  },
+  "nameEdit": {
+    "title": "编辑个人资料",
+    "displayName": "显示名称",
+    "yourNamePlaceholder": "你的名字",
+    "emailAddress": "邮箱地址",
+    "notAvailable": "不可用",
+    "nameRequired": "名字是必填的",
+    "nameTooLong": "名字太长（最多100个字符）",
+    "saving": "保存中...",
+    "saveChanges": "保存更改",
+    "nameUpdated": "你的名字已成功更新",
+    "failedToUpdate": "更新名字失败。请再试一次。"
   }
 }

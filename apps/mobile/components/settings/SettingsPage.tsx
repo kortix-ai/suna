@@ -267,18 +267,14 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               label={t('settings.beta') || 'Beta'}
               onPress={handleBeta}
             />
-            
-            {/* Delete Account - Regular Menu Item */}
             {!isGuest && (
               <SettingsItem
                 icon={Trash2}
-                label={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
+                label={deletionStatus?.has_pending_deletion ? t('accountDeletion.deletionScheduled') : t('accountDeletion.deleteYourAccount')}
                 onPress={handleAccountDeletion}
                 showBadge={deletionStatus?.has_pending_deletion}
               />
             )}
-
-            {/* Sign Out - Regular Menu Item */}
             {!isGuest && (
               <SettingsItem
                 icon={LogOut}
@@ -287,7 +283,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               />
             )}
           </View>
-          
           <View className="h-20" />
         </ScrollView>
       </View>

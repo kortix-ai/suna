@@ -223,18 +223,33 @@ function BackButton({ onPress }: BackButtonProps) {
 }
 
 
-interface BigNewChatButtonProps {
+interface NewChatButtonProps {
   onPress?: () => void;
 }
 
-function BigNewChatButton({ onPress }: BigNewChatButtonProps) {
+function NewChatButton({ onPress }: NewChatButtonProps) {
   const { t } = useLanguage();
-  
+
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <Button
-      onPress={onPress}
-      className="w-full rounded-full bg-primary"
-      size="lg"
+    <AnimatedPressable
+      style={animatedStyle}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress?.();
+      }}
+      onPressIn={() => {
+        scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+      }}
+      className="h-14 w-full rounded-full bg-primary flex-row items-center justify-center gap-2"
     >
       <Icon 
         as={Plus}
@@ -242,10 +257,10 @@ function BigNewChatButton({ onPress }: BigNewChatButtonProps) {
         strokeWidth={2}
         className="text-primary-foreground"
       />
-      <Text className="text-primary-foreground text-sm font-roobert-medium">
+      <Text className="text-primary-foreground font-roobert-medium">
         {t('menu.newChat')}
       </Text>
-    </Button>
+    </AnimatedPressable>
   );
 }
 
@@ -785,7 +800,7 @@ export function MenuPage({
               onTriggersPress={onTriggersPress}
             />
           ) : (
-            <BigNewChatButton onPress={onNewChat} />
+            <NewChatButton onPress={onNewChat} />
           )}
         </View>
       </SafeAreaView>

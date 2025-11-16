@@ -62,14 +62,14 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
           removeClippedSubviews={true}
         >
           <SettingsHeader
-            title="Language"
+            title={t('language.title')}
             onClose={handleClose}
           />
           
           <View className="px-6 pb-8">
             <View className="mb-3">
               <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                Select Language
+                {t('language.selectLanguage')}
               </Text>
             </View>
 
