@@ -45,6 +45,16 @@ max_client_conn = 100
 # [db.vault]
 # secret_key = "env(SECRET_VALUE)"
 
+# Custom database settings for webhook functionality
+# See: migrations/20251113000000_welcome_email_webhook.sql
+#
+# ⚠️  These settings ONLY apply if you're running LOCAL Supabase (rare)
+# Most people use CLOUD Supabase → configure in Supabase Dashboard instead
+# See: backend/supabase/WEBHOOK_SETUP.md
+[db.settings]
+app.backend_url = "http://backend:8000"
+app.webhook_secret = "your-webhook-secret-here-change-in-production"
+
 [db.migrations]
 # Specifies an ordered list of schema files that describe your database.
 # Supports glob patterns relative to supabase directory: "./schemas/*.sql"

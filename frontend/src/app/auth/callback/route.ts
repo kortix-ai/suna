@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { sendWelcomeEmail } from '@/lib/email'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -30,11 +29,8 @@ export async function GET(request: NextRequest) {
       }
 
       if (data.user) {
-        // Check if this is a new user signup (user created within last 3 minutes)
-        const userCreatedAt = new Date(data.user.created_at);
-        const now = new Date();
-        const minutesSinceCreation = (now.getTime() - userCreatedAt.getTime()) / (1000 * 60);
-        const isNewUser = minutesSinceCreation < 3;
+        // Welcome email is now sent automatically by Supabase database trigger
+        // See: backend/supabase/migrations/20251113000000_welcome_email_webhook.sql
 
         const { data: accountData } = await supabase
           .schema('basejump')
@@ -43,17 +39,6 @@ export async function GET(request: NextRequest) {
           .eq('primary_owner_user_id', data.user.id)
           .eq('personal_account', true)
           .single();
-
-        // Send welcome email for new signups (both OAuth and email/password)
-        // This handles both OAuth signups and email confirmation callbacks
-        if (isNewUser && data.user.email) {
-          const userName = data.user.user_metadata?.full_name || 
-                          data.user.user_metadata?.name ||
-                          data.user.email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-          
-          // Send welcome email asynchronously (don't block redirect)
-          sendWelcomeEmail(data.user.email, userName);
-        }
 
         if (accountData) {
           const { data: creditAccount } = await supabase

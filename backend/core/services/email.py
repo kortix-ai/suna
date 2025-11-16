@@ -137,7 +137,7 @@ class EmailService:
 <body>
   <div class="container">
     <div class="logo-container">
-      <img src="https://www.kortix.com/favicon.png" alt="Kortix Suna Logo" class="logo">
+      <img src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/loaded_images/Profile%20Picture%20Black.png" alt="Kortix Suna Logo" class="logo">
     </div>
     <h1>Welcome to Kortix Suna!</h1>
 
