@@ -115,14 +115,14 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
           removeClippedSubviews={true}
         >
           <SettingsHeader
-            title="Appearance"
+            title={t('theme.title')}
             onClose={handleClose}
           />
 
           <View className="px-6 pb-8">
             {/* <View className="mb-6">
               <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                Preview
+                {t('theme.preview')}
               </Text>
               <View className="flex-row gap-4 mb-6">
                 <DeviceMock theme="light" isActive={currentTheme === 'light'} />
@@ -132,15 +132,15 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
 
             <View className="mb-3">
               <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                Theme Options
+                {t('theme.themeOptions')}
               </Text>
             </View>
 
             <View className="gap-3">
               <ThemeOption
                 icon={Sun}
-                label="Light"
-                description="Always use light theme"
+                label={t('theme.light')}
+                description={t('theme.lightDescription')}
                 isSelected={themePreference === 'light'}
                 onPress={() => handleThemeSelect('light')}
                 disabled={isTransitioning}
@@ -148,21 +148,21 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
               
               <ThemeOption
                 icon={Moon}
-                label="Dark"
-                description="Always use dark theme"
+                label={t('theme.dark')}
+                description={t('theme.darkDescription')}
                 isSelected={themePreference === 'dark'}
                 onPress={() => handleThemeSelect('dark')}
                 disabled={isTransitioning}
               />
 
-              <ThemeOption
+              {/* <ThemeOption
                 icon={Monitor}
-                label="System"
-                description="Follow device settings"
+                label={t('theme.system')}
+                description={t('theme.systemDescription')}
                 isSelected={themePreference === 'system'}
                 onPress={() => handleThemeSelect('system')}
                 disabled={isTransitioning}
-              />
+              /> */}
             </View>
           </View>
           <View className="h-20" />
@@ -252,6 +252,7 @@ interface DeviceMockProps {
 }
 
 function DeviceMock({ theme, isActive }: DeviceMockProps) {
+  const { t } = useLanguage();
   const isLight = theme === 'light';
   const scale = useSharedValue(1);
 
@@ -434,7 +435,7 @@ function DeviceMock({ theme, isActive }: DeviceMockProps) {
             isActive ? 'text-primary' : 'text-muted-foreground'
           }`}
         >
-          {isLight ? 'Light Mode' : 'Dark Mode'}
+          {isLight ? t('theme.lightMode') : t('theme.darkMode')}
         </Text>
       </View>
     </Animated.View>

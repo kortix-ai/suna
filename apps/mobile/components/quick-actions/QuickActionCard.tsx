@@ -7,7 +7,8 @@ import Animated, {
   useSharedValue, 
   withSpring 
 } from 'react-native-reanimated';
-import type { QuickAction } from '../shared/types';
+import { QuickAction } from '.';
+
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -45,10 +46,10 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
       onPress={handlePress}
-      className={`flex-row items-center px-4 py-2.5 mr-2 rounded-2xl border ${
+      className={`flex-row items-center px-4 py-2.5 mr-2 rounded-2xl ${
         isSelected 
-          ? 'bg-primary border-primary' 
-          : 'bg-card border-border/50'
+          ? 'bg-primary/10' 
+          : 'bg-primary/5'
       }`}
       style={animatedStyle}
     >

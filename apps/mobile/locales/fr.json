@@ -22,13 +22,16 @@
     "signIn": "Se connecter",
     "signOut": "Déconnexion",
     "signUp": "S'inscrire",
+    "logIn": "Se connecter",
     "signingIn": "Connexion...",
     "sending": "Envoi...",
     "email": "Email",
     "emailAddress": "Adresse email",
-    "emailPlaceholder": "Adresse email",
+    "emailPlaceholder": "Email",
     "password": "Mot de passe",
     "passwordPlaceholder": "Mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "confirmPasswordPlaceholder": "Confirmer le mot de passe",
     "forgotPassword": "Mot de passe oublié?",
     "resetPassword": "Réinitialiser",
     "resetPasswordDescription": "Entre ton email et on t'enverra un lien de réinitialisation",
@@ -45,6 +48,7 @@
     "signInWithApple": "Se connecter avec Apple",
     "signInWithGoogle": "Se connecter avec Google",
     "orEmail": "ou email",
+    "or": "ou",
     "orContinueWith": "Ou continuer avec",
     "alreadyHaveAccount": "Déjà un compte?",
     "dontHaveAccount": "Pas encore de compte?",
@@ -52,10 +56,87 @@
     "guest": "Invité",
     "signOutConfirm": "Vraiment te déconnecter?",
     "createFreeAccount": "Créer un compte gratuit",
+    "createAccount": "Créer un compte",
     "enterEmailPassword": "Entre ton email et mot de passe",
     "enterEmailAddress": "Entre ton adresse email",
     "signInFailed": "Connexion échouée. Vérifie tes identifiants.",
-    "resetFailed": "Impossible d'envoyer l'email. Réessaie."
+    "signUpFailed": "Inscription échouée. Réessaie.",
+    "resetFailed": "Impossible d'envoyer l'email. Réessaie.",
+    "passwordsDontMatch": "Les mots de passe ne correspondent pas",
+    "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères",
+    "welcomeTitle": "Engager Kortix pour",
+    "rotatingPhrases": {
+      "presentations": "présentations",
+      "writing": "écriture",
+      "emails": "emails",
+      "research": "recherche",
+      "planning": "planification",
+      "studying": "études",
+      "anything": "n'importe quoi."
+    },
+    "agreeTerms": "J'accepte les",
+    "userTerms": "Conditions d'Utilisation",
+    "acknowledgePrivacy": "et reconnais la",
+    "privacyNotice": "Politique de confidentialité",
+    "confirmationEmailSent": "Lien de confirmation envoyé à",
+    "openEmailAppBtn": "Ouvrir l'App Email",
+    "openGmailBtn": "Ouvrir l'App Gmail",
+    "validationErrors": {
+      "emailPasswordRequired": "Merci d'entrer l'email et le mot de passe",
+      "passwordsNoMatch": "Les mots de passe ne correspondent pas",
+      "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères"
+    }
+  },
+  "onboarding": {
+    "skip": "Passer",
+    "next": "Suivant",
+    "getStarted": "Commencer",
+    "slide1": {
+      "title": "Chat avec IA",
+      "description": "Aie des conversations naturelles avec des assistants IA puissants qui comprennent le contexte et fournissent des réponses utiles"
+    },
+    "slide2": {
+      "title": "Ultra Rapide",
+      "description": "Obtiens des réponses instantanées avec les derniers modèles d'IA. Ton assistant est toujours prêt à aider"
+    },
+    "slide3": {
+      "title": "Sécurisé et Privé",
+      "description": "Tes conversations sont chiffrées et sécurisées. On respecte ta vie privée et ne partage jamais tes données"
+    },
+    "slide4": {
+      "title": "Automatiser les Tâches",
+      "description": "Configure des triggers et workers pour automatiser tes workflows et booster ta productivité"
+    },
+    "slides": {
+      "title": "Générer des Présentations",
+      "description": "Crée des présentations professionnelles en quelques secondes. Des pitch decks aux rapports business.",
+      "example": "Crée un pitch deck pour ma startup"
+    },
+    "research": {
+      "title": "Recherche Approfondie",
+      "description": "Recherche web complète avec insights instantanés, résumés et analyses.",
+      "example": "Recherche les tendances IA en santé"
+    },
+    "data": {
+      "title": "Analyse de Données",
+      "description": "Analyse des données, crée des visualisations et génère de l'intelligence actionnable.",
+      "example": "Analyse les données de ventes trimestrielles"
+    },
+    "docs": {
+      "title": "Création de Documents",
+      "description": "Génère des rapports, rédige des emails et crée n'importe quel document avec l'assistance IA.",
+      "example": "Rédige une proposition de projet"
+    },
+    "automation": {
+      "title": "Automatisation Intelligente",
+      "description": "Configure des triggers pour automatiser les workflows. Programme des tâches et surveille les événements.",
+      "example": "Envoyer des rapports quotidiens à 9h"
+    },
+    "superworker": {
+      "title": "Ton Super Worker IA",
+      "description": "Combine toutes les fonctionnalités pour construire des workers IA personnalisés pour n'importe quelle tâche dont tu as besoin.",
+      "example": "Créer un agent de support client"
+    }
   },
   "settings": {
     "title": "Paramètres",
@@ -67,6 +148,8 @@
     "advancedFeatures": "Fonctionnalités avancées",
     "signOut": "Déconnexion",
     "upgrade": "Passer à Pro",
+    "deleteAccount": "Supprimer le Compte",
+    "beta": "Fonctionnalités Beta",
     "unlockFeatures": "Débloquer toutes les fonctionnalités"
   },
   "chat": {
@@ -249,8 +332,119 @@
     "transcriptionFailed": "Échec de la transcription audio. Veuillez réessayer."
   },
   "billing": {
+    "title": "Facturation & Abonnement",
+    "currentPlan": "Plan Actuel",
     "credits": "Crédits",
-    "remaining": "restants"
+    "remaining": "restants",
+    "totalAvailableCredits": "Total de Crédits Disponibles",
+    "upgrade": "Améliorer",
+    "topUp": "Recharger",
+    "creditBreakdown": "Détail des Crédits",
+    "renewsInDays": "Se renouvelle dans {{days}}j",
+    "noRenewal": "Pas de renouvellement",
+    "extra": "Extra",
+    "nextBilling": "Prochaine Facturation",
+    "changePlan": "Changer de Plan",
+    "upgradeOrDowngrade": "Améliorer ou rétrograder",
+    "billingPortal": "Portail de Facturation",
+    "paymentMethods": "Méthodes de paiement",
+    "annualCommitment": "Engagement Annuel",
+    "activeUntil": "Actif jusqu'au {{date}}",
+    "subscriptionCancelled": "Abonnement Annulé",
+    "subscriptionCancelledOn": "Ton abonnement sera annulé le {{date}}",
+    "reactivate": "Réactiver",
+    "reactivating": "Réactivation...",
+    "howCreditsWork": "Comment fonctionnent les crédits",
+    "learnAboutCredits": "Apprendre sur l'utilisation des crédits",
+    "cancelPlan": "Annuler le Plan",
+    "usage": "Utilisation",
+    "last30Days": "30 derniers j",
+    "failedToLoad": "Échec du chargement des données d'abonnement",
+    "buyCredits": "Acheter des Crédits",
+    "availableCredits": "Crédits disponibles",
+    "creditPackages": "Paquets de Crédits",
+    "choosePackageBoost": "Choisis un paquet et augmente ton solde de crédits",
+    "ranOutOfCredits": "Tu n'as plus de crédits. Améliore maintenant.",
+    "choosePlan": "Choisis ton Plan",
+    "getStarted": "Commencer",
+    "selectPlan": "Sélectionner le Plan",
+    "upgradeNow": "Améliorer Maintenant",
+    "downgrade": "Rétrograder",
+    "switchPlan": "Changer de Plan",
+    "monthly": "Mensuel",
+    "yearlyCommitment": "Annuel",
+    "save15Percent": "Économise 15%",
+    "mostPopular": "Le Plus Populaire",
+    "perMonth": "/mois",
+    "billedYearly": "facturé annuellement",
+    "billedMonthly": "facturé mensuellement",
+    "creditsIncluded": "{{amount}} crédits/mois",
+    "unlimitedCredits": "Crédits illimités",
+    "everything": "Tout dans {{plan}}",
+    "plus": "plus",
+    "addCredits": "Ajouter des Crédits",
+    "needMoreCredits": "Besoin de plus de crédits?",
+    "purchaseAdditional": "Achete des crédits supplémentaires à tout moment"
+  },
+  "theme": {
+    "title": "Apparence",
+    "preview": "Aperçu",
+    "themeOptions": "Options de Thème",
+    "light": "Clair",
+    "dark": "Sombre",
+    "system": "Système",
+    "lightDescription": "Toujours utiliser le thème clair",
+    "darkDescription": "Toujours utiliser le thème sombre",
+    "systemDescription": "Suivre les paramètres de l'appareil",
+    "lightMode": "Mode Clair",
+    "darkMode": "Mode Sombre"
+  },
+  "language": {
+    "title": "Langue",
+    "selectLanguage": "Sélectionner la Langue"
+  },
+  "beta": {
+    "title": "Fonctionnalités Bêta",
+    "experimentalFeatures": "Fonctionnalités Expérimentales",
+    "earlyAccess": "Accède en avant-première aux nouvelles fonctionnalités",
+    "advancedFeatures": "Fonctionnalités Avancées",
+    "advancedDescription": "Accède aux fonctionnalités expérimentales et outils avancés avant leur sortie officielle",
+    "whatsIncluded": "Ce qui est Inclus",
+    "experimentalTools": "Outils Expérimentaux",
+    "experimentalToolsDescription": "Teste de nouvelles fonctionnalités avant la sortie officielle",
+    "advancedSettings": "Paramètres Avancés",
+    "advancedSettingsDescription": "Personnalise ton expérience avec des options d'utilisateur avancé",
+    "pleaseNote": "Note Importante",
+    "betaWarning": "Les fonctionnalités bêta peuvent être instables et changer sans préavis. À utiliser à tes risques et périls."
+  },
+  "accountDeletion": {
+    "title": "Supprimer le Compte",
+    "deletionScheduled": "Suppression Programmée",
+    "scheduledFor": "Programmée Pour",
+    "deleteYourAccount": "Supprimer ton Compte",
+    "actionCannotBeUndone": "Cette action ne peut pas être annulée",
+    "accountWillBeDeleted": "Ton compte sera définitivement supprimé",
+    "whatWillBeDeleted": "Ce qui sera Supprimé",
+    "allAgents": "Tous tes agents et versions d'agents",
+    "allThreads": "Tous tes fils et conversations",
+    "allCredentials": "Toutes tes identifiants et intégrations",
+    "subscriptionData": "Ton abonnement et données de facturation",
+    "gracePeriod": "Période de Grâce de 30 Jours",
+    "gracePeriodDescription": "Ton compte sera programmé pour suppression dans 30 jours. Tu peux annuler cette demande à tout moment pendant la période de grâce.",
+    "typeDeleteToConfirm": "Tape {{text}} pour confirmer",
+    "deletePlaceholder": "SUPPRIMER",
+    "deleteAccount": "Supprimer le Compte",
+    "cancelDeletion": "Annuler la Suppression",
+    "processing": "Traitement...",
+    "deletionScheduledSuccess": "Ton compte sera supprimé dans 30 jours. Tu peux annuler cette demande à tout moment.",
+    "cancelDeletionTitle": "Annuler la Suppression de Compte",
+    "cancelDeletionDescription": "Veux-tu annuler la suppression de ton compte? Ton compte et toutes les données seront préservés.",
+    "back": "Retour",
+    "deletionCancelled": "Suppression Annulée",
+    "deletionCancelledSuccess": "Ton compte est en sécurité. La suppression a été annulée.",
+    "failedToRequest": "Échec de la demande de suppression de compte",
+    "failedToCancel": "Échec de l'annulation de suppression de compte",
+    "cancelRequestDescription": "Tu peux annuler cette demande à tout moment avant la date de suppression. Toutes tes données seront préservées si tu annules."
   },
   "models": {
     "selectModel": "Choisir un Modèle",
@@ -285,5 +479,41 @@
     "returnToHome": "Retour au home",
     "createNew": "Créer un nouveau {{item}}",
     "openConversation": "Ouvrir Chat: {{title}}"
+  },
+  "usage": {
+    "title": "Utilisation",
+    "totalCreditsUsed": "Total de Crédits Utilisés",
+    "loadingUsageData": "Chargement des données...",
+    "failedToLoad": "Échec du chargement des données",
+    "usageStats": "Stats d'Utilisation",
+    "conversations": "Conversations",
+    "avgPerChat": "Moy. par Chat",
+    "usageTrend": "Tendance d'Utilisation",
+    "lastConversations": "Dernières {{count}} conversations",
+    "conversationBreakdown": "Détail des Conversations",
+    "noConversationsYet": "Pas encore de conversations",
+    "conversationHistoryAppearHere": "Ton historique apparaîtra ici",
+    "showingTopOf": "Affichage de {{shown}} sur {{total}} conversations",
+    "credits": "crédits",
+    "upgradeYourPlan": "Améliore ton Plan",
+    "upgradeDescription": "Obtiens plus de crédits et débloque des fonctionnalités premium",
+    "topUp": "Recharger",
+    "topUpDescription": "Recharge ton compte avec des crédits supplémentaires",
+    "upgrade": "Améliorer",
+    "upgradeToUltra": "Passer à Ultra",
+    "upgradeToUltraDescription": "Obtiens le niveau le plus élevé pour un maximum de crédits"
+  },
+  "nameEdit": {
+    "title": "Modifier le Profil",
+    "displayName": "Nom d'Affichage",
+    "yourNamePlaceholder": "Ton nom",
+    "emailAddress": "Adresse Email",
+    "notAvailable": "Non disponible",
+    "nameRequired": "Le nom est requis",
+    "nameTooLong": "Le nom est trop long (max 100 caractères)",
+    "saving": "Sauvegarde...",
+    "saveChanges": "Sauvegarder",
+    "nameUpdated": "Ton nom a été mis à jour avec succès",
+    "failedToUpdate": "Échec de la mise à jour du nom. Réessaie."
   }
 }

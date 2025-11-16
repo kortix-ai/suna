@@ -55,7 +55,83 @@
     "enterEmailPassword": "Digite email e senha",
     "enterEmailAddress": "Digite seu endereço de email",
     "signInFailed": "Falha ao entrar. Confere teus dados.",
-    "resetFailed": "Não conseguimos enviar o email. Tenta de novo."
+    "resetFailed": "Não conseguimos enviar o email. Tenta de novo.",
+    "logIn": "Entrar",
+    "passwordsDontMatch": "Senhas não coincidem",
+    "passwordTooShort": "Senha deve ter pelo menos 8 caracteres",
+    "welcomeTitle": "Contrate o Kortix para",
+    "rotatingPhrases": {
+      "presentations": "apresentações",
+      "writing": "escrita",
+      "emails": "emails",
+      "research": "pesquisa",
+      "planning": "planejamento",
+      "studying": "estudos",
+      "anything": "qualquer coisa."
+    },
+    "agreeTerms": "Concordo com os",
+    "userTerms": "Termos e Condições do Usuário",
+    "acknowledgePrivacy": "e reconheço o",
+    "privacyNotice": "Aviso de privacidade",
+    "confirmationEmailSent": "Link de confirmação enviado para",
+    "openEmailAppBtn": "Abrir App de Email",
+    "openGmailBtn": "Abrir App do Gmail",
+    "validationErrors": {
+      "emailPasswordRequired": "Por favor digite email e senha",
+      "passwordsNoMatch": "Senhas não coincidem",
+      "passwordTooShort": "Senha deve ter pelo menos 8 caracteres"
+    }
+  },
+  "onboarding": {
+    "skip": "Pular",
+    "next": "Próximo",
+    "getStarted": "Começar",
+    "slide1": {
+      "title": "Chat com IA",
+      "description": "Tenha conversas naturais com assistentes IA poderosos que entendem o contexto e fornecem respostas úteis"
+    },
+    "slide2": {
+      "title": "Super Rápido",
+      "description": "Obtenha respostas instantâneas com os modelos de IA mais recentes. Seu assistente está sempre pronto para ajudar"
+    },
+    "slide3": {
+      "title": "Seguro & Privado",
+      "description": "Suas conversas são criptografadas e seguras. Respeitamos sua privacidade e nunca compartilhamos seus dados"
+    },
+    "slide4": {
+      "title": "Automatizar Tarefas",
+      "description": "Configure triggers e workers para automatizar seus fluxos de trabalho e aumentar a produtividade"
+    },
+    "slides": {
+      "title": "Gerar Apresentações",
+      "description": "Crie apresentações profissionais em segundos. De pitch decks a relatórios empresariais.",
+      "example": "Crie um pitch deck para minha startup"
+    },
+    "research": {
+      "title": "Pesquisa Profunda",
+      "description": "Pesquisa web abrangente com insights instantâneos, resumos e análises.",
+      "example": "Pesquise tendências de IA na saúde"
+    },
+    "data": {
+      "title": "Análise de Dados",
+      "description": "Analise dados, crie visualizações e gere inteligência acionável.",
+      "example": "Analise dados de vendas trimestrais"
+    },
+    "docs": {
+      "title": "Criação de Documentos",
+      "description": "Gere relatórios, rascunhe emails e crie qualquer documento com assistência IA.",
+      "example": "Rascunhe uma proposta de projeto"
+    },
+    "automation": {
+      "title": "Automação Inteligente",
+      "description": "Configure triggers para automatizar fluxos de trabalho. Agende tarefas e monitore eventos.",
+      "example": "Enviar relatórios diários às 9h"
+    },
+    "superworker": {
+      "title": "Seu Super Worker IA",
+      "description": "Combine todos os recursos para construir workers IA personalizados para qualquer tarefa que você precisar.",
+      "example": "Crie um agente de suporte ao cliente"
+    }
   },
   "settings": {
     "title": "Configurações",
@@ -67,6 +143,8 @@
     "advancedFeatures": "Recursos avançados",
     "signOut": "Sair",
     "upgrade": "Fazer upgrade para Pro",
+    "deleteAccount": "Excluir Conta",
+    "beta": "Recursos Beta",
     "unlockFeatures": "Desbloquear todos os recursos"
   },
   "chat": {
@@ -234,8 +312,119 @@
     "failedToOpenFilePicker": "Não conseguimos abrir o seletor de arquivos. Tenta de novo."
   },
   "billing": {
+    "title": "Faturação & Assinatura",
+    "currentPlan": "Plano Atual",
     "credits": "Créditos",
-    "remaining": "restantes"
+    "remaining": "restantes",
+    "totalAvailableCredits": "Total de Créditos Disponíveis",
+    "upgrade": "Melhorar",
+    "topUp": "Recarregar",
+    "creditBreakdown": "Detalhamento de Créditos",
+    "renewsInDays": "Renova em {{days}}d",
+    "noRenewal": "Sem renovação",
+    "extra": "Extra",
+    "nextBilling": "Próxima Faturação",
+    "changePlan": "Mudar Plano",
+    "upgradeOrDowngrade": "Melhorar ou rebaixar",
+    "billingPortal": "Portal de Faturação",
+    "paymentMethods": "Métodos de pagamento",
+    "annualCommitment": "Compromisso Anual",
+    "activeUntil": "Ativo até {{date}}",
+    "subscriptionCancelled": "Assinatura Cancelada",
+    "subscriptionCancelledOn": "Sua assinatura será cancelada em {{date}}",
+    "reactivate": "Reativar",
+    "reactivating": "Reativando...",
+    "howCreditsWork": "Como os créditos funcionam",
+    "learnAboutCredits": "Aprenda sobre uso de créditos",
+    "cancelPlan": "Cancelar Plano",
+    "usage": "Uso",
+    "last30Days": "Últimos 30d",
+    "failedToLoad": "Erro ao carregar dados da assinatura",
+    "buyCredits": "Comprar Créditos",
+    "availableCredits": "Créditos disponíveis",
+    "creditPackages": "Pacotes de Créditos",
+    "choosePackageBoost": "Escolha um pacote e aumente seu saldo de créditos",
+    "ranOutOfCredits": "Você ficou sem créditos. Melhore agora.",
+    "choosePlan": "Escolha seu Plano",
+    "getStarted": "Começar",
+    "selectPlan": "Selecionar Plano",
+    "upgradeNow": "Melhorar Agora",
+    "downgrade": "Rebaixar",
+    "switchPlan": "Trocar Plano",
+    "monthly": "Mensal",
+    "yearlyCommitment": "Anual",
+    "save15Percent": "Economize 15%",
+    "mostPopular": "Mais Popular",
+    "perMonth": "/mês",
+    "billedYearly": "faturado anualmente",
+    "billedMonthly": "faturado mensalmente",
+    "creditsIncluded": "{{amount}} créditos/mês",
+    "unlimitedCredits": "Créditos ilimitados",
+    "everything": "Tudo em {{plan}}",
+    "plus": "mais",
+    "addCredits": "Adicionar Créditos",
+    "needMoreCredits": "Precisa de mais créditos?",
+    "purchaseAdditional": "Compre créditos adicionais a qualquer momento"
+  },
+  "theme": {
+    "title": "Aparência",
+    "preview": "Visualização",
+    "themeOptions": "Opções de Tema",
+    "light": "Claro",
+    "dark": "Escuro",
+    "system": "Sistema",
+    "lightDescription": "Sempre usar tema claro",
+    "darkDescription": "Sempre usar tema escuro",
+    "systemDescription": "Seguir configurações do dispositivo",
+    "lightMode": "Modo Claro",
+    "darkMode": "Modo Escuro"
+  },
+  "language": {
+    "title": "Idioma",
+    "selectLanguage": "Selecionar Idioma"
+  },
+  "beta": {
+    "title": "Recursos Beta",
+    "experimentalFeatures": "Recursos Experimentais",
+    "earlyAccess": "Tenha acesso antecipado a novas capacidades",
+    "advancedFeatures": "Recursos Avançados",
+    "advancedDescription": "Acesse recursos experimentais e ferramentas avançadas antes de serem lançados para todos",
+    "whatsIncluded": "O que Está Incluído",
+    "experimentalTools": "Ferramentas Experimentais",
+    "experimentalToolsDescription": "Experimente novas capacidades antes do lançamento oficial",
+    "advancedSettings": "Configurações Avançadas",
+    "advancedSettingsDescription": "Ajuste sua experiência com opções de usuário avançado",
+    "pleaseNote": "Observação",
+    "betaWarning": "Recursos beta podem ser instáveis e mudar sem aviso prévio. Use por sua conta e risco."
+  },
+  "accountDeletion": {
+    "title": "Excluir Conta",
+    "deletionScheduled": "Exclusão Agendada",
+    "scheduledFor": "Agendada Para",
+    "deleteYourAccount": "Excluir sua Conta",
+    "actionCannotBeUndone": "Esta ação não pode ser desfeita",
+    "accountWillBeDeleted": "Sua conta será excluída permanentemente",
+    "whatWillBeDeleted": "O que Será Excluído",
+    "allAgents": "Todos os seus agentes e versões de agentes",
+    "allThreads": "Todas as suas threads e conversações",
+    "allCredentials": "Todas as suas credenciais e integrações",
+    "subscriptionData": "Seus dados de assinatura e cobrança",
+    "gracePeriod": "Período de Carência de 30 Dias",
+    "gracePeriodDescription": "Sua conta será agendada para exclusão em 30 dias. Você pode cancelar esta solicitação a qualquer momento durante o período de carência.",
+    "typeDeleteToConfirm": "Digite {{text}} para confirmar",
+    "deletePlaceholder": "EXCLUIR",
+    "deleteAccount": "Excluir Conta",
+    "cancelDeletion": "Cancelar Exclusão",
+    "processing": "Processando...",
+    "deletionScheduledSuccess": "Sua conta será excluída em 30 dias. Você pode cancelar esta solicitação a qualquer momento.",
+    "cancelDeletionTitle": "Cancelar Exclusão de Conta",
+    "cancelDeletionDescription": "Você quer cancelar a exclusão da sua conta? Sua conta e todos os dados serão preservados.",
+    "back": "Voltar",
+    "deletionCancelled": "Exclusão Cancelada",
+    "deletionCancelledSuccess": "Sua conta está segura. A exclusão foi cancelada.",
+    "failedToRequest": "Falha ao solicitar exclusão de conta",
+    "failedToCancel": "Falha ao cancelar exclusão de conta",
+    "cancelRequestDescription": "Você pode cancelar esta solicitação a qualquer momento antes da data de exclusão. Todos os seus dados serão preservados se cancelar."
   },
   "models": {
     "selectModel": "Selecionar Modelo",
@@ -270,6 +459,42 @@
     "returnToHome": "Voltar para home",
     "createNew": "Criar novo {{item}}",
     "openConversation": "Abrir Chat: {{title}}"
+  },
+  "usage": {
+    "title": "Uso",
+    "totalCreditsUsed": "Total de Créditos Usados",
+    "loadingUsageData": "Carregando dados de uso...",
+    "failedToLoad": "Erro ao carregar dados",
+    "usageStats": "Estatísticas de Uso",
+    "conversations": "Conversas",
+    "avgPerChat": "Média por Chat",
+    "usageTrend": "Tendência de Uso",
+    "lastConversations": "Últimas {{count}} conversas",
+    "conversationBreakdown": "Detalhamento de Conversas",
+    "noConversationsYet": "Ainda sem conversas",
+    "conversationHistoryAppearHere": "Seu histórico vai aparecer aqui",
+    "showingTopOf": "Mostrando {{shown}} de {{total}} conversas",
+    "credits": "créditos",
+    "upgradeYourPlan": "Melhore seu Plano",
+    "upgradeDescription": "Ganhe mais créditos e desbloqueie recursos premium",
+    "topUp": "Recarregar",
+    "topUpDescription": "Recarregue sua conta com créditos adicionais",
+    "upgrade": "Melhorar",
+    "upgradeToUltra": "Upgrade para Ultra",
+    "upgradeToUltraDescription": "Pegue o nível mais alto para créditos máximos"
+  },
+  "nameEdit": {
+    "title": "Editar Perfil",
+    "displayName": "Nome de Exibição",
+    "yourNamePlaceholder": "Seu nome",
+    "emailAddress": "Endereço de Email",
+    "notAvailable": "Não disponível",
+    "nameRequired": "Nome é obrigatório",
+    "nameTooLong": "Nome muito longo (máx 100 caracteres)",
+    "saving": "Salvando...",
+    "saveChanges": "Salvar Mudanças",
+    "nameUpdated": "Seu nome foi atualizado com sucesso",
+    "failedToUpdate": "Erro ao atualizar nome. Tente novamente."
   }
 }
 

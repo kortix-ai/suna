@@ -58,10 +58,10 @@ export function NameEditPage({
   
   const validateName = (name: string): string | null => {
     if (!name.trim()) {
-      return t('settings.nameRequired') || 'Name is required';
+      return t('nameEdit.nameRequired');
     }
     if (name.length > 100) {
-      return 'Name is too long (max 100 characters)';
+      return t('nameEdit.nameTooLong');
     }
     return null;
   };
@@ -129,18 +129,18 @@ export function NameEditPage({
       // Show success message after a short delay
       setTimeout(() => {
         Alert.alert(
-          t('common.success') || 'Success',
-          t('settings.nameUpdated') || 'Your name has been updated successfully'
+          t('common.success'),
+          t('nameEdit.nameUpdated')
         );
       }, 300);
     } catch (err: any) {
       console.error('❌ Failed to update name:', err);
-      const errorMessage = err.message || 'Failed to update name. Please try again.';
+      const errorMessage = err.message || t('nameEdit.failedToUpdate');
       setError(errorMessage);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       
       Alert.alert(
-        t('common.error') || 'Error',
+        t('common.error'),
         errorMessage
       );
     } finally {
@@ -167,7 +167,7 @@ export function NameEditPage({
           keyboardShouldPersistTaps="handled"
         >
           <SettingsHeader
-            title="Edit Profile"
+            title={t('nameEdit.title')}
             onClose={handleClose}
             disabled={isLoading}
           />
@@ -183,7 +183,7 @@ export function NameEditPage({
                     setName(text);
                     setError(null);
                   }}
-                  placeholder="Your name"
+                  placeholder={t('nameEdit.yourNamePlaceholder')}
                   placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
                   className="text-3xl font-roobert-semibold text-foreground text-center tracking-tight"
                   editable={!isLoading}
@@ -194,7 +194,7 @@ export function NameEditPage({
                   onSubmitEditing={handleSave}
                 />
                 <Text className="text-sm font-roobert text-muted-foreground text-center mt-2">
-                  Display Name
+                  {t('nameEdit.displayName')}
                 </Text>
               </View>
             </View>
@@ -218,10 +218,10 @@ export function NameEditPage({
                   </View>
                   <View className="flex-1">
                     <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
-                      Email Address
+                      {t('nameEdit.emailAddress')}
                     </Text>
                     <Text className="text-sm font-roobert-semibold text-foreground">
-                      {user?.email || 'Not available'}
+                      {user?.email || t('nameEdit.notAvailable')}
                     </Text>
                   </View>
                 </View>
@@ -252,6 +252,7 @@ interface SaveButtonProps {
 
 function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProps) {
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const scale = useSharedValue(1);
   
   const animatedStyle = useAnimatedStyle(() => ({
@@ -290,7 +291,7 @@ function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProp
             forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
           />
           <Text className="text-primary-foreground text-sm font-roobert-medium">
-            Saving...
+            {t('nameEdit.saving')}
           </Text>
         </>
       ) : (
@@ -302,11 +303,10 @@ function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProp
             strokeWidth={2.5} 
           />
           <Text className="text-primary-foreground text-sm font-roobert-medium">
-            Save Changes
+            {t('nameEdit.saveChanges')}
           </Text>
         </>
       )}
     </AnimatedPressable>
   );
 }
-

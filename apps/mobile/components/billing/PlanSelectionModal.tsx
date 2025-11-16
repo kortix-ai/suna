@@ -3,6 +3,7 @@ import { View, Modal } from 'react-native';
 import { PricingSection } from './PricingSection';
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/lib/billing';
+import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 
 interface PlanSelectionModalProps {
@@ -18,6 +19,7 @@ export function PlanSelectionModal({
   returnUrl,
   creditsExhausted = false,
 }: PlanSelectionModalProps) {
+  const { t } = useLanguage();
   const queryClient = useQueryClient();
 
   const handleClose = () => {
@@ -47,7 +49,7 @@ export function PlanSelectionModal({
           showTitleAndTabs={true}
           insideDialog={true}
           noPadding={true}
-          customTitle={creditsExhausted ? "You ran out of credits. Upgrade now." : undefined}
+          customTitle={creditsExhausted ? t('billing.ranOutOfCredits') : undefined}
           onSubscriptionUpdate={handleSubscriptionUpdate}
           onClose={handleClose}
         />

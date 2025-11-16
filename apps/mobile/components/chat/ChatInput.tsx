@@ -4,7 +4,7 @@ import { useLanguage } from '@/contexts';
 import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Square, Loader2 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, type ViewProps } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -312,34 +312,20 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
 
   return (
     <View 
-      className="relative rounded-3xl border border-border overflow-hidden"
-      style={[
-        { height: dynamicHeight }, 
-        style
-      ]}
+      className="relative rounded-3xl overflow-hidden"
+      style={{ height: dynamicHeight, ...(style as ViewStyle) }}
       {...props}
     >
       {/* Solid background */}
       <View 
-        className="absolute inset-0"
-        style={{ 
-          backgroundColor: colorScheme === 'dark' 
-            ? '#161618' 
-            : '#FFFFFF' 
-        }}
+        className="absolute inset-0 bg-[#ECECEC] dark:bg-[#1C1D20]"
       />
-
-      {/* Main Container */}
       <View className="p-4 flex-1">
         {isRecording ? (
-          /* Recording Mode UI */
           <>
-            {/* Waveform */}
             <View className="flex-1 items-center bottom-5 justify-center">
               <AudioWaveform isRecording={true} audioLevels={audioLevels} />
             </View>
-            
-            {/* Timer / Transcription Status */}
             <View className="absolute bottom-6 right-16 items-center">
               <Text className="text-xs font-roobert-medium text-foreground/50">
                 {recordingStatusText}
@@ -357,7 +343,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   cancelScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                 }}
                 onPress={onCancelRecording}
-                className="bg-secondary rounded-full items-center justify-center"
+                className="bg-primary/5 rounded-full items-center justify-center"
                 style={[{ width: 40, height: 40 }, cancelAnimatedStyle]}
               >
                 <Icon 
@@ -445,7 +431,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   }}
                   onPress={onAttachPress}
                   disabled={isSendingMessage || isAgentRunning || isTranscribing}
-                  className="bg-primary/5 rounded-full w-10 h-10 items-center justify-center border border-border/30"
+                  className="bg-primary/5 rounded-full w-10 h-10 items-center justify-center"
                   style={[
                     attachAnimatedStyle,
                     { opacity: isSendingMessage || isAgentRunning || isTranscribing ? 0.4 : 1 }
@@ -465,7 +451,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                       console.log('❌ Clearing quick action context');
                       onClearQuickAction?.();
                     }}
-                    className="bg-primary/10 rounded-full flex-row items-center h-10 px-3 border border-primary/20 active:opacity-70"
+                    className="bg-primary/5 rounded-full flex-row items-center h-10 px-3 active:opacity-70"
                   >
                     <Icon 
                       as={QuickActionIcon} 

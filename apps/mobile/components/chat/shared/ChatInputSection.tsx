@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { View, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, KeyboardAvoidingView, Platform, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { AttachmentBar } from '@/components/attachments';
+import { QuickActionBar } from '@/components/quick-actions';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
 
@@ -23,6 +24,8 @@ export interface ChatInputSectionProps {
   
   // Agent selection
   onAgentPress: () => void;
+
+  style?: ViewStyle;
   
   // Audio recording
   onAudioRecord: () => Promise<void>;
@@ -36,6 +39,9 @@ export interface ChatInputSectionProps {
   selectedQuickAction: string | null;
   selectedQuickActionOption?: string | null;
   onClearQuickAction: () => void;
+  onQuickActionPress?: (actionId: string) => void;
+  onQuickActionSelectOption?: (optionId: string) => void;
+  onQuickActionSelectPrompt?: (prompt: string) => void;
   
   // Agent running state
   isAgentRunning: boolean;
@@ -88,8 +94,12 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
   selectedQuickAction,
   selectedQuickActionOption,
   onClearQuickAction,
+  onQuickActionPress,
+  onQuickActionSelectOption,
+  onQuickActionSelectPrompt,
   isAgentRunning,
   onStopAgentRun,
+  style,
   isAuthenticated,
   onOpenAuthDrawer,
   isSendingMessage,
@@ -130,6 +140,19 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
         pointerEvents="none"
       />
       
+      {/* Quick Action Bar - Above everything */}
+      {onQuickActionPress && (
+        <View className="pb-2 px-3" pointerEvents="box-none">
+          <QuickActionBar 
+            onActionPress={onQuickActionPress}
+            selectedActionId={selectedQuickAction}
+            selectedOptionId={selectedQuickActionOption}
+            onSelectOption={onQuickActionSelectOption}
+            onSelectPrompt={onQuickActionSelectPrompt}
+          />
+        </View>
+      )}
+
       {/* Attachment Bar - Above Input */}
       <AttachmentBar 
         attachments={attachments}

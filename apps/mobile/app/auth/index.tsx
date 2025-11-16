@@ -37,31 +37,35 @@ const AnimatedText = Animated.createAnimatedComponent(Text);
 
 type AuthView = 'welcome' | 'sign-in' | 'sign-up';
 
-const ROTATING_PHRASES = [
-  { text: 'presentations', color: '' },
-  { text: 'writing', color: '' },
-  { text: 'emails', color: '' },
-  { text: 'research', color: '' },
-  { text: 'planning', color: '' },
-  { text: 'studying', color: '' },
-  { text: 'anything.', color: '#3B82F6' },
-];
+function getRotatingPhrases(t: (key: string) => string) {
+  return [
+    { text: t('auth.rotatingPhrases.presentations'), color: '' },
+    { text: t('auth.rotatingPhrases.writing'), color: '' },
+    { text: t('auth.rotatingPhrases.emails'), color: '' },
+    { text: t('auth.rotatingPhrases.research'), color: '' },
+    { text: t('auth.rotatingPhrases.planning'), color: '' },
+    { text: t('auth.rotatingPhrases.studying'), color: '' },
+    { text: t('auth.rotatingPhrases.anything'), color: '#3B82F6' },
+  ];
+}
 
 function RotatingText() {
+  const { t } = useLanguage();
+  const rotatingPhrases = React.useMemo(() => getRotatingPhrases(t), [t]);
   const [currentIndex, setCurrentIndex] = React.useState(0);
-  const [currentPhrase, setCurrentPhrase] = React.useState(ROTATING_PHRASES[0]);
+  const [currentPhrase, setCurrentPhrase] = React.useState(rotatingPhrases[0]);
 
   React.useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % ROTATING_PHRASES.length);
+      setCurrentIndex((prev) => (prev + 1) % rotatingPhrases.length);
     }, 1800);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [rotatingPhrases.length]);
 
   React.useEffect(() => {
-    setCurrentPhrase(ROTATING_PHRASES[currentIndex]);
-  }, [currentIndex]);
+    setCurrentPhrase(rotatingPhrases[currentIndex]);
+  }, [currentIndex, rotatingPhrases]);
 
   const chars = currentPhrase.text.split('');
 
@@ -185,13 +189,13 @@ export default function AuthScreen() {
     if (result.success) {
       handleNavigateToHome();
     } else {
-      setError(result.error?.message || 'Sign in failed. Please try again.');
+      setError(result.error?.message || t('auth.signInFailed'));
     }
   };
 
   const handleSignIn = async () => {
     if (!email || !password) {
-      setError('Please enter both email and password');
+      setError(t('auth.validationErrors.emailPasswordRequired'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -203,26 +207,26 @@ export default function AuthScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       handleNavigateToHome();
     } else {
-      setError(result.error?.message || 'Sign in failed. Please try again.');
+      setError(result.error?.message || t('auth.signInFailed'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
 
   const handleSignUp = async () => {
     if (!email || !password) {
-      setError('Please enter both email and password');
+      setError(t('auth.validationErrors.emailPasswordRequired'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords don\'t match');
+      setError(t('auth.validationErrors.passwordsNoMatch'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError(t('auth.validationErrors.passwordTooShort'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -235,7 +239,7 @@ export default function AuthScreen() {
       setRegistrationEmail(email);
       setShowEmailConfirmation(true);
     } else {
-      setError(result.error?.message || 'Sign up failed. Please try again.');
+      setError(result.error?.message || t('auth.signUpFailed'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
@@ -345,6 +349,7 @@ export default function AuthScreen() {
 }
 
 function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: () => void }) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const scale1 = useSharedValue(1);
   const scale2 = useSharedValue(1);
@@ -387,11 +392,11 @@ function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: (
       </View>
       <View className="justify-center mb-10">
         <View className="-mb-4">
-          <KortixLogo variant="logomark" size={80} />
+          <KortixLogo variant="logomark" size={80} color={isDark ? 'dark' : 'light'} />
         </View>
         <View className="mb-6">
-          <Text className="text-[40px] font-roobert-semibold text-foreground leading-tight">
-            Hire Kortix for
+          <Text className="text-3xl font-roobert-semibold text-foreground leading-tight">
+            {t('auth.welcomeTitle')}
           </Text>
           <RotatingText />
         </View>
@@ -426,19 +431,19 @@ function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: (
 
           <View className="flex-1 flex-row flex-wrap">
             <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
-              I agree with{' '}
+              {t('auth.agreeTerms')}{' '}
             </Text>
             <TouchableOpacity onPress={handleOpenTerms}>
               <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
-                User Terms And Conditions
+                {t('auth.userTerms')}
               </Text>
             </TouchableOpacity>
             <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
-              {' '}and acknowledge the{' '}
+              {' '}{t('auth.acknowledgePrivacy')}{' '}
             </Text>
             <TouchableOpacity onPress={handleOpenPrivacy}>
               <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
-                Privacy notice
+                {t('auth.privacyNotice')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -475,7 +480,7 @@ function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: (
             fontSize: 16,
             fontFamily: 'Roobert-Medium',
           }}>
-            Sign up
+            {t('auth.signUp')}
           </Text>
         </AnimatedPressable>
 
@@ -501,7 +506,7 @@ function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: (
           }]}
         >
           <Text className="text-foreground text-[16px] font-roobert-medium">
-            Log in
+            {t('auth.logIn')}
           </Text>
         </AnimatedPressable>
       </View>
@@ -542,6 +547,7 @@ function SignInView({
   emailInputRef,
   passwordInputRef,
 }: SignInViewProps) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const buttonScale = useSharedValue(1);
 
@@ -574,7 +580,7 @@ function SignInView({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text className="text-muted-foreground text-[16px] font-roobert">
-            Back
+            {t('common.back')}
           </Text>
         </TouchableOpacity>
 
@@ -586,7 +592,7 @@ function SignInView({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text className="text-foreground text-[16px] font-roobert-medium">
-            Sign up
+            {t('auth.signUp')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -594,27 +600,27 @@ function SignInView({
       <View className="flex-1">
         <View>
           <View className="-mb-2">
-            <KortixLogo variant="logomark" size={64} />
+            <KortixLogo variant="logomark" size={64} color={isDark ? 'dark' : 'light'} />
           </View>
           <Text className="text-[36px] font-roobert-semibold text-foreground leading-tight mb-8">
-            Log in
+            {t('auth.logIn')}
           </Text>
         </View>
 
         <View className="gap-3 mb-6">
           <AppleSignInButton
             onPress={() => onOAuthSignIn('apple')}
-            label="Continue with Apple"
+            label={t('auth.continueWithApple')}
           />
           <GoogleSignInButton
             onPress={() => onOAuthSignIn('google')}
-            label="Continue with Google"
+            label={t('auth.continueWithGoogle')}
           />
         </View>
 
         <View className="flex-row items-center mb-6">
           <View className="flex-1 h-px bg-border" />
-          <Text className="text-muted-foreground text-[14px] font-roobert mx-4">or</Text>
+          <Text className="text-muted-foreground text-[14px] font-roobert mx-4">{t('auth.or')}</Text>
           <View className="flex-1 h-px bg-border" />
         </View>
 
@@ -624,7 +630,7 @@ function SignInView({
               ref={emailInputRef}
               value={email}
               onChangeText={(text) => setEmail(text.trim().toLowerCase())}
-              placeholder="Email"
+              placeholder={t('auth.emailPlaceholder')}
               placeholderTextColor="hsl(var(--muted-foreground))"
               keyboardType="email-address"
               textContentType="emailAddress"
@@ -644,7 +650,7 @@ function SignInView({
               ref={passwordInputRef}
               value={password}
               onChangeText={setPassword}
-              placeholder="Password"
+              placeholder={t('auth.passwordPlaceholder')}
               placeholderTextColor="hsl(var(--muted-foreground))"
               secureTextEntry={!showPassword}
               textContentType="password"
@@ -708,7 +714,7 @@ function SignInView({
               fontSize: 16,
               fontFamily: 'Roobert-Medium',
             }}>
-              Log in
+              {t('auth.logIn')}
             </Text>
           )}
         </AnimatedPressable>
@@ -769,6 +775,7 @@ function SignUpView({
   passwordInputRef,
   confirmPasswordInputRef,
 }: SignUpViewProps) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const buttonScale = useSharedValue(1);
 
@@ -807,7 +814,7 @@ function SignUpView({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text className="text-muted-foreground text-[16px] font-roobert">
-            Back
+            {t('common.back')}
           </Text>
         </TouchableOpacity>
 
@@ -819,7 +826,7 @@ function SignUpView({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text className="text-foreground text-[16px] font-roobert-medium">
-            Log in
+            {t('auth.logIn')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -827,27 +834,27 @@ function SignUpView({
       <View className="flex-1">
         <View>
           <View className="-mb-2">
-            <KortixLogo variant="logomark" size={64} />
+            <KortixLogo variant="logomark" size={64} color={isDark ? 'dark' : 'light'} />
           </View>
           <Text className="text-[36px] font-roobert-semibold text-foreground leading-tight mb-8">
-            Create account
+            {t('auth.createAccount')}
           </Text>
         </View>
 
         <View className="gap-3 mb-6">
           <AppleSignInButton
             onPress={() => onOAuthSignIn('apple')}
-            label="Continue with Apple"
+            label={t('auth.continueWithApple')}
           />
           <GoogleSignInButton
             onPress={() => onOAuthSignIn('google')}
-            label="Continue with Google"
+            label={t('auth.continueWithGoogle')}
           />
         </View>
 
         <View className="flex-row items-center mb-6">
           <View className="flex-1 h-px bg-border" />
-          <Text className="text-muted-foreground text-[14px] font-roobert mx-4">or</Text>
+          <Text className="text-muted-foreground text-[14px] font-roobert mx-4">{t('auth.or')}</Text>
           <View className="flex-1 h-px bg-border" />
         </View>
 
@@ -857,7 +864,7 @@ function SignUpView({
               ref={emailInputRef}
               value={email}
               onChangeText={(text) => setEmail(text.trim().toLowerCase())}
-              placeholder="Email"
+              placeholder={t('auth.emailPlaceholder')}
               placeholderTextColor="hsl(var(--muted-foreground))"
               keyboardType="email-address"
               textContentType="emailAddress"
@@ -877,7 +884,7 @@ function SignUpView({
               ref={passwordInputRef}
               value={password}
               onChangeText={setPassword}
-              placeholder="Password"
+              placeholder={t('auth.passwordPlaceholder')}
               placeholderTextColor="hsl(var(--muted-foreground))"
               secureTextEntry={!showPassword}
               textContentType="newPassword"
@@ -909,7 +916,7 @@ function SignUpView({
               ref={confirmPasswordInputRef}
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              placeholder="Confirm your password"
+              placeholder={t('auth.confirmPasswordPlaceholder')}
               placeholderTextColor="hsl(var(--muted-foreground))"
               secureTextEntry={!showConfirmPassword}
               textContentType="newPassword"
@@ -940,7 +947,7 @@ function SignUpView({
         {!passwordsMatch && confirmPassword.length > 0 && (
           <AnimatedView entering={FadeIn.duration(200)} className="mb-4">
             <Text className="text-destructive text-[14px] font-roobert text-center">
-              Passwords don't match
+              {t('auth.passwordsDontMatch')}
             </Text>
           </AnimatedView>
         )}
@@ -981,7 +988,7 @@ function SignUpView({
               fontSize: 16,
               fontFamily: 'Roobert-Medium',
             }}>
-              Sign up
+              {t('auth.signUp')}
             </Text>
           )}
         </AnimatedPressable>
@@ -1182,6 +1189,7 @@ function EmailConfirmationView({
   email: string; 
   onBack: () => void;
 }) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -1231,10 +1239,10 @@ function EmailConfirmationView({
               <Icon as={MailCheck} size={36} className="text-white" strokeWidth={2} />
             </View>
             <Text className="text-[36px] font-roobert-semibold text-foreground leading-tight mb-3">
-              Check your email
+              {t('auth.checkYourEmail')}
             </Text>
             <Text className="text-[16px] font-roobert text-muted-foreground mb-2">
-              Confirmation link sent to
+              {t('auth.confirmationEmailSent')}
             </Text>
             <View className="mb-8 bg-muted/10 dark:bg-muted/30 rounded-[20px] px-5 py-4">
               <Text className="text-[15px] font-roobert-medium text-foreground">
@@ -1247,7 +1255,7 @@ function EmailConfirmationView({
             {Platform.OS === 'ios' && (
               <EmailAppButton
                 onPress={() => handleOpenEmail()}
-                appName="Open Email App"
+                appName={t('auth.openEmailAppBtn')}
                 logo={
                   <Icon as={Mail} size={20} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2.5} />
                 }
@@ -1256,7 +1264,7 @@ function EmailConfirmationView({
             )}
             <EmailAppButton
               onPress={() => handleOpenEmail('gmail')}
-              appName="Open Gmail App"
+                appName={t('auth.openGmailBtn')}
               logo={
                 <MaterialCommunityIcons name="gmail" size={22} color={isDark ? '#FFFFFF' : '#000000'} />
               }

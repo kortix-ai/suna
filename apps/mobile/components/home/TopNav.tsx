@@ -98,55 +98,8 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
       >
         <Icon as={Menu} size={24} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
-
-      {/* Upgrade Button with Plus Badge - centered horizontally, only show for free tier */}
-      {isFreeTier && (
-        <AnimatedPressable
-          onPressIn={() => {
-            upgradeScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-          }}
-          onPressOut={() => {
-            upgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-          }}
-          onPress={handleUpgradePress}
-          style={[
-            upgradeAnimatedStyle,
-            {
-              position: 'absolute',
-              left: (SCREEN_WIDTH - buttonWidth) / 2, // Center horizontally
-              width: buttonWidth,
-              height: 41,
-              borderWidth: 1.5,
-              borderColor: colorScheme === 'dark' ? '#242427' : '#d0d0d0',
-              backgroundColor: 'transparent',
-              borderRadius: 16,
-              paddingHorizontal: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              overflow: 'visible', // Ensure content isn't clipped
-            }
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Upgrade to Plus"
-        >
-          <Text 
-            className="text-[14px] font-roobert-medium"
-            style={{ 
-              color: colorScheme === 'dark' ? '#f8f8f8' : '#121215',
-              includeFontPadding: false,
-              lineHeight: 17, // Match font size + 3px for proper spacing
-            }}
-          >
-            Upgrade
-          </Text>
-          <TierBadge tier="Plus" size="small" />
-        </AnimatedPressable>
-      )}
-
       <View className="absolute right-6 flex-row items-center gap-2" style={{ top: 8.5 }}>
-        {!isFreeTier && (
+        {isFreeTier && (
           <AnimatedPressable
             onPressIn={() => {
               rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -175,7 +128,7 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
             creditsScale.value = withSpring(1, { damping: 15, stiffness: 400 });
           }}
           onPress={handleCreditsPress}
-          className="flex-row items-center gap-2 bg-primary/10 border-[1.5px] border-primary/30 rounded-full px-3 py-1.5"
+          className="flex-row items-center gap-2 bg-primary/5 rounded-full px-3 py-1.5"
           style={creditsAnimatedStyle}
           accessibilityRole="button"
           accessibilityLabel="View usage"

@@ -8,6 +8,7 @@
 import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { useLanguage } from '@/contexts';
 import type { BillingPeriod } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import Animated, { 
@@ -27,6 +28,7 @@ export function BillingPeriodToggle({
   billingPeriod,
   setBillingPeriod,
 }: BillingPeriodToggleProps) {
+  const { t } = useLanguage();
   const isYearly = billingPeriod === 'yearly_commitment';
   
   const monthlyScale = useSharedValue(1);
@@ -67,7 +69,7 @@ export function BillingPeriodToggle({
               : 'text-muted-foreground'
           }`}
         >
-          Monthly
+          {t('billing.monthly')}
         </Text>
       </AnimatedPressable>
 
@@ -96,7 +98,7 @@ export function BillingPeriodToggle({
               : 'text-muted-foreground'
           }`}
         >
-          Yearly
+          {t('billing.yearlyCommitment')}
         </Text>
         <View
           className={`px-1 py-0.5 rounded-full ${
@@ -108,7 +110,7 @@ export function BillingPeriodToggle({
           <Text className={`text-[9px] font-roobert-semibold ${
             isYearly ? 'text-primary' : 'text-primary'
           }`}>
-            15%
+            {t('billing.save15Percent')}
           </Text>
         </View>
       </AnimatedPressable>

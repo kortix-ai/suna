@@ -55,7 +55,83 @@
     "enterEmailPassword": "メールとパスワードを入力",
     "enterEmailAddress": "メールアドレスを入力",
     "signInFailed": "ログイン失敗。認証情報を確認してください。",
-    "resetFailed": "メール送信に失敗しました。もう一度お試しください。"
+    "resetFailed": "メール送信に失敗しました。もう一度お試しください。",
+    "logIn": "ログイン",
+    "passwordsDontMatch": "パスワードが一致しません",
+    "passwordTooShort": "パスワードは8文字以上必要です",
+    "welcomeTitle": "Kortixを雇って",
+    "rotatingPhrases": {
+      "presentations": "プレゼン",
+      "writing": "文書作成",
+      "emails": "メール",
+      "research": "リサーチ",
+      "planning": "計画",
+      "studying": "学習",
+      "anything": "何でも。"
+    },
+    "agreeTerms": "利用規約に同意し",
+    "userTerms": "ユーザー利用規約",
+    "acknowledgePrivacy": "プライバシー",
+    "privacyNotice": "ポリシーを確認しました",
+    "confirmationEmailSent": "確認リンクを送信しました",
+    "openEmailAppBtn": "メールアプリを開く",
+    "openGmailBtn": "Gmailアプリを開く",
+    "validationErrors": {
+      "emailPasswordRequired": "メールとパスワードを入力してください",
+      "passwordsNoMatch": "パスワードが一致しません",
+      "passwordTooShort": "パスワードは8文字以上必要です"
+    }
+  },
+  "onboarding": {
+    "skip": "スキップ",
+    "next": "次へ",
+    "getStarted": "始める",
+    "slide1": {
+      "title": "AIとチャット",
+      "description": "文脈を理解し、役立つ回答を提供する強力なAIアシスタントと自然な会話をしよう"
+    },
+    "slide2": {
+      "title": "超高速",
+      "description": "最新のAIモデルで即座に回答を取得。あなたのアシスタントはいつでもヘルプの準備ができています"
+    },
+    "slide3": {
+      "title": "安全・プライベート",
+      "description": "あなたの会話は暗号化され安全です。プライバシーを尊重し、データを共有することはありません"
+    },
+    "slide4": {
+      "title": "タスク自動化",
+      "description": "トリガーとワーカーを設定してワークフローを自動化し、生産性を向上させましょう"
+    },
+    "slides": {
+      "title": "プレゼン生成",
+      "description": "プロフェッショナルなプレゼンテーションを数秒で作成。ピッチデッキからビジネスレポートまで。",
+      "example": "スタートアップのピッチデッキを作成"
+    },
+    "research": {
+      "title": "深いリサーチ",
+      "description": "瞬時の洞察、要約、分析による包括的なウェブリサーチ。",
+      "example": "ヘルスケアのAIトレンドを調査"
+    },
+    "data": {
+      "title": "データ分析",
+      "description": "データを分析し、視覚化を作成し、実用的なインテリジェンスを生成。",
+      "example": "四半期売上データを分析"
+    },
+    "docs": {
+      "title": "ドキュメント作成",
+      "description": "レポート生成、メール下書き、AIアシスタンスであらゆるドキュメントを作成。",
+      "example": "プロジェクト提案を起草"
+    },
+    "automation": {
+      "title": "スマート自動化",
+      "description": "ワークフローを自動化するトリガーを設定。タスクをスケジュールし、イベントを監視。",
+      "example": "毎日9時にレポートを送信"
+    },
+    "superworker": {
+      "title": "あなたのAIスーパーワーカー",
+      "description": "すべての機能を組み合わせて、必要なあらゆるタスクのためのカスタムAIワーカーを構築。",
+      "example": "カスタマーサポートエージェントを作成"
+    }
   },
   "settings": {
     "title": "設定",
@@ -234,8 +310,121 @@
     "failedToOpenFilePicker": "ファイル選択を開けませんでした。もう一度お試しください。"
   },
   "billing": {
+    "title": "請求とサブスクリプション",
+    "currentPlan": "現在のプラン",
     "credits": "クレジット",
-    "remaining": "残り"
+    "remaining": "残り",
+    "totalAvailableCredits": "利用可能クレジット総数",
+    "upgrade": "アップグレード",
+    "topUp": "チャージ",
+    "creditBreakdown": "クレジットの内訳",
+    "renewsInDays": "{{days}}日後に更新",
+    "noRenewal": "更新なし",
+    "extra": "追加",
+    "nextBilling": "次回請求",
+    "changePlan": "プラン変更",
+    "upgradeOrDowngrade": "アップグレードまたはダウングレード",
+    "billingPortal": "請求ポータル",
+    "paymentMethods": "支払い方法",
+    "annualCommitment": "年間コミットメント",
+    "activeUntil": "{{date}}まで有効",
+    "subscriptionCancelled": "サブスクリプションキャンセル済み",
+    "subscriptionCancelledOn": "あなたのサブスクリプションは{{date}}にキャンセルされます",
+    "reactivate": "再開",
+    "reactivating": "再開中...",
+    "howCreditsWork": "クレジットの仕組み",
+    "learnAboutCredits": "クレジットの使い方を学ぶ",
+    "cancelPlan": "プランキャンセル",
+    "usage": "使用状況",
+    "last30Days": "過去30日",
+    "failedToLoad": "サブスクリプションデータの読み込みに失敗",
+    "buyCredits": "クレジット購入",
+    "availableCredits": "利用可能クレジット",
+    "creditPackages": "クレジットパッケージ",
+    "choosePackageBoost": "パッケージを選んでクレジット残高を增やそう",
+    "ranOutOfCredits": "クレジットが尽きました。今すぐアップグレードしてください。",
+    "choosePlan": "プランを選ぶ",
+    "getStarted": "始める",
+    "selectPlan": "プランを選択",
+    "upgradeNow": "今すぐアップグレード",
+    "downgrade": "ダウングレード",
+    "switchPlan": "プラン変更",
+    "monthly": "月額",
+    "yearlyCommitment": "年額",
+    "save15Percent": "15%お得",
+    "mostPopular": "人気No.1",
+    "perMonth": "/月",
+    "billedYearly": "年額請求",
+    "billedMonthly": "月額請求",
+    "creditsIncluded": "月{{amount}}クレジット",
+    "unlimitedCredits": "無制限クレジット",
+    "everything": "{{plan}}の全機能",
+    "plus": "プラス",
+    "addCredits": "クレジット追加",
+    "needMoreCredits": "もっとクレジットが必要？",
+    "purchaseAdditional": "いつでも追加クレジットを購入可能"
+  },
+  "theme": {
+    "title": "外観",
+    "preview": "プレビュー",
+    "themeOptions": "テーマオプション",
+    "light": "ライト",
+    "dark": "ダーク",
+    "system": "システム",
+    "lightDescription": "常にライトテーマを使用",
+    "darkDescription": "常にダークテーマを使用",
+    "systemDescription": "デバイス設定に従う",
+    "lightMode": "ライトモード",
+    "darkMode": "ダークモード"
+  },
+  "language": {
+    "title": "言語",
+    "selectLanguage": "言語を選択"
+  },
+  "beta": {
+    "title": "ベータ機能",
+    "experimentalFeatures": "実験機能",
+    "earlyAccess": "新機能をいち早く体験",
+    "advancedFeatures": "高度な機能",
+    "advancedDescription": "実験機能や高度なツールを一般リリース前に利用できます",
+    "whatsIncluded": "含まれる機能",
+    "experimentalTools": "実験ツール",
+    "experimentalToolsDescription": "正式リリース前に新機能をお試しください",
+    "advancedSettings": "高度設定",
+    "advancedSettingsDescription": "上級者向けオプションで体験をカスタマイズ",
+    "pleaseNote": "注意事項",
+    "beta": "ベータ機能",
+    "deleteAccount": "アカウントを削除",
+    "betaWarning": "ベータ機能は不安定な場合があり、予告なく変更される可能性があります。自己責任でご利用ください。"
+  },
+  "accountDeletion": {
+    "title": "アカウント削除",
+    "deletionScheduled": "削除予定",
+    "scheduledFor": "予定日",
+    "deleteYourAccount": "アカウントを削除",
+    "actionCannotBeUndone": "この操作は元に戻せません",
+    "accountWillBeDeleted": "アカウントが永久に削除されます",
+    "whatWillBeDeleted": "削除されるデータ",
+    "allAgents": "すべてのエージェントとバージョン",
+    "allThreads": "すべてのスレッドと会話",
+    "allCredentials": "すべての認証情報と連携",
+    "subscriptionData": "サブスクリプションと請求データ",
+    "gracePeriod": "30日間の献猶期間",
+    "gracePeriodDescription": "アカウントは30日後に削除予定となります。献猷期間中はいつでもこのリクエストをキャンセルできます。",
+    "typeDeleteToConfirm": "{{text}}と入力して確認",
+    "deletePlaceholder": "削除",
+    "deleteAccount": "アカウント削除",
+    "cancelDeletion": "削除キャンセル",
+    "processing": "処理中...",
+    "deletionScheduledSuccess": "アカウントは30日後に削除されます。いつでもこのリクエストをキャンセルできます。",
+    "cancelDeletionTitle": "アカウント削除キャンセル",
+    "cancelDeletionDescription": "アカウントの削除をキャンセルしますか？アカウントとすべてのデータが保存されます。",
+    "back": "戻る",
+    "deletionCancelled": "削除キャンセル済み",
+    "deletionCancelledSuccess": "アカウントは安全です。削除がキャンセルされました。",
+    "failedToRequest": "アカウント削除リクエストに失敗",
+    "failedToCancel": "アカウント削除キャンセルに失敗",
+    "cancelRequestDescription": "削除日前ならいつでもこのリクエストをキャンセルできます。キャンセルすると、すべてのデータが保存されます。"
   },
   "models": {
     "selectModel": "モデルを選択",
@@ -270,5 +459,41 @@
     "returnToHome": "ホームに戻る",
     "createNew": "新しい{{item}}を作成",
     "openConversation": "Chat を開く：{{title}}"
+  },
+  "usage": {
+    "title": "使用状況",
+    "totalCreditsUsed": "使用クレジット合計",
+    "loadingUsageData": "使用データ読み込み中...",
+    "failedToLoad": "データの読み込みに失敗",
+    "usageStats": "使用統計",
+    "conversations": "会話",
+    "avgPerChat": "チャット平均",
+    "usageTrend": "使用トレンド",
+    "lastConversations": "直近{{count}}件の会話",
+    "conversationBreakdown": "会話の内訳",
+    "noConversationsYet": "まだ会話がありません",
+    "conversationHistoryAppearHere": "会話履歴がここに表示されます",
+    "showingTopOf": "{{total}}件中{{shown}}件を表示",
+    "credits": "クレジット",
+    "upgradeYourPlan": "プランをアップグレード",
+    "upgradeDescription": "もっとクレジットを手に入れてプレミアム機能を解除",
+    "topUp": "チャージ",
+    "topUpDescription": "アカウントに追加のクレジットをチャージ",
+    "upgrade": "アップグレード",
+    "upgradeToUltra": "Ultraにアップグレード",
+    "upgradeToUltraDescription": "最高ティアで最大クレジットを手に入れよう"
+  },
+  "nameEdit": {
+    "title": "プロフィール編集",
+    "displayName": "表示名",
+    "yourNamePlaceholder": "あなたの名前",
+    "emailAddress": "メールアドレス",
+    "notAvailable": "利用不可",
+    "nameRequired": "名前は必須です",
+    "nameTooLong": "名前が長すぎます（最大100文字）",
+    "saving": "保存中...",
+    "saveChanges": "変更を保存",
+    "nameUpdated": "名前が正常に更新されました",
+    "failedToUpdate": "名前の更新に失敗しました。もう一度お試しください。"
   }
 }

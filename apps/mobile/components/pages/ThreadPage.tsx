@@ -387,10 +387,10 @@ export function ThreadPage({
   }, [isLoading, hasMessages, messages.length, chat.activeThread?.id, isUserScrolling, showScrollToBottom, insets.top]);
 
   return (
-    <View className="flex-1" style={{ backgroundColor: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}>
+    <View className="flex-1 bg-background">
         <View className="flex-1">
           {isLoading ? (
-            <View className="flex-1 items-center justify-center">
+            <View className="flex-1 items-center justify-center" style={{ paddingTop: Math.max(insets.top, 16) + 80 }}>
               <View className="w-20 h-20 rounded-full items-center justify-center">
                 <LottieView
                   source={require('@/components/animations/loading.json')}
@@ -415,6 +415,7 @@ export function ThreadPage({
               justifyContent: 'center',
               alignItems: 'center',
               paddingHorizontal: 32,
+              paddingTop: Math.max(insets.top, 16) + 80,
             }}
             refreshControl={
               <RefreshControl
@@ -425,18 +426,18 @@ export function ThreadPage({
                 title=""
                 progressBackgroundColor={colorScheme === 'dark' ? '#1a1a1c' : '#ffffff'}
                 colors={['#000000']}
-                progressViewOffset={20}
+                progressViewOffset={Math.max(insets.top, 16) + 80}
               />
             }
           >
-            <View className="w-20 h-20 rounded-full bg-secondary items-center justify-center mb-4">
+            <View className="w-20 h-20 rounded-full bg-muted/20 items-center justify-center mb-6">
               <MessageCircle size={40} color={colorScheme === 'dark' ? '#666' : '#999'} />
             </View>
-            <Text className="text-foreground text-lg font-roobert-semibold text-center">
-              {chat.activeThread?.title || 'Thread'}
+            <Text className="text-foreground text-xl font-roobert-semibold text-center mb-2">
+              {chat.activeThread?.title || 'New Thread'}
             </Text>
-            <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
-              No messages yet. Start the conversation!
+            <Text className="text-muted-foreground text-base font-roobert text-center">
+              Start the conversation with a message or voice note
             </Text>
           </ScrollView>
         ) : (
@@ -446,9 +447,9 @@ export function ThreadPage({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ 
               flexGrow: 1,
-              paddingTop: insets.top + 60, 
+              paddingTop: Math.max(insets.top, 16) + 80, 
               paddingBottom: 200,
-              paddingHorizontal: 14,
+              paddingHorizontal: 16,
             }}
             keyboardShouldPersistTaps="handled"
             scrollEventThrottle={16}
@@ -470,7 +471,7 @@ export function ThreadPage({
                 title=""
                 progressBackgroundColor={colorScheme === 'dark' ? '#1a1a1c' : '#ffffff'}
                 colors={['#000000']}
-                progressViewOffset={20}
+                progressViewOffset={Math.max(insets.top, 16) + 80}
               />
             }
           >
@@ -498,20 +499,29 @@ export function ThreadPage({
           </ScrollView>
         )}
       </View>
+      
+      {/* Scroll to Bottom Button - Positioned above chat input */}
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
-          className="absolute bottom-24 right-4 w-12 h-12 bg-primary rounded-full items-center justify-center shadow-lg active:bg-primary/80"
-          style={{ elevation: 8 }}
+          className="absolute right-6 bg-background border border-border/40 rounded-full w-12 h-12 items-center justify-center shadow-lg active:opacity-80"
+          style={{ 
+            bottom: 220, // Position above chat input
+            elevation: 8,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 8,
+          }}
         >
-          <ArrowDown size={20} color="white" />
+          <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
         </Pressable>
       )}
 
 
       {/* Thread Header */}
       <ThreadHeader
-        threadTitle={chat.activeThread?.title}
+        threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
         onTitleChange={async (newTitle) => {
           console.log('📝 Thread title changed to:', newTitle);
           try {

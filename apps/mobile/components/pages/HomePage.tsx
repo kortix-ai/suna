@@ -103,23 +103,6 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             <View className="absolute inset-0" pointerEvents="none">
               <BackgroundLogo />
             </View>
-            <View className="absolute bottom-40 left-0 right-0 pb-2 z-10" pointerEvents="box-none">
-              <QuickActionBar 
-                onActionPress={chat.handleQuickAction}
-                selectedActionId={chat.selectedQuickAction}
-                selectedOptionId={chat.selectedQuickActionOption}
-                onSelectOption={(optionId) => {
-                  console.log('🎯 Option selected:', optionId);
-                  chat.setSelectedQuickActionOption(optionId);
-                }}
-                onSelectPrompt={(prompt) => {
-                  console.log('📝 Loading prompt into input:', prompt);
-                  chat.setInputValue(prompt);
-                  // Also focus the input so the user can immediately edit or send
-                  chatInputRef.current?.focusInput();
-                }}
-              />
-            </View>
             <ChatInputSection
               ref={chatInputRef}
               value={chat.inputValue}
@@ -144,6 +127,16 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               selectedQuickAction={chat.selectedQuickAction}
               selectedQuickActionOption={chat.selectedQuickActionOption}
               onClearQuickAction={chat.clearQuickAction}
+              onQuickActionPress={chat.handleQuickAction}
+              onQuickActionSelectOption={(optionId) => {
+                console.log('🎯 Option selected:', optionId);
+                chat.setSelectedQuickActionOption(optionId);
+              }}
+              onQuickActionSelectPrompt={(prompt) => {
+                console.log('📝 Loading prompt into input:', prompt);
+                chat.setInputValue(prompt);
+                chatInputRef.current?.focusInput();
+              }}
               isAuthenticated={isAuthenticated}
               onOpenAuthDrawer={onOpenAuthDrawer}
               isAgentRunning={chat.isAgentRunning}

@@ -124,26 +124,26 @@ export function PricingTierCard({
   // Button styling and text logic
   const getButtonText = (): string => {
     if (!isAuthenticated) {
-      return tier.buttonText || 'Get Started';
+      return tier.buttonText || t('billing.getStarted');
     }
     
     if (isCurrentPlan && !isSameTierDifferentPeriod) {
-      return 'Current Plan';
+      return t('billing.currentPlan');
     }
     
     if (isSameTierDifferentPeriod) {
-      return billingPeriod === 'yearly_commitment' ? 'Upgrade' : 'Switch Plan';
+      return billingPeriod === 'yearly_commitment' ? t('billing.upgrade') : t('billing.switchPlan');
     }
     
     if (isUpgrade) {
-      return 'Upgrade';
+      return t('billing.upgrade');
     }
     
     if (isDowngrade) {
-      return 'Downgrade';
+      return t('billing.downgrade');
     }
     
-    return tier.buttonText || 'Get Started';
+    return tier.buttonText || t('billing.getStarted');
   };
 
   const getButtonStyles = (): string => {

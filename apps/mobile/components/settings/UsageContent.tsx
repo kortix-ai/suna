@@ -59,10 +59,6 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
     endDate: dateRange.to,
   });
 
-  React.useEffect(() => {
-    refetch();
-  }, []);
-
   const handleThreadPress = React.useCallback((threadId: string, projectId: string | null) => {
     console.log('🎯 Thread pressed:', threadId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -98,7 +94,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
       <View className="py-12 items-center justify-center">
         <ActivityIndicator size="large" />
         <Text className="mt-4 text-sm text-muted-foreground">
-          Loading usage data...
+          {t('usage.loadingUsageData')}
         </Text>
       </View>
     );
@@ -109,7 +105,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
       <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4 flex-row items-start gap-2">
         <Icon as={AlertCircle} size={16} className="text-destructive" strokeWidth={2} />
         <Text className="text-sm font-roobert-medium text-destructive flex-1">
-          {error instanceof Error ? error.message : 'Failed to load usage data'}
+          {error instanceof Error ? error.message : t('usage.failedToLoad')}
         </Text>
       </View>
     );
@@ -129,7 +125,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
           {formatCredits(summary.total_credits_used)}
         </Text>
         <Text className="text-sm font-roobert text-muted-foreground">
-          Total Credits Used
+          {t('usage.totalCreditsUsed')}
         </Text>
         <Text className="text-xs font-roobert text-muted-foreground mt-1">
           {formatDateShort(summary.start_date)} - {formatDateShort(summary.end_date)}
@@ -141,7 +137,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
             className="mt-4 bg-primary rounded-full px-6 py-2.5 active:opacity-80"
           >
             <Text className="text-sm font-roobert-semibold text-primary-foreground">
-              Upgrade Your Plan
+              {t('usage.upgradeYourPlan')}
             </Text>
           </Pressable>
         ) : isUltraTier ? (
@@ -150,7 +146,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
             className="mt-4 bg-primary rounded-full px-6 py-2.5 active:opacity-80"
           >
             <Text className="text-sm font-roobert-semibold text-primary-foreground">
-              Top Up
+              {t('usage.topUp')}
             </Text>
           </Pressable>
         ) : (
@@ -159,7 +155,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
             className="mt-4 bg-primary rounded-full px-6 py-2.5 active:opacity-80"
           >
             <Text className="text-sm font-roobert-semibold text-primary-foreground">
-              Upgrade
+              {t('usage.upgrade')}
             </Text>
           </Pressable>
         )}
@@ -168,11 +164,12 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
       <UsageGraph 
         threadRecords={threadRecords}
         isDark={isDark}
+        t={t}
       />
 
       <View className="mb-6">
         <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-          Usage Stats
+          {t('usage.usageStats')}
         </Text>
         <View className="flex-row gap-3">
           <View className="flex-1 bg-primary/5 rounded-3xl p-5">
@@ -183,7 +180,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
               {totalConversations}
             </Text>
             <Text className="text-xs font-roobert-medium text-muted-foreground">
-              Conversations
+              {t('usage.conversations')}
             </Text>
           </View>
           <View className="flex-1 bg-primary/5 rounded-3xl p-5">
@@ -194,7 +191,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
               {formatCredits(averagePerConversation)}
             </Text>
             <Text className="text-xs font-roobert-medium text-muted-foreground">
-              Avg per Chat
+              {t('usage.avgPerChat')}
             </Text>
           </View>
         </View>
@@ -202,7 +199,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
 
       <View className="mb-3">
         <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-          Conversation Breakdown
+          {t('usage.conversationBreakdown')}
         </Text>
       </View>
 
@@ -212,10 +209,10 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
             <Icon as={MessageSquare} size={28} className="text-muted-foreground" strokeWidth={2} />
           </View>
           <Text className="text-sm font-roobert-medium text-foreground mb-1">
-            No conversations yet
+            {t('usage.noConversationsYet')}
           </Text>
           <Text className="text-xs text-muted-foreground text-center">
-            Your conversation history will appear here
+            {t('usage.conversationHistoryAppearHere')}
           </Text>
         </View>
       ) : (
@@ -226,6 +223,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
               record={record}
               isLast={index === threadRecords.length - 1}
               onPress={() => handleThreadPress(record.thread_id, record.project_id)}
+              t={t}
             />
           ))}
         </View>
@@ -234,7 +232,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
       {data?.pagination && data.pagination.total > 50 && (
         <View className="mt-6 bg-muted/20 rounded-2xl p-4">
           <Text className="text-xs font-roobert text-muted-foreground text-center">
-            Showing top 50 of {data.pagination.total} conversations
+            {t('usage.showingTopOf', { shown: 50, total: data.pagination.total })}
           </Text>
         </View>
       )}
@@ -246,9 +244,10 @@ interface ConversationCardProps {
   record: any;
   isLast: boolean;
   onPress: () => void;
+  t: (key: string, options?: any) => string;
 }
 
-function ConversationCard({ record, isLast, onPress }: ConversationCardProps) {
+function ConversationCard({ record, isLast, onPress, t }: ConversationCardProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -278,7 +277,7 @@ function ConversationCard({ record, isLast, onPress }: ConversationCardProps) {
             </Text>
           </View>
           <Text className="text-[10px] font-roobert text-muted-foreground">
-            credits
+            {t('usage.credits')}
           </Text>
         </View>
       </View>
@@ -289,9 +288,10 @@ function ConversationCard({ record, isLast, onPress }: ConversationCardProps) {
 interface UsageGraphProps {
   threadRecords: any[];
   isDark: boolean;
+  t: (key: string, options?: any) => string;
 }
 
-function UsageGraph({ threadRecords, isDark }: UsageGraphProps) {
+function UsageGraph({ threadRecords, isDark, t }: UsageGraphProps) {
   const graphData = React.useMemo(() => {
     if (!threadRecords || threadRecords.length === 0) {
       return Array(20).fill(0).map((_, i) => Math.random() * 30 + 20);
@@ -347,10 +347,10 @@ function UsageGraph({ threadRecords, isDark }: UsageGraphProps) {
 
           <View className="mt-4">
             <Text className="text-sm font-roobert text-muted-foreground mb-1">
-              Usage Trend
+              {t('usage.usageTrend')}
             </Text>
             <Text className="text-lg font-roobert-medium text-muted-foreground">
-              Last {Math.min(threadRecords.length, 20)} conversations
+              {t('usage.lastConversations', { count: Math.min(threadRecords.length, 20) })}
             </Text>
           </View>
         </View>

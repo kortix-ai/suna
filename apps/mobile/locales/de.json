@@ -22,13 +22,16 @@
     "signIn": "Anmelden",
     "signOut": "Abmelden",
     "signUp": "Registrieren",
+    "logIn": "Anmelden",
     "signingIn": "Wird angemeldet...",
     "sending": "Wird gesendet...",
     "email": "E-Mail",
     "emailAddress": "E-Mail-Adresse",
-    "emailPlaceholder": "E-Mail-Adresse",
+    "emailPlaceholder": "E-Mail",
     "password": "Passwort",
     "passwordPlaceholder": "Passwort",
+    "confirmPassword": "Passwort bestätigen",
+    "confirmPasswordPlaceholder": "Passwort bestätigen",
     "forgotPassword": "Passwort vergessen?",
     "resetPassword": "Passwort zurücksetzen",
     "resetPasswordDescription": "Gib deine E-Mail ein und wir schicken dir einen Link zum Zurücksetzen",
@@ -45,6 +48,7 @@
     "signInWithApple": "Mit Apple anmelden",
     "signInWithGoogle": "Mit Google anmelden",
     "orEmail": "oder E-Mail",
+    "or": "oder",
     "orContinueWith": "Oder weiter mit",
     "alreadyHaveAccount": "Schon einen Account?",
     "dontHaveAccount": "Noch keinen Account?",
@@ -52,10 +56,87 @@
     "guest": "Gast",
     "signOutConfirm": "Wirklich abmelden?",
     "createFreeAccount": "Kostenlosen Account erstellen",
+    "createAccount": "Account erstellen",
     "enterEmailPassword": "Bitte E-Mail und Passwort eingeben",
     "enterEmailAddress": "Bitte E-Mail-Adresse eingeben",
     "signInFailed": "Login fehlgeschlagen. Check deine Zugangsdaten.",
-    "resetFailed": "Konnte E-Mail nicht senden. Versuch's nochmal."
+    "signUpFailed": "Registrierung fehlgeschlagen. Versuch's nochmal.",
+    "resetFailed": "Konnte E-Mail nicht senden. Versuch's nochmal.",
+    "passwordsDontMatch": "Passwörter stimmen nicht überein",
+    "passwordTooShort": "Passwort muss mindestens 8 Zeichen haben",
+    "welcomeTitle": "Hire Kortix für",
+    "rotatingPhrases": {
+      "presentations": "Präsentationen",
+      "writing": "Schreiben",
+      "emails": "E-Mails",
+      "research": "Recherche",
+      "planning": "Planung",
+      "studying": "Lernen",
+      "anything": "alles."
+    },
+    "agreeTerms": "Ich stimme den",
+    "userTerms": "Nutzungsbedingungen",
+    "acknowledgePrivacy": "zu und erkenne die",
+    "privacyNotice": "Datenschutzerklärung",
+    "confirmationEmailSent": "Bestätigungslink gesendet an",
+    "openEmailAppBtn": "E-Mail-App öffnen",
+    "openGmailBtn": "Gmail-App öffnen",
+    "validationErrors": {
+      "emailPasswordRequired": "Bitte E-Mail und Passwort eingeben",
+      "passwordsNoMatch": "Passwörter stimmen nicht überein",
+      "passwordTooShort": "Passwort muss mindestens 8 Zeichen haben"
+    }
+  },
+  "onboarding": {
+    "skip": "Überspringen",
+    "next": "Weiter",
+    "getStarted": "Los geht's",
+    "slide1": {
+      "title": "Chat mit KI",
+      "description": "Führe natürliche Gespräche mit mächtigen KI-Assistenten, die den Kontext verstehen und hilfreiche Antworten geben"
+    },
+    "slide2": {
+      "title": "Blitzschnell",
+      "description": "Erhalte sofortige Antworten mit den neuesten KI-Modellen. Dein Assistent ist immer bereit zu helfen"
+    },
+    "slide3": {
+      "title": "Sicher & Privat",
+      "description": "Deine Gespräche sind verschlüsselt und sicher. Wir respektieren deine Privatsphäre und teilen niemals deine Daten"
+    },
+    "slide4": {
+      "title": "Aufgaben Automatisieren",
+      "description": "Richte Trigger und Workers ein, um deine Workflows zu automatisieren und die Produktivität zu steigern"
+    },
+    "slides": {
+      "title": "Präsentationen Erstellen",
+      "description": "Erstelle professionelle Präsentationen in Sekunden. Von Pitch Decks bis hin zu Business-Reports.",
+      "example": "Erstelle ein Pitch Deck für mein Startup"
+    },
+    "research": {
+      "title": "Tiefe Recherche",
+      "description": "Umfassende Web-Recherche mit sofortigen Insights, Zusammenfassungen und Analysen.",
+      "example": "Recherchiere KI-Trends im Gesundheitswesen"
+    },
+    "data": {
+      "title": "Datenanalyse",
+      "description": "Analysiere Daten, erstelle Visualisierungen und generiere umsetzbare Intelligenz.",
+      "example": "Analysiere quartalsweise Verkaufsdaten"
+    },
+    "docs": {
+      "title": "Dokument-Erstellung",
+      "description": "Generiere Berichte, entwerfe E-Mails und erstelle beliebige Dokumente mit KI-Unterstützung.",
+      "example": "Entwerfe einen Projektvorschlag"
+    },
+    "automation": {
+      "title": "Intelligente Automatisierung",
+      "description": "Richte Trigger ein, um Workflows zu automatisieren. Plane Aufgaben und überwache Events.",
+      "example": "Täglich um 9 Uhr Berichte senden"
+    },
+    "superworker": {
+      "title": "Dein KI-Superworker",
+      "description": "Kombiniere alle Features, um maßgeschneiderte KI-Workers für jede Aufgabe zu erstellen, die du brauchst.",
+      "example": "Erstelle einen Kundenservice-Agenten"
+    }
   },
   "settings": {
     "title": "Einstellungen",
@@ -67,6 +148,8 @@
     "advancedFeatures": "Erweiterte Funktionen",
     "signOut": "Abmelden",
     "upgrade": "Zu Pro upgraden",
+    "beta": "Beta",
+    "deleteAccount": "Konto löschen",
     "unlockFeatures": "Alle Features freischalten"
   },
   "chat": {
@@ -234,8 +317,119 @@
     "failedToOpenFilePicker": "Dateiauswahl konnte nicht geöffnet werden. Versuch's nochmal."
   },
   "billing": {
+    "title": "Abrechnung & Abonnement",
+    "currentPlan": "Aktueller Plan",
     "credits": "Credits",
-    "remaining": "übrig"
+    "remaining": "übrig",
+    "totalAvailableCredits": "Gesamt Verfügbare Credits",
+    "upgrade": "Upgraden",
+    "topUp": "Aufladen",
+    "creditBreakdown": "Credit-Übersicht",
+    "renewsInDays": "Erneuert sich in {{days}}T",
+    "noRenewal": "Keine Erneuerung",
+    "extra": "Extra",
+    "nextBilling": "Nächste Abrechnung",
+    "changePlan": "Plan Ändern",
+    "upgradeOrDowngrade": "Upgrade oder Downgrade",
+    "billingPortal": "Abrechnungsportal",
+    "paymentMethods": "Zahlungsmethoden",
+    "annualCommitment": "Jahresverpflichtung",
+    "activeUntil": "Aktiv bis {{date}}",
+    "subscriptionCancelled": "Abonnement Gekündigt",
+    "subscriptionCancelledOn": "Dein Abonnement wird am {{date}} gekündigt",
+    "reactivate": "Reaktivieren",
+    "reactivating": "Reaktivierung...",
+    "howCreditsWork": "Wie Credits funktionieren",
+    "learnAboutCredits": "Lerne über Credit-Nutzung",
+    "cancelPlan": "Plan Kündigen",
+    "usage": "Nutzung",
+    "last30Days": "Letzte 30T",
+    "failedToLoad": "Fehler beim Laden der Abonnement-Daten",
+    "buyCredits": "Credits Kaufen",
+    "availableCredits": "Verfügbare Credits",
+    "creditPackages": "Credit-Pakete",
+    "choosePackageBoost": "Wähle ein Paket und erhöhe dein Credit-Guthaben",
+    "ranOutOfCredits": "Dir sind die Credits ausgegangen. Jetzt upgraden.",
+    "choosePlan": "Wähle deinen Plan",
+    "getStarted": "Loslegen",
+    "selectPlan": "Plan Auswählen",
+    "upgradeNow": "Jetzt Upgraden",
+    "downgrade": "Downgraden",
+    "switchPlan": "Plan Wechseln",
+    "monthly": "Monatlich",
+    "yearlyCommitment": "Jährlich",
+    "save15Percent": "Spare 15%",
+    "mostPopular": "Beliebteste",
+    "perMonth": "/Monat",
+    "billedYearly": "jährlich abgerechnet",
+    "billedMonthly": "monatlich abgerechnet",
+    "creditsIncluded": "{{amount}} Credits/Monat",
+    "unlimitedCredits": "Unbegrenzte Credits",
+    "everything": "Alles in {{plan}}",
+    "plus": "plus",
+    "addCredits": "Credits Hinzufügen",
+    "needMoreCredits": "Mehr Credits benötigt?",
+    "purchaseAdditional": "Kaufe jederzeit zusätzliche Credits"
+  },
+  "theme": {
+    "title": "Aussehen",
+    "preview": "Vorschau",
+    "themeOptions": "Theme-Optionen",
+    "light": "Hell",
+    "dark": "Dunkel",
+    "system": "System",
+    "lightDescription": "Immer helles Theme verwenden",
+    "darkDescription": "Immer dunkles Theme verwenden",
+    "systemDescription": "Geräteeinstellungen folgen",
+    "lightMode": "Heller Modus",
+    "darkMode": "Dunkler Modus"
+  },
+  "language": {
+    "title": "Sprache",
+    "selectLanguage": "Sprache Auswählen"
+  },
+  "beta": {
+    "title": "Beta-Funktionen",
+    "experimentalFeatures": "Experimentelle Funktionen",
+    "earlyAccess": "Früher Zugang zu neuen Fähigkeiten",
+    "advancedFeatures": "Erweiterte Funktionen",
+    "advancedDescription": "Zugang zu experimentellen Funktionen und erweiterten Tools bevor sie für alle verfügbar sind",
+    "whatsIncluded": "Was Enthalten Ist",
+    "experimentalTools": "Experimentelle Tools",
+    "experimentalToolsDescription": "Probiere neue Fähigkeiten vor der offiziellen Veröffentlichung aus",
+    "advancedSettings": "Erweiterte Einstellungen",
+    "advancedSettingsDescription": "Passe deine Erfahrung mit Power-User-Optionen an",
+    "pleaseNote": "Bitte Beachten",
+    "betaWarning": "Beta-Funktionen können instabil sein und sich ohne Ankündigung ändern. Nutzung auf eigene Gefahr."
+  },
+  "accountDeletion": {
+    "title": "Konto Löschen",
+    "deletionScheduled": "Löschung Geplant",
+    "scheduledFor": "Geplant Für",
+    "deleteYourAccount": "Dein Konto Löschen",
+    "actionCannotBeUndone": "Diese Aktion kann nicht rückgängig gemacht werden",
+    "accountWillBeDeleted": "Dein Konto wird dauerhaft gelöscht",
+    "whatWillBeDeleted": "Was Gelöscht Wird",
+    "allAgents": "Alle deine Agenten und Agent-Versionen",
+    "allThreads": "Alle deine Threads und Konversationen",
+    "allCredentials": "Alle deine Anmeldedaten und Integrationen",
+    "subscriptionData": "Deine Abonnement- und Abrechnungsdaten",
+    "gracePeriod": "30-Tage Kulanzfrist",
+    "gracePeriodDescription": "Dein Konto wird in 30 Tagen zur Löschung vorgesehen. Du kannst diese Anfrage jederzeit während der Kulanzfrist abbrechen.",
+    "typeDeleteToConfirm": "Tippe {{text}} zur Bestätigung",
+    "deletePlaceholder": "LÖSCHEN",
+    "deleteAccount": "Konto Löschen",
+    "cancelDeletion": "Löschung Abbrechen",
+    "processing": "Verarbeitung...",
+    "deletionScheduledSuccess": "Dein Konto wird in 30 Tagen gelöscht. Du kannst diese Anfrage jederzeit abbrechen.",
+    "cancelDeletionTitle": "Kontolöschung Abbrechen",
+    "cancelDeletionDescription": "Möchtest du die Löschung deines Kontos abbrechen? Dein Konto und alle Daten bleiben erhalten.",
+    "back": "Zurück",
+    "deletionCancelled": "Löschung Abgebrochen",
+    "deletionCancelledSuccess": "Dein Konto ist sicher. Die Löschung wurde abgebrochen.",
+    "failedToRequest": "Fehler beim Anfordern der Kontolöschung",
+    "failedToCancel": "Fehler beim Abbrechen der Kontolöschung",
+    "cancelRequestDescription": "Du kannst diese Anfrage jederzeit vor dem Löschungsdatum abbrechen. Alle deine Daten werden erhalten, wenn du abbrichst."
   },
   "models": {
     "selectModel": "Modell wählen",
@@ -270,5 +464,41 @@
     "returnToHome": "Zurück zum Home-Screen",
     "createNew": "Neuen {{item}} erstellen",
     "openConversation": "Chat öffnen: {{title}}"
+  },
+  "usage": {
+    "title": "Nutzung",
+    "totalCreditsUsed": "Gesamt Verbrauchte Credits",
+    "loadingUsageData": "Lade Nutzungsdaten...",
+    "failedToLoad": "Fehler beim Laden der Daten",
+    "usageStats": "Nutzungsstatistiken",
+    "conversations": "Konversationen",
+    "avgPerChat": "Durchschnitt pro Chat",
+    "usageTrend": "Nutzungstrend",
+    "lastConversations": "Letzte {{count}} Konversationen",
+    "conversationBreakdown": "Konversations-Übersicht",
+    "noConversationsYet": "Noch keine Konversationen",
+    "conversationHistoryAppearHere": "Deine Konversationshistorie erscheint hier",
+    "showingTopOf": "Zeige {{shown}} von {{total}} Konversationen",
+    "credits": "Credits",
+    "upgradeYourPlan": "Upgrade deinen Plan",
+    "upgradeDescription": "Hol dir mehr Credits und schalte Premium-Features frei",
+    "topUp": "Aufladen",
+    "topUpDescription": "Lade dein Konto mit zusätzlichen Credits auf",
+    "upgrade": "Upgraden",
+    "upgradeToUltra": "Upgrade auf Ultra",
+    "upgradeToUltraDescription": "Hol dir den höchsten Tier für maximale Credits"
+  },
+  "nameEdit": {
+    "title": "Profil Bearbeiten",
+    "displayName": "Anzeigename",
+    "yourNamePlaceholder": "Dein Name",
+    "emailAddress": "E-Mail-Adresse",
+    "notAvailable": "Nicht verfügbar",
+    "nameRequired": "Name ist erforderlich",
+    "nameTooLong": "Name ist zu lang (max 100 Zeichen)",
+    "saving": "Wird gespeichert...",
+    "saveChanges": "Änderungen Speichern",
+    "nameUpdated": "Dein Name wurde erfolgreich aktualisiert",
+    "failedToUpdate": "Fehler beim Aktualisieren des Namens. Bitte erneut versuchen."
   }
 }

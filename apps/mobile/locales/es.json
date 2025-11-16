@@ -22,13 +22,16 @@
     "signIn": "Iniciar sesión",
     "signOut": "Cerrar sesión",
     "signUp": "Registrarse",
+    "logIn": "Iniciar sesión",
     "signingIn": "Iniciando sesión...",
     "sending": "Enviando...",
     "email": "Email",
     "emailAddress": "Dirección de email",
-    "emailPlaceholder": "Dirección de email",
+    "emailPlaceholder": "Email",
     "password": "Contraseña",
     "passwordPlaceholder": "Contraseña",
+    "confirmPassword": "Confirma tu contraseña",
+    "confirmPasswordPlaceholder": "Confirma tu contraseña",
     "forgotPassword": "¿Olvidaste tu contraseña?",
     "resetPassword": "Restablecer contraseña",
     "resetPasswordDescription": "Ingresa tu email y te enviaremos un link para restablecer tu contraseña",
@@ -45,6 +48,7 @@
     "signInWithApple": "Iniciar con Apple",
     "signInWithGoogle": "Iniciar con Google",
     "orEmail": "o email",
+    "or": "o",
     "orContinueWith": "O continuar con",
     "alreadyHaveAccount": "¿Ya tienes cuenta?",
     "dontHaveAccount": "¿No tienes cuenta?",
@@ -52,10 +56,87 @@
     "guest": "Invitado",
     "signOutConfirm": "¿Seguro que quieres cerrar sesión?",
     "createFreeAccount": "Crear cuenta gratis",
+    "createAccount": "Crear cuenta",
     "enterEmailPassword": "Ingresa email y contraseña",
     "enterEmailAddress": "Ingresa tu email",
     "signInFailed": "Error al iniciar sesión. Verifica tus datos.",
-    "resetFailed": "No pudimos enviar el email. Intenta de nuevo."
+    "signUpFailed": "Error al registrarse. Intenta de nuevo.",
+    "resetFailed": "No pudimos enviar el email. Intenta de nuevo.",
+    "passwordsDontMatch": "Las contraseñas no coinciden",
+    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "welcomeTitle": "Contrata Kortix para",
+    "rotatingPhrases": {
+      "presentations": "presentaciones",
+      "writing": "redacción",
+      "emails": "emails",
+      "research": "investigación",
+      "planning": "planificación",
+      "studying": "estudiar",
+      "anything": "cualquier cosa."
+    },
+    "agreeTerms": "Acepto los",
+    "userTerms": "Términos y Condiciones de Usuario",
+    "acknowledgePrivacy": "y reconozco el",
+    "privacyNotice": "Aviso de privacidad",
+    "confirmationEmailSent": "Enlace de confirmación enviado a",
+    "openEmailAppBtn": "Abrir App de Email",
+    "openGmailBtn": "Abrir App de Gmail",
+    "validationErrors": {
+      "emailPasswordRequired": "Por favor ingresa email y contraseña",
+      "passwordsNoMatch": "Las contraseñas no coinciden",
+      "passwordTooShort": "La contraseña debe tener al menos 8 caracteres"
+    }
+  },
+  "onboarding": {
+    "skip": "Saltar",
+    "next": "Siguiente",
+    "getStarted": "Comenzar",
+    "slide1": {
+      "title": "Chat con IA",
+      "description": "Ten conversaciones naturales con asistentes IA poderosos que entienden el contexto y brindan respuestas útiles"
+    },
+    "slide2": {
+      "title": "Súper Rápido",
+      "description": "Obtén respuestas instantáneas con los últimos modelos de IA. Tu asistente siempre está listo para ayudar"
+    },
+    "slide3": {
+      "title": "Seguro y Privado",
+      "description": "Tus conversaciones están encriptadas y seguras. Respetamos tu privacidad y nunca compartimos tus datos"
+    },
+    "slide4": {
+      "title": "Automatizar Tareas",
+      "description": "Configura triggers y workers para automatizar tus flujos de trabajo y aumentar la productividad"
+    },
+    "slides": {
+      "title": "Generar Presentaciones",
+      "description": "Crea presentaciones profesionales en segundos. Desde pitch decks hasta reportes de negocio.",
+      "example": "Crea un pitch deck para mi startup"
+    },
+    "research": {
+      "title": "Investigación Profunda",
+      "description": "Investigación web integral con insights instantáneos, resúmenes y análisis.",
+      "example": "Investiga tendencias de IA en salud"
+    },
+    "data": {
+      "title": "Análisis de Datos",
+      "description": "Analiza datos, crea visualizaciones y genera inteligencia accionable.",
+      "example": "Analiza datos de ventas trimestrales"
+    },
+    "docs": {
+      "title": "Creación de Documentos",
+      "description": "Genera reportes, borradores de emails y crea cualquier documento con asistencia de IA.",
+      "example": "Redacta una propuesta de proyecto"
+    },
+    "automation": {
+      "title": "Automatización Inteligente",
+      "description": "Configura triggers para automatizar flujos de trabajo. Programa tareas y monitorea eventos.",
+      "example": "Enviar reportes diarios a las 9 AM"
+    },
+    "superworker": {
+      "title": "Tu Super Worker IA",
+      "description": "Combina todas las características para construir workers de IA personalizados para cualquier tarea que necesites.",
+      "example": "Crear un agente de soporte al cliente"
+    }
   },
   "settings": {
     "title": "Ajustes",
@@ -67,6 +148,8 @@
     "advancedFeatures": "Funciones avanzadas",
     "signOut": "Cerrar sesión",
     "upgrade": "Actualizar a Pro",
+    "beta": "Funciones Beta",
+    "deleteAccount": "Eliminar Cuenta",
     "unlockFeatures": "Desbloquear todas las funciones"
   },
   "chat": {
@@ -249,8 +332,119 @@
     "transcriptionFailed": "Error al transcribir el audio. Por favor intenta de nuevo."
   },
   "billing": {
+    "title": "Facturación & Suscripción",
+    "currentPlan": "Plan Actual",
     "credits": "Créditos",
-    "remaining": "restantes"
+    "remaining": "restantes",
+    "totalAvailableCredits": "Créditos Totales Disponibles",
+    "upgrade": "Mejorar",
+    "topUp": "Recargar",
+    "creditBreakdown": "Desglose de Créditos",
+    "renewsInDays": "Se renueva en {{days}}d",
+    "noRenewal": "Sin renovación",
+    "extra": "Extra",
+    "nextBilling": "Próxima Facturación",
+    "changePlan": "Cambiar Plan",
+    "upgradeOrDowngrade": "Mejorar o degradar",
+    "billingPortal": "Portal de Facturación",
+    "paymentMethods": "Métodos de pago",
+    "annualCommitment": "Compromiso Anual",
+    "activeUntil": "Activo hasta {{date}}",
+    "subscriptionCancelled": "Suscripción Cancelada",
+    "subscriptionCancelledOn": "Tu suscripción será cancelada el {{date}}",
+    "reactivate": "Reactivar",
+    "reactivating": "Reactivando...",
+    "howCreditsWork": "Cómo funcionan los créditos",
+    "learnAboutCredits": "Aprende sobre el uso de créditos",
+    "cancelPlan": "Cancelar Plan",
+    "usage": "Uso",
+    "last30Days": "Últimos 30d",
+    "failedToLoad": "Error al cargar datos de suscripción",
+    "buyCredits": "Comprar Créditos",
+    "availableCredits": "Créditos disponibles",
+    "creditPackages": "Paquetes de Créditos",
+    "choosePackageBoost": "Elige un paquete y aumenta tu saldo de créditos",
+    "ranOutOfCredits": "Te quedaste sin créditos. Mejora ahora.",
+    "choosePlan": "Elige tu Plan",
+    "getStarted": "Comenzar",
+    "selectPlan": "Seleccionar Plan",
+    "upgradeNow": "Mejorar Ahora",
+    "downgrade": "Degradar",
+    "switchPlan": "Cambiar Plan",
+    "monthly": "Mensual",
+    "yearlyCommitment": "Anual",
+    "save15Percent": "Ahorra 15%",
+    "mostPopular": "Más Popular",
+    "perMonth": "/mes",
+    "billedYearly": "facturado anualmente",
+    "billedMonthly": "facturado mensualmente",
+    "creditsIncluded": "{{amount}} créditos/mes",
+    "unlimitedCredits": "Créditos ilimitados",
+    "everything": "Todo en {{plan}}",
+    "plus": "más",
+    "addCredits": "Agregar Créditos",
+    "needMoreCredits": "¿Necesitas más créditos?",
+    "purchaseAdditional": "Compra créditos adicionales en cualquier momento"
+  },
+  "theme": {
+    "title": "Apariencia",
+    "preview": "Vista Previa",
+    "themeOptions": "Opciones de Tema",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Sistema",
+    "lightDescription": "Usar siempre tema claro",
+    "darkDescription": "Usar siempre tema oscuro",
+    "systemDescription": "Seguir configuración del dispositivo",
+    "lightMode": "Modo Claro",
+    "darkMode": "Modo Oscuro"
+  },
+  "language": {
+    "title": "Idioma",
+    "selectLanguage": "Seleccionar Idioma"
+  },
+  "beta": {
+    "title": "Funciones Beta",
+    "experimentalFeatures": "Funciones Experimentales",
+    "earlyAccess": "Obtén acceso temprano a nuevas capacidades",
+    "advancedFeatures": "Funciones Avanzadas",
+    "advancedDescription": "Accede a funciones experimentales y herramientas avanzadas antes de que se liberen a todos",
+    "whatsIncluded": "Qué Incluye",
+    "experimentalTools": "Herramientas Experimentales",
+    "experimentalToolsDescription": "Prueba nuevas capacidades antes del lanzamiento oficial",
+    "advancedSettings": "Configuración Avanzada",
+    "advancedSettingsDescription": "Ajusta tu experiencia con opciones de usuario avanzado",
+    "pleaseNote": "Ten en Cuenta",
+    "betaWarning": "Las funciones beta pueden ser inestables y cambiar sin previo aviso. Úsalas bajo tu propio riesgo."
+  },
+  "accountDeletion": {
+    "title": "Eliminar Cuenta",
+    "deletionScheduled": "Eliminación Programada",
+    "scheduledFor": "Programada Para",
+    "deleteYourAccount": "Eliminar tu Cuenta",
+    "actionCannotBeUndone": "Esta acción no se puede deshacer",
+    "accountWillBeDeleted": "Tu cuenta será eliminada permanentemente",
+    "whatWillBeDeleted": "Qué será Eliminado",
+    "allAgents": "Todos tus agentes y versiones de agentes",
+    "allThreads": "Todos tus hilos y conversaciones",
+    "allCredentials": "Todas tus credenciales e integraciones",
+    "subscriptionData": "Tu suscripción y datos de facturación",
+    "gracePeriod": "Período de Gracia de 30 Días",
+    "gracePeriodDescription": "Tu cuenta será programada para eliminación en 30 días. Puedes cancelar esta solicitud en cualquier momento durante el período de gracia.",
+    "typeDeleteToConfirm": "Escribe {{text}} para confirmar",
+    "deletePlaceholder": "ELIMINAR",
+    "deleteAccount": "Eliminar Cuenta",
+    "cancelDeletion": "Cancelar Eliminación",
+    "processing": "Procesando...",
+    "deletionScheduledSuccess": "Tu cuenta será eliminada en 30 días. Puedes cancelar esta solicitud en cualquier momento.",
+    "cancelDeletionTitle": "Cancelar Eliminación de Cuenta",
+    "cancelDeletionDescription": "¿Quieres cancelar la eliminación de tu cuenta? Tu cuenta y todos los datos serán preservados.",
+    "back": "Atrás",
+    "deletionCancelled": "Eliminación Cancelada",
+    "deletionCancelledSuccess": "Tu cuenta está segura. La eliminación ha sido cancelada.",
+    "failedToRequest": "Error al solicitar eliminación de cuenta",
+    "failedToCancel": "Error al cancelar eliminación de cuenta",
+    "cancelRequestDescription": "Puedes cancelar esta solicitud en cualquier momento antes de la fecha de eliminación. Todos tus datos serán preservados si cancelas."
   },
   "models": {
     "selectModel": "Elegir Modelo",
@@ -285,5 +479,41 @@
     "returnToHome": "Volver al home",
     "createNew": "Crear nuevo {{item}}",
     "openConversation": "Abrir Chat: {{title}}"
+  },
+  "usage": {
+    "title": "Uso",
+    "totalCreditsUsed": "Créditos Totales Usados",
+    "loadingUsageData": "Cargando datos de uso...",
+    "failedToLoad": "Error al cargar datos de uso",
+    "usageStats": "Estadísticas de Uso",
+    "conversations": "Conversaciones",
+    "avgPerChat": "Promedio por Chat",
+    "usageTrend": "Tendencia de Uso",
+    "lastConversations": "Últimas {{count}} conversaciones",
+    "conversationBreakdown": "Desglose de Conversaciones",
+    "noConversationsYet": "Aún no hay conversaciones",
+    "conversationHistoryAppearHere": "Tu historial de conversaciones aparecerá aquí",
+    "showingTopOf": "Mostrando {{shown}} de {{total}} conversaciones",
+    "credits": "créditos",
+    "upgradeYourPlan": "Mejora tu Plan",
+    "upgradeDescription": "Obtén más créditos y desbloquea funciones premium",
+    "topUp": "Recargar",
+    "topUpDescription": "Recarga tu cuenta con créditos adicionales",
+    "upgrade": "Mejorar",
+    "upgradeToUltra": "Mejorar a Ultra",
+    "upgradeToUltraDescription": "Obtén el nivel más alto para créditos máximos"
+  },
+  "nameEdit": {
+    "title": "Editar Perfil",
+    "displayName": "Nombre a Mostrar",
+    "yourNamePlaceholder": "Tu nombre",
+    "emailAddress": "Dirección de Email",
+    "notAvailable": "No disponible",
+    "nameRequired": "El nombre es obligatorio",
+    "nameTooLong": "El nombre es muy largo (máx 100 caracteres)",
+    "saving": "Guardando...",
+    "saveChanges": "Guardar Cambios",
+    "nameUpdated": "Tu nombre se ha actualizado correctamente",
+    "failedToUpdate": "Error al actualizar el nombre. Inténtalo de nuevo."
   }
 }

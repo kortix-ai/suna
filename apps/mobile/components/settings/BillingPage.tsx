@@ -278,7 +278,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
       <View className="absolute inset-0 z-50 bg-background">
         <SettingsHeader title={t('billing.title')} onClose={handleClose} />
         <View className="p-6">
-          <Text className="text-muted-foreground">Loading...</Text>
+          <Text className="text-muted-foreground">{t('billing.loading')}</Text>
         </View>
       </View>
     );
@@ -340,7 +340,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                 {formatCredits(totalCredits)}
               </Text>
               <Text className="text-sm font-roobert text-muted-foreground">
-                Total Available Credits
+                {t('billing.totalAvailableCredits')}
               </Text>
             </View>
             {tierType !== 'Ultra' ? (
@@ -351,7 +351,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                 >
                   <Icon as={CreditCard} size={16} className="text-primary-foreground" strokeWidth={2.5} />
                   <Text className="text-sm font-roobert-medium text-primary-foreground">
-                    Upgrade
+                    {t('billing.upgrade')}
                   </Text>
                 </Pressable>
               </View>
@@ -363,7 +363,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                 >
                   <Icon as={CreditCard} size={16} className="text-primary-foreground" strokeWidth={2.5} />
                   <Text className="text-sm font-roobert-medium text-primary-foreground">
-                    Top up
+                    {t('billing.topUp')}
                   </Text>
                 </Pressable>
               </View>
@@ -373,7 +373,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
 
             <View className="mb-6">
               <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                Credit Breakdown
+                {t('billing.creditBreakdown')}
               </Text>
               <View className="flex-row gap-3">
                 <View className="flex-1 bg-primary/5 rounded-3xl p-5">
@@ -384,12 +384,12 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                     {formatCredits(expiringCredits)}
                   </Text>
                   <Text className="mb-1 text-xs font-roobert-medium text-muted-foreground">
-                    Monthly
+                    {t('billing.monthly')}
                   </Text>
                   <Text className="text-[10px] font-roobert text-primary">
                     {daysUntilRefresh !== null 
-                      ? `Renews in ${daysUntilRefresh}d`
-                      : 'No renewal'
+                      ? t('billing.renewsInDays', { days: daysUntilRefresh })
+                      : t('billing.noRenewal')
                     }
                   </Text>
                 </View>
@@ -401,10 +401,10 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                     {formatCredits(nonExpiringCredits)}
                   </Text>
                   <Text className="mb-1 text-xs font-roobert-medium text-muted-foreground">
-                    Extra
+                    {t('billing.extra')}
                   </Text>
                   <Text className="text-[10px] font-roobert text-primary">
-                    Never expires
+                    {t('billing.neverExpires')}
                   </Text>
                 </View>
               </View>
@@ -415,7 +415,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                 <View className="flex-row items-center justify-between">
                   <View>
                     <Text className="mb-0.5 text-xs font-roobert-medium text-muted-foreground">
-                      Current Plan
+                      {t('billing.currentPlan')}
                     </Text>
                     <View className="mt-1">
                       <TierBadge tier={tierType} size="small" />
@@ -423,7 +423,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                   </View>
                   <View className="items-end">
                     <Text className="mb-0.5 text-xs font-roobert-medium text-muted-foreground">
-                      Next Billing
+                      {t('billing.nextBilling')}
                     </Text>
                     <Text className="text-sm font-roobert-medium text-foreground">
                       {formatDateFlexible(subscription.current_period_end)}
@@ -439,32 +439,32 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                 <View className="flex-row gap-3">
                   <Pressable
                     onPress={handleChangePlan}
-                    className="flex-1 bg-card border border-border/40 rounded-2xl p-4 active:opacity-80"
+                    className="flex-1 bg-primary/5 rounded-3xl p-4 active:opacity-80"
                   >
-                    <View className="mb-3 h-11 w-11 items-center justify-center rounded-full bg-primary/10">
-                      <Icon as={ArrowUpDown} size={20} className="text-primary" strokeWidth={2.5} />
+                    <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-amber-500">
+                      <Icon as={ArrowUpDown} size={20} className="text-white" strokeWidth={2.5} />
                     </View>
                     <Text className="text-sm font-roobert-semibold text-foreground mb-1">
-                      Change Plan
+                      {t('billing.changePlan')}
                     </Text>
                     <Text className="text-xs font-roobert text-muted-foreground">
-                      Upgrade or downgrade
+                      {t('billing.upgradeOrDowngrade')}
                     </Text>
                   </Pressable>
 
                   <Pressable
                     onPress={handleManageSubscription}
                     disabled={createPortalSessionMutation.isPending}
-                    className="flex-1 bg-card border border-border/40 rounded-2xl p-4 active:opacity-80"
+                    className="flex-1 bg-primary/5 rounded-3xl p-4 active:opacity-80"
                   >
-                    <View className="mb-3 h-11 w-11 items-center justify-center rounded-full bg-primary/10">
-                      <Icon as={Wallet} size={20} className="text-muted-foreground" strokeWidth={2.5} />
+                    <View className="mb-3 h-8 w-8 items-center justify-center rounded-full bg-indigo-500">
+                      <Icon as={Wallet} size={20} className="text-white" strokeWidth={2.5} />
                     </View>
                     <Text className="text-sm font-roobert-semibold text-foreground mb-1">
-                      {createPortalSessionMutation.isPending ? 'Loading...' : 'Billing Portal'}
+                      {createPortalSessionMutation.isPending ? t('billing.loading') : t('billing.billingPortal')}
                     </Text>
                     <Text className="text-xs font-roobert text-muted-foreground">
-                      Payment methods
+                      {t('billing.paymentMethods')}
                     </Text>
                   </Pressable>
                 </View>
@@ -480,10 +480,10 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                     </View>
                     <View className="flex-1">
                       <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
-                        {createPortalSessionMutation.isPending ? 'Loading...' : 'Billing Portal'}
+                        {createPortalSessionMutation.isPending ? t('billing.loading') : t('billing.billingPortal')}
                       </Text>
                       <Text className="text-xs font-roobert text-muted-foreground">
-                        Payment methods
+                        {t('billing.paymentMethods')}
                       </Text>
                     </View>
                   </View>
@@ -500,10 +500,10 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                   </View>
                   <View className="flex-1">
                     <Text className="mb-1 text-sm font-roobert-semibold text-foreground">
-                      Annual Commitment
+                      {t('billing.annualCommitment')}
                     </Text>
                     <Text className="text-xs font-roobert text-muted-foreground">
-                      Active until {formatEndDate(commitmentInfo.commitment_end_date || '')}
+                      {t('billing.activeUntil', { date: formatEndDate(commitmentInfo.commitment_end_date || '') })}
                     </Text>
                   </View>
                 </View>
@@ -532,10 +532,10 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                   </View>
                   <View className="flex-1">
                     <Text className="mb-1 text-sm font-roobert-semibold text-destructive">
-                      Subscription Cancelled
+                      {t('billing.subscriptionCancelled')}
                     </Text>
                     <Text className="mb-4 text-xs font-roobert text-muted-foreground">
-                      Your subscription will be cancelled on {cancellationDate}
+                      {t('billing.subscriptionCancelledOn', { date: cancellationDate })}
                     </Text>
                     <Pressable
                       onPress={handleReactivate}
@@ -544,7 +544,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                     >
                       <Icon as={RotateCcw} size={14} className="text-primary-foreground" strokeWidth={2.5} />
                       <Text className="text-sm font-roobert-medium text-primary-foreground">
-                        {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Reactivate'}
+                        {reactivateSubscriptionMutation.isPending ? t('billing.reactivating') : t('billing.reactivate')}
                       </Text>
                     </Pressable>
                   </View>
@@ -566,10 +566,10 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                 </View>
                 <View className="flex-1">
                   <Text className="text-sm font-roobert-semibold text-foreground">
-                    How credits work
+                    {t('billing.howCreditsWork')}
                   </Text>
                   <Text className="text-xs font-roobert text-muted-foreground">
-                    Learn about credit usage
+                    {t('billing.learnAboutCredits')}
                   </Text>
                 </View>
               </Pressable>
@@ -583,7 +583,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                   className="py-3 px-4 active:opacity-60"
                 >
                   <Text className="text-xs font-roobert-medium text-muted-foreground">
-                    Cancel Plan
+                    {t('billing.cancelPlan')}
                   </Text>
                 </Pressable>
               </View>
@@ -618,6 +618,7 @@ interface UsageSectionProps {
 }
 
 function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
+  const { t } = useLanguage();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -685,8 +686,8 @@ function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
           <View className="absolute top-1/3 left-1/2 -translate-x-1/2 w-3/4 h-1/3 bg-primary/10 rounded-full" style={{ filter: 'blur(40px)' }} />
           <View className="relative">
             <View className="flex-row items-start justify-between">
-              <View className="h-8 w-8 items-center justify-center rounded-full bg-foreground">
-                <Icon as={TrendingDown} size={20} className="text-background" strokeWidth={2.5} />
+              <View className="h-8 w-8 items-center justify-center rounded-full bg-green-500">
+                <Icon as={TrendingDown} size={20} className="text-white" strokeWidth={2.5} />
               </View>
               <View className="absolute right-0 top-0">
                 <Svg width={180} height={60} viewBox={`0 0 ${width} ${height}`}>
@@ -705,10 +706,10 @@ function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
             <View className="flex-row items-end justify-between mt-4">
               <View>
                 <Text className="text-sm font-roobert text-muted-foreground">
-                  Usage
+                  {t('billing.usage')}
                 </Text>
                 <Text className="text-lg font-roobert-medium text-muted-foreground">
-                  Last 30d
+                  {t('billing.last30Days')}
                 </Text>
               </View>
               <View className="items-end">

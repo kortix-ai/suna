@@ -47,7 +47,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
           removeClippedSubviews={true}
         >
           <SettingsHeader
-            title="Beta Features"
+            title={t('beta.title')}
             onClose={handleClose}
           />
           
@@ -57,10 +57,10 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                 <Icon as={Sparkles} size={28} className="text-primary" strokeWidth={2} />
               </View>
               <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-                Experimental Features
+                {t('beta.experimentalFeatures')}
               </Text>
               <Text className="text-sm font-roobert text-muted-foreground text-center">
-                Get early access to new capabilities
+                {t('beta.earlyAccess')}
               </Text>
             </View>
 
@@ -80,7 +80,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                     </View>
                     <View className="flex-1">
                       <Text className="text-base font-roobert-semibold text-foreground mb-0.5">
-                        Advanced Features
+                        {t('beta.advancedFeatures')}
                       </Text>
                     </View>
                   </View>
@@ -99,7 +99,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                 
                 <View className="pt-3 border-t border-border/40">
                   <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                    Access experimental features and advanced tools before they're released to everyone
+                    {t('beta.advancedDescription')}
                   </Text>
                 </View>
               </View>
@@ -108,18 +108,18 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
             {advancedFeaturesEnabled && (
               <View className="mb-6">
                 <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                  What's Included
+                  {t('beta.whatsIncluded')}
                 </Text>
                 <View className="gap-3">
                   <FeatureCard
                     icon={Zap}
-                    title="Experimental Tools"
-                    description="Try out new capabilities before official release"
+                    title={t('beta.experimentalTools')}
+                    description={t('beta.experimentalToolsDescription')}
                   />
                   <FeatureCard
                     icon={Layers}
-                    title="Advanced Settings"
-                    description="Fine-tune your experience with power user options"
+                    title={t('beta.advancedSettings')}
+                    description={t('beta.advancedSettingsDescription')}
                   />
                 </View>
               </View>
@@ -132,10 +132,10 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                 </View>
                 <View className="flex-1">
                   <Text className="text-sm font-roobert-semibold text-foreground mb-1">
-                    Please Note
+                    {t('beta.pleaseNote')}
                   </Text>
                   <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                    Beta features may be unstable and could change without notice. Use at your own discretion.
+                    {t('beta.betaWarning')}
                   </Text>
                 </View>
               </View>
