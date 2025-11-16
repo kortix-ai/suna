@@ -1,19 +1,14 @@
 import * as React from 'react';
-import { View, ScrollView, Pressable, Image, ActivityIndicator, FlatList, Alert } from 'react-native';
+import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
-  ArrowLeft, 
-  Plug2, 
+  ArrowLeft,
   CheckCircle2,
-  Circle,
   Search,
-  Save,
   AlertCircle
 } from 'lucide-react-native';
-import { SettingsHeader } from '../SettingsHeader';
 import { useLanguage } from '@/contexts';
-import { useAgent } from '@/contexts';
 import { 
   useComposioTools,
   useUpdateComposioTools,
@@ -21,7 +16,6 @@ import {
   type ComposioProfile,
   type ComposioTool
 } from '@/hooks/useComposio';
-import * as Haptics from 'expo-haptics';
 import { ToolkitIcon } from './ToolkitIcon';
 import Animated, { 
   useAnimatedStyle, 
@@ -30,14 +24,6 @@ import Animated, {
 } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-interface ComposioToolsSelectorProps {
-  app: ComposioApp;
-  profile: ComposioProfile;
-  visible: boolean;
-  onClose: () => void;
-  onComplete: () => void;
-}
 
 interface ComposioToolsContentProps {
   app: ComposioApp;
@@ -61,24 +47,10 @@ export function ComposioToolsContent({
   const { mutate: updateTools, isPending: isSaving } = useUpdateComposioTools();
   
   const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = React.useState('');
 
   const tools = toolsData?.tools || [];
-  
-  const filteredTools = React.useMemo(() => {
-    if (!searchQuery.trim()) return tools;
-    
-    const query = searchQuery.toLowerCase();
-    return tools.filter((tool: ComposioTool) => 
-      tool.name.toLowerCase().includes(query) ||
-      tool.description?.toLowerCase().includes(query)
-    );
-  }, [tools, searchQuery]);
 
   const handleToolToggle = React.useCallback((toolName: string) => {
-    console.log('🎯 Toggling tool:', toolName);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
     setSelectedTools(prev => {
       const newSet = new Set(prev);
       if (newSet.has(toolName)) {
@@ -91,9 +63,6 @@ export function ComposioToolsContent({
   }, []);
 
   const handleSelectAll = React.useCallback(() => {
-    console.log('🎯 Select all tools');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
     if (selectedTools.size === tools.length) {
       setSelectedTools(new Set());
     } else {
@@ -103,88 +72,73 @@ export function ComposioToolsContent({
 
   const handleSaveTools = React.useCallback(() => {
     if (!agentId) return;
-    
-    console.log('💾 Saving tools to agent:', Array.from(selectedTools));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     updateTools({
       agentId,
       profileId: profile.profile_id,
       selectedTools: Array.from(selectedTools)
     }, {
-      onSuccess: () => {
-        Alert.alert('Success', `Added ${selectedTools.size} ${app.name} tools to your agent!`);
+      onSuccess: (data) => {
+        console.log('✅ Tools saved successfully:', data);
+        Alert.alert(t('integrations.connectionSuccess'), t('integrations.toolsSelector.toolsAddedSuccess', { count: selectedTools.size, app: app.name }));
         onComplete();
       },
       onError: (error: any) => {
-        Alert.alert('Error', error.message || 'Failed to save tools');
+        console.error('❌ Failed to save tools:', error);
+        Alert.alert(t('integrations.connectionError'), error.message || t('integrations.toolsSelector.failedToSaveTools'));
       }
     });
-  }, [agentId, profile.profile_id, selectedTools, updateTools, app.name, onComplete]);
+  }, [agentId, profile.profile_id, selectedTools, updateTools, app.name, onComplete, t]);
 
   return (
-    <View className="flex-1">
-      <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
+    <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
         {onBack && (
           <Pressable
             onPress={onBack}
-            className="items-center justify-center w-10 h-10 mb-4 active:opacity-70 rounded-full bg-primary/10"
+            className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
           >
-            <ArrowLeft size={20} className="text-foreground" />
+            <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
           </Pressable>
         )}
         
-        <View className="items-center py-6">
-          <ToolkitIcon 
-            slug={app.slug} 
-            name={app.name} 
-            size="lg" 
-            className="mb-4"
-          />
-          
-          <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
-            Configure {app.name} Tools
-          </Text>
-          
-          <Text className="text-sm font-roobert text-muted-foreground text-center">
-            Select tools to add to your agent
-          </Text>
-        </View>
-
-        {/* Profile Info */}
-        <View className="flex-row items-center gap-3 p-4 bg-muted/5 rounded-2xl mb-6">
-          <ToolkitIcon slug={app.slug} name={app.name} size="sm" />
-          <View className="flex-1">
-            <Text className="font-roobert-semibold text-foreground">
-              {profile.profile_name}
-            </Text>
-            <Text className="text-sm text-muted-foreground">
-              Select tools to add to your agent
-            </Text>
+        <View className="mb-8">
+          <View className="flex-row items-center gap-4 mb-2">
+            <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
+              <ToolkitIcon 
+                slug={app.slug} 
+                name={app.name} 
+                size="sm" 
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-2xl font-roobert-bold text-foreground">
+                {app.name}
+              </Text>
+            </View>
           </View>
+          <Text className="text-base font-roobert text-muted-foreground mt-2">
+            {profile.profile_name}
+          </Text>
         </View>
 
-        {/* Tools Count and Select All */}
-        <View className="flex-row items-center justify-between mb-4">
-          <Text className="text-sm text-muted-foreground">
-            {selectedTools.size} of {tools.length} tools selected
+        <View className="flex-row items-center justify-between mb-6">
+          <Text className="text-sm font-roobert-medium text-muted-foreground uppercase tracking-wider">
+            {t('integrations.toolsSelector.selected', { count: selectedTools.size, total: tools.length, plural: selectedTools.size !== 1 ? 's' : '' })}
           </Text>
           <Pressable
             onPress={handleSelectAll}
-            className="px-4 py-2 bg-muted/10 rounded-xl active:opacity-70"
+            className="px-4 py-2 rounded-full bg-muted/10 active:opacity-70"
           >
-            <Text className="text-sm font-roobert-medium text-primary">
-              {selectedTools.size === tools.length ? 'Deselect All' : 'Select All'}
+            <Text className="text-sm font-roobert-semibold text-foreground">
+              {selectedTools.size === tools.length ? t('integrations.toolsSelector.deselectAll') : t('integrations.toolsSelector.selectAll')}
             </Text>
           </Pressable>
         </View>
-
-        {/* Tools List - Using regular Views instead of FlatList */}
         {isLoading ? (
           <View className="items-center py-8">
             <ActivityIndicator size="large" className="text-primary" />
             <Text className="text-sm font-roobert text-muted-foreground mt-2">
-              Loading tools...
+              {t('integrations.toolsSelector.loadingTools')}
             </Text>
           </View>
         ) : error ? (
@@ -207,8 +161,8 @@ export function ComposioToolsContent({
           </View>
         ) : (
           <View className="space-y-3 mb-6">
-            {filteredTools.length > 0 ? (
-              filteredTools.map((tool: ComposioTool, index: number) => (
+            {tools.length > 0 ? (
+              tools.map((tool: ComposioTool, index: number) => (
                 <ToolCard
                   key={tool.name || index}
                   tool={tool}
@@ -220,244 +174,23 @@ export function ComposioToolsContent({
               <View className="items-center py-12 px-6">
                 <Icon as={Search} size={48} className="text-muted-foreground/40" />
                 <Text className="text-lg font-roobert-medium text-foreground mt-4">
-                  No Tools Available
+                  {t('integrations.toolsSelector.noToolsAvailable')}
                 </Text>
                 <Text className="text-sm font-roobert text-muted-foreground text-center">
-                  This integration doesn't have any tools to configure
+                  {t('integrations.toolsSelector.noToolsDescription')}
                 </Text>
               </View>
             )}
           </View>
         )}
 
-        {/* Save Button */}
-        <View className="flex-row gap-3">
-          {onBack && (
-            <Pressable 
-              onPress={onBack}
-              className="flex-1 py-4 items-center rounded-2xl border border-border/30"
-            >
-              <Text className="font-roobert-medium text-muted-foreground">Back</Text>
-            </Pressable>
-          )}
-          
-          <Pressable 
-            onPress={handleSaveTools}
-            disabled={selectedTools.size === 0 || isSaving}
-            className={`flex-1 py-4 items-center rounded-2xl ${
-              selectedTools.size === 0 || isSaving ? 'bg-muted/30' : 'bg-primary'
-            }`}
-          >
-            <View className="flex-row items-center gap-2">
-              {isSaving && <ActivityIndicator size="small" color="#fff" />}
-              <Text className={`font-roobert-medium ${
-                selectedTools.size === 0 || isSaving ? 'text-muted-foreground' : 'text-primary-foreground'
-              }`}>
-                {isSaving ? 'Saving...' : `Save ${selectedTools.size} Tools`}
-              </Text>
-            </View>
-          </Pressable>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-export function ComposioToolsSelector({ 
-  app, 
-  profile, 
-  visible, 
-  onClose, 
-  onComplete 
-}: ComposioToolsSelectorProps) {
-  const { t } = useLanguage();
-  const { getCurrentAgent } = useAgent();
-  const currentAgent = getCurrentAgent();
-  const { data: toolsData, isLoading, error, refetch } = useComposioTools(profile.profile_id);
-  const { mutate: updateTools, isPending } = useUpdateComposioTools();
-  
-  const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = React.useState('');
-
-  const tools = toolsData?.tools || [];
-
-  const filteredTools = React.useMemo(() => {
-    if (!searchQuery.trim()) return tools;
-    
-    const query = searchQuery.toLowerCase();
-    return tools.filter((tool: ComposioTool) => 
-      tool.name.toLowerCase().includes(query) ||
-      tool.description?.toLowerCase().includes(query)
-    );
-  }, [tools, searchQuery]);
-
-  React.useEffect(() => {
-    if (tools.length > 0 && selectedTools.size === 0) {
-      const preSelected = new Set<string>();
-      tools.forEach((tool: ComposioTool) => {
-        if (tool.name.includes('list') || tool.name.includes('get') || tool.name.includes('search')) {
-          preSelected.add(tool.name);
-        }
-      });
-      if (preSelected.size > 0) {
-        setSelectedTools(preSelected);
-      }
-    }
-  }, [tools, selectedTools.size]);
-
-  const handleClose = React.useCallback(() => {
-    console.log('🎯 Tools selector closing');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onClose();
-  }, [onClose]);
-
-  const handleToolToggle = React.useCallback((toolName: string) => {
-    console.log('🎯 Tool toggled:', toolName);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    setSelectedTools(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(toolName)) {
-        newSet.delete(toolName);
-      } else {
-        newSet.add(toolName);
-      }
-      return newSet;
-    });
-  }, []);
-
-  const handleSelectAll = React.useCallback(() => {
-    console.log('🎯 Select all tools');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    if (selectedTools.size === filteredTools.length) {
-      setSelectedTools(new Set());
-    } else {
-      setSelectedTools(new Set(filteredTools.map((tool: ComposioTool) => tool.name)));
-    }
-  }, [selectedTools.size, filteredTools]);
-
-  const handleSave = React.useCallback(() => {
-    if (!currentAgent?.agent_id) {
-      Alert.alert('No Agent Selected', 'Please select an agent first');
-      return;
-    }
-
-    console.log('🎯 Saving tools configuration');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    updateTools({
-      agentId: currentAgent.agent_id,
-      profileId: profile.profile_id,
-      selectedTools: Array.from(selectedTools),
-    }, {
-      onSuccess: () => {
-        console.log('✅ Tools updated successfully');
-        Alert.alert('Tools Added', `${selectedTools.size} tools configured for ${app.name}`);
-        onComplete();
-      },
-      onError: (error) => {
-        console.error('❌ Failed to update tools:', error);
-        Alert.alert('Update Failed', error.message || 'Please try again');
-      },
-    });
-  }, [currentAgent, profile, selectedTools, app.name, updateTools, onComplete]);
-
-  if (!visible) return null;
-
-  return (
-    <View className="flex-1">
-      <SettingsHeader
-        title={`${app.name} Tools`}
-        onClose={handleClose}
-        variant="close"
-      /> 
-      <View className="flex-1">
-        <View className="px-6 py-4 border-b border-border/10">
-          <View className="flex-row items-center gap-3 mb-4">
-            <ToolkitIcon 
-              slug={app.slug} 
-              name={app.name} 
-              size="sm" 
-            />
-            <View className="flex-1">
-              <Text className="text-lg font-roobert-semibold text-foreground">
-                {profile.profile_name}
-              </Text>
-              <Text className="text-sm font-roobert text-muted-foreground">
-                Select tools to add to your agent
-              </Text>
-            </View>
-          </View>
-
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm font-roobert text-muted-foreground">
-              {selectedTools.size} of {filteredTools.length} tools selected
-            </Text>
-            
-            <Pressable
-              onPress={handleSelectAll}
-              className="px-3 py-1.5 rounded-lg bg-muted/10 dark:bg-muted/30"
-            >
-              <Text className="text-sm font-roobert-medium text-foreground">
-                {selectedTools.size === filteredTools.length ? 'Deselect All' : 'Select All'}
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {isLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" className="text-primary" />
-            <Text className="text-sm font-roobert text-muted-foreground mt-4">
-              Loading available tools...
-            </Text>
-          </View>
-        ) : error ? (
-          <View className="flex-1 items-center justify-center px-6">
-            <Icon as={Search} size={48} className="text-muted-foreground/40" />
-            <Text className="text-lg font-roobert-medium text-foreground mt-4 text-center">
-              Failed to Load Tools
-            </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center">
-              {error.message || 'Please try again'}
-            </Text>
-            <Pressable
-              onPress={() => refetch()}
-              className="mt-4 px-4 py-2 bg-primary rounded-xl"
-            >
-              <Text className="text-sm font-roobert-medium text-white">
-                Retry
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <FlatList
-            data={filteredTools}
-            keyExtractor={(item) => item.name}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 100 }}
-            renderItem={({ item }) => (
-              <ToolCard
-                tool={item}
-                selected={selectedTools.has(item.name)}
-                onToggle={() => handleToolToggle(item.name)}
-              />
-            )}
-            ListEmptyComponent={
-              <View className="flex-1 items-center justify-center py-12 px-6">
-                <Icon as={Search} size={48} className="text-muted-foreground/40" />
-                <Text className="text-lg font-roobert-medium text-foreground mt-4">
-                  No Tools Available
-                </Text>
-                <Text className="text-sm font-roobert text-muted-foreground text-center">
-                  This integration doesn't have any tools to configure
-                </Text>
-              </View>
-            }
-          />
-        )}
-      </View>
+        <ContinueButton
+          onPress={handleSaveTools}
+          disabled={selectedTools.size === 0 || isSaving}
+          isLoading={isSaving}
+          label={isSaving ? t('integrations.toolsSelector.addingTools') : selectedTools.size === 0 ? t('integrations.toolsSelector.selectTools') : selectedTools.size === 1 ? t('integrations.toolsSelector.addTool', { count: selectedTools.size }) : t('integrations.toolsSelector.addTools', { count: selectedTools.size })}
+          rounded="full"
+        />
     </View>
   );
 }
@@ -468,7 +201,21 @@ interface ToolCardProps {
   onToggle: () => void;
 }
 
-const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
+interface ContinueButtonProps {
+  onPress: () => void;
+  disabled?: boolean;
+  label: string;
+  isLoading?: boolean;
+  rounded?: 'full' | '2xl';
+}
+
+const ContinueButton = React.memo(({ 
+  onPress, 
+  disabled = false, 
+  label, 
+  isLoading = false,
+  rounded = 'full'
+}: ContinueButtonProps) => {
   const scale = useSharedValue(1);
   
   const animatedStyle = useAnimatedStyle(() => ({
@@ -476,47 +223,73 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
   }));
   
   const handlePressIn = React.useCallback(() => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-  }, [scale]);
+    if (!disabled) {
+      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    }
+  }, [scale, disabled]);
   
   const handlePressOut = React.useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   }, [scale]);
   
   return (
-    <AnimatedPressable
-      onPress={onToggle}
+    <AnimatedPressable 
+      onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className={`mx-6 my-1.5 p-4 rounded-2xl border ${
-        selected 
-          ? 'bg-primary/5 border-primary/20' 
-          : 'bg-muted/10 dark:bg-muted/30 border-transparent'
+      disabled={disabled}
+      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${
+        disabled ? 'bg-muted/20' : 'bg-foreground'
       }`}
     >
-      <View className="flex-row items-center gap-3">
-        <Icon 
-          as={selected ? CheckCircle2 : Circle} 
-          size={20} 
-          className={selected ? 'text-primary' : 'text-muted-foreground'} 
-          strokeWidth={2}
-        />
-        
-        <View className="flex-1">
-          <Text className="text-base font-roobert-medium text-foreground">
-            {tool.name}
-          </Text>
-          {tool.description && (
-            <Text 
-              className="text-sm font-roobert text-muted-foreground mt-1" 
-              numberOfLines={2}
-            >
-              {tool.description}
-            </Text>
-          )}
-        </View>
+      <View className="flex-row items-center gap-2">
+        {isLoading && <ActivityIndicator size="small" color="#fff" />}
+        <Text className={`text-base font-roobert-semibold ${
+          disabled ? 'text-muted-foreground' : 'text-background'
+        }`}>
+          {label}
+        </Text>
       </View>
     </AnimatedPressable>
+  );
+});
+
+const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
+  return (
+    <Pressable
+      onPress={onToggle}
+      className={`flex-row items-start gap-3 p-4 rounded-3xl mb-2 active:opacity-80 ${
+        selected 
+          ? 'bg-primary/10' 
+          : 'bg-muted/5'
+      }`}
+    >
+      <View className={`w-6 h-6 rounded-full items-center justify-center mt-0.5 ${
+        selected ? 'bg-primary' : 'bg-transparent border-2 border-muted-foreground/30'
+      }`}>
+        {selected && (
+          <Icon 
+            as={CheckCircle2} 
+            size={16} 
+            className="text-primary-foreground" 
+            strokeWidth={2.5}
+          />
+        )}
+      </View>
+      
+      <View className="flex-1">
+        <Text className="font-roobert-semibold text-foreground mb-1">
+          {tool.name}
+        </Text>
+        <Text 
+          className="text-sm font-roobert text-muted-foreground leading-relaxed" 
+          numberOfLines={2}
+          ellipsizeMode="tail"
+        >
+          {tool.description}
+        </Text>
+      </View>
+    </Pressable>
   );
 });

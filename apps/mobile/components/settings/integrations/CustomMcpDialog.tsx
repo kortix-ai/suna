@@ -64,12 +64,12 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
     }
 
     if (!validateUrl(url.trim())) {
-      setValidationError('Please enter a valid HTTP or HTTPS URL.');
+      setValidationError(t('integrations.customMcp.enterValidUrl'));
       return;
     }
 
     if (!manualServerName.trim()) {
-      setValidationError('Please enter a name for this MCP server.');
+      setValidationError(t('integrations.customMcp.enterServerName'));
       return;
     }
 
@@ -86,21 +86,30 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
         console.log('✅ Tools discovered:', response);
         
         if (!response.tools || response.tools.length === 0) {
-          setValidationError('No tools found. Please check your configuration.');
+          setValidationError(t('integrations.customMcp.noToolsFound'));
           return;
         }
 
-        setServerName(response.serverName || manualServerName.trim());
+        const finalServerName = response.serverName || manualServerName.trim();
+        setServerName(finalServerName);
         setDiscoveredTools(response.tools);
         setSelectedTools(new Set(response.tools.map(tool => tool.name)));
+        
+        // Pass the config to onSave for AgentDrawer flow
+        onSave?.({
+          serverName: finalServerName,
+          url: url.trim(),
+          type: 'http' as const,
+          tools: response.tools
+        });
         setStep('tools');
       },
       onError: (error) => {
         console.error('❌ Failed to discover tools:', error);
-        setValidationError(error.message || 'Failed to connect to the MCP server. Please check your configuration.');
+        setValidationError(error.message || t('integrations.customMcp.failedToConnect'));
       },
     });
-  }, [url, manualServerName, validateUrl, discoverTools, isValidating]);
+  }, [url, manualServerName, validateUrl, discoverTools, isValidating, onSave, t]);
 
   const handleBackToConfig = React.useCallback(() => {
     console.log('🎯 Back to configuration');
@@ -110,17 +119,16 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
 
   const handleToolsComplete = React.useCallback((enabledTools: string[]) => {
     console.log('✅ Custom MCP configuration completed');
-    
     const config = {
       serverName: serverName,
       url: url.trim(),
       type: 'http' as const,
-      tools: enabledTools
+      tools: enabledTools,
+      discoveredTools: discoveredTools
     };
-    
     onSave?.(config);
-    Alert.alert('Custom MCP Added', `${enabledTools.length} tools configured`);
-  }, [serverName, url, onSave]);
+    Alert.alert(t('integrations.customMcp.toolsConfigured'), t('integrations.customMcp.toolsConfiguredMessage', { count: enabledTools.length }));
+  }, [serverName, url, discoveredTools, onSave, t]);
 
   return (
     <>
@@ -146,28 +154,26 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
               </Pressable>
             )}
             
-            <Text className="text-2xl font-roobert-bold text-foreground mb-2">
-              Add Custom MCP Server
-            </Text>
-            
-            <View className="items-center py-6">
-              <View className="h-16 w-16 rounded-2xl bg-orange-100 dark:bg-orange-900/30 items-center justify-center mb-4">
-                <Icon as={Globe} size={24} className="text-orange-600" />
+            <View className="mb-8">
+              <View className="flex-row items-center gap-4 mb-2">
+                <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
+                  <Icon as={Globe} size={24} className="text-primary" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-2xl font-roobert-bold text-foreground">
+                    {t('integrations.customMcp.title')}
+                  </Text>
+                </View>
               </View>
-              
-              <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
-                Custom MCP Integration
-              </Text>
-              
-              <Text className="text-sm font-roobert text-muted-foreground text-center">
-                Connect to a custom Model Control Protocol server via HTTP
+              <Text className="text-base font-roobert text-muted-foreground mt-2">
+                {t('integrations.customMcp.description')}
               </Text>
             </View>
 
             <View className="space-y-6">
-              <View className="space-y-2">
-                <Text className="text-sm font-roobert-medium text-foreground">
-                  Server URL
+              <View>
+                <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+                  {t('integrations.customMcp.serverUrl')}
                 </Text>
                 <TextInput
                   value={url}
@@ -175,18 +181,18 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
                     setUrl(text);
                     if (validationError) setValidationError(null);
                   }}
-                  placeholder="https://your-mcp-server.com"
-                  className="bg-muted/20 border border-border rounded-xl px-4 py-3 text-foreground font-roobert"
-                  placeholderTextColor="#888888"
+                  placeholder={t('integrations.customMcp.serverUrlPlaceholder')}
+                  className="bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground border border-border/40"
+                  placeholderTextColor="rgba(156, 163, 175, 0.5)"
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
                 />
               </View>
 
-              <View className="space-y-2">
-                <Text className="text-sm font-roobert-medium text-foreground">
-                  Server Name
+              <View className='mt-4 mb-6'>
+                <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+                  {t('integrations.customMcp.serverName')}
                 </Text>
                 <TextInput
                   value={manualServerName}
@@ -194,48 +200,25 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
                     setManualServerName(text);
                     if (validationError) setValidationError(null);
                   }}
-                  placeholder="My Custom Server"
-                  className="bg-muted/20 border border-border rounded-xl px-4 py-3 text-foreground font-roobert"
-                  placeholderTextColor="#888888"
+                  placeholder={t('integrations.customMcp.serverNamePlaceholder')}
+                  className="bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground border border-border/40"
+                  placeholderTextColor="rgba(156, 163, 175, 0.5)"
                 />
               </View>
 
               {validationError && (
-                <View className="bg-destructive/10 border border-destructive/20 rounded-xl p-4">
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={AlertCircle} size={16} className="text-destructive" />
-                    <Text className="text-sm font-roobert-medium text-destructive">
-                      Configuration Error
-                    </Text>
-                  </View>
-                  <Text className="text-sm font-roobert text-destructive/80 mt-1">
+                <View className="mt-3 mb-6">
+                  <Text className="text-sm font-roobert text-red-600 mb-2">
                     {validationError}
                   </Text>
                 </View>
               )}
 
-              <View className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
-                <View className="flex-row items-start gap-3">
-                  <Icon as={Info} size={16} className="text-blue-600 mt-0.5" />
-                  <View className="flex-1">
-                    <Text className="text-sm font-roobert-medium text-blue-900 dark:text-blue-100 mb-1">
-                      MCP Server Requirements
-                    </Text>
-                    <Text className="text-sm font-roobert text-blue-800 dark:text-blue-200">
-                      • Must be accessible via HTTP/HTTPS{'\n'}
-                      • Should implement MCP protocol correctly{'\n'}
-                      • Must respond to tool discovery requests
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <ActionButton
-                title={isValidating ? "Discovering Tools..." : "Discover Tools"}
-                description="Connect to the server and discover available tools"
+              <ContinueButton
                 onPress={handleDiscoverTools}
                 disabled={isValidating || !url.trim() || !manualServerName.trim()}
-                loading={isValidating}
+                label={isValidating ? t('integrations.customMcp.discoveringTools') : t('integrations.customMcp.discoverTools')}
+                isLoading={isValidating}
               />
             </View>
           </View>
@@ -291,17 +274,17 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
 
   const handleDiscoverTools = React.useCallback(() => {
     if (!url.trim()) {
-      setValidationError('Please enter the MCP server URL.');
+      setValidationError(t('integrations.customMcp.enterValidUrl'));
       return;
     }
 
     if (!validateUrl(url.trim())) {
-      setValidationError('Please enter a valid HTTP or HTTPS URL.');
+      setValidationError(t('integrations.customMcp.enterValidUrl'));
       return;
     }
 
     if (!manualServerName.trim()) {
-      setValidationError('Please enter a name for this MCP server.');
+      setValidationError(t('integrations.customMcp.enterServerName'));
       return;
     }
 
@@ -318,7 +301,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
         console.log('✅ Tools discovered:', response);
         
         if (!response.tools || response.tools.length === 0) {
-          setValidationError('No tools found. Please check your configuration.');
+          setValidationError(t('integrations.customMcp.noToolsFound'));
           return;
         }
 
@@ -329,10 +312,10 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
       },
       onError: (error) => {
         console.error('❌ Failed to discover tools:', error);
-        setValidationError(error.message || 'Failed to connect to the MCP server. Please check your configuration.');
+        setValidationError(error.message || t('integrations.customMcp.failedToConnect'));
       },
     });
-  }, [url, manualServerName, validateUrl, discoverTools]);
+  }, [url, manualServerName, validateUrl, discoverTools, t]);
 
   const handleBackToConfig = React.useCallback(() => {
     console.log('🎯 Back to configuration');
@@ -353,8 +336,8 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
     onSave(config);
     handleClose();
     
-    Alert.alert('Custom MCP Added', `${enabledTools.length} tools configured`);
-  }, [serverName, url, onSave, handleClose]);
+    Alert.alert(t('integrations.customMcp.toolsConfigured'), t('integrations.customMcp.toolsConfiguredMessage', { count: enabledTools.length }));
+  }, [serverName, url, onSave, handleClose, t]);
 
   if (!open) return null;
 
@@ -378,7 +361,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
         ) : (
           <>
             <SettingsHeader
-              title="Add Custom MCP Server"
+              title={t('integrations.customMcp.title')}
               onClose={handleClose}
             />
             
@@ -388,38 +371,26 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
             >
               
               <View className="px-6 pb-6">
-            <View className="items-center py-6">
-              <View className="h-16 w-16 rounded-2xl bg-orange-100 dark:bg-orange-900/30 items-center justify-center mb-4">
-                <Icon as={Globe} size={24} className="text-orange-600" />
+            <View className="mb-8">
+              <View className="flex-row items-center gap-4 mb-2">
+                <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
+                  <Icon as={Globe} size={24} className="text-primary" />
+                </View>
+                <View className="flex-1">
+                  <Text className="text-2xl font-roobert-bold text-foreground">
+                    {t('integrations.customMcp.title')}
+                  </Text>
+                </View>
               </View>
-              
-              <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
-                Custom MCP Integration
-              </Text>
-              
-              <Text className="text-sm font-roobert text-muted-foreground text-center">
-                Connect to a custom Model Control Protocol server via HTTP
+              <Text className="text-base font-roobert text-muted-foreground mt-2">
+                {t('integrations.customMcp.description')}
               </Text>
             </View>
 
             <View className="space-y-6">
-              <View className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/30 rounded-2xl p-4">
-                <View className="flex-row items-start gap-3">
-                  <Icon as={Info} size={16} className="text-blue-600 mt-0.5" />
-                  <View className="flex-1">
-                    <Text className="text-sm font-roobert-medium text-blue-900 dark:text-blue-100">
-                      What is MCP?
-                    </Text>
-                    <Text className="text-sm font-roobert text-blue-700 dark:text-blue-200 mt-1">
-                      Model Control Protocol allows you to connect custom tools and services to your agent via HTTP endpoints.
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
               <View>
-                <Text className="text-base font-roobert-medium text-foreground mb-3">
-                  Server URL
+                <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+                  {t('integrations.customMcp.serverUrl')}
                 </Text>
                 <TextInput
                   value={url}
@@ -427,21 +398,18 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
                     setUrl(text);
                     setValidationError(null);
                   }}
-                  placeholder="https://your-mcp-server.com"
-                  className="bg-muted/10 dark:bg-muted/30 rounded-xl px-4 py-3 text-base font-roobert text-foreground"
-                  placeholderTextColor="rgba(156, 163, 175, 0.6)"
+                  placeholder={t('integrations.customMcp.serverUrlPlaceholder')}
+                  className="bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground border border-border/40"
+                  placeholderTextColor="rgba(156, 163, 175, 0.5)"
                   keyboardType="url"
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
-                <Text className="text-sm font-roobert text-muted-foreground mt-2">
-                  Enter the HTTP(S) URL of your MCP server endpoint.
-                </Text>
               </View>
 
               <View>
-                <Text className="text-base font-roobert-medium text-foreground mb-3">
-                  Server Name
+                <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+                  {t('integrations.customMcp.serverName')}
                 </Text>
                 <TextInput
                   value={manualServerName}
@@ -449,35 +417,26 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
                     setManualServerName(text);
                     setValidationError(null);
                   }}
-                  placeholder="My Custom MCP Server"
-                  className="bg-muted/10 dark:bg-muted/30 rounded-xl px-4 py-3 text-base font-roobert text-foreground"
-                  placeholderTextColor="rgba(156, 163, 175, 0.6)"
+                  placeholder={t('integrations.customMcp.serverNamePlaceholder')}
+                  className="bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground border border-border/40"
+                  placeholderTextColor="rgba(156, 163, 175, 0.5)"
                 />
-                <Text className="text-sm font-roobert text-muted-foreground mt-2">
-                  Choose a descriptive name to identify this server.
-                </Text>
               </View>
 
               {validationError && (
-                <View className="bg-destructive/10 border border-destructive/20 rounded-2xl p-4">
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={AlertCircle} size={16} className="text-destructive" />
-                    <Text className="text-sm font-roobert-medium text-destructive">
-                      Configuration Error
-                    </Text>
-                  </View>
-                  <Text className="text-sm font-roobert text-destructive/80 mt-1">
+                <View className="mt-3">
+                  <Text className="text-sm font-roobert text-red-600 mb-2">
                     {validationError}
                   </Text>
                 </View>
               )}
 
-              <ActionButton
-                title={isValidating ? "Discovering Tools..." : "Discover Tools"}
-                description="Connect to the server and discover available tools"
+              <ContinueButton
                 onPress={handleDiscoverTools}
                 disabled={isValidating || !url.trim() || !manualServerName.trim()}
-                loading={isValidating}
+                label={isValidating ? t('integrations.customMcp.discoveringTools') : t('integrations.customMcp.discoverTools')}
+                isLoading={isValidating}
+                rounded="2xl"
               />
             </View>
               </View>
@@ -490,62 +449,55 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
   );
 }
 
-interface ActionButtonProps {
-  title: string;
-  description: string;
+interface ContinueButtonProps {
   onPress: () => void;
   disabled?: boolean;
-  loading?: boolean;
+  label: string;
+  isLoading?: boolean;
+  rounded?: 'full' | '2xl';
 }
 
-const ActionButton = React.memo(({ 
-  title, 
-  description, 
+const ContinueButton = React.memo(({ 
   onPress, 
-  disabled = false,
-  loading = false
-}: ActionButtonProps) => {
+  disabled = false, 
+  label, 
+  isLoading = false,
+  rounded = 'full'
+}: ContinueButtonProps) => {
   const scale = useSharedValue(1);
   
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    opacity: disabled ? 0.5 : 1,
   }));
   
   const handlePressIn = React.useCallback(() => {
     if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
+      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
     }
   }, [scale, disabled]);
   
   const handlePressOut = React.useCallback(() => {
-    if (!disabled) {
-      scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, disabled]);
+    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  }, [scale]);
   
   return (
     <AnimatedPressable
-      onPress={disabled ? undefined : onPress}
+      onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="bg-primary rounded-2xl p-4"
+      disabled={disabled}
+      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${
+        disabled ? 'bg-muted/20' : 'bg-foreground'
+      }`}
     >
-      <View className="flex-row items-center gap-3">
-        {loading ? (
-          <ActivityIndicator size="small" className="text-white" />
-        ) : (
-          <Icon as={CheckCircle2} size={20} className="text-white" strokeWidth={2} />
-        )}
-        <View className="flex-1">
-          <Text className="text-base font-roobert-medium text-white">
-            {title}
-          </Text>
-          <Text className="text-sm font-roobert text-white/80">
-            {description}
-          </Text>
-        </View>
+      <View className="flex-row items-center gap-2">
+        {isLoading && <ActivityIndicator size="small" color="#fff" />}
+        <Text className={`text-base font-roobert-semibold ${
+          disabled ? 'text-muted-foreground' : 'text-background'
+        }`}>
+          {label}
+        </Text>
       </View>
     </AnimatedPressable>
   );

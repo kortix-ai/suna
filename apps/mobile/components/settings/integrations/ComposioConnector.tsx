@@ -1,21 +1,14 @@
 import * as React from 'react';
-import { View, ScrollView, Pressable, Image, ActivityIndicator, TextInput, Alert, Switch } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert, Switch } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
   ArrowLeft, 
-  Plug2, 
   ExternalLink,
-  AlertCircle,
   CheckCircle2,
   Plus,
-  User,
-  Settings,
   Check,
   X,
-  Loader2,
-  Info,
-  Shield
 } from 'lucide-react-native';
 import { SettingsHeader } from '../SettingsHeader';
 import { useLanguage } from '@/contexts';
@@ -24,13 +17,9 @@ import {
   useComposioProfiles, 
   useComposioToolkitDetails,
   useCheckProfileNameAvailability,
-  useUpdateComposioTools,
   type ComposioApp,
   type ComposioProfile,
-  type CreateComposioProfileRequest,
-  type AuthConfigField
 } from '@/hooks/useComposio';
-import * as Haptics from 'expo-haptics';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -38,7 +27,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import { ToolkitIcon } from './ToolkitIcon';
-import { ComposioToolsSelector } from './ComposioToolsSelector';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -65,7 +53,6 @@ enum Step {
   ProfileSelect = 'profile-select',
   ProfileCreate = 'profile-create',
   Connecting = 'connecting',
-  ToolsSelection = 'tools-selection',
   Success = 'success'
 }
 
@@ -98,8 +85,6 @@ export function ComposioConnectorContent({
   const [useCustomAuth, setUseCustomAuth] = React.useState(false);
   const [customAuthConfig, setCustomAuthConfig] = React.useState<Record<string, string>>({});
   const [customAuthConfigErrors, setCustomAuthConfigErrors] = React.useState<Record<string, string>>({});
-  
-  const [selectedTools, setSelectedTools] = React.useState<string[]>([]);
 
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
@@ -114,8 +99,6 @@ export function ComposioConnectorContent({
       debounceMs: 500
     }
   );
-  
-  const { mutate: updateTools } = useUpdateComposioTools();
 
   const existingProfiles = profiles?.filter((p: ComposioProfile) =>
     p.toolkit_slug === app.slug && p.is_connected
@@ -130,7 +113,6 @@ export function ComposioConnectorContent({
     setCreatedProfileId(null);
     setRedirectUrl(null);
     setSelectedConnectionType(null);
-    setSelectedTools([]);
     setInitiationFields({});
     setInitiationFieldsErrors({});
     setUseCustomAuth(requiresCustomAuth);
@@ -146,42 +128,14 @@ export function ComposioConnectorContent({
       if (profile) {
         setSelectedProfile(profile);
         setCreatedProfileId(profile.profile_id);
-        if (mode === 'full' && agentId) {
-          if (onNavigateToTools) {
-            onNavigateToTools(app, profile);
-          } else {
-            setCurrentStep(Step.ToolsSelection);
-          }
+        if (mode === 'full' && agentId && onNavigateToTools) {
+          onNavigateToTools(app, profile);
         } else {
           onComplete(profile.profile_id, app.name, app.slug);
         }
       }
     }
-  }, [selectedConnectionType, selectedProfileId, existingProfiles, mode, agentId, onComplete, app]);
-
-  const handleSaveTools = async () => {
-    if (!selectedProfile || !agentId) return;
-    updateTools({
-      agentId,
-      profileId: selectedProfile.profile_id,
-      selectedTools
-    }, {
-      onSuccess: () => {
-        Alert.alert('Success', `Added ${selectedTools.length} ${selectedProfile.toolkit_name} tools to your agent!`);
-        onComplete(selectedProfile.profile_id, app.name, app.slug);
-      },
-      onError: (error: any) => {
-        Alert.alert('Error', error.message || 'Failed to save tools');
-      }
-    });
-  };
-
-  const handleInitiationFieldChange = (fieldName: string, value: string) => {
-    setInitiationFields(prev => ({ ...prev, [fieldName]: value }));
-    if (initiationFieldsErrors[fieldName]) {
-      setInitiationFieldsErrors(prev => ({ ...prev, [fieldName]: '' }));
-    }
-  };
+  }, [selectedConnectionType, selectedProfileId, existingProfiles, mode, agentId, onComplete, app, onNavigateToTools]);
 
   const handleCreateProfile = () => {
     if (!profileName.trim()) {
@@ -194,6 +148,8 @@ export function ComposioConnectorContent({
       return;
     }
 
+    console.log('🚀 Creating profile:', profileName, 'for app:', app.slug);
+
     createProfile({
       toolkit_slug: app.slug,
       profile_name: profileName,
@@ -202,15 +158,30 @@ export function ComposioConnectorContent({
       use_custom_auth: useCustomAuth,
     }, {
       onSuccess: (response) => {
+        console.log('✅ Profile created successfully:', response);
         setCreatedProfileId(response.profile_id);
+        
         if (response.redirect_url) {
+          console.log('🌐 Opening OAuth redirect:', response.redirect_url);
           setRedirectUrl(response.redirect_url);
           setCurrentStep(Step.Connecting);
+          
+          // Open browser for OAuth authentication
           WebBrowser.openBrowserAsync(response.redirect_url, {
             presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
             showTitle: true,
+            controlsColor: '#000000',
+            dismissButtonStyle: 'close',
+          }).then((result) => {
+            console.log('🔄 WebBrowser result:', result);
+            
+            if (result.type === 'dismiss' || result.type === 'cancel') {
+              // User closed browser, assume auth completed
+              handleAuthComplete();
+            }
           });
         } else {
+          // No OAuth required, direct success
           setCurrentStep(Step.Success);
           setTimeout(() => {
             onComplete(response.profile_id, app.name, app.slug);
@@ -218,17 +189,37 @@ export function ComposioConnectorContent({
         }
       },
       onError: (error: any) => {
+        console.error('❌ Profile creation failed:', error);
         Alert.alert('Error', error.message || 'Failed to create profile');
       }
     });
   };
 
   const handleAuthComplete = () => {
+    console.log('✅ Authentication completed for profile:', createdProfileId);
+    
     if (createdProfileId) {
-      setCurrentStep(Step.Success);
-      setTimeout(() => {
-        onComplete(createdProfileId, app.name, app.slug);
-      }, 1500);
+      if (mode === 'full' && agentId && onNavigateToTools) {
+        // Navigate to tools selection
+        const newProfile = {
+          profile_id: createdProfileId,
+          profile_name: profileName,
+          display_name: profileName,
+          toolkit_name: app.name,
+          toolkit_slug: app.slug,
+          mcp_url: '',
+          is_connected: true,
+          is_default: false,
+          connection_status: 'active' as const,
+          created_at: new Date().toISOString(),
+        };
+        onNavigateToTools(app, newProfile);
+      } else {
+        setCurrentStep(Step.Success);
+        setTimeout(() => {
+          onComplete(createdProfileId, app.name, app.slug);
+        }, 1500);
+      }
     }
   };
 
@@ -240,317 +231,242 @@ export function ComposioConnectorContent({
       case Step.Connecting:
         setCurrentStep(Step.ProfileCreate);
         break;
-      case Step.ToolsSelection:
-        setCurrentStep(Step.ProfileSelect);
-        break;
       default:
         onBack?.();
         break;
     }
   };
 
-  // Profile Selection Step
   if (currentStep === Step.ProfileSelect) {
     return (
-      <View className="flex-1">
-        <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
+      <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
           {onBack && (
             <Pressable
               onPress={onBack}
-              className="items-center justify-center w-10 h-10 mb-4 active:opacity-70 rounded-full bg-primary/10"
+              className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
             >
-              <ArrowLeft size={20} className="text-foreground" />
+              <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
             </Pressable>
           )}
-          
-          <View className="items-center py-6">
-            <ToolkitIcon 
-              slug={app.slug} 
-              name={app.name} 
-              size="lg" 
-              className="mb-4"
-            />
-            
-            <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
-              Connect to {app.name}
-            </Text>
-            
-            <Text className="text-sm font-roobert text-muted-foreground text-center">
-              Choose an existing profile or create a new connection
+          <View className="mb-8">
+            <View className="flex-row items-center gap-4 mb-2">
+              <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
+                <ToolkitIcon 
+                  slug={app.slug} 
+                  name={app.name} 
+                  size="sm" 
+                />
+              </View>
+              <View className="flex-1">
+                <Text className="text-2xl font-roobert-bold text-foreground">
+                  {app.name}
+                </Text>
+              </View>
+            </View>
+            <Text className="text-base font-roobert text-muted-foreground mt-2">
+              {existingProfiles.length > 0 ? t('integrations.connector.selectConnection') : t('integrations.connector.createFirstConnection')}
             </Text>
           </View>
 
-          <View className="space-y-4">
-            {existingProfiles.length > 0 && (
-              <ConnectionOption
-                icon={Check}
-                title="Use Existing Connection"
-                description={`${existingProfiles.length} profile${existingProfiles.length > 1 ? 's' : ''} already connected`}
-                isSelected={selectedConnectionType === 'existing'}
+          <View className="space-y-3 mb-8">
+            {existingProfiles.map((profile: ComposioProfile) => (
+              <ProfileListItem
+                key={profile.profile_id}
+                profile={profile}
+                isSelected={selectedProfileId === profile.profile_id && selectedConnectionType === 'existing'}
                 onPress={() => {
-                  if (selectedConnectionType === 'existing') {
-                    setSelectedConnectionType(null);
-                    setSelectedProfileId('');
-                  } else {
-                    setSelectedConnectionType('existing');
-                    setSelectedProfileId(existingProfiles[0]?.profile_id || '');
-                  }
+                  setSelectedConnectionType('existing');
+                  setSelectedProfileId(profile.profile_id);
                 }}
-              >
-                {selectedConnectionType === 'existing' && (
-                  <View className="mt-4 pt-4 border-t border-border/30">
-                    {existingProfiles.map((profile: ComposioProfile) => (
-                      <Pressable
-                        key={profile.profile_id}
-                        onPress={() => setSelectedProfileId(profile.profile_id)}
-                        className={`p-3 rounded-xl border mb-2 ${
-                          selectedProfileId === profile.profile_id 
-                            ? 'border-primary bg-primary/5' 
-                            : 'border-border/30'
-                        }`}
-                      >
-                        <Text className="font-roobert-medium text-foreground">
-                          {profile.profile_name}
-                        </Text>
-                        <Text className="text-sm text-muted-foreground">
-                          Created {new Date(profile.created_at).toLocaleDateString()}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </ConnectionOption>
-            )}
-
-            <ConnectionOption
-              icon={Plus}
-              title="Create New Connection"
-              description={`Connect a new ${app.name} account`}
-              isSelected={selectedConnectionType === 'new'}
-              onPress={() => {
-                if (selectedConnectionType === 'new') {
-                  setSelectedConnectionType(null);
-                  setSelectedProfileId('');
-                } else {
-                  setSelectedConnectionType('new');
-                  setSelectedProfileId('new');
-                }
-              }}
-            />
-          </View>
-
-          <View className="mt-8 flex-row gap-3">
-            {onBack && (
-              <Pressable 
-                onPress={onBack}
-                className="flex-1 py-4 items-center rounded-2xl border border-border/30"
-              >
-                <Text className="font-roobert-medium text-muted-foreground">Cancel</Text>
-              </Pressable>
-            )}
+              />
+            ))}
             
-            <Pressable 
-              onPress={handleMainAction}
-              disabled={!selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)}
-              className={`flex-1 py-4 items-center rounded-2xl ${
-                !selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)
-                  ? 'bg-muted/30'
-                  : 'bg-primary'
+            <Pressable
+              onPress={() => {
+                setSelectedConnectionType('new');
+                setSelectedProfileId('new');
+              }}
+              className={`flex-row items-center p-4 rounded-3xl active:opacity-80 ${
+                selectedConnectionType === 'new'
+                  ? 'bg-primary/10'
+                  : 'bg-muted/5'
               }`}
             >
-              <Text className={`font-roobert-medium ${
-                !selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)
-                  ? 'text-muted-foreground'
-                  : 'text-primary-foreground'
+              <View className={`w-10 h-10 rounded-xl items-center justify-center ${
+                selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
               }`}>
-                {selectedConnectionType === 'new' ? 'Create Connection' : 
-                 selectedConnectionType === 'existing' && selectedProfileId ? 
-                   'Use Profile' : 
-                   'Continue'}
-              </Text>
+                <Icon as={Plus} size={20} className={selectedConnectionType === 'new' ? 'text-primary-foreground' : 'text-muted-foreground'} strokeWidth={2.5} />
+              </View>
+              <View className="flex-1 ml-3">
+                <Text className="text-base font-roobert-semibold text-foreground">
+                  {t('integrations.connector.createNewConnection')}
+                </Text>
+              </View>
+              {selectedConnectionType === 'new' && (
+                <View className="w-5 h-5 rounded-full bg-primary items-center justify-center">
+                  <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+                </View>
+              )}
             </Pressable>
           </View>
+
+          <ContinueButton 
+            onPress={handleMainAction}
+            disabled={!selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)}
+            label={selectedConnectionType === 'new' ? t('integrations.connector.continue') : 
+                   selectedConnectionType === 'existing' && selectedProfileId ? 
+                     t('integrations.connector.continue') : 
+                     t('integrations.connector.selectAnOption')}
+          />
         </View>
-      </View>
     );
   }
 
-  // Profile Creation Step
   if (currentStep === Step.ProfileCreate) {
     return (
       <View className="flex-1">
         <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
           <Pressable
             onPress={handleBack}
-            className="items-center justify-center w-10 h-10 mb-4 active:opacity-70 rounded-full bg-primary/10"
+            className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
           >
-            <ArrowLeft size={20} className="text-foreground" />
+            <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
           </Pressable>
           
-          <View className="items-center py-6">
-            <ToolkitIcon 
-              slug={app.slug} 
-              name={app.name} 
-              size="lg" 
-              className="mb-4"
-            />
-            
-            <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
-              Create New Profile
-            </Text>
-            
-            <Text className="text-sm font-roobert text-muted-foreground text-center">
-              Set up a new connection to {app.name}
-            </Text>
-          </View>
-
-          <View className="space-y-6">
-            <View>
-              <Text className="text-base font-roobert-medium text-foreground mb-3">
-                Profile Name
-              </Text>
-              <View className="relative">
-                <TextInput
-                  value={profileName}
-                  onChangeText={setProfileName}
-                  placeholder={`e.g., ${app.name} Production`}
-                  className={`bg-muted/10 dark:bg-muted/30 rounded-xl px-4 py-3 text-base font-roobert text-foreground pr-12 ${
-                    nameAvailability && !nameAvailability.available ? 'border border-red-500' :
-                    nameAvailability && nameAvailability.available && profileName.length > 0 ? 'border border-green-500' :
-                    'border border-transparent'
-                  }`}
-                  placeholderTextColor="rgba(156, 163, 175, 0.6)"
+          <View className="mb-8">
+            <View className="flex-row items-center gap-4 mb-2">
+              <View className="w-14 h-14 rounded-2xl bg-background border border-border/40 items-center justify-center">
+                <ToolkitIcon 
+                  slug={app.slug} 
+                  name={app.name} 
+                  size="sm" 
                 />
-                <View className="absolute right-3 top-1/2 -translate-y-1/2">
-                  {isCheckingName && profileName.length > 0 && (
-                    <ActivityIndicator size="small" color="#666" />
-                  )}
-                  {!isCheckingName && nameAvailability && profileName.length > 0 && (
-                    nameAvailability.available ? (
-                      <Icon as={Check} size={16} className="text-green-500" />
-                    ) : (
-                      <Icon as={X} size={16} className="text-red-500" />
-                    )
-                  )}
-                </View>
               </View>
-              
-              {nameAvailability && !nameAvailability.available && (
-                <View className="mt-2">
-                  <Text className="text-sm text-red-500">
-                    This name is already in use
-                  </Text>
-                  {nameAvailability.suggestions.length > 0 && (
-                    <View className="flex-row flex-wrap gap-2 mt-2">
-                      {nameAvailability.suggestions.map((suggestion: string) => (
-                        <Pressable
-                          key={suggestion}
-                          onPress={() => setProfileName(suggestion)}
-                          className="px-2 py-1 bg-muted/20 rounded"
-                        >
-                          <Text className="text-xs text-muted-foreground">
-                            {suggestion}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )}
-              {nameAvailability && nameAvailability.available && profileName.length > 0 && (
-                <Text className="text-sm text-green-600 mt-2">
-                  Name available
+              <View className="flex-1">
+                <Text className="text-2xl font-roobert-bold text-foreground">
+                  {app.name}
                 </Text>
-              )}
+              </View>
             </View>
-
-            <View className="flex-row gap-3">
-              <Pressable 
-                onPress={handleBack}
-                disabled={isCreating}
-                className="flex-1 py-4 items-center rounded-2xl border border-border/30"
-              >
-                <Text className="font-roobert-medium text-muted-foreground">Back</Text>
-              </Pressable>
-              
-              <Pressable 
-                onPress={handleCreateProfile}
-                disabled={
-                  isCreating ||
-                  isLoadingToolkitDetails ||
-                  !profileName.trim() ||
-                  isCheckingName ||
-                  (nameAvailability && !nameAvailability.available)
-                }
-                className={`flex-1 py-4 items-center rounded-2xl ${
-                  isCreating ||
-                  isLoadingToolkitDetails ||
-                  !profileName.trim() ||
-                  isCheckingName ||
-                  (nameAvailability && !nameAvailability.available)
-                    ? 'bg-muted/30'
-                    : 'bg-primary'
-                }`}
-              >
-                <View className="flex-row items-center gap-2">
-                  {isCreating && <ActivityIndicator size="small" color="#fff" />}
-                  <Text className={`font-roobert-medium ${
-                    isCreating ||
-                    isLoadingToolkitDetails ||
-                    !profileName.trim() ||
-                    isCheckingName ||
-                    (nameAvailability && !nameAvailability.available)
-                      ? 'text-muted-foreground'
-                      : 'text-primary-foreground'
-                  }`}>
-                    {isCreating ? 'Creating...' : 'Connect'}
-                  </Text>
-                </View>
-              </Pressable>
-            </View>
+            <Text className="text-base font-roobert text-muted-foreground mt-2">
+              {t('integrations.connector.chooseNameForConnection')}
+            </Text>
           </View>
+
+          <View className="mb-8">
+            <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+              {t('integrations.connector.profileName')}
+            </Text>
+            <View className="relative">
+              <TextInput
+                value={profileName}
+                onChangeText={setProfileName}
+                placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
+                className={`bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground pr-12 ${
+                  nameAvailability && !nameAvailability.available ? 'border-2 border-red-500/50' :
+                  nameAvailability && nameAvailability.available && profileName.length > 0 ? 'border border-border/40' :
+                  'border border-border/40'
+                }`}
+                placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                autoFocus
+              />
+              <View className="absolute right-4 top-1/2 -translate-y-1/2">
+                {isCheckingName && profileName.length > 0 && (
+                  <ActivityIndicator size="small" color="#999" />
+                )}
+                {!isCheckingName && nameAvailability && profileName.length > 0 && (
+                  nameAvailability.available ? (
+                    <View className="w-6 h-6 rounded-full bg-green-500/10 items-center justify-center">
+                      <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
+                    </View>
+                  ) : (
+                    <View className="w-6 h-6 rounded-full bg-red-500/10 items-center justify-center">
+                      <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
+                    </View>
+                  )
+                )}
+              </View>
+            </View>
+            
+            {nameAvailability && !nameAvailability.available && (
+              <View className="mt-3">
+                <Text className="text-sm font-roobert text-red-600 mb-2">
+                  {t('integrations.connector.nameAlreadyTaken')}
+                </Text>
+                {nameAvailability.suggestions.length > 0 && (
+                  <View className="flex-row flex-wrap gap-2">
+                    {nameAvailability.suggestions.map((suggestion: string) => (
+                      <Pressable
+                        key={suggestion}
+                        onPress={() => setProfileName(suggestion)}
+                        className="px-3 py-1.5 bg-muted/10 border border-border/40 rounded-full active:opacity-70"
+                      >
+                        <Text className="text-xs font-roobert-medium text-foreground">
+                          {suggestion}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+
+          <ContinueButton 
+            onPress={handleCreateProfile}
+            disabled={
+              isCreating ||
+              isLoadingToolkitDetails ||
+              !profileName.trim() ||
+              isCheckingName ||
+              (nameAvailability && !nameAvailability.available)
+            }
+            isLoading={isCreating}
+            label={isCreating ? t('integrations.connector.creating') : t('integrations.connector.continue')}
+            rounded="2xl"
+          />
         </View>
       </View>
     );
   }
 
-  // Connecting Step
   if (currentStep === Step.Connecting) {
     return (
       <View className="flex-1">
         <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-          <View className="items-center py-12">
-            <View className="w-20 h-20 rounded-2xl bg-primary/10 items-center justify-center mb-6">
-              <Icon as={ExternalLink} size={40} className="text-primary" />
+          <View className="items-center pt-12 pb-12">
+            <View className="w-20 h-20 rounded-2xl bg-muted/5 border border-border/40 items-center justify-center mb-6">
+              <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
             </View>
-            <Text className="text-lg font-roobert-semibold text-foreground mb-2">
-              Complete Authentication
+            <Text className="text-2xl font-roobert-bold text-foreground mb-2 text-center">
+              {t('integrations.connector.completeInBrowser')}
             </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center mb-6">
-              A browser window has opened for you to authorize your {app.name} connection.
-              Complete the process there and return here.
+            <Text className="text-base font-roobert text-muted-foreground text-center mb-8 px-8 leading-relaxed">
+              {t('integrations.connector.authenticateInstructions')}
             </Text>
             
             {redirectUrl && (
-              <View className="bg-muted/10 border border-muted/30 rounded-2xl p-4 mb-6">
-                <Text className="text-sm font-roobert text-muted-foreground text-center">
-                  If the window didn't open,{' '}
-                  <Text 
-                    onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
-                    className="text-primary underline"
-                  >
-                    tap here to authenticate
-                  </Text>
+              <Pressable
+                onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
+                className="mb-6 active:opacity-70"
+              >
+                <Text className="text-sm font-roobert-medium text-foreground underline">
+                  {t('integrations.connector.reopenBrowser')}
                 </Text>
-              </View>
+              </Pressable>
             )}
             
-            <Pressable
+            <ContinueButton 
               onPress={handleAuthComplete}
-              className="w-full bg-primary rounded-2xl py-4 items-center"
+              label={t('integrations.connector.completedAuthentication')}
+            />
+            
+            <Pressable
+              onPress={handleBack}
+              className="py-2 mt-4 active:opacity-70"
             >
-              <Text className="text-base font-roobert-medium text-primary-foreground">
-                I've Completed Authentication
+              <Text className="text-sm font-roobert text-muted-foreground">
+                {t('integrations.connector.goBack')}
               </Text>
             </Pressable>
           </View>
@@ -558,64 +474,20 @@ export function ComposioConnectorContent({
       </View>
     );
   }
- 
-  if (currentStep === Step.ToolsSelection && selectedProfile && !onNavigateToTools) {
-    return (
-      <View className="flex-1">
-        <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-          <Pressable
-            onPress={handleBack}
-            className="items-center justify-center w-10 h-10 mb-4 active:opacity-70 rounded-full bg-primary/10"
-          >
-            <ArrowLeft size={20} className="text-foreground" />
-          </Pressable>
-          
-          <View className="items-center py-6">
-            <ToolkitIcon 
-              slug={app.slug} 
-              name={app.name} 
-              size="lg" 
-              className="mb-4"
-            />
-            
-            <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
-              Configure {app.name} Tools
-            </Text>
-            
-            <Text className="text-sm font-roobert text-muted-foreground text-center">
-              Select tools to add to your agent
-            </Text>
-          </View>
 
-          <ComposioToolsSelector
-            app={app}
-            profile={selectedProfile}
-            visible={true}
-            onClose={handleBack}
-            onComplete={() => {
-              Alert.alert('Success', `${app.name} tools configured successfully!`);
-              onComplete(selectedProfile.profile_id, app.name, app.slug);
-            }}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  // Success Step
   if (currentStep === Step.Success) {
     return (
       <View className="flex-1">
         <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-          <View className="items-center py-12">
-            <View className="w-20 h-20 rounded-full bg-green-100 items-center justify-center mb-6">
-              <Icon as={CheckCircle2} size={40} className="text-green-600" />
+          <View className="items-center pt-16 pb-12">
+            <View className="w-20 h-20 rounded-full bg-green-500/10 items-center justify-center mb-6">
+              <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
             </View>
-            <Text className="text-lg font-roobert-semibold text-foreground mb-2">
-              Successfully Connected!
+            <Text className="text-2xl font-roobert-bold text-foreground mb-2">
+              {t('integrations.connector.allSet')}
             </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center">
-              Your {app.name} integration is ready.
+            <Text className="text-base font-roobert text-muted-foreground text-center px-8">
+              {t('integrations.connector.connectionReady', { app: app.name })}
             </Text>
           </View>
         </View>
@@ -634,12 +506,14 @@ export function ComposioConnector({
   mode = 'full',
   agentId
 }: ComposioConnectorProps) {
+  const { t } = useLanguage();
+  
   if (!visible) return null;
 
   return (
     <View className="flex-1">
       <SettingsHeader
-        title={`Connect ${app.name}`}
+        title={t('integrations.connector.connectTo', { app: app.name })}
         onClose={onClose}
       />
       
@@ -659,23 +533,20 @@ export function ComposioConnector({
   );
 }
 
-interface ConnectionOptionProps {
-  icon: typeof Plus;
-  title: string;
-  description: string;
-  isSelected: boolean;
+interface ContinueButtonProps {
   onPress: () => void;
-  children?: React.ReactNode;
+  disabled?: boolean;
+  label: string;
+  isLoading?: boolean;
+  rounded?: 'full' | '2xl';
 }
 
-const ConnectionOption = React.memo(({ 
-  icon, 
-  title, 
-  description, 
-  isSelected, 
-  onPress,
-  children
-}: ConnectionOptionProps) => {
+const ContinueButton = React.memo(({ 
+  onPress, 
+  disabled = false, 
+  label, 
+  isLoading = false,
+}: ContinueButtonProps) => {
   const scale = useSharedValue(1);
   
   const animatedStyle = useAnimatedStyle(() => ({
@@ -683,39 +554,69 @@ const ConnectionOption = React.memo(({
   }));
   
   const handlePressIn = React.useCallback(() => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-  }, [scale]);
+    if (!disabled) {
+      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
+    }
+  }, [scale, disabled]);
   
   const handlePressOut = React.useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   }, [scale]);
   
   return (
-    <AnimatedPressable
+    <AnimatedPressable 
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className={`border rounded-2xl p-4 ${
-        isSelected ? 'border-primary bg-primary/5' : 'border-border/30'
+      disabled={disabled}
+      className={`w-full py-4 items-center rounded-full ${
+        disabled ? 'bg-muted/20' : 'bg-foreground'
       }`}
     >
-      <View className="flex-row items-center gap-3">
-        <View className={`w-12 h-12 rounded-2xl items-center justify-center ${
-          isSelected ? 'bg-primary/20' : 'bg-muted/20'
+      <View className="flex-row items-center gap-2">
+        {isLoading && <ActivityIndicator size="small" color="#fff" />}
+        <Text className={`text-base font-roobert-semibold ${
+          disabled ? 'text-muted-foreground' : 'text-background'
         }`}>
-          <Icon as={icon} size={20} className={isSelected ? 'text-primary' : 'text-muted-foreground'} />
-        </View>
-        <View className="flex-1">
-          <Text className="font-roobert-medium text-foreground">
-            {title}
-          </Text>
-          <Text className="text-sm text-muted-foreground">
-            {description}
-          </Text>
-        </View>
+          {label}
+        </Text>
       </View>
-      {children}
     </AnimatedPressable>
+  );
+});
+
+interface ProfileListItemProps {
+  profile: ComposioProfile;
+  isSelected: boolean;
+  onPress: () => void;
+}
+
+const ProfileListItem = React.memo(({ profile, isSelected, onPress }: ProfileListItemProps) => {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`flex-row items-center p-4 rounded-3xl active:opacity-80 mb-2 ${
+        isSelected
+          ? 'bg-primary/10'
+          : 'bg-muted/5'
+      }`}
+    >
+      <View className={`w-10 h-10 rounded-xl items-center justify-center ${
+        isSelected ? 'bg-primary' : 'bg-muted/30'
+      }`}>
+        <Icon as={CheckCircle2} size={20} className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'} strokeWidth={2.5} />
+      </View>
+      <View className="flex-1 ml-3">
+        <Text className="text-base font-roobert-semibold text-foreground">
+          {profile.profile_name}
+        </Text>
+      </View>
+      {isSelected && (
+        <View className="w-5 h-5 rounded-full bg-primary items-center justify-center">
+          <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+        </View>
+      )}
+    </Pressable>
   );
 });

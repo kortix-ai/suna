@@ -19,10 +19,9 @@ import Animated, {
   useSharedValue, 
   withSpring 
 } from 'react-native-reanimated';
-import { ComposioAppsList } from './integrations/ComposioAppsList';
 import { CustomMcpDialog } from './integrations/CustomMcpDialog';
-import { ComposioApp, useComposioToolkitIcon } from '@/hooks/useComposio';
 import { ToolkitIcon } from './integrations/ToolkitIcon';
+import { useComposioToolkitIcon } from '@/hooks/useComposio';
 
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -39,7 +38,7 @@ interface IntegrationsPageContentProps {
   onNavigate?: (view: string) => void;
 }
 
-const AppBubble = React.memo(() => {
+export const AppBubble = React.memo(() => {
   const { data: iconData, isLoading } = useComposioToolkitIcon('gmail');
   const iconUrl = iconData?.success ? iconData.icon_url : null;
   if (isLoading) {
@@ -52,13 +51,13 @@ const AppBubble = React.memo(() => {
   
   return (
     <View className='flex-row items-center justify-center'>
-        <View className='bg-white shadow-xs border border-primary/10 p-1 rounded-full'>
+        <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full'>
             <ToolkitIcon slug="gmail" name="Gmail" size="xs" />
         </View>
-        <View className='bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
+        <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
             <ToolkitIcon slug="notion" name="Notion" size="xs" />
         </View>
-        <View className='bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
+        <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
             <ToolkitIcon slug="linear" name="Linear" size="xs" />
         </View>
     </View>
@@ -114,25 +113,25 @@ export function IntegrationsPageContent({ onBack, noPadding = false, onFullScree
           )}
           
           <Text className="text-2xl font-roobert-bold text-foreground mb-2">
-            {t('settings.integrations') || 'Integrations'}
+            {t('integrations.title')}
           </Text>
           
           <Text className="text-sm font-roobert text-muted-foreground mb-6">
-            Connect your favorite apps and services to automate workflows and extend your agent's capabilities.
+            {t('integrations.description')}
           </Text>
 
           <View className="space-y-4">
             <IntegrationSection
               customIcon={<AppBubble />}
-              title="External Apps"
-              description="Connect popular apps & services"
+              title={t('integrations.externalApps')}
+              description={t('integrations.externalAppsDescription')}
               onPress={handleComposioApps}
             />
 
             <IntegrationSection
               icon={Globe}
-              title="Custom MCP Servers"
-              description="Add custom HTTP-based integrations"
+              title={t('integrations.customMcpServers')}
+              description={t('integrations.customMcpDescription')}
               onPress={handleCustomMcp}
             />
           </View>
@@ -140,13 +139,6 @@ export function IntegrationsPageContent({ onBack, noPadding = false, onFullScree
 
         <View className="h-20" />
       </ScrollView>
-
-      <AnimatedPageWrapper visible={isComposioPageVisible} onClose={() => setIsComposioPageVisible(false)}>
-        <ComposioAppsList 
-          visible
-          onClose={() => setIsComposioPageVisible(false)}
-        />
-      </AnimatedPageWrapper>
 
       <AnimatedPageWrapper visible={showCustomMcpDialog} onClose={() => setShowCustomMcpDialog(false)}>
         <CustomMcpDialog
@@ -181,7 +173,7 @@ export function IntegrationsPage({ visible, onClose }: IntegrationsPageProps) {
       />
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
         <SettingsHeader
-          title={t('settings.integrations') || 'Integrations'}
+          title={t('integrations.title')}
           onClose={handleClose}
         />
         <IntegrationsPageContent />

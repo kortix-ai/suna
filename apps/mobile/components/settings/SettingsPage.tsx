@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Image, Alert, ScrollView } from 'react-native';
+import { Pressable, View, Alert, ScrollView } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -11,16 +11,13 @@ import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
-  ArrowLeft,
   User,
   CreditCard,
-  Plug,
   Moon,
   Sun,
   Globe,
   LogOut,
   ChevronRight,
-  Zap,
   FlaskConical,
   Trash2
 } from 'lucide-react-native';
@@ -38,7 +35,6 @@ import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { ProfilePicture } from './ProfilePicture';
-import { IntegrationsPage } from './IntegrationsPage';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -48,27 +44,6 @@ interface SettingsPageProps {
   onClose: () => void;
 }
 
-/**
- * SettingsPage Component
- * 
- * Clean, elegant settings page with minimal design.
- * 
- * Design Specifications:
- * - Full screen with simple backdrop
- * - Clean header with back button and "Settings" title
- * - Profile name display
- * - Upgrade section for non-pro users
- * - Minimal menu items with icons
- * - Simple, no-animation slide in
- * 
- * Menu Items:
- * - Name (profile management)
- * - Billing
- * - Integrations
- * - Theme & App Icon
- * - App Language
- * - Sign Out
- */
 export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const { colorScheme } = useColorScheme();
   const { user, signOut } = useAuthContext();
@@ -242,12 +217,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
             />
             
             <SettingsItem
-              icon={Plug}
-              label={t('settings.integrations')}
-              onPress={handleIntegrations}
-            />
-            
-            <SettingsItem
               icon={colorScheme === 'dark' ? Sun : Moon}
               label={t('settings.themeTitle') || 'Theme'}
               onPress={handleTheme}
@@ -351,22 +320,10 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
           onClose={() => setIsAccountDeletionPageVisible(false)}
         />
       </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper visible={isIntegrationsPageVisible} onClose={() => setIsIntegrationsPageVisible(false)}>
-        <IntegrationsPage
-          visible
-          onClose={() => setIsIntegrationsPageVisible(false)}
-        />
-      </AnimatedPageWrapper>
     </View>
   );
 }
 
-/**
- * SettingsItem Component
- * 
- * Clean settings list item with icon, label, and chevron.
- */
 interface SettingsItemProps {
   icon: typeof User;
   label: string;

@@ -207,7 +207,7 @@ function BackButton({ onPress }: BackButtonProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="w-10 h-10 rounded-full bg-muted/30 items-center justify-center active:bg-muted/50"
+      className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center active:bg-muted/50"
       accessibilityRole="button"
       accessibilityLabel={t('actions.goBack')}
       accessibilityHint={t('actions.returnToHome')}
