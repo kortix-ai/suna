@@ -23,8 +23,11 @@ export function AnimatedPageWrapper({ visible, onClose, children }: AnimatedPage
 
   React.useEffect(() => {
     if (visible) {
+      translateX.value = SCREEN_WIDTH;
       setShouldRender(true);
-      translateX.value = withTiming(0, { duration: 300 });
+      requestAnimationFrame(() => {
+        translateX.value = withTiming(0, { duration: 300 });
+      });
     } else {
       translateX.value = withTiming(SCREEN_WIDTH, { duration: 300 }, (finished) => {
         if (finished) {

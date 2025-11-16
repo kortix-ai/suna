@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Image, Alert, ScrollView } from 'react-native';
+import { Pressable, View, Alert, ScrollView } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -11,16 +11,13 @@ import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
-  ArrowLeft,
   User,
   CreditCard,
-  Plug,
   Moon,
   Sun,
   Globe,
   LogOut,
   ChevronRight,
-  Zap,
   FlaskConical,
   Trash2
 } from 'lucide-react-native';
@@ -47,27 +44,6 @@ interface SettingsPageProps {
   onClose: () => void;
 }
 
-/**
- * SettingsPage Component
- * 
- * Clean, elegant settings page with minimal design.
- * 
- * Design Specifications:
- * - Full screen with simple backdrop
- * - Clean header with back button and "Settings" title
- * - Profile name display
- * - Upgrade section for non-pro users
- * - Minimal menu items with icons
- * - Simple, no-animation slide in
- * 
- * Menu Items:
- * - Name (profile management)
- * - Billing
- * - Integrations
- * - Theme & App Icon
- * - App Language
- * - Sign Out
- */
 export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const { colorScheme } = useColorScheme();
   const { user, signOut } = useAuthContext();
@@ -81,6 +57,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
+  const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
   
   const isGuest = !user;
   
@@ -127,13 +104,8 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleIntegrations = React.useCallback(() => {
     console.log('🎯 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    Alert.alert(
-      t('settings.integrations') || 'Integrations',
-      'Integration management is coming soon! Connect your favorite apps to automate workflows.',
-      [{ text: t('common.ok') || 'OK' }]
-    );
-  }, [t]);
+    setIsIntegrationsPageVisible(true);
+  }, []);
   
   const handleTheme = React.useCallback(() => {
     console.log('🎯 Theme pressed');
@@ -245,12 +217,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
             />
             
             <SettingsItem
-              icon={Plug}
-              label={t('settings.integrations')}
-              onPress={handleIntegrations}
-            />
-            
-            <SettingsItem
               icon={colorScheme === 'dark' ? Sun : Moon}
               label={t('settings.themeTitle') || 'Theme'}
               onPress={handleTheme}
@@ -358,11 +324,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   );
 }
 
-/**
- * SettingsItem Component
- * 
- * Clean settings list item with icon, label, and chevron.
- */
 interface SettingsItemProps {
   icon: typeof User;
   label: string;

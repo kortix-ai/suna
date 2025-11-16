@@ -20,7 +20,8 @@ import {
   ChevronRight,
   ArrowLeft,
   Crown,
-  DollarSign
+  DollarSign,
+  Plug
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -39,6 +40,15 @@ import { EntityList } from '@/components/shared/EntityList';
 import { useSearch } from '@/lib/utils/search';
 import { useAvailableModels } from '@/lib/models';
 import type { Agent, Model } from '@/api/types';
+import { AppBubble, IntegrationsPage, IntegrationsPageContent } from '@/components/settings/IntegrationsPage';
+import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
+import { ComposioAppDetailContent } from '@/components/settings/integrations/ComposioAppDetail';
+import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
+import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
+import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
+import { CustomMcpToolsContent } from '@/components/settings/integrations/CustomMcpToolsSelector';
+import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
+import { ToolkitIcon } from '../settings/integrations/ToolkitIcon';
 
 interface AgentDrawerProps {
   visible: boolean;
@@ -46,11 +56,10 @@ interface AgentDrawerProps {
   onCreateAgent?: () => void;
 }
 
-type ViewState = 'main' | 'agents' | 'models';
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+type ViewState = 'main' | 'agents' | 'models' | 'integrations' | 'composio' | 'composio-detail' | 'composio-connector' | 'composio-tools' | 'customMcp' | 'customMcp-tools';
 
-/**
- * BackButton - Reusable back button component
- */
+
 function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
   
@@ -67,16 +76,7 @@ function BackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-/**
- * AgentDrawer Component - Dynamic agent & model selection drawer
- * 
- * Features:
- * - Blur background for modern glassmorphism effect
- * - Dynamic content switching between main, agents, and models views
- * - Smooth transitions with fade animations
- * - Back button navigation
- * - Full height utilization for all views
- */
+
 export function AgentDrawer({
   visible,
   onClose,
@@ -87,42 +87,29 @@ export function AgentDrawer({
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   
-  // Get agents and models from context/API
   const agentContext = useAgent();
   const { agents, selectedAgentId, selectedModelId, selectAgent, selectModel, isLoading, loadAgents } = agentContext;
   
-  // Debug: Log what we're getting from context
-  React.useEffect(() => {
-    console.log('🔍 AgentContext in AgentDrawer:', {
-      hasSelectModel: !!selectModel,
-      selectedModelId,
-      selectedAgentId,
-      agentsCount: agents.length
-    });
-  }, [selectModel, selectedModelId, selectedAgentId, agents.length]);
-  
   const { data: modelsData, isLoading: modelsLoading } = useAvailableModels();
   
-  // Billing context for subscription checks
   const { hasActiveSubscription, subscriptionData } = useBillingContext();
   
   const models = modelsData?.models || [];
   const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
   
-  // Get selected model - use local selection, fallback to agent's model, then recommended
   const selectedModel = React.useMemo(() => {
     if (selectedModelId) {
       const model = models.find(m => m.id === selectedModelId);
       if (model) return model;
     }
-    // Fallback to agent's configured model or recommended model
     return models.find(m => m.id === selectedAgent?.model) || models.find(m => m.recommended);
   }, [selectedModelId, models, selectedAgent]);
   
-  // Dynamic view state management
   const [currentView, setCurrentView] = React.useState<ViewState>('main');
+  const [selectedComposioApp, setSelectedComposioApp] = React.useState<any>(null);
+  const [selectedComposioProfile, setSelectedComposioProfile] = React.useState<any>(null);
+  const [customMcpConfig, setCustomMcpConfig] = React.useState<{serverName: string; url: string; tools: any[]} | null>(null);
   
-  // Search functionality for agents
   const searchableAgents = React.useMemo(() => 
     agents.map(agent => ({ ...agent, id: agent.agent_id })), 
     [agents]
@@ -133,14 +120,12 @@ export function AgentDrawer({
     [agentResults]
   );
   
-  // Search functionality for models
   const searchableModels = React.useMemo(() => 
     models.map(model => ({ ...model, name: model.display_name })), 
     [models]
   );
   const { query: modelQuery, results: modelResults, clearSearch: clearModelSearch, updateQuery: updateModelQuery } = useSearch(searchableModels, ['display_name', 'short_name']);
   
-  // Separate models into free and premium
   const { freeModels, premiumModels } = React.useMemo(() => {
     const resultsToUse = modelQuery ? modelResults : models;
     const free = resultsToUse.filter(m => !m.requires_subscription).sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -225,6 +210,36 @@ export function AgentDrawer({
     navigateToView('main');
   }, [navigateToView, canAccessModel, selectModel]);
 
+  const integrationsScale = useSharedValue(1);
+  
+  const integrationsAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: integrationsScale.value }],
+  }));
+
+  const handleIntegrationsPress = React.useCallback(() => {
+    console.log('🔌 Integrations pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (!selectedAgent) {
+      Alert.alert(
+        'No Agent Selected',
+        'Please select an agent first before configuring integrations.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    
+    setCurrentView('integrations');
+  }, [selectedAgent]);
+
+  const handleIntegrationsPressIn = React.useCallback(() => {
+    integrationsScale.value = withTiming(0.95, { duration: 100 });
+  }, []);
+
+  const handleIntegrationsPressOut = React.useCallback(() => {
+    integrationsScale.value = withTiming(1, { duration: 100 });
+  }, []);
+
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -238,10 +253,8 @@ export function AgentDrawer({
     []
   );
 
-  // Render main view content
   const renderMainView = () => (
-    <ScrollView showsVerticalScrollIndicator={false}>
-      {/* My Workers Section */}
+    <View>
       <View className="pb-3" style={{ overflow: 'visible' }}>
         <View className="flex-row items-center justify-between mb-3">
           <Text 
@@ -322,14 +335,31 @@ export function AgentDrawer({
         )}
       </View>
 
-      {/* Divider & Worker Settings Section - Only show when advanced features enabled */}
+      <AnimatedPressable 
+        style={[
+          integrationsAnimatedStyle,
+          { 
+            borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
+            borderWidth: 1,
+            borderOpacity: 0.5,
+          }
+        ]}
+        className="flex-1 h-16 flex-row gap-2 mt-4 rounded-full items-center justify-center"
+        onPress={handleIntegrationsPress}
+        onPressIn={handleIntegrationsPressIn}
+        onPressOut={handleIntegrationsPressOut}
+      >
+        <AppBubble />
+        <Text className="font-roobert-medium" style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}>
+          {t('integrations.connectApps')}
+        </Text>
+      </AnimatedPressable>
       {advancedFeaturesEnabled && (
         <>
           <View 
             style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
             className="h-px w-full my-3" 
           />
-          
           <View className="pb-2">
             <View className="flex-row items-center justify-between mb-2.5">
               <Text 
@@ -339,8 +369,6 @@ export function AgentDrawer({
                 Worker Settings
               </Text>
             </View>
-
-            {/* Settings Icons Row */}
             <View className="flex-row gap-1.5 opacity-75">
               <Pressable 
                 style={{ 
@@ -352,7 +380,6 @@ export function AgentDrawer({
               >
                 <Briefcase size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-              
               <Pressable 
                 style={{ 
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
@@ -363,7 +390,6 @@ export function AgentDrawer({
               >
                 <FileText size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-              
               <Pressable 
                 style={{ 
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
@@ -385,28 +411,15 @@ export function AgentDrawer({
               >
                 <Zap size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-              
-              <Pressable 
-                style={{ 
-                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-                  borderWidth: 1.5,
-                }}
-                className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-              >
-                <Layers size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
             </View>
           </View>
         </>
       )}
-    </ScrollView>
+    </View>
   );
 
-  // Render agents view content
   const renderAgentsView = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
-      {/* Header with back button */}
       <View className="flex-row items-center mb-4">
         <BackButton onPress={() => navigateToView('main')} />
         <View className="flex-1 ml-3">
@@ -522,7 +535,6 @@ export function AgentDrawer({
           </View>
         ) : (
           <>
-            {/* Free Models Section */}
             {freeModels.length > 0 && (
               <View className="mb-4">
                 <Text 
@@ -640,8 +652,6 @@ export function AgentDrawer({
                 )}
               </View>
             )}
-
-            {/* Empty State */}
             {freeModels.length === 0 && premiumModels.length === 0 && (
               <View className="py-8 items-center">
                 <Text 
@@ -662,7 +672,7 @@ export function AgentDrawer({
     <BottomSheet
       ref={bottomSheetRef}
       index={-1}
-      snapPoints={['95%']}
+      snapPoints={['90%']}
       enablePanDownToClose
       onChange={(index) => index === -1 && onClose()}
       backdropComponent={renderBackdrop}
@@ -680,13 +690,13 @@ export function AgentDrawer({
         borderRadius: 3,
       }}
     >
-      {/* Content with proper height management */}
-      <BottomSheetView
-        style={{
+      <BottomSheetScrollView
+        contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: 24,
           paddingBottom: 32,
         }}
+        showsVerticalScrollIndicator={false}
       >
         {/* Dynamic content based on current view */}
         {currentView === 'main' && (
@@ -706,7 +716,123 @@ export function AgentDrawer({
             {renderModelsView()}
           </Animated.View>
         )}
-      </BottomSheetView>
+        
+        {currentView === 'integrations' && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <IntegrationsPageContent 
+              onBack={() => setCurrentView('main')}
+              noPadding={true}
+              onNavigate={(view) => setCurrentView(view as ViewState)}
+            />
+          </Animated.View>
+        )}
+        
+        {currentView === 'composio' && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <ComposioAppsContent 
+              onBack={() => setCurrentView('integrations')}
+              onAppSelect={(app) => {
+                setSelectedComposioApp(app);
+                setCurrentView('composio-detail');
+              }}
+              noPadding={true}
+            />
+          </Animated.View>
+        )}
+        
+        {currentView === 'composio-detail' && selectedComposioApp && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <ComposioAppDetailContent
+              app={selectedComposioApp}
+              onBack={() => setCurrentView('composio')}
+              onComplete={() => setCurrentView('integrations')}
+              onNavigateToConnector={(app) => {
+                setSelectedComposioApp(app);
+                setCurrentView('composio-connector');
+              }}
+              onNavigateToTools={(app, profile) => {
+                setSelectedComposioApp(app);
+                setSelectedComposioProfile(profile);
+                setCurrentView('composio-tools');
+              }}
+              noPadding={true}
+            />
+          </Animated.View>
+        )}
+        
+        {currentView === 'composio-connector' && selectedComposioApp && selectedAgent && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <ComposioConnectorContent
+              app={selectedComposioApp}
+              onBack={() => setCurrentView('composio-detail')}
+              onComplete={(profileId, appName, appSlug) => {
+                console.log('✅ Composio connector completed');
+                setCurrentView('integrations');
+              }}
+              onNavigateToTools={(app, profile) => {
+                setSelectedComposioApp(app);
+                setSelectedComposioProfile(profile);
+                setCurrentView('composio-tools');
+              }}
+              mode="full"
+              agentId={selectedAgent.agent_id}
+              noPadding={true}
+            />
+          </Animated.View>
+        )}
+        
+        {currentView === 'composio-tools' && selectedComposioApp && selectedComposioProfile && selectedAgent && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <ComposioToolsContent
+              app={selectedComposioApp}
+              profile={selectedComposioProfile}
+              agentId={selectedAgent.agent_id}
+              onBack={() => setCurrentView('composio-connector')}
+              onComplete={() => {
+                console.log('✅ Composio tools configured');
+                setCurrentView('integrations');
+              }}
+              noPadding={true}
+            />
+          </Animated.View>
+        )}
+        
+        {currentView === 'customMcp' && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <CustomMcpContent 
+              onBack={() => setCurrentView('integrations')}
+              noPadding={true}
+              onSave={(config) => {
+                console.log('Custom MCP config:', config);
+                // Store the config and navigate to tools selector
+                setCustomMcpConfig({
+                  serverName: config.serverName,
+                  url: config.url,
+                  tools: config.tools || []
+                });
+                setCurrentView('customMcp-tools');
+              }}
+            />
+          </Animated.View>
+        )}
+        
+        {currentView === 'customMcp-tools' && customMcpConfig && (
+          <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <CustomMcpToolsContent
+              serverName={customMcpConfig.serverName}
+              url={customMcpConfig.url}
+              tools={customMcpConfig.tools}
+              onBack={() => setCurrentView('customMcp')}
+              onComplete={(enabledTools) => {
+                console.log('✅ Custom MCP tools configured:', enabledTools);
+                Alert.alert(t('integrations.customMcp.toolsConfigured'), t('integrations.customMcp.toolsConfiguredMessage', { count: enabledTools.length }));
+                setCurrentView('integrations');
+              }}
+              noPadding={true}
+            />
+          </Animated.View>
+        )}
+      </BottomSheetScrollView>
     </BottomSheet>
   );
 }
