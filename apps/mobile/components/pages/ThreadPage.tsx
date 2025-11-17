@@ -390,7 +390,7 @@ export function ThreadPage({
     <View className="flex-1 bg-background">
         <View className="flex-1">
           {isLoading ? (
-            <View className="flex-1 items-center justify-center" style={{ paddingTop: Math.max(insets.top, 16) + 80 }}>
+            <View className="flex-1 items-center justify-center">
               <View className="w-20 h-20 rounded-full items-center justify-center">
                 <LottieView
                   source={require('@/components/animations/loading.json')}
