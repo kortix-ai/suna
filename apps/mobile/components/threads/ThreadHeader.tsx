@@ -114,7 +114,7 @@ export function ThreadHeader({
         zIndex: 0,
       }}
     >
-      <View className="px-6 flex-row items-center gap-3">
+      <View className="pl-4 pr-4 flex-row items-center gap-3">
         <AnimatedPressable
           onPressIn={() => {
             menuScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
