@@ -24,7 +24,69 @@
 
 ## 🚀 Build Commands
 
-### TestFlight Build (Recommended for testing)
+### ⚡ Expo Go Testing (SIMPLEST)
+
+**The fastest way to test with your team - works just like development!**
+
+```bash
+cd apps/mobile
+
+# Using BRANCHES (tied to git branches)
+eas update --branch main --message "Test build for team" --platform ios
+
+# For Android testing
+eas update --branch main --message "Test build for team" --platform android
+```
+
+**Then share with your team:**
+
+**Option 1: Direct URL (Easiest)**
+1. After publishing, you'll get a URL like: `exp://u.expo.dev/...`
+2. Share this URL with your team
+3. Team members:
+   - Install **Expo Go** app from App Store (if not already installed)
+   - Open the URL on their iPhone (tap it, or paste in Safari and it will open Expo Go)
+   - App loads instantly! 🎉
+
+**Option 2: QR Code**
+1. Visit your Expo dashboard: `https://expo.dev/accounts/kortix/projects/kortix`
+2. Find your published update
+3. Share the QR code with your team
+4. They scan it with Expo Go app
+
+**Note:** Some native features (like Apple Sign In) may have limitations in Expo Go, but most features work perfectly for testing.
+
+---
+
+### 🤖 Automatic Updates via CI/CD
+
+**Auto-publish EAS updates whenever you push to git!**
+
+We have a GitHub Actions workflow (`.github/workflows/mobile-eas-update.yml`) that automatically publishes EAS updates when you push to `main`, `staging`, or `production` branches.
+
+**Setup (one-time):**
+1. Get your Expo access token:
+   - Visit: https://expo.dev/accounts/kortix/settings/access-tokens
+   - Create a new token (or use existing one)
+2. Add it as a GitHub secret:
+   - Go to your GitHub repo → Settings → Secrets and variables → Actions
+   - Click "New repository secret"
+   - Name: `EXPO_TOKEN`
+   - Value: Your Expo access token
+
+**How it works:**
+- ✅ Automatically runs on push to `main`, `staging`, or `production` branches
+- ✅ Only triggers when files in `apps/mobile/` change
+- ✅ Publishes to iOS by default (can be configured)
+- ✅ Uses the git branch name as the EAS branch
+- ✅ Includes commit message and SHA in the update message
+
+**Manual trigger:**
+You can also manually trigger the workflow from GitHub Actions tab with custom branch/platform options.
+
+---
+
+### TestFlight Build (For TestFlight distribution)
 
 ```bash
 cd apps/mobile
@@ -121,16 +183,24 @@ Visit the URL provided in the terminal output
 
 Located in: `apps/mobile/eas.json`
 
+- **expo-internal**: For Expo internal distribution (fast testing)
+  - Profile: Lines 38-50
+  - Distribution: `internal` (no App Store review)
+  - Best for: Quick testing iterations
+
 - **testflight**: For TestFlight distribution
-  - Profile: Lines 20-26
-  - Submit config: Lines 36-42
+  - Profile: Lines 25-37
+  - Submit config: Lines 47-53
+  - Distribution: `store` (requires TestFlight review)
 
 - **production**: For App Store release
-  - Profile: Lines 14-19
-  - Submit config: Lines 29-35
+  - Profile: Lines 14-24
+  - Submit config: Lines 40-46
+  - Distribution: App Store
 
 - **preview**: For internal testing
   - Profile: Lines 11-13
+  - Distribution: `internal`
 
 - **development**: For dev client builds
   - Profile: Lines 7-10
