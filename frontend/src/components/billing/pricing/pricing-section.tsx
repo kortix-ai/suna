@@ -21,7 +21,6 @@ import {
   Zap,
   ShoppingCart,
   Lightbulb,
-  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,7 +38,6 @@ import { AnimatedBg } from '@/components/ui/animated-bg';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
 import { BorderBeam } from '@/components/ui/border-beam';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
@@ -274,14 +272,17 @@ function PricingTier({
             console.error(
               "Error: Received status but no checkout URL.",
             );
-            toast.error('Failed to initiate subscription. Please try again.');
+            toast.error(t('failedToInitiateSubscription'));
           }
           break;
         case 'upgraded':
         case 'updated':
           const upgradeMessage = response.details?.is_upgrade
-            ? `Subscription upgraded from $${response.details.current_price} to $${response.details.new_price}`
-            : 'Subscription updated successfully';
+            ? t('subscriptionUpgraded', { 
+                currentPrice: `$${response.details.current_price}`, 
+                newPrice: `$${response.details.new_price}` 
+              })
+            : t('subscriptionUpdated');
           toast.success(upgradeMessage);
           posthog.capture('plan_upgraded');
           queryClient.invalidateQueries({ queryKey: billingKeys.all });
@@ -293,21 +294,24 @@ function PricingTier({
           }
           break;
         case 'commitment_blocks_downgrade':
-          toast.warning(response.message || 'Cannot downgrade during commitment period');
+          toast.warning(response.message || t('cannotDowngradeDuringCommitment'));
           break;
         case 'downgrade_scheduled':
         case 'scheduled':
           const effectiveDate = response.effective_date
             ? new Date(response.effective_date).toLocaleDateString()
-            : 'the end of your billing period';
+            : null;
 
-          const statusChangeMessage = 'Subscription change scheduled';
+          const statusChangeMessage = t('subscriptionChangeScheduled');
+          const planChangeDate = effectiveDate 
+            ? t('planWillChangeOn', { date: effectiveDate })
+            : t('planWillChangeOn', { date: 'the end of your billing period' });
 
           toast.success(
             <div>
               <p>{statusChangeMessage}</p>
               <p className="text-sm mt-1">
-                Your plan will change on {effectiveDate}.
+                {planChangeDate}
               </p>
             </div>,
           );
@@ -318,7 +322,7 @@ function PricingTier({
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'no_change':
-          toast.info(response.message || 'You are already on this plan.');
+          toast.info(response.message || t('alreadyOnThisPlan'));
           break;
         default:
           console.warn(
@@ -374,17 +378,17 @@ function PricingTier({
   if (isAuthenticated) {
     if (isCurrentActivePlan) {
       if (userPlanName === 'trial') {
-        buttonText = 'Trial Active';
+        buttonText = t('trialActive');
         statusBadge = (
           <span className="bg-green-500/10 text-green-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            7-Day Trial
+            {t('trialBadge')}
           </span>
         );
       } else {
-        buttonText = 'Current Plan';
+        buttonText = t('currentPlan');
         statusBadge = (
           <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            Current
+            {t('currentBadge')}
           </span>
         );
       }
@@ -393,7 +397,7 @@ function PricingTier({
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
     } else if (isScheduledTargetPlan) {
-      buttonText = 'Scheduled';
+      buttonText = t('scheduled');
       buttonDisabled = true;
       buttonVariant = 'outline';
       ringClass = isCompact
@@ -403,7 +407,7 @@ function PricingTier({
         'bg-yellow-500/5 hover:bg-yellow-500/10 text-yellow-600 border-yellow-500/20';
       statusBadge = (
         <span className="bg-yellow-500/10 text-yellow-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-          Scheduled
+          {t('scheduledBadge')}
         </span>
       );
     } else if (isScheduled && currentSubscription?.tier_key === tier.tierKey) {
@@ -497,7 +501,7 @@ function PricingTier({
     }
 
     if (isPlanLoading) {
-      buttonText = 'Loading...';
+      buttonText = t('loading');
       buttonClassName = 'opacity-70 cursor-not-allowed';
     }
   } else {
@@ -842,7 +846,7 @@ export function PricingSection({
     return (
       <div className="p-4 bg-muted/30 border border-border rounded-lg text-center">
         <p className="text-sm text-muted-foreground">
-          Running in local development mode - billing features are disabled
+          {t('localModeMessage')}
         </p>
       </div>
     );
@@ -855,11 +859,8 @@ export function PricingSection({
     >
       <div className="w-full mx-auto px-6 flex flex-col items-center">
         {isAlert && (
-          <div className="w-full flex justify-center mb-6 gap-4">
-            <div className="h-10 w-10 rounded-full bg-amber-600/10 border border-amber-600/20 dark:bg-amber-500/10 dark:border-amber-500/20 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-            </div>
-            <h2 className="text-3xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl text-amber-600 dark:text-amber-500">
+          <div className="w-full flex justify-center mb-6">
+            <h2 className="text-3xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl text-foreground">
               {alertTitle || t('pickPlan')}
             </h2>
           </div>

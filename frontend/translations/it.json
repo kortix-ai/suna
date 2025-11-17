@@ -244,7 +244,9 @@
     "customWorkers": "Worker personalizzati",
     "scheduledTriggers": "Trigger pianificati",
     "appTriggers": "Trigger app",
-    "limitsExceeded": "Hai esaurito i limiti. Aggiorna il tuo piano per chattare di più."
+    "limitsExceeded": "Hai esaurito i limiti. Aggiorna il tuo piano per chattare di più.",
+    "agentInitiatedSuccessfully": "Agente avviato con successo",
+    "aiAssistantReady": "Il tuo assistente AI è pronto ad aiutare"
   },
   "thread": {
     "integrations": "Integrazioni",
@@ -385,6 +387,11 @@
     "downgrade": "Passa a un piano inferiore",
     "switchToLegacyYearly": "Passa al piano annuale legacy",
     "pickPlan": "Scegli il piano che fa per te.",
+    "reachedLimit": "Hai raggiunto i tuoi limiti.",
+    "projectLimit": "Limite progetti ({current}/{limit})",
+    "threadLimit": "Limite thread ({current}/{limit})",
+    "workerLimit": "Limite worker ({current}/{limit})",
+    "triggerLimit": "Limite trigger ({current}/{limit})",
     "getAdditionalCredits": "Ottieni crediti aggiuntivi",
     "selectPlan": "Seleziona piano",
     "changeScheduled": "Modifica pianificata",

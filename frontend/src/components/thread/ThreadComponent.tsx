@@ -10,7 +10,7 @@ import { useSearchParams } from 'next/navigation';
 import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/thread/chat-input/chat-input';
-import { useSidebar } from '@/components/ui/sidebar';
+import { useSidebar, SidebarContext } from '@/components/ui/sidebar';
 import { useAgentStream } from '@/hooks/agents';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
@@ -121,18 +121,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const lastStreamStartedRef = useRef<string | null>(null); // Track last runId we started streaming for
   const pendingMessageRef = useRef<string | null>(null); // Store pending message to add when agent starts
 
-  // Sidebar - try to use it if SidebarProvider is available (logged in users on share page will have it)
-  let leftSidebarState: 'expanded' | 'collapsed' | undefined;
-  let setLeftSidebarOpen: ((open: boolean) => void) | undefined;
-
-  try {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const sidebar = useSidebar();
-    leftSidebarState = sidebar.state;
-    setLeftSidebarOpen = sidebar.setOpen;
-  } catch (e) {
-    // SidebarProvider not available (anonymous user on share page), continue without sidebar
-  }
+  // Sidebar - safely use it if SidebarProvider is available (logged in users on share page will have it)
+  // Use React.useContext directly which returns null if context is not available (doesn't throw)
+  const sidebarContext = React.useContext(SidebarContext);
+  const leftSidebarState: 'expanded' | 'collapsed' | undefined = sidebarContext?.state;
+  const setLeftSidebarOpen: ((open: boolean) => void) | undefined = sidebarContext?.setOpen;
 
   // Custom hooks
   const {

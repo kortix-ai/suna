@@ -49,6 +49,7 @@ const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 export function DashboardContent() {
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
+  const tBilling = useTranslations('billing');
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
@@ -241,12 +242,12 @@ export function DashboardContent() {
       if (error instanceof ProjectLimitError) {
         pricingModalStore.openPricingModal({ 
           isAlert: true,
-          alertTitle: `Upgrade to create more projects (currently ${error.detail.current_count}/${error.detail.limit})` 
+          alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
         });
       } else if (error instanceof ThreadLimitError) {
         pricingModalStore.openPricingModal({ 
           isAlert: true,
-          alertTitle: `Upgrade to create more threads (currently ${error.detail.current_count}/${error.detail.limit})` 
+          alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
         });
       } else if (error instanceof BillingError) {
         const message = error.detail?.message?.toLowerCase() || '';

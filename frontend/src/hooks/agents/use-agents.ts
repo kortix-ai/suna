@@ -6,6 +6,7 @@ import { useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { AgentCountLimitError, CustomWorkerLimitError } from '@/lib/api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useTranslations } from 'next-intl';
 
 export const useAgents = (
   params: AgentsParams = {},
@@ -62,6 +63,7 @@ export const useCreateNewAgent = () => {
   const router = useRouter();
   const createAgentMutation = useCreateAgent();
   const pricingModalStore = usePricingModalStore();
+  const tBilling = useTranslations('billing');
 
   return useMutation({
     mutationFn: async (_: void) => {
@@ -82,7 +84,7 @@ export const useCreateNewAgent = () => {
       if (error instanceof AgentCountLimitError || error instanceof CustomWorkerLimitError) {
         pricingModalStore.openPricingModal({ 
           isAlert: true,
-          alertTitle: `Upgrade to create more workers (currently ${error.detail.current_count}/${error.detail.limit})` 
+          alertTitle: `${tBilling('reachedLimit')} ${tBilling('workerLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
         });
       }
     },
