@@ -80,11 +80,10 @@ export function QuickActionExpandedView({
     <Animated.View 
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(200)}
-      className="mb-4"
     >
       {/* Header - only show for modes with visual options */}
       {!showPromptExamples && (
-        <View className="flex-row items-center justify-between mb-3 px-6">
+        <View className="flex-row items-center justify-between mb-3 px-3">
           <Text className="text-sm font-roobert-medium text-foreground">
             {headerText}
           </Text>
@@ -100,7 +99,7 @@ export function QuickActionExpandedView({
 
       {/* Prompt Examples for People & Research */}
       {showPromptExamples ? (
-        <View className="px-6 gap-3">
+        <View className="px-3 gap-3">
           <View className="flex-row items-center justify-between mb-1">
             <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wide">
               {t('quickActions.examplePrompts', { defaultValue: 'Example Prompts' })}
@@ -134,8 +133,9 @@ export function QuickActionExpandedView({
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ 
-            paddingHorizontal: 24,
-            paddingVertical: isSlideMode ? 8 : 0
+            paddingHorizontal: 12,
+            paddingVertical: isSlideMode ? 8 : 0,
+            gap: 16
           }}
           className="flex-row"
         >

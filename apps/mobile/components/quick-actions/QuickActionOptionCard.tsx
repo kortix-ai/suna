@@ -99,7 +99,6 @@ export function QuickActionOptionCard({ option, actionId, onPress, isSelected = 
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
       onPress={handlePress}
-      className="mr-4"
       style={animatedStyle}
     >
       <View className="items-center">
