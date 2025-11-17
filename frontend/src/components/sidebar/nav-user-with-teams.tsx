@@ -69,6 +69,7 @@ import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { TierBadge } from '@/components/billing/tier-badge';
+import { useTranslations } from 'next-intl';
 
 export function NavUserWithTeams({
   user,
@@ -82,6 +83,7 @@ export function NavUserWithTeams({
     planIcon?: string;
   };
 }) {
+  const t = useTranslations('sidebar');
   const router = useRouter();
   const { isMobile } = useSidebar();
   const { data: accounts } = useAccounts();
@@ -231,7 +233,7 @@ export function NavUserWithTeams({
               {personalAccount && (
                 <>
                   <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5">
-                    Workspaces
+                    {t('workspaces')}
                   </DropdownMenuLabel>
                   <DropdownMenuItem
                     key={personalAccount.account_id}
@@ -371,7 +373,7 @@ export function NavUserWithTeams({
                     <Sun className="h-4 w-4 absolute rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                     <Moon className="h-4 w-4 absolute rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
                   </div>
-                  <span>Theme</span>
+                  <span>{t('theme')}</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
 
@@ -417,7 +419,7 @@ export function NavUserWithTeams({
               <DropdownMenuSeparator className="my-1" />
               <DropdownMenuItem onClick={handleLogout} className="gap-2 p-2">
                 <LogOut className="h-4 w-4" />
-                <span>Log Out</span>
+                <span>{t('logout')}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

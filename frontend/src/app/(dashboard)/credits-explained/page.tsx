@@ -9,18 +9,20 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useTranslations } from 'next-intl';
 
 export default function CreditsPage() {
+  const t = useTranslations('billing.creditsExplainedPage');
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8 md:py-12">
       {/* Header Section */}
       <div className="space-y-3 mb-10">
         <h1 className="text-3xl md:text-4xl font-medium tracking-tight text-foreground">
-          Credits Explained
+          {t('title')}
         </h1>
         <p className="text-lg text-muted-foreground">
-          Everything you need to know about how credits work on Kortix
+          {t('subtitle')}
         </p>
       </div>
 
@@ -29,10 +31,10 @@ export default function CreditsPage() {
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
-            <h2 className="text-xl font-semibold">Understanding Credits</h2>
+            <h2 className="text-xl font-semibold">{t('understandingCredits.title')}</h2>
           </div>
           <p className="text-muted-foreground leading-relaxed text-base">
-            Credits serve as Kortix's universal currency for platform operations. Every action your AI agents perform—from analyzing data to generating code—consumes credits based on the task's complexity and the resources required.
+            {t('understandingCredits.description')}
           </p>
         </div>
 
@@ -40,11 +42,11 @@ export default function CreditsPage() {
         <div className="space-y-6">
           <div className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
-            <h2 className="text-xl font-semibold">How Credits Work</h2>
+            <h2 className="text-xl font-semibold">{t('howCreditsWork.title')}</h2>
           </div>
           
           <p className="text-muted-foreground leading-relaxed">
-            Credits are consumed based on the resources your AI agents use:
+            {t('howCreditsWork.description')}
           </p>
 
           <div className="space-y-4">
@@ -55,16 +57,16 @@ export default function CreditsPage() {
                     <Zap className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>AI Model Usage</CardTitle>
+                    <CardTitle>{t('howCreditsWork.aiModelUsage.title')}</CardTitle>
                     <CardDescription>
-                      The primary driver of credit consumption
+                      {t('howCreditsWork.aiModelUsage.description')}
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Different AI models have different costs based on their capabilities and token usage. Credits are consumed for input tokens (your prompts and context), output tokens (agent responses), and vary by model tier (Claude, GPT, etc.).
+                  {t('howCreditsWork.aiModelUsage.content')}
                 </p>
               </CardContent>
             </Card>
@@ -76,16 +78,16 @@ export default function CreditsPage() {
                     <Coins className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Pricing Model</CardTitle>
+                    <CardTitle>{t('howCreditsWork.pricingModel.title')}</CardTitle>
                     <CardDescription>
-                      20% markup on AI model costs
+                      {t('howCreditsWork.pricingModel.description')}
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  We apply a 20% markup on all API and model costs to cover platform infrastructure, security, and ongoing development. This transparent pricing ensures you know exactly what you're paying for.
+                  {t('howCreditsWork.pricingModel.content')}
                 </p>
               </CardContent>
             </Card>
@@ -96,11 +98,11 @@ export default function CreditsPage() {
         <div className="space-y-6">
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-5 w-5 text-primary" />
-            <h2 className="text-xl font-semibold">Getting More Credits</h2>
+            <h2 className="text-xl font-semibold">{t('gettingMoreCredits.title')}</h2>
           </div>
 
           <p className="text-muted-foreground leading-relaxed">
-            There are several ways to obtain credits in Kortix:
+            {t('gettingMoreCredits.description')}
           </p>
 
           <div className="space-y-4">
@@ -111,9 +113,9 @@ export default function CreditsPage() {
                     <RefreshCw className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Monthly Subscription Credits</CardTitle>
+                    <CardTitle>{t('gettingMoreCredits.monthlySubscription.title')}</CardTitle>
                     <CardDescription>
-                      Included with your paid plan and renewed automatically each month. These are expiring credits.
+                      {t('gettingMoreCredits.monthlySubscription.description')}
                     </CardDescription>
                   </div>
                 </div>
@@ -127,9 +129,9 @@ export default function CreditsPage() {
                     <Coins className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Top-Up Credits</CardTitle>
+                    <CardTitle>{t('gettingMoreCredits.topUpCredits.title')}</CardTitle>
                     <CardDescription>
-                      Purchase additional credits when you need them. These are non-expiring and available to premium members.
+                      {t('gettingMoreCredits.topUpCredits.description')}
                     </CardDescription>
                   </div>
                 </div>
@@ -143,9 +145,9 @@ export default function CreditsPage() {
                     <Gift className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Promotional & Event Grants</CardTitle>
+                    <CardTitle>{t('gettingMoreCredits.promotionalGrants.title')}</CardTitle>
                     <CardDescription>
-                      Bonus credits from special events, promotions, or referrals. These are non-expiring.
+                      {t('gettingMoreCredits.promotionalGrants.description')}
                     </CardDescription>
                   </div>
                 </div>
@@ -159,9 +161,9 @@ export default function CreditsPage() {
                     <RefreshCw className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Refunds</CardTitle>
+                    <CardTitle>{t('gettingMoreCredits.refunds.title')}</CardTitle>
                     <CardDescription>
-                      Credits returned due to technical issues or failed tasks. These are non-expiring.
+                      {t('gettingMoreCredits.refunds.description')}
                     </CardDescription>
                   </div>
                 </div>
@@ -174,11 +176,11 @@ export default function CreditsPage() {
         <div className="space-y-6">
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-primary" />
-            <h2 className="text-xl font-semibold">Types of Credits</h2>
+            <h2 className="text-xl font-semibold">{t('typesOfCredits.title')}</h2>
           </div>
 
           <p className="text-muted-foreground leading-relaxed">
-            Kortix uses two types of credits to give you flexibility in how you manage your usage:
+            {t('typesOfCredits.description')}
           </p>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -189,16 +191,16 @@ export default function CreditsPage() {
                     <Clock className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Expiring Credits</CardTitle>
+                    <CardTitle>{t('typesOfCredits.expiringCredits.title')}</CardTitle>
                     <CardDescription>
-                      Monthly subscription credits
+                      {t('typesOfCredits.expiringCredits.description')}
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  These credits are included with your paid subscription and are renewed automatically each month on your subscription date. They expire at the end of each billing cycle and are always consumed first before any non-expiring credits.
+                  {t('typesOfCredits.expiringCredits.content')}
                 </p>
               </CardContent>
             </Card>
@@ -210,16 +212,16 @@ export default function CreditsPage() {
                     <Infinity className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Non-Expiring Credits</CardTitle>
+                    <CardTitle>{t('typesOfCredits.nonExpiringCredits.title')}</CardTitle>
                     <CardDescription>
-                      Permanent credits that never expire
+                      {t('typesOfCredits.nonExpiringCredits.description')}
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  These credits never expire and carry over month to month. They include top-up purchases, refunds, and promotional grants. Non-expiring credits are only used after your expiring credits have been depleted.
+                  {t('typesOfCredits.nonExpiringCredits.content')}
                 </p>
               </CardContent>
             </Card>
@@ -228,7 +230,7 @@ export default function CreditsPage() {
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>Credit Priority:</strong> When you use Kortix, expiring credits are consumed first. Only after your expiring credits run out will non-expiring credits be used.
+              <strong>{t('typesOfCredits.creditPriority.title')}</strong> {t('typesOfCredits.creditPriority.description')}
             </AlertDescription>
           </Alert>
         </div>

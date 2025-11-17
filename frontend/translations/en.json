@@ -1,0 +1,796 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving...",
+    "success": "Success",
+    "done": "Done",
+    "close": "Close",
+    "ok": "OK",
+    "yes": "Yes",
+    "no": "No",
+    "delete": "Delete",
+    "edit": "Edit",
+    "search": "Search",
+    "loading": "Loading...",
+    "error": "Error",
+    "retry": "Try again",
+    "send": "Send",
+    "back": "Back",
+    "new": "New",
+    "create": "Create",
+    "update": "Update",
+    "remove": "Remove",
+    "confirm": "Confirm",
+    "processing": "Processing...",
+    "keep": "Keep",
+    "active": "Active",
+    "inactive": "Inactive",
+    "next": "Next",
+    "upgrade": "Upgrade",
+    "basic": "Basic",
+    "tryFree": "Start free"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "general": "General",
+      "plan": "Plan",
+      "billing": "Billing",
+      "usage": "Usage",
+      "knowledgeBase": "Knowledge Base",
+      "integrations": "Integrations",
+      "envManager": "Env Manager"
+    },
+    "general": {
+      "title": "Profile Settings",
+      "description": "Manage your account information",
+      "name": "Name",
+      "email": "Email",
+      "namePlaceholder": "Enter your name",
+      "emailCannotChange": "Email cannot be changed from here",
+      "saveChanges": "Save Changes",
+      "profileUpdated": "Profile updated successfully",
+      "profileUpdateFailed": "Failed to update profile",
+      "language": {
+        "title": "Language",
+        "description": "Choose your preferred language",
+        "current": "Current Language",
+        "select": "Select Language"
+      },
+      "deleteAccount": {
+        "title": "Delete Account",
+        "description": "Permanently remove your account and all associated data",
+        "button": "Delete Account",
+        "scheduled": "Deletion Scheduled",
+        "scheduledDescription": "Your account will be permanently deleted on {date}.",
+        "canCancel": "You can cancel this request anytime before the deletion date.",
+        "cancelButton": "Cancel Deletion Request",
+        "dialogTitle": "Delete Account",
+        "warning": "This action cannot be undone after 30 days",
+        "whenDelete": "When you delete your account:",
+        "agentsDeleted": "All your agents and agent versions will be deleted",
+        "threadsDeleted": "All your threads and conversations will be deleted",
+        "credentialsRemoved": "All your credentials and integrations will be removed",
+        "subscriptionCancelled": "Your subscription will be cancelled",
+        "billingRemoved": "All billing data will be removed",
+        "scheduled30Days": "Your account will be scheduled for deletion in 30 days",
+        "gracePeriod": "You can cancel this request anytime within the 30-day grace period. After 30 days, all your data will be permanently deleted and cannot be recovered.",
+        "confirmText": "Type delete to confirm",
+        "confirmPlaceholder": "delete",
+        "keepAccount": "Keep Account",
+        "cancelDeletionTitle": "Cancel Account Deletion",
+        "cancelDeletionDescription": "Are you sure you want to cancel the deletion of your account? Your account and all data will be preserved.",
+        "cancelDeletion": "Cancel Deletion"
+      }
+    },
+    "billing": {
+      "title": "Billing Status",
+      "description": "Manage your credits and subscription",
+      "totalCredits": "Total Available Credits",
+      "allCredits": "All credits",
+      "monthlyCredits": "Monthly Credits",
+      "renewalIn": "Renewal in {days} {days, plural, one {day} other {days}}",
+      "noRenewal": "No renewal scheduled",
+      "extraCredits": "Extra Credits",
+      "nonExpiring": "Non-expiring",
+      "renews": "Renews {date}",
+      "manageSubscription": "Manage Subscription",
+      "getAdditionalCredits": "Get Additional Credits",
+      "changePlan": "Change Plan",
+      "annualCommitment": "Annual Commitment",
+      "activeUntil": "Active until {date}",
+      "subscriptionCancelled": "Your subscription will be cancelled on {date}",
+      "reactivate": "Reactivate",
+      "creditsExplained": "Credits explained",
+      "cancelPlan": "Cancel Plan",
+      "reactivateSubscription": "Reactivate Subscription",
+      "reactivating": "Reactivating...",
+      "cancelDialogTitle": "Cancel Subscription",
+      "cancelDialogDescription": "Are you sure you want to cancel your subscription? You'll continue to have access until {date}.",
+      "keepSubscription": "Keep Subscription",
+      "cancelling": "Cancelling...",
+      "localMode": "Local Mode Active",
+      "localModeDescription": "All premium features are available in this environment"
+    },
+    "usage": {
+      "title": "Usage"
+    },
+    "knowledgeBase": {
+      "opening": "Opening Knowledge Base",
+      "redirecting": "Redirecting to Knowledge Base page..."
+    },
+    "integrations": {
+      "opening": "Opening Integrations",
+      "redirecting": "Redirecting to Integrations page..."
+    }
+  },
+  "triggers": {
+    "getStarted": "Get started by adding a trigger",
+    "getStartedDescription": "Schedule a trigger to automate actions and get reminders when they complete.",
+    "search": "Search",
+    "scheduledTrigger": "Scheduled Trigger",
+    "eventBasedTrigger": "Event-based Trigger",
+    "chooseAgent": "Choose Agent",
+    "schedule": "Schedule",
+    "agentInstructions": "Agent Instructions",
+    "agentInstructionsDescription": "Custom prompt for the agent",
+    "assignedAgent": "Assigned Agent",
+    "unknownAgent": "Unknown Agent",
+    "technicalDetails": "Technical Details",
+    "type": "Type",
+    "provider": "Provider",
+    "created": "Created",
+    "lastUpdated": "Last Updated",
+    "enable": "Enable",
+    "disable": "Disable",
+    "deleteTask": "Delete Task",
+    "deleteTaskDescription": "Are you sure you want to delete \"{name}\"? This action cannot be undone and will stop all automated runs from this task.",
+    "taskEnabled": "Task enabled",
+    "taskDisabled": "Task disabled",
+    "toggleTaskFailed": "Failed to toggle task",
+    "taskDeletedSuccess": "Task deleted successfully",
+    "deleteTaskFailed": "Failed to delete task",
+    "taskUpdatedSuccess": "Task updated successfully",
+    "updateTaskFailed": "Failed to update task",
+    "pleaseSelectAgent": "Please select an agent",
+    "defaultScheduledTriggerName": "Scheduled Trigger",
+    "defaultScheduledTriggerDescription": "Automatically scheduled trigger",
+    "scheduleTriggerUpdated": "Schedule trigger updated successfully",
+    "scheduleTriggerCreated": "Schedule trigger created successfully",
+    "upgradeForMoreScheduledTriggers": "Upgrade to create more scheduled triggers",
+    "upgradeForMoreAppTriggers": "Upgrade to create more app-based triggers",
+    "updateScheduleTriggerFailed": "Failed to update schedule trigger",
+    "createScheduleTriggerFailed": "Failed to create schedule trigger",
+    "editScheduledTask": "Edit Scheduled Task",
+    "createScheduledTask": "Create Scheduled Task",
+    "editAppBasedTask": "Edit App-based Task",
+    "createAppBasedTask": "Create App-based Task",
+    "updateAgentForTask": "Update the agent for this task",
+    "selectAgentForTask": "First, select which agent should handle this task",
+    "createNew": "Create new",
+    "notConfigured": "Not configured",
+    "every15Minutes": "Every 15 minutes",
+    "every30Minutes": "Every 30 minutes",
+    "everyHour": "Every hour",
+    "dailyAt9AM": "Daily at 9 AM",
+    "weekdaysAt9AM": "Weekdays at 9 AM",
+    "weeklyOnMonday": "Weekly on Monday",
+    "monthlyOn1st": "Monthly on 1st"
+  },
+  "sidebar": {
+    "chats": "Chats",
+    "agents": "Agents",
+    "workers": "Workers",
+    "triggers": "Triggers",
+    "newChat": "New Chat",
+    "newAgent": "New Agent",
+    "settings": "Settings",
+    "logout": "Log out",
+    "openMenu": "Open menu",
+    "expandSidebar": "Expand sidebar (CMD+B)",
+    "searchChats": "Search chats",
+    "searchChatsPlaceholder": "Search chats...",
+    "allTriggers": "All Triggers",
+    "addWorkers": "Add Workers",
+    "addTrigger": "Add Trigger",
+    "triggerConfig": "Trigger Config",
+    "scheduledTrigger": "Scheduled Trigger",
+    "scheduledTriggerDescription": "Schedule a trigger to run at a specific time",
+    "eventBasedTrigger": "Event-based Trigger",
+    "eventBasedTriggerDescription": "Make a trigger to run when an event occurs",
+    "noChatsFound": "No chats found",
+    "search": "Search",
+    "searchPlaceholder": "Search...",
+    "searchResults": "Search Results",
+    "recent": "Recent",
+    "personalAccount": "Personal Account",
+    "workspaces": "Workspaces",
+    "theme": "Theme",
+    "integrations": "Integrations",
+    "billing": "Billing",
+    "usage": "Usage",
+    "adminPanel": "Admin Panel",
+    "apiKeys": "API Keys",
+    "envManager": "Env Manager",
+    "advanced": "Advanced"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome",
+    "whatWouldYouLike": "What do you want to get done?",
+    "describeWhatYouNeed": "Describe what you need help with...",
+    "usageLimits": "Usage Limits",
+    "threads": "Threads",
+    "customWorkers": "Custom Workers",
+    "scheduledTriggers": "Scheduled Triggers",
+    "appTriggers": "App Triggers",
+    "limitsExceeded": "You ran out of limits. Upgrade your plan to chat more."
+  },
+  "thread": {
+    "integrations": "Integrations",
+    "connect": "Connect",
+    "seeAllIntegrations": "+ See all integrations",
+    "connectIntegrations": "Connect integrations",
+    "adaptive": "Adaptive",
+    "adaptiveDescription": "Quick responses with smart context switching",
+    "autonomous": "Autonomous",
+    "autonomousDescription": "Deep work mode for multi-step problem solving",
+    "chat": "Chat",
+    "chatDescription": "Simple back-and-forth conversation",
+    "uploadingFiles": "Uploading {count} file{plural}...",
+    "uploadingFilesOne": "Uploading {count} file...",
+    "uploadingFilesMany": "Uploading {count} files...",
+    "scrollToBottom": "Scroll to bottom",
+    "tools": "Tools",
+    "instructions": "Instructions",
+    "knowledge": "Knowledge",
+    "triggers": "Triggers",
+    "agents": "Agents",
+    "superWorker": "Super Worker",
+    "searchWorkers": "Search workers...",
+    "myWorkers": "My Workers",
+    "running": "Running",
+    "minimizeToFloatingPreview": "Minimize to floating preview",
+    "close": "Close",
+    "noActionsYet": "No actions yet",
+    "workerActionsDescription": "Worker actions and results will appear here as they execute",
+    "toolIsRunning": "Tool is running",
+    "toolCurrentlyExecuting": "{toolName} is currently executing. Results will appear here when complete."
+  },
+  "agents": {
+    "title": "Agents",
+    "create": "Create Agent",
+    "createNewWorker": "Create New Worker",
+    "edit": "Edit Agent",
+    "delete": "Delete Agent",
+    "name": "Name",
+    "description": "Description",
+    "model": "Model",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "Define how your agent should behave...",
+    "customizeIcon": "Click to customize agent icon"
+  },
+  "home": {
+    "heroPlaceholder": "Describe the task you want your Worker to complete..."
+  },
+  "threads": {
+    "title": "Threads",
+    "newThread": "New Thread",
+    "sendMessage": "Send message",
+    "placeholder": "Type your message..."
+  },
+  "billing": {
+    "title": "Billing",
+    "subscription": "Subscription",
+    "credits": "Credits",
+    "popular": "Popular",
+    "creditsExplained": "Credits explained",
+    "creditsExplainedPage": {
+      "title": "Credits Explained",
+      "subtitle": "Everything you need to know about how credits work on Kortix",
+      "understandingCredits": {
+        "title": "Understanding Credits",
+        "description": "Credits serve as Kortix's universal currency for platform operations. Every action your AI agents perform—from analyzing data to generating code—consumes credits based on the task's complexity and the resources required."
+      },
+      "howCreditsWork": {
+        "title": "How Credits Work",
+        "description": "Credits are consumed based on the resources your AI agents use:",
+        "aiModelUsage": {
+          "title": "AI Model Usage",
+          "description": "The primary driver of credit consumption",
+          "content": "Different AI models have different costs based on their capabilities and token usage. Credits are consumed for input tokens (your prompts and context), output tokens (agent responses), and vary by model tier (Claude, GPT, etc.)."
+        },
+        "pricingModel": {
+          "title": "Pricing Model",
+          "description": "20% markup on AI model costs",
+          "content": "We apply a 20% markup on all API and model costs to cover platform infrastructure, security, and ongoing development. This transparent pricing ensures you know exactly what you're paying for."
+        }
+      },
+      "gettingMoreCredits": {
+        "title": "Getting More Credits",
+        "description": "There are several ways to obtain credits in Kortix:",
+        "monthlySubscription": {
+          "title": "Monthly Subscription Credits",
+          "description": "Included with your paid plan and renewed automatically each month. These are expiring credits."
+        },
+        "topUpCredits": {
+          "title": "Top-Up Credits",
+          "description": "Purchase additional credits when you need them. These are non-expiring and available to premium members."
+        },
+        "promotionalGrants": {
+          "title": "Promotional & Event Grants",
+          "description": "Bonus credits from special events, promotions, or referrals. These are non-expiring."
+        },
+        "refunds": {
+          "title": "Refunds",
+          "description": "Credits returned due to technical issues or failed tasks. These are non-expiring."
+        }
+      },
+      "typesOfCredits": {
+        "title": "Types of Credits",
+        "description": "Kortix uses two types of credits to give you flexibility in how you manage your usage:",
+        "expiringCredits": {
+          "title": "Expiring Credits",
+          "description": "Monthly subscription credits",
+          "content": "These credits are included with your paid subscription and are renewed automatically each month on your subscription date. They expire at the end of each billing cycle and are always consumed first before any non-expiring credits."
+        },
+        "nonExpiringCredits": {
+          "title": "Non-Expiring Credits",
+          "description": "Permanent credits that never expire",
+          "content": "These credits never expire and carry over month to month. They include top-up purchases, refunds, and promotional grants. Non-expiring credits are only used after your expiring credits have been depleted."
+        },
+        "creditPriority": {
+          "title": "Credit Priority:",
+          "description": "When you use Kortix, expiring credits are consumed first. Only after your expiring credits run out will non-expiring credits be used."
+        }
+      }
+    },
+    "close": "Close",
+    "cancelScheduledChange": "Cancel Scheduled Change",
+    "threadUsage": "Thread Usage",
+    "error": "Error",
+    "totalUsage": "Total Usage",
+    "usage": "Usage",
+    "thread": "Thread",
+    "lastUsed": "Last Used",
+    "creditsUsed": "Credits Used",
+    "creditTransactions": "Credit Transactions",
+    "loadingTransactionHistory": "Loading your transaction history...",
+    "monthly": "Monthly",
+    "yearly": "Yearly",
+    "discount": "15% off",
+    "perMonth": "/month",
+    "billedYearly": "billed yearly",
+    "downgradePending": "Downgrade Pending",
+    "downgrade": "Downgrade",
+    "switchToLegacyYearly": "Switch to Legacy Yearly",
+    "pickPlan": "Pick the plan that works for you.",
+    "getAdditionalCredits": "Get Additional Credits",
+    "selectPlan": "Select Plan",
+    "changeScheduled": "Change Scheduled",
+    "notAvailable": "Not Available",
+    "features": {
+      "creditsPerMonth": "{count} credits/month",
+      "customWorker": "{count} custom Worker",
+      "customWorkers": "{count} custom workers",
+      "privateProject": "{count} private project",
+      "privateProjects": "Private projects",
+      "customTrigger": "{count} custom trigger",
+      "integrations": "100+ integrations",
+      "premiumAIModels": "Premium AI Models",
+      "prioritySupport": "Priority Support"
+    }
+  },
+  "auth": {
+    "logIntoAccount": "Log into your account",
+    "createAccount": "Create your account",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithGitHub": "Continue with GitHub",
+    "orEmail": "or email",
+    "emailAddress": "Email address",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signingIn": "Signing in...",
+    "creatingAccount": "Creating account...",
+    "forgotPassword": "Forgot password?",
+    "dontHaveAccount": "Don't have an account? Sign up",
+    "alreadyHaveAccount": "Already have an account? Sign in",
+    "acceptPrivacyTerms": "I accept the <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>",
+    "privacyPolicy": "Privacy Policy",
+    "termsOfService": "Terms of Service",
+    "checkYourEmail": "Check your email",
+    "confirmationLinkSent": "We've sent a confirmation link to:",
+    "clickLinkToActivate": "Click the link in the email to activate your account. If you don't see the email, check your spam folder.",
+    "returnToHome": "Return to home",
+    "backToSignIn": "Back to sign in",
+    "resetPassword": "Reset Password",
+    "resetPasswordDescription": "Enter your email address and we'll send you a link to reset your password.",
+    "sendResetLink": "Send Reset Link",
+    "cancel": "Cancel",
+    "pleaseEnterValidEmail": "Please enter a valid email address",
+    "signInFailed": "Login failed",
+    "signUpFailed": "Sign up failed"
+  },
+  "onboarding": {
+    "welcome": "Welcome",
+    "next": "Next",
+    "skip": "Skip"
+  },
+  "tools": {
+    "executeCommand": "Executing Command",
+    "checkCommandOutput": "Checking Command Output",
+    "terminateCommand": "Terminating Command",
+    "listCommands": "Listing Commands",
+    "createFile": "Creating File",
+    "deleteFile": "Deleting File",
+    "fullFileRewrite": "Rewriting File",
+    "strReplace": "Editing Text",
+    "editFile": "Editing File",
+    "uploadFile": "Uploading File",
+    "createDocument": "Creating Document",
+    "updateDocument": "Updating Document",
+    "readDocument": "Reading Document",
+    "listDocuments": "Listing Documents",
+    "deleteDocument": "Deleting Document",
+    "createTasks": "Creating Tasks",
+    "updateTasks": "Updating Tasks",
+    "browserNavigateTo": "Navigating to Page",
+    "browserAct": "Performing Action",
+    "browserExtractContent": "Extracting Content",
+    "browserScreenshot": "Taking Screenshot",
+    "executeDataProviderCall": "Calling data provider",
+    "getDataProviderEndpoints": "Getting endpoints",
+    "ask": "Ask",
+    "wait": "Wait",
+    "complete": "Completing Task",
+    "crawlWebpage": "Crawling Website",
+    "exposePort": "Exposing Port",
+    "scrapeWebpage": "Scraping Website",
+    "webSearch": "Searching Web",
+    "loadImage": "Loading Image",
+    "createPresentationOutline": "Creating Presentation Outline",
+    "createPresentation": "Creating Presentation",
+    "presentPresentation": "Presenting",
+    "clearImagesFromContext": "Clearing Images from context",
+    "imageSearch": "Searching Image",
+    "createSheet": "Creating Sheet",
+    "updateSheet": "Updating Sheet",
+    "viewSheet": "Viewing Sheet",
+    "analyzeSheet": "Analyzing Sheet",
+    "visualizeSheet": "Visualizing Sheet",
+    "formatSheet": "Formatting Sheet",
+    "updateAgent": "Updating Agent",
+    "getCurrentAgentConfig": "Getting Agent Config",
+    "searchMcpServers": "Searching MCP Servers",
+    "getMcpServerTools": "Getting MCP Server Tools",
+    "configureMcpServer": "Configuring MCP Server",
+    "getPopularMcpServers": "Getting Popular MCP Servers",
+    "testMcpServerConnection": "Testing MCP Server Connection",
+    "listAppEventTriggers": "Finding event triggers",
+    "createEventTrigger": "Creating event trigger",
+    "getProjectStructure": "Getting Project Structure",
+    "buildProject": "Building Project",
+    "makePhoneCall": "Making Phone Call",
+    "endCall": "Ending Call",
+    "getCallDetails": "Getting Call Details",
+    "listCalls": "Listing Calls",
+    "monitorCall": "Monitoring Call",
+    "waitForCallCompletion": "Waiting for Completion",
+    "getPaperDetails": "Getting Paper Details",
+    "searchAuthors": "Searching Authors",
+    "getAuthorDetails": "Getting Author Details",
+    "getAuthorPapers": "Getting Author Papers",
+    "getPaperCitations": "Getting Paper Citations",
+    "getPaperReferences": "Getting Paper References",
+    "paperSearch": "Searching for Papers",
+    "discoverUserMcpServers": "Discovering tools",
+    "createCredentialProfile": "Creating profile",
+    "getCredentialProfiles": "Getting profiles",
+    "configureProfileForAgent": "Adding tools to agent",
+    "createNewAgent": "Creating New Agent",
+    "searchMcpServersForAgent": "Searching MCP Servers",
+    "createCredentialProfileForAgent": "Creating Credential Profile",
+    "discoverMcpToolsForAgent": "Discovering MCP Tools",
+    "configureAgentIntegration": "Configuring Agent Integration",
+    "createAgentScheduledTrigger": "Creating Scheduled Trigger",
+    "listAgentScheduledTriggers": "Listing Agent Scheduled Triggers",
+    "executingTool": "Executing tool",
+    "toolExecutedSuccessfully": "Tool executed successfully",
+    "toolExecutionFailed": "Tool execution failed",
+    "input": "Input",
+    "output": "Output",
+    "copyFileContent": "Copy file content",
+    "fileContentCopied": "File content copied to clipboard",
+    "failedToCopyFileContent": "Failed to copy file content",
+    "noContentAvailable": "No Content Available",
+    "noContentDescription": "This tool execution did not produce any input or output content to display.",
+    "tool": "Tool"
+  },
+  "agentRunLimit": {
+    "gotIt": "Got it",
+    "parallelRunsLimitReached": "Parallel Runs Limit Reached",
+    "parallelRunsLimitDescription": "You've reached the maximum parallel agent runs allowed.",
+    "needMoreParallelRuns": "Need more parallel runs?",
+    "upgradeDescription": "Upgrade your plan to run multiple agents simultaneously and boost your productivity.",
+    "upgradePlan": "Upgrade Plan",
+    "currentlyRunningAgents": "Currently Running Agents",
+    "loadingThreads": "Loading threads...",
+    "foundRunningAgents": "Found {count} running agents but unable to load thread details.",
+    "threadIds": "Thread IDs: {ids}",
+    "moreRunning": "+{count} more running",
+    "whatCanYouDo": "What can you do?",
+    "stopAgentsHint": "Click the stop button to stop running agents",
+    "waitForCompletion": "Wait for an agent to complete automatically",
+    "upgradeYourPlan": "Upgrade your plan",
+    "forMoreParallelRuns": "for more parallel runs",
+    "stopAgent": "Stop agent",
+    "stopThisAgent": "Stop this agent",
+    "openThread": "Open thread",
+    "agentStoppedSuccessfully": "Agent stopped successfully",
+    "failedToStopAgent": "Failed to stop agent",
+    "upgradeToRunMore": "Upgrade to run more agents in parallel"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "network": "Network error",
+    "unauthorized": "Unauthorized",
+    "notFound": "Not found"
+  },
+  "languages": {
+    "en": "English",
+    "de": "Deutsch",
+    "it": "Italiano"
+  },
+  "suna": {
+    "samplePrompts": "Sample prompts",
+    "chooseStyle": "Choose a style",
+    "chooseTemplate": "Choose a template",
+    "chooseOutputFormat": "Choose output format",
+    "preferredCharts": "Preferred charts",
+    "whatWouldYouLike": "What do you want to get done?",
+    "describeTask": "Describe the task you want your Worker to complete...",
+    "modes": {
+      "image": "Image",
+      "slides": "Slides",
+      "data": "Data",
+      "docs": "Docs",
+      "people": "People",
+      "research": "Research"
+    },
+    "styles": {
+      "photorealistic": "Photorealistic",
+      "watercolor": "Watercolor",
+      "digital-art": "Digital Art",
+      "oil-painting": "Oil Painting",
+      "minimalist": "Minimalist",
+      "isometric": "Isometric",
+      "vintage": "Vintage",
+      "comic": "Comic Book",
+      "neon": "Neon",
+      "pastel": "Pastel",
+      "geometric": "Geometric",
+      "abstract": "Abstract",
+      "anime": "Anime",
+      "impressionist": "Impressionist",
+      "surreal": "Surreal"
+    },
+    "templates": {
+      "minimalist": {
+        "name": "Minimalist",
+        "description": "Clean and simple design"
+      },
+      "minimalist_2": {
+        "name": "Minimalist 2",
+        "description": "Alternative minimal style"
+      },
+      "black_and_white_clean": {
+        "name": "Black & White",
+        "description": "Classic monochrome"
+      },
+      "colorful": {
+        "name": "Colorful",
+        "description": "Vibrant and energetic"
+      },
+      "startup": {
+        "name": "Startup",
+        "description": "Dynamic and innovative"
+      },
+      "elevator_pitch": {
+        "name": "Elevator Pitch",
+        "description": "Quick and impactful"
+      },
+      "portfolio": {
+        "name": "Portfolio",
+        "description": "Showcase your work"
+      },
+      "textbook": {
+        "name": "Textbook",
+        "description": "Educational and structured"
+      },
+      "architect": {
+        "name": "Architect",
+        "description": "Professional and precise"
+      },
+      "hipster": {
+        "name": "Hipster",
+        "description": "Modern and trendy"
+      },
+      "green": {
+        "name": "Green",
+        "description": "Nature-inspired design"
+      },
+      "premium_black": {
+        "name": "Premium Black",
+        "description": "Luxury dark theme"
+      },
+      "premium_green": {
+        "name": "Premium Green",
+        "description": "Sophisticated green"
+      },
+      "professor_gray": {
+        "name": "Professor Gray",
+        "description": "Academic and scholarly"
+      },
+      "gamer_gray": {
+        "name": "Gamer Gray",
+        "description": "Gaming-inspired design"
+      },
+      "competitor_analysis_blue": {
+        "name": "Analysis Blue",
+        "description": "Business analysis focused"
+      },
+      "numbers_clean": {
+        "name": "Numbers Clean",
+        "description": "Clean data visualization"
+      },
+      "numbers_colorful": {
+        "name": "Numbers Colorful",
+        "description": "Vibrant data presentation"
+      },
+      "prd": {
+        "name": "PRD",
+        "description": "Product requirements document"
+      },
+      "technical": {
+        "name": "Technical",
+        "description": "Technical documentation"
+      },
+      "proposal": {
+        "name": "Proposal",
+        "description": "Business proposal"
+      },
+      "report": {
+        "name": "Report",
+        "description": "Detailed report format"
+      },
+      "guide": {
+        "name": "Guide",
+        "description": "Step-by-step guide"
+      },
+      "wiki": {
+        "name": "Wiki",
+        "description": "Knowledge base article"
+      },
+      "policy": {
+        "name": "Policy",
+        "description": "Policy document"
+      },
+      "meeting-notes": {
+        "name": "Meeting Notes",
+        "description": "Meeting minutes"
+      }
+    },
+    "outputFormats": {
+      "spreadsheet": {
+        "name": "Spreadsheet",
+        "description": "Table with formulas"
+      },
+      "dashboard": {
+        "name": "Dashboard",
+        "description": "Interactive charts"
+      },
+      "report": {
+        "name": "Report",
+        "description": "Analysis with visuals"
+      },
+      "slides": {
+        "name": "Slides",
+        "description": "Presentation format"
+      }
+    },
+    "charts": {
+      "bar": "Bar",
+      "line": "Line",
+      "pie": "Pie",
+      "scatter": "Scatter",
+      "heatmap": "Heat map",
+      "bubble": "Bubble",
+      "wordcloud": "Word cloud",
+      "stacked": "Stacked bar",
+      "area": "Area"
+    },
+    "prompts": {
+      "image": {
+        "0": "A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting",
+        "1": "Close-up portrait of a fashion model with avant-garde makeup, studio lighting, high contrast shadows",
+        "2": "Cozy Scandinavian living room with natural wood furniture, indoor plants, and soft morning sunlight",
+        "3": "Futuristic cyberpunk street market at night with neon signs, rain-slicked pavement, and holographic displays",
+        "4": "Elegant product photography of luxury perfume bottle on marble surface with soft reflections",
+        "5": "Whimsical floating islands connected by rope bridges in a pastel sky with dreamy clouds",
+        "6": "Macro close-up of morning dew drops on vibrant flower petals with bokeh background",
+        "7": "Modern workspace desk setup with laptop, coffee, notebook, and succulent plants from above",
+        "8": "Mystical forest path with ancient trees, glowing fireflies, and ethereal light beams through fog",
+        "9": "Architectural detail of contemporary glass building facade with geometric patterns and reflections",
+        "10": "Vibrant street food vendor stall with colorful ingredients, steam rising, and warm lighting",
+        "11": "Serene Japanese zen garden with raked sand, moss-covered stones, and cherry blossom petals",
+        "12": "Dynamic action shot of athlete mid-jump against dramatic sunset sky, silhouette effect",
+        "13": "Rustic farmhouse kitchen with copper pots, fresh herbs, wooden cutting boards, and natural textures",
+        "14": "Abstract fluid art with swirling metallic gold, deep blue, and emerald green organic patterns"
+      },
+      "slides": {
+        "0": "Create a Series A pitch deck with market size, traction, and financial projections",
+        "1": "Build a Q4 business review showcasing KPIs, wins, and strategic initiatives",
+        "2": "Design a product launch presentation with demo videos and customer testimonials",
+        "3": "Develop a sales enablement deck explaining our value prop and competitive advantages",
+        "4": "Create an investor update highlighting key metrics and upcoming milestones",
+        "5": "Build a customer case study presentation showing ROI and success metrics",
+        "6": "Design an all-hands presentation covering company updates and vision",
+        "7": "Develop a training deck for new product features and workflows",
+        "8": "Create a conference talk about scaling engineering teams",
+        "9": "Build a board meeting presentation with strategic recommendations"
+      },
+      "data": {
+        "0": "Build a financial model projecting ARR growth with different pricing scenarios",
+        "1": "Create an interactive sales dashboard tracking metrics by region and quarter",
+        "2": "Analyze 50K customer reviews and visualize sentiment trends over time",
+        "3": "Design a content calendar tracking campaigns with ROI and engagement charts",
+        "4": "Build a cohort analysis showing user retention and churn patterns",
+        "5": "Create a marketing attribution model comparing channel performance",
+        "6": "Develop a hiring tracker with pipeline metrics and time-to-fill analysis",
+        "7": "Build a budget planning spreadsheet with scenario modeling",
+        "8": "Analyze website traffic data and visualize conversion funnels",
+        "9": "Create an inventory management system with automated reorder alerts"
+      },
+      "docs": {
+        "0": "Write a comprehensive PRD for an AI-powered recommendation engine",
+        "1": "Draft a technical architecture document for a scalable microservices platform",
+        "2": "Create a go-to-market strategy document for our Q2 product launch",
+        "3": "Develop a 90-day onboarding playbook for engineering managers",
+        "4": "Write an API documentation guide with examples and best practices",
+        "5": "Create a company handbook covering culture, policies, and benefits",
+        "6": "Draft a data privacy policy compliant with GDPR and CCPA",
+        "7": "Develop a customer success playbook for SaaS enterprise accounts",
+        "8": "Write a security incident response plan with escalation procedures",
+        "9": "Create a comprehensive style guide for brand and content"
+      },
+      "people": {
+        "0": "Find VP of Engineering candidates at Series B+ AI/ML startups in San Francisco Bay Area with 10+ years experience and proven track record scaling engineering teams",
+        "1": "Build lead list of CMOs at B2B SaaS companies ($10M-$50M ARR) who recently raised Series A/B funding - include email patterns and tech stack",
+        "2": "Research Senior Blockchain Engineers with Solidity/Rust experience at top crypto projects, open to relocation to Dubai or Singapore",
+        "3": "Generate prospect list of technical founders at Seed-Series A startups in Enterprise AI who raised $2M-$15M in last 6 months",
+        "4": "Identify Senior Product Managers at fintech companies with 5-10 years experience from FAANG or unicorns, skilled in 0-1 product development",
+        "5": "Find CIOs and VP Engineering at mid-market healthcare IT companies (500-5000 employees) with $500K+ IT budgets planning cloud migration",
+        "6": "Research VP Sales at B2B SaaS companies showing 100%+ YoY growth, with 7+ years closing $100K+ deals and PLG experience",
+        "7": "Build list of CTOs at enterprise companies actively implementing AI infrastructure with multi-million dollar budgets in 2024",
+        "8": "Find Senior UX/UI Designers with mobile-first consumer app experience and 1M+ user portfolios, actively looking or open to opportunities",
+        "9": "Identify Senior DevOps Engineers at cloud-native startups with Kubernetes/Terraform expertise and 5-8 years building infrastructure for 10M+ users"
+      },
+      "research": {
+        "0": "Analyze emerging trends in quantum computing and potential business applications",
+        "1": "Research top 10 competitors in the AI-powered CRM space with feature comparison",
+        "2": "Investigate regulatory requirements for launching a fintech app in the EU",
+        "3": "Compile market analysis on electric vehicle adoption rates across major markets",
+        "4": "Study the impact of remote work on commercial real estate demand in major cities",
+        "5": "Research Web3 adoption patterns among Fortune 500 companies",
+        "6": "Analyze consumer sentiment towards sustainable fashion brands",
+        "7": "Investigate the latest developments in gene therapy for rare diseases",
+        "8": "Study pricing strategies of successful D2C subscription box companies",
+        "9": "Research the competitive landscape of AI-powered cybersecurity solutions"
+      }
+    }
+  }
+}
+

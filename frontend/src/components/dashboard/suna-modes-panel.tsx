@@ -26,6 +26,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getPdfUrl } from '@/components/thread/tool-views/utils/presentation-utils';
+import { useTranslations } from 'next-intl';
 
 interface SunaModesPanelProps {
   selectedMode: string | null;
@@ -1105,8 +1106,37 @@ export function SunaModesPanel({
   selectedTemplate: controlledSelectedTemplate,
   onTemplateChange
 }: SunaModesPanelProps) {
+  const t = useTranslations('suna');
   const currentMode = selectedMode ? modes.find((m) => m.id === selectedMode) : null;
   const promptCount = isMobile ? 2 : 4;
+  
+  // Get translated prompts for a mode
+  const getTranslatedPrompts = (modeId: string): string[] => {
+    const prompts: string[] = [];
+    let index = 0;
+    const maxPrompts = 20; // Safety limit
+    
+    while (index < maxPrompts) {
+      try {
+        const key = `prompts.${modeId}.${index}`;
+        const prompt = t(key);
+        // Check if translation exists (next-intl returns the key if missing)
+        if (!prompt || prompt === `suna.${key}` || prompt.startsWith('suna.prompts.')) {
+          break;
+        }
+        prompts.push(prompt);
+        index++;
+      } catch {
+        break;
+      }
+    }
+    
+    // Fallback to hardcoded prompts if no translations found
+    if (prompts.length === 0 && currentMode) {
+      return currentMode.samplePrompts;
+    }
+    return prompts;
+  };
   
   // State to track current random selection of prompts
   const [randomizedPrompts, setRandomizedPrompts] = useState<string[]>([]);
@@ -1135,10 +1165,11 @@ export function SunaModesPanel({
 
   // Randomize prompts when mode changes or on mount
   useEffect(() => {
-    if (currentMode) {
-      setRandomizedPrompts(getRandomPrompts(currentMode.samplePrompts, promptCount));
+    if (selectedMode) {
+      const translatedPrompts = getTranslatedPrompts(selectedMode);
+      setRandomizedPrompts(getRandomPrompts(translatedPrompts, promptCount));
     }
-  }, [selectedMode, currentMode, promptCount]);
+  }, [selectedMode, promptCount, t]);
   
   // Reset selections when mode changes
   useEffect(() => {
@@ -1149,9 +1180,10 @@ export function SunaModesPanel({
 
   // Handler for refresh button
   const handleRefreshPrompts = () => {
-    if (currentMode) {
+    if (selectedMode) {
       setIsRefreshing(true);
-      setRandomizedPrompts(getRandomPrompts(currentMode.samplePrompts, promptCount));
+      const translatedPrompts = getTranslatedPrompts(selectedMode);
+      setRandomizedPrompts(getRandomPrompts(translatedPrompts, promptCount));
       setTimeout(() => setIsRefreshing(false), 300);
     }
   };
@@ -1231,7 +1263,7 @@ export function SunaModesPanel({
       {selectedMode && displayedPrompts && ['research', 'people'].includes(selectedMode) && (
         <div className="space-y-2 animate-in fade-in-0 zoom-in-95 duration-300">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sample prompts</h3>
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('samplePrompts')}</h3>
             <Button
               variant="ghost"
               size="sm"
@@ -1276,7 +1308,7 @@ export function SunaModesPanel({
       {selectedMode && displayedPrompts && !['research', 'people'].includes(selectedMode) && (
         <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-muted-foreground">Sample prompts</h3>
+            <h3 className="text-sm font-medium text-muted-foreground">{t('samplePrompts')}</h3>
             <Button
               variant="ghost"
               size="sm"
@@ -1322,7 +1354,10 @@ export function SunaModesPanel({
       {selectedMode && currentMode?.options && (
         <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-75">
           <h3 className="text-sm font-medium text-muted-foreground">
-            {currentMode.options.title}
+            {currentMode.options.title === 'Choose a style' ? t('chooseStyle') :
+             currentMode.options.title === 'Choose a template' ? t('chooseTemplate') :
+             currentMode.options.title === 'Choose output format' ? t('chooseOutputFormat') :
+             currentMode.options.title}
           </h3>
           
           {selectedMode === 'image' && (
@@ -1349,7 +1384,7 @@ export function SunaModesPanel({
                       )}
                     </div>
                     <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
-                      {item.name}
+                      {t(`styles.${item.id}`) || item.name}
                     </span>
                   </Card>
                 ))}
@@ -1404,11 +1439,11 @@ export function SunaModesPanel({
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
-                        {item.name}
+                        {t(`templates.${item.id}.name`) || item.name}
                       </p>
                       {item.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">
-                          {item.description}
+                          {t(`templates.${item.id}.description`) || item.description}
                         </p>
                       )}
                     </div>
@@ -1440,11 +1475,11 @@ export function SunaModesPanel({
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
-                        {item.name}
+                        {t(`templates.${item.id}.name`) || item.name}
                       </p>
                       {item.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">
-                          {item.description}
+                          {t(`templates.${item.id}.description`) || item.description}
                         </p>
                       )}
                     </div>
@@ -1507,11 +1542,11 @@ export function SunaModesPanel({
                             ? "text-primary" 
                             : "text-foreground/80 group-hover:text-primary"
                         )}>
-                          {item.name}
+                          {t(`outputFormats.${item.id}.name`) || item.name}
                         </p>
                         {item.description && (
                           <p className="text-xs text-muted-foreground">
-                            {item.description}
+                            {t(`outputFormats.${item.id}.description`) || item.description}
                           </p>
                         )}
                       </div>
@@ -1528,7 +1563,7 @@ export function SunaModesPanel({
       {selectedMode === 'data' && currentMode?.chartTypes && (
         <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-150">
           <h3 className="text-sm font-medium text-muted-foreground">
-            {currentMode.chartTypes.title}
+            {t('preferredCharts')}
           </h3>
           <ScrollArea className="w-full">
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2">
@@ -1584,7 +1619,7 @@ export function SunaModesPanel({
                           ? "text-primary" 
                           : "text-foreground/70 group-hover:text-foreground"
                       )}>
-                        {chart.name}
+                        {t(`charts.${chart.id}`) || chart.name}
                       </span>
                     </Card>
                   </motion.div>

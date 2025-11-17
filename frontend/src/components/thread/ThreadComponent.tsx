@@ -53,6 +53,7 @@ import { threadKeys } from '@/hooks/threads/keys';
 import { fileQueryKeys } from '@/hooks/files';
 import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
+import { useTranslations } from 'next-intl';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -63,6 +64,7 @@ interface ThreadComponentProps {
 }
 
 export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false }: ThreadComponentProps) {
+  const t = useTranslations('dashboard');
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -1016,7 +1018,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             <div className="flex-shrink-0 border-t border-border/20 bg-background p-4">
               <ChatInput
                 onSubmit={handleSubmitMessage}
-                placeholder={`Describe what you need help with...`}
+                placeholder={t('describeWhatYouNeed')}
                 loading={isSending}
                 disabled={isSending}
                 isAgentRunning={
@@ -1159,7 +1161,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             <div className={cn('mx-auto', isMobile ? 'w-full' : 'max-w-3xl')}>
               <ChatInput
                 onSubmit={handleSubmitMessage}
-                placeholder={`Describe what you need help with...`}
+                placeholder={t('describeWhatYouNeed')}
                 loading={isSending}
                 disabled={isSending}
                 isAgentRunning={

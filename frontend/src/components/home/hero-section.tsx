@@ -32,6 +32,7 @@ import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog'
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
+import { useTranslations } from 'next-intl';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -44,6 +45,7 @@ const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
 
 export function HeroSection() {
+    const t = useTranslations('suna');
     const { hero } = siteConfig;
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -264,7 +266,7 @@ export function HeroSection() {
 
                     <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-20 max-w-4xl mx-auto pb-7">
                         <h1 className="text-2xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center px-2">
-                            What do you want to get done?
+                            {t('whatWouldYouLike')}
                         </h1>
                     </div>
 
@@ -274,7 +276,7 @@ export function HeroSection() {
                                 <ChatInput
                                     ref={chatInputRef}
                                     onSubmit={handleChatInputSubmit}
-                                    placeholder="Describe the task you want your Worker to complete..."
+                                    placeholder={t('describeTask')}
                                     loading={isSubmitting}
                                     disabled={isSubmitting}
                                     value={inputValue}
