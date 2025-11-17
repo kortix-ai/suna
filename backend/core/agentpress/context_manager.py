@@ -11,9 +11,11 @@ from typing import List, Dict, Any, Optional, Union
 
 from litellm.utils import token_counter
 from anthropic import Anthropic
+import boto3
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.ai_models import model_manager
+from core.ai_models.registry import SHOULD_USE_ANTHROPIC
 from core.agentpress.prompt_caching import apply_anthropic_caching_strategy
 
 DEFAULT_TOKEN_THRESHOLD = 120000
@@ -37,6 +39,8 @@ class ContextManager:
         self.keep_recent_assistant_messages = 10  # Number of recent assistant messages to keep uncompressed
         # Initialize Anthropic client for accurate token counting
         self._anthropic_client = None
+        # Initialize Bedrock client for token counting
+        self._bedrock_client = None
 
     def _get_anthropic_client(self):
         """Lazy initialization of Anthropic client."""
@@ -45,11 +49,22 @@ class ContextManager:
             if api_key:
                 self._anthropic_client = Anthropic(api_key=api_key)
         return self._anthropic_client
+    
+    def _get_bedrock_client(self):
+        """Lazy initialization of Bedrock client."""
+        if self._bedrock_client is None:
+            try:
+                self._bedrock_client = boto3.client("bedrock-runtime", region_name="us-west-2")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize Bedrock client: {e}")
+        return self._bedrock_client
 
     async def count_tokens(self, model: str, messages: List[Dict[str, Any]], system_prompt: Optional[Dict[str, Any]] = None, apply_caching: bool = True) -> int:
         """Count tokens using the correct tokenizer for the model.
         
-        For Anthropic/Claude models: Uses Anthropic's official tokenizer
+        For Anthropic/Claude models: 
+            - Uses Bedrock count_tokens API when SHOULD_USE_ANTHROPIC is False
+            - Uses Anthropic's official tokenizer when SHOULD_USE_ANTHROPIC is True
         For other models: Uses LiteLLM's token_counter
         
         IMPORTANT: By default, applies caching transformation before counting to match
@@ -60,15 +75,24 @@ class ContextManager:
             messages: List of messages
             system_prompt: Optional system prompt
             apply_caching: If True, temporarily apply caching transformation before counting
-            
+        
         Returns:
             Token count (with caching overhead if apply_caching=True)
         """
+        logger.info(f"🔍 count_tokens called with model: {model}, apply_caching: {apply_caching}, num_messages: {len(messages)}")
+        
         # Apply caching transformation if requested (to match API reality)
         messages_to_count = messages
         system_to_count = system_prompt
         
-        if apply_caching and ('claude' in model.lower() or 'anthropic' in model.lower()):
+        # Check if this needs caching (Anthropic/Claude/Bedrock models)
+        needs_caching = apply_caching and (
+            'claude' in model.lower() or 
+            'anthropic' in model.lower() or 
+            'bedrock' in model.lower()
+        )
+        
+        if needs_caching:
             try:
                 # Temporarily apply caching transformation
                 prepared = await apply_anthropic_caching_strategy(
@@ -86,39 +110,131 @@ class ContextManager:
                 logger.debug(f"Failed to apply caching for counting: {e}")
                 # Continue with uncached messages
         
-        # Check if this is an Anthropic model
-        if 'claude' in model.lower() or 'anthropic' in model.lower():
-            # Use Anthropic's official tokenizer
-            try:
-                client = self._get_anthropic_client()
-                if client:
-                    # Strip provider prefix
-                    clean_model = model.split('/')[-1] if '/' in model else model
-                    
-                    # Clean messages - only role and content
-                    clean_messages = []
-                    for msg in messages_to_count:
-                        if msg.get('role') == 'system':
-                            continue  # System passed separately
-                        clean_messages.append({
-                            'role': msg.get('role'),
-                            'content': msg.get('content')
-                        })
-                    
-                    # Extract system content
-                    system_content = None
-                    if system_to_count and isinstance(system_to_count, dict):
-                        system_content = system_to_count.get('content')
-                    
-                    # Build parameters
-                    count_params = {'model': clean_model, 'messages': clean_messages}
-                    if system_content:
-                        count_params['system'] = system_content
-                    
-                    result = client.messages.count_tokens(**count_params)
-                    return result.input_tokens
-            except Exception as e:
-                logger.debug(f"Anthropic token counting failed, falling back to LiteLLM: {e}")
+        logger.debug(f"🔍 After caching transform: messages_to_count={len(messages_to_count)}, system_to_count={'present' if system_to_count else 'none'}")
+        
+        # Check if this is an Anthropic model (includes Bedrock ARNs)
+        is_anthropic_model = (
+            'claude' in model.lower() or 
+            'anthropic' in model.lower() or 
+            'bedrock' in model.lower()  # Bedrock ARNs for Claude models
+        )
+        
+        if is_anthropic_model:
+            logger.info(f"🔍 Model is Claude/Anthropic/Bedrock: {model}, SHOULD_USE_ANTHROPIC={SHOULD_USE_ANTHROPIC}")
+            # Use Bedrock token counting when SHOULD_USE_ANTHROPIC is False
+            # Strip cache_control fields since Bedrock uses different caching format
+            # The base token count is accurate regardless of caching metadata
+            if not SHOULD_USE_ANTHROPIC:
+                logger.info(f"🔍 Using Bedrock token counting path (apply_caching={apply_caching})")
+                try:
+                    bedrock_client = self._get_bedrock_client()
+                    logger.info(f"🔍 Bedrock client initialized: {bedrock_client is not None}")
+                    if bedrock_client:
+                        # Extract model ID from ARN or use model name directly
+                        # For Bedrock ARNs, we need to map to the actual model ID
+                        model_id_mapping = {
+                            "heol2zyy5v48": "anthropic.claude-3-5-haiku-20241022-v1:0",  # Haiku 4.5
+                            "few7z4l830xh": "anthropic.claude-3-5-sonnet-20241022-v2:0",  # Sonnet 4.5
+                            "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",   # Sonnet 4
+                        }
+                        
+                        # Try to extract profile ID from ARN
+                        bedrock_model_id = None
+                        if "application-inference-profile" in model:
+                            # Extract profile ID from ARN
+                            profile_id = model.split("/")[-1]
+                            bedrock_model_id = model_id_mapping.get(profile_id)
+                        
+                        # Default to Haiku if we can't determine the model
+                        if not bedrock_model_id:
+                            bedrock_model_id = "anthropic.claude-3-5-haiku-20241022-v1:0"
+                            logger.debug(f"Could not map model '{model}' to Bedrock model ID, using default: {bedrock_model_id}")
+                        
+                        # Helper function to clean content blocks for Bedrock
+                        def clean_content_for_bedrock(content):
+                            """Remove Anthropic-specific fields that Bedrock doesn't accept."""
+                            if isinstance(content, str):
+                                return [{'text': content}]
+                            elif isinstance(content, list):
+                                cleaned = []
+                                for block in content:
+                                    if isinstance(block, dict):
+                                        # Keep only the fields Bedrock accepts
+                                        clean_block = {}
+                                        if 'text' in block:
+                                            clean_block['text'] = block['text']
+                                        elif 'guardContent' in block:
+                                            clean_block['guardContent'] = block['guardContent']
+                                        # Note: cache_control and type are stripped out
+                                        if clean_block:  # Only add if we have valid content
+                                            cleaned.append(clean_block)
+                                return cleaned
+                            return content
+                        
+                        # Format messages for Bedrock converse API
+                        bedrock_messages = []
+                        for msg in messages_to_count:
+                            if msg.get('role') == 'system':
+                                continue  # System passed separately
+                            
+                            bedrock_messages.append({
+                                'role': msg.get('role'),
+                                'content': clean_content_for_bedrock(msg.get('content'))
+                            })
+                        
+                        # Build input for count_tokens
+                        input_to_count = {'messages': bedrock_messages}
+                        
+                        # Add system prompt if present (also clean it)
+                        if system_to_count:
+                            system_content = system_to_count.get('content')
+                            input_to_count['system'] = clean_content_for_bedrock(system_content)
+                        
+                        # Call Bedrock count_tokens API
+                        response = bedrock_client.count_tokens(
+                            modelId=bedrock_model_id,
+                            input={'converse': input_to_count}
+                        )
+                        
+                        logger.info(f"✅ Bedrock token count for {bedrock_model_id}: {response['inputTokens']} tokens")
+                        return response['inputTokens']
+                    else:
+                        logger.warning(f"⚠️ Bedrock client is None, falling back to LiteLLM")
+                except Exception as e:
+                    logger.warning(f"⚠️ Bedrock token counting failed, falling back to LiteLLM: {e}")
+            
+            # Use Anthropic's official tokenizer when SHOULD_USE_ANTHROPIC is True
+            else:
+                try:
+                    client = self._get_anthropic_client()
+                    if client:
+                        # Strip provider prefix
+                        clean_model = model.split('/')[-1] if '/' in model else model
+                        
+                        # Clean messages - only role and content
+                        clean_messages = []
+                        for msg in messages_to_count:
+                            if msg.get('role') == 'system':
+                                continue  # System passed separately
+                            clean_messages.append({
+                                'role': msg.get('role'),
+                                'content': msg.get('content')
+                            })
+                        
+                        # Extract system content
+                        system_content = None
+                        if system_to_count and isinstance(system_to_count, dict):
+                            system_content = system_to_count.get('content')
+                        
+                        # Build parameters
+                        count_params = {'model': clean_model, 'messages': clean_messages}
+                        if system_content:
+                            count_params['system'] = system_content
+                        
+                        result = client.messages.count_tokens(**count_params)
+                        return result.input_tokens
+                except Exception as e:
+                    logger.debug(f"Anthropic token counting failed, falling back to LiteLLM: {e}")
         
         # Fallback to LiteLLM token_counter
         if system_to_count:
@@ -620,7 +736,7 @@ class ContextManager:
                     continue  # Skip non-dict messages
                 if self.is_tool_result_message(msg):  # Only compress ToolResult messages
                     _i += 1  # Count the number of ToolResult messages
-                    msg_token_count = token_counter(messages=[msg])  # Count the number of tokens in the message
+                    msg_token_count = await self.count_tokens(llm_model, [msg], apply_caching=False)  # Count the number of tokens in the message
                     if msg_token_count > token_threshold:  # If the message is too long
                         if _i > self.keep_recent_tool_outputs:  # If this is not one of the most recent N ToolResult messages
                             message_id = msg.get('message_id')  # Get the message_id
@@ -650,7 +766,7 @@ class ContextManager:
                     continue  # Skip non-dict messages
                 if msg.get('role') == 'user':  # Only compress User messages
                     _i += 1  # Count the number of User messages
-                    msg_token_count = token_counter(messages=[msg])  # Count the number of tokens in the message
+                    msg_token_count = await self.count_tokens(llm_model, [msg], apply_caching=False)  # Count the number of tokens in the message
                     if msg_token_count > token_threshold:  # If the message is too long
                         if _i > self.keep_recent_user_messages:  # If this is not one of the most recent N User messages
                             message_id = msg.get('message_id')  # Get the message_id
@@ -680,7 +796,7 @@ class ContextManager:
                     continue  # Skip non-dict messages
                 if msg.get('role') == 'assistant':  # Only compress Assistant messages
                     _i += 1  # Count the number of Assistant messages
-                    msg_token_count = token_counter(messages=[msg])  # Count the number of tokens in the message
+                    msg_token_count = await self.count_tokens(llm_model, [msg], apply_caching=False)  # Count the number of tokens in the message
                     if msg_token_count > token_threshold:  # If the message is too long
                         if _i > self.keep_recent_assistant_messages:  # If this is not one of the most recent N Assistant messages
                             message_id = msg.get('message_id')  # Get the message_id

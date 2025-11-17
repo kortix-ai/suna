@@ -118,13 +118,26 @@ class ResponseProcessor:
             return format_for_yield(message_obj)
         return None
 
-    def _estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], accumulated_content: str, llm_model: str) -> Dict[str, Any]:
+    async def _estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], accumulated_content: str, llm_model: str) -> Dict[str, Any]:
         """
         Estimate token usage when exact usage data is unavailable.
         This is critical for billing on timeouts, crashes, disconnects, etc.
+        
+        Uses ContextManager.count_tokens for accurate Bedrock token counting.
         """
         try:
-            prompt_tokens = token_counter(model=llm_model, messages=prompt_messages)
+            # Use ContextManager for accurate Bedrock token counting
+            from core.agentpress.context_manager import ContextManager
+            context_manager = ContextManager()
+            
+            # Count prompt tokens using Bedrock (if applicable)
+            prompt_tokens = await context_manager.count_tokens(
+                model=llm_model, 
+                messages=prompt_messages,
+                apply_caching=False  # Estimation doesn't need caching overhead
+            )
+            
+            # Count completion tokens (simple text counting)
             completion_tokens = token_counter(model=llm_model, text=accumulated_content) if accumulated_content else 0
             
             logger.warning(f"⚠️ ESTIMATED TOKEN USAGE (no exact data): prompt={prompt_tokens}, completion={completion_tokens}")
@@ -986,7 +999,7 @@ class ResponseProcessor:
                         llm_end_content = self._serialize_model_response(final_llm_response)
                     else:
                         logger.warning("💰 No LLM response with usage - ESTIMATING token usage for billing")
-                        estimated_usage = self._estimate_token_usage(prompt_messages, accumulated_content, llm_model)
+                        estimated_usage = await self._estimate_token_usage(prompt_messages, accumulated_content, llm_model)
                         llm_end_content = {
                             "model": llm_model,
                             "usage": estimated_usage

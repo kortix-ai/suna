@@ -18,7 +18,6 @@ from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from datetime import datetime, timezone
 from core.billing.billing_integration import billing_integration
-from litellm.utils import token_counter
 
 ToolChoice = Literal["auto", "required", "none"]
 
@@ -330,7 +329,6 @@ class ThreadManager:
             if ENABLE_PROMPT_CACHING:
                 try:
                     from core.ai_models import model_manager
-                    from litellm.utils import token_counter
                     client = await self.db.client
                     
                     # Query last llm_response_end message from messages table (already stored there!)
@@ -364,8 +362,22 @@ class ThreadManager:
                         
                         # Only use fast path if model matches and we have stored tokens
                         if usage and normalized_stored == normalized_current:
-                            # Use total_tokens (includes prev completion) for better accuracy
-                            last_total_tokens = int(usage.get('total_tokens', 0))
+                            # The conversation size for the next turn is:
+                            # previous prompt + previous completion (becomes part of history)
+                            # When caching is involved:
+                            # - Cache CREATION: prompt_tokens = new content only, cache_creation_tokens = what got cached
+                            # - Cache READING: prompt_tokens = total (includes cached), cached_tokens = what was read
+                            last_prompt_tokens = int(usage.get('prompt_tokens', 0))
+                            last_completion_tokens = int(usage.get('completion_tokens', 0))
+                            cache_creation_tokens = int(usage.get('cache_creation_input_tokens', 0))
+                            
+                            # Base for next turn = full conversation context
+                            # When cache was CREATED: prompt_tokens (new) + cache_creation_tokens (cached) + completion_tokens
+                            # When cache was READ: prompt_tokens (already includes cached) + completion_tokens
+                            # Adding cache_creation_tokens ensures we account for full context in both cases
+                            last_total_tokens = last_prompt_tokens + last_completion_tokens + cache_creation_tokens
+                            
+                            logger.debug(f"Fast check base: prompt={last_prompt_tokens}, completion={last_completion_tokens}, cache_creation={cache_creation_tokens}, base_for_next={last_total_tokens}")
                             
                             # Count tokens in new message (only for first turn, not auto-continue)
                             new_msg_tokens = 0
@@ -376,9 +388,13 @@ class ThreadManager:
                                 logger.debug(f"✅ Auto-continue detected (count={auto_continue_state['count']}), skipping new message token count")
                             elif latest_user_message_content:
                                 # First turn: Use passed content (avoids DB query)
-                                new_msg_tokens = token_counter(
+                                # Use ContextManager for accurate Bedrock token counting
+                                logger.info(f"🔍 Fast path: calling count_tokens with model={llm_model}")
+                                temp_context_manager = ContextManager()
+                                new_msg_tokens = await temp_context_manager.count_tokens(
                                     model=llm_model, 
-                                    messages=[{"role": "user", "content": latest_user_message_content}]
+                                    messages=[{"role": "user", "content": latest_user_message_content}],
+                                    apply_caching=False  # Fast path doesn't need caching overhead
                                 )
                                 logger.debug(f"First turn: counting {new_msg_tokens} tokens from latest_user_message_content")
                             else:
@@ -395,9 +411,13 @@ class ThreadManager:
                                 if latest_msg_result.data:
                                     new_msg_content = latest_msg_result.data.get('content', '')
                                     if new_msg_content:
-                                        new_msg_tokens = token_counter(
-                                            model=llm_model, 
-                                            messages=[{"role": "user", "content": new_msg_content}]
+                                        # Use ContextManager for accurate Bedrock token counting
+                                        logger.info(f"🔍 Fast path DB fallback: calling count_tokens with model={llm_model}")
+                                        temp_context_manager = ContextManager()
+                                        new_msg_tokens = await temp_context_manager.count_tokens(
+                                            model=llm_model,
+                                            messages=[{"role": "user", "content": new_msg_content}],
+                                            apply_caching=False  # Fast path doesn't need caching overhead
                                         )
                                         logger.debug(f"First turn (DB fallback): counting {new_msg_tokens} tokens from DB query")
                             
@@ -460,8 +480,12 @@ class ThreadManager:
                     )
                     logger.debug(f"Context compression completed: {len(messages)} -> {len(compressed_messages)} messages")
                     messages = compressed_messages
+                elif len(messages) == 1:
+                    # First message in thread: Skip compression check entirely to reduce latency
+                    # A single user message + system prompt is always under threshold
+                    logger.info(f"⚡ First message detected, skipping compression check for low latency")
                 else:
-                    # First turn or no fast path data: Run compression check
+                    # Multiple messages but no fast path data: Run compression check
                     logger.debug(f"Running compression check on {len(messages)} messages")
                     context_manager = ContextManager()
                     compressed_messages = await context_manager.compress_messages(
@@ -491,14 +515,22 @@ class ThreadManager:
             
             # Apply caching
             if ENABLE_PROMPT_CACHING:
-                prepared_messages = await apply_anthropic_caching_strategy(
-                    system_prompt, 
-                    messages, 
-                    llm_model,
-                    thread_id=thread_id,
-                    force_recalc=force_rebuild
-                )
-                prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
+                if len(messages) == 1:
+                    # First message: Skip caching setup to reduce latency
+                    # Caching only pays off on turn 2+ when blocks are reused
+                    # Turn 1 pays setup cost (token counting, DB writes) with zero benefit
+                    logger.info(f"⚡ First message detected, skipping caching setup for low latency")
+                    prepared_messages = [system_prompt] + messages
+                else:
+                    # Turn 2+: Apply caching (reuses previous blocks for cost/latency savings)
+                    prepared_messages = await apply_anthropic_caching_strategy(
+                        system_prompt, 
+                        messages, 
+                        llm_model,
+                        thread_id=thread_id,
+                        force_recalc=force_rebuild
+                    )
+                    prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
             else:
                 prepared_messages = [system_prompt] + messages
 

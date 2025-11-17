@@ -191,43 +191,75 @@ def is_anthropic_model(model_name: str) -> bool:
     # Include 'bedrock' since Bedrock can serve Claude/Anthropic models
     return any(provider in resolved_model for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus', 'bedrock'])
 
-def estimate_token_count(text: str, model: str = "claude-3-5-sonnet-20240620") -> int:
+async def estimate_token_count_bedrock(text: str, model: str = "claude-3-5-sonnet-20240620") -> int:
     """
-    Accurate token counting using LiteLLM's token_counter.
-    Uses model-specific tokenizers when available, falls back to tiktoken.
+    Accurate token counting using Bedrock count_tokens API.
+    Falls back to word-based estimation on error.
     """
     if not text:
         return 0
     
     try:
-        from litellm import token_counter
-        # Use LiteLLM's token counter with the specific model
-        return token_counter(model=model, text=str(text))
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager()
+        
+        # Create a temporary message for token counting
+        temp_message = {"role": "user", "content": text}
+        return await context_manager.count_tokens(
+            model=model,
+            messages=[temp_message],
+            apply_caching=False
+        )
     except Exception as e:
-        logger.warning(f"LiteLLM token counting failed: {e}, using fallback estimation")
+        logger.warning(f"Bedrock token counting failed: {e}, using fallback estimation")
         # Fallback to word-based estimation
         word_count = len(str(text).split())
         return int(word_count * 1.3)
 
-def get_message_token_count(message: Dict[str, Any], model: str = "claude-3-5-sonnet-20240620") -> int:
-    """Get estimated token count for a message, including base64 image data."""
-    content = message.get('content', '')
-    if isinstance(content, list):
-        total_tokens = 0
-        for item in content:
-            if isinstance(item, dict):
-                if item.get('type') == 'text':
-                    total_tokens += estimate_token_count(item.get('text', ''), model)
-                elif item.get('type') == 'image_url':
-                    # Count image_url tokens - base64 data is very token-heavy
-                    image_url = item.get('image_url', {}).get('url', '')
-                    total_tokens += estimate_token_count(image_url, model)
-        return total_tokens
-    return estimate_token_count(str(content), model)
+async def get_message_token_count(message: Dict[str, Any], model: str = "claude-3-5-sonnet-20240620") -> int:
+    """Get accurate token count for a message using Bedrock."""
+    try:
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager()
+        
+        # Use Bedrock to count the actual message
+        return await context_manager.count_tokens(
+            model=model,
+            messages=[message],
+            apply_caching=False
+        )
+    except Exception as e:
+        logger.warning(f"Bedrock message token counting failed: {e}, using fallback")
+        # Fallback: estimate from content
+        content = message.get('content', '')
+        if isinstance(content, str):
+            word_count = len(content.split())
+            return int(word_count * 1.3)
+        return 100  # Conservative fallback
 
-def get_messages_token_count(messages: List[Dict[str, Any]], model: str = "claude-3-5-sonnet-20240620") -> int:
-    """Get total token count for a list of messages."""
-    return sum(get_message_token_count(msg, model) for msg in messages)
+async def get_messages_token_count(messages: List[Dict[str, Any]], model: str = "claude-3-5-sonnet-20240620") -> int:
+    """Get total token count for a list of messages using Bedrock."""
+    try:
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager()
+        
+        # Use Bedrock to count all messages at once (more efficient)
+        return await context_manager.count_tokens(
+            model=model,
+            messages=messages,
+            apply_caching=False
+        )
+    except Exception as e:
+        logger.warning(f"Bedrock messages token counting failed: {e}, using fallback")
+        # Fallback: sum word counts
+        total = 0
+        for msg in messages:
+            content = msg.get('content', '')
+            if isinstance(content, str):
+                total += int(len(content.split()) * 1.3)
+            else:
+                total += 100
+        return total
 
 def calculate_optimal_cache_threshold(
     context_window: int, 
@@ -440,9 +472,19 @@ async def apply_anthropic_caching_strategy(
     # Calculate mathematically optimized cache threshold
     if cache_threshold_tokens is None or should_recalculate:
         # Include system prompt tokens in calculation for accurate density (like compression does)
-        # Use token_counter on combined messages to match compression's calculation method
-        from litellm import token_counter
-        total_tokens = token_counter(model=model_name, messages=[working_system_prompt] + conversation_messages) if conversation_messages else 0
+        # Use Bedrock count_tokens for accurate token counting
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager()
+        
+        if conversation_messages:
+            total_tokens = await context_manager.count_tokens(
+                model=model_name, 
+                messages=conversation_messages,
+                system_prompt=working_system_prompt,
+                apply_caching=False  # Don't apply caching during threshold calculation
+            )
+        else:
+            total_tokens = 0
         
         cache_threshold_tokens = calculate_optimal_cache_threshold(
             context_window_tokens, 
@@ -467,7 +509,7 @@ async def apply_anthropic_caching_strategy(
     prepared_messages = []
     
     # Block 1: System prompt (cache if ≥1024 tokens)
-    system_tokens = get_message_token_count(working_system_prompt, model_name)
+    system_tokens = await get_message_token_count(working_system_prompt, model_name)
     if system_tokens >= 1024:  # Anthropic's minimum cacheable size
         cached_system = add_cache_control(working_system_prompt)
         prepared_messages.append(cached_system)
@@ -483,7 +525,7 @@ async def apply_anthropic_caching_strategy(
         logger.debug("No conversation messages to add")
         return prepared_messages
     
-    total_conversation_tokens = get_messages_token_count(conversation_messages, model_name)
+    total_conversation_tokens = await get_messages_token_count(conversation_messages, model_name)
     logger.info(f"📊 Processing {len(conversation_messages)} messages ({total_conversation_tokens} tokens)")
     
     # Check if we have enough tokens to start caching
@@ -516,7 +558,7 @@ async def apply_anthropic_caching_strategy(
                 cache_threshold_tokens = adjusted_threshold
         
         # Conversation fits within cache limits - use chunked approach
-        chunks_created, last_cached_message_id = create_conversation_chunks(
+        chunks_created, last_cached_message_id = await create_conversation_chunks(
             conversation_messages, 
             cache_threshold_tokens, 
             max_conversation_blocks,
@@ -530,9 +572,10 @@ async def apply_anthropic_caching_strategy(
         logger.warning(f"Conversation ({total_conversation_tokens} tokens) exceeds cache limit ({max_cacheable_tokens})")
         # For now, add recent messages only (could implement summarization here)
         recent_token_limit = min(cache_threshold_tokens * 2, max_cacheable_tokens)
-        recent_messages = get_recent_messages_within_token_limit(conversation_messages, recent_token_limit, model_name)
+        recent_messages = await get_recent_messages_within_token_limit(conversation_messages, recent_token_limit, model_name)
         prepared_messages.extend(recent_messages)
-        logger.info(f"Added {len(recent_messages)} recent messages ({get_messages_token_count(recent_messages, model_name)} tokens)")
+        recent_tokens = await get_messages_token_count(recent_messages, model_name)
+        logger.info(f"Added {len(recent_messages)} recent messages ({recent_tokens} tokens)")
     
     logger.info(f"🎯 Total cache blocks used: {blocks_used}/4")
     
@@ -567,7 +610,7 @@ async def apply_anthropic_caching_strategy(
     
     return prepared_messages
 
-def create_conversation_chunks(
+async def create_conversation_chunks(
     messages: List[Dict[str, Any]], 
     chunk_threshold_tokens: int,
     max_blocks: int,
@@ -589,7 +632,7 @@ def create_conversation_chunks(
     last_cached_message_id = None
     
     for i, message in enumerate(messages):
-        message_tokens = get_message_token_count(message, model)
+        message_tokens = await get_message_token_count(message, model)
         
         # Check if adding this message would exceed threshold
         if current_chunk_tokens + message_tokens > chunk_threshold_tokens and current_chunk:
@@ -635,7 +678,7 @@ def create_conversation_chunks(
     
     return chunks_created, last_cached_message_id
 
-def get_recent_messages_within_token_limit(messages: List[Dict[str, Any]], token_limit: int, model: str = "claude-3-5-sonnet-20240620") -> List[Dict[str, Any]]:
+async def get_recent_messages_within_token_limit(messages: List[Dict[str, Any]], token_limit: int, model: str = "claude-3-5-sonnet-20240620") -> List[Dict[str, Any]]:
     """Get the most recent messages that fit within the token limit."""
     if not messages:
         return []
@@ -645,7 +688,7 @@ def get_recent_messages_within_token_limit(messages: List[Dict[str, Any]], token
     
     # Start from the end and work backwards
     for message in reversed(messages):
-        message_tokens = get_message_token_count(message, model)
+        message_tokens = await get_message_token_count(message, model)
         if total_tokens + message_tokens <= token_limit:
             recent_messages.insert(0, message)  # Insert at beginning to maintain order
             total_tokens += message_tokens
