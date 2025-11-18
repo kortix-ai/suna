@@ -5,48 +5,23 @@ import Animated, {
   useSharedValue, 
   useAnimatedStyle, 
   withRepeat,
-  withSequence,
   withTiming,
-  withDelay,
-  Easing,
-  FadeIn,
-  FadeOut
+  Easing
 } from 'react-native-reanimated';
-import { KortixLoader } from '../ui';
 
-const loadingMessages = [
-  "Initializing neural pathways...",
-  "Analyzing query complexity...",
-  "Assembling cognitive framework...",
-  "Orchestrating thought processes...",
-  "Synthesizing contextual understanding...",
-  "Calibrating response parameters...",
-  "Engaging reasoning algorithms...",
-  "Processing semantic structures...",
-  "Formulating strategic approach...",
-  "Optimizing solution pathways...",
-  "Harmonizing data streams...",
-  "Architecting intelligent response...",
-  "Fine-tuning cognitive models...",
-  "Weaving narrative threads...",
-  "Crystallizing insights...",
-  "Preparing comprehensive analysis..."
-];
+const TEXTS = ["Thinking", "Planning", "Strategising", "Analyzing", "Processing"];
+const TYPE_DELAY = 100;
+const ERASE_DELAY = 50;
+const PAUSE_DELAY = 1000;
 
-const PulsingDot = ({ delay = 0 }: { delay?: number }) => {
-  const opacity = useSharedValue(0.4);
+const BlinkingCursor = () => {
+  const opacity = useSharedValue(1);
 
   useEffect(() => {
-    opacity.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 500, easing: Easing.ease }),
-          withTiming(0.4, { duration: 500, easing: Easing.ease })
-        ),
-        -1,
-        false
-      )
+    opacity.value = withRepeat(
+      withTiming(0, { duration: 500, easing: Easing.ease }),
+      -1,
+      true
     );
   }, []);
 
@@ -55,40 +30,60 @@ const PulsingDot = ({ delay = 0 }: { delay?: number }) => {
   }));
 
   return (
-    <Animated.View 
-      style={animatedStyle} 
-      className="h-1 w-1 rounded-full bg-primary"
-    />
+    <Animated.Text style={animatedStyle} className="text-xs text-muted-foreground">
+      |
+    </Animated.Text>
   );
 };
 
 export const AgentLoader = React.memo(function AgentLoader() {
-  const [messageIndex, setMessageIndex] = useState(0);
+  const [displayText, setDisplayText] = useState("");
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMessageIndex((prev) => (prev + 1) % loadingMessages.length);
-    }, 1500);
+    let timeoutId: NodeJS.Timeout;
+    let currentTextIndex = 0;
+    let currentCharIndex = 0;
 
-    return () => clearInterval(interval);
+    const type = () => {
+      const currentText = TEXTS[currentTextIndex];
+      if (currentCharIndex < currentText.length) {
+        setDisplayText(currentText.slice(0, currentCharIndex + 1));
+        currentCharIndex++;
+        timeoutId = setTimeout(type, TYPE_DELAY);
+      } else {
+        timeoutId = setTimeout(() => {
+          currentCharIndex = currentText.length;
+          erase();
+        }, PAUSE_DELAY);
+      }
+    };
+
+    const erase = () => {
+      const currentText = TEXTS[currentTextIndex];
+      if (currentCharIndex > 0) {
+        currentCharIndex--;
+        setDisplayText(currentText.slice(0, currentCharIndex));
+        timeoutId = setTimeout(erase, ERASE_DELAY);
+      } else {
+        currentTextIndex = (currentTextIndex + 1) % TEXTS.length;
+        currentCharIndex = 0;
+        timeoutId = setTimeout(type, TYPE_DELAY);
+      }
+    };
+
+    type();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, []);
 
   return (
-    <View className="flex-row py-2 items-center gap-3 w-full">
-      <View className="flex-row items-center gap-1">
-        <KortixLoader size="small" />
-      </View>
-      <View className="flex-1">
-        <Animated.View
-          key={messageIndex}
-          entering={FadeIn.duration(300).easing(Easing.ease)}
-          exiting={FadeOut.duration(300).easing(Easing.ease)}
-        >
-          <Text className="text-xs text-muted-foreground">
-            {loadingMessages[messageIndex]}
-          </Text>
-        </Animated.View>
-      </View>
+    <View className="flex-row py-2 items-center w-full">
+      <Text className="text-xs text-muted-foreground">
+        {displayText}
+      </Text>
+      <BlinkingCursor />
     </View>
   );
 });

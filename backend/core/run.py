@@ -819,7 +819,7 @@ class AgentRunner:
                             generation.end(status_message="error_detected", level="ERROR")
                         break
                         
-                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'present_presentation']:
+                    if agent_should_terminate or last_tool_call in ['ask', 'complete']:
                         if generation:
                             generation.end(status_message="agent_stopped")
                         continue_execution = False

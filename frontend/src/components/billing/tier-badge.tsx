@@ -74,29 +74,9 @@ export function TierBadge({
   const planIcon = getPlanIcon(planName, isLocal);
   const config = sizeConfig[size];
 
-  // Debug logging
-  React.useEffect(() => {
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-      console.log('[TierBadge]', {
-        planName,
-        planIcon,
-        size,
-        height: config.height,
-        variant,
-        iconOnly,
-        isLocal,
-        willRender: !!planIcon || (!iconOnly && variant !== 'circle')
-      });
-    }
-  }, [planName, planIcon, size, variant, iconOnly, isLocal, config.height]);
-
   // If no icon (e.g., Basic tier), return null or text only
   if (!planIcon) {
-    console.log('[TierBadge] No icon found for plan:', planName);
     if (iconOnly || variant === 'circle') {
-      if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-        console.log('[TierBadge] Returning null - no icon for plan:', planName);
-      }
       return null;
     }
     return (

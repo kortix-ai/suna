@@ -25,6 +25,7 @@ import {
 import { AgentLoader } from './AgentLoader';
 import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
 import { StreamingToolCard } from './StreamingToolCard';
+import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -70,7 +71,6 @@ function preprocessTextOnlyToolsLocal(content: string): string {
     return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, '$1');
   });
 
-  content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
 
   content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
     if (match.includes('<parameter name="attachments"')) return match;
@@ -82,8 +82,6 @@ function preprocessTextOnlyToolsLocal(content: string): string {
     return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
   });
 
-  content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)$/gi, '$1');
-
   content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, (match) => {
     if (match.match(/<ask[^>]*attachments=/i)) return match;
     return match.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, '$1');
@@ -93,8 +91,6 @@ function preprocessTextOnlyToolsLocal(content: string): string {
     if (match.match(/<complete[^>]*attachments=/i)) return match;
     return match.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, '$1');
   });
-
-  content = content.replace(/<present_presentation[^>]*>([\s\S]*?)<\/present_presentation>/gi, '$1');
   return content;
 }
 
@@ -190,14 +186,12 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
                 {askText}
               </Markdown>
               
-              {isLatestMessage && (
-                <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
-                  <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
-                    Kortix will automatically continue working once you provide your response.
-                  </Text>
-                </View>
-              )}
+              <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
+                <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+                <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
+                  Kortix will automatically continue working once you provide your response.
+                </Text>
+              </View>
             </View>
           );
 
@@ -226,6 +220,16 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
               >
                 {completeText}
               </Markdown>
+              
+              <TaskCompletedFeedback
+                taskSummary={completeText}
+                threadId={message.thread_id}
+                messageId={messageId}
+                onFollowUpClick={(prompt) => {
+                  // TODO: Handle follow-up click - could trigger a new message
+                  console.log('Follow-up clicked:', prompt);
+                }}
+              />
             </View>
           );
 

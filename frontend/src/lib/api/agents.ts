@@ -100,25 +100,6 @@ export const unifiedAgentStart = async (options: {
       });
     }
 
-    // Debug logging
-    console.log('[unifiedAgentStart] Sending to backend:', {
-      threadId: options.threadId,
-      prompt: options.prompt ? options.prompt.substring(0, 100) : undefined,
-      promptLength: options.prompt?.length || 0,
-      model_name: options.model_name,
-      agent_id: options.agent_id,
-      filesCount: options.files?.length || 0,
-    });
-    
-    // Debug: Log FormData contents
-    console.log('[unifiedAgentStart] FormData entries:');
-    for (const [key, value] of formData.entries()) {
-      if (value instanceof File) {
-        console.log(`  ${key}: File(${value.name}, ${value.size} bytes)`);
-      } else {
-        console.log(`  ${key}: ${String(value).substring(0, 100)}`);
-      }
-    }
 
     const response = await backendApi.upload<{ thread_id: string; agent_run_id: string; status: string }>(
       '/agent/start',
@@ -408,7 +389,7 @@ export const streamAgent = (
       activeStreams.set(agentRunId, eventSource);
 
       eventSource.onopen = () => {
-        console.log(`[STREAM] EventSource opened for ${agentRunId}`);
+        // Stream opened successfully
       };
 
       eventSource.onmessage = (event) => {

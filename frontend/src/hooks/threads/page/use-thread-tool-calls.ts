@@ -6,7 +6,6 @@ import { safeJsonParse } from '@/components/thread/utils';
 import { ParsedContent } from '@/components/thread/types';
 import { extractToolName } from '@/components/thread/tool-views/xml-parser';
 import { useIsMobile } from '@/hooks/utils';
-import { extractAskData } from '@/components/thread/tool-views/ask-tool/_utils';
 
 interface UseToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -66,14 +65,17 @@ function parseToolContent(content: any): {
   return null;
 }
 
-// Helper function to check if an ask tool should be filtered out (no attachments)
-function shouldFilterAskTool(toolName: string, assistantContent: any, toolContent: any): boolean {
-  if (toolName.toLowerCase() !== 'ask') {
-    return false; // Not an ask tool, don't filter
+// Helper function to check if a tool should be filtered out from the side panel
+// ASK and COMPLETE tools are always filtered out since they're rendered inline
+function shouldFilterTool(toolName: string, assistantContent: any, toolContent: any): boolean {
+  const normalizedToolName = toolName.toLowerCase();
+  
+  // Always filter out ask and complete tools - they're rendered inline in ThreadContent
+  if (normalizedToolName === 'ask' || normalizedToolName === 'complete') {
+    return true;
   }
   
-  const { attachments } = extractAskData(assistantContent, toolContent, true);
-  return !attachments || attachments.length === 0;
+  return false;
 }
 
 export function useToolCalls(
@@ -198,8 +200,8 @@ export function useToolCalls(
           } catch { }
         }
 
-        // Check if this ask tool should be filtered out
-        if (shouldFilterAskTool(toolName, assistantMsg.content, resultMessage.content)) {
+        // Check if this tool should be filtered out (e.g., ask/complete are rendered inline)
+        if (shouldFilterTool(toolName, assistantMsg.content, resultMessage.content)) {
           // Skip this tool call - don't add it to historicalToolPairs
           return;
         }
@@ -309,6 +311,11 @@ export function useToolCalls(
       // Get the raw tool name and ensure it uses hyphens
       const rawToolName = toolCall.name || toolCall.xml_tag_name || 'Unknown Tool';
       const toolName = rawToolName.replace(/_/g, '-').toLowerCase();
+
+      // Filter out ask and complete tools - they're rendered inline
+      if (toolName === 'ask' || toolName === 'complete') {
+        return;
+      }
 
       if (userClosedPanelRef.current) return;
 

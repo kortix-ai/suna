@@ -92,7 +92,6 @@ export async function middleware(request: NextRequest) {
       // Store locale in headers so next-intl can pick it up
       response.headers.set('x-locale', locale);
       
-      console.log(`🌍 Rewriting /${locale}${remainingPath === '/' ? '' : remainingPath} to ${remainingPath}`);
       return response;
     }
   }
@@ -137,7 +136,6 @@ export async function middleware(request: NextRequest) {
         }
       } catch (error) {
         // User might not be authenticated, continue with geo-detection
-        console.debug('Could not fetch user locale in middleware:', error);
       }
     }
     
@@ -147,20 +145,14 @@ export async function middleware(request: NextRequest) {
     // This prevents unnecessary redirects for English speakers and users with preferences
     if (!hasExplicitPreference && !userLocale) {
       const acceptLanguage = request.headers.get('accept-language');
-      console.log('🌍 Browser Accept-Language header:', acceptLanguage);
-      console.log('🌍 Request pathname:', pathname);
-      console.log('🌍 Has explicit preference:', hasExplicitPreference);
-      console.log('🌍 User locale from metadata:', userLocale);
       
       const detectedLocale = detectBestLocaleFromHeaders(acceptLanguage);
-      console.log('🌍 Detected locale from headers:', detectedLocale);
       
       // Only redirect if detected locale is not English (default)
       // This prevents unnecessary redirects for English speakers
       if (detectedLocale !== defaultLocale) {
         const redirectUrl = new URL(request.url);
         redirectUrl.pathname = `/${detectedLocale}${pathname === '/' ? '' : pathname}`;
-        console.log(`🌍 Auto-redirecting to locale route: ${redirectUrl.pathname} (detected: ${detectedLocale})`);
         
         const redirectResponse = NextResponse.redirect(redirectUrl);
         // Set cookie so we don't redirect again on next visit

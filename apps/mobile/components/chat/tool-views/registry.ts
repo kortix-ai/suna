@@ -210,7 +210,6 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'delete-slide': PresentationToolView,
   'delete-presentation': PresentationToolView,
   'validate-slide': PresentationToolView,
-  'present-presentation': PresentationToolView,
   
   // Document tools
   'parse-document': DocumentParserToolView,

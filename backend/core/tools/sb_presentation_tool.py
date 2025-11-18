@@ -239,7 +239,7 @@ class SandboxPresentationTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "list_templates",
-            "description": "List all available presentation templates. **WHEN TO USE**: Call this tool when a user requests a presentation (e.g., 'make a ppt on X', 'create a presentation about Y') but has NOT specified a template name. **WHEN TO SKIP**: Do NOT call this tool if: (1) the user explicitly specifies a template name (e.g., 'use minimalist template', 'template hipster'), or (2) the user explicitly requests a custom theme. **IMPORTANT**: When presenting the templates to the user after calling this tool, always mention that if they don't like any of the templates, they can choose a custom theme instead. After the user selects a template, use load_template_design to load it.",
+            "description": "List all available presentation templates. ** CRITICAL: ONLY USE WHEN USER EXPLICITLY REQUESTS TEMPLATES ** **WHEN TO USE**: Call this tool ONLY when the user explicitly asks for templates (e.g., 'use a template', 'show me templates', 'use the minimalist template', 'I want to use a template'). **WHEN TO SKIP**: Do NOT call this tool by default. The default workflow is CUSTOM THEME which creates truly unique designs. Do NOT call this tool if: (1) the user requests a presentation without mentioning templates (use custom theme instead), (2) the user explicitly requests a custom theme, or (3) the user wants a unique/original design. **IMPORTANT**: Templates are optional - only use when explicitly requested. The default is always a custom, unique design based on the topic's actual brand colors and visual identity.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -1224,92 +1224,3 @@ print(json.dumps(result))
         
         except Exception as e:
             return self.fail_response(f"Failed to export presentation to PDF: {str(e)}")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "present_presentation",
-            "description": "Present the final presentation to the user. Use this tool when: 1) All slides have been created and formatted, 2) The presentation is ready for user review, 3) You want to show the user the complete presentation with all files, 4) The presentation creation process is finished and you want to deliver the final result. IMPORTANT: This tool is specifically for presenting completed presentations, not for intermediate steps. Include the presentation name, slide count, and all relevant file attachments. This tool provides a special UI for presentation delivery. This tool allows users to download the presentation as PDF, PPTX, or upload to Google Slides. **IMPORTANT: Whenever a user wants to download the presentation as PDF, PPTX, or upload to Google Slides, use this tool to present the presentation to the user.**",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "presentation_name": {
-                        "type": "string",
-                        "description": "The identifier/folder name of the presentation (e.g., 'test_presentation'). This should match the presentation_name used in create_slide."
-                    },
-                    "presentation_title": {
-                        "type": "string",
-                        "description": "The human-readable title of the presentation (e.g., 'Test Presentation'). This will be displayed prominently to the user."
-                    },
-                    "presentation_path": {
-                        "type": "string",
-                        "description": "The file path where the presentation is located (e.g., 'presentations/my-presentation/'). This helps users locate the files."
-                    },
-                    "slide_count": {
-                        "type": "integer",
-                        "description": "The total number of slides in the presentation. This gives users a quick overview of the presentation size."
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "A summary or description of the presentation to present to the user. Include: 1) What the presentation covers, 2) Key highlights or features, 3) Any important notes about the presentation, 4) How to use or view the presentation."
-                    },
-                    "attachments": {
-                        "anyOf": [
-                            {"type": "string"},
-                            {"items": {"type": "string"}, "type": "array"}
-                        ],
-                        "description": "List of HTML slide files to attach (e.g., 'presentations/my-presentation/slide_01.html'). The UI will provide buttons for users to download as PDF, PPTX, or upload to Google Slides, so you only need to provide the HTML files. Always use relative paths to /workspace directory."
-                    },
-                    "presentation_url": {
-                        "type": "string",
-                        "description": "(Optional) A direct URL to view the presentation if available. This could be a hosted version or a specific viewing link."
-                    }
-                },
-                "required": ["presentation_name", "presentation_title", "presentation_path", "slide_count", "text", "attachments"]
-            }
-        }
-    })
-    async def present_presentation(
-        self, 
-        presentation_name: str,
-        presentation_title: str,
-        presentation_path: str,
-        slide_count: int,
-        text: str,
-        attachments: Union[str, List[str]],
-        presentation_url: Optional[str] = None
-    ) -> ToolResult:
-        """Present the final presentation to the user.
-
-        Args:
-            presentation_name: The identifier/folder name of the presentation
-            presentation_title: The human-readable title of the presentation
-            presentation_path: The file path where the presentation is located
-            slide_count: The total number of slides in the presentation
-            text: A summary or description of the presentation
-            attachments: List of presentation files to attach
-            presentation_url: Optional direct URL to view the presentation
-
-        Returns:
-            ToolResult indicating successful presentation delivery
-        """
-        try:
-            # Convert single attachment to list for consistent handling
-            if attachments and isinstance(attachments, str):
-                attachments = [attachments]
-
-            # Create a structured response with all presentation data
-            result_data = {
-                "presentation_name": presentation_name,
-                "presentation_title": presentation_title,
-                "presentation_path": presentation_path,
-                "slide_count": slide_count,
-                "text": text,
-                "attachments": attachments,
-                "presentation_url": presentation_url,
-                "status": "presentation_delivered"
-            }
-                
-            return self.success_response(result_data)
-        except Exception as e:
-            return self.fail_response(f"Error presenting presentation: {str(e)}")

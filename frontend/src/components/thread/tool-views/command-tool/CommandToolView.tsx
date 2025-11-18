@@ -8,6 +8,7 @@ import {
   Clock,
   ArrowRight,
   TerminalIcon,
+  Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
@@ -181,6 +182,13 @@ export function CommandToolView({
                 (name === 'check-command-output' ? 'Output retrieved successfully' : 'Command executed successfully') :
                 (name === 'check-command-output' ? 'Failed to retrieve output' : 'Command failed')
               }
+            </Badge>
+          )}
+
+          {isStreaming && (
+            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+              {name === 'check-command-output' ? 'Retrieving output' : 'Executing'}
             </Badge>
           )}
         </div>

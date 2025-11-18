@@ -33,12 +33,10 @@ async function getStoredLocale(): Promise<Locale> {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-      console.log(`✅ Using user metadata locale: ${user.user_metadata.locale}`);
       return user.user_metadata.locale as Locale;
     }
   } catch (error) {
     // Silently fail - user might not be authenticated
-    console.debug('Could not fetch user locale from profile:', error);
   }
   
   // Priority 2: Check cookie (explicit user preference)
@@ -47,7 +45,6 @@ async function getStoredLocale(): Promise<Locale> {
   if (localeCookie) {
     const value = localeCookie.split('=')[1].trim();
     if (locales.includes(value as Locale)) {
-      console.log(`✅ Using cookie locale: ${value}`);
       return value as Locale;
     }
   }
@@ -55,13 +52,11 @@ async function getStoredLocale(): Promise<Locale> {
   // Priority 3: Check localStorage (explicit user preference)
   const stored = localStorage.getItem('locale');
   if (stored && locales.includes(stored as Locale)) {
-    console.log(`✅ Using localStorage locale: ${stored}`);
     return stored as Locale;
   }
   
   // Priority 4: Geo-detection (default when nothing is explicitly set)
   const geoDetected = detectBestLocale();
-  console.log(`🌍 Using geo-detected locale: ${geoDetected}`);
   return geoDetected;
 }
 
@@ -89,7 +84,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         throw new Error(`Invalid translations object for locale ${targetLocale}`);
       }
       if (!translations.common || !translations.suna) {
-        console.warn(`⚠️ Missing sections in ${targetLocale}:`, {
+        console.warn(`Missing sections in ${targetLocale}:`, {
           hasCommon: !!translations.common,
           hasSuna: !!translations.suna,
           keys: Object.keys(translations).slice(0, 10)
@@ -98,22 +93,16 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       setMessages(translations);
       setLocale(targetLocale);
       localeRef.current = targetLocale;
-      console.log(`✅ Loaded translations for locale: ${targetLocale}`, {
-        keys: Object.keys(translations).length,
-        hasCommon: !!translations.common,
-        hasSuna: !!translations.suna
-      });
     } catch (error) {
-      console.error(`❌ Failed to load translations for ${targetLocale}:`, error);
+      console.error(`Failed to load translations for ${targetLocale}:`, error);
       // Fallback to default locale
       try {
         const defaultTranslations = await getTranslations(defaultLocale);
         setMessages(defaultTranslations);
         setLocale(defaultLocale);
         localeRef.current = defaultLocale;
-        console.log(`✅ Fallback to default locale: ${defaultLocale}`);
       } catch (fallbackError) {
-        console.error('❌ Failed to load default locale translations:', fallbackError);
+        console.error('Failed to load default locale translations:', fallbackError);
         // Last resort: empty translations object
         setMessages({});
         setLocale(defaultLocale);
@@ -161,7 +150,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         const cookieValue = `locale=${currentLocale}; path=/; max-age=31536000; SameSite=Lax`;
         document.cookie = cookieValue;
         localStorage.setItem('locale', currentLocale);
-        console.log(`🌍 Auto-detected and saved locale: ${currentLocale} (from geo-detection)`);
       }
       
       if (mounted) {
@@ -181,7 +169,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleLocaleChange = (e: CustomEvent<Locale>) => {
       const newLocale = e.detail;
-      console.log(`🔄 Locale change event received: ${newLocale}`);
       // Use ref to check current locale to avoid stale closure
       if (newLocale !== localeRef.current && locales.includes(newLocale)) {
         loadTranslations(newLocale);
@@ -199,7 +186,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'locale' && e.newValue && locales.includes(e.newValue as Locale)) {
-        console.log(`🔄 Storage change detected, loading locale: ${e.newValue}`);
         loadTranslations(e.newValue as Locale);
       }
     };
@@ -215,17 +201,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   // This ensures the context is always available
   // Use empty object as fallback to prevent errors
   const safeMessages = messages || {};
-
-  if (messages) {
-    console.log(`🌍 I18nProvider: Providing locale "${locale}" with ${Object.keys(messages).length} translation keys`, {
-      hasCommon: !!messages.common,
-      hasSuna: !!messages.suna,
-      commonKeys: messages.common ? Object.keys(messages.common).length : 0,
-      sunaKeys: messages.suna ? Object.keys(messages.suna).length : 0
-    });
-  } else {
-    console.log('⏳ I18nProvider: Loading messages, using empty fallback...');
-  }
 
   // Don't render children until messages are loaded to prevent MISSING_MESSAGE errors
   if (!messages || Object.keys(messages).length === 0) {
