@@ -308,6 +308,7 @@ async def apply_anthropic_caching_strategy(
         return [working_system_prompt] + filtered_conversation
     
     # Build cache blocks from scratch each time - Anthropic handles caching automatically
+    # Note: Caller should skip calling this function for first message (len <= 2)
     logger.info(f"🆕 Building cache structure for {len(conversation_messages)} messages")
     
     # Check if we should use stored threshold and system prompt tokens
