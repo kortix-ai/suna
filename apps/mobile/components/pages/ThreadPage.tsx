@@ -2,8 +2,8 @@ import * as React from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import Animated, { 
-  useAnimatedStyle, 
+import Animated, {
+  useAnimatedStyle,
   withSpring,
   useAnimatedKeyboard,
   FadeIn,
@@ -33,10 +33,10 @@ interface ThreadPageProps {
   onOpenAuthDrawer: () => void;
 }
 
-const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({ 
+const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   isRefreshing,
   insets
-}: { 
+}: {
   isRefreshing: boolean;
   insets: { top: number };
 }) {
@@ -48,7 +48,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   const contentOpacity = useSharedValue(0);
   const contentTranslateY = useSharedValue(0);
   const lottieRef = React.useRef<LottieView>(null);
-  
+
   React.useEffect(() => {
     if (isRefreshing) {
       opacity.value = 1;
@@ -58,70 +58,70 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
       borderTopRadius.value = 20;
       borderBottomRadius.value = 20;
       contentTranslateY.value = -20;
-      
+
       // Start Lottie animation
       lottieRef.current?.play();
-      
-      width.value = withTiming(160, { 
+
+      width.value = withTiming(160, {
         duration: 450,
         easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
       });
-      
-      height.value = withTiming(90, { 
+
+      height.value = withTiming(90, {
         duration: 450,
         easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
       });
-      
-      borderTopRadius.value = withTiming(30, { 
+
+      borderTopRadius.value = withTiming(30, {
         duration: 450,
         easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
       });
-      
-      borderBottomRadius.value = withTiming(24, { 
+
+      borderBottomRadius.value = withTiming(24, {
         duration: 450,
         easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
       });
-      
+
       contentTranslateY.value = withDelay(100, withTiming(20, {
         duration: 350,
         easing: Easing.bezier(0.25, 0.46, 0.45, 0.94)
       }));
-      
+
       contentOpacity.value = withDelay(200, withTiming(1, { duration: 200 }));
-      
+
     } else if (opacity.value === 1) {
       // Stop Lottie animation
       lottieRef.current?.pause();
-      
+
       contentOpacity.value = withTiming(0, { duration: 150 });
       contentTranslateY.value = withTiming(-20, {
         duration: 250,
         easing: Easing.bezier(0.5, 0, 0.75, 0)
       });
-      
+
       setTimeout(() => {
-        width.value = withTiming(126, { 
+        width.value = withTiming(126, {
           duration: 400,
           easing: Easing.bezier(0.33, 0, 0.67, 1)
         });
-        
-        borderTopRadius.value = withTiming(20, { 
+
+        borderTopRadius.value = withTiming(20, {
           duration: 400,
           easing: Easing.bezier(0.33, 0, 0.67, 1)
         });
-        
-        borderBottomRadius.value = withTiming(20, { 
+
+        borderBottomRadius.value = withTiming(20, {
           duration: 400,
           easing: Easing.bezier(0.33, 0, 0.67, 1)
         });
-        
-        height.value = withTiming(37, { 
+
+        height.value = withTiming(37, {
           duration: 400,
           easing: Easing.bezier(0.33, 0, 0.67, 1)
         });
-        
+
         setTimeout(() => {
-          opacity.value = withTiming(0, { 
+          opacity.value = withTiming(0, {
             duration: 300,
             easing: Easing.bezier(0.25, 0.1, 0.25, 1)
           });
@@ -129,7 +129,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
       }, 150);
     }
   }, [isRefreshing]);
-  
+
   const animatedContainerStyle = useAnimatedStyle(() => ({
     width: width.value,
     height: height.value,
@@ -139,18 +139,18 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
     borderBottomRightRadius: borderBottomRadius.value,
     opacity: opacity.value,
   }));
-  
+
   const contentStyle = useAnimatedStyle(() => ({
     opacity: contentOpacity.value,
     transform: [{ translateY: contentTranslateY.value }],
   }));
-  
+
   return (
     <>
       {Platform.OS === 'ios' && (
-        <View 
+        <View
           className="absolute w-full items-center"
-          style={{ 
+          style={{
             top: 11,
             zIndex: 9999,
             elevation: 999,
@@ -184,18 +184,18 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
           </Animated.View>
         </View>
       )}
-      
+
       {Platform.OS === 'android' && (
-        <View 
+        <View
           className="absolute w-full items-center"
-          style={{ 
+          style={{
             top: insets.top + 10,
             zIndex: 9999,
             elevation: 999,
           }}
           pointerEvents="none"
         >
-          <Animated.View 
+          <Animated.View
             style={[
               animatedContainerStyle,
               {
@@ -241,14 +241,14 @@ export function ThreadPage({
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
   const [isFileManagerVisible, setIsFileManagerVisible] = React.useState(false);
   const [selectedFilePath, setSelectedFilePath] = React.useState<string | undefined>();
-  
+
   // Thread actions hooks
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
-  
+
   // Get full thread data with sandbox info
   const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
-  
+
   // Refetch thread data when file manager opens to ensure latest sandbox info
   React.useEffect(() => {
     if (isFileManagerVisible) {
@@ -256,7 +256,7 @@ export function ThreadPage({
       refetchThreadData();
     }
   }, [isFileManagerVisible, refetchThreadData]);
-  
+
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
   const streamingToolCall = chat.streamingToolCall || null;
@@ -269,19 +269,19 @@ export function ThreadPage({
   const lastMessageCountRef = React.useRef(messages.length);
   const lastStreamingLengthRef = React.useRef(0);
   const scrollAnimationRef = React.useRef<number | null>(null);
-  
+
   React.useEffect(() => {
     const hasNewMessages = messages.length > lastMessageCountRef.current;
     const hasStreamingContent = streamingContent !== '';
-    
+
     if ((hasNewMessages || hasStreamingContent) && scrollViewRef.current && !isUserScrolling) {
       scrollViewRef.current?.scrollToEnd({ animated: false });
     }
-    
+
     lastMessageCountRef.current = messages.length;
     lastStreamingLengthRef.current = streamingContent.length;
   }, [messages.length, streamingContent, isUserScrolling]);
-  
+
   React.useEffect(() => {
     return () => {
       if (scrollAnimationRef.current) {
@@ -289,18 +289,18 @@ export function ThreadPage({
       }
     };
   }, []);
-  
+
   const lastScrollYRef = React.useRef(0);
-  
+
   const handleScroll = React.useCallback((event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const currentScrollY = contentOffset.y;
     const maxScrollY = contentSize.height - layoutMeasurement.height;
     const isAtBottom = currentScrollY >= maxScrollY - 100;
     const isScrollingUp = currentScrollY < lastScrollYRef.current;
-    
+
     lastScrollYRef.current = currentScrollY;
-    
+
     if (isScrollingUp && !isAtBottom) {
       setIsUserScrolling(true);
       setShowScrollToBottom(true);
@@ -309,24 +309,24 @@ export function ThreadPage({
       setShowScrollToBottom(false);
     }
   }, []);
-  
+
   // Scroll to bottom function
   const scrollToBottom = React.useCallback(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
   }, []);
-  
+
   // Pull to refresh handler
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
       console.log('⚠️ Cannot refresh while streaming');
       return;
     }
-    
+
     console.log('🔄 Pull to refresh triggered');
     setIsRefreshing(true);
-    
+
     try {
       await chat.refreshMessages();
       console.log('✅ Messages refreshed');
@@ -340,7 +340,7 @@ export function ThreadPage({
   // Ensure thread content is loaded when ThreadPage mounts or thread changes
   const hasInitializedRef = React.useRef(false);
   const lastThreadIdRef = React.useRef<string | undefined>(undefined);
-  
+
   React.useEffect(() => {
     const currentThreadId = chat.activeThread?.id;
     if (!currentThreadId) {
@@ -350,7 +350,7 @@ export function ThreadPage({
 
     const isInitialMount = !hasInitializedRef.current;
     const isThreadChanged = lastThreadIdRef.current !== currentThreadId;
-    
+
     if (isInitialMount || isThreadChanged) {
       console.log('🔄 [ThreadPage] Thread mount/change detected:', {
         threadId: currentThreadId,
@@ -359,10 +359,10 @@ export function ThreadPage({
         hasMessages: messages.length > 0,
         isLoading
       });
-      
+
       hasInitializedRef.current = true;
       lastThreadIdRef.current = currentThreadId;
-      
+
       if (messages.length === 0 && !isLoading && !chat.isStreaming) {
         console.log('📡 [ThreadPage] No messages found, fetching from backend');
         chat.refreshMessages().catch(error => {
@@ -388,29 +388,29 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
-        <View className="flex-1">
-          {isLoading ? (
-            <View className="flex-1 items-center justify-center" style={{ paddingTop: Math.max(insets.top, 16) + 80 }}>
-              <View className="w-20 h-20 rounded-full items-center justify-center">
-                <LottieView
-                  source={require('@/components/animations/loading.json')}
-                  style={{ width: 40, height: 40 }}
-                  autoPlay
-                  loop
-                  speed={1.2}
-                  colorFilters={[
-                    {
-                      keypath: '*',
-                      color: isDark ? '#ffffff' : '#121215',
-                    },
-                  ]}
-                />
-              </View>
+      <View className="flex-1">
+        {isLoading ? (
+          <View className="flex-1 items-center justify-center" style={{ paddingTop: Math.max(insets.top, 16) + 80 }}>
+            <View className="w-20 h-20 rounded-full items-center justify-center">
+              <LottieView
+                source={require('@/components/animations/loading.json')}
+                style={{ width: 40, height: 40 }}
+                autoPlay
+                loop
+                speed={1.2}
+                colorFilters={[
+                  {
+                    keypath: '*',
+                    color: isDark ? '#ffffff' : '#121215',
+                  },
+                ]}
+              />
             </View>
-          ) : !hasMessages ? (
+          </View>
+        ) : !hasMessages ? (
           <ScrollView
             className="flex-1"
-            contentContainerStyle={{ 
+            contentContainerStyle={{
               flex: 1,
               justifyContent: 'center',
               alignItems: 'center',
@@ -445,9 +445,9 @@ export function ThreadPage({
             ref={scrollViewRef}
             className="flex-1"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ 
+            contentContainerStyle={{
               flexGrow: 1,
-              paddingTop: Math.max(insets.top, 16) + 80, 
+              paddingTop: Math.max(insets.top, 16) + 80,
               paddingBottom: 200,
               paddingHorizontal: 16,
             }}
@@ -499,19 +499,14 @@ export function ThreadPage({
           </ScrollView>
         )}
       </View>
-      
+
       {/* Scroll to Bottom Button - Positioned above chat input */}
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
-          className="absolute right-6 bg-background border border-border/40 rounded-full w-12 h-12 items-center justify-center shadow-lg active:opacity-80"
-          style={{ 
-            bottom: 220, // Position above chat input
-            elevation: 8,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 8,
+          className="absolute right-6 bg-card border border-border rounded-full w-12 h-12 items-center justify-center active:opacity-80"
+          style={{
+            bottom: 200,
           }}
         >
           <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
@@ -532,7 +527,7 @@ export function ThreadPage({
         }}
         onMenuPress={onMenuPress}
         onActionsPress={() => setIsThreadActionsVisible(true)}
-      />        
+      />
 
       {/* Chat Input Section with Gradient */}
       <ChatInputSection
@@ -584,9 +579,9 @@ export function ThreadPage({
         onClose={() => setIsThreadActionsVisible(false)}
         onShare={async () => {
           if (!chat.activeThread?.id) return;
-          
+
           console.log('📤 Share thread:', chat.activeThread?.title);
-          
+
           try {
             await shareThreadMutation.mutateAsync(chat.activeThread.id);
             setIsThreadActionsVisible(false);
@@ -602,9 +597,9 @@ export function ThreadPage({
         }}
         onDelete={() => {
           if (!chat.activeThread?.id) return;
-          
+
           const threadTitle = chat.activeThread?.title || 'this thread';
-          
+
           Alert.alert(
             'Delete Thread',
             `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
@@ -618,19 +613,19 @@ export function ThreadPage({
                 style: 'destructive',
                 onPress: async () => {
                   setIsThreadActionsVisible(false);
-                  
+
                   if (!chat.activeThread?.id) return;
-                  
+
                   try {
                     console.log('🗑️ Deleting thread:', threadTitle);
                     await deleteThreadMutation.mutateAsync(chat.activeThread.id);
-                    
+
                     // Navigate to home after successful deletion
                     chat.startNewChat();
                     if (router.canGoBack()) {
                       router.back();
                     }
-                    
+
                     console.log('✅ Thread deleted successfully');
                   } catch (error) {
                     console.error('Failed to delete thread:', error);
@@ -642,7 +637,7 @@ export function ThreadPage({
           );
         }}
       />
-      
+
       {/* Tool Call Panel - Native modal with automatic background scaling on iOS */}
       <ToolCallPanel
         visible={!!chat.selectedToolData}
@@ -703,7 +698,7 @@ export function ThreadPage({
           </View>
         )}
       </Modal>
-      
+
       {/* Dynamic Island Pull Refresh Animation - Rendered last to be on top of everything */}
       <DynamicIslandRefresh isRefreshing={isRefreshing} insets={insets} />
     </View>

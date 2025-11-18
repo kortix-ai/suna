@@ -5,7 +5,7 @@ import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Menu, MoreHorizontal } from 'lucide-react-native';
+import { CircleEllipsis, Menu, MessageCircleMore, MoreHorizontal, TextAlignStart } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -80,11 +80,11 @@ export function ThreadHeader({
   const handleTitleBlur = async () => {
     console.log('✏️ Title editing finished');
     setIsEditingTitle(false);
-    
+
     if (editedTitle !== threadTitle && editedTitle.trim()) {
       console.log('💾 Saving new thread title:', editedTitle);
       setIsUpdating(true);
-      
+
       try {
         await onTitleChange?.(editedTitle.trim());
         console.log('✅ Thread title updated successfully');
@@ -106,15 +106,15 @@ export function ThreadHeader({
   };
 
   return (
-    <View 
+    <View
       className="absolute top-0 left-0 right-0 bg-background border-b border-border/20"
-      style={{ 
-        paddingTop: Math.max(insets.top, 16) + 16,
-        paddingBottom: 16,
+      style={{
+        paddingTop: Math.max(insets.top, 16) + 8,
+        paddingBottom: 8,
         zIndex: 0,
       }}
     >
-      <View className="px-6 flex-row items-center gap-3">
+      <View className="px-3 flex-row items-center gap-3">
         <AnimatedPressable
           onPressIn={() => {
             menuScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
@@ -124,14 +124,14 @@ export function ThreadHeader({
           }}
           onPress={handleMenuPress}
           style={menuAnimatedStyle}
-          className="w-8 h-8 items-center justify-center bg-primary/10 rounded-full"
+          className="w-8 h-8 items-center justify-center rounded-full"
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Open menu"
         >
-          <Icon as={Menu} size={16} className="text-foreground" strokeWidth={2} />
+          <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
         </AnimatedPressable>
-        
+
         {/* Thread Title */}
         <View className="flex-1 flex-row items-center">
           {isEditingTitle ? (
@@ -157,7 +157,7 @@ export function ThreadHeader({
               className="flex-1"
               hitSlop={8}
             >
-              <Text 
+              <Text
                 className="text-xl font-roobert-medium text-foreground tracking-tight"
                 numberOfLines={1}
                 ellipsizeMode="tail"
@@ -166,7 +166,7 @@ export function ThreadHeader({
               </Text>
             </Pressable>
           )}
-          
+
           {(isUpdating || isLoading) && (
             <View className="ml-2">
               <KortixLoader size="large" />
@@ -184,12 +184,12 @@ export function ThreadHeader({
           }}
           onPress={handleActionsPress}
           style={actionAnimatedStyle}
-          className="w-8 h-8 items-center justify-center bg-primary/10 rounded-full"
+          className="w-8 h-8 items-center justify-center rounded-full"
           hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Thread actions"
         >
-          <Icon as={MoreHorizontal} size={20} className="text-foreground" strokeWidth={2} />
+          <Icon as={MessageCircleMore} size={20} className="text-foreground" strokeWidth={2} />
         </AnimatedPressable>
       </View>
     </View>
