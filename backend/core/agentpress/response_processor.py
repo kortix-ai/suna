@@ -118,37 +118,47 @@ class ResponseProcessor:
             return format_for_yield(message_obj)
         return None
 
-    def _estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], accumulated_content: str, llm_model: str) -> Dict[str, Any]:
+    async def _estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], accumulated_content: str, llm_model: str) -> Dict[str, Any]:
         """
         Estimate token usage when exact usage data is unavailable.
         This is critical for billing on timeouts, crashes, disconnects, etc.
+        
+        Uses ContextManager which has provider-specific APIs (Anthropic/Bedrock) for accuracy.
         """
         try:
-            prompt_tokens = token_counter(model=llm_model, messages=prompt_messages)
-            completion_tokens = token_counter(model=llm_model, text=accumulated_content) if accumulated_content else 0
-            
-            logger.warning(f"⚠️ ESTIMATED TOKEN USAGE (no exact data): prompt={prompt_tokens}, completion={completion_tokens}")
-            
-            return {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
-                "estimated": True
-            }
+            from core.agentpress.context_manager import ContextManager
+            context_mgr = ContextManager()
+            return await context_mgr.estimate_token_usage(prompt_messages, accumulated_content, llm_model)
         except Exception as e:
-            logger.error(f"Failed to estimate token usage: {e}")
-            fallback_prompt = len(' '.join(str(m.get('content', '')) for m in prompt_messages).split()) * 1.3
-            fallback_completion = len(accumulated_content.split()) * 1.3 if accumulated_content else 0
-            
-            logger.warning(f"⚠️ FALLBACK TOKEN ESTIMATION: prompt≈{int(fallback_prompt)}, completion≈{int(fallback_completion)}")
-            
-            return {
-                "prompt_tokens": int(fallback_prompt),
-                "completion_tokens": int(fallback_completion),
-                "total_tokens": int(fallback_prompt + fallback_completion),
-                "estimated": True,
-                "fallback": True
-            }
+            logger.error(f"Context manager estimation failed: {e}, falling back to LiteLLM")
+            # Fallback to LiteLLM
+            try:
+                prompt_tokens = token_counter(model=llm_model, messages=prompt_messages)
+                completion_tokens = token_counter(model=llm_model, text=accumulated_content) if accumulated_content else 0
+                
+                logger.warning(f"⚠️ ESTIMATED TOKEN USAGE (LiteLLM): prompt={prompt_tokens}, completion={completion_tokens}")
+                
+                return {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                    "estimated": True
+                }
+            except Exception as e2:
+                logger.error(f"LiteLLM estimation failed: {e2}, using word count fallback")
+                # Final fallback to word count
+                fallback_prompt = len(' '.join(str(m.get('content', '')) for m in prompt_messages).split()) * 1.3
+                fallback_completion = len(accumulated_content.split()) * 1.3 if accumulated_content else 0
+                
+                logger.warning(f"⚠️ FALLBACK TOKEN ESTIMATION: prompt≈{int(fallback_prompt)}, completion≈{int(fallback_completion)}")
+                
+                return {
+                    "prompt_tokens": int(fallback_prompt),
+                    "completion_tokens": int(fallback_completion),
+                    "total_tokens": int(fallback_prompt + fallback_completion),
+                    "estimated": True,
+                    "fallback": True
+                }
     
     
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
@@ -204,8 +214,7 @@ class ResponseProcessor:
         type: str,
         content: Union[Dict[str, Any], List[Any], str],
         is_llm_message: bool = False,
-        metadata: Optional[Dict[str, Any]] = None,
-        model: Optional[str] = None  # NEW: for token count caching
+        metadata: Optional[Dict[str, Any]] = None
     ):
         """Helper to add a message with agent version information if available."""
         agent_id = None
@@ -222,8 +231,7 @@ class ResponseProcessor:
             is_llm_message=is_llm_message,
             metadata=metadata,
             agent_id=agent_id,
-            agent_version_id=agent_version_id,
-            model=model  # Pass model for token counting
+            agent_version_id=agent_version_id
         )
 
     async def process_streaming_response(
@@ -628,8 +636,7 @@ class ResponseProcessor:
 
                 last_assistant_message_object = await self._add_message_with_agent_info(
                     thread_id=thread_id, type="assistant", content=message_data,
-                    is_llm_message=True, metadata={"thread_run_id": thread_run_id},
-                    model=llm_model  # Cache token count
+                    is_llm_message=True, metadata={"thread_run_id": thread_run_id}
                 )
 
                 if last_assistant_message_object:
@@ -989,7 +996,7 @@ class ResponseProcessor:
                         llm_end_content = self._serialize_model_response(final_llm_response)
                     else:
                         logger.warning("💰 No LLM response with usage - ESTIMATING token usage for billing")
-                        estimated_usage = self._estimate_token_usage(prompt_messages, accumulated_content, llm_model)
+                        estimated_usage = await self._estimate_token_usage(prompt_messages, accumulated_content, llm_model)
                         llm_end_content = {
                             "model": llm_model,
                             "usage": estimated_usage
@@ -1176,8 +1183,7 @@ class ResponseProcessor:
             message_data = {"role": "assistant", "content": content, "tool_calls": native_tool_calls_for_message or None}
             assistant_message_object = await self._add_message_with_agent_info(
                 thread_id=thread_id, type="assistant", content=message_data,
-                is_llm_message=True, metadata={"thread_run_id": thread_run_id},
-                model=llm_model  # Cache token count
+                is_llm_message=True, metadata={"thread_run_id": thread_run_id}
             )
             if assistant_message_object:
                  yield assistant_message_object
