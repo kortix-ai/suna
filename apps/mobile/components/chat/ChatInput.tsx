@@ -193,8 +193,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
 
   // Calculate dynamic height based on content
   const dynamicHeight = React.useMemo(() => {
-    const baseHeight = 150;
-    const maxHeight = 280;
+    const baseHeight = 120;
+    const maxHeight = 200;
     // No longer need attachment height as they're external
     const calculatedHeight = contentHeight + 80; // Add padding for controls
     return Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
