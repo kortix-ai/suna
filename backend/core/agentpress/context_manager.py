@@ -37,6 +37,7 @@ class ContextManager:
         self.keep_recent_assistant_messages = 10  # Number of recent assistant messages to keep uncompressed
         # Initialize Anthropic client for accurate token counting
         self._anthropic_client = None
+        self._bedrock_client = None
 
     def _get_anthropic_client(self):
         """Lazy initialization of Anthropic client."""
@@ -45,11 +46,22 @@ class ContextManager:
             if api_key:
                 self._anthropic_client = Anthropic(api_key=api_key)
         return self._anthropic_client
+    
+    def _get_bedrock_client(self):
+        """Lazy initialization of Bedrock client."""
+        if self._bedrock_client is None:
+            try:
+                import boto3
+                self._bedrock_client = boto3.client('bedrock-runtime', region_name='us-west-2')
+            except Exception as e:
+                logger.debug(f"Could not initialize Bedrock client: {e}")
+        return self._bedrock_client
 
     async def count_tokens(self, model: str, messages: List[Dict[str, Any]], system_prompt: Optional[Dict[str, Any]] = None, apply_caching: bool = True) -> int:
         """Count tokens using the correct tokenizer for the model.
         
         For Anthropic/Claude models: Uses Anthropic's official tokenizer
+        For Bedrock models: Uses Bedrock's count_tokens API
         For other models: Uses LiteLLM's token_counter
         
         IMPORTANT: By default, applies caching transformation before counting to match
@@ -120,12 +132,133 @@ class ContextManager:
             except Exception as e:
                 logger.debug(f"Anthropic token counting failed, falling back to LiteLLM: {e}")
         
+        # Check if this is a Bedrock model
+        elif 'bedrock' in model.lower():
+            try:
+                bedrock_client = self._get_bedrock_client()
+                if bedrock_client:
+                    # Map profile IDs to model IDs
+                    model_id_mapping = {
+                        "heol2zyy5v48": "anthropic.claude-3-5-haiku-20241022-v1:0",
+                        "few7z4l830xh": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                        "tyj1ks3nj9qf": "anthropic.claude-sonnet-4-20250514-v1:0",
+                    }
+                    
+                    # Extract profile ID from ARN
+                    bedrock_model_id = None
+                    if "application-inference-profile" in model:
+                        profile_id = model.split("/")[-1]
+                        bedrock_model_id = model_id_mapping.get(profile_id)
+                    
+                    if not bedrock_model_id:
+                        bedrock_model_id = "anthropic.claude-3-5-haiku-20241022-v1:0"
+                    
+                    # Clean content blocks for Bedrock Converse API
+                    def clean_content_for_bedrock(content):
+                        """
+                        Convert Anthropic format to Bedrock Converse API format.
+                        Converts cache_control -> cachePoint to preserve cache overhead in token counts.
+                        """
+                        if isinstance(content, str):
+                            return [{'text': content}]
+                        elif isinstance(content, list):
+                            cleaned = []
+                            for block in content:
+                                if isinstance(block, dict):
+                                    # Extract text
+                                    if 'text' in block:
+                                        cleaned.append({'text': block['text']})
+                                        # Convert cache_control to cachePoint (separate block)
+                                        if 'cache_control' in block:
+                                            cleaned.append({'cachePoint': {'type': 'default'}})
+                            return cleaned if cleaned else [{'text': str(content)}]
+                        return [{'text': str(content)}]
+                    
+                    # Format messages for Bedrock
+                    bedrock_messages = []
+                    system_content = None
+                    
+                    for msg in messages_to_count:
+                        if msg.get('role') == 'system':
+                            system_content = clean_content_for_bedrock(msg.get('content'))
+                            continue
+                        
+                        bedrock_messages.append({
+                            'role': msg.get('role'),
+                            'content': clean_content_for_bedrock(msg.get('content'))
+                        })
+                    
+                    # Build input
+                    input_to_count = {'messages': bedrock_messages}
+                    if system_content:
+                        input_to_count['system'] = system_content
+                    elif system_to_count:
+                        input_to_count['system'] = clean_content_for_bedrock(system_to_count.get('content'))
+                    
+                    # Call Bedrock count_tokens API
+                    response = bedrock_client.count_tokens(
+                        modelId=bedrock_model_id,
+                        input={'converse': input_to_count}
+                    )
+                    
+                    return response['inputTokens']
+            except Exception as e:
+                logger.debug(f"Bedrock token counting failed, falling back to LiteLLM: {e}")
+        
         # Fallback to LiteLLM token_counter
         if system_to_count:
             return token_counter(model=model, messages=[system_to_count] + messages_to_count)
         else:
             return token_counter(model=model, messages=messages_to_count)
 
+    async def estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], completion_content: str, model: str) -> Dict[str, Any]:
+        """
+        Estimate token usage for billing when exact usage is unavailable.
+        Uses provider-specific APIs (Anthropic/Bedrock) when available for accuracy.
+        
+        Args:
+            prompt_messages: The prompt messages sent to the LLM
+            completion_content: The accumulated completion text
+            model: Model name
+            
+        Returns:
+            Dict with prompt_tokens, completion_tokens, total_tokens, estimated=True
+        """
+        try:
+            # Count prompt tokens using accurate provider APIs
+            prompt_tokens = await self.count_tokens(model, prompt_messages, apply_caching=False)
+            
+            # Count completion tokens (just the text)
+            completion_tokens = 0
+            if completion_content:
+                completion_tokens = token_counter(model=model, text=completion_content)
+            
+            total_tokens = prompt_tokens + completion_tokens
+            
+            logger.warning(f"⚠️ ESTIMATED TOKEN USAGE: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+            
+            return {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "estimated": True
+            }
+        except Exception as e:
+            logger.error(f"Failed to estimate token usage: {e}")
+            # Fallback to word count
+            fallback_prompt = len(' '.join(str(m.get('content', '')) for m in prompt_messages).split()) * 1.3
+            fallback_completion = len(completion_content.split()) * 1.3 if completion_content else 0
+            
+            logger.warning(f"⚠️ FALLBACK TOKEN ESTIMATION: prompt≈{int(fallback_prompt)}, completion≈{int(fallback_completion)}")
+            
+            return {
+                "prompt_tokens": int(fallback_prompt),
+                "completion_tokens": int(fallback_completion),
+                "total_tokens": int(fallback_prompt + fallback_completion),
+                "estimated": True,
+                "fallback": True
+            }
+    
     def is_tool_result_message(self, msg: Dict[str, Any]) -> bool:
         """Check if a message is a tool result message."""
         if not isinstance(msg, dict) or not ("content" in msg and msg['content']):
