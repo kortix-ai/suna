@@ -367,6 +367,12 @@ class ThreadManager:
                             # Use total_tokens (includes prev completion) for better accuracy
                             last_total_tokens = int(usage.get('total_tokens', 0))
                             
+                            # Add cache creation tokens for accurate count (AWS Bedrock quota calculation)
+                            cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
+                            if cache_creation > 0:
+                                last_total_tokens += cache_creation
+                                logger.debug(f"Added {cache_creation} cache creation tokens to fast check total")
+                            
                             # Count tokens in new message (only for first turn, not auto-continue)
                             new_msg_tokens = 0
                             
