@@ -15,8 +15,8 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, Locale> = {
   'Europe/Vienna': 'de',
   'Europe/Zurich': 'de',
   'Europe/Rome': 'it',
-  'Europe/Madrid': 'en', // Spanish not supported, default to EN
-  'Europe/Paris': 'en', // French not supported, default to EN
+  'Europe/Madrid': 'es',
+  'Europe/Paris': 'fr',
   'Europe/London': 'en',
   'Europe/Dublin': 'en',
   'Europe/Amsterdam': 'en', // Dutch not supported, default to EN
@@ -39,14 +39,48 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, Locale> = {
   'America/Los_Angeles': 'en',
   'America/Toronto': 'en',
   'America/Vancouver': 'en',
-  'America/Mexico_City': 'en', // Spanish not supported
-  'America/Sao_Paulo': 'en', // Portuguese not supported
-  'America/Buenos_Aires': 'en', // Spanish not supported
+  'America/Mexico_City': 'es',
+  'America/Sao_Paulo': 'pt',
+  'America/Buenos_Aires': 'es',
+  'America/Lima': 'es',
+  'America/Santiago': 'es',
+  'America/Bogota': 'es',
+  'America/Caracas': 'es',
+  'America/Montevideo': 'es',
+  'America/La_Paz': 'es',
+  'America/Asuncion': 'es',
+  'America/Guayaquil': 'es',
+  'America/Panama': 'es',
+  'America/Costa_Rica': 'es',
+  'America/Guatemala': 'es',
+  'America/Havana': 'es',
+  'America/Santo_Domingo': 'es',
+  'America/San_Juan': 'es',
+  'America/Managua': 'es',
+  'America/Tegucigalpa': 'es',
+  'America/El_Salvador': 'es',
+  'America/Rio_Branco': 'pt',
+  'America/Manaus': 'pt',
+  'America/Cuiaba': 'pt',
+  'America/Campo_Grande': 'pt',
+  'America/Recife': 'pt',
+  'America/Fortaleza': 'pt',
+  'America/Belem': 'pt',
+  'America/Araguaina': 'pt',
+  'America/Maceio': 'pt',
+  'America/Salvador': 'pt',
+  'America/Bahia': 'pt',
+  'America/Noronha': 'pt',
   
   // Asia Pacific
-  'Asia/Tokyo': 'en', // Japanese not supported
-  'Asia/Shanghai': 'en', // Chinese not supported
-  'Asia/Hong_Kong': 'en',
+  'Asia/Tokyo': 'ja',
+  'Asia/Shanghai': 'zh',
+  'Asia/Beijing': 'zh',
+  'Asia/Chongqing': 'zh',
+  'Asia/Urumqi': 'zh',
+  'Asia/Hong_Kong': 'zh',
+  'Asia/Macau': 'zh',
+  'Asia/Taipei': 'zh',
   'Asia/Singapore': 'en',
   'Asia/Seoul': 'en', // Korean not supported
   'Asia/Dubai': 'en',
@@ -97,6 +131,40 @@ export function detectLocaleFromTimezone(): Locale | null {
       if (timezone.includes('Rome') || timezone.includes('Milan')) {
         return 'it';
       }
+      
+      // Spanish timezones
+      if (timezone.includes('Madrid') || timezone.includes('Barcelona')) {
+        return 'es';
+      }
+      
+      // French timezones
+      if (timezone.includes('Paris')) {
+        return 'fr';
+      }
+    }
+    
+    // Portuguese-speaking regions
+    if (timezone.startsWith('America/')) {
+      if (timezone.includes('Sao_Paulo') || timezone.includes('Rio') || timezone.includes('Brasilia') || timezone.includes('Recife') || timezone.includes('Fortaleza') || timezone.includes('Manaus') || timezone.includes('Belem') || timezone.includes('Salvador') || timezone.includes('Campo_Grande') || timezone.includes('Cuiaba') || timezone.includes('Araguaina') || timezone.includes('Maceio') || timezone.includes('Bahia') || timezone.includes('Noronha') || timezone.includes('Rio_Branco')) {
+        return 'pt';
+      }
+      
+      // Spanish-speaking regions in Americas
+      if (timezone.includes('Mexico') || timezone.includes('Buenos_Aires') || timezone.includes('Lima') || timezone.includes('Santiago') || timezone.includes('Bogota') || timezone.includes('Caracas') || timezone.includes('Montevideo') || timezone.includes('La_Paz') || timezone.includes('Asuncion') || timezone.includes('Guayaquil') || timezone.includes('Panama') || timezone.includes('Costa_Rica') || timezone.includes('Guatemala') || timezone.includes('Havana') || timezone.includes('Santo_Domingo') || timezone.includes('San_Juan') || timezone.includes('Managua') || timezone.includes('Tegucigalpa') || timezone.includes('El_Salvador')) {
+        return 'es';
+      }
+    }
+    
+    // Chinese-speaking regions
+    if (timezone.startsWith('Asia/')) {
+      if (timezone.includes('Shanghai') || timezone.includes('Beijing') || timezone.includes('Chongqing') || timezone.includes('Urumqi') || timezone.includes('Hong_Kong') || timezone.includes('Macau') || timezone.includes('Taipei')) {
+        return 'zh';
+      }
+      
+      // Japanese timezone
+      if (timezone.includes('Tokyo')) {
+        return 'ja';
+      }
     }
     
     return null;
@@ -115,8 +183,13 @@ export function detectLocaleFromBrowser(): Locale | null {
   }
 
   try {
+    // Log browser language info for debugging
+    console.log('🌍 Browser navigator.language:', navigator.language);
+    console.log('🌍 Browser navigator.languages:', navigator.languages);
+    
     const browserLang = navigator.language.split('-')[0].toLowerCase();
     if (locales.includes(browserLang as Locale)) {
+      console.log('🌍 Matched browser language:', browserLang);
       return browserLang as Locale;
     }
     
@@ -124,10 +197,12 @@ export function detectLocaleFromBrowser(): Locale | null {
     const fullLang = navigator.language.toLowerCase();
     for (const locale of locales) {
       if (fullLang.startsWith(locale)) {
+        console.log('🌍 Matched browser language (full code):', locale);
         return locale;
       }
     }
     
+    console.log('🌍 No match found for browser language');
     return null;
   } catch (error) {
     console.warn('Failed to detect locale from browser:', error);

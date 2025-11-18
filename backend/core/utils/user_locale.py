@@ -7,7 +7,7 @@ from core.utils.logger import logger
 from core.services.supabase import DBConnection
 
 # Supported locales (must match frontend)
-SUPPORTED_LOCALES = ['en', 'de', 'it']
+SUPPORTED_LOCALES = ['en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es']
 DEFAULT_LOCALE = 'en'
 
 
@@ -24,7 +24,7 @@ async def get_user_locale(user_id: str, client=None) -> str:
         client: Optional Supabase client. If not provided, creates a new connection.
     
     Returns:
-        Locale string ('en', 'de', 'it') or 'en' as default
+        Locale string ('en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es') or 'en' as default
     """
     try:
         if client is None:
@@ -85,7 +85,7 @@ def get_locale_context_prompt(locale: str) -> str:
     Generate a locale-specific context prompt to add to the system prompt.
     
     Args:
-        locale: User's preferred locale ('en', 'de', 'it')
+        locale: User's preferred locale ('en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es')
     
     Returns:
         Formatted prompt string with locale instructions
@@ -96,7 +96,17 @@ The user has set their preferred language to English. You should respond in Engl
         'de': """## SPRACHPREFERENZ
 Der Benutzer hat Deutsch als bevorzugte Sprache eingestellt. Sie sollten auf Deutsch antworten und durchgehend deutsche Terminologie verwenden. Alle Ihre Antworten, Erklärungen und Interaktionen sollten in deutscher Sprache erfolgen.""",
         'it': """## PREFERENZA LINGUISTICA
-L'utente ha impostato l'italiano come lingua preferita. Dovresti rispondere in italiano e utilizzare terminologia italiana in tutte le tue risposte. Tutte le tue risposte, spiegazioni e interazioni dovrebbero essere in italiano."""
+L'utente ha impostato l'italiano come lingua preferita. Dovresti rispondere in italiano e utilizzare terminologia italiana in tutte le tue risposte. Tutte le tue risposte, spiegazioni e interazioni dovrebbero essere in italiano.""",
+        'zh': """## 语言偏好
+用户已将首选语言设置为中文。您应该用中文回复，并在所有回复中使用中文术语。您的所有回复、解释和交互都应该是中文。""",
+        'ja': """## 言語設定
+ユーザーは日本語を優先言語に設定しています。日本語で応答し、すべての応答で日本語の用語を使用してください。すべての応答、説明、インタラクションは日本語で行う必要があります。""",
+        'pt': """## PREFERÊNCIA DE IDIOMA
+O usuário definiu o português como idioma preferido. Você deve responder em português e usar terminologia portuguesa em todas as suas respostas. Todas as suas respostas, explicações e interações devem ser em português.""",
+        'fr': """## PRÉFÉRENCE DE LANGUE
+L'utilisateur a défini le français comme langue préférée. Vous devez répondre en français et utiliser la terminologie française dans toutes vos réponses. Toutes vos réponses, explications et interactions doivent être en français.""",
+        'es': """## PREFERENCIA DE IDIOMA
+El usuario ha establecido el español como idioma preferido. Debes responder en español y usar terminología española en todas tus respuestas. Todas tus respuestas, explicaciones e interacciones deben ser en español."""
     }
     
     return locale_instructions.get(locale, locale_instructions['en'])

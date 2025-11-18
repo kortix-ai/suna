@@ -12,9 +12,9 @@
     "delete": "Löschen",
     "edit": "Bearbeiten",
     "search": "Suchen",
-    "loading": "Wird geladen...",
+    "loading": "Lädt...",
     "error": "Fehler",
-    "retry": "Erneut versuchen",
+    "retry": "Nochmal versuchen",
     "send": "Senden",
     "back": "Zurück",
     "new": "Neu",
@@ -44,49 +44,49 @@
     },
     "general": {
       "title": "Profileinstellungen",
-      "description": "Verwalten Sie Ihre Kontoinformationen",
+      "description": "Verwalte deine Kontoinformationen",
       "name": "Name",
       "email": "E-Mail",
-      "namePlaceholder": "Geben Sie Ihren Namen ein",
+      "namePlaceholder": "Gib deinen Namen ein",
       "emailCannotChange": "E-Mail kann hier nicht geändert werden",
       "saveChanges": "Änderungen speichern",
       "profileUpdated": "Profil erfolgreich aktualisiert",
       "profileUpdateFailed": "Profil konnte nicht aktualisiert werden",
       "language": {
         "title": "Sprache",
-        "description": "Wählen Sie Ihre bevorzugte Sprache",
+        "description": "Wähle deine bevorzugte Sprache",
         "current": "Aktuelle Sprache",
         "select": "Sprache auswählen"
       },
       "deleteAccount": {
         "title": "Konto löschen",
-        "description": "Entfernen Sie Ihr Konto und alle zugehörigen Daten dauerhaft",
+        "description": "Entferne dein Konto und alle zugehörigen Daten dauerhaft",
         "button": "Konto löschen",
         "scheduled": "Löschung geplant",
-        "scheduledDescription": "Ihr Konto wird am {date} dauerhaft gelöscht.",
-        "canCancel": "Sie können diese Anfrage jederzeit vor dem Löschdatum stornieren.",
+        "scheduledDescription": "Dein Konto wird am {date} dauerhaft gelöscht.",
+        "canCancel": "Du kannst diese Anfrage jederzeit vor dem Löschdatum stornieren.",
         "cancelButton": "Löschungsanfrage stornieren",
         "dialogTitle": "Konto löschen",
         "warning": "Diese Aktion kann nach 30 Tagen nicht rückgängig gemacht werden",
-        "whenDelete": "Wenn Sie Ihr Konto löschen:",
-        "agentsDeleted": "Alle Ihre Agenten und Agent-Versionen werden gelöscht",
-        "threadsDeleted": "Alle Ihre Threads und Unterhaltungen werden gelöscht",
-        "credentialsRemoved": "Alle Ihre Anmeldedaten und Integrationen werden entfernt",
-        "subscriptionCancelled": "Ihr Abonnement wird gekündigt",
+        "whenDelete": "Wenn du dein Konto löschst:",
+        "agentsDeleted": "Alle deine Agenten und Agent-Versionen werden gelöscht",
+        "threadsDeleted": "Alle deine Threads und Unterhaltungen werden gelöscht",
+        "credentialsRemoved": "Alle deine Anmeldedaten und Integrationen werden entfernt",
+        "subscriptionCancelled": "Dein Abonnement wird gekündigt",
         "billingRemoved": "Alle Abrechnungsdaten werden entfernt",
-        "scheduled30Days": "Ihr Konto wird für die Löschung in 30 Tagen eingeplant",
-        "gracePeriod": "Sie können diese Anfrage jederzeit innerhalb der 30-tägigen Frist stornieren. Nach 30 Tagen werden alle Ihre Daten dauerhaft gelöscht und können nicht wiederhergestellt werden.",
-        "confirmText": "Geben Sie delete ein, um zu bestätigen",
+        "scheduled30Days": "Dein Konto wird für die Löschung in 30 Tagen eingeplant",
+        "gracePeriod": "Du kannst diese Anfrage jederzeit innerhalb der 30-tägigen Frist stornieren. Nach 30 Tagen werden alle deine Daten dauerhaft gelöscht und können nicht wiederhergestellt werden.",
+        "confirmText": "Tippe delete zur Bestätigung",
         "confirmPlaceholder": "delete",
         "keepAccount": "Konto behalten",
         "cancelDeletionTitle": "Kontolöschung stornieren",
-        "cancelDeletionDescription": "Sind Sie sicher, dass Sie die Löschung Ihres Kontos stornieren möchten? Ihr Konto und alle Daten werden erhalten bleiben.",
+        "cancelDeletionDescription": "Möchtest du die Löschung deines Kontos stornieren? Dein Konto und alle Daten bleiben erhalten.",
         "cancelDeletion": "Löschung stornieren"
       }
     },
     "billing": {
       "title": "Abrechnungsstatus",
-      "description": "Verwalten Sie Ihre Credits und Ihr Abonnement",
+      "description": "Verwalte deine Credits und dein Abonnement",
       "totalCredits": "Gesamte verfügbare Credits",
       "allCredits": "Alle Credits",
       "monthlyCredits": "Monatliche Credits",
@@ -100,14 +100,14 @@
       "changePlan": "Plan ändern",
       "annualCommitment": "Jährliche Verpflichtung",
       "activeUntil": "Aktiv bis {date}",
-      "subscriptionCancelled": "Ihr Abonnement wird am {date} gekündigt",
+      "subscriptionCancelled": "Dein Abonnement wird am {date} gekündigt",
       "reactivate": "Reaktivieren",
       "creditsExplained": "Credits erklärt",
       "cancelPlan": "Plan kündigen",
       "reactivateSubscription": "Abonnement reaktivieren",
       "reactivating": "Wird reaktiviert...",
       "cancelDialogTitle": "Abonnement kündigen",
-      "cancelDialogDescription": "Sind Sie sicher, dass Sie Ihr Abonnement kündigen möchten? Sie haben weiterhin Zugriff bis {date}.",
+      "cancelDialogDescription": "Bist du sicher, dass du dein Abonnement kündigen möchtest? Du hast weiterhin Zugriff bis {date}.",
       "keepSubscription": "Abonnement behalten",
       "cancelling": "Wird gekündigt...",
       "localMode": "Lokaler Modus aktiv",
@@ -145,7 +145,7 @@
     "enable": "Aktivieren",
     "disable": "Deaktivieren",
     "deleteTask": "Aufgabe löschen",
-    "deleteTaskDescription": "Sind Sie sicher, dass Sie \"{name}\" löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden und stoppt alle automatisierten Ausführungen dieser Aufgabe.",
+    "deleteTaskDescription": "Bist du sicher, dass du \"{name}\" löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden und stoppt alle automatisierten Ausführungen dieser Aufgabe.",
     "taskEnabled": "Aufgabe aktiviert",
     "taskDisabled": "Aufgabe deaktiviert",
     "toggleTaskFailed": "Aufgabe konnte nicht umgeschaltet werden",
@@ -153,7 +153,7 @@
     "deleteTaskFailed": "Aufgabe konnte nicht gelöscht werden",
     "taskUpdatedSuccess": "Aufgabe erfolgreich aktualisiert",
     "updateTaskFailed": "Aufgabe konnte nicht aktualisiert werden",
-    "pleaseSelectAgent": "Bitte wählen Sie einen Agenten aus",
+    "pleaseSelectAgent": "Bitte wähle einen Agenten aus",
     "defaultScheduledTriggerName": "Geplanter Trigger",
     "defaultScheduledTriggerDescription": "Automatisch geplanter Trigger",
     "scheduleTriggerUpdated": "Geplanter Trigger erfolgreich aktualisiert",
@@ -167,7 +167,7 @@
     "editAppBasedTask": "App-basierte Aufgabe bearbeiten",
     "createAppBasedTask": "App-basierte Aufgabe erstellen",
     "updateAgentForTask": "Agent für diese Aufgabe aktualisieren",
-    "selectAgentForTask": "Wählen Sie zuerst den Agenten aus, der diese Aufgabe bearbeiten soll",
+    "selectAgentForTask": "Wähle zuerst den Agenten aus, der diese Aufgabe bearbeiten soll",
     "createNew": "Neu erstellen",
     "notConfigured": "Nicht konfiguriert",
     "every15Minutes": "Alle 15 Minuten",
@@ -219,8 +219,8 @@
     "knowledgeBase": "Wissensdatenbank",
     "conversation": "Unterhaltung",
     "conversations": "Unterhaltungen",
-    "noConversations": "Noch keine Unterhaltungen",
-    "startNewChat": "Neuen Chat starten",
+    "noConversations": "Noch keine Chats",
+    "startNewChat": "Starte einen neuen Chat",
     "openInNewTab": "In neuem Tab öffnen",
     "delete": "Löschen",
     "deleting": "Löschen",
@@ -237,16 +237,16 @@
   "dashboard": {
     "title": "Dashboard",
     "welcome": "Willkommen",
-    "whatWouldYouLike": "Was möchten Sie erledigen?",
-    "describeWhatYouNeed": "Beschreiben Sie, wobei Sie Hilfe benötigen...",
+    "whatWouldYouLike": "Was möchtest du erledigen?",
+    "describeWhatYouNeed": "Beschreibe, wobei du Hilfe benötigst...",
     "usageLimits": "Nutzungslimits",
     "threads": "Threads",
     "customWorkers": "Benutzerdefinierte Worker",
     "scheduledTriggers": "Geplante Trigger",
     "appTriggers": "App-Trigger",
-    "limitsExceeded": "Sie haben Ihre Limits erreicht. Upgraden Sie Ihren Plan, um mehr zu chatten.",
+    "limitsExceeded": "Du hast deine Limits erreicht. Upgraden deinen Plan, um mehr zu chatten.",
     "agentInitiatedSuccessfully": "Agent erfolgreich gestartet",
-    "aiAssistantReady": "Ihr KI-Assistent ist bereit zu helfen"
+    "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen"
   },
   "thread": {
     "integrations": "Integrationen",
@@ -291,10 +291,10 @@
     "title": "Threads",
     "newThread": "Neuer Thread",
     "sendMessage": "Nachricht senden",
-    "placeholder": "Geben Sie Ihre Nachricht ein..."
+    "placeholder": "Gib deine Nachricht ein..."
   },
   "billing": {
-    "title": "Abrechnung",
+    "title": "Abrechnung & Abonnement",
     "subscription": "Abonnement",
     "credits": "Credits",
     "popular": "Beliebt",
@@ -305,34 +305,34 @@
     "currentBadge": "Aktuell",
     "scheduled": "Geplant",
     "scheduledBadge": "Geplant",
-    "loading": "Wird geladen...",
+    "loading": "Lädt...",
     "subscriptionChangeScheduled": "Abonnementänderung geplant",
-    "planWillChangeOn": "Ihr Plan ändert sich am {date}.",
-    "failedToInitiateSubscription": "Abonnement konnte nicht gestartet werden. Bitte versuchen Sie es erneut.",
+    "planWillChangeOn": "Dein Plan ändert sich am {date}.",
+    "failedToInitiateSubscription": "Abonnement konnte nicht gestartet werden. Versuch's nochmal.",
     "subscriptionUpgraded": "Abonnement von {currentPrice} auf {newPrice} aktualisiert",
     "subscriptionUpdated": "Abonnement erfolgreich aktualisiert",
     "cannotDowngradeDuringCommitment": "Während der Verpflichtungsperiode kann nicht herabgestuft werden",
-    "alreadyOnThisPlan": "Sie sind bereits auf diesem Plan.",
+    "alreadyOnThisPlan": "Du bist bereits auf diesem Plan.",
     "localModeMessage": "Läuft im lokalen Entwicklungsmodus - Abrechnungsfunktionen sind deaktiviert",
     "creditsExplainedPage": {
       "title": "Credits erklärt",
-      "subtitle": "Alles, was Sie über die Funktionsweise von Credits bei Kortix wissen müssen",
+      "subtitle": "Alles, was du über die Funktionsweise von Credits bei Kortix wissen musst",
       "understandingCredits": {
         "title": "Credits verstehen",
-        "description": "Credits dienen als universelle Währung von Kortix für Plattformoperationen. Jede Aktion, die Ihre KI-Agenten ausführen – von der Datenanalyse bis zur Codegenerierung – verbraucht Credits basierend auf der Komplexität der Aufgabe und den erforderlichen Ressourcen."
+        "description": "Credits dienen als universelle Währung von Kortix für Plattformoperationen. Jede Aktion, die deine KI-Agenten ausführen – von der Datenanalyse bis zur Codegenerierung – verbraucht Credits basierend auf der Komplexität der Aufgabe und den erforderlichen Ressourcen."
       },
       "howCreditsWork": {
         "title": "Wie Credits funktionieren",
-        "description": "Credits werden basierend auf den Ressourcen verbraucht, die Ihre KI-Agenten verwenden:",
+        "description": "Credits werden basierend auf den Ressourcen verbraucht, die deine KI-Agenten verwenden:",
         "aiModelUsage": {
           "title": "KI-Modellnutzung",
           "description": "Der Haupttreiber des Credit-Verbrauchs",
-          "content": "Verschiedene KI-Modelle haben unterschiedliche Kosten basierend auf ihren Fähigkeiten und der Token-Nutzung. Credits werden für Eingabe-Tokens (Ihre Prompts und Kontext), Ausgabe-Tokens (Agent-Antworten) verbraucht und variieren je nach Modell-Tier (Claude, GPT usw.)."
+          "content": "Verschiedene KI-Modelle haben unterschiedliche Kosten basierend auf ihren Fähigkeiten und der Token-Nutzung. Credits werden für Eingabe-Tokens (deine Prompts und Kontext), Ausgabe-Tokens (Agent-Antworten) verbraucht und variieren je nach Modell-Tier (Claude, GPT usw.)."
         },
         "pricingModel": {
           "title": "Preismodell",
           "description": "20% Aufschlag auf KI-Modellkosten",
-          "content": "Wir erheben einen Aufschlag von 20% auf alle API- und Modellkosten, um die Plattforminfrastruktur, Sicherheit und laufende Entwicklung zu decken. Diese transparente Preisgestaltung stellt sicher, dass Sie genau wissen, wofür Sie bezahlen."
+          "content": "Wir erheben einen Aufschlag von 20% auf alle API- und Modellkosten, um die Plattforminfrastruktur, Sicherheit und laufende Entwicklung zu decken. Diese transparente Preisgestaltung stellt sicher, dass du genau weißt, wofür du bezahlst."
         }
       },
       "gettingMoreCredits": {
@@ -340,11 +340,11 @@
         "description": "Es gibt mehrere Möglichkeiten, Credits bei Kortix zu erhalten:",
         "monthlySubscription": {
           "title": "Monatliche Abonnement-Credits",
-          "description": "Im Rahmen Ihres kostenpflichtigen Plans enthalten und jeden Monat automatisch erneuert. Dies sind ablaufende Credits."
+          "description": "Im Rahmen deines kostenpflichtigen Plans enthalten und jeden Monat automatisch erneuert. Dies sind ablaufende Credits."
         },
         "topUpCredits": {
           "title": "Auflade-Credits",
-          "description": "Kaufen Sie zusätzliche Credits, wenn Sie sie benötigen. Diese laufen nicht ab und sind für Premium-Mitglieder verfügbar."
+          "description": "Kaufe zusätzliche Credits, wenn du sie benötigst. Diese laufen nicht ab und sind für Premium-Mitglieder verfügbar."
         },
         "promotionalGrants": {
           "title": "Werbe- und Event-Gutschriften",
@@ -357,20 +357,20 @@
       },
       "typesOfCredits": {
         "title": "Arten von Credits",
-        "description": "Kortix verwendet zwei Arten von Credits, um Ihnen Flexibilität bei der Verwaltung Ihrer Nutzung zu geben:",
+        "description": "Kortix verwendet zwei Arten von Credits, um dir Flexibilität bei der Verwaltung deiner Nutzung zu geben:",
         "expiringCredits": {
           "title": "Ablaufende Credits",
           "description": "Monatliche Abonnement-Credits",
-          "content": "Diese Credits sind in Ihrem kostenpflichtigen Abonnement enthalten und werden jeden Monat automatisch an Ihrem Abonnementdatum erneuert. Sie laufen am Ende jedes Abrechnungszyklus ab und werden immer zuerst verbraucht, bevor ablauffreie Credits verwendet werden."
+          "content": "Diese Credits sind in deinem kostenpflichtigen Abonnement enthalten und werden jeden Monat automatisch an deinem Abonnementdatum erneuert. Sie laufen am Ende jedes Abrechnungszyklus ab und werden immer zuerst verbraucht, bevor ablauffreie Credits verwendet werden."
         },
         "nonExpiringCredits": {
           "title": "Nicht ablaufende Credits",
           "description": "Permanente Credits, die nie ablaufen",
-          "content": "Diese Credits laufen nie ab und werden von Monat zu Monat übertragen. Sie umfassen Aufladekäufe, Rückerstattungen und Werbegutschriften. Nicht ablaufende Credits werden nur verwendet, nachdem Ihre ablaufenden Credits aufgebraucht sind."
+          "content": "Diese Credits laufen nie ab und werden von Monat zu Monat übertragen. Sie umfassen Aufladekäufe, Rückerstattungen und Werbegutschriften. Nicht ablaufende Credits werden nur verwendet, nachdem deine ablaufenden Credits aufgebraucht sind."
         },
         "creditPriority": {
           "title": "Credit-Priorität:",
-          "description": "Wenn Sie Kortix verwenden, werden zuerst ablaufende Credits verbraucht. Erst nachdem Ihre ablaufenden Credits aufgebraucht sind, werden nicht ablaufende Credits verwendet."
+          "description": "Wenn du Kortix verwendest, werden zuerst ablaufende Credits verbraucht. Erst nachdem deine ablaufenden Credits aufgebraucht sind, werden nicht ablaufende Credits verwendet."
         }
       }
     },
@@ -393,8 +393,8 @@
     "downgradePending": "Downgrade ausstehend",
     "downgrade": "Herabstufen",
     "switchToLegacyYearly": "Zu Legacy-Jahresplan wechseln",
-    "pickPlan": "Wählen Sie den Plan, der zu Ihnen passt.",
-    "reachedLimit": "Sie haben Ihre Limits erreicht.",
+    "pickPlan": "Wähle den Plan, der zu dir passt.",
+    "reachedLimit": "Du hast deine Limits erreicht.",
     "projectLimit": "Projektlimit ({current}/{limit})",
     "threadLimit": "Thread-Limit ({current}/{limit})",
     "workerLimit": "Worker-Limit ({current}/{limit})",
@@ -416,7 +416,7 @@
     }
   },
   "auth": {
-    "logIntoAccount": "In Ihr Konto einloggen",
+    "logIntoAccount": "In dein Konto einloggen",
     "createAccount": "Konto erstellen",
     "continueWithGoogle": "Mit Google fortfahren",
     "continueWithGitHub": "Mit GitHub fortfahren",
@@ -426,26 +426,26 @@
     "confirmPassword": "Passwort bestätigen",
     "signIn": "Anmelden",
     "signUp": "Registrieren",
-    "signingIn": "Anmeldung läuft...",
+    "signingIn": "Wird angemeldet...",
     "creatingAccount": "Konto wird erstellt...",
     "forgotPassword": "Passwort vergessen?",
-    "dontHaveAccount": "Noch kein Konto? Registrieren",
-    "alreadyHaveAccount": "Bereits ein Konto? Anmelden",
-    "acceptPrivacyTerms": "Ich akzeptiere die <privacyPolicy>Datenschutzerklärung</privacyPolicy> und die <termsOfService>Nutzungsbedingungen</termsOfService>",
+    "dontHaveAccount": "Noch keinen Account? Registrieren",
+    "alreadyHaveAccount": "Schon einen Account? Anmelden",
+    "acceptPrivacyTerms": "Ich stimme den <privacyPolicy>Datenschutzerklärung</privacyPolicy> und den <termsOfService>Nutzungsbedingungen</termsOfService> zu",
     "privacyPolicy": "Datenschutzerklärung",
     "termsOfService": "Nutzungsbedingungen",
-    "checkYourEmail": "E-Mail prüfen",
-    "confirmationLinkSent": "Wir haben einen Bestätigungslink gesendet an:",
-    "clickLinkToActivate": "Klicken Sie auf den Link in der E-Mail, um Ihr Konto zu aktivieren. Wenn Sie die E-Mail nicht sehen, prüfen Sie Ihren Spam-Ordner.",
+    "checkYourEmail": "Check deine E-Mails",
+    "confirmationLinkSent": "Wir haben dir einen Bestätigungslink geschickt an:",
+    "clickLinkToActivate": "Klicke auf den Link in der E-Mail, um dein Konto zu aktivieren. Wenn du die E-Mail nicht siehst, check deinen Spam-Ordner.",
     "returnToHome": "Zur Startseite zurückkehren",
-    "backToSignIn": "Zurück zur Anmeldung",
+    "backToSignIn": "Zurück zum Login",
     "resetPassword": "Passwort zurücksetzen",
-    "resetPasswordDescription": "Geben Sie Ihre E-Mail-Adresse ein und wir senden Ihnen einen Link zum Zurücksetzen Ihres Passworts.",
-    "sendResetLink": "Zurücksetzungslink senden",
+    "resetPasswordDescription": "Gib deine E-Mail-Adresse ein und wir schicken dir einen Link zum Zurücksetzen",
+    "sendResetLink": "Link senden",
     "cancel": "Abbrechen",
-    "pleaseEnterValidEmail": "Bitte geben Sie eine gültige E-Mail-Adresse ein",
-    "signInFailed": "Anmeldung fehlgeschlagen",
-    "signUpFailed": "Registrierung fehlgeschlagen"
+    "pleaseEnterValidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
+    "signInFailed": "Login fehlgeschlagen. Check deine Zugangsdaten.",
+    "signUpFailed": "Registrierung fehlgeschlagen. Versuch's nochmal."
   },
   "onboarding": {
     "welcome": "Willkommen",
@@ -545,19 +545,19 @@
   "agentRunLimit": {
     "gotIt": "Verstanden",
     "parallelRunsLimitReached": "Limit für parallele Ausführungen erreicht",
-    "parallelRunsLimitDescription": "Sie haben die maximale Anzahl paralleler Agenten-Ausführungen erreicht.",
+    "parallelRunsLimitDescription": "Du hast die maximale Anzahl paralleler Agenten-Ausführungen erreicht.",
     "needMoreParallelRuns": "Mehr parallele Ausführungen benötigt?",
-    "upgradeDescription": "Upgraden Sie Ihren Plan, um mehrere Agenten gleichzeitig auszuführen und Ihre Produktivität zu steigern.",
+    "upgradeDescription": "Upgraden deinen Plan, um mehrere Agenten gleichzeitig auszuführen und deine Produktivität zu steigern.",
     "upgradePlan": "Plan upgraden",
     "currentlyRunningAgents": "Aktuell laufende Agenten",
     "loadingThreads": "Threads werden geladen...",
     "foundRunningAgents": "{count} laufende Agenten gefunden, aber Thread-Details konnten nicht geladen werden.",
     "threadIds": "Thread-IDs: {ids}",
     "moreRunning": "+{count} weitere laufen",
-    "whatCanYouDo": "Was können Sie tun?",
-    "stopAgentsHint": "Klicken Sie auf die Stopp-Schaltfläche, um laufende Agenten zu stoppen",
-    "waitForCompletion": "Warten Sie, bis ein Agent automatisch abgeschlossen ist",
-    "upgradeYourPlan": "Upgraden Sie Ihren Plan",
+    "whatCanYouDo": "Was kannst du tun?",
+    "stopAgentsHint": "Klicke auf die Stopp-Schaltfläche, um laufende Agenten zu stoppen",
+    "waitForCompletion": "Warte, bis ein Agent automatisch abgeschlossen ist",
+    "upgradeYourPlan": "Upgraden deinen Plan",
     "forMoreParallelRuns": "für mehr parallele Ausführungen",
     "stopAgent": "Agent stoppen",
     "stopThisAgent": "Diesen Agenten stoppen",
@@ -740,4 +740,3 @@
     }
   }
 }
-
