@@ -48,6 +48,10 @@ async def initialize():
     logger.info(f"Initializing worker with Redis at {redis_host}:{redis_port}")
     await retry(lambda: redis.initialize_async())
     await db.initialize()
+    
+    # Pre-load tool classes to avoid first-request delay
+    from core.utils.tool_discovery import warm_up_tools_cache
+    warm_up_tools_cache()
 
     _initialized = True
     logger.info(f"✅ Worker initialized successfully with instance ID: {instance_id}")
