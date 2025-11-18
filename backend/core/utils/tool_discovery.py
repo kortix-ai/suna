@@ -119,6 +119,9 @@ def _generate_display_name(name: str) -> str:
     return s3.title()
 
 
+# Cache for discovered tools to avoid repeated expensive imports
+_TOOLS_CACHE = None
+
 def discover_tools() -> Dict[str, Type[Tool]]:
     """Discover all available tools from the centralized tool registry.
     
@@ -131,8 +134,13 @@ def discover_tools() -> Dict[str, Type[Tool]]:
         Dict mapping tool names (str) to tool classes (Type[Tool])
         Example: {'web_search_tool': SandboxWebSearchTool, 'browser_tool': BrowserTool, ...}
     """
+    global _TOOLS_CACHE
+    if _TOOLS_CACHE is not None:
+        return _TOOLS_CACHE
+    
     from core.tools.tool_registry import get_all_tools
-    return get_all_tools()
+    _TOOLS_CACHE = get_all_tools()
+    return _TOOLS_CACHE
 
 
 def _extract_tool_metadata(tool_name: str, tool_class: Type[Tool]) -> Dict[str, Any]:
