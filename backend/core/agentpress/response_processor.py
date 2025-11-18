@@ -204,7 +204,8 @@ class ResponseProcessor:
         type: str,
         content: Union[Dict[str, Any], List[Any], str],
         is_llm_message: bool = False,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None  # NEW: for token count caching
     ):
         """Helper to add a message with agent version information if available."""
         agent_id = None
@@ -221,7 +222,8 @@ class ResponseProcessor:
             is_llm_message=is_llm_message,
             metadata=metadata,
             agent_id=agent_id,
-            agent_version_id=agent_version_id
+            agent_version_id=agent_version_id,
+            model=model  # Pass model for token counting
         )
 
     async def process_streaming_response(
@@ -626,7 +628,8 @@ class ResponseProcessor:
 
                 last_assistant_message_object = await self._add_message_with_agent_info(
                     thread_id=thread_id, type="assistant", content=message_data,
-                    is_llm_message=True, metadata={"thread_run_id": thread_run_id}
+                    is_llm_message=True, metadata={"thread_run_id": thread_run_id},
+                    model=llm_model  # Cache token count
                 )
 
                 if last_assistant_message_object:
@@ -1173,7 +1176,8 @@ class ResponseProcessor:
             message_data = {"role": "assistant", "content": content, "tool_calls": native_tool_calls_for_message or None}
             assistant_message_object = await self._add_message_with_agent_info(
                 thread_id=thread_id, type="assistant", content=message_data,
-                is_llm_message=True, metadata={"thread_run_id": thread_run_id}
+                is_llm_message=True, metadata={"thread_run_id": thread_run_id},
+                model=llm_model  # Cache token count
             )
             if assistant_message_object:
                  yield assistant_message_object

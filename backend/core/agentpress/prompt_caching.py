@@ -60,7 +60,7 @@ async def get_stored_threshold(thread_id: str, model: str) -> Optional[Dict[str,
     return None
 
 
-async def store_threshold(thread_id: str, threshold: int, model: str, reason: str, turn: int):
+async def store_threshold(thread_id: str, threshold: int, model: str, reason: str, turn: Optional[int] = None, system_prompt_tokens: Optional[int] = None):
     """Store cache threshold in thread metadata."""
     from core.services.supabase import DBConnection
     db = DBConnection()
@@ -75,6 +75,7 @@ async def store_threshold(thread_id: str, threshold: int, model: str, reason: st
         metadata['cache_config'] = {
             'threshold': threshold,
             'model': model,
+            'system_prompt_tokens': system_prompt_tokens,
             'last_calc_turn': turn,
             'last_calc_reason': reason,
             'updated_at': datetime.now(timezone.utc).isoformat()
@@ -413,16 +414,20 @@ async def apply_anthropic_caching_strategy(
     # No stored blocks or force rebuild - chunk from scratch
     logger.info(f"🆕 Building cache blocks from scratch ({len(conversation_messages)} messages)")
     
-    # Check if we should use stored threshold
+    # Check if we should use stored threshold and system prompt tokens
     stored_config = None
     should_recalculate = force_recalc
+    system_prompt_tokens = None
     
     if thread_id and not force_recalc:
         stored_config = await get_stored_threshold(thread_id, model_name)
         
         if stored_config:
             cache_threshold_tokens = stored_config['threshold']
+            system_prompt_tokens = stored_config.get('system_prompt_tokens')  # Reuse if available
             logger.info(f"♻️ Reusing stored threshold: {cache_threshold_tokens} tokens (last calc: turn {stored_config['last_calc_turn']}, reason: {stored_config['last_calc_reason']})")
+            if system_prompt_tokens:
+                logger.debug(f"♻️ Reusing stored system prompt tokens: {system_prompt_tokens}")
         else:
             should_recalculate = True
             logger.info(f"🆕 No stored threshold - will calculate and store")
@@ -450,10 +455,14 @@ async def apply_anthropic_caching_strategy(
             total_tokens  # Now includes system prompt for accurate density calculation
         )
         
+        # Calculate system prompt tokens if not already done (for storage)
+        if system_prompt_tokens is None:
+            system_prompt_tokens = get_message_token_count(working_system_prompt, model_name)
+        
         # Store it if we have thread_id
-        if thread_id and turn_number is not None:
+        if thread_id:
             reason = "compression" if force_recalc else "initial"
-            await store_threshold(thread_id, cache_threshold_tokens, model_name, reason, turn_number)
+            await store_threshold(thread_id, cache_threshold_tokens, model_name, reason, turn_number, system_prompt_tokens)
     
     logger.info(f"📊 Applying single cache breakpoint strategy for {len(conversation_messages)} messages")
     
@@ -467,15 +476,19 @@ async def apply_anthropic_caching_strategy(
     prepared_messages = []
     
     # Block 1: System prompt (cache if ≥1024 tokens)
-    system_tokens = get_message_token_count(working_system_prompt, model_name)
-    if system_tokens >= 1024:  # Anthropic's minimum cacheable size
+    # Reuse stored system_prompt_tokens if available, otherwise calculate
+    if system_prompt_tokens is None:
+        system_prompt_tokens = get_message_token_count(working_system_prompt, model_name)
+        logger.debug(f"Calculated system prompt tokens: {system_prompt_tokens}")
+    
+    if system_prompt_tokens >= 1024:  # Anthropic's minimum cacheable size
         cached_system = add_cache_control(working_system_prompt)
         prepared_messages.append(cached_system)
-        logger.info(f"🔥 Block 1: Cached system prompt ({system_tokens} tokens)")
+        logger.info(f"🔥 Block 1: Cached system prompt ({system_prompt_tokens} tokens)")
         blocks_used = 1
     else:
         prepared_messages.append(working_system_prompt)
-        logger.debug(f"System prompt too small for caching: {system_tokens} tokens")
+        logger.debug(f"System prompt too small for caching: {system_prompt_tokens} tokens")
         blocks_used = 0
     
     # Handle conversation messages with token-based chunked caching
