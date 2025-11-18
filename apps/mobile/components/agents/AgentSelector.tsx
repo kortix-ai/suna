@@ -3,10 +3,10 @@ import { Icon } from '@/components/ui/icon';
 import { ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
@@ -37,7 +37,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   // Show loading state only if agents are actually loading
   if (isLoading || agents.length === 0) {
     return (
-      <View className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3.5 py-2 border border-border/30">
+      <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
         <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
         <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
       </View>
@@ -47,7 +47,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   // Show "Select Agent" if agents are loaded but none selected
   if (!agent) {
     return (
-      <AnimatedPressable 
+      <AnimatedPressable
         onPressIn={() => {
           scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
         }}
@@ -55,16 +55,16 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           scale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         onPress={onPress}
-        className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3.5 py-2 border border-border/30"
+        className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2"
         style={animatedStyle}
       >
         <View className="w-6 h-6 bg-muted rounded-full items-center justify-center">
           <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
         </View>
         <Text className="text-muted-foreground text-sm font-roobert-medium">Select Agent</Text>
-        <Icon 
-          as={ChevronDown} 
-          size={13} 
+        <Icon
+          as={ChevronDown}
+          size={13}
           className="text-foreground/60"
           strokeWidth={2}
         />
@@ -75,7 +75,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   if (compact) {
     // Minimal version: just avatar with chevron badge
     return (
-      <AnimatedPressable 
+      <AnimatedPressable
         onPressIn={() => {
           scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
         }}
@@ -88,10 +88,10 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
       >
         <AgentAvatar agent={agent} size={26} />
         {/* Small chevron indicator */}
-        <View className="absolute -bottom-0.5 -right-0.5 bg-secondary rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
-          <Icon 
-            as={ChevronDown} 
-            size={8} 
+        <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
+          <Icon
+            as={ChevronDown}
+            size={8}
             className="text-foreground"
             strokeWidth={2.5}
           />
@@ -102,7 +102,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
 
   // Full version with name
   return (
-    <AnimatedPressable 
+    <AnimatedPressable
       onPressIn={() => {
         scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
       }}
@@ -110,18 +110,18 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
       onPress={onPress}
-      className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3.5 py-2 border border-border/30"
+      className="flex-row items-center gap-1.5 rounded-2xl px-3.5 py-2"
       style={animatedStyle}
     >
       {/* Agent info with avatar */}
       <AgentAvatar agent={agent} size={19} />
       <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
-      
+
       {/* Chevron down */}
-      <Icon 
-        as={ChevronDown} 
-        size={13} 
-        className="text-foreground/60"
+      <Icon
+        as={ChevronDown}
+        size={15}
+        className="text-foreground/60 pt-0.5"
         strokeWidth={2}
       />
     </AnimatedPressable>

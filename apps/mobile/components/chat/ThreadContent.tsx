@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
 import { safeJsonParse } from '@/lib/utils/message-grouping';
-import { 
+import {
   preprocessTextOnlyTools,
   parseXmlToolCalls,
   isNewXmlFormat,
@@ -17,14 +17,15 @@ import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { AgentIdentifier } from '@/components/agents';
-import { 
-  FileAttachmentsGrid, 
-  extractFileReferences, 
-  removeFileReferences 
+import {
+  FileAttachmentsGrid,
+  extractFileReferences,
+  removeFileReferences
 } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
 import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
 import { StreamingToolCard } from './StreamingToolCard';
+import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -32,8 +33,8 @@ export interface ToolMessagePair {
 }
 
 function renderStandaloneAttachments(
-  attachments: string[], 
-  sandboxId?: string, 
+  attachments: string[],
+  sandboxId?: string,
   onFilePress?: (filePath: string) => void,
   alignRight: boolean = false
 ) {
@@ -70,7 +71,6 @@ function preprocessTextOnlyToolsLocal(content: string): string {
     return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, '$1');
   });
 
-  content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
 
   content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
     if (match.includes('<parameter name="attachments"')) return match;
@@ -82,8 +82,6 @@ function preprocessTextOnlyToolsLocal(content: string): string {
     return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
   });
 
-  content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)$/gi, '$1');
-
   content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, (match) => {
     if (match.match(/<ask[^>]*attachments=/i)) return match;
     return match.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, '$1');
@@ -93,8 +91,6 @@ function preprocessTextOnlyToolsLocal(content: string): string {
     if (match.match(/<complete[^>]*attachments=/i)) return match;
     return match.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, '$1');
   });
-
-  content = content.replace(/<present_presentation[^>]*>([\s\S]*?)<\/present_presentation>/gi, '$1');
   return content;
 }
 
@@ -109,12 +105,12 @@ interface MarkdownContentProps {
 
 function MarkdownContent({ content, handleToolClick, messageId, onFilePress, sandboxId, isLatestMessage }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
-  
+
   const processedContent = useMemo(() => {
     let processed = preprocessTextOnlyToolsLocal(content);
-    
+
     processed = processed.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '');
-    
+
     const oldFormatToolTags = [
       'execute-command', 'check-command-output', 'terminate-command',
       'create-file', 'delete-file', 'str-replace', 'edit-file', 'full-file-rewrite',
@@ -127,15 +123,15 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
       'execute-code', 'make-phone-call', 'end-call',
       'designer-create-or-edit', 'image-edit-or-generate',
     ];
-    
+
     for (const tag of oldFormatToolTags) {
       const regex = new RegExp(`<${tag}[^>]*>.*?<\\/${tag}>|<${tag}[^>]*\\/>`, 'gis');
       processed = processed.replace(regex, '');
     }
-    
+
     processed = processed.replace(/^\s*\n/gm, '');
     processed = processed.trim();
-    
+
     return processed;
   }, [content]);
 
@@ -190,14 +186,12 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
                 {askText}
               </Markdown>
               
-              {isLatestMessage && (
-                <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
-                  <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
-                    Kortix will automatically continue working once you provide your response.
-                  </Text>
-                </View>
-              )}
+              <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
+                <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+                <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
+                  Kortix will automatically continue working once you provide your response.
+                </Text>
+              </View>
             </View>
           );
 
@@ -226,6 +220,16 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
               >
                 {completeText}
               </Markdown>
+              
+              <TaskCompletedFeedback
+                taskSummary={completeText}
+                threadId={message.thread_id}
+                messageId={messageId}
+                onFollowUpClick={(prompt) => {
+                  // TODO: Handle follow-up click - could trigger a new message
+                  console.log('Follow-up clicked:', prompt);
+                }}
+              />
             </View>
           );
 
@@ -314,10 +318,10 @@ const ToolCard = React.memo(function ToolCard({
   onPress?: () => void;
 }) {
   const { colorScheme } = useColorScheme();
-  
+
   const completedData = useMemo(() => {
     if (!message || isLoading) return null;
-    
+
     const parsed = parseToolMessage(message.content);
     if (!parsed) {
       return {
@@ -327,7 +331,7 @@ const ToolCard = React.memo(function ToolCard({
         isError: true,
       };
     }
-    
+
     return {
       toolName: parsed.toolName,
       displayName: getUserFriendlyToolName(parsed.toolName),
@@ -338,10 +342,10 @@ const ToolCard = React.memo(function ToolCard({
 
   const loadingData = useMemo(() => {
     if (!isLoading || !toolCall) return null;
-    
+
     const toolName = toolCall.function_name || toolCall.name || 'Tool';
     const displayName = getUserFriendlyToolName(toolName);
-    
+
     return { toolName, displayName };
   }, [isLoading, toolCall]);
 
@@ -380,10 +384,10 @@ const ToolCard = React.memo(function ToolCard({
       className="flex-row items-center gap-3 p-3 rounded-3xl bg-primary/10 active:opacity-70"
     >
       <View className={`h-8 w-8 rounded-xl items-center justify-center ${isError ? 'bg-destructive/10' : 'bg-primary/10'}`}>
-        <Icon 
-          as={isError ? AlertCircle : IconComponent} 
-          size={16} 
-          className={isError ? 'text-destructive' : 'text-primary'} 
+        <Icon
+          as={isError ? AlertCircle : IconComponent}
+          size={16}
+          className={isError ? 'text-destructive' : 'text-primary'}
         />
       </View>
       <View className="flex-1">
@@ -391,10 +395,10 @@ const ToolCard = React.memo(function ToolCard({
           {displayName}
         </Text>
       </View>
-      <Icon 
-        as={isError ? AlertCircle : CheckCircle2} 
-        size={16} 
-        className={isError ? 'text-destructive' : 'text-primary'} 
+      <Icon
+        as={isError ? AlertCircle : CheckCircle2}
+        size={16}
+        className={isError ? 'text-destructive' : 'text-primary'}
       />
     </Pressable>
   );
@@ -448,20 +452,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     toolMessages.forEach(toolMsg => {
       const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
       const assistantId = metadata.assistant_message_id || null;
-      
+
       const parsed = parseToolMessage(toolMsg.content);
       const toolName = parsed?.toolName || '';
-      
+
       if (toolName === 'ask' || toolName === 'complete') {
         return;
       }
-      
+
       if (!toolMap.has(assistantId)) {
         toolMap.set(assistantId, []);
       }
       toolMap.get(assistantId)!.push(toolMsg);
     });
-    
+
     assistantMessages.forEach((assistantMsg) => {
       const linkedTools = toolMap.get(assistantMsg.message_id || null);
       if (linkedTools && linkedTools.length > 0) {
@@ -473,7 +477,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         });
       }
     });
-    
+
     const orphanedTools = toolMap.get(null);
     if (orphanedTools) {
       orphanedTools.forEach((toolMsg) => {
@@ -483,7 +487,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         });
       });
     }
-    
+
     return pairs;
   }, [messages]);
 
@@ -622,36 +626,36 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
   const toolResultsMaps = useMemo(() => {
     const maps = new Map<string, Map<string | null, UnifiedMessage[]>>();
-    
+
     groupedMessages.forEach((group) => {
       if (group.type === 'assistant_group') {
         const toolMessages = group.messages.filter(m => m.type === 'tool');
         const map = new Map<string | null, UnifiedMessage[]>();
-        
+
         toolMessages.forEach(toolMsg => {
           const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
           const assistantId = metadata.assistant_message_id || null;
-          
+
           const parsed = parseToolMessage(toolMsg.content);
           const toolName = parsed?.toolName || '';
-          
+
           if (toolName === 'ask' || toolName === 'complete') {
             return;
           }
-          
+
           if (!map.has(assistantId)) {
             map.set(assistantId, []);
           }
           map.get(assistantId)!.push(toolMsg);
         });
-        
+
         maps.set(group.key, map);
       }
     });
-    
+
     return maps;
   }, [groupedMessages]);
-  
+
   const handleToolPress = useCallback((clickedToolMsg: UnifiedMessage) => {
     const clickedIndex = allToolMessages.findIndex(
       t => t.toolMessage.message_id === clickedToolMsg.message_id
@@ -700,9 +704,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
           const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
           const attachments = attachmentsMatch
             ? attachmentsMatch.map((match: string) => {
-                const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
-                return pathMatch ? pathMatch[1] : null;
-              }).filter(Boolean)
+              const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
+              return pathMatch ? pathMatch[1] : null;
+            }).filter(Boolean)
             : [];
 
           const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
@@ -713,12 +717,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
               {cleanContent && (
                 <View className="flex-row justify-end">
-                  <View 
-                    className="max-w-[80%] rounded-3xl px-4 py-1.5"
+                  <View
+                    className="max-w-[85%] bg-card border border-border px-4 py-0.5"
                     style={{
-                      backgroundColor: isDark ? '#1C1D20' : '#ECECEC',
-                      borderWidth: 0,
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                      borderRadius: 24,
+                      borderBottomRightRadius: 8,
                     }}
                   >
                     <Markdown
@@ -736,7 +739,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
             </View>
           );
         }
-        
+
         if (group.type === 'assistant_group') {
           const firstAssistantMsg = group.messages.find(m => m.type === 'assistant');
           const groupAgentId = firstAssistantMsg?.agent_id;
@@ -746,7 +749,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
           return (
             <View key={group.key} className="mb-6">
               <View className="flex-row items-center mb-3">
-                <AgentIdentifier 
+                <AgentIdentifier
                   agentId={groupAgentId}
                   size={24}
                   showName
@@ -769,7 +772,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                   return (
                     <View key={msgKey}>
-                      <MarkdownContent 
+                      <MarkdownContent
                         content={parsedContent.content}
                         handleToolClick={handleToolClick}
                         messageId={message.message_id}
@@ -777,7 +780,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                         sandboxId={sandboxId}
                         isLatestMessage={isLatestMessage}
                       />
-                      
+
                       {linkedTools && linkedTools.length > 0 && (
                         <View className="gap-2 mt-3">
                           {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => {
@@ -787,7 +790,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                               );
                               onToolPress?.(allToolMessages, clickedIndex >= 0 ? clickedIndex : 0);
                             };
-                            
+
                             return (
                               <ToolCard
                                 key={`tool-${toolMsg.message_id || toolIdx}`}
@@ -806,14 +809,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                   <View className="mt-3">
                     {(() => {
                       const rawContent = streamingTextContent || '';
-                      
+
                       if (!rawContent) {
                         return <AgentLoader />;
                       }
 
                       let detectedTag: string | null = null;
                       let tagStartIndex = -1;
-                      
+
                       const functionCallsIndex = rawContent.indexOf('<function_calls>');
                       if (functionCallsIndex !== -1) {
                         detectedTag = 'function_calls';
@@ -829,7 +832,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                           }
                         }
                       }
-                      
+
                       const textBeforeTag = detectedTag && tagStartIndex >= 0 ? rawContent.substring(0, tagStartIndex) : rawContent;
                       const processedTextBeforeTag = preprocessTextOnlyToolsLocal(textBeforeTag);
 
@@ -854,28 +857,28 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                     })()}
                   </View>
                 )}
-                
+
               </View>
             </View>
           );
         }
-        
+
         return null;
       })}
-      
+
       {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
         (messages.length === 0 || messages[messages.length - 1].type === 'user')) && (
           <View className="mb-6">
             <View className="flex-row items-center mb-3">
-              <AgentIdentifier 
+              <AgentIdentifier
                 size={24}
                 showName
               />
             </View>
             <AgentLoader />
           </View>
-      )}
-      
+        )}
+
       <View className="h-4" />
     </View>
   );

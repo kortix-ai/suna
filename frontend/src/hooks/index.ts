@@ -14,7 +14,7 @@ export * from './files/use-file-queries';
 export * from './files/use-file-mutations';
 export * from './files/use-sandbox-mutations';
 // Export file utilities separately to avoid conflicts
-export { useCachedFile, FileCache, getCachedFile, fetchFileContent, useVncPreloader, usePresentationViewer } from './files';
+export { useCachedFile, FileCache, getCachedFile, fetchFileContent, useVncPreloader } from './files';
 
 // Subscriptions - export specific hooks to avoid conflicts with billing
 export { useSubscription, useSubscriptionWithStreaming, useCreatePortalSession, useSubscriptionCommitment, isPlan } from './billing';

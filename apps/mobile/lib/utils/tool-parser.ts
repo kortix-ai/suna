@@ -213,7 +213,6 @@ export function preprocessTextOnlyTools(content: string): string {
     return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, '$1');
   });
 
-  content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
 
   content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
     if (match.includes('<parameter name="attachments"')) return match;
@@ -225,7 +224,6 @@ export function preprocessTextOnlyTools(content: string): string {
     return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
   });
 
-  content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)$/gi, '$1');
 
   content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, (match) => {
     if (match.match(/<ask[^>]*attachments=/i)) return match;
@@ -236,8 +234,6 @@ export function preprocessTextOnlyTools(content: string): string {
     if (match.match(/<complete[^>]*attachments=/i)) return match;
     return match.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, '$1');
   });
-
-  content = content.replace(/<present_presentation[^>]*>([\s\S]*?)<\/present_presentation>/gi, '$1');
   return content;
 }
 

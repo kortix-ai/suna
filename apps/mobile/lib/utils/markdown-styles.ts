@@ -214,10 +214,10 @@ export const markdownStyles = StyleSheet.create({
     lineHeight: 25,
   },
 
-  // Text container
-  textgroup: {
-    marginBottom: 4,
-  },
+  // Text container CAUSES MISSCENTERIN OF TEXT
+  // textgroup: {
+  //   marginBottom: 4,
+  // },
 
   // Delete
   del: {
@@ -231,7 +231,6 @@ export const markdownStyles = StyleSheet.create({
  */
 export const markdownStylesDark = StyleSheet.create({
   ...markdownStyles,
-  
   body: {
     ...markdownStyles.body,
     color: '#fafafa', // zinc-50

@@ -3,7 +3,6 @@
  */
 export { useCachedFile, FileCache, getCachedFile, fetchFileContent } from './use-cached-file';
 export { useVncPreloader, type VncStatus } from './useVncPreloader';
-export { usePresentationViewer } from './use-presentation-viewer';
 
 // Export file query hooks and utilities
 export {

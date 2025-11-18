@@ -21,6 +21,8 @@ import {
 import { useFileContent, useImageContent } from '@/hooks/files';
 import { useAuth } from '@/components/AuthProvider';
 import { Project } from '@/lib/api/projects';
+import { PresentationSlidePreview } from '@/components/thread/tool-views/presentation-tools/PresentationSlidePreview';
+import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 
 // Define basic file types
 export type FileType =
@@ -29,6 +31,31 @@ export type FileType =
     | 'archive' | 'database' | 'markdown'
     | 'csv'
     | 'other';
+
+// Helper function to check if a filepath is a presentation attachment
+function isPresentationAttachment(filepath: string): boolean {
+    // Check if it matches patterns like:
+    // - presentations/[name]/slide_01.html
+    // - presentations/[name]/metadata.json
+    const presentationPattern = /^presentations\/([^\/]+)\/(slide_\d+\.html|metadata\.json)$/i;
+    return presentationPattern.test(filepath);
+}
+
+// Helper function to extract presentation name from filepath
+function extractPresentationName(filepath: string): string | null {
+    const match = filepath.match(/^presentations\/([^\/]+)\//i);
+    return match ? match[1] : null;
+}
+
+// Helper function to extract slide number from filepath
+function extractSlideNumber(filepath: string): number | null {
+    // Match patterns like slide_01.html, slide_1.html, etc.
+    const match = filepath.match(/slide_(\d+)\.html$/i);
+    if (match) {
+        return parseInt(match[1], 10);
+    }
+    return null;
+}
 
 // Simple extension-based file type detection
 function getFileType(filename: string): FileType {
@@ -190,6 +217,7 @@ export function FileAttachment({
 }: FileAttachmentProps) {
     // Authentication 
     const { session } = useAuth();
+    const { openPresentation } = usePresentationViewerStore();
 
     // Simplified state management
     const [hasError, setHasError] = React.useState(false);
@@ -362,6 +390,35 @@ export function FileAttachment({
             window.open(fileUrl, '_blank');
         }
     };
+
+    // Check if this is a presentation attachment - render with PresentationSlidePreview
+    if (isPresentationAttachment(filepath) && project) {
+        const presentationName = extractPresentationName(filepath);
+        const slideNumber = extractSlideNumber(filepath);
+        if (presentationName && project?.sandbox?.sandbox_url) {
+            return (
+                <PresentationSlidePreview
+                    presentationName={presentationName}
+                    project={project}
+                    initialSlide={slideNumber || undefined}
+                    onFullScreenClick={(slideNum) => {
+                        // Open the full-screen presentation viewer modal
+                        console.log('[FileAttachment] Opening presentation:', {
+                            presentationName,
+                            sandboxUrl: project.sandbox.sandbox_url,
+                            slideNumber: slideNum || slideNumber || 1
+                        });
+                        openPresentation(
+                            presentationName,
+                            project.sandbox.sandbox_url,
+                            slideNum || slideNumber || 1
+                        );
+                    }}
+                    className={className}
+                />
+            );
+        }
+    }
 
     // Images are displayed with their natural aspect ratio
     if (isImage && showPreview) {

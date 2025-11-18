@@ -164,19 +164,19 @@ export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
             ? batchResults[currentQueryIndex].images
             : images;
           return currentImages.length > 0 && (
-            <View className="gap-3">
-              <View className="flex-row items-center gap-2">
-                <Icon as={ImageIcon} size={16} className="text-foreground/50" />
-                <Text className="text-sm font-roobert-medium text-foreground/70">
+          <View className="gap-3">
+            <View className="flex-row items-center gap-2">
+              <Icon as={ImageIcon} size={16} className="text-foreground/50" />
+              <Text className="text-sm font-roobert-medium text-foreground/70">
                   Images ({currentImages.length})
                 </Text>
                 {isBatch && batchResults && (
                   <Text className="text-xs font-roobert text-muted-foreground">
                     (Query {currentQueryIndex + 1})
-                  </Text>
+              </Text>
                 )}
-              </View>
-              <View className="flex-row flex-wrap gap-3">
+            </View>
+            <View className="flex-row flex-wrap gap-3">
                 {currentImages.slice(0, 6).map((imageUrl, idx) => (
                 <Pressable
                   key={idx}
@@ -193,13 +193,13 @@ export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
                     <Icon as={ExternalLink} size={12} className="text-white" />
                   </View>
                 </Pressable>
-                ))}
-              </View>
+              ))}
+            </View>
               {currentImages.length > 6 && (
-                <Text className="text-xs font-roobert text-muted-foreground text-center mt-1">
+              <Text className="text-xs font-roobert text-muted-foreground text-center mt-1">
                   +{currentImages.length - 6} more images
-                </Text>
-              )}
+              </Text>
+            )}
             </View>
           );
         })()}
@@ -218,8 +218,8 @@ export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
                       <Text className="text-sm font-roobert text-foreground leading-relaxed">
                         {batchItem.answer}
                       </Text>
-                    </View>
-                  )}
+          </View>
+        )}
 
                   {batchItem.results.length > 0 ? (
                     <View className="gap-2.5">

@@ -29,7 +29,6 @@ export default getRequestConfig(async ({ requestLocale }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
       locale = user.user_metadata.locale as Locale;
-      console.log(`✅ Using user metadata locale (highest priority): ${locale}`);
       return {
         locale,
         messages: (await import(`../../translations/${locale}.json`)).default
@@ -37,14 +36,12 @@ export default getRequestConfig(async ({ requestLocale }) => {
     }
   } catch (error) {
     // User might not be authenticated, continue with other methods
-    console.debug('Could not fetch user locale from profile:', error);
   }
   
   // Priority 2: Check cookie (explicit user preference)
   const localeCookie = cookieStore.get('locale')?.value;
   if (localeCookie && locales.includes(localeCookie as Locale)) {
     locale = localeCookie as Locale;
-    console.log(`✅ Using cookie locale: ${locale}`);
     return {
       locale,
       messages: (await import(`../../translations/${locale}.json`)).default
@@ -57,7 +54,6 @@ export default getRequestConfig(async ({ requestLocale }) => {
   const urlLocale = requestLocale || headersList.get('x-locale');
   if (urlLocale && locales.includes(urlLocale as Locale)) {
     locale = urlLocale as Locale;
-    console.log(`🌍 Using locale from URL path (SEO): ${locale}`);
     return {
       locale,
       messages: (await import(`../../translations/${locale}.json`)).default
@@ -70,12 +66,10 @@ export default getRequestConfig(async ({ requestLocale }) => {
     const browserLocale = acceptLanguage.split(',')[0].split('-')[0].toLowerCase();
     if (locales.includes(browserLocale as Locale)) {
       locale = browserLocale as Locale;
-      console.log(`🌍 Using browser language locale: ${locale}`);
     }
   }
 
   // Priority 5: Default to English
-  console.log(`🌍 Using default locale: ${locale}`);
   return {
     locale,
     messages: (await import(`../../translations/${locale}.json`)).default

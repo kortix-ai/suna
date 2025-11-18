@@ -1,16 +1,15 @@
 import React from 'react';
-import { View, ScrollView } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircleQuestion, CheckCircle2, AlertCircle, Paperclip, Info } from 'lucide-react-native';
+import { MessageCircleQuestion, CheckCircle2, AlertCircle, Paperclip, Info, ChevronRight } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractAskData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 
 export function AskToolView({ toolData, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
-  const { text, attachments, success } = extractAskData(toolData);
+  const { text, attachments, follow_up_answers, success } = extractAskData(toolData);
   const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
-  const isLatest = currentIndex !== undefined && totalCalls !== undefined && currentIndex === totalCalls - 1;
 
   if (isStreaming) {
     return (
@@ -84,12 +83,31 @@ export function AskToolView({ toolData, isStreaming = false, project, assistantM
           </View>
         )}
 
-        {isLatest && (
-          <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
-            <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
-            <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
-              Kortix will automatically continue working once you provide your response.
-            </Text>
+        <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
+          <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+          <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
+            Kortix will automatically continue working once you provide your response.
+          </Text>
+        </View>
+
+        {/* Follow-up Answers */}
+        {follow_up_answers && follow_up_answers.length > 0 && (
+          <View className="gap-2">
+            {follow_up_answers.slice(0, 4).map((answer, index) => (
+              <Pressable
+                key={index}
+                onPress={() => {
+                  // TODO: Handle follow-up answer click - could trigger a response
+                  console.log('Follow-up answer clicked:', answer);
+                }}
+                className="flex-row items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-muted/30 border border-border/50 active:bg-muted/50"
+              >
+                <Text className="text-sm font-roobert text-foreground/70 flex-1 leading-relaxed">
+                  {answer}
+                </Text>
+                <Icon as={ChevronRight} size={14} className="text-muted-foreground/40" />
+              </Pressable>
+            ))}
           </View>
         )}
 

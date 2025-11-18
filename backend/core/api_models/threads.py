@@ -22,3 +22,22 @@ class MessageCreateRequest(BaseModel):
     type: str
     content: str
     is_llm_message: bool = True
+
+
+class MessageFeedbackRequest(BaseModel):
+    """Request model for submitting message feedback."""
+    rating: float
+    feedback_text: Optional[str] = None
+    help_improve: bool = True
+
+
+class MessageFeedbackResponse(BaseModel):
+    """Response model for message feedback."""
+    feedback_id: str
+    thread_id: str
+    message_id: str
+    rating: float
+    feedback_text: Optional[str] = None
+    help_improve: bool
+    created_at: str
+    updated_at: str
