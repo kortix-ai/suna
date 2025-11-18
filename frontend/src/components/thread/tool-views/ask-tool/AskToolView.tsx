@@ -7,6 +7,7 @@ import {
   Clock,
   MessageSquare,
   Paperclip,
+  Info,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import {
@@ -34,6 +35,8 @@ export function AskToolView({
   isStreaming = false,
   onFileClick,
   project,
+  currentIndex,
+  totalCalls,
 }: AskToolViewProps) {
 
   const {
@@ -204,6 +207,15 @@ export function AskToolView({
                 </h3>
                 <p className="text-sm text-muted-foreground">
                   No files attached to this question
+                </p>
+              </div>
+            )}
+            
+            {currentIndex !== undefined && totalCalls !== undefined && currentIndex === totalCalls - 1 && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
+                <Info className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Kortix will automatically continue working once you provide your response.
                 </p>
               </div>
             )}

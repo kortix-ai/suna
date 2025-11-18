@@ -142,7 +142,7 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
       
       {/* Quick Action Bar - Above everything */}
       {onQuickActionPress && (
-        <View className="pb-2 px-3" pointerEvents="box-none">
+        <View className="pb-2" pointerEvents="box-none">
           <QuickActionBar 
             onActionPress={onQuickActionPress}
             selectedActionId={selectedQuickAction}

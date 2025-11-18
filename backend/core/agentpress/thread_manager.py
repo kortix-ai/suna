@@ -367,6 +367,12 @@ class ThreadManager:
                             # Use total_tokens (includes prev completion) for better accuracy
                             last_total_tokens = int(usage.get('total_tokens', 0))
                             
+                            # Add cache creation tokens for accurate count (AWS Bedrock quota calculation)
+                            cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
+                            if cache_creation > 0:
+                                last_total_tokens += cache_creation
+                                logger.debug(f"Added {cache_creation} cache creation tokens to fast check total")
+                            
                             # Count tokens in new message (only for first turn, not auto-continue)
                             new_msg_tokens = 0
                             
@@ -445,7 +451,10 @@ class ThreadManager:
 
             # Apply context compression (only if needed based on fast path check)
             if ENABLE_CONTEXT_MANAGER:
-                if skip_fetch:
+                # Skip compression for first message (minimal context)
+                if len(messages) <= 2:
+                    logger.debug(f"First message: Skipping compression ({len(messages)} messages)")
+                elif skip_fetch:
                     # Fast path: We know we're under threshold, skip compression entirely
                     logger.debug(f"Fast path: Skipping compression check (under threshold)")
                 elif need_compression:
@@ -490,7 +499,8 @@ class ThreadManager:
                     logger.debug(f"Failed to check cache_needs_rebuild flag: {e}")
             
             # Apply caching
-            if ENABLE_PROMPT_CACHING:
+            if ENABLE_PROMPT_CACHING and len(messages) > 2:
+                # Skip caching for first message (minimal context)
                 prepared_messages = await apply_anthropic_caching_strategy(
                     system_prompt, 
                     messages, 
@@ -500,6 +510,8 @@ class ThreadManager:
                 )
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
             else:
+                if ENABLE_PROMPT_CACHING and len(messages) <= 2:
+                    logger.debug(f"First message: Skipping caching and validation ({len(messages)} messages)")
                 prepared_messages = [system_prompt] + messages
 
             # Get tool schemas for LLM API call (after compression)

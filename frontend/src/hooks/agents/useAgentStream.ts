@@ -19,6 +19,7 @@ import { composioKeys } from '@/hooks/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { useContextUsageStore } from '@/stores/context-usage-store';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
@@ -333,6 +334,39 @@ export function useAgentStream(
             jsonData,
           );
           const errorMessage = jsonData.message || 'Unknown error occurred';
+          const messageLower = errorMessage.toLowerCase();
+          
+          // Check if this is a billing error
+          const isBillingError = 
+            messageLower.includes('insufficient credits') ||
+            messageLower.includes('credit') ||
+            messageLower.includes('balance') ||
+            messageLower.includes('out of credits') ||
+            messageLower.includes('no credits') ||
+            messageLower.includes('billing check failed');
+          
+          if (isBillingError) {
+            setError(errorMessage);
+            callbacks.onError?.(errorMessage);
+            
+            // Open pricing modal automatically
+            const isCreditsExhausted = 
+              messageLower.includes('insufficient credits') ||
+              messageLower.includes('out of credits') ||
+              messageLower.includes('no credits') ||
+              messageLower.includes('balance');
+            
+            const alertTitle = isCreditsExhausted 
+              ? 'You ran out of credits. Upgrade now.'
+              : 'Billing check failed. Please upgrade to continue.';
+            
+            usePricingModalStore.getState().openPricingModal({ 
+              isAlert: true, 
+              alertTitle 
+            });
+            return;
+          }
+          
           setError(errorMessage);
           toast.error(errorMessage, { duration: 15000 });
           callbacks.onError?.(errorMessage);
@@ -346,7 +380,8 @@ export function useAgentStream(
             message.includes('credit') ||
             message.includes('balance') ||
             message.includes('out of credits') ||
-            message.includes('no credits');
+            message.includes('no credits') ||
+            message.includes('billing check failed');
           
           if (isBillingError) {
             console.error(
@@ -355,6 +390,23 @@ export function useAgentStream(
             );
             setError(jsonData.message);
             callbacks.onError?.(jsonData.message);
+            
+            // Open pricing modal automatically
+            const isCreditsExhausted = 
+              message.includes('insufficient credits') ||
+              message.includes('out of credits') ||
+              message.includes('no credits') ||
+              message.includes('balance');
+            
+            const alertTitle = isCreditsExhausted 
+              ? 'You ran out of credits. Upgrade now.'
+              : 'Billing check failed. Please upgrade to continue.';
+            
+            usePricingModalStore.getState().openPricingModal({ 
+              isAlert: true, 
+              alertTitle 
+            });
+            
             finalizeStream('stopped', currentRunIdRef.current);
             return;
           }
@@ -577,7 +629,8 @@ export function useAgentStream(
             lower.includes('credit') ||
             lower.includes('balance') ||
             lower.includes('out of credits') ||
-            lower.includes('no credits');
+            lower.includes('no credits') ||
+            lower.includes('billing check failed');
           
           if (isBillingError && errorMessage) {
             console.error(
@@ -585,6 +638,22 @@ export function useAgentStream(
             );
             setError(errorMessage);
             callbacks.onError?.(errorMessage);
+            
+            // Open pricing modal automatically
+            const isCreditsExhausted = 
+              lower.includes('insufficient credits') ||
+              lower.includes('out of credits') ||
+              lower.includes('no credits') ||
+              lower.includes('balance');
+            
+            const alertTitle = isCreditsExhausted 
+              ? 'You ran out of credits. Upgrade now.'
+              : 'Billing check failed. Please upgrade to continue.';
+            
+            usePricingModalStore.getState().openPricingModal({ 
+              isAlert: true, 
+              alertTitle 
+            });
           }
           
           // Map backend terminal status to hook terminal status

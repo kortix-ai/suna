@@ -1,5 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { CircleDashed, CheckCircle, AlertTriangle } from 'lucide-react';
+import { CircleDashed, CheckCircle, AlertTriangle, Info } from 'lucide-react';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
 import { FileAttachmentGrid } from '@/components/thread/file-attachment';
 import { useFilePreloader } from '@/hooks/files';
@@ -10,13 +10,13 @@ import {
     getToolIcon,
     getUserFriendlyToolName,
     safeJsonParse,
+    HIDE_STREAMING_XML_TAGS,
 } from '@/components/thread/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentLoader } from './loader';
 import { parseXmlToolCalls, isNewXmlFormat } from '@/components/thread/tool-views/xml-parser';
 import { ShowToolStream } from './ShowToolStream';
 import { ComposioUrlDetector } from './composio-url-detector';
-import { HIDE_STREAMING_XML_TAGS } from '@/components/thread/utils';
 
 
 // Helper function to render attachments (keeping original implementation for now)
@@ -44,7 +44,8 @@ export function renderMarkdownContent(
     fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void,
     sandboxId?: string,
     project?: Project,
-    debugMode?: boolean
+    debugMode?: boolean,
+    isLatestMessage?: boolean
 ) {
     // If in debug mode, just display raw content in a pre tag
     if (debugMode) {
@@ -94,6 +95,14 @@ export function renderMarkdownContent(
                         <div key={`ask-${match.index}-${index}`} className="space-y-3">
                             <ComposioUrlDetector content={askText} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" />
                             {renderAttachments(attachmentArray, fileViewerHandler, sandboxId, project)}
+                            {isLatestMessage && (
+                                <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
+                                    <Info className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
+                                    <p className="text-sm text-muted-foreground leading-relaxed">
+                                        Kortix will automatically continue working once you provide your response.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     );
                 } else if (toolName === 'complete') {
@@ -727,12 +736,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                 const elements: React.ReactNode[] = [];
                                                                 let assistantMessageCount = 0; // Move this outside the loop
 
+                                                                // Check if this is the last group
+                                                                const isLastGroup = groupIndex === finalGroupedMessages.length - 1;
+                                                                
+                                                                // Find the last assistant message in this group
+                                                                const assistantMessages = group.messages.filter(m => m.type === 'assistant');
+                                                                const lastAssistantMessageId = assistantMessages.length > 0 
+                                                                    ? assistantMessages[assistantMessages.length - 1].message_id 
+                                                                    : null;
+
                                                                 group.messages.forEach((message, msgIndex) => {
                                                                     if (message.type === 'assistant') {
                                                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                                                                         const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
 
                                                                         if (!parsedContent.content) return;
+
+                                                                        // Check if this is the latest message (last assistant message in the last group)
+                                                                        const isLatestMessage = isLastGroup && message.message_id === lastAssistantMessageId;
 
                                                                         const renderedContent = renderMarkdownContent(
                                                                             parsedContent.content,
@@ -741,7 +762,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                             handleOpenFileViewer,
                                                                             sandboxId,
                                                                             project,
-                                                                            debugMode
+                                                                            debugMode,
+                                                                            isLatestMessage
                                                                         );
 
                                                                         elements.push(

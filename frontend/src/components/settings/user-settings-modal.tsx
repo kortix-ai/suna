@@ -70,6 +70,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } 
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import ThreadUsage from '@/components/billing/thread-usage';
 import { formatCredits } from '@/lib/utils/credit-formatter';
+import { LanguageSwitcher } from './language-switcher';
+import { useTranslations } from 'next-intl';
 
 type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations';
 
@@ -219,6 +221,8 @@ export function UserSettingsModal({
 }
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
+    const t = useTranslations('settings.general');
+    const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
     const [isLoading, setIsLoading] = useState(true);
@@ -255,14 +259,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             if (error) throw error;
 
-            toast.success('Profile updated successfully');
+            toast.success(t('profileUpdated'));
 
             setTimeout(() => {
                 window.location.reload();
             }, 500);
         } catch (error) {
             console.error('Error updating profile:', error);
-            toast.error('Failed to update profile');
+            toast.error(t('profileUpdateFailed'));
         } finally {
             setIsSaving(false);
         }
@@ -303,26 +307,26 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     return (
         <div className="p-6 space-y-6">
             <div>
-                <h3 className="text-lg font-semibold mb-1">Profile Settings</h3>
+                <h3 className="text-lg font-semibold mb-1">{t('title')}</h3>
                 <p className="text-sm text-muted-foreground">
-                    Manage your account information
+                    {t('description')}
                 </p>
             </div>
 
             <div className="space-y-4">
                 <div className="space-y-2">
-                    <Label htmlFor="name">Name</Label>
+                    <Label htmlFor="name">{t('name')}</Label>
                     <Input
                         id="name"
                         value={userName}
                         onChange={(e) => setUserName(e.target.value)}
-                        placeholder="Enter your name"
+                        placeholder={t('namePlaceholder')}
                         className="shadow-none"
                     />
                 </div>
 
                 <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">{t('email')}</Label>
                     <Input
                         id="email"
                         value={userEmail}
@@ -330,8 +334,12 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                         className="bg-muted/50 cursor-not-allowed shadow-none"
                     />
                     <p className="text-xs text-muted-foreground">
-                        Email cannot be changed from here
+                        {t('emailCannotChange')}
                     </p>
+                </div>
+
+                <div className="space-y-2 pt-4">
+                    <LanguageSwitcher />
                 </div>
             </div>
 
@@ -340,13 +348,13 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     variant="outline"
                     onClick={onClose}
                 >
-                    Cancel
+                    {tCommon('cancel')}
                 </Button>
                 <Button
                     onClick={handleSave}
                     disabled={isSaving}
                 >
-                    {isSaving ? 'Saving...' : 'Save Changes'}
+                    {isSaving ? tCommon('saving') : t('saveChanges')}
                 </Button>
             </div>
 

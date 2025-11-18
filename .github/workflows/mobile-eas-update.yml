@@ -1,0 +1,103 @@
+name: EAS Update - Expo Go Testing
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - production
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile-eas-update.yml'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Git branch name to publish to'
+        required: true
+        default: 'main'
+      platform:
+        description: 'Platform to publish for'
+        required: true
+        default: 'ios'
+        type: choice
+        options:
+          - ios
+          - android
+
+permissions:
+  contents: read
+
+jobs:
+  publish-update:
+    name: Publish EAS Update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: apps/mobile
+        run: npm ci
+
+      - name: Get branch name
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "branch=${GITHUB_REF#refs/heads/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get platform
+        id: platform
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "platform=${{ github.event.inputs.platform }}" >> $GITHUB_OUTPUT
+          else
+            echo "platform=ios" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get commit message
+        id: commit
+        run: |
+          echo "message=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Publish EAS Update
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA
+          EXPO_PUBLIC_BACKEND_URL: https://staging-api.suna.so/api
+        run: |
+          eas update \
+            --branch ${{ steps.branch.outputs.branch }} \
+            --message "${{ steps.commit.outputs.message }} (${{ steps.commit.outputs.sha }})" \
+            --platform ${{ steps.platform.outputs.platform }} \
+            --non-interactive
+
+      - name: Comment on PR (if applicable)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ EAS Update published to branch `${{ steps.branch.outputs.branch }}` for `${{ steps.platform.outputs.platform }}`'
+            })
+

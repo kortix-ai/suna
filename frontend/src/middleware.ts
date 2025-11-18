@@ -1,6 +1,18 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { locales, defaultLocale, type Locale } from '@/i18n/config';
+import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
+
+// Marketing pages that support locale routing for SEO (/de, /it, etc.)
+const MARKETING_ROUTES = [
+  '/',
+  '/suna',
+  '/enterprise',
+  '/legal',
+  '/support',
+  '/templates',
+];
 
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
@@ -19,6 +31,8 @@ const PUBLIC_ROUTES = [
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
   '/suna', // Suna rebrand page should be public for SEO
+  // Add locale routes for marketing pages
+  ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
 // Routes that require authentication but are related to billing/trials/setup
@@ -47,6 +61,117 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/')
   ) {
     return NextResponse.next();
+  }
+
+  // Extract path segments
+  const pathSegments = pathname.split('/').filter(Boolean);
+  const firstSegment = pathSegments[0];
+  
+  // Check if first segment is a locale (e.g., /de, /it, /de/suna)
+  if (firstSegment && locales.includes(firstSegment as Locale)) {
+    const locale = firstSegment as Locale;
+    const remainingPath = '/' + pathSegments.slice(1).join('/') || '/';
+    
+    // Verify remaining path is a marketing route
+    const isRemainingPathMarketing = MARKETING_ROUTES.some(route => {
+      if (route === '/') {
+        return remainingPath === '/' || remainingPath === '';
+      }
+      return remainingPath === route || remainingPath.startsWith(route + '/');
+    });
+    
+    if (isRemainingPathMarketing) {
+      // Rewrite /de to /, /de/suna to /suna, etc.
+      const response = NextResponse.rewrite(new URL(remainingPath, request.url));
+      response.cookies.set('locale', locale, {
+        path: '/',
+        maxAge: 31536000, // 1 year
+        sameSite: 'lax',
+      });
+      
+      // Store locale in headers so next-intl can pick it up
+      response.headers.set('x-locale', locale);
+      
+      console.log(`🌍 Rewriting /${locale}${remainingPath === '/' ? '' : remainingPath} to ${remainingPath}`);
+      return response;
+    }
+  }
+  
+  // Check if this is a marketing route (without locale prefix)
+  const isMarketingRoute = MARKETING_ROUTES.some(route => 
+    pathname === route || pathname.startsWith(route + '/')
+  );
+
+  // Auto-redirect based on geo-detection for marketing pages
+  // Only redirect if:
+  // 1. User is visiting a marketing route without locale prefix
+  // 2. User doesn't have an explicit preference (no cookie, no user metadata)
+  // 3. Detected locale is not English (default)
+  if (isMarketingRoute && (!firstSegment || !locales.includes(firstSegment as Locale))) {
+    // Check if user has explicit preference in cookie
+    const localeCookie = request.cookies.get('locale')?.value;
+    const hasExplicitPreference = !!localeCookie && locales.includes(localeCookie as Locale);
+    
+    // Check user metadata (if authenticated) - only if no cookie preference
+    let userLocale: Locale | null = null;
+    if (!hasExplicitPreference) {
+      try {
+        const supabase = createServerClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          {
+            cookies: {
+              getAll() {
+                return request.cookies.getAll();
+              },
+              setAll() {
+                // No-op for middleware
+              },
+            },
+          }
+        );
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
+          userLocale = user.user_metadata.locale as Locale;
+        }
+      } catch (error) {
+        // User might not be authenticated, continue with geo-detection
+        console.debug('Could not fetch user locale in middleware:', error);
+      }
+    }
+    
+    // Only auto-redirect if:
+    // - No explicit preference (no cookie, no user metadata)
+    // - Detected locale is not English (default)
+    // This prevents unnecessary redirects for English speakers and users with preferences
+    if (!hasExplicitPreference && !userLocale) {
+      const acceptLanguage = request.headers.get('accept-language');
+      console.log('🌍 Browser Accept-Language header:', acceptLanguage);
+      console.log('🌍 Request pathname:', pathname);
+      console.log('🌍 Has explicit preference:', hasExplicitPreference);
+      console.log('🌍 User locale from metadata:', userLocale);
+      
+      const detectedLocale = detectBestLocaleFromHeaders(acceptLanguage);
+      console.log('🌍 Detected locale from headers:', detectedLocale);
+      
+      // Only redirect if detected locale is not English (default)
+      // This prevents unnecessary redirects for English speakers
+      if (detectedLocale !== defaultLocale) {
+        const redirectUrl = new URL(request.url);
+        redirectUrl.pathname = `/${detectedLocale}${pathname === '/' ? '' : pathname}`;
+        console.log(`🌍 Auto-redirecting to locale route: ${redirectUrl.pathname} (detected: ${detectedLocale})`);
+        
+        const redirectResponse = NextResponse.redirect(redirectUrl);
+        // Set cookie so we don't redirect again on next visit
+        redirectResponse.cookies.set('locale', detectedLocale, {
+          path: '/',
+          maxAge: 31536000, // 1 year
+          sameSite: 'lax',
+        });
+        return redirectResponse;
+      }
+    }
   }
 
   // Allow all public routes without any checks

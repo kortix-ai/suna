@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { AgentSelector } from '@/components/agents/agent-selector';
 import { TriggerLimitError } from '@/lib/api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useTranslations } from 'next-intl';
 
 interface TriggerCreationDialogProps {
   open: boolean;
@@ -50,6 +51,7 @@ export function TriggerCreationDialog({
   const createTriggerMutation = useCreateTrigger();
   const updateTriggerMutation = useUpdateTrigger();
   const pricingModalStore = usePricingModalStore();
+  const tBilling = useTranslations('billing');
 
   // Initialize form for edit mode or pre-selected agent
   React.useEffect(() => {
@@ -119,9 +121,10 @@ export function TriggerCreationDialog({
       handleClose();
     } catch (error: any) {
       if (error instanceof TriggerLimitError) {
-        const triggerType = error.detail.trigger_type === 'scheduled' ? 'scheduled' : 'app-based';
-        const upgradeMessage = `Upgrade to create more ${triggerType} triggers`;
-        pricingModalStore.openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+        pricingModalStore.openPricingModal({ 
+          isAlert: true, 
+          alertTitle: `${tBilling('reachedLimit')} ${tBilling('triggerLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+        });
         handleClose();
         return;
       }

@@ -3,7 +3,7 @@ import { Text } from '@/components/ui/text';
 import { TierBadge } from '@/components/menu/TierBadge';
 import * as React from 'react';
 import { Pressable, View, Dimensions } from 'react-native';
-import { Menu, Coins, Sparkles } from 'lucide-react-native';
+import { Menu, Coins, Sparkles, TextAlignStart } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -96,9 +96,9 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
         accessibilityLabel="Open menu"
         accessibilityHint="Opens the navigation drawer"
       >
-        <Icon as={Menu} size={24} className="text-foreground" strokeWidth={2} />
+        <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
-      <View className="absolute right-6 flex-row items-center gap-2" style={{ top: 8.5 }}>
+      <View className="absolute right-6 flex-row items-center gap-2" >
         {isFreeTier && (
           <AnimatedPressable
             onPressIn={() => {

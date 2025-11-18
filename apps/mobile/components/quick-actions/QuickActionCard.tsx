@@ -46,7 +46,7 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
       onPress={handlePress}
-      className={`flex-row items-center px-4 py-2.5 mr-2 rounded-2xl ${
+      className={`flex-row items-center px-4 py-2.5 rounded-2xl ${
         isSelected 
           ? 'bg-primary/10' 
           : 'bg-primary/5'

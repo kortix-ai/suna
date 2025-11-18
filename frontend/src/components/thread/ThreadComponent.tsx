@@ -10,7 +10,7 @@ import { useSearchParams } from 'next/navigation';
 import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/thread/chat-input/chat-input';
-import { useSidebar } from '@/components/ui/sidebar';
+import { useSidebar, SidebarContext } from '@/components/ui/sidebar';
 import { useAgentStream } from '@/hooks/agents';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
@@ -53,6 +53,7 @@ import { threadKeys } from '@/hooks/threads/keys';
 import { fileQueryKeys } from '@/hooks/files';
 import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
+import { useTranslations } from 'next-intl';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -63,6 +64,7 @@ interface ThreadComponentProps {
 }
 
 export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false }: ThreadComponentProps) {
+  const t = useTranslations('dashboard');
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -119,18 +121,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const lastStreamStartedRef = useRef<string | null>(null); // Track last runId we started streaming for
   const pendingMessageRef = useRef<string | null>(null); // Store pending message to add when agent starts
 
-  // Sidebar - try to use it if SidebarProvider is available (logged in users on share page will have it)
-  let leftSidebarState: 'expanded' | 'collapsed' | undefined;
-  let setLeftSidebarOpen: ((open: boolean) => void) | undefined;
-
-  try {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const sidebar = useSidebar();
-    leftSidebarState = sidebar.state;
-    setLeftSidebarOpen = sidebar.setOpen;
-  } catch (e) {
-    // SidebarProvider not available (anonymous user on share page), continue without sidebar
-  }
+  // Sidebar - safely use it if SidebarProvider is available (logged in users on share page will have it)
+  // Use React.useContext directly which returns null if context is not available (doesn't throw)
+  const sidebarContext = React.useContext(SidebarContext);
+  const leftSidebarState: 'expanded' | 'collapsed' | undefined = sidebarContext?.state;
+  const setLeftSidebarOpen: ((open: boolean) => void) | undefined = sidebarContext?.setOpen;
 
   // Custom hooks
   const {
@@ -1016,7 +1011,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             <div className="flex-shrink-0 border-t border-border/20 bg-background p-4">
               <ChatInput
                 onSubmit={handleSubmitMessage}
-                placeholder={`Describe what you need help with...`}
+                placeholder={t('describeWhatYouNeed')}
                 loading={isSending}
                 disabled={isSending}
                 isAgentRunning={
@@ -1159,7 +1154,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             <div className={cn('mx-auto', isMobile ? 'w-full' : 'max-w-3xl')}>
               <ChatInput
                 onSubmit={handleSubmitMessage}
-                placeholder={`Describe what you need help with...`}
+                placeholder={t('describeWhatYouNeed')}
                 loading={isSending}
                 disabled={isSending}
                 isAgentRunning={

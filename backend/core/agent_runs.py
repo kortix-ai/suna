@@ -682,7 +682,6 @@ async def unified_agent_start(
     except Exception as e:
         logger.error(f"Error in unified agent start: {str(e)}\n{traceback.format_exc()}")
         # Log the actual error details for debugging
-        import traceback
         error_details = {
             "error": str(e),
             "error_type": type(e).__name__,

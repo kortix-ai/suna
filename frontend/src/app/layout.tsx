@@ -15,6 +15,7 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { PlanSelectionModal } from '@/components/billing/pricing/plan-selection-modal';
 import { Suspense } from 'react';
+import { I18nProvider } from '@/components/i18n-provider';
 
 
 export const viewport: Viewport = {
@@ -202,6 +203,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <I18nProvider>
           <AuthProvider>
             <ReactQueryProvider>
               {children}
@@ -211,6 +213,7 @@ export default function RootLayout({
               </Suspense>
             </ReactQueryProvider>
           </AuthProvider>
+          </I18nProvider>
           <Analytics />
           <GoogleAnalytics gaId="G-6ETJFB3PT3" />
           <SpeedInsights />

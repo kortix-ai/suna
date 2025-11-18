@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { HealthCheckedVncIframe } from './HealthCheckedVncIframe';
 import { BrowserHeader } from './tool-views/BrowserToolView';
+import { useTranslations } from 'next-intl';
 
 import {
   Drawer,
@@ -257,6 +258,7 @@ export function ToolCallSidePanel({
   disableInitialAnimation,
   compact = false,
 }: ToolCallSidePanelProps) {
+  const t = useTranslations('thread');
   const [dots, setDots] = React.useState('');
   const [internalIndex, setInternalIndex] = React.useState(0);
   const [navigationMode, setNavigationMode] = React.useState<'live' | 'manual'>('live');
@@ -770,10 +772,10 @@ export function ToolCallSidePanel({
               </div>
               <div className="space-y-2">
                 <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
-                  No actions yet
+                  {t('noActionsYet')}
                 </h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                  Worker actions and results will appear here as they execute
+                  {t('workerActionsDescription')}
                 </p>
               </div>
             </div>

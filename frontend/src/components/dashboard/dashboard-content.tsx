@@ -41,11 +41,15 @@ import { Info, X } from 'lucide-react';
 import { useLimits } from '@/hooks/dashboard/use-limits';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Progress } from '../ui/progress';
+import { useTranslations } from 'next-intl';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
 
 export function DashboardContent() {
+  const t = useTranslations('dashboard');
+  const tCommon = useTranslations('common');
+  const tBilling = useTranslations('billing');
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
@@ -238,12 +242,12 @@ export function DashboardContent() {
       if (error instanceof ProjectLimitError) {
         pricingModalStore.openPricingModal({ 
           isAlert: true,
-          alertTitle: `Upgrade to create more projects (currently ${error.detail.current_count}/${error.detail.limit})` 
+          alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
         });
       } else if (error instanceof ThreadLimitError) {
         pricingModalStore.openPricingModal({ 
           isAlert: true,
-          alertTitle: `Upgrade to create more threads (currently ${error.detail.current_count}/${error.detail.limit})` 
+          alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
         });
       } else if (error instanceof BillingError) {
         const message = error.detail?.message?.toLowerCase() || '';
@@ -316,11 +320,11 @@ export function DashboardContent() {
             </PopoverTrigger>
             <PopoverContent align='end' className="w-70">
               <div>
-                <h2 className="text-md font-medium mb-4">Usage Limits</h2>
+                <h2 className="text-md font-medium mb-4">{t('usageLimits')}</h2>
                 <div className="space-y-2">
                   <div className='space-y-2'>
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Threads</span>
+                      <span className="text-muted-foreground">{t('threads')}</span>
                       <span className="font-medium">{limits?.thread_count?.current_count || 0} / {limits?.thread_count?.limit || 0}</span>
                     </div>
                     <Progress 
@@ -340,7 +344,7 @@ export function DashboardContent() {
                   </div>
                   <div className='space-y-2'>
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Scheduled Triggers</span>
+                      <span className="text-muted-foreground">{t('scheduledTriggers')}</span>
                       <span className="font-medium">{limits?.trigger_count?.scheduled?.current_count || 0} / {limits?.trigger_count?.scheduled?.limit || 0}</span>
                     </div>
                     <Progress 
@@ -350,7 +354,7 @@ export function DashboardContent() {
                   </div>
                   <div className='space-y-2'>
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">App Triggers</span>
+                      <span className="text-muted-foreground">{t('appTriggers')}</span>
                       <span className="font-medium">{limits?.trigger_count?.app?.current_count || 0} / {limits?.trigger_count?.app?.limit || 0}</span>
                     </div>
                     <Progress 
@@ -414,7 +418,7 @@ export function DashboardContent() {
                         <p
                           className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
                         >
-                          What do you want to get done?
+                          {t('whatWouldYouLike')}
                         </p>
                       </div>
 
@@ -423,7 +427,7 @@ export function DashboardContent() {
                           ref={chatInputRef}
                           onSubmit={handleSubmit}
                           loading={isSubmitting || isRedirecting}
-                          placeholder="Describe what you need help with..."
+                          placeholder={t('describeWhatYouNeed')}
                           value={inputValue}
                           onChange={setInputValue}
                           hideAttachments={false}
@@ -450,14 +454,14 @@ export function DashboardContent() {
                               transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
                             }}
                           >
-                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>You ran out of limits. Upgrade your plan to chat more.</span>
+                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>{t('limitsExceeded')}</span>
                             <div className='flex items-center -mb-3.5'>
                               <Button 
                                 size='sm' 
                                 className='h-6 text-xs'
                                 onClick={() => pricingModalStore.openPricingModal()}
                               >
-                                  Upgrade
+                                {tCommon('upgrade')}
                                 </Button>
                               {/* <Button 
                                 size='icon' 

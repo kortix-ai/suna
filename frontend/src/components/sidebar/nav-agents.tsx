@@ -61,6 +61,7 @@ import { useThreadAgentStatuses } from '@/hooks/threads';
 import { formatDateForList } from '@/lib/utils/date-formatting';
 import { Thread, getThreadsPaginated } from '@/lib/api/threads';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslations } from 'next-intl';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -232,6 +233,7 @@ const ThreadItem: React.FC<{
   };
 
 export function NavAgents() {
+  const t = useTranslations('sidebar');
   const { isMobile, state, setOpenMobile } = useSidebar()
   const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null)
   const [showShareModal, setShowShareModal] = useState(false)
@@ -784,7 +786,7 @@ export function NavAgents() {
               </>
             ) : (
               <div className="py-2 pl-2.5 text-sm text-muted-foreground">
-                No conversations yet
+                {t('noConversations')}
               </div>
             )}
           </>

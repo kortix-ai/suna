@@ -1,15 +1,23 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, ScrollView, Linking, Pressable, Image as RNImage, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Search, ExternalLink, Globe, CheckCircle2, AlertCircle, ImageIcon } from 'lucide-react-native';
+import { Search, ExternalLink, Globe, CheckCircle2, AlertCircle, ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractWebSearchData, cleanUrl, getFavicon } from './_utils';
 import * as Haptics from 'expo-haptics';
 
 export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
-  const { query, results, images, success } = extractWebSearchData(toolData);
+  const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolData);
   const isLoading = isStreaming && results.length === 0 && images.length === 0;
+  const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
+
+  // Reset to first query when batch results change
+  useEffect(() => {
+    if (isBatch && batchResults && batchResults.length > 0) {
+      setCurrentQueryIndex(0);
+    }
+  }, [isBatch, batchResults?.length]);
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -92,16 +100,84 @@ export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
           )}
         </View>
 
-        {images.length > 0 && (
-          <View className="gap-3">
-            <View className="flex-row items-center gap-2">
-              <Icon as={ImageIcon} size={16} className="text-foreground/50" />
-              <Text className="text-sm font-roobert-medium text-foreground/70">
-                Images ({images.length})
+        {/* Navigation Header - At the absolute top */}
+        {isBatch && batchResults && (
+          <View className="flex-row items-center justify-between pb-4 mb-4 border-b border-border">
+            <View className="flex-1 min-w-0">
+              <View className="flex-row items-center gap-2 mb-1">
+                <Text className="text-xs font-roobert-medium text-muted-foreground">
+                  Query {currentQueryIndex + 1} of {batchResults.length}
+                </Text>
+                <Icon 
+                  as={batchResults[currentQueryIndex].success ? CheckCircle2 : AlertCircle} 
+                  size={12} 
+                  className={batchResults[currentQueryIndex].success ? 'text-primary' : 'text-destructive'} 
+                />
+                {batchResults[currentQueryIndex].results.length > 0 && (
+                  <View className="bg-muted px-1.5 py-0.5 rounded">
+                    <Text className="text-xs font-roobert-medium text-muted-foreground">
+                      {batchResults[currentQueryIndex].results.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text className="text-sm font-roobert-medium text-foreground" numberOfLines={1}>
+                {batchResults[currentQueryIndex].query}
               </Text>
             </View>
-            <View className="flex-row flex-wrap gap-3">
-              {images.slice(0, 6).map((imageUrl, idx) => (
+            
+            <View className="flex-row items-center gap-1 ml-3">
+              <Pressable
+                onPress={() => {
+                  if (currentQueryIndex > 0) {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setCurrentQueryIndex(currentQueryIndex - 1);
+                  }
+                }}
+                disabled={currentQueryIndex === 0}
+                className={`h-8 w-8 items-center justify-center rounded-lg ${
+                  currentQueryIndex === 0 ? 'opacity-30' : 'active:bg-muted'
+                }`}
+              >
+                <Icon as={ChevronLeft} size={18} className="text-foreground" />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (currentQueryIndex < batchResults.length - 1) {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setCurrentQueryIndex(currentQueryIndex + 1);
+                  }
+                }}
+                disabled={currentQueryIndex === batchResults.length - 1}
+                className={`h-8 w-8 items-center justify-center rounded-lg ${
+                  currentQueryIndex === batchResults.length - 1 ? 'opacity-30' : 'active:bg-muted'
+                }`}
+              >
+                <Icon as={ChevronRight} size={18} className="text-foreground" />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {(() => {
+          const currentImages = isBatch && batchResults && batchResults[currentQueryIndex]?.images
+            ? batchResults[currentQueryIndex].images
+            : images;
+          return currentImages.length > 0 && (
+            <View className="gap-3">
+              <View className="flex-row items-center gap-2">
+                <Icon as={ImageIcon} size={16} className="text-foreground/50" />
+                <Text className="text-sm font-roobert-medium text-foreground/70">
+                  Images ({currentImages.length})
+                </Text>
+                {isBatch && batchResults && (
+                  <Text className="text-xs font-roobert text-muted-foreground">
+                    (Query {currentQueryIndex + 1})
+                  </Text>
+                )}
+              </View>
+              <View className="flex-row flex-wrap gap-3">
+                {currentImages.slice(0, 6).map((imageUrl, idx) => (
                 <Pressable
                   key={idx}
                   onPress={() => handleOpenUrl(imageUrl)}
@@ -117,17 +193,95 @@ export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
                     <Icon as={ExternalLink} size={12} className="text-white" />
                   </View>
                 </Pressable>
-              ))}
+                ))}
+              </View>
+              {currentImages.length > 6 && (
+                <Text className="text-xs font-roobert text-muted-foreground text-center mt-1">
+                  +{currentImages.length - 6} more images
+                </Text>
+              )}
             </View>
-            {images.length > 6 && (
-              <Text className="text-xs font-roobert text-muted-foreground text-center mt-1">
-                +{images.length - 6} more images
-              </Text>
-            )}
-          </View>
-        )}
+          );
+        })()}
 
-        {results.length > 0 && (
+        {isBatch && batchResults ? (
+          // Batch mode: display current query results
+          <View className="gap-4">
+
+            {/* Current Query Results */}
+            {(() => {
+              const batchItem = batchResults[currentQueryIndex];
+              return (
+                <View className="gap-4">
+                  {batchItem.answer && (
+                    <View className="bg-muted/50 border border-border rounded-xl p-3">
+                      <Text className="text-sm font-roobert text-foreground leading-relaxed">
+                        {batchItem.answer}
+                      </Text>
+                    </View>
+                  )}
+
+                  {batchItem.results.length > 0 ? (
+                    <View className="gap-2.5">
+                      {batchItem.results.map((result, idx) => {
+                        const favicon = getFavicon(result.url);
+                        
+                        return (
+                          <Pressable
+                            key={`batch-${currentQueryIndex}-result-${idx}`}
+                            onPress={() => handleOpenUrl(result.url)}
+                            className="bg-card border border-border rounded-xl p-3.5 gap-2"
+                          >
+                            <View className="flex-row items-start gap-2.5">
+                              {favicon && (
+                                <RNImage
+                                  source={{ uri: favicon }}
+                                  style={{ width: 18, height: 18, borderRadius: 3 }}
+                                />
+                              )}
+                              <View className="flex-1 gap-1">
+                                <Text 
+                                  className="text-sm font-roobert-medium text-primary"
+                                  numberOfLines={2}
+                                >
+                                  {result.title}
+                                </Text>
+                                <View className="flex-row items-center gap-1.5">
+                                  <Icon as={Globe} size={11} className="text-muted-foreground" />
+                                  <Text 
+                                    className="text-xs font-roobert text-muted-foreground flex-1"
+                                    numberOfLines={1}
+                                  >
+                                    {cleanUrl(result.url)}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Icon as={ExternalLink} size={14} className="text-muted-foreground" />
+                            </View>
+                            
+                            {result.snippet && (
+                              <Text 
+                                className="text-xs font-roobert text-foreground/60 mt-1"
+                                numberOfLines={2}
+                              >
+                                {result.snippet}
+                              </Text>
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text className="text-sm font-roobert text-muted-foreground italic py-4 text-center">
+                      No results found for this query
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
+          </View>
+        ) : results.length > 0 && (
+          // Single query mode: original display
           <View className="gap-3">
             <View className="flex-row items-center justify-between">
               <Text className="text-sm font-roobert-medium text-foreground/70">

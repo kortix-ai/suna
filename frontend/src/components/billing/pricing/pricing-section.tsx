@@ -21,7 +21,6 @@ import {
   Zap,
   ShoppingCart,
   Lightbulb,
-  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,7 +38,8 @@ import { AnimatedBg } from '@/components/ui/animated-bg';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
 import { BorderBeam } from '@/components/ui/border-beam';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -139,6 +139,7 @@ function BillingPeriodToggle({
   billingPeriod: 'monthly' | 'yearly' | 'yearly_commitment';
   setBillingPeriod: (period: 'monthly' | 'yearly' | 'yearly_commitment') => void;
 }) {
+  const t = useTranslations('billing');
   const isYearly = billingPeriod === 'yearly_commitment' || billingPeriod === 'yearly';
 
   return (
@@ -152,7 +153,7 @@ function BillingPeriodToggle({
             billingPeriod === 'monthly' ? 'border-primary' : 'border-border'
           )}
         >
-          Monthly
+          {t('monthly')}
         </Button>
         <Button
           variant={billingPeriod === 'yearly_commitment' ? 'default' : 'outline'}
@@ -162,14 +163,14 @@ function BillingPeriodToggle({
             billingPeriod === 'yearly_commitment' ? 'border-primary' : 'border-border'
           )}
         >
-          Yearly
+          {t('yearly')}
           <span className={cn(
             "px-1.5 py-0.5 rounded-full text-xs font-medium",
             isYearly
               ? "bg-background/90 text-primary"
               : "bg-muted/80 text-primary dark:bg-muted"
           )}>
-            15% off
+            {t('discount')}
           </span>
         </Button>
       </div>
@@ -192,6 +193,8 @@ function PricingTier({
   billingPeriod = 'monthly' as 'monthly' | 'yearly' | 'yearly_commitment',
   currentBillingPeriod = null as 'monthly' | 'yearly' | 'yearly_commitment' | null,
 }: PricingTierProps & { currentBillingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment' | null }) {
+  const t = useTranslations('billing');
+  const tCommon = useTranslations('common');
   const queryClient = useQueryClient();
 
   // Determine the price to display based on billing period
@@ -269,14 +272,17 @@ function PricingTier({
             console.error(
               "Error: Received status but no checkout URL.",
             );
-            toast.error('Failed to initiate subscription. Please try again.');
+            toast.error(t('failedToInitiateSubscription'));
           }
           break;
         case 'upgraded':
         case 'updated':
           const upgradeMessage = response.details?.is_upgrade
-            ? `Subscription upgraded from $${response.details.current_price} to $${response.details.new_price}`
-            : 'Subscription updated successfully';
+            ? t('subscriptionUpgraded', { 
+                currentPrice: `$${response.details.current_price}`, 
+                newPrice: `$${response.details.new_price}` 
+              })
+            : t('subscriptionUpdated');
           toast.success(upgradeMessage);
           posthog.capture('plan_upgraded');
           queryClient.invalidateQueries({ queryKey: billingKeys.all });
@@ -288,21 +294,24 @@ function PricingTier({
           }
           break;
         case 'commitment_blocks_downgrade':
-          toast.warning(response.message || 'Cannot downgrade during commitment period');
+          toast.warning(response.message || t('cannotDowngradeDuringCommitment'));
           break;
         case 'downgrade_scheduled':
         case 'scheduled':
           const effectiveDate = response.effective_date
             ? new Date(response.effective_date).toLocaleDateString()
-            : 'the end of your billing period';
+            : null;
 
-          const statusChangeMessage = 'Subscription change scheduled';
+          const statusChangeMessage = t('subscriptionChangeScheduled');
+          const planChangeDate = effectiveDate 
+            ? t('planWillChangeOn', { date: effectiveDate })
+            : t('planWillChangeOn', { date: 'the end of your billing period' });
 
           toast.success(
             <div>
               <p>{statusChangeMessage}</p>
               <p className="text-sm mt-1">
-                Your plan will change on {effectiveDate}.
+                {planChangeDate}
               </p>
             </div>,
           );
@@ -313,7 +322,7 @@ function PricingTier({
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'no_change':
-          toast.info(response.message || 'You are already on this plan.');
+          toast.info(response.message || t('alreadyOnThisPlan'));
           break;
         default:
           console.warn(
@@ -356,7 +365,7 @@ function PricingTier({
     );
   const isPlanLoading = isLoading[tier.tierKey];
 
-  let buttonText = isAuthenticated ? 'Select Plan' : tier.buttonText;
+  let buttonText = isAuthenticated ? t('selectPlan') : tier.buttonText;
   let buttonDisabled = isPlanLoading;
   let buttonVariant: ButtonVariant = null;
   let ringClass = '';
@@ -369,17 +378,17 @@ function PricingTier({
   if (isAuthenticated) {
     if (isCurrentActivePlan) {
       if (userPlanName === 'trial') {
-        buttonText = 'Trial Active';
+        buttonText = t('trialActive');
         statusBadge = (
           <span className="bg-green-500/10 text-green-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            7-Day Trial
+            {t('trialBadge')}
           </span>
         );
       } else {
-        buttonText = 'Current Plan';
+        buttonText = t('currentPlan');
         statusBadge = (
           <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            Current
+            {t('currentBadge')}
           </span>
         );
       }
@@ -388,7 +397,7 @@ function PricingTier({
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
     } else if (isScheduledTargetPlan) {
-      buttonText = 'Scheduled';
+      buttonText = t('scheduled');
       buttonDisabled = true;
       buttonVariant = 'outline';
       ringClass = isCompact
@@ -398,17 +407,17 @@ function PricingTier({
         'bg-yellow-500/5 hover:bg-yellow-500/10 text-yellow-600 border-yellow-500/20';
       statusBadge = (
         <span className="bg-yellow-500/10 text-yellow-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-          Scheduled
+          {t('scheduledBadge')}
         </span>
       );
     } else if (isScheduled && currentSubscription?.tier_key === tier.tierKey) {
-      buttonText = 'Change Scheduled';
+      buttonText = t('changeScheduled');
       buttonVariant = 'secondary';
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
       statusBadge = (
         <span className="bg-yellow-500/10 text-yellow-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-          Downgrade Pending
+          {t('downgradePending')}
         </span>
       );
     } else {
@@ -448,19 +457,19 @@ function PricingTier({
         targetAmount === 0 &&
         currentSubscription?.status !== 'no_subscription'
       ) {
-        buttonText = 'Select Plan';
+        buttonText = t('selectPlan');
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
       } else if (isYearlyDowngradeToMonthly) {
         // Prevent downgrading from yearly to monthly - once yearly, stay yearly
-        buttonText = 'Not Available';
+        buttonText = t('notAvailable');
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
       } else if (!planChangeValidation.allowed) {
         // Plan change not allowed due to business rules
-        buttonText = 'Not Available';
+        buttonText = t('notAvailable');
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
@@ -468,23 +477,23 @@ function PricingTier({
         if (targetAmount > currentAmount || isSameTierUpgradeToLongerTerm) {
           // Allow upgrade to higher tier OR upgrade to longer term on same tier
           if (isSameTierUpgradeToLongerTerm && targetAmount <= currentAmount) {
-            buttonText = billingPeriod === 'yearly_commitment' ? 'Upgrade' : 'Switch to Legacy Yearly';
+            buttonText = billingPeriod === 'yearly_commitment' ? tCommon('upgrade') : t('switchToLegacyYearly');
             buttonVariant = billingPeriod === 'yearly_commitment' ? tier.buttonColor as ButtonVariant : 'default';
             buttonClassName = billingPeriod === 'yearly_commitment'
               ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
               : 'bg-green-600 hover:bg-green-700 text-white';
           } else {
-            buttonText = 'Upgrade';
+            buttonText = tCommon('upgrade');
             buttonVariant = tier.buttonColor as ButtonVariant;
             buttonClassName = 'bg-primary hover:bg-primary/90 text-primary-foreground';
           }
         } else if (targetAmount < currentAmount || isSameTierDowngradeToShorterTerm) {
-          buttonText = 'Downgrade';
+          buttonText = t('downgrade');
           buttonVariant = 'outline';
           buttonClassName = '';
           isDowngradeAction = true;
         } else {
-          buttonText = 'Select Plan';
+          buttonText = t('selectPlan');
           buttonVariant = tier.buttonColor as ButtonVariant;
           buttonClassName = 'bg-primary hover:bg-primary/90 text-primary-foreground';
         }
@@ -492,7 +501,7 @@ function PricingTier({
     }
 
     if (isPlanLoading) {
-      buttonText = 'Loading...';
+      buttonText = t('loading');
       buttonClassName = 'opacity-70 cursor-not-allowed';
     }
   } else {
@@ -564,7 +573,7 @@ function PricingTier({
           <TierBadge planName={tier.name} size="lg" variant="default" />
           <div className="flex items-center gap-2">
             {tier.isPopular && (
-              <Badge variant='default'>Popular</Badge>
+              <Badge variant='default'>{t('popular')}</Badge>
             )}
             {/* Show upgrade badge for yearly commitment plans when user is on monthly */}
             {isAuthenticated && statusBadge}
@@ -580,7 +589,7 @@ function PricingTier({
                 </span>
               </div>
               <div className="flex items-center gap-1 mt-1">
-                <span className="text-xs text-muted-foreground">/month</span>
+                <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
               </div>
             </div>
           ) : billingPeriod === 'yearly' && tier.yearlyPrice && displayPrice !== '$0' ? (
@@ -594,8 +603,8 @@ function PricingTier({
                 )}
               </div>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-muted-foreground">/month</span>
-                <span className="text-xs text-muted-foreground">billed yearly</span>
+                <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
+                <span className="text-xs text-muted-foreground">{t('billedYearly')}</span>
               </div>
             </div>
           ) : (
@@ -605,7 +614,7 @@ function PricingTier({
               </div>
               <div className="flex items-center gap-1 mt-1">
                 {displayPrice !== '$0' && (
-                  <span className="text-xs text-muted-foreground">/month</span>
+                  <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
                 )}
               </div>
             </div>
@@ -620,14 +629,58 @@ function PricingTier({
       )}>
         {tier.features && tier.features.length > 0 && (
           <ul className="space-y-3">
-            {tier.features.map((feature) => (
-              <li key={feature} className="flex items-center gap-3">
-                <div className="size-5 min-w-5 flex items-center justify-center text-muted-foreground">
-                  {getFeatureIcon(feature)}
-                </div>
-                <span className="text-sm">{feature}</span>
-              </li>
-            ))}
+            {tier.features.map((feature) => {
+              // Translate feature strings
+              let translatedFeature = feature;
+              
+              // Match and translate common patterns
+              if (feature.includes('credits/month')) {
+                const match = feature.match(/(\d+[,\d]*)\s*credits\/month/);
+                if (match) {
+                  const count = match[1].replace(/,/g, '');
+                  translatedFeature = t('features.creditsPerMonth', { count });
+                }
+              } else if (feature.includes('custom Worker') || feature.includes('custom workers')) {
+                const match = feature.match(/(\d+)\s*custom\s+(?:Worker|workers)/);
+                if (match) {
+                  const count = parseInt(match[1]);
+                  translatedFeature = count === 1 
+                    ? t('features.customWorker', { count })
+                    : t('features.customWorkers', { count });
+                }
+              } else if (feature.includes('private project')) {
+                const match = feature.match(/(\d+)\s*private\s+project/);
+                if (match) {
+                  const count = parseInt(match[1]);
+                  translatedFeature = count === 1
+                    ? t('features.privateProject', { count })
+                    : t('features.privateProjects');
+                }
+              } else if (feature === 'Private projects') {
+                translatedFeature = t('features.privateProjects');
+              } else if (feature.includes('custom trigger')) {
+                const match = feature.match(/(\d+)\s*custom\s+trigger/);
+                if (match) {
+                  const count = parseInt(match[1]);
+                  translatedFeature = t('features.customTrigger', { count });
+                }
+              } else if (feature.includes('100+ integrations') || feature === '100+ integrations') {
+                translatedFeature = t('features.integrations');
+              } else if (feature.includes('Premium AI Models') || feature === 'Premium AI Models') {
+                translatedFeature = t('features.premiumAIModels');
+              } else if (feature.includes('Priority Support') || feature === 'Priority Support') {
+                translatedFeature = t('features.prioritySupport');
+              }
+              
+              return (
+                <li key={feature} className="flex items-center gap-3">
+                  <div className="size-5 min-w-5 flex items-center justify-center text-muted-foreground">
+                    {getFeatureIcon(feature)}
+                  </div>
+                  <span className="text-sm">{translatedFeature}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -701,6 +754,7 @@ export function PricingSection({
   isAlert = false,
   alertTitle
 }: PricingSectionProps) {
+  const t = useTranslations('billing');
   const { user } = useAuth();
   const isUserAuthenticated = !!user;
   const queryClient = useQueryClient();
@@ -792,7 +846,7 @@ export function PricingSection({
     return (
       <div className="p-4 bg-muted/30 border border-border rounded-lg text-center">
         <p className="text-sm text-muted-foreground">
-          Running in local development mode - billing features are disabled
+          {t('localModeMessage')}
         </p>
       </div>
     );
@@ -805,19 +859,16 @@ export function PricingSection({
     >
       <div className="w-full mx-auto px-6 flex flex-col items-center">
         {isAlert && (
-          <div className="w-full flex justify-center mb-6 gap-4">
-            <div className="h-10 w-10 rounded-full bg-amber-600/10 border border-amber-600/20 dark:bg-amber-500/10 dark:border-amber-500/20 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-            </div>
-            <h2 className="text-3xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl text-amber-600 dark:text-amber-500">
-              {alertTitle || 'Pick the plan that works for you.'}
+          <div className="w-full flex justify-center mb-6">
+            <h2 className="text-3xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl text-foreground">
+              {alertTitle || t('pickPlan')}
             </h2>
           </div>
         )}
         {showTitleAndTabs && !isAlert && (
           <div className="w-full flex justify-center mb-6">
             <h2 className="text-3xl font-medium tracking-tight text-center text-balance leading-tight max-w-2xl">
-              {customTitle || 'Pick the plan that works for you.'}
+              {customTitle || t('pickPlan')}
             </h2>
           </div>
         )}
@@ -866,16 +917,18 @@ export function PricingSection({
                 className="gap-2"
               >
                 <ShoppingCart className="h-5 w-5" />
-                Get Additional Credits
+                {t('getAdditionalCredits')}
               </Button>
               {/* Credits Explained Link */}
               <Button
                 variant="link"
-                onClick={() => window.open('/credits-explained', '_blank')}
+                asChild
                 className="text-muted-foreground hover:text-foreground h-auto p-0"
               >
-                <Lightbulb className="h-3.5 w-3.5 mr-2" />
-                <span className="text-sm">Credits explained</span>
+                <Link href="/credits-explained" target="_blank" rel="noopener noreferrer">
+                  <Lightbulb className="h-3.5 w-3.5 mr-2" />
+                  <span className="text-sm">{t('creditsExplained')}</span>
+                </Link>
               </Button>
             </div>
           )}
@@ -885,11 +938,13 @@ export function PricingSection({
           <div className="w-full max-w-6xl mt-8 flex justify-center">
             <Button
               variant="link"
-              onClick={() => window.open('/credits-explained', '_blank')}
+              asChild
               className="text-muted-foreground hover:text-foreground h-auto p-0"
             >
-              <Lightbulb className="h-3.5 w-3.5 mr-2" />
-              <span className="text-sm">Credits explained</span>
+              <Link href="/credits-explained" target="_blank" rel="noopener noreferrer">
+                <Lightbulb className="h-3.5 w-3.5 mr-2" />
+                <span className="text-sm">{t('creditsExplained')}</span>
+              </Link>
             </Button>
           </div>
         )}

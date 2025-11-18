@@ -1,0 +1,817 @@
+{
+  "common": {
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "saving": "Salvando...",
+    "success": "Sucesso",
+    "done": "Pronto",
+    "close": "Fechar",
+    "ok": "OK",
+    "yes": "Sim",
+    "no": "Não",
+    "delete": "Excluir",
+    "edit": "Editar",
+    "search": "Buscar",
+    "loading": "Carregando...",
+    "error": "Erro",
+    "retry": "Tentar de novo",
+    "send": "Enviar",
+    "back": "Voltar",
+    "new": "Novo",
+    "create": "Criar",
+    "update": "Atualizar",
+    "remove": "Remover",
+    "confirm": "Confirmar",
+    "processing": "Processando...",
+    "keep": "Manter",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "next": "Próximo",
+    "upgrade": "Melhorar",
+    "basic": "Básico",
+    "tryFree": "Começar grátis"
+  },
+  "settings": {
+    "title": "Configurações",
+    "tabs": {
+      "general": "Geral",
+      "plan": "Plano",
+      "billing": "Cobrança",
+      "usage": "Uso",
+      "knowledgeBase": "Base de Conhecimento",
+      "integrations": "Integrações",
+      "envManager": "Gerenciador de Ambiente"
+    },
+    "general": {
+      "title": "Configurações do Perfil",
+      "description": "Gerencia as informações da tua conta",
+      "name": "Nome",
+      "email": "Email",
+      "namePlaceholder": "Digite teu nome",
+      "emailCannotChange": "Email não pode ser alterado daqui",
+      "saveChanges": "Salvar Mudanças",
+      "profileUpdated": "Perfil atualizado com sucesso",
+      "profileUpdateFailed": "Falha ao atualizar perfil",
+      "language": {
+        "title": "Idioma",
+        "description": "Escolhe teu idioma preferido",
+        "current": "Idioma Atual",
+        "select": "Selecionar Idioma"
+      },
+      "deleteAccount": {
+        "title": "Excluir Conta",
+        "description": "Remove permanentemente tua conta e todos os dados associados",
+        "button": "Excluir Conta",
+        "scheduled": "Exclusão Agendada",
+        "scheduledDescription": "Tua conta será permanentemente excluída em {date}.",
+        "canCancel": "Podes cancelar este pedido a qualquer momento antes da data de exclusão.",
+        "cancelButton": "Cancelar Pedido de Exclusão",
+        "dialogTitle": "Excluir Conta",
+        "warning": "Esta ação não pode ser desfeita após 30 dias",
+        "whenDelete": "Quando excluis tua conta:",
+        "agentsDeleted": "Todos os teus agentes e versões de agentes serão excluídos",
+        "threadsDeleted": "Todas as tuas threads e conversas serão excluídas",
+        "credentialsRemoved": "Todas as tuas credenciais e integrações serão removidas",
+        "subscriptionCancelled": "Tua assinatura será cancelada",
+        "billingRemoved": "Todos os dados de cobrança serão removidos",
+        "scheduled30Days": "Tua conta será agendada para exclusão em 30 dias",
+        "gracePeriod": "Podes cancelar este pedido a qualquer momento durante o período de carência de 30 dias. Após 30 dias, todos os teus dados serão permanentemente excluídos e não poderão ser recuperados.",
+        "confirmText": "Digite excluir para confirmar",
+        "confirmPlaceholder": "delete",
+        "keepAccount": "Manter Conta",
+        "cancelDeletionTitle": "Cancelar Exclusão de Conta",
+        "cancelDeletionDescription": "Tens certeza que queres cancelar a exclusão da tua conta? Tua conta e todos os dados serão preservados.",
+        "cancelDeletion": "Cancelar Exclusão"
+      }
+    },
+    "billing": {
+      "title": "Cobrança e Assinatura",
+      "description": "Gerencie seus créditos e assinatura",
+      "insufficientCredits": "Créditos insuficientes",
+      "insufficientCreditsMessage": "Verificação de cobrança falhou: Créditos insuficientes. Seu saldo é {balance}. Por favor, adicione créditos para continuar.",
+      "creditsExhausted": "Você ficou sem créditos. Atualize agora.",
+      "billingCheckFailed": "Verificação de cobrança falhou. Por favor, atualize para continuar.",
+      "failedToStartAgent": "Falha ao iniciar o agente {agentName}: {message}"
+    },
+    "usage": {
+      "title": "Uso"
+    },
+    "knowledgeBase": {
+      "opening": "Abrindo Base de Conhecimento",
+      "redirecting": "Redirecionando para a página da Base de Conhecimento..."
+    },
+    "integrations": "Integrações"
+  },
+  "triggers": {
+    "getStarted": "Começa adicionando um trigger",
+    "getStartedDescription": "Agenda um trigger para automatizar ações e receber lembretes quando completarem.",
+    "search": "Buscar",
+    "scheduledTrigger": "Trigger Agendado",
+    "eventBasedTrigger": "Trigger Baseado em Evento",
+    "chooseAgent": "Escolher Agente",
+    "schedule": "Agendar",
+    "agentInstructions": "Instruções do Agente",
+    "agentInstructionsDescription": "Prompt personalizado para o agente",
+    "assignedAgent": "Agente Atribuído",
+    "unknownAgent": "Agente Desconhecido",
+    "technicalDetails": "Detalhes Técnicos",
+    "type": "Tipo",
+    "provider": "Provedor",
+    "created": "Criado",
+    "lastUpdated": "Última Atualização",
+    "enable": "Ativar",
+    "disable": "Desativar",
+    "deleteTask": "Excluir Tarefa",
+    "deleteTaskDescription": "Tens certeza que queres excluir \"{name}\"? Esta ação não pode ser desfeita e vai parar todas as execuções automáticas desta tarefa.",
+    "taskEnabled": "Tarefa ativada",
+    "taskDisabled": "Tarefa desativada",
+    "toggleTaskFailed": "Falha ao alternar tarefa",
+    "taskDeletedSuccess": "Tarefa excluída com sucesso",
+    "deleteTaskFailed": "Falha ao excluir tarefa",
+    "taskUpdatedSuccess": "Tarefa atualizada com sucesso",
+    "updateTaskFailed": "Falha ao atualizar tarefa",
+    "pleaseSelectAgent": "Por favor seleciona um agente",
+    "defaultScheduledTriggerName": "Trigger Agendado",
+    "defaultScheduledTriggerDescription": "Trigger agendado automaticamente",
+    "scheduleTriggerUpdated": "Trigger agendado atualizado com sucesso",
+    "scheduleTriggerCreated": "Trigger agendado criado com sucesso",
+    "upgradeForMoreScheduledTriggers": "Melhora para criar mais triggers agendados",
+    "upgradeForMoreAppTriggers": "Melhora para criar mais triggers baseados em app",
+    "updateScheduleTriggerFailed": "Falha ao atualizar trigger agendado",
+    "createScheduleTriggerFailed": "Falha ao criar trigger agendado",
+    "editScheduledTask": "Editar Tarefa Agendada",
+    "createScheduledTask": "Criar Tarefa Agendada",
+    "editAppBasedTask": "Editar Tarefa Baseada em App",
+    "createAppBasedTask": "Criar Tarefa Baseada em App",
+    "updateAgentForTask": "Atualizar o agente para esta tarefa",
+    "selectAgentForTask": "Primeiro, seleciona qual agente deve lidar com esta tarefa",
+    "createNew": "Criar novo",
+    "notConfigured": "Não configurado",
+    "every15Minutes": "A cada 15 minutos",
+    "every30Minutes": "A cada 30 minutos",
+    "everyHour": "A cada hora",
+    "dailyAt9AM": "Diariamente às 9h",
+    "weekdaysAt9AM": "Dias úteis às 9h",
+    "weeklyOnMonday": "Semanalmente na segunda-feira",
+    "monthlyOn1st": "Mensalmente no dia 1"
+  },
+  "sidebar": {
+    "chats": "Chats",
+    "agents": "Agentes",
+    "workers": "Workers",
+    "triggers": "Triggers",
+    "newChat": "Novo Chat",
+    "newAgent": "Novo Agente",
+    "settings": "Configurações",
+    "logout": "Sair",
+    "openMenu": "Abrir menu",
+    "expandSidebar": "Expandir barra lateral (CMD+B)",
+    "searchChats": "Buscar chats",
+    "searchChatsPlaceholder": "Buscar chats...",
+    "allTriggers": "Todos os Triggers",
+    "addWorkers": "Adicionar Workers",
+    "addTrigger": "Adicionar Trigger",
+    "triggerConfig": "Configuração de Trigger",
+    "scheduledTrigger": "Trigger Agendado",
+    "scheduledTriggerDescription": "Agendar um trigger para executar em um horário específico",
+    "eventBasedTrigger": "Trigger Baseado em Evento",
+    "eventBasedTriggerDescription": "Criar um trigger para executar quando um evento ocorrer",
+    "noChatsFound": "Nenhum chat encontrado",
+    "noConversations": "Ainda sem chats",
+    "search": "Buscar",
+    "searchPlaceholder": "Buscar...",
+    "searchResults": "Resultados da Busca",
+    "recent": "Recentes",
+    "personalAccount": "Conta Pessoal",
+    "workspaces": "Espaços de Trabalho",
+    "theme": "Tema",
+    "integrations": "Integrações",
+    "billing": "Cobrança",
+    "usage": "Uso",
+    "adminPanel": "Painel Admin",
+    "apiKeys": "Chaves API",
+    "envManager": "Gerenciador de Ambiente",
+    "advanced": "Avançado",
+    "plan": "Plano",
+    "knowledgeBase": "Base de Conhecimento",
+    "conversation": "Conversa",
+    "conversations": "Conversas",
+    "startNewChat": "Começar um novo chat",
+    "openInNewTab": "Abrir em nova aba",
+    "delete": "Excluir",
+    "deleting": "Excluindo",
+    "allThreadsLoaded": "Todas as threads carregadas",
+    "myWorkforce": "Minha Força de Trabalho",
+    "addTeam": "Adicionar Time",
+    "selectAll": "Selecionar todos",
+    "deselectAll": "Desselecionar todos",
+    "selectAllConversations": "Selecionar todas as conversas",
+    "deselectAllConversations": "Desselecionar todas as conversas",
+    "loadMore": "Carregar mais",
+    "remaining": "restantes"
+  },
+  "dashboard": {
+    "title": "Painel",
+    "welcome": "Bem-vindo",
+    "whatWouldYouLike": "O que tu queres fazer?",
+    "describeWhatYouNeed": "Descreve com o que precisas de ajuda...",
+    "usageLimits": "Limites de Uso",
+    "threads": "Threads",
+    "customWorkers": "Workers Personalizados",
+    "scheduledTriggers": "Triggers Agendados",
+    "appTriggers": "Triggers de App",
+    "limitsExceeded": "Ficaste sem limites. Melhora teu plano para chatear mais.",
+    "agentInitiatedSuccessfully": "Agente iniciado com sucesso",
+    "aiAssistantReady": "Teu assistente de IA está pronto para ajudar"
+  },
+  "thread": {
+    "integrations": "Integrações",
+    "connect": "Conectar",
+    "seeAllIntegrations": "+ Ver todas as integrações",
+    "connectIntegrations": "Conectar integrações",
+    "adaptive": "Adaptativo",
+    "adaptiveDescription": "Respostas rápidas com mudança inteligente de contexto",
+    "autonomous": "Autônomo",
+    "autonomousDescription": "Modo de trabalho profundo para resolução de problemas em várias etapas",
+    "chat": "Chat",
+    "chatDescription": "Conversa simples de ida e volta",
+    "uploadingFiles": "Enviando {count} arquivo{plural}...",
+    "uploadingFilesOne": "Enviando {count} arquivo...",
+    "uploadingFilesMany": "Enviando {count} arquivos...",
+    "scrollToBottom": "Rolar para baixo",
+    "tools": "Ferramentas",
+    "instructions": "Instruções",
+    "knowledge": "Conhecimento",
+    "triggers": "Triggers",
+    "agents": "Agentes",
+    "superWorker": "Super Worker",
+    "searchWorkers": "Buscar workers...",
+    "myWorkers": "Meus Workers",
+    "running": "Executando",
+    "minimizeToFloatingPreview": "Minimizar para pré-visualização flutuante",
+    "close": "Fechar",
+    "noActionsYet": "Ainda sem ações",
+    "workerActionsDescription": "Ações e resultados do Worker aparecerão aqui conforme executam",
+    "toolIsRunning": "Ferramenta está executando",
+    "toolCurrentlyExecuting": "{toolName} está executando no momento. Resultados aparecerão aqui quando completo."
+  },
+  "agents": {
+    "title": "Agentes",
+    "create": "Criar Agente",
+    "createNewWorker": "Criar Novo Worker",
+    "edit": "Editar Agente",
+    "delete": "Excluir Agente",
+    "name": "Nome",
+    "description": "Descrição",
+    "model": "Modelo",
+    "systemPrompt": "Prompt do Sistema",
+    "systemPromptPlaceholder": "Define como teu agente deve se comportar...",
+    "customizeIcon": "Clica para personalizar ícone do agente"
+  },
+  "home": {
+    "heroPlaceholder": "Descreve a tarefa que queres que teu Worker complete..."
+  },
+  "threads": {
+    "title": "Threads",
+    "newThread": "Nova Thread",
+    "sendMessage": "Enviar mensagem",
+    "placeholder": "Digite tua mensagem..."
+  },
+  "billing": {
+    "title": "Faturação & Assinatura",
+    "subscription": "Assinatura",
+    "credits": "Créditos",
+    "popular": "Popular",
+    "creditsExplained": "Créditos explicados",
+    "trialActive": "Teste Ativo",
+    "trialBadge": "Teste de 7 Dias",
+    "currentPlan": "Plano Atual",
+    "currentBadge": "Atual",
+    "scheduled": "Agendado",
+    "scheduledBadge": "Agendado",
+    "loading": "Carregando informações de cobrança...",
+    "subscriptionChangeScheduled": "Mudança de assinatura agendada",
+    "planWillChangeOn": "Teu plano mudará em {date}.",
+    "failedToInitiateSubscription": "Falha ao iniciar assinatura. Tenta de novo.",
+    "subscriptionUpgraded": "Assinatura melhorada de {currentPrice} para {newPrice}",
+    "subscriptionUpdated": "Assinatura atualizada com sucesso",
+    "cannotDowngradeDuringCommitment": "Não podes rebaixar durante o período de compromisso",
+    "alreadyOnThisPlan": "Já estás neste plano.",
+    "localModeMessage": "Executando em modo de desenvolvimento local - recursos de cobrança desabilitados",
+    "creditsExplainedPage": {
+      "title": "Créditos Explicados",
+      "subtitle": "Tudo o que precisas saber sobre como os créditos funcionam no Kortix",
+      "understandingCredits": {
+        "title": "Entendendo Créditos",
+        "description": "Os créditos servem como moeda universal do Kortix para operações da plataforma. Cada ação que teus agentes de IA executam—de analisar dados a gerar código—consome créditos com base na complexidade da tarefa e nos recursos necessários."
+      },
+      "howCreditsWork": {
+        "title": "Como os Créditos Funcionam",
+        "description": "Os créditos são consumidos com base nos recursos que teus agentes de IA usam:",
+        "aiModelUsage": {
+          "title": "Uso do Modelo de IA",
+          "description": "O principal fator de consumo de créditos",
+          "content": "Diferentes modelos de IA têm custos diferentes com base em suas capacidades e uso de tokens. Os créditos são consumidos para tokens de entrada (teus prompts e contexto), tokens de saída (respostas do agente) e variam por nível do modelo (Claude, GPT, etc.)."
+        },
+        "pricingModel": {
+          "title": "Modelo de Preços",
+          "description": "Margem de 20% sobre os custos do modelo de IA",
+          "content": "Aplicamos uma margem de 20% em todos os custos de API e modelo para cobrir infraestrutura da plataforma, segurança e desenvolvimento contínuo. Este preço transparente garante que saibas exatamente pelo que estás pagando."
+        }
+      },
+      "gettingMoreCredits": {
+        "title": "Obtendo Mais Créditos",
+        "description": "Existem várias formas de obter créditos no Kortix:",
+        "monthlySubscription": {
+          "title": "Créditos de Assinatura Mensal",
+          "description": "Incluídos no teu plano pago e renovados automaticamente a cada mês. Estes são créditos com expiração."
+        },
+        "topUpCredits": {
+          "title": "Créditos de Recarga",
+          "description": "Compra créditos adicionais quando precisares. Estes não expiram e estão disponíveis para membros premium."
+        },
+        "promotionalGrants": {
+          "title": "Concessões Promocionais e de Eventos",
+          "description": "Créditos bônus de eventos especiais, promoções ou indicações. Estes não expiram."
+        },
+        "refunds": {
+          "title": "Reembolsos",
+          "description": "Créditos devolvidos devido a problemas técnicos ou tarefas falhadas. Estes não expiram."
+        }
+      },
+      "typesOfCredits": {
+        "title": "Tipos de Créditos",
+        "description": "O Kortix usa dois tipos de créditos para te dar flexibilidade em como geres teu uso:",
+        "expiringCredits": {
+          "title": "Créditos com Expiração",
+          "description": "Créditos de assinatura mensal",
+          "content": "Estes créditos estão incluídos na tua assinatura paga e são renovados automaticamente a cada mês na data da tua assinatura. Eles expiram no final de cada ciclo de cobrança e são sempre consumidos primeiro antes de quaisquer créditos sem expiração."
+        },
+        "nonExpiringCredits": {
+          "title": "Créditos sem Expiração",
+          "description": "Créditos permanentes que nunca expiram",
+          "content": "Estes créditos nunca expiram e são transferidos de mês para mês. Eles incluem compras de recarga, reembolsos e concessões promocionais. Os créditos sem expiração são usados apenas após os teus créditos com expiração serem esgotados."
+        },
+        "creditPriority": {
+          "title": "Prioridade de Créditos:",
+          "description": "Quando usas o Kortix, os créditos com expiração são consumidos primeiro. Apenas após os teus créditos com expiração se esgotarem, os créditos sem expiração serão usados."
+        }
+      }
+    },
+    "close": "Fechar",
+    "cancelScheduledChange": "Cancelar Mudança Agendada",
+    "threadUsage": "Uso de Thread",
+    "error": "Erro",
+    "totalUsage": "Uso Total",
+    "usage": "Uso",
+    "thread": "Thread",
+    "lastUsed": "Último Uso",
+    "creditsUsed": "Créditos Usados",
+    "creditTransactions": "Transações de Crédito",
+    "loadingTransactionHistory": "Carregando teu histórico de transações...",
+    "monthly": "Mensal",
+    "yearly": "Anual",
+    "discount": "15% de desconto",
+    "perMonth": "/mês",
+    "billedYearly": "faturado anualmente",
+    "downgradePending": "Rebaixamento Pendente",
+    "downgrade": "Rebaixar",
+    "switchToLegacyYearly": "Mudar para Anual Legado",
+    "pickPlan": "Escolhe o plano que funciona para ti.",
+    "reachedLimit": "Atingiste teus limites.",
+    "projectLimit": "Limite de Projeto ({current}/{limit})",
+    "threadLimit": "Limite de Thread ({current}/{limit})",
+    "workerLimit": "Limite de Worker ({current}/{limit})",
+    "triggerLimit": "Limite de Trigger ({current}/{limit})",
+    "getAdditionalCredits": "Obter Créditos Adicionais",
+    "selectPlan": "Selecionar Plano",
+    "changeScheduled": "Mudança Agendada",
+    "notAvailable": "Não Disponível",
+    "features": {
+      "creditsPerMonth": "{count} créditos/mês",
+      "customWorker": "{count} Worker personalizado",
+      "customWorkers": "{count} Workers personalizados",
+      "privateProject": "{count} projeto privado",
+      "privateProjects": "Projetos privados",
+      "customTrigger": "{count} trigger personalizado",
+      "integrations": "100+ integrações",
+      "premiumAIModels": "Modelos de IA Premium",
+      "prioritySupport": "Suporte Prioritário"
+    }
+  },
+  "auth": {
+    "logIntoAccount": "Entra na tua conta",
+    "createAccount": "Criar conta",
+    "continueWithGoogle": "Continuar com Google",
+    "continueWithGitHub": "Continuar com GitHub",
+    "orEmail": "ou email",
+    "emailAddress": "Endereço de email",
+    "password": "Senha",
+    "confirmPassword": "Confirma tua senha",
+    "signIn": "Entrar",
+    "signUp": "Cadastrar",
+    "signingIn": "Entrando...",
+    "creatingAccount": "Criando conta...",
+    "forgotPassword": "Esqueceu a senha?",
+    "dontHaveAccount": "Não tem conta?",
+    "alreadyHaveAccount": "Já tem conta?",
+    "acceptPrivacyTerms": "Aceito a <privacyPolicy>Política de Privacidade</privacyPolicy> e os <termsOfService>Termos de Serviço</termsOfService>",
+    "privacyPolicy": "Política de Privacidade",
+    "termsOfService": "Termos de Serviço",
+    "checkYourEmail": "Confere teu email",
+    "confirmationLinkSent": "Enviamos um link para",
+    "clickLinkToActivate": "Clica no link no email para ativar tua conta. Se não vires o email, confere a pasta de spam.",
+    "returnToHome": "Voltar para home",
+    "backToSignIn": "Voltar ao login",
+    "resetPassword": "Redefinir senha",
+    "resetPasswordDescription": "Digite seu email e vamos te enviar um link para redefinir",
+    "sendResetLink": "Enviar link",
+    "cancel": "Cancelar",
+    "pleaseEnterValidEmail": "Por favor digite um endereço de email válido",
+    "signInFailed": "Falha ao entrar. Confere teus dados.",
+    "signUpFailed": "Cadastro falhou. Tenta de novo."
+  },
+  "onboarding": {
+    "welcome": "Bem-vindo",
+    "next": "Próximo",
+    "skip": "Pular"
+  },
+  "tools": {
+    "executeCommand": "Executando comando",
+    "checkCommandOutput": "Verificando saída do comando",
+    "terminateCommand": "Encerrando comando",
+    "listCommands": "Listando comandos",
+    "createFile": "Criando arquivo",
+    "deleteFile": "Excluindo arquivo",
+    "fullFileRewrite": "Reescrevendo arquivo",
+    "strReplace": "Editando texto",
+    "editFile": "Editando arquivo",
+    "uploadFile": "Enviando arquivo",
+    "createDocument": "Criando documento",
+    "updateDocument": "Atualizando documento",
+    "readDocument": "Lendo documento",
+    "listDocuments": "Listando documentos",
+    "deleteDocument": "Excluindo documento",
+    "createTasks": "Criando tarefas",
+    "updateTasks": "Atualizando tarefas",
+    "browserNavigateTo": "Navegando para página",
+    "browserAct": "Executando ação",
+    "browserExtractContent": "Extraindo conteúdo",
+    "browserScreenshot": "Tirando captura de tela",
+    "executeDataProviderCall": "Chamando provedor de dados",
+    "getDataProviderEndpoints": "Obtendo endpoints",
+    "ask": "Perguntar",
+    "wait": "Aguardar",
+    "complete": "Completando tarefa",
+    "crawlWebpage": "Rastreando site",
+    "exposePort": "Expondo porta",
+    "scrapeWebpage": "Raspando página",
+    "webSearch": "Buscando na web",
+    "loadImage": "Carregando imagem",
+    "createPresentationOutline": "Criando esboço de apresentação",
+    "createPresentation": "Criando apresentação",
+    "presentPresentation": "Apresentando",
+    "clearImagesFromContext": "Limpando imagens do contexto",
+    "imageSearch": "Buscando imagem",
+    "createSheet": "Criando planilha",
+    "updateSheet": "Atualizando planilha",
+    "viewSheet": "Visualizando planilha",
+    "analyzeSheet": "Analisando planilha",
+    "visualizeSheet": "Visualizando planilha",
+    "formatSheet": "Formatando planilha",
+    "updateAgent": "Atualizando agente",
+    "getCurrentAgentConfig": "Obtendo configuração do agente",
+    "searchMcpServers": "Buscando servidores MCP",
+    "getMcpServerTools": "Obtendo ferramentas do servidor MCP",
+    "configureMcpServer": "Configurando servidor MCP",
+    "getPopularMcpServers": "Obtendo servidores MCP populares",
+    "testMcpServerConnection": "Testando conexão do servidor MCP",
+    "listAppEventTriggers": "Encontrando triggers de evento",
+    "createEventTrigger": "Criando trigger de evento",
+    "getProjectStructure": "Obtendo estrutura do projeto",
+    "buildProject": "Construindo projeto",
+    "makePhoneCall": "Fazendo chamada",
+    "endCall": "Encerrando chamada",
+    "getCallDetails": "Obtendo detalhes da chamada",
+    "listCalls": "Listando chamadas",
+    "monitorCall": "Monitorando chamada",
+    "waitForCallCompletion": "Aguardando conclusão",
+    "getPaperDetails": "Obtendo detalhes do artigo",
+    "searchAuthors": "Buscando autores",
+    "getAuthorDetails": "Obtendo detalhes do autor",
+    "getAuthorPapers": "Obtendo artigos do autor",
+    "getPaperCitations": "Obtendo citações do artigo",
+    "getPaperReferences": "Obtendo referências do artigo",
+    "paperSearch": "Buscando artigos",
+    "discoverUserMcpServers": "Descobrindo ferramentas",
+    "createCredentialProfile": "Criando perfil",
+    "getCredentialProfiles": "Obtendo perfis",
+    "configureProfileForAgent": "Adicionando ferramentas ao agente",
+    "createNewAgent": "Criando novo agente",
+    "searchMcpServersForAgent": "Buscando servidores MCP",
+    "createCredentialProfileForAgent": "Criando perfil de credenciais",
+    "discoverMcpToolsForAgent": "Descobrindo ferramentas MCP",
+    "configureAgentIntegration": "Configurando integração do agente",
+    "createAgentScheduledTrigger": "Criando trigger agendado",
+    "listAgentScheduledTriggers": "Listando triggers agendados do agente",
+    "executingTool": "Executando ferramenta",
+    "toolExecutedSuccessfully": "Ferramenta executada com sucesso",
+    "toolExecutionFailed": "Falha na execução da ferramenta",
+    "input": "Entrada",
+    "output": "Saída",
+    "copyFileContent": "Copiar conteúdo do arquivo",
+    "fileContentCopied": "Conteúdo do arquivo copiado para área de transferência",
+    "failedToCopyFileContent": "Falha ao copiar conteúdo do arquivo",
+    "noContentAvailable": "Nenhum conteúdo disponível",
+    "noContentDescription": "Esta execução de ferramenta não produziu nenhum conteúdo de entrada ou saída para exibir.",
+    "tool": "Ferramenta"
+  },
+  "agentRunLimit": {
+    "gotIt": "Entendi",
+    "parallelRunsLimitReached": "Limite de Execuções Paralelas Atingido",
+    "parallelRunsLimitDescription": "Atingiste o máximo de execuções paralelas de agentes permitidas.",
+    "needMoreParallelRuns": "Precisas de mais execuções paralelas?",
+    "upgradeDescription": "Melhora teu plano para executar múltiplos agentes simultaneamente e aumentar tua produtividade.",
+    "upgradePlan": "Melhorar Plano",
+    "currentlyRunningAgents": "Agentes Atualmente Executando",
+    "loadingThreads": "Carregando threads...",
+    "foundRunningAgents": "Encontrados {count} agentes executando mas incapaz de carregar detalhes da thread.",
+    "threadIds": "IDs de Thread: {ids}",
+    "moreRunning": "+{count} executando",
+    "whatCanYouDo": "O que podes fazer?",
+    "stopAgentsHint": "Clica no botão parar para parar agentes executando",
+    "waitForCompletion": "Espera um agente completar automaticamente",
+    "upgradeYourPlan": "Melhora teu plano",
+    "forMoreParallelRuns": "para mais execuções paralelas",
+    "stopAgent": "Parar agente",
+    "stopThisAgent": "Parar este agente",
+    "openThread": "Abrir thread",
+    "agentStoppedSuccessfully": "Agente parado com sucesso",
+    "failedToStopAgent": "Falha ao parar agente",
+    "upgradeToRunMore": "Melhora para executar mais agentes em paralelo"
+  },
+  "errors": {
+    "generic": "Ocorreu um erro",
+    "network": "Erro de rede",
+    "unauthorized": "Não autorizado",
+    "notFound": "Não encontrado"
+  },
+  "languages": {
+    "en": "English",
+    "de": "Deutsch",
+    "it": "Italiano",
+    "zh": "中文",
+    "ja": "日本語",
+    "pt": "Português",
+    "fr": "Français",
+    "es": "Español"
+  },
+  "suna": {
+    "samplePrompts": "Prompts de exemplo",
+    "chooseStyle": "Escolhe um estilo",
+    "chooseTemplate": "Escolhe um template",
+    "chooseOutputFormat": "Escolhe formato de saída",
+    "preferredCharts": "Gráficos preferidos",
+    "whatWouldYouLike": "O que tu queres fazer?",
+    "describeTask": "Descreve a tarefa que queres que teu Worker complete...",
+    "modes": {
+      "image": "Imagem",
+      "slides": "Slides",
+      "data": "Dados",
+      "docs": "Documentos",
+      "people": "Pessoas",
+      "research": "Pesquisa"
+    },
+    "styles": {
+      "photorealistic": "Fotorealista",
+      "watercolor": "Aquarela",
+      "digital-art": "Arte Digital",
+      "oil-painting": "Pintura a Óleo",
+      "minimalist": "Minimalista",
+      "isometric": "Isométrico",
+      "vintage": "Vintage",
+      "comic": "Quadrinhos",
+      "neon": "Neon",
+      "pastel": "Pastel",
+      "geometric": "Geométrico",
+      "abstract": "Abstrato",
+      "anime": "Anime",
+      "impressionist": "Impressionista",
+      "surreal": "Surrealista"
+    },
+    "templates": {
+      "minimalist": {
+        "name": "Minimalista",
+        "description": "Design limpo e simples"
+      },
+      "minimalist_2": {
+        "name": "Minimalista 2",
+        "description": "Estilo minimal alternativo"
+      },
+      "black_and_white_clean": {
+        "name": "Preto e Branco",
+        "description": "Monocromático clássico"
+      },
+      "colorful": {
+        "name": "Colorido",
+        "description": "Vibrante e energético"
+      },
+      "startup": {
+        "name": "Startup",
+        "description": "Dinâmico e inovador"
+      },
+      "elevator_pitch": {
+        "name": "Elevator Pitch",
+        "description": "Rápido e impactante"
+      },
+      "portfolio": {
+        "name": "Portfólio",
+        "description": "Mostra teu trabalho"
+      },
+      "textbook": {
+        "name": "Livro Didático",
+        "description": "Educacional e estruturado"
+      },
+      "architect": {
+        "name": "Arquiteto",
+        "description": "Profissional e preciso"
+      },
+      "hipster": {
+        "name": "Hipster",
+        "description": "Moderno e na moda"
+      },
+      "green": {
+        "name": "Verde",
+        "description": "Design inspirado na natureza"
+      },
+      "premium_black": {
+        "name": "Preto Premium",
+        "description": "Tema escuro luxuoso"
+      },
+      "premium_green": {
+        "name": "Verde Premium",
+        "description": "Verde sofisticado"
+      },
+      "professor_gray": {
+        "name": "Professor Cinza",
+        "description": "Acadêmico e erudito"
+      },
+      "gamer_gray": {
+        "name": "Gamer Cinza",
+        "description": "Design inspirado em jogos"
+      },
+      "competitor_analysis_blue": {
+        "name": "Análise Azul",
+        "description": "Focado em análise de negócios"
+      },
+      "numbers_clean": {
+        "name": "Números Limpos",
+        "description": "Visualização de dados limpa"
+      },
+      "numbers_colorful": {
+        "name": "Números Coloridos",
+        "description": "Apresentação de dados vibrante"
+      },
+      "prd": {
+        "name": "PRD",
+        "description": "Documento de requisitos do produto"
+      },
+      "technical": {
+        "name": "Técnico",
+        "description": "Documentação técnica"
+      },
+      "proposal": {
+        "name": "Proposta",
+        "description": "Proposta comercial"
+      },
+      "report": {
+        "name": "Relatório",
+        "description": "Formato de relatório detalhado"
+      },
+      "guide": {
+        "name": "Guia",
+        "description": "Guia passo a passo"
+      },
+      "wiki": {
+        "name": "Wiki",
+        "description": "Artigo da base de conhecimento"
+      },
+      "policy": {
+        "name": "Política",
+        "description": "Documento de política"
+      },
+      "meeting-notes": {
+        "name": "Atas da Reunião",
+        "description": "Atas da reunião"
+      }
+    },
+    "outputFormats": {
+      "spreadsheet": {
+        "name": "Planilha",
+        "description": "Tabela com fórmulas"
+      },
+      "dashboard": {
+        "name": "Painel",
+        "description": "Gráficos interativos"
+      },
+      "report": {
+        "name": "Relatório",
+        "description": "Análise com visuais"
+      },
+      "slides": {
+        "name": "Slides",
+        "description": "Formato de apresentação"
+      }
+    },
+    "charts": {
+      "bar": "Barras",
+      "line": "Linhas",
+      "pie": "Pizza",
+      "scatter": "Dispersão",
+      "heatmap": "Mapa de calor",
+      "bubble": "Bolhas",
+      "wordcloud": "Nuvem de palavras",
+      "stacked": "Barras empilhadas",
+      "area": "Área"
+    },
+    "prompts": {
+      "image": {
+        "0": "Uma majestosa águia dourada voando através de picos de montanhas nebulosas ao nascer do sol com iluminação dramática",
+        "1": "Retrato close-up de uma modelo de moda com maquiagem avant-garde, iluminação de estúdio, sombras de alto contraste",
+        "2": "Sala de estar escandinava aconchegante com móveis de madeira natural, plantas de interior e suave luz matinal",
+        "3": "Mercado de rua futurista cyberpunk à noite com sinais neon, calçada molhada pela chuva e displays holográficos",
+        "4": "Fotografia elegante de produto de frasco de perfume de luxo em superfície de mármore com reflexos suaves",
+        "5": "Ilhas flutuantes caprichosas conectadas por pontes de corda em um céu pastel com nuvens sonhadoras",
+        "6": "Close-up macro de gotas de orvalho matinal em pétalas de flores vibrantes com fundo bokeh",
+        "7": "Configuração moderna de mesa de espaço de trabalho com laptop, café, caderno e plantas suculentas de cima",
+        "8": "Caminho místico na floresta com árvores antigas, vaga-lumes brilhantes e feixes de luz etéreos através da névoa",
+        "9": "Detalhe arquitetônico de fachada de edifício de vidro contemporâneo com padrões geométricos e reflexos",
+        "10": "Barraca vibrante de vendedor de comida de rua com ingredientes coloridos, vapor subindo e iluminação quente",
+        "11": "Jardim zen japonês sereno com areia penteada, pedras cobertas de musgo e pétalas de cerejeira",
+        "12": "Foto de ação dinâmica de atleta no meio do salto contra céu de pôr do sol dramático, efeito silhueta",
+        "13": "Cozinha rústica de fazenda com panelas de cobre, ervas frescas, tábuas de corte de madeira e texturas naturais",
+        "14": "Arte fluida abstrata com padrões orgânicos de ouro metálico giratório, azul profundo e verde esmeralda"
+      },
+      "slides": {
+        "0": "Criar um pitch deck da Série A com tamanho de mercado, tração e projeções financeiras",
+        "1": "Construir uma revisão de negócios do Q4 mostrando KPIs, vitórias e iniciativas estratégicas",
+        "2": "Projetar uma apresentação de lançamento de produto com vídeos de demonstração e depoimentos de clientes",
+        "3": "Desenvolver um deck de capacitação de vendas explicando nossa proposta de valor e vantagens competitivas",
+        "4": "Criar uma atualização para investidores destacando métricas-chave e marcos futuros",
+        "5": "Construir uma apresentação de estudo de caso do cliente mostrando ROI e métricas de sucesso",
+        "6": "Projetar uma apresentação all-hands cobrindo atualizações da empresa e visão",
+        "7": "Desenvolver um deck de treinamento para novos recursos e fluxos de trabalho do produto",
+        "8": "Criar uma palestra de conferência sobre escalar equipes de engenharia",
+        "9": "Construir uma apresentação de reunião de diretoria com recomendações estratégicas"
+      },
+      "data": {
+        "0": "Construir um modelo financeiro projetando crescimento de ARR com diferentes cenários de preços",
+        "1": "Criar um painel de vendas interativo rastreando métricas por região e trimestre",
+        "2": "Analisar 50 mil avaliações de clientes e visualizar tendências de sentimento ao longo do tempo",
+        "3": "Projetar um calendário de conteúdo rastreando campanhas com gráficos de ROI e engajamento",
+        "4": "Construir uma análise de coorte mostrando padrões de retenção e churn de usuários",
+        "5": "Criar um modelo de atribuição de marketing comparando desempenho de canais",
+        "6": "Desenvolver um rastreador de contratação com métricas de pipeline e análise de tempo para preencher",
+        "7": "Construir uma planilha de planejamento de orçamento com modelagem de cenários",
+        "8": "Analisar dados de tráfego do site e visualizar funis de conversão",
+        "9": "Criar um sistema de gestão de inventário com alertas automáticos de reabastecimento"
+      },
+      "docs": {
+        "0": "Escrever um PRD abrangente para um motor de recomendação alimentado por IA",
+        "1": "Rascunhar um documento de arquitetura técnica para uma plataforma de microsserviços escalável",
+        "2": "Criar um documento de estratégia go-to-market para nosso lançamento de produto do Q2",
+        "3": "Desenvolver um playbook de onboarding de 90 dias para gerentes de engenharia",
+        "4": "Escrever um guia de documentação de API com exemplos e melhores práticas",
+        "5": "Criar um manual da empresa cobrindo cultura, políticas e benefícios",
+        "6": "Rascunhar uma política de privacidade de dados compatível com GDPR e CCPA",
+        "7": "Desenvolver um playbook de sucesso do cliente para contas empresariais SaaS",
+        "8": "Escrever um plano de resposta a incidentes de segurança com procedimentos de escalação",
+        "9": "Criar um guia de estilo abrangente para marca e conteúdo"
+      },
+      "people": {
+        "0": "Encontrar candidatos a VP de Engenharia em startups de IA/ML da Série B+ na área da baía de San Francisco com 10+ anos de experiência e histórico comprovado de escalar equipes de engenharia",
+        "1": "Construir lista de leads de CMOs em empresas B2B SaaS ($10M-$50M ARR) que recentemente levantaram financiamento da Série A/B - incluir padrões de email e stack tecnológico",
+        "2": "Pesquisar Engenheiros Sênior de Blockchain com experiência em Solidity/Rust em projetos cripto de topo, abertos a realocação para Dubai ou Singapura",
+        "3": "Gerar lista de prospects de fundadores técnicos em startups Seed-Série A em IA Empresarial que levantaram $2M-$15M nos últimos 6 meses",
+        "4": "Identificar Gerentes de Produto Sênior em empresas fintech com 5-10 anos de experiência da FAANG ou unicórnios, habilidosos em desenvolvimento de produto 0-1",
+        "5": "Encontrar CIOs e VP de Engenharia em empresas de TI de saúde de médio mercado (500-5000 funcionários) com orçamentos de TI de $500K+ planejando migração para nuvem",
+        "6": "Pesquisar VP de Vendas em empresas B2B SaaS mostrando crescimento de 100%+ YoY, com 7+ anos fechando negócios de $100K+ e experiência PLG",
+        "7": "Construir lista de CTOs em empresas empresariais implementando ativamente infraestrutura de IA com orçamentos multimilionários em 2024",
+        "8": "Encontrar Designers Sênior UX/UI com experiência em app de consumidor mobile-first e portfólios de 1M+ usuários, procurando ativamente ou abertos a oportunidades",
+        "9": "Identificar Engenheiros DevOps Sênior em startups cloud-native com expertise em Kubernetes/Terraform e 5-8 anos construindo infraestrutura para 10M+ usuários"
+      },
+      "research": {
+        "0": "Analisar tendências emergentes em computação quântica e aplicações comerciais potenciais",
+        "1": "Pesquisar os 10 principais concorrentes no espaço de CRM alimentado por IA com comparação de recursos",
+        "2": "Investigar requisitos regulatórios para lançar um app fintech na UE",
+        "3": "Compilar análise de mercado sobre taxas de adoção de veículos elétricos em mercados principais",
+        "4": "Estudar o impacto do trabalho remoto na demanda de imóveis comerciais em cidades principais",
+        "5": "Pesquisar padrões de adoção Web3 entre empresas Fortune 500",
+        "6": "Analisar sentimento do consumidor em relação a marcas de moda sustentável",
+        "7": "Investigar os últimos desenvolvimentos em terapia genética para doenças raras",
+        "8": "Estudar estratégias de preços de empresas bem-sucedidas de caixas de assinatura D2C",
+        "9": "Pesquisar o panorama competitivo de soluções de cibersegurança alimentadas por IA"
+      }
+    }
+  }
+}

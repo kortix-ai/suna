@@ -167,32 +167,35 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const formattedMessage = formatErrorMessage(rawMessage, context);
 
   if (error instanceof AgentRunLimitError) {
-    const upgradeMessage = `Upgrade to run more agents concurrently (currently ${error.detail.running_count}/${error.detail.limit})`;
+    // Note: Translations should be handled in components that use this handler
+    // This is a fallback for non-component contexts
+    const upgradeMessage = `You've reached your limits. Agent Run Limit (${error.detail.running_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof ProjectLimitError) {
-    const upgradeMessage = `Upgrade to create more projects (currently ${error.detail.current_count}/${error.detail.limit})`;
+    // Note: Translations should be handled in components that use this handler
+    // This is a fallback for non-component contexts
+    const upgradeMessage = `You've reached your limits. Project Limit (${error.detail.current_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof ThreadLimitError) {
-    const upgradeMessage = `Upgrade to create more threads (currently ${error.detail.current_count}/${error.detail.limit})`;
+    const upgradeMessage = `You've reached your limits. Thread Limit (${error.detail.current_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof AgentCountLimitError) {
-    const upgradeMessage = `Upgrade to create more workers (currently ${error.detail.current_count}/${error.detail.limit})`;
+    const upgradeMessage = `You've reached your limits. Worker Limit (${error.detail.current_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
 
   if (error instanceof TriggerLimitError) {
-    const triggerType = error.detail.trigger_type === 'scheduled' ? 'scheduled' : 'app-based';
-    const upgradeMessage = `Upgrade to create more ${triggerType} triggers (currently ${error.detail.current_count}/${error.detail.limit})`;
+    const upgradeMessage = `You've reached your limits. Trigger Limit (${error.detail.current_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
     return;
   }
@@ -204,8 +207,30 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   }
 
   if (error instanceof CustomWorkerLimitError) {
-    const upgradeMessage = `Upgrade to create more custom workers (currently ${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ title: upgradeMessage });
+    const upgradeMessage = `You've reached your limits. Worker Limit (${error.detail.current_count}/${error.detail.limit})`;
+    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof BillingError) {
+    // Extract billing error message and determine if credits are exhausted
+    const message = error.detail?.message?.toLowerCase() || '';
+    const isCreditsExhausted = 
+      message.includes('credit') ||
+      message.includes('balance') ||
+      message.includes('insufficient') ||
+      message.includes('out of credits') ||
+      message.includes('no credits');
+    
+    // Open pricing modal with appropriate alert title
+    const alertTitle = isCreditsExhausted 
+      ? 'You ran out of credits. Upgrade now.'
+      : 'Billing check failed. Please upgrade to continue.';
+    
+    usePricingModalStore.getState().openPricingModal({ 
+      isAlert: true, 
+      alertTitle 
+    });
     return;
   }
 

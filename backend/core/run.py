@@ -337,7 +337,8 @@ class PromptManager:
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
                                   client=None,
                                   tool_registry=None,
-                                  xml_tool_calling: bool = True) -> dict:
+                                  xml_tool_calling: bool = True,
+                                  user_id: Optional[str] = None) -> dict:
         
         default_system_content = get_system_prompt()
         
@@ -493,6 +494,17 @@ When using the tools:
         datetime_info += "Use this information for any time-sensitive tasks, research, or when current date/time context is needed.\n"
         
         system_content += datetime_info
+
+        # Add user locale context if user_id is provided
+        if user_id and client:
+            try:
+                from core.utils.user_locale import get_user_locale, get_locale_context_prompt
+                locale = await get_user_locale(user_id, client)
+                locale_prompt = get_locale_context_prompt(locale)
+                system_content += f"\n\n{locale_prompt}\n"
+                logger.debug(f"Added locale context ({locale}) to system prompt for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to add locale context to system prompt: {e}")
 
         system_message = {"role": "system", "content": system_content}
         return system_message
@@ -650,7 +662,8 @@ class AgentRunner:
             self.config.thread_id, 
             mcp_wrapper_instance, self.client,
             tool_registry=self.thread_manager.tool_registry,
-            xml_tool_calling=True
+            xml_tool_calling=True,
+            user_id=self.account_id
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
         logger.debug(f"model_name received: {self.config.model_name}")
