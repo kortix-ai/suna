@@ -153,23 +153,26 @@ class ContextManager:
                     if not bedrock_model_id:
                         bedrock_model_id = "anthropic.claude-3-5-haiku-20241022-v1:0"
                     
-                    # Clean content blocks for Bedrock
+                    # Clean content blocks for Bedrock Converse API
                     def clean_content_for_bedrock(content):
+                        """
+                        Convert Anthropic format to Bedrock Converse API format.
+                        Converts cache_control -> cachePoint to preserve cache overhead in token counts.
+                        """
                         if isinstance(content, str):
                             return [{'text': content}]
                         elif isinstance(content, list):
                             cleaned = []
                             for block in content:
                                 if isinstance(block, dict):
-                                    clean_block = {}
+                                    # Extract text
                                     if 'text' in block:
-                                        clean_block['text'] = block['text']
-                                    elif 'guardContent' in block:
-                                        clean_block['guardContent'] = block['guardContent']
-                                    if clean_block:
-                                        cleaned.append(clean_block)
-                            return cleaned
-                        return content
+                                        cleaned.append({'text': block['text']})
+                                        # Convert cache_control to cachePoint (separate block)
+                                        if 'cache_control' in block:
+                                            cleaned.append({'cachePoint': {'type': 'default'}})
+                            return cleaned if cleaned else [{'text': str(content)}]
+                        return [{'text': str(content)}]
                     
                     # Format messages for Bedrock
                     bedrock_messages = []
