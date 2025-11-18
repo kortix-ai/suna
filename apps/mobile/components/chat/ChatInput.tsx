@@ -5,12 +5,12 @@ import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, 
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
   withSpring,
   withTiming,
-  withRepeat 
+  withRepeat
 } from 'react-native-reanimated';
 import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
@@ -67,9 +67,9 @@ interface ChatInputProps extends ViewProps {
  * - Auto-clear input after successful send
  * - Programmatic focus support
  */
-export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({ 
-  value, 
-  onChangeText, 
+export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
+  value,
+  onChangeText,
   onSendMessage,
   onSendAudio,
   onAttachPress,
@@ -94,7 +94,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   isSendingMessage = false,
   isTranscribing = false,
   style,
-  ...props 
+  ...props
 }, ref) => {
   // Animation values for buttons
   const attachScale = useSharedValue(1);
@@ -103,10 +103,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const sendScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
   const rotation = useSharedValue(0);
-  
+
   // TextInput ref for programmatic focus
   const textInputRef = React.useRef<TextInput>(null);
-  
+
   // Expose focus method via ref
   React.useImperativeHandle(ref, () => ({
     focus: () => {
@@ -114,7 +114,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       textInputRef.current?.focus();
     },
   }), []);
-  
+
   // Subtle fade animation for agent running state
   React.useEffect(() => {
     if (isAgentRunning) {
@@ -127,7 +127,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       pulseOpacity.value = withTiming(1, { duration: 300 });
     }
   }, [isAgentRunning]);
-  
+
   // Rotating animation for sending state
   React.useEffect(() => {
     if (isSendingMessage) {
@@ -151,7 +151,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       );
     }
   }, [isTranscribing]);
-  
+
   // States
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
@@ -160,10 +160,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const hasContent = hasText || hasAttachments;
   const [contentHeight, setContentHeight] = React.useState(0);
   const lastLoggedHeightRef = React.useRef(0);
-  
+
   // Use translated placeholder if not provided
   const effectivePlaceholder = placeholder || t('chat.placeholder');
-  
+
   // Get icon for selected quick action
   const getQuickActionIcon = () => {
     switch (selectedQuickAction) {
@@ -176,7 +176,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       default: return null;
     }
   };
-  
+
   const getQuickActionLabel = () => {
     switch (selectedQuickAction) {
       case 'image': return t('quickActions.image');
@@ -188,9 +188,9 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       default: return null;
     }
   };
-  
+
   const QuickActionIcon = getQuickActionIcon();
-  
+
   // Calculate dynamic height based on content
   const dynamicHeight = React.useMemo(() => {
     const baseHeight = 150;
@@ -217,7 +217,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     transform: [{ scale: sendScale.value }],
     opacity: pulseOpacity.value,
   }));
-  
+
   const rotationAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
   }));
@@ -225,26 +225,26 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   // Handle sending text message - checks auth first
   const handleSendMessage = () => {
     if (!value?.trim()) return;
-    
+
     // Check authentication before sending
     if (!isAuthenticated) {
       console.log('🔐 User not authenticated, showing auth drawer');
       console.log('⏰ Timestamp:', new Date().toISOString());
       console.log('📝 Input value:', value);
       console.log('📊 Input length:', value.length);
-      
+
       // Dismiss keyboard first for better UX
       Keyboard.dismiss();
-      
+
       // Wait for keyboard to dismiss, then open auth screen
       setTimeout(() => {
         console.log('🔐 Opening auth screen after keyboard dismissal');
         onOpenAuthDrawer?.();
       }, 200); // Small delay for smooth transition
-      
+
       return;
     }
-    
+
     console.log('✅ User authenticated, sending message');
     // Don't clear input here - let useChat handle it after successful send
     // Trim trailing spaces before sending
@@ -258,19 +258,19 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       console.log('🔐 User not authenticated, showing auth drawer (audio)');
       console.log('⏰ Timestamp:', new Date().toISOString());
       console.log('🎤 Recording duration:', recordingDuration);
-      
+
       // Cancel recording first
       onCancelRecording?.();
-      
+
       // Wait a bit, then open auth screen
       setTimeout(() => {
         console.log('🔐 Opening auth screen after canceling recording');
         onOpenAuthDrawer?.();
       }, 200);
-      
+
       return;
     }
-    
+
     // User is authenticated, send audio normally
     console.log('✅ User authenticated, sending audio');
     onSendAudio?.();
@@ -304,21 +304,21 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
-  
+
   // Show transcription status in recording mode
-  const recordingStatusText = isTranscribing 
-    ? 'Transcribing...' 
+  const recordingStatusText = isTranscribing
+    ? 'Transcribing...'
     : formatDuration(recordingDuration);
 
   return (
-    <View 
-      className="relative rounded-3xl overflow-hidden"
+    <View
+      className="relative rounded-[30px] overflow-hidden bg-card border border-border"
       style={{ height: dynamicHeight, ...(style as ViewStyle) }}
       {...props}
     >
       {/* Solid background */}
-      <View 
-        className="absolute inset-0 bg-[#ECECEC] dark:bg-[#1C1D20]"
+      <View
+        className="absolute inset-0"
       />
       <View className="p-4 flex-1">
         {isRecording ? (
@@ -331,11 +331,11 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                 {recordingStatusText}
               </Text>
             </View>
-            
+
             {/* Bottom Controls */}
             <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
               {/* Cancel Button */}
-              <AnimatedPressable 
+              <AnimatedPressable
                 onPressIn={() => {
                   cancelScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
                 }}
@@ -346,16 +346,16 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                 className="bg-primary/5 rounded-full items-center justify-center"
                 style={[{ width: 40, height: 40 }, cancelAnimatedStyle]}
               >
-                <Icon 
-                  as={X} 
-                  size={16} 
+                <Icon
+                  as={X}
+                  size={16}
                   className="text-foreground"
                   strokeWidth={2}
                 />
               </AnimatedPressable>
 
               {/* Stop/Send Button */}
-              <AnimatedPressable 
+              <AnimatedPressable
                 onPressIn={() => {
                   stopScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
                 }}
@@ -366,9 +366,9 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                 className="bg-primary rounded-full items-center justify-center"
                 style={[{ width: 40, height: 40 }, stopAnimatedStyle]}
               >
-                <Icon 
-                  as={CornerDownLeft} 
-                  size={16} 
+                <Icon
+                  as={CornerDownLeft}
+                  size={16}
                   className="text-primary-foreground"
                   strokeWidth={2}
                 />
@@ -380,7 +380,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
           <>
             {/* Content Area - Text Only */}
             <View className="flex-1 mb-12">
-              <ScrollView 
+              <ScrollView
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
               >
@@ -391,8 +391,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   onChangeText={onChangeText}
                   placeholder={effectivePlaceholder}
                   placeholderTextColor={
-                    colorScheme === 'dark' 
-                      ? 'rgba(248, 248, 248, 0.4)' 
+                    colorScheme === 'dark'
+                      ? 'rgba(248, 248, 248, 0.4)'
                       : 'rgba(18, 18, 21, 0.4)'
                   }
                   multiline
@@ -408,7 +408,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                     setContentHeight(newHeight);
                   }}
                   className="text-foreground text-base"
-                  style={{ 
+                  style={{
                     fontFamily: 'Roobert-Regular',
                     minHeight: 52,
                     opacity: isSendingMessage || isAgentRunning || isTranscribing ? 0.5 : 1,
@@ -416,13 +416,13 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                 />
               </ScrollView>
             </View>
-            
+
             {/* Bottom Action Bar */}
             <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
               {/* Left Side - Attach Button & Quick Action Badge */}
               <View className="flex-row items-center gap-2">
                 {/* Attach Button */}
-                <AnimatedPressable 
+                <AnimatedPressable
                   onPressIn={() => {
                     attachScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
                   }}
@@ -431,37 +431,37 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   }}
                   onPress={onAttachPress}
                   disabled={isSendingMessage || isAgentRunning || isTranscribing}
-                  className="bg-primary/5 rounded-full w-10 h-10 items-center justify-center"
+                  className="border border-border rounded-[18px] w-10 h-10 items-center justify-center"
                   style={[
                     attachAnimatedStyle,
                     { opacity: isSendingMessage || isAgentRunning || isTranscribing ? 0.4 : 1 }
                   ]}
                 >
-                  <Icon 
-                    as={Paperclip} 
-                    size={16} 
+                  <Icon
+                    as={Paperclip}
+                    size={16}
                     className="text-foreground"
                   />
                 </AnimatedPressable>
 
                 {/* Quick Action Context Badge - Entire badge is clickable */}
                 {selectedQuickAction && QuickActionIcon && (
-                  <Pressable 
+                  <Pressable
                     onPress={() => {
                       console.log('❌ Clearing quick action context');
                       onClearQuickAction?.();
                     }}
                     className="bg-primary/5 rounded-full flex-row items-center h-10 px-3 active:opacity-70"
                   >
-                    <Icon 
-                      as={QuickActionIcon} 
-                      size={16} 
+                    <Icon
+                      as={QuickActionIcon}
+                      size={16}
                       className="text-primary mr-1.5"
                       strokeWidth={2}
                     />
-                    <Icon 
-                      as={X} 
-                      size={14} 
+                    <Icon
+                      as={X}
+                      size={14}
                       className="text-primary"
                       strokeWidth={2}
                     />
@@ -475,7 +475,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                 <AgentSelector onPress={onAgentPress} compact={false} />
 
                 {/* Send/Stop/Audio Button */}
-                <AnimatedPressable 
+                <AnimatedPressable
                   onPressIn={() => {
                     sendScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
                   }}
@@ -484,32 +484,31 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   }}
                   onPress={handleButtonPress}
                   disabled={isSendingMessage || isTranscribing}
-                  className={`rounded-full items-center justify-center ${
-                    isAgentRunning 
-                      ? 'bg-foreground' 
-                      : 'bg-primary'
-                  }`}
+                  className={`rounded-[18px] items-center justify-center ${isAgentRunning
+                    ? 'bg-foreground'
+                    : 'bg-primary'
+                    }`}
                   style={[{ width: 40, height: 40 }, sendAnimatedStyle]}
                 >
                   {isSendingMessage || isTranscribing ? (
                     <AnimatedView style={rotationAnimatedStyle}>
-                      <Icon 
+                      <Icon
                         as={Loader2}
-                        size={16} 
+                        size={16}
                         className="text-primary-foreground"
                         strokeWidth={2}
                       />
                     </AnimatedView>
                   ) : (
-                    <Icon 
+                    <Icon
                       as={
-                        isAgentRunning 
-                          ? Square 
-                          : hasContent 
-                            ? CornerDownLeft 
+                        isAgentRunning
+                          ? Square
+                          : hasContent
+                            ? CornerDownLeft
                             : AudioLines
-                      } 
-                      size={isAgentRunning ? 14 : 16} 
+                      }
+                      size={isAgentRunning ? 14 : 18}
                       className={isAgentRunning ? "text-background" : "text-primary-foreground"}
                       strokeWidth={2}
                     />

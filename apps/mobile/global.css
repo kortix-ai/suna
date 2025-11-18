@@ -9,9 +9,9 @@
 
   /* Light Mode (Default) - Kortix Brand */
   :root {
-    --background: 240 11% 97%;         /* #F8F8F8 - Kortix White */
+    --background: 0 0% 96%;         /* #F6F6F6 - Kortix White */
     --foreground: 218 12% 7%;          /* #121215 - Kortix Black */
-    --card: 0 0% 100%;                 /* #FFFFFF - Pure white cards */
+    --card: 210 20% 98%;                 /* #F9FAFB - Pure white cards */
     --card-foreground: 218 12% 7%;     /* #121215 - Card text */
     --popover: 0 0% 100%;              /* #FFFFFF - Popover background */
     --popover-foreground: 218 12% 7%;  /* #121215 - Popover text */
@@ -24,7 +24,7 @@
     --accent: 220 13% 91%;             /* #E5E7EB - Accent */
     --accent-foreground: 218 12% 7%;   /* #121215 - Text on accent */
     --destructive: 0 84.2% 60.2%;
-    --border: 220 13% 85%;             /* #D4D4D8 - Borders */
+    --border: 210 3% 87%;             /* #DCDDDE - Borders */
     --input: 0 0% 100%;                /* #FFFFFF - Inputs */
     --ring: 218 12% 7%;                /* #121215 - Focus rings */
     --radius: 0.625rem;
@@ -37,9 +37,9 @@
 
   /* Dark Mode - Kortix Brand */
   .dark:root {
-    --background: 218 12% 7%;          /* #121215 - Kortix Black */
+    --background: 240 8% 8%;          /* #121215 - Kortix Black */
     --foreground: 240 11% 97%;         /* #F8F8F8 - Kortix White */
-    --card: 220 6% 9%;                 /* #161618 - Dark cards */
+    --card: 240 4% 9%;                 /* #161618 - Dark cards */
     --card-foreground: 240 11% 97%;    /* #F8F8F8 - Card text */
     --popover: 220 6% 9%;              /* #161618 - Popover background */
     --popover-foreground: 240 11% 97%; /* #F8F8F8 - Popover text */
@@ -52,7 +52,7 @@
     --accent: 220 4% 17%;              /* #2A2A2C - Accent */
     --accent-foreground: 240 11% 97%;  /* #F8F8F8 - Text on accent */
     --destructive: 0 70.9% 59.4%;
-    --border: 240 3% 15%;              /* #242427 - Borders */
+    --border: 240 1% 14%;              /* #232324 - Borders */
     --input: 220 6% 9%;                /* #161618 - Inputs */
     --ring: 240 11% 97%;               /* #F8F8F8 - Focus rings */
     --chart-1: 220 70% 50%;

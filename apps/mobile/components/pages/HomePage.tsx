@@ -29,13 +29,13 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   onOpenAuthDrawer,
 }, ref) => {
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
-  
+
   const { isOpen: isPricingModalOpen, alertTitle, creditsExhausted, closePricingModal } = usePricingModalStore();
   const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
   const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
-  
+
   const chatInputRef = React.useRef<ChatInputSectionRef>(null);
-  
+
   React.useImperativeHandle(ref, () => ({
     focusChatInput: () => {
       console.log('🎯 Focusing chat input from HomePage');
@@ -83,20 +83,20 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
 
   return (
     <View className="flex-1 bg-background">
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
         keyboardVerticalOffset={0}
         enabled={false}
       >
-        <Pressable 
-          className="flex-1" 
+        <Pressable
+          className="flex-1"
           onPress={Keyboard.dismiss}
           accessible={false}
         >
           <View className="flex-1 relative">
-            <TopNav 
-              onMenuPress={onMenuPress} 
+            <TopNav
+              onMenuPress={onMenuPress}
               onUpgradePress={handleUpgradePress}
               onCreditsPress={handleCreditsPress}
             />
@@ -145,7 +145,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             />
           </View>
         </Pressable>
-        <ChatDrawers
+        {/* <ChatDrawers
           isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
           isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
@@ -153,7 +153,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           onTakePicture={chat.handleTakePicture}
           onChooseImages={chat.handleChooseImages}
           onChooseFiles={chat.handleChooseFiles}
-        />
+        /> */}
         <PlanSelectionModal
           open={isPricingModalOpen}
           onOpenChange={handleClosePricingModal}
