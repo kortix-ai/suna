@@ -2,14 +2,15 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircleQuestion, CheckCircle2, AlertCircle, Paperclip } from 'lucide-react-native';
+import { MessageCircleQuestion, CheckCircle2, AlertCircle, Paperclip, Info } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractAskData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 
-export function AskToolView({ toolData, isStreaming = false, project, assistantMessage }: ToolViewProps) {
+export function AskToolView({ toolData, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
   const { text, attachments, success } = extractAskData(toolData);
   const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
+  const isLatest = currentIndex !== undefined && totalCalls !== undefined && currentIndex === totalCalls - 1;
 
   if (isStreaming) {
     return (
@@ -80,6 +81,15 @@ export function AskToolView({ toolData, isStreaming = false, project, assistantM
               compact={false}
               showPreviews={true}
             />
+          </View>
+        )}
+
+        {isLatest && (
+          <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
+            <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+            <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
+              Kortix will automatically continue working once you provide your response.
+            </Text>
           </View>
         )}
 

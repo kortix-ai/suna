@@ -7,6 +7,14 @@ export interface WebSearchData {
   images: string[];
   success?: boolean;
   timestamp?: string;
+  isBatch?: boolean;
+  batchResults?: Array<{
+    query: string;
+    success: boolean;
+    results: Array<{ title: string; url: string; snippet?: string }>;
+    answer: string;
+    images: string[];
+  }>;
 }
 
 const parseContent = (content: any): any => {
@@ -40,7 +48,43 @@ const extractFromNewFormat = (content: any): WebSearchData => {
     }
     parsedOutput = parsedOutput || {};
 
-    // Handle both single and batch image search responses
+    // Check if this is a batch search response
+    if (parsedOutput?.batch_mode === true && Array.isArray(parsedOutput.results)) {
+      // Batch search response
+      const batchResults = parsedOutput.results.map((batchItem: any) => ({
+        query: batchItem.query || '',
+        success: batchItem.success !== false,
+        results: (batchItem.results || []).map((result: any) => ({
+          title: result.title || '',
+          url: result.url || '',
+          snippet: result.content || result.snippet || ''
+        })),
+        answer: batchItem.answer || '',
+        images: batchItem.images || []
+      }));
+
+      // Flatten all results and images for combined display
+      const allResults = batchResults.flatMap(br => br.results);
+      const allImages = batchResults.flatMap(br => br.images);
+      const allQueries = batchResults.map(br => br.query).filter(Boolean);
+      const combinedQuery = allQueries.length > 1 
+        ? `${allQueries.length} queries: ${allQueries.join(', ')}` 
+        : allQueries[0] || null;
+      const allSuccessful = batchResults.every(br => br.success);
+
+      return {
+        query: combinedQuery,
+        results: allResults,
+        answer: batchResults.find(br => br.answer)?.answer || null,
+        images: allImages,
+        success: allSuccessful,
+        timestamp: toolExecution.execution_details?.timestamp,
+        isBatch: true,
+        batchResults
+      };
+    }
+
+    // Handle legacy batch_results format (for image search)
     let images: string[] = [];
     let query = args.query || parsedOutput?.query || null;
     
@@ -120,6 +164,14 @@ export function extractWebSearchData(
   actualIsSuccess: boolean;
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
+  isBatch?: boolean;
+  batchResults?: Array<{
+    query: string;
+    success: boolean;
+    results: Array<{ title: string; url: string; snippet?: string }>;
+    answer: string;
+    images: string[];
+  }>;
 } {
   let query: string | null = null;
   let searchResults: Array<{ title: string; url: string; snippet?: string }> = [];
@@ -132,27 +184,42 @@ export function extractWebSearchData(
   const assistantNewFormat = extractFromNewFormat(assistantContent);
   const toolNewFormat = extractFromNewFormat(toolContent);
 
-  if (assistantNewFormat.query || assistantNewFormat.results.length > 0) {
-    query = assistantNewFormat.query;
-    searchResults = assistantNewFormat.results;
-    answer = assistantNewFormat.answer;
-    images = assistantNewFormat.images;
-    if (assistantNewFormat.success !== undefined) {
-      actualIsSuccess = assistantNewFormat.success;
+  // Prefer assistant content if it has batch results
+  const sourceFormat = (assistantNewFormat.query || assistantNewFormat.results.length > 0 || assistantNewFormat.isBatch) 
+    ? assistantNewFormat 
+    : (toolNewFormat.query || toolNewFormat.results.length > 0 || toolNewFormat.isBatch)
+      ? toolNewFormat
+      : null;
+
+  if (sourceFormat) {
+    query = sourceFormat.query;
+    searchResults = sourceFormat.results;
+    answer = sourceFormat.answer;
+    images = sourceFormat.images;
+    if (sourceFormat.success !== undefined) {
+      actualIsSuccess = sourceFormat.success;
     }
-    if (assistantNewFormat.timestamp) {
-      actualAssistantTimestamp = assistantNewFormat.timestamp;
+    if (sourceFormat.timestamp) {
+      if (sourceFormat === assistantNewFormat) {
+        actualAssistantTimestamp = sourceFormat.timestamp;
+      } else {
+        actualToolTimestamp = sourceFormat.timestamp;
+      }
     }
-  } else if (toolNewFormat.query || toolNewFormat.results.length > 0) {
-    query = toolNewFormat.query;
-    searchResults = toolNewFormat.results;
-    answer = toolNewFormat.answer;
-    images = toolNewFormat.images;
-    if (toolNewFormat.success !== undefined) {
-      actualIsSuccess = toolNewFormat.success;
-    }
-    if (toolNewFormat.timestamp) {
-      actualToolTimestamp = toolNewFormat.timestamp;
+    
+    // Return batch data if available
+    if (sourceFormat.isBatch && sourceFormat.batchResults) {
+      return {
+        query,
+        searchResults,
+        answer,
+        images,
+        actualIsSuccess,
+        actualToolTimestamp,
+        actualAssistantTimestamp,
+        isBatch: true,
+        batchResults: sourceFormat.batchResults
+      };
     }
   } else {
     const assistantLegacy = extractFromLegacyFormat(assistantContent);
@@ -172,6 +239,43 @@ export function extractWebSearchData(
           parsedContent = toolContent;
         } else {
           parsedContent = {};
+        }
+
+        // Check if this is a batch search response in legacy format
+        if (parsedContent.batch_mode === true && Array.isArray(parsedContent.results)) {
+          // Batch search response
+          const batchResults = parsedContent.results.map((batchItem: any) => ({
+            query: batchItem.query || '',
+            success: batchItem.success !== false,
+            results: (batchItem.results || []).map((result: any) => ({
+              title: result.title || '',
+              url: result.url || '',
+              snippet: result.content || result.snippet || ''
+            })),
+            answer: batchItem.answer || '',
+            images: batchItem.images || []
+          }));
+
+          // Flatten all results and images for combined display
+          const allResults = batchResults.flatMap(br => br.results);
+          const allImages = batchResults.flatMap(br => br.images);
+          const allQueries = batchResults.map(br => br.query).filter(Boolean);
+          const combinedQuery = allQueries.length > 1 
+            ? `${allQueries.length} queries: ${allQueries.join(', ')}` 
+            : allQueries[0] || null;
+          const allSuccessful = batchResults.every(br => br.success);
+
+          return {
+            query: combinedQuery || query,
+            searchResults: allResults.length > 0 ? allResults : searchResults,
+            answer: batchResults.find(br => br.answer)?.answer || answer,
+            images: allImages.length > 0 ? allImages : images,
+            actualIsSuccess: allSuccessful,
+            actualToolTimestamp,
+            actualAssistantTimestamp,
+            isBatch: true,
+            batchResults
+          };
         }
 
         if (parsedContent.answer && typeof parsedContent.answer === 'string') {
@@ -208,6 +312,7 @@ export function extractWebSearchData(
     images,
     actualIsSuccess,
     actualToolTimestamp,
-    actualAssistantTimestamp
+    actualAssistantTimestamp,
+    isBatch: false
   };
 } 

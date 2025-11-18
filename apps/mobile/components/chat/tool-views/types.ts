@@ -27,6 +27,12 @@ export interface ToolViewProps {
     name: string;
     sandbox_id?: string;
   };
+  
+  /** Current index in the tool call list (for determining if this is the latest) */
+  currentIndex?: number;
+  
+  /** Total number of tool calls (for determining if this is the latest) */
+  totalCalls?: number;
 }
 
 export interface ToolViewComponent {

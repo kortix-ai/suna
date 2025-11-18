@@ -149,6 +149,8 @@ export function ToolCallPanel({
             toolData={toolData}
             assistantMessage={currentPair.assistantMessage}
             toolMessage={currentPair.toolMessage}
+            currentIndex={currentIndex}
+            totalCalls={toolMessages.length}
           />
         )}
       </BottomSheetScrollView>

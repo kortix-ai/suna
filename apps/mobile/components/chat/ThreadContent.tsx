@@ -23,7 +23,7 @@ import {
   removeFileReferences 
 } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
-import { CircleDashed, CheckCircle2, AlertCircle } from 'lucide-react-native';
+import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
 import { StreamingToolCard } from './StreamingToolCard';
 
 export interface ToolMessagePair {
@@ -104,9 +104,10 @@ interface MarkdownContentProps {
   messageId?: string | null;
   onFilePress?: (filePath: string) => void;
   sandboxId?: string;
+  isLatestMessage?: boolean;
 }
 
-function MarkdownContent({ content, handleToolClick, messageId, onFilePress, sandboxId }: MarkdownContentProps) {
+function MarkdownContent({ content, handleToolClick, messageId, onFilePress, sandboxId, isLatestMessage }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
   
   const processedContent = useMemo(() => {
@@ -188,6 +189,15 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
               >
                 {askText}
               </Markdown>
+              
+              {isLatestMessage && (
+                <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
+                  <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
+                    Kortix will automatically continue working once you provide your response.
+                  </Text>
+                </View>
+              )}
             </View>
           );
 
@@ -752,6 +762,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                   const linkedTools = toolResultsMap.get(message.message_id || null);
 
+                  // Check if this is the latest message (last assistant message in the last group)
+                  const isLastGroup = groupIndex === groupedMessages.length - 1;
+                  const isLastAssistantMessage = msgIndex === assistantMessages.length - 1;
+                  const isLatestMessage = isLastGroup && isLastAssistantMessage;
+
                   return (
                     <View key={msgKey}>
                       <MarkdownContent 
@@ -760,6 +775,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                         messageId={message.message_id}
                         onFilePress={onFilePress}
                         sandboxId={sandboxId}
+                        isLatestMessage={isLatestMessage}
                       />
                       
                       {linkedTools && linkedTools.length > 0 && (

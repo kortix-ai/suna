@@ -9,6 +9,7 @@ import json
 import datetime
 import asyncio
 import logging
+import time
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
@@ -33,9 +34,9 @@ class SandboxWebSearchTool(SandboxToolsBase):
         self.firecrawl_url = config.FIRECRAWL_URL
         
         if not self.tavily_api_key:
-            logger.warning("TAVILY_API_KEY not configured - Web Search Tool will not be available")
+            logging.warning("TAVILY_API_KEY not configured - Web Search Tool will not be available")
         if not self.firecrawl_api_key:
-            logger.warning("FIRECRAWL_API_KEY not configured - Web Scraping Tool will not be available")
+            logging.warning("FIRECRAWL_API_KEY not configured - Web Scraping Tool will not be available")
 
         # Tavily asynchronous search client
         self.tavily_client = AsyncTavilyClient(api_key=self.tavily_api_key)
@@ -44,18 +45,30 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information on a specific topic using the Tavily API. This tool allows you to gather real-time information from the internet to answer user queries, research topics, validate facts, and find recent developments. Results include titles, URLs, and publication dates. Use this tool for discovering relevant web pages before potentially crawling them for complete content.",
+            "description": "Search the web for up-to-date information using the Tavily API. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing an array of queries, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images. Use this tool for discovering relevant web pages before potentially crawling them for complete content.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
-                        "type": "string",
-                        "description": "The search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for."
+                        "oneOf": [
+                            {
+                                "type": "string",
+                                "description": "A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for."
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "Multiple search queries to execute concurrently. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"topic overview\", \"use cases\", \"user demographics\"]"
+                            }
+                        ],
+                        "description": "Either a single search query (string) or multiple queries (array of strings) to execute concurrently. Use batch mode (array) for faster research when investigating multiple aspects of a topic."
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "The number of search results to return. Increase for more comprehensive research or decrease for focused, high-relevance results.",
-                        "default": 20
+                        "description": "The number of search results to return per query. Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode.",
+                        "default": 10
                     }
                 },
                 "required": ["query"]
@@ -64,36 +77,138 @@ class SandboxWebSearchTool(SandboxToolsBase):
     })
     async def web_search(
         self, 
-        query: str,
+        query: str | list[str],
         num_results: int = 20
     ) -> ToolResult:
         """
         Search the web using the Tavily API to find relevant and up-to-date information.
+        Supports both single queries and batch queries for concurrent execution.
         """
         try:
             # Check if Tavily API key is configured
             if not self.tavily_api_key:
                 return self.fail_response("Web Search is not available. TAVILY_API_KEY is not configured.")
             
-            # Ensure we have a valid query
-            if not query or not isinstance(query, str):
-                return self.fail_response("A valid search query is required.")
-            
             # Normalize num_results
             if num_results is None:
-                num_results = 20
+                num_results = 10
             elif isinstance(num_results, int):
                 num_results = max(1, min(num_results, 50))
             elif isinstance(num_results, str):
                 try:
                     num_results = max(1, min(int(num_results), 50))
                 except ValueError:
-                    num_results = 20
+                    num_results = 10
             else:
-                num_results = 20
+                num_results = 10
 
-            # Execute the search with Tavily
-            logging.info(f"Executing web search for query: '{query}' with {num_results} results")
+            # Determine if this is a batch query or single query
+            is_batch = isinstance(query, list)
+            
+            if is_batch:
+                # Batch mode: process multiple queries concurrently
+                if not query or len(query) == 0:
+                    return self.fail_response("At least one search query is required in the batch.")
+                
+                # Filter out empty queries
+                queries = [q.strip() for q in query if q and isinstance(q, str) and q.strip()]
+                if not queries:
+                    return self.fail_response("No valid search queries provided in the batch.")
+                
+                logging.info(f"Executing batch web search for {len(queries)} queries with {num_results} results each")
+                
+                # Execute all searches concurrently
+                start_time = time.time()
+                tasks = [
+                    self._execute_single_search(q, num_results) 
+                    for q in queries
+                ]
+                search_results = await asyncio.gather(*tasks, return_exceptions=True)
+                elapsed_time = time.time() - start_time
+                logging.info(f"Batch search completed in {elapsed_time:.2f}s (concurrent execution)")
+                
+                # Process results and handle exceptions
+                batch_response = {
+                    "batch_mode": True,
+                    "total_queries": len(queries),
+                    "results": []
+                }
+                
+                all_successful = True
+                for i, result in enumerate(search_results):
+                    if isinstance(result, Exception):
+                        logging.error(f"Error processing query '{queries[i]}': {str(result)}")
+                        batch_response["results"].append({
+                            "query": queries[i],
+                            "success": False,
+                            "error": str(result),
+                            "results": [],
+                            "answer": ""
+                        })
+                        all_successful = False
+                    else:
+                        batch_response["results"].append({
+                            "query": queries[i],
+                            "success": result.get("success", False),
+                            "results": result.get("results", []),
+                            "answer": result.get("answer", ""),
+                            "images": result.get("images", []),
+                            "response": result.get("response", {})
+                        })
+                        if not result.get("success", False):
+                            all_successful = False
+                
+                logging.info(f"Batch search completed: {len([r for r in batch_response['results'] if r.get('success')])}/{len(queries)} queries successful")
+                
+                return ToolResult(
+                    success=all_successful,
+                    output=json.dumps(batch_response, ensure_ascii=False)
+                )
+            else:
+                # Single query mode: original behavior
+                if not query or not isinstance(query, str):
+                    return self.fail_response("A valid search query is required.")
+                
+                query = query.strip()
+                if not query:
+                    return self.fail_response("A valid search query is required.")
+                
+                logging.info(f"Executing web search for query: '{query}' with {num_results} results")
+                result = await self._execute_single_search(query, num_results)
+                
+                if result.get("success", False):
+                    return ToolResult(
+                        success=True,
+                        output=json.dumps(result.get("response", {}), ensure_ascii=False)
+                    )
+                else:
+                    logging.warning(f"No search results or answer found for query: '{query}'")
+                    return ToolResult(
+                        success=False,
+                        output=json.dumps(result.get("response", {}), ensure_ascii=False)
+                    )
+        
+        except Exception as e:
+            error_message = str(e)
+            query_str = ", ".join(query) if isinstance(query, list) else str(query)
+            logging.error(f"Error performing web search for '{query_str}': {error_message}")
+            simplified_message = f"Error performing web search: {error_message[:200]}"
+            if len(error_message) > 200:
+                simplified_message += "..."
+            return self.fail_response(simplified_message)
+    
+    async def _execute_single_search(self, query: str, num_results: int) -> dict:
+        """
+        Helper function to execute a single search query.
+        
+        Parameters:
+        - query: The search query string
+        - num_results: Number of results to return
+        
+        Returns:
+        - dict with success status, results, answer, images, and full response
+        """
+        try:
             search_response = await self.tavily_client.search(
                 query=query,
                 max_results=num_results,
@@ -102,35 +217,35 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 search_depth="advanced",
             )
             
-            # Check if we have actual results or an answer
+            # Extract results and answer
             results = search_response.get('results', [])
             answer = search_response.get('answer', '')
-            
-            # Return the complete Tavily response 
-            # This includes the query, answer, results, images and more
-            logging.info(f"Retrieved search results for query: '{query}' with answer and {len(results)} results")
+            images = search_response.get('images', [])
             
             # Consider search successful if we have either results OR an answer
-            if len(results) > 0 or (answer and answer.strip()):
-                return ToolResult(
-                    success=True,
-                    output=json.dumps(search_response, ensure_ascii=False)
-                )
-            else:
-                # No results or answer found
-                logging.warning(f"No search results or answer found for query: '{query}'")
-                return ToolResult(
-                    success=False,
-                    output=json.dumps(search_response, ensure_ascii=False)
-                )
+            success = len(results) > 0 or (answer and answer.strip())
+            
+            logging.info(f"Retrieved search results for query: '{query}' - {len(results)} results, answer: {'yes' if answer else 'no'}")
+            
+            return {
+                "success": success,
+                "results": results,
+                "answer": answer,
+                "images": images,
+                "response": search_response
+            }
         
         except Exception as e:
             error_message = str(e)
-            logging.error(f"Error performing web search for '{query}': {error_message}")
-            simplified_message = f"Error performing web search: {error_message[:200]}"
-            if len(error_message) > 200:
-                simplified_message += "..."
-            return self.fail_response(simplified_message)
+            logging.error(f"Error executing search for '{query}': {error_message}")
+            return {
+                "success": False,
+                "results": [],
+                "answer": "",
+                "images": [],
+                "response": {},
+                "error": error_message
+            }
 
     @openapi_schema({
         "type": "function",
@@ -197,8 +312,11 @@ class SandboxWebSearchTool(SandboxToolsBase):
             logging.info(f"Processing {len(url_list)} URLs: {url_list}")
             
             # Process each URL concurrently and collect results
+            start_time = time.time()
             tasks = [self._scrape_single_url(url, include_html) for url in url_list]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            elapsed_time = time.time() - start_time
+            logging.info(f"Scraped {len(url_list)} URLs in {elapsed_time:.2f}s (concurrent execution)")
 
             # Process results, handling exceptions
             processed_results = []
