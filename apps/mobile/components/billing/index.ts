@@ -7,6 +7,8 @@
 // Composite component (quick setup)
 export { BillingContent } from './BillingContent';
 export { PricingSection } from './PricingSection';
+export { RevenueCatPricingSection } from './RevenueCatPricingSection';
+export { UnifiedPricingSection } from './UnifiedPricingSection';
 export { PlanSelectionModal } from './PlanSelectionModal';
 export { ScheduledDowngradeCard } from './ScheduledDowngradeCard';
 

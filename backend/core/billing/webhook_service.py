@@ -1131,7 +1131,7 @@ class WebhookService:
                 logger.error(f"[SUBSCRIPTION DELETED] Error checking for other subscriptions: {e}")
         
         current_account = await client.from_('credit_accounts').select(
-            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id'
+            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id, provider, revenuecat_subscription_id'
         ).eq('account_id', account_id).execute()
         
         if not current_account.data:
@@ -1145,6 +1145,16 @@ class WebhookService:
         expiring_credits = account_data.get('expiring_credits', 0)
         non_expiring_credits = account_data.get('non_expiring_credits', 0)
         current_subscription_id = account_data.get('stripe_subscription_id')
+        provider = account_data.get('provider', 'stripe')
+        revenuecat_subscription_id = account_data.get('revenuecat_subscription_id')
+        
+        if provider == 'revenuecat' and revenuecat_subscription_id:
+            logger.info(
+                f"[SUBSCRIPTION DELETED] Account {account_id} has switched to RevenueCat "
+                f"(provider={provider}, revenuecat_sub={revenuecat_subscription_id}) - "
+                f"skipping Stripe cleanup"
+            )
+            return
         
         if current_subscription_id and current_subscription_id != subscription.id:
             logger.info(f"[SUBSCRIPTION DELETED] Account {account_id} already has different subscription {current_subscription_id} - skipping cleanup")

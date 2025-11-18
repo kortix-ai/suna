@@ -8,7 +8,8 @@
 import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { PRICING_TIERS, BillingPeriod, getDisplayPrice, startPlanCheckout } from '@/lib/billing';
+import { PRICING_TIERS, BillingPeriod, getDisplayPrice } from '@/lib/billing';
+import { startUnifiedPlanCheckout } from '@/lib/billing/unified-checkout';
 import * as Haptics from 'expo-haptics';
 import { PricingTierCard } from './PricingTierCard';
 import { BillingPeriodSelector } from './BillingPeriodSelector';
@@ -44,16 +45,14 @@ export function BillingContent({
     setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: true }));
 
     try {
-      await startPlanCheckout(
+      await startUnifiedPlanCheckout(
         tierKey,
         billingPeriod,
         () => {
-          // Success callback
           setPlanLoadingStates({});
           onSuccess?.();
         },
         () => {
-          // Cancel callback
           setPlanLoadingStates({});
           onCancel?.();
         }

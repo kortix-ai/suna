@@ -6,6 +6,7 @@ import * as Linking from 'expo-linking';
 import { makeRedirectUri } from 'expo-auth-session';
 import { Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
+import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
 import type {
   AuthState,
   SignInCredentials,
@@ -48,7 +49,7 @@ export function useAuth() {
     console.log('🔐 Initializing auth state');
     
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }: { data: { session: Session | null } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
       console.log('📊 Initial session:', session ? 'Active' : 'None');
       setAuthState({
         user: session?.user ?? null,
@@ -56,11 +57,19 @@ export function useAuth() {
         isLoading: false,
         isAuthenticated: !!session,
       });
+
+      if (session?.user && shouldUseRevenueCat()) {
+        try {
+          await initializeRevenueCat(session.user.id, session.user.email);
+        } catch (error) {
+          console.warn('⚠️ Failed to initialize RevenueCat:', error);
+        }
+      }
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, session: Session | null) => {
+      async (_event: AuthChangeEvent, session: Session | null) => {
         console.log('🔄 Auth state changed:', _event);
         setAuthState({
           user: session?.user ?? null,
@@ -68,6 +77,14 @@ export function useAuth() {
           isLoading: false,
           isAuthenticated: !!session,
         });
+
+        if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
+          try {
+            await initializeRevenueCat(session.user.id, session.user.email);
+          } catch (error) {
+            console.warn('⚠️ Failed to initialize RevenueCat:', error);
+          }
+        }
       }
     );
 

@@ -17,12 +17,21 @@ class FreeTierService:
             logger.info(f"[FREE TIER] Auto-subscribing user {account_id} to free tier")
             
             existing_sub = await client.from_('credit_accounts').select(
-                'stripe_subscription_id, tier'
+                'stripe_subscription_id, revenuecat_subscription_id, provider, tier'
             ).eq('account_id', account_id).execute()
             
             if existing_sub.data and len(existing_sub.data) > 0:
-                if existing_sub.data[0].get('stripe_subscription_id'):
-                    logger.info(f"[FREE TIER] User {account_id} already has subscription, skipping")
+                account = existing_sub.data[0]
+                has_stripe_sub = account.get('stripe_subscription_id')
+                has_revenuecat_sub = account.get('revenuecat_subscription_id')
+                provider = account.get('provider')
+                
+                if has_stripe_sub or has_revenuecat_sub or provider == 'revenuecat':
+                    logger.info(
+                        f"[FREE TIER] User {account_id} already has subscription "
+                        f"(stripe={bool(has_stripe_sub)}, revenuecat={bool(has_revenuecat_sub)}, "
+                        f"provider={provider}), skipping"
+                    )
                     return {'success': False, 'message': 'Already subscribed'}
             
             customer_result = await client.schema('basejump').from_('billing_customers').select(

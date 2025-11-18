@@ -47,8 +47,11 @@ max_client_conn = 100
 
 # Note: Webhook configuration is stored in the database table `webhook_config`
 # See: migrations/20251113000000_welcome_email_webhook.sql
-# For cloud Supabase, configure via SQL Editor in Dashboard
-# For local Supabase, see: backend/supabase/WEBHOOK_SETUP.md
+#
+# ⚠️  These settings ONLY apply if you're running LOCAL Supabase (rare)
+# Most people use CLOUD Supabase → configure in Supabase Dashboard instead
+# See: backend/supabase/WEBHOOK_SETUP.md
+[db.settings]
 
 [db.migrations]
 # Specifies an ordered list of schema files that describe your database.

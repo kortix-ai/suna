@@ -261,8 +261,30 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
 
   const handleCancel = React.useCallback(() => {
     setShowCancelDialog(false);
+    
+    // Check if user is on RevenueCat
+    const provider = subscriptionData?.provider || 'stripe';
+    
+    if (provider === 'revenuecat') {
+      // RevenueCat users must cancel in-app
+      const isIOS = require('react-native').Platform.OS === 'ios';
+      const message = isIOS 
+        ? 'To cancel your subscription, please go to:\n\nSettings → [Your Name] → Subscriptions → Kortix'
+        : 'To cancel your subscription, please go to:\n\nPlay Store → Subscriptions → Kortix';
+      
+      require('react-native').Alert.alert(
+        'Manage Subscription',
+        message,
+        [
+          { text: 'OK', style: 'default' }
+        ]
+      );
+      return;
+    }
+    
+    // Stripe cancellation
     cancelSubscriptionMutation.mutate(undefined);
-  }, [cancelSubscriptionMutation]);
+  }, [cancelSubscriptionMutation, subscriptionData]);
 
   const handleReactivate = React.useCallback(() => {
     reactivateSubscriptionMutation.mutate();
