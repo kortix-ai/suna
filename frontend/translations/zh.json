@@ -84,7 +84,15 @@
         "cancelDeletion": "取消删除"
       }
     },
-    "billing": "账单",
+    "billing": {
+      "title": "账单和订阅",
+      "description": "管理您的积分和订阅",
+      "insufficientCredits": "积分不足",
+      "insufficientCreditsMessage": "账单检查失败：积分不足。您的余额为 {balance}。请添加积分以继续。",
+      "creditsExhausted": "您的积分已用完。立即升级。",
+      "billingCheckFailed": "账单检查失败。请升级以继续。",
+      "failedToStartAgent": "启动智能体 {agentName} 失败：{message}"
+    },
     "usage": {
       "title": "使用情况"
     },

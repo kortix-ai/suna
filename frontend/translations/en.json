@@ -111,7 +111,12 @@
       "keepSubscription": "Keep Subscription",
       "cancelling": "Cancelling...",
       "localMode": "Local Mode Active",
-      "localModeDescription": "All premium features are available in this environment"
+      "localModeDescription": "All premium features are available in this environment",
+      "insufficientCredits": "Insufficient credits",
+      "insufficientCreditsMessage": "Billing check failed: Insufficient credits. Your balance is {balance}. Please add credits to continue.",
+      "creditsExhausted": "You ran out of credits. Upgrade now.",
+      "billingCheckFailed": "Billing check failed. Please upgrade to continue.",
+      "failedToStartAgent": "Failed to start agent {agentName}: {message}"
     },
     "usage": {
       "title": "Usage"

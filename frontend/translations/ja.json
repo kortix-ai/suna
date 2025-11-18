@@ -84,7 +84,15 @@
         "cancelDeletion": "削除をキャンセル"
       }
     },
-    "billing": "請求",
+    "billing": {
+      "title": "請求とサブスクリプション",
+      "description": "クレジットとサブスクリプションを管理",
+      "insufficientCredits": "クレジット不足",
+      "insufficientCreditsMessage": "請求チェックに失敗しました：クレジット不足。残高は {balance} です。続行するにはクレジットを追加してください。",
+      "creditsExhausted": "クレジットがなくなりました。今すぐアップグレードしてください。",
+      "billingCheckFailed": "請求チェックに失敗しました。続行するにはアップグレードしてください。",
+      "failedToStartAgent": "エージェント {agentName} の起動に失敗しました：{message}"
+    },
     "usage": {
       "title": "使用状況"
     },

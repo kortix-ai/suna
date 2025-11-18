@@ -111,7 +111,12 @@
       "keepSubscription": "Mantieni abbonamento",
       "cancelling": "Annullamento in corso...",
       "localMode": "Modalità locale attiva",
-      "localModeDescription": "Tutte le funzionalità premium sono disponibili in questo ambiente"
+      "localModeDescription": "Tutte le funzionalità premium sono disponibili in questo ambiente",
+      "insufficientCredits": "Crediti insufficienti",
+      "insufficientCreditsMessage": "Controllo fatturazione fallito: Crediti insufficienti. Il tuo saldo è {balance}. Aggiungi crediti per continuare.",
+      "creditsExhausted": "Hai esaurito i crediti. Aggiorna ora.",
+      "billingCheckFailed": "Controllo fatturazione fallito. Aggiorna per continuare.",
+      "failedToStartAgent": "Impossibile avviare l'agente {agentName}: {message}"
     },
     "usage": {
       "title": "Utilizzo"

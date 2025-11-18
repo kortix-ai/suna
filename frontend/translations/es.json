@@ -84,7 +84,15 @@
         "cancelDeletion": "Cancelar Eliminación"
       }
     },
-    "billing": "Facturación",
+    "billing": {
+      "title": "Facturación y Suscripción",
+      "description": "Gestiona tus créditos y suscripción",
+      "insufficientCredits": "Créditos insuficientes",
+      "insufficientCreditsMessage": "Verificación de facturación fallida: Créditos insuficientes. Tu saldo es {balance}. Por favor, añade créditos para continuar.",
+      "creditsExhausted": "Te has quedado sin créditos. Actualiza ahora.",
+      "billingCheckFailed": "Verificación de facturación fallida. Por favor, actualiza para continuar.",
+      "failedToStartAgent": "Error al iniciar el agente {agentName}: {message}"
+    },
     "usage": {
       "title": "Uso"
     },

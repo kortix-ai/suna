@@ -207,10 +207,30 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   }
 
   if (error instanceof CustomWorkerLimitError) {
-    // Note: Translations should be handled in components that use this handler
-    // This is a fallback for non-component contexts
     const upgradeMessage = `You've reached your limits. Worker Limit (${error.detail.current_count}/${error.detail.limit})`;
     usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
+    return;
+  }
+
+  if (error instanceof BillingError) {
+    // Extract billing error message and determine if credits are exhausted
+    const message = error.detail?.message?.toLowerCase() || '';
+    const isCreditsExhausted = 
+      message.includes('credit') ||
+      message.includes('balance') ||
+      message.includes('insufficient') ||
+      message.includes('out of credits') ||
+      message.includes('no credits');
+    
+    // Open pricing modal with appropriate alert title
+    const alertTitle = isCreditsExhausted 
+      ? 'You ran out of credits. Upgrade now.'
+      : 'Billing check failed. Please upgrade to continue.';
+    
+    usePricingModalStore.getState().openPricingModal({ 
+      isAlert: true, 
+      alertTitle 
+    });
     return;
   }
 

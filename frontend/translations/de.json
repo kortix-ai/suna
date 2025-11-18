@@ -111,7 +111,12 @@
       "keepSubscription": "Abonnement behalten",
       "cancelling": "Wird gekündigt...",
       "localMode": "Lokaler Modus aktiv",
-      "localModeDescription": "Alle Premium-Funktionen sind in dieser Umgebung verfügbar"
+      "localModeDescription": "Alle Premium-Funktionen sind in dieser Umgebung verfügbar",
+      "insufficientCredits": "Unzureichende Credits",
+      "insufficientCreditsMessage": "Abrechnungsprüfung fehlgeschlagen: Unzureichende Credits. Dein Guthaben beträgt {balance}. Bitte füge Credits hinzu, um fortzufahren.",
+      "creditsExhausted": "Dir sind die Credits ausgegangen. Jetzt upgraden.",
+      "billingCheckFailed": "Abrechnungsprüfung fehlgeschlagen. Bitte upgraden, um fortzufahren.",
+      "failedToStartAgent": "Agent {agentName} konnte nicht gestartet werden: {message}"
     },
     "usage": {
       "title": "Nutzung"

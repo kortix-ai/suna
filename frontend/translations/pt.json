@@ -84,7 +84,15 @@
         "cancelDeletion": "Cancelar Exclusão"
       }
     },
-    "billing": "Cobrança",
+    "billing": {
+      "title": "Cobrança e Assinatura",
+      "description": "Gerencie seus créditos e assinatura",
+      "insufficientCredits": "Créditos insuficientes",
+      "insufficientCreditsMessage": "Verificação de cobrança falhou: Créditos insuficientes. Seu saldo é {balance}. Por favor, adicione créditos para continuar.",
+      "creditsExhausted": "Você ficou sem créditos. Atualize agora.",
+      "billingCheckFailed": "Verificação de cobrança falhou. Por favor, atualize para continuar.",
+      "failedToStartAgent": "Falha ao iniciar o agente {agentName}: {message}"
+    },
     "usage": {
       "title": "Uso"
     },

@@ -84,7 +84,15 @@
         "cancelDeletion": "Annuler la Suppression"
       }
     },
-    "billing": "Facturation",
+    "billing": {
+      "title": "Facturation et Abonnement",
+      "description": "Gérez vos crédits et votre abonnement",
+      "insufficientCredits": "Crédits insuffisants",
+      "insufficientCreditsMessage": "Vérification de facturation échouée : Crédits insuffisants. Votre solde est {balance}. Veuillez ajouter des crédits pour continuer.",
+      "creditsExhausted": "Vous avez épuisé vos crédits. Mettez à niveau maintenant.",
+      "billingCheckFailed": "Vérification de facturation échouée. Veuillez mettre à niveau pour continuer.",
+      "failedToStartAgent": "Échec du démarrage de l'agent {agentName} : {message}"
+    },
     "usage": {
       "title": "Utilisation"
     },
