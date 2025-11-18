@@ -10,7 +10,7 @@ class EmailService:
     def __init__(self):
         self.api_token = os.getenv('MAILTRAP_API_TOKEN')
         self.sender_email = os.getenv('MAILTRAP_SENDER_EMAIL', 'dom@kortix.ai')
-        self.sender_name = os.getenv('MAILTRAP_SENDER_NAME', 'Suna Team')
+        self.sender_name = os.getenv('MAILTRAP_SENDER_NAME', 'Dom from Kortix')
         
         if not self.api_token:
             logger.warning("MAILTRAP_API_TOKEN not found in environment variables")
@@ -26,7 +26,7 @@ class EmailService:
         if not user_name:
             user_name = user_email.split('@')[0].title()
         
-        subject = "🎉 Welcome to Suna — Let's Get Started "
+        subject = "🎉 Welcome to Kortix — Let's Get Started "
         html_content = self._get_welcome_email_template(user_name)
         text_content = self._get_welcome_email_text(user_name)
         
@@ -71,7 +71,7 @@ class EmailService:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Kortix Suna</title>
+  <title>Welcome to Kortix</title>
   <style>
     body {{
       font-family: Arial, sans-serif;
@@ -137,29 +137,21 @@ class EmailService:
 <body>
   <div class="container">
     <div class="logo-container">
-      <img src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/loaded_images/Profile%20Picture%20Black.png" alt="Kortix Suna Logo" class="logo">
+      <img src="https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/loaded_images/Profile%20Picture%20Black.png" alt="Kortix Logo" class="logo">
     </div>
-    <h1>Welcome to Kortix Suna!</h1>
 
     <p>Hi {user_name},</p>
 
-    <p><em><strong>Welcome to Kortix Suna — we're excited to have you on board!</strong></em></p>
+    <p><em><strong>Welcome to <a href="https://www.kortix.com/">Kortix.com</a> — we're excited to have you on board!</strong></em></p>
 
     <p>To get started, we'd like to get to know you better: fill out this short <a href="https://docs.google.com/forms/d/e/1FAIpQLSef1EHuqmIh_iQz-kwhjnzSC3Ml-V_5wIySDpMoMU9W_j24JQ/viewform">form</a>!</p>
 
-    <p>To celebrate your arrival, here's a <strong>15% discount</strong> for your first month to get more usage:</p>
-
+    <p>To celebrate your arrival, here's a <strong>15% discount</strong> for your first month:</p>
     <p>🎁 Use code <strong>WELCOME15</strong> at checkout.</p>
 
     <p>Let us know if you need help getting started or have questions — we're always here, and join our <a href="https://discord.com/invite/RvFhXUdZ9H">Discord community</a>.</p>
 
-    <p><strong>For your business:</strong> if you want to automate manual and ordinary tasks for your company, book a call with us <a href="https://cal.com/team/kortix/enterprise-demo">here</a></p>
-
-    <p>Thanks again, and welcome to the Suna community <span class="emoji">🌞</span></p>
-
-    <p>— The Suna Team</p>
-
-    <a href="https://www.suna.so/" class="button">Go to the platform</a>
+    <p>Thanks again, and welcome to the Kortix community!</p>
   </div>
 </body>
 </html>"""
@@ -167,26 +159,20 @@ class EmailService:
     def _get_welcome_email_text(self, user_name: str) -> str:
         return f"""Hi {user_name},
 
-Welcome to Suna — we're excited to have you on board!
+Welcome to https://www.kortix.com/ — we're excited to have you on board!
 
 To get started, we'd like to get to know you better: fill out this short form!
 https://docs.google.com/forms/d/e/1FAIpQLSef1EHuqmIh_iQz-kwhjnzSC3Ml-V_5wIySDpMoMU9W_j24JQ/viewform
 
-To celebrate your arrival, here's a 15% discount for your first month to get more usage:
+To celebrate your arrival, here's a 15% discount for your first month:
 🎁 Use code WELCOME15 at checkout.
 
 Let us know if you need help getting started or have questions — we're always here, and join our Discord community: https://discord.com/invite/RvFhXUdZ9H
 
-For your business: if you want to automate manual and ordinary tasks for your company, book a call with us here: https://cal.com/team/kortix/enterprise-demo 
-
-Thanks again, and welcome to the Suna community 🌞
-
-— The Suna Team
-
-Go to the platform: https://www.suna.so/
+Thanks again, and welcome to the Kortix community!
 
 ---
-© 2025 Suna. All rights reserved.
-You received this email because you signed up for a Suna account."""
+© 2025 Kortix. All rights reserved.
+You received this email because you signed up for a Kortix account."""
 
 email_service = EmailService() 
