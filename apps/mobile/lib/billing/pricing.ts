@@ -119,7 +119,7 @@ export const PRICING_TIERS: PricingTier[] = [
   },
 ];
 
-export type BillingPeriod = 'monthly' | 'yearly_commitment';
+export type BillingPeriod = 'monthly' | 'yearly' | 'yearly_commitment';
 
 /**
  * Get the display price based on billing period
@@ -128,8 +128,12 @@ export function getDisplayPrice(
   tier: PricingTier,
   period: BillingPeriod
 ): string {
-  if (period === 'yearly_commitment' && tier.priceYearly) {
-    return `$${tier.priceYearly}`;
+  if ((period === 'yearly' || period === 'yearly_commitment') && tier.priceYearly) {
+    // Yearly: -10%, Yearly Commitment: -15%
+    const yearlyPrice = period === 'yearly' 
+      ? tier.priceMonthly * 0.9 
+      : tier.priceYearly;
+    return `$${yearlyPrice.toFixed(0)}`;
   }
   return tier.price;
 }

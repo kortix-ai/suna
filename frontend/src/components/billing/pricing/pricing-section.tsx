@@ -341,20 +341,22 @@ function PricingTier({
     }
   };
 
-  // Find the current tier using tier_key
   const currentTier = siteConfig.cloudPricingItems.find(
     (p) => p.tierKey === currentSubscription?.tier_key || p.tierKey === currentSubscription?.tier?.name,
   );
 
   const userPlanName = currentSubscription?.plan_name || 'none';
 
-  // Check if this is the current plan - must match BOTH tier_key AND billing period
   const isSameTier = currentSubscription?.tier_key === tier.tierKey ||
     currentSubscription?.tier?.name === tier.tierKey;
   const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
 
-  const isCurrentActivePlan = isAuthenticated && isSameTier && isSameBillingPeriod &&
-    currentSubscription?.subscription?.status === 'active';
+  const isRevenueCatSubscription = currentSubscription?.provider === 'revenuecat';
+  
+  const isCurrentActivePlan = isAuthenticated && isSameTier && 
+    (isSameBillingPeriod || isRevenueCatSubscription) &&
+    (currentSubscription?.subscription?.status === 'active' || 
+     (isRevenueCatSubscription && currentSubscription?.status === 'active'));
 
   const isScheduled = isAuthenticated && (currentSubscription as any)?.has_schedule;
   const isScheduledTargetPlan =
@@ -376,7 +378,13 @@ function PricingTier({
   const planChangeValidation = { allowed: true };
 
   if (isAuthenticated) {
-    if (isCurrentActivePlan) {
+    // For RevenueCat subscriptions on web, show current plan and disable changes
+    if (isRevenueCatSubscription && !isCurrentActivePlan) {
+      buttonText = 'Manage in App';
+      buttonDisabled = true;
+      buttonVariant = 'outline';
+      buttonClassName = 'opacity-70 cursor-not-allowed bg-muted text-muted-foreground';
+    } else if (isCurrentActivePlan) {
       if (userPlanName === 'trial') {
         buttonText = t('trialActive');
         statusBadge = (
@@ -388,7 +396,7 @@ function PricingTier({
         buttonText = t('currentPlan');
         statusBadge = (
           <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            {t('currentBadge')}
+            Current{isRevenueCatSubscription ? ' (Mobile)' : ''}
           </span>
         );
       }
@@ -851,6 +859,8 @@ export function PricingSection({
       </div>
     );
   }
+
+  const isRevenueCatUser = isAuthenticated && currentSubscription?.provider === 'revenuecat';
 
   return (
     <section

@@ -812,18 +812,22 @@ class WebhookService:
                                                         'can_cancel_after': commitment_end.isoformat()
                                                     })
                                                     
-                                                    try:
-                                                        await client.from_('commitment_history').insert({
-                                                            'account_id': account_id,
-                                                            'commitment_type': 'yearly_commitment',
-                                                            'price_id': current_price_id,
-                                                            'start_date': commitment_start.isoformat(),
-                                                            'end_date': commitment_end.isoformat(),
-                                                            'stripe_subscription_id': subscription['id']
-                                                        }).execute()
-                                                        logger.info(f"[DOWNGRADE APPLIED] New tier has commitment - tracked in commitment_history until {commitment_end.date()}")
-                                                    except Exception as e:
-                                                        logger.warning(f"[DOWNGRADE APPLIED] Could not insert commitment_history (may already exist): {e}")
+                                            try:
+                                                user_check = await client.from_('users').select('id').eq('id', account_id).execute()
+                                                if not user_check.data:
+                                                    logger.warning(f"[DOWNGRADE APPLIED] User {account_id} not found, skipping commitment_history insert")
+                                                else:
+                                                    await client.from_('commitment_history').insert({
+                                                        'account_id': account_id,
+                                                        'commitment_type': 'yearly_commitment',
+                                                        'price_id': current_price_id,
+                                                        'start_date': commitment_start.isoformat(),
+                                                        'end_date': commitment_end.isoformat(),
+                                                        'stripe_subscription_id': subscription['id']
+                                                    }).execute()
+                                                    logger.info(f"[DOWNGRADE APPLIED] New tier has commitment - tracked in commitment_history until {commitment_end.date()}")
+                                            except Exception as e:
+                                                logger.warning(f"[DOWNGRADE APPLIED] Could not insert commitment_history (may already exist): {e}")
                                             else:
                                                 update_data.update({
                                                     'commitment_type': None,
@@ -1131,7 +1135,7 @@ class WebhookService:
                 logger.error(f"[SUBSCRIPTION DELETED] Error checking for other subscriptions: {e}")
         
         current_account = await client.from_('credit_accounts').select(
-            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id'
+            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id, provider, revenuecat_subscription_id, revenuecat_product_id'
         ).eq('account_id', account_id).execute()
         
         if not current_account.data:
@@ -1145,6 +1149,17 @@ class WebhookService:
         expiring_credits = account_data.get('expiring_credits', 0)
         non_expiring_credits = account_data.get('non_expiring_credits', 0)
         current_subscription_id = account_data.get('stripe_subscription_id')
+        provider = account_data.get('provider', 'stripe')
+        revenuecat_subscription_id = account_data.get('revenuecat_subscription_id')
+        revenuecat_product_id = account_data.get('revenuecat_product_id')
+        
+        if provider == 'revenuecat' or revenuecat_subscription_id or revenuecat_product_id:
+            logger.info(
+                f"[SUBSCRIPTION DELETED] Account {account_id} has switched to or is using RevenueCat "
+                f"(provider={provider}, revenuecat_sub={revenuecat_subscription_id}, "
+                f"revenuecat_product={revenuecat_product_id}) - skipping Stripe cleanup"
+            )
+            return
         
         if current_subscription_id and current_subscription_id != subscription.id:
             logger.info(f"[SUBSCRIPTION DELETED] Account {account_id} already has different subscription {current_subscription_id} - skipping cleanup")
@@ -1612,14 +1627,21 @@ class WebhookService:
             'can_cancel_after': end_date.isoformat()
         }).eq('account_id', account_id).execute()
         
-        await client.from_('commitment_history').insert({
-            'account_id': account_id,
-            'commitment_type': 'yearly_commitment',
-            'price_id': price_id,
-            'start_date': start_date.isoformat(),
-            'end_date': end_date.isoformat(),
-            'stripe_subscription_id': subscription['id']
-        }).execute()
+        try:
+            user_check = await client.from_('users').select('id').eq('id', account_id).execute()
+            if user_check.data:
+                await client.from_('commitment_history').insert({
+                    'account_id': account_id,
+                    'commitment_type': 'yearly_commitment',
+                    'price_id': price_id,
+                    'start_date': start_date.isoformat(),
+                    'end_date': end_date.isoformat(),
+                    'stripe_subscription_id': subscription['id']
+                }).execute()
+            else:
+                 logger.warning(f"[_track_commitment] User {account_id} not found, skipping commitment_history insert")
+        except Exception as e:
+            logger.warning(f"[_track_commitment] Could not insert commitment_history: {e}")
 
     async def _handle_invoice_payment_failed(self, event, client):
         invoice = event.data.object

@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/lib/billing';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
+import { UnifiedPricingSection } from './UnifiedPricingSection';
 
 interface PlanSelectionModalProps {
   open: boolean;
@@ -44,7 +45,7 @@ export function PlanSelectionModal({
       onRequestClose={handleClose}
     >
       <View className="flex-1 bg-background">
-        <PricingSection
+        <UnifiedPricingSection
           returnUrl={returnUrl}
           showTitleAndTabs={true}
           insideDialog={true}

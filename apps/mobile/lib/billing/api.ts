@@ -32,13 +32,17 @@ export interface SubscriptionInfo {
   status: string;
   plan_name: string;
   display_plan_name?: string;
-  tier_key: string;  // Backend tier key
-  billing_period?: 'monthly' | 'yearly' | 'yearly_commitment' | null;  // Billing period from price_id
+  tier_key: string;
+  billing_period?: 'monthly' | 'yearly' | 'yearly_commitment' | null;
+  provider?: 'stripe' | 'revenuecat';
+  revenuecat_customer_id?: string | null;
+  revenuecat_subscription_id?: string | null;
+  revenuecat_product_id?: string | null;
   subscription: {
     id: string;
     status: string;
-    tier_key: string;  // Backend tier key
-    current_period_end: string | number;  // Unix timestamp (seconds) or ISO string
+    tier_key: string;
+    current_period_end: string | number;
     cancel_at?: string | number | null;
     canceled_at?: string | number | null;
     cancel_at_period_end?: boolean;
@@ -248,9 +252,15 @@ async function fetchApi<T>(
 
 export const billingApi = {
   async getSubscription(): Promise<SubscriptionInfo> {
-    // console.log('🔄 Fetching subscription data...');
+    console.log('🔄 Fetching subscription data...');
     const data = await fetchApi<SubscriptionInfo>('/billing/subscription');
-    // console.log('✅ Subscription data received:', JSON.stringify(data, null, 2));
+    console.log('✅ Subscription data received:', {
+      provider: data.provider,
+      revenuecat_product_id: data.revenuecat_product_id,
+      revenuecat_subscription_id: data.revenuecat_subscription_id,
+      tier_key: data.tier_key,
+      status: data.status
+    });
     return data;
   },
 
