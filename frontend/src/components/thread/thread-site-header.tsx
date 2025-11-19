@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, ExternalLink, Monitor, Copy, Check } from "lucide-react"
+import { FolderOpen, Upload, Monitor, Copy, Check } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -199,7 +199,7 @@ export function SiteHeader({
                 onClick={openShareModal}
                 className="h-9 px-3 cursor-pointer gap-2"
               >
-                <ExternalLink className="h-4 w-4" />
+                <Upload className="h-4 w-4" />
                 <span>Share</span>
               </Button>
             )}

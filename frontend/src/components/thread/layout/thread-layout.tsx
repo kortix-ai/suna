@@ -254,7 +254,7 @@ export function ThreadLayout({
 
           {/* ChatInput - positioned at bottom of main content panel */}
           {chatInput && (
-            <div className="flex-shrink-0 relative z-10 bg-gradient-to-b from-background via-background/90 to-transparent pr-4 pl-4">
+            <div className="flex-shrink-0 relative z-10 bg-gradient-to-b from-background via-background/90 to-transparent px-4">
               {chatInput}
             </div>
           )}
