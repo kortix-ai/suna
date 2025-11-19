@@ -40,7 +40,26 @@ class SubscriptionService:
             .execute()
         
         if customer_result.data:
-            return customer_result.data[0]['id']
+            customer_id = customer_result.data[0]['id']
+            try:
+                await StripeAPIWrapper.safe_stripe_call(
+                    stripe.Customer.retrieve_async,
+                    customer_id
+                )
+                logger.info(f"[BILLING] Found existing Stripe customer {customer_id} for account {account_id}")
+                return customer_id
+            except stripe.error.InvalidRequestError as e:
+                if 'No such customer' in str(e):
+                    logger.warning(f"[BILLING] Customer {customer_id} not found in Stripe, deleting stale record and creating new customer")
+                    await client.schema('basejump').from_('billing_customers')\
+                        .delete()\
+                        .eq('account_id', account_id)\
+                        .execute()
+                else:
+                    raise
+            except Exception as e:
+                logger.error(f"[BILLING] Error verifying customer {customer_id}: {e}")
+                raise
         
         account_result = await client.schema('basejump').from_('accounts')\
             .select('id, name, personal_account, primary_owner_user_id')\

@@ -33,18 +33,21 @@ CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC);
 ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Users can only see their own feedback
+DROP POLICY IF EXISTS "Users can view their own feedback" ON feedback;
 CREATE POLICY "Users can view their own feedback"
     ON feedback
     FOR SELECT
     USING (auth.uid() = account_id);
 
 -- Policy: Users can insert their own feedback
+DROP POLICY IF EXISTS "Users can insert their own feedback" ON feedback;
 CREATE POLICY "Users can insert their own feedback"
     ON feedback
     FOR INSERT
     WITH CHECK (auth.uid() = account_id);
 
 -- Policy: Users can update their own feedback
+DROP POLICY IF EXISTS "Users can update their own feedback" ON feedback;
 CREATE POLICY "Users can update their own feedback"
     ON feedback
     FOR UPDATE
@@ -52,6 +55,7 @@ CREATE POLICY "Users can update their own feedback"
     WITH CHECK (auth.uid() = account_id);
 
 -- Policy: Users can delete their own feedback
+DROP POLICY IF EXISTS "Users can delete their own feedback" ON feedback;
 CREATE POLICY "Users can delete their own feedback"
     ON feedback
     FOR DELETE
@@ -67,6 +71,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to automatically update updated_at
+DROP TRIGGER IF EXISTS update_feedback_updated_at ON feedback;
 CREATE TRIGGER update_feedback_updated_at
     BEFORE UPDATE ON feedback
     FOR EACH ROW

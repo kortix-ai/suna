@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS public.webhook_config (
 -- Only service_role can modify this table
 ALTER TABLE public.webhook_config ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage webhook config" ON public.webhook_config;
 CREATE POLICY "Service role can manage webhook config"
   ON public.webhook_config
   FOR ALL
@@ -56,7 +57,7 @@ CREATE POLICY "Service role can manage webhook config"
   USING (true)
   WITH CHECK (true);
 
--- Block public access
+DROP POLICY IF EXISTS "No public access" ON public.webhook_config;
 CREATE POLICY "No public access"
   ON public.webhook_config
   FOR ALL
