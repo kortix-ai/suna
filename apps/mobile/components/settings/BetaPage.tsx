@@ -18,30 +18,30 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled, toggle: toggleAdvancedFeatures } = useAdvancedFeatures();
-  
+
   const handleClose = React.useCallback(() => {
     console.log('🎯 Beta page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
-  
+
   const handleToggle = React.useCallback(async () => {
     console.log('🎯 Advanced features toggle pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await toggleAdvancedFeatures();
   }, [toggleAdvancedFeatures]);
-  
+
   if (!visible) return null;
-  
+
   return (
     <View className="absolute inset-0 z-50">
       <Pressable
         onPress={handleClose}
         className="absolute inset-0 bg-black/50"
       />
-      
+
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
+        <ScrollView
           className="flex-1"
           showsVerticalScrollIndicator={false}
           removeClippedSubviews={true}
@@ -50,7 +50,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
             title={t('beta.title')}
             onClose={handleClose}
           />
-          
+
           <View className="px-6 pb-8">
             <View className="mb-8 items-center pt-4">
               <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
@@ -68,14 +68,13 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
               <View className="bg-card border border-border/40 rounded-2xl p-5">
                 <View className="flex-row items-center justify-between mb-4">
                   <View className="flex-row items-center gap-3 flex-1">
-                    <View className={`h-11 w-11 rounded-full items-center justify-center ${
-                      advancedFeaturesEnabled ? 'bg-primary' : 'bg-primary/10'
-                    }`}>
-                      <Icon 
-                        as={Layers} 
-                        size={20} 
-                        className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-primary'} 
-                        strokeWidth={2.5} 
+                    <View className={`h-11 w-11 rounded-full items-center justify-center ${advancedFeaturesEnabled ? 'bg-primary' : 'bg-primary/10'
+                      }`}>
+                      <Icon
+                        as={Layers}
+                        size={20}
+                        className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-primary'}
+                        strokeWidth={2.5}
                       />
                     </View>
                     <View className="flex-1">
@@ -84,19 +83,19 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                       </Text>
                     </View>
                   </View>
-                  
+
                   <Switch
                     value={advancedFeaturesEnabled}
                     onValueChange={handleToggle}
-                    trackColor={{ 
+                    trackColor={{
                       false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
-                      true: colorScheme === 'dark' ? '#34C759' : '#34C759' 
+                      true: colorScheme === 'dark' ? '#34C759' : '#34C759'
                     }}
                     thumbColor="#FFFFFF"
                     ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
                   />
                 </View>
-                
+
                 <View className="pt-3 border-t border-border/40">
                   <Text className="text-sm font-roobert text-muted-foreground leading-5">
                     {t('beta.advancedDescription')}
@@ -126,7 +125,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
             )}
 
             <View className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5">
-              <View className="flex-row items-start gap-3 mb-3">
+              <View className="flex-col items-start gap-3 mb-3">
                 <View className="h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
                   <Icon as={AlertCircle} size={18} className="text-destructive" strokeWidth={2.5} />
                 </View>

@@ -14,7 +14,7 @@ import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { KortixLoader } from '@/components/ui';
-import { Search, Plus, X, AlertCircle, MessageSquare, Users, Zap, PanelLeftClose, CircleChevronLeft, ChevronLeft, ChevronFirst } from 'lucide-react-native';
+import { Search, Plus, X, AlertCircle, MessageSquare, Users, Zap, PanelLeftClose, CircleChevronLeft, ChevronLeft, ChevronFirst, ChevronsUpDown } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
@@ -34,6 +34,7 @@ import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
+import { TierBadge } from '@/components/billing/TierBadge';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -560,52 +561,56 @@ export function MenuPage({
     >
       <SafeAreaView edges={['top', 'bottom']} className="flex-1">
         <View className="flex-1 px-6 pt-2">
-          <View className="flex-row items-center justify-between mb-6">
+          <View className="mb-4 flex-row items-center gap-3">
+            <View className="flex-1">
+              {activeTab === 'chats' && (
+                <SearchBar
+                  value={chatsSearch.query}
+                  onChangeText={chatsSearch.updateQuery}
+                  placeholder={t('menu.searchConversations') || 'Search chats...'}
+                  onClear={chatsSearch.clearSearch}
+                />
+              )}
+              {activeTab === 'workers' && (
+                <SearchBar
+                  value={workersSearch.query}
+                  onChangeText={workersSearch.updateQuery}
+                  placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
+                  onClear={workersSearch.clearSearch}
+                />
+              )}
+              {activeTab === 'triggers' && (
+                <SearchBar
+                  value={triggersSearch.query}
+                  onChangeText={triggersSearch.updateQuery}
+                  placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
+                  onClear={triggersSearch.clearSearch}
+                />
+              )}
+            </View>
             <AnimatedPressable
-              onPress={handleProfilePress}
-              onPressIn={handleProfilePressIn}
-              onPressOut={handleProfilePressOut}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (activeTab === 'chats') onNewChat?.();
+                else if (activeTab === 'workers') onNewWorker?.();
+                else if (activeTab === 'triggers') handleTriggerCreate();
+              }}
+              onPressIn={() => {
+                profileScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              }}
+              onPressOut={() => {
+                profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
               style={profileAnimatedStyle}
-              className="flex-row items-center gap-3"
+              className="w-11 h-11 rounded-[21px] bg-primary items-center justify-center"
             >
-              <ProfilePicture imageUrl={placeholderImageUrl} size={12} />
-              <View className="flex-col items-start -mt-1.5">
-                <Text className="text-lg font-roobert-semibold text-foreground">
-                  {profile.name || 'User'}
-                </Text>
-                <Text className="text-sm font-roobert text-muted-foreground">
-                  {profile.email || 'Tap to open settings'}
-                </Text>
-              </View>
+              <Icon
+                as={Plus}
+                size={20}
+                className="text-primary-foreground"
+                strokeWidth={2.5}
+              />
             </AnimatedPressable>
-            <BackButton onPress={onClose} />
-          </View>
-
-          <View className="mb-4">
-            {activeTab === 'chats' && (
-              <SearchBar
-                value={chatsSearch.query}
-                onChangeText={chatsSearch.updateQuery}
-                placeholder={t('menu.searchConversations') || 'Search chats...'}
-                onClear={chatsSearch.clearSearch}
-              />
-            )}
-            {activeTab === 'workers' && (
-              <SearchBar
-                value={workersSearch.query}
-                onChangeText={workersSearch.updateQuery}
-                placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
-                onClear={workersSearch.clearSearch}
-              />
-            )}
-            {activeTab === 'triggers' && (
-              <SearchBar
-                value={triggersSearch.query}
-                onChangeText={triggersSearch.updateQuery}
-                placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
-                onClear={triggersSearch.clearSearch}
-              />
-            )}
           </View>
 
           <View className="flex-1 relative -mx-6">
@@ -791,16 +796,43 @@ export function MenuPage({
           </View>
         </View>
 
-        <View className="px-6 pb-4">
-          {advancedFeaturesEnabled ? (
+        <View className="px-6 pb-0 gap-4">
+          <AnimatedPressable
+            onPress={handleProfilePress}
+            onPressIn={handleProfilePressIn}
+            onPressOut={handleProfilePressOut}
+            style={profileAnimatedStyle}
+            className="flex-row items-center gap-3 border border-border p-3 rounded-2xl"
+          >
+            <ProfilePicture imageUrl={placeholderImageUrl} size={12} />
+            <View className="flex-col items-start -mt-1.5">
+              <Text className="text-lg font-roobert-semibold text-foreground">
+                {profile.name || 'User'}
+              </Text>
+              {profile.planName ? (
+                <View className="flex-row items-center gap-2">
+                  <TierBadge planName={profile.planName} size="sm" variant="default" />
+                </View>
+              ) : (
+                <Text className="text-sm font-roobert text-muted-foreground">
+                  {profile.email || 'Tap to open settings'}
+                </Text>
+              )}
+            </View>
+            <Icon
+              as={ChevronsUpDown}
+              size={20}
+              className="text-muted-foreground ml-auto"
+              strokeWidth={2}
+            />
+          </AnimatedPressable>
+          {advancedFeaturesEnabled && (
             <BottomNav
               activeTab={activeTab}
               onChatsPress={onChatsPress}
               onWorkersPress={onWorkersPress}
               onTriggersPress={onTriggersPress}
             />
-          ) : (
-            <NewChatButton onPress={onNewChat} />
           )}
         </View>
       </SafeAreaView>

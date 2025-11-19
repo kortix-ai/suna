@@ -20,6 +20,7 @@ export * from './usage-api';
 export * from './provider';
 export * from './revenuecat';
 export * from './unified-checkout';
+export * from './plan-utils';
 
 // Named exports for convenience
 export { billingApi } from './api';
