@@ -73,12 +73,7 @@ export const formatCronExpression = (cron?: string): string => {
   if (minute === '0' && hour === '*/1' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
     return 'Every hour';
   }
-  if (minute === '*/15' && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    return 'Every 15 minutes';
-  }
-  if (minute === '*/30' && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
-    return 'Every 30 minutes';
-  }
+  // Removed: schedules under 1 hour are no longer allowed
   if (minute === '0' && hour === '9' && dayOfMonth === '*' && month === '*' && dayOfWeek === '1-5') {
     return 'Weekdays at 9 AM';
   }
@@ -179,16 +174,6 @@ export const isValidCronExpression = (cron: string): boolean => {
  * Get common cron presets
  */
 export const getCronPresets = () => [
-  {
-    label: 'Every 15 minutes',
-    value: '*/15 * * * *',
-    description: 'Runs every 15 minutes',
-  },
-  {
-    label: 'Every 30 minutes',
-    value: '*/30 * * * *',
-    description: 'Runs every 30 minutes',
-  },
   {
     label: 'Every hour',
     value: '0 * * * *',

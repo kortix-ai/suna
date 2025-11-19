@@ -47,8 +47,6 @@ interface SimplifiedTriggerDetailPanelProps {
 }
 
 const SCHEDULE_PRESETS = [
-  { cron: '*/15 * * * *', name: 'Every 15 minutes', icon: <Zap className="h-4 w-4" /> },
-  { cron: '*/30 * * * *', name: 'Every 30 minutes', icon: <Timer className="h-4 w-4" /> },
   { cron: '0 * * * *', name: 'Every hour', icon: <Timer className="h-4 w-4" /> },
   { cron: '0 9 * * *', name: 'Daily at 9 AM', icon: <Target className="h-4 w-4" /> },
   { cron: '0 9 * * 1-5', name: 'Weekdays at 9 AM', icon: <CalendarIcon className="h-4 w-4" /> },

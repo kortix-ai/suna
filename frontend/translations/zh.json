@@ -257,7 +257,15 @@
     "noActionsYet": "还没有操作",
     "workerActionsDescription": "Worker 操作和结果将在此处显示",
     "toolIsRunning": "工具正在运行",
-    "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。"
+    "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。",
+    "rateThisResult": "评价此结果",
+    "feedbackHelpsImprove": "您的反馈帮助我们改进",
+    "additionalFeedbackOptional": "附加反馈（可选）",
+    "helpKortixImprove": "帮助 Kortix 通过您的反馈改进",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "feedbackSubmittedSuccess": "反馈提交成功",
+    "feedbackSubmitFailed": "反馈提交失败"
   },
   "agents": {
     "title": "智能体",
