@@ -156,7 +156,19 @@
     "threadTitle": "Título do chat",
     "editTitle": "Editar título",
     "noMessages": "Ainda sem mensagens",
-    "startConversation": "Começar uma conversa"
+    "startConversation": "Começar uma conversa",
+    "taskCompleted": "Tarefa concluída",
+    "howWasThisResult": "Como foi este resultado?",
+    "rateThisResult": "Avaliar este resultado",
+    "feedbackHelpsImprove": "Teu feedback nos ajuda a melhorar",
+    "additionalFeedbackOptional": "Feedback adicional (opcional)",
+    "helpKortixImprove": "Ajuda Kortix a melhorar com meu feedback",
+    "submit": "Enviar",
+    "submitting": "Enviando...",
+    "suggestedFollowUps": "Sugestões de acompanhamento",
+    "error": "Erro",
+    "feedbackSubmitFailed": "Falha ao enviar feedback",
+    "feedbackSubmitFailedRetry": "Falha ao enviar feedback. Por favor, tente novamente."
   },
   "agents": {
     "selectAgent": "Selecionar Worker",

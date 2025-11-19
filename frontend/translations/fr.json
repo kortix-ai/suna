@@ -235,6 +235,10 @@
     "autonomousDescription": "Mode travail approfondi pour résolution de problèmes en plusieurs étapes",
     "chat": "Chat",
     "chatDescription": "Conversation simple aller-retour",
+    "sampleAnswers": "Exemples de réponses",
+    "samplePrompts": "Exemples de prompts",
+    "waitingForUserResponse": "Kortix continuera à travailler de manière autonome après ta réponse.",
+    "taskCompleted": "Tâche terminée",
     "uploadingFiles": "Téléchargement de {count} fichier{plural}...",
     "uploadingFilesOne": "Téléchargement de {count} fichier...",
     "uploadingFilesMany": "Téléchargement de {count} fichiers...",
@@ -253,7 +257,15 @@
     "noActionsYet": "Pas encore d'actions",
     "workerActionsDescription": "Les actions et résultats du Worker apparaîtront ici lors de l'exécution",
     "toolIsRunning": "L'outil est en cours d'exécution",
-    "toolCurrentlyExecuting": "{toolName} est en cours d'exécution. Les résultats apparaîtront ici une fois terminé."
+    "toolCurrentlyExecuting": "{toolName} est en cours d'exécution. Les résultats apparaîtront ici une fois terminé.",
+    "rateThisResult": "Évaluer ce résultat",
+    "feedbackHelpsImprove": "Vos commentaires nous aident à nous améliorer",
+    "additionalFeedbackOptional": "Commentaire supplémentaire (optionnel)",
+    "helpKortixImprove": "Aidez Kortix à s'améliorer avec vos commentaires",
+    "submit": "Envoyer",
+    "submitting": "Envoi en cours...",
+    "feedbackSubmittedSuccess": "Commentaire envoyé avec succès",
+    "feedbackSubmitFailed": "Échec de l'envoi du commentaire"
   },
   "agents": {
     "title": "Agents",

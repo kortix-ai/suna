@@ -1,17 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
-import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { createClient } from '@/lib/supabase/client';
-import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
-import { SubscriptionStoreSync } from '@/stores/subscription-store';
-
-// Wrapper component to handle delete operation side effects
-function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode }) {
-    useDeleteOperationEffects();
-    return <>{children}</>;
-}
+import { AppProviders } from '@/components/layout/app-providers';
 
 export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
@@ -41,16 +32,9 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     // If user is logged in, wrap with all necessary providers and show sidebar
     if (isLoggedIn) {
         return (
-            <DeleteOperationEffectsWrapper>
-                <SubscriptionStoreSync>
-                    <SidebarProvider>
-                        <SidebarLeft />
-                        <SidebarInset>
+            <AppProviders showSidebar={true}>
                             {children}
-                        </SidebarInset>
-                    </SidebarProvider>
-                </SubscriptionStoreSync>
-            </DeleteOperationEffectsWrapper>
+            </AppProviders>
         );
     }
 

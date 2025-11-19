@@ -27,6 +27,7 @@ import { Card } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getPdfUrl } from '@/components/thread/tool-views/utils/presentation-utils';
 import { useTranslations } from 'next-intl';
+import { PromptExamples } from '@/components/shared/prompt-examples';
 
 interface SunaModesPanelProps {
   selectedMode: string | null;
@@ -1261,9 +1262,9 @@ export function SunaModesPanel({
 
       {/* Sample Prompts - Google List Style (for research, people) */}
       {selectedMode && displayedPrompts && ['research', 'people'].includes(selectedMode) && (
-        <div className="space-y-2 animate-in fade-in-0 zoom-in-95 duration-300">
-          <div className="flex items-center justify-between px-1">
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('samplePrompts')}</h3>
+        <div className="animate-in fade-in-0 zoom-in-95 duration-300">
+          <div className="flex items-center justify-between px-1 mb-2">
+            <span></span>
             <Button
               variant="ghost"
               size="sm"
@@ -1278,37 +1279,21 @@ export function SunaModesPanel({
               </motion.div>
             </Button>
           </div>
-          <div className="space-y-1">
-            {displayedPrompts.map((prompt, index) => (
-              <motion.div
-                key={`${prompt}-${index}`}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{
-                  duration: 0.2,
-                  delay: index * 0.03,
-                  ease: "easeOut"
-                }}
-                className="group cursor-pointer rounded-lg hover:bg-accent/50 transition-colors duration-150"
-                onClick={() => handlePromptSelect(prompt)}
-              >
-                <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-                  <p className="text-sm text-foreground/70 group-hover:text-foreground transition-colors leading-relaxed flex-1">
-                    {prompt}
-                  </p>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                </div>
-              </motion.div>
-            ))}
-          </div>
+          <PromptExamples
+            prompts={displayedPrompts.map(p => ({ text: p }))}
+            onPromptClick={handlePromptSelect}
+            title={t('samplePrompts')}
+            variant="text"
+            showTitle={true}
+          />
         </div>
       )}
 
       {/* Sample Prompts - Card Grid Style (for image, slides, data, docs) */}
       {selectedMode && displayedPrompts && !['research', 'people'].includes(selectedMode) && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-muted-foreground">{t('samplePrompts')}</h3>
+        <div className="animate-in fade-in-0 zoom-in-95 duration-300">
+          <div className="flex items-center justify-between mb-3">
+            <span></span>
             <Button
               variant="ghost"
               size="sm"
@@ -1323,30 +1308,14 @@ export function SunaModesPanel({
               </motion.div>
             </Button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {displayedPrompts.map((prompt, index) => (
-              <motion.div
-                key={`${prompt}-${index}`}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{
-                  duration: 0.3,
-                  delay: index * 0.05,
-                  ease: "easeOut"
-                }}
-              >
-                <Card
-                  className="p-4 cursor-pointer hover:bg-primary/5 transition-all duration-200 group border border-border rounded-xl"
-                  onClick={() => handlePromptSelect(prompt)}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm text-foreground/80 leading-relaxed">{prompt}</p>
-                    <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0 transition-colors duration-200" />
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
+          <PromptExamples
+            prompts={displayedPrompts.map(p => ({ text: p }))}
+            onPromptClick={handlePromptSelect}
+            title={t('samplePrompts')}
+            variant="card"
+            columns={2}
+            showTitle={true}
+          />
         </div>
       )}
 

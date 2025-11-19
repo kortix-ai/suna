@@ -23,13 +23,14 @@ const extractFromNewFormat = (content: any): {
   text: string | null;
   attachments: string[] | null;
   status: string | null;
+  follow_up_answers: string[] | null;
   success?: boolean; 
   timestamp?: string;
 } => {
   const parsedContent = parseContent(content);
   
   if (!parsedContent || typeof parsedContent !== 'object') {
-    return { text: null, attachments: null, status: null, success: undefined, timestamp: undefined };
+    return { text: null, attachments: null, status: null, follow_up_answers: null, success: undefined, timestamp: undefined };
   }
 
   if ('tool_execution' in parsedContent && typeof parsedContent.tool_execution === 'object') {
@@ -53,6 +54,26 @@ const extractFromNewFormat = (content: any): {
       }
     }
 
+    let follow_up_answers: string[] | null = null;
+    if (args.follow_up_answers) {
+      if (Array.isArray(args.follow_up_answers)) {
+        follow_up_answers = args.follow_up_answers.filter((a: string) => a && a.trim().length > 0);
+      } else if (typeof args.follow_up_answers === 'string') {
+        // Handle case where it's a JSON string
+        try {
+          const parsed = JSON.parse(args.follow_up_answers);
+          if (Array.isArray(parsed)) {
+            follow_up_answers = parsed.filter((a: string) => a && a.trim().length > 0);
+          }
+        } catch (e) {
+          // If parsing fails, treat as single string
+          if (args.follow_up_answers.trim().length > 0) {
+            follow_up_answers = [args.follow_up_answers];
+          }
+        }
+      }
+    }
+
     let status: string | null = null;
     if (parsedOutput && typeof parsedOutput === 'object' && parsedOutput.status) {
       status = parsedOutput.status;
@@ -61,6 +82,7 @@ const extractFromNewFormat = (content: any): {
     const extractedData = {
       text: args.text || null,
       attachments,
+      follow_up_answers,
       status: status || parsedContent.summary || null,
       success: toolExecution.result?.success,
       timestamp: toolExecution.execution_details?.timestamp
@@ -70,10 +92,14 @@ const extractFromNewFormat = (content: any): {
   }
 
   if ('role' in parsedContent && 'content' in parsedContent) {
-    return extractFromNewFormat(parsedContent.content);
+    // If content is a string, parse it first before recursing
+    const nestedContent = typeof parsedContent.content === 'string' 
+      ? parseContent(parsedContent.content) 
+      : parsedContent.content;
+    return extractFromNewFormat(nestedContent);
   }
 
-  return { text: null, attachments: null, status: null, success: undefined, timestamp: undefined };
+  return { text: null, attachments: null, status: null, follow_up_answers: null, success: undefined, timestamp: undefined };
 };
 
 const extractFromLegacyFormat = (content: any): { 
@@ -134,6 +160,7 @@ export function extractAskData(
   text: string | null;
   attachments: string[] | null;
   status: string | null;
+  follow_up_answers: string[] | null;
   actualIsSuccess: boolean;
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
@@ -141,6 +168,7 @@ export function extractAskData(
   let text: string | null = null;
   let attachments: string[] | null = null;
   let status: string | null = null;
+  let follow_up_answers: string[] | null = null;
   let actualIsSuccess = isSuccess;
   let actualToolTimestamp = toolTimestamp;
   let actualAssistantTimestamp = assistantTimestamp;
@@ -148,20 +176,22 @@ export function extractAskData(
   const assistantNewFormat = extractFromNewFormat(assistantContent);
   const toolNewFormat = extractFromNewFormat(toolContent);
 
-  if (assistantNewFormat.text || assistantNewFormat.attachments || assistantNewFormat.status) {
+  if (assistantNewFormat.text || assistantNewFormat.attachments || assistantNewFormat.status || assistantNewFormat.follow_up_answers) {
     text = assistantNewFormat.text;
     attachments = assistantNewFormat.attachments;
     status = assistantNewFormat.status;
+    follow_up_answers = assistantNewFormat.follow_up_answers;
     if (assistantNewFormat.success !== undefined) {
       actualIsSuccess = assistantNewFormat.success;
     }
     if (assistantNewFormat.timestamp) {
       actualAssistantTimestamp = assistantNewFormat.timestamp;
     }
-  } else if (toolNewFormat.text || toolNewFormat.attachments || toolNewFormat.status) {
+  } else if (toolNewFormat.text || toolNewFormat.attachments || toolNewFormat.status || toolNewFormat.follow_up_answers) {
     text = toolNewFormat.text;
     attachments = toolNewFormat.attachments;
     status = toolNewFormat.status;
+    follow_up_answers = toolNewFormat.follow_up_answers;
     if (toolNewFormat.success !== undefined) {
       actualIsSuccess = toolNewFormat.success;
     }
@@ -181,6 +211,7 @@ export function extractAskData(
     text,
     attachments,
     status,
+    follow_up_answers,
     actualIsSuccess,
     actualToolTimestamp,
     actualAssistantTimestamp

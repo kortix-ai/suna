@@ -3,6 +3,7 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
+from core.utils.distributed_lock import DistributedLock
 from .config import FREE_TIER_INITIAL_CREDITS
 
 class FreeTierService:
@@ -10,19 +11,36 @@ class FreeTierService:
         self.stripe = stripe
         
     async def auto_subscribe_to_free_tier(self, account_id: str, email: Optional[str] = None) -> Dict:
-        db = DBConnection()
-        client = await db.client
+        lock_key = f"free_tier_setup:{account_id}"
+        lock = DistributedLock(lock_key, timeout_seconds=60)
+        
+        acquired = await lock.acquire(wait=True, wait_timeout=10)
+        if not acquired:
+            logger.warning(f"[FREE TIER] Could not acquire lock for {account_id}, another process may be setting up free tier")
+            return {'success': False, 'message': 'Lock acquisition failed'}
         
         try:
-            logger.info(f"[FREE TIER] Auto-subscribing user {account_id} to free tier")
+            db = DBConnection()
+            client = await db.client
+            
+            logger.info(f"[FREE TIER] Auto-subscribing user {account_id} to free tier (lock acquired)")
             
             existing_sub = await client.from_('credit_accounts').select(
-                'stripe_subscription_id, tier'
+                'stripe_subscription_id, revenuecat_subscription_id, provider, tier'
             ).eq('account_id', account_id).execute()
             
             if existing_sub.data and len(existing_sub.data) > 0:
-                if existing_sub.data[0].get('stripe_subscription_id'):
-                    logger.info(f"[FREE TIER] User {account_id} already has subscription, skipping")
+                account = existing_sub.data[0]
+                has_stripe_sub = account.get('stripe_subscription_id')
+                has_revenuecat_sub = account.get('revenuecat_subscription_id')
+                provider = account.get('provider')
+                
+                if has_stripe_sub or has_revenuecat_sub or provider == 'revenuecat':
+                    logger.info(
+                        f"[FREE TIER] User {account_id} already has subscription "
+                        f"(stripe={bool(has_stripe_sub)}, revenuecat={bool(has_revenuecat_sub)}, "
+                        f"provider={provider}), skipping"
+                    )
                     return {'success': False, 'message': 'Already subscribed'}
             
             customer_result = await client.schema('basejump').from_('billing_customers').select(
@@ -104,6 +122,9 @@ class FreeTierService:
         except Exception as e:
             logger.error(f"[FREE TIER] Error auto-subscribing {account_id}: {e}")
             return {'success': False, 'error': str(e)}
+        finally:
+            await lock.release()
+            logger.info(f"[FREE TIER] Released lock for {account_id}")
 
 free_tier_service = FreeTierService()
 

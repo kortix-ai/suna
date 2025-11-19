@@ -12,9 +12,6 @@ export function getPlanName(subscriptionData: any, isLocal: boolean = false): st
 
   // Handle null/undefined subscription data
   if (!subscriptionData) {
-    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-      console.warn('[getPlanName] No subscription data provided');
-    }
     return 'Basic';
   }
 
@@ -29,15 +26,6 @@ export function getPlanName(subscriptionData: any, isLocal: boolean = false): st
   const currentTier = siteConfig.cloudPricingItems.find(
     (p) => p.tierKey === tierKey
   );
-
-  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-    console.log('[getPlanName]', {
-      tierKey,
-      foundTier: currentTier?.name,
-      subscriptionTier: subscriptionData?.tier?.name,
-      availableTiers: siteConfig.cloudPricingItems.map(p => ({ name: p.name, key: p.tierKey }))
-    });
-  }
 
   // Return the frontend tier name (Plus, Pro, Ultra, etc.) or fallback to backend display name
   return currentTier?.name || subscriptionData?.display_plan_name || subscriptionData?.tier?.display_name || 'Basic';

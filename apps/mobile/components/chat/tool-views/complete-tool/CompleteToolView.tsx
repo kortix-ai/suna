@@ -6,9 +6,10 @@ import { CheckCircle2, AlertCircle, Trophy, Sparkles, Paperclip } from 'lucide-r
 import type { ToolViewProps } from '../types';
 import { extractCompleteData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
+import { TaskCompletedFeedback } from './TaskCompletedFeedback';
 
-export function CompleteToolView({ toolData, isStreaming = false, project, assistantMessage }: ToolViewProps) {
-  const { text, attachments, success } = extractCompleteData(toolData);
+export function CompleteToolView({ toolData, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
+  const { text, attachments, follow_up_prompts, success } = extractCompleteData(toolData);
   const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
 
   if (isStreaming) {
@@ -100,6 +101,20 @@ export function CompleteToolView({ toolData, isStreaming = false, project, assis
               showPreviews={true}
             />
           </View>
+        )}
+
+        {/* Task Completed Feedback */}
+        {success && (
+          <TaskCompletedFeedback
+            taskSummary={text}
+            followUpPrompts={follow_up_prompts.length > 0 ? follow_up_prompts : undefined}
+            threadId={assistantMessage?.thread_id}
+            messageId={assistantMessage?.message_id}
+            onFollowUpClick={(prompt) => {
+              // TODO: Handle follow-up click - could trigger a new message
+              console.log('Follow-up clicked:', prompt);
+            }}
+          />
         )}
       </View>
     </ScrollView>

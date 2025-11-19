@@ -3,6 +3,7 @@ import type { ParsedToolData } from '@/lib/utils/tool-parser';
 export interface AskToolData {
   text: string | null;
   attachments: string[];
+  follow_up_answers: string[];
   success: boolean;
 }
 
@@ -22,6 +23,7 @@ export function extractAskData(toolData: ParsedToolData): AskToolData {
   
   let text = args?.text || null;
   let attachments: string[] = [];
+  let follow_up_answers: string[] = [];
   
   if (args?.attachments) {
     if (typeof args.attachments === 'string') {
@@ -31,9 +33,14 @@ export function extractAskData(toolData: ParsedToolData): AskToolData {
     }
   }
   
+  if (args?.follow_up_answers && Array.isArray(args.follow_up_answers)) {
+    follow_up_answers = args.follow_up_answers.filter((a: string) => a && a.trim().length > 0);
+  }
+  
   return {
     text,
     attachments,
+    follow_up_answers,
     success: result.success ?? true
   };
 }

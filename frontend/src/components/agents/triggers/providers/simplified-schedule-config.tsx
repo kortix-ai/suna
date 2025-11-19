@@ -67,34 +67,6 @@ interface SchedulePreset {
 const QUICK_PRESETS: SchedulePreset[] = [
   // High Frequency
   {
-    id: 'every-minute',
-    name: 'Every minute',
-    description: 'Maximum frequency',
-    cron: '* * * * *',
-    icon: <Zap className="h-5 w-5" />
-  },
-  {
-    id: 'every-5min',
-    name: 'Every 5 minutes',
-    description: 'Very frequent checks',
-    cron: '*/5 * * * *',
-    icon: <Timer className="h-5 w-5" />
-  },
-  {
-    id: 'every-15min',
-    name: 'Every 15 minutes',
-    description: 'High frequency monitoring',
-    cron: '*/15 * * * *',
-    icon: <Zap className="h-5 w-5" />
-  },
-  {
-    id: 'every-30min',
-    name: 'Every 30 minutes',
-    description: 'Regular monitoring',
-    cron: '*/30 * * * *',
-    icon: <Timer className="h-5 w-5" />
-  },
-  {
     id: 'hourly',
     name: 'Every hour',
     description: 'Hourly check-ins',

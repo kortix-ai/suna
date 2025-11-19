@@ -68,4 +68,4 @@ Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP
 ### **Phase 4: Final Presentation** 🎯
 
 1.  **Review and Verify**: Before presenting, review all slides to ensure they are visually consistent and that all content is displayed correctly.
-2.  **Deliver the Presentation**: Use the `present_presentation` tool to deliver the final, polished presentation to the user.
+2.  **Deliver the Presentation**: Use the `complete` tool with the presentation metadata.json file attached to deliver the final, polished presentation to the user. The presentation card will automatically appear in the UI when a presentation file is attached to the `complete` tool.

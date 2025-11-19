@@ -154,7 +154,19 @@
     "threadTitle": "チャットタイトル",
     "editTitle": "タイトル編集",
     "noMessages": "まだメッセージなし",
-    "startConversation": "会話を始める"
+    "startConversation": "会話を始める",
+    "taskCompleted": "タスク完了",
+    "howWasThisResult": "この結果はいかがでしたか？",
+    "rateThisResult": "この結果を評価",
+    "feedbackHelpsImprove": "フィードバックは改善に役立ちます",
+    "additionalFeedbackOptional": "追加のフィードバック（任意）",
+    "helpKortixImprove": "フィードバックでKortixの改善にご協力ください",
+    "submit": "送信",
+    "submitting": "送信中...",
+    "suggestedFollowUps": "提案されたフォローアップ",
+    "error": "エラー",
+    "feedbackSubmitFailed": "フィードバックの送信に失敗しました",
+    "feedbackSubmitFailedRetry": "フィードバックの送信に失敗しました。もう一度お試しください。"
   },
   "agents": {
     "selectAgent": "Workerを選択",

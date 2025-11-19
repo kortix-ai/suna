@@ -11,7 +11,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { AlertCircle } from 'lucide-react-native';
 import { formatCredits } from '@/lib/utils/credit-formatter';
-import { startCreditPurchase } from '@/lib/billing';
+import { startUnifiedCreditPurchase } from '@/lib/billing/unified-checkout';
 import * as Haptics from 'expo-haptics';
 
 interface CreditPurchaseModalProps {
@@ -63,14 +63,13 @@ export function CreditPurchaseModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     try {
-      await startCreditPurchase(
+      await startUnifiedCreditPurchase(
         amount,
         () => {
           setIsProcessing(false);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           onPurchaseComplete?.();
           onOpenChange(false);
-          // Reset state
           setSelectedPackage(null);
           setCustomAmount('');
         },

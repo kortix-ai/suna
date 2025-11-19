@@ -36,18 +36,24 @@ class MessageTool(Tool):
                             {"items": {"type": "string"}, "type": "array"}
                         ],
                         "description": "(Optional) List of files or URLs to attach to the question. Include when: 1) Question relates to specific files or configurations, 2) User needs to review content before answering, 3) Options or choices are documented in files, 4) Supporting evidence or context is needed. Always use relative paths to /workspace directory."
+                    },
+                    "follow_up_answers": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "(Optional) List of suggested follow-up answers or responses the user can click to respond quickly. Use when: 1) There are common or likely responses, 2) You want to guide the user toward specific options, 3) Quick responses would improve UX. Each answer can be a short phrase or a more descriptive sentence that clearly communicates the user's intent. Examples: \"Yes, proceed with that approach\", \"No, let's cancel this and try a different method\", \"I'd prefer Option A because it aligns better with our goals\", \"Let me review the details and get back to you\". Longer, more descriptive answers are encouraged as they provide better context. Maximum 4 suggestions."
                     }
                 },
                 "required": ["text"]
             }
         }
     })
-    async def ask(self, text: str, attachments: Optional[Union[str, List[str]]] = None) -> ToolResult:
+    async def ask(self, text: str, attachments: Optional[Union[str, List[str]]] = None, follow_up_answers: Optional[List[str]] = None) -> ToolResult:
         """Ask the user a question and wait for a response.
 
         Args:
             text: The question to present to the user
             attachments: Optional file paths or URLs to attach to the question
+            follow_up_answers: Optional list of suggested follow-up answers
 
         Returns:
             ToolResult indicating the question was successfully sent
@@ -153,19 +159,25 @@ class MessageTool(Tool):
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "(Optional) List of files or URLs to attach to the completion message. Include when: 1) Completion relates to specific files or configurations, 2) User needs to review final outputs, 3) Deliverables are documented in files, 4) Supporting evidence or context is needed. Always use relative paths to /workspace directory."
+                        "description": "(Optional) List of files or URLs to attach to the completion message. Include when: 1) Completion relates to specific files or configurations, 2) User needs to review final outputs, 3) Deliverables are documented in files, 4) Supporting evidence or context is needed. Always use relative paths to /workspace directory. **For presentations**: When attaching presentation files, only attach the first slide (e.g., `presentations/[name]/slide_01.html`) to keep the UI tidy - the presentation card will automatically show the full presentation. You can also attach `presentations/[name]/metadata.json` if needed."
+                    },
+                    "follow_up_prompts": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "(Optional) List of suggested follow-up prompts the user can click to continue working. Use when: 1) There are logical next steps or related tasks, 2) You want to guide the user toward useful follow-up actions, 3) Quick prompts would improve UX. Each prompt should be a clear, actionable request that describes what the user wants to accomplish. Longer, more descriptive prompts are encouraged as they provide better context and clarity. Examples: \"Generate a detailed speaker script for the presentation with talking points for each slide\", \"Create a comprehensive summary document that highlights the key findings and recommendations\", \"Explore this topic in more depth by researching recent developments and industry trends\", \"Refine the design to match our brand guidelines and improve the user experience\". Maximum 4 suggestions."
                     }
                 },
                 "required": []
             }
         }
     })
-    async def complete(self, text: Optional[str] = None, attachments: Optional[Union[str, List[str]]] = None) -> ToolResult:
+    async def complete(self, text: Optional[str] = None, attachments: Optional[Union[str, List[str]]] = None, follow_up_prompts: Optional[List[str]] = None) -> ToolResult:
         """Indicate that the agent has completed all tasks and is entering complete state.
 
         Args:
             text: Optional completion message or summary to present to the user
             attachments: Optional file paths or URLs to attach to the completion message
+            follow_up_prompts: Optional list of suggested follow-up prompts
 
         Returns:
             ToolResult indicating successful transition to complete state

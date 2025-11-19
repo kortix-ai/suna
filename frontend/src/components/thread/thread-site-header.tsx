@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, ExternalLink, Monitor, Copy, Check } from "lucide-react"
+import { FolderOpen, Upload, Monitor, Copy, Check } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -29,7 +29,6 @@ interface ThreadSiteHeaderProps {
   onToggleSidePanel: () => void;
   onProjectRenamed?: (newName: string) => void;
   isMobileView?: boolean;
-  debugMode?: boolean;
   variant?: 'default' | 'shared';
 }
 
@@ -41,7 +40,6 @@ export function SiteHeader({
   onToggleSidePanel,
   onProjectRenamed,
   isMobileView,
-  debugMode,
   variant = 'default',
 }: ThreadSiteHeaderProps) {
   const pathname = usePathname()
@@ -177,13 +175,6 @@ export function SiteHeader({
         </div>
 
         <div className="flex items-center gap-1 pr-4">
-          {/* Debug mode indicator */}
-          {debugMode && (
-            <div className="bg-amber-500 text-black text-xs px-2 py-0.5 rounded-md mr-2">
-              Debug
-            </div>
-          )}
-
           {/* Show all buttons on both mobile and desktop - responsive tooltips */}
           <TooltipProvider>
             {variant === 'shared' ? (
@@ -208,7 +199,7 @@ export function SiteHeader({
                 onClick={openShareModal}
                 className="h-9 px-3 cursor-pointer gap-2"
               >
-                <ExternalLink className="h-4 w-4" />
+                <Upload className="h-4 w-4" />
                 <span>Share</span>
               </Button>
             )}

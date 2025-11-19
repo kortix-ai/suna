@@ -235,6 +235,10 @@
     "autonomousDescription": "多步骤问题解决的深度工作模式",
     "chat": "聊天",
     "chatDescription": "简单的来回对话",
+    "sampleAnswers": "示例答案",
+    "samplePrompts": "示例提示",
+    "waitingForUserResponse": "您回答后，Kortix将继续自主工作。",
+    "taskCompleted": "任务已完成",
     "uploadingFiles": "正在上传 {count} 个文件...",
     "uploadingFilesOne": "正在上传 {count} 个文件...",
     "uploadingFilesMany": "正在上传 {count} 个文件...",
@@ -253,7 +257,15 @@
     "noActionsYet": "还没有操作",
     "workerActionsDescription": "Worker 操作和结果将在此处显示",
     "toolIsRunning": "工具正在运行",
-    "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。"
+    "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。",
+    "rateThisResult": "评价此结果",
+    "feedbackHelpsImprove": "您的反馈帮助我们改进",
+    "additionalFeedbackOptional": "附加反馈（可选）",
+    "helpKortixImprove": "帮助 Kortix 通过您的反馈改进",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "feedbackSubmittedSuccess": "反馈提交成功",
+    "feedbackSubmitFailed": "反馈提交失败"
   },
   "agents": {
     "title": "智能体",

@@ -119,6 +119,24 @@ def _generate_display_name(name: str) -> str:
     return s3.title()
 
 
+# Cache for discovered tools to avoid repeated expensive imports
+_TOOLS_CACHE = None
+
+
+def warm_up_tools_cache():
+    """Pre-load and cache all tool classes on worker startup.
+    
+    This should be called when a worker process starts to avoid the first
+    user request paying the ~4s cost of importing all tool modules.
+    """
+    logger.info("🔥 Warming up worker: loading tool classes...")
+    import time
+    start = time.time()
+    discover_tools()
+    elapsed = time.time() - start
+    logger.info(f"✅ Worker ready: {len(_TOOLS_CACHE)} tools loaded in {elapsed:.2f}s")
+
+
 def discover_tools() -> Dict[str, Type[Tool]]:
     """Discover all available tools from the centralized tool registry.
     
@@ -131,8 +149,14 @@ def discover_tools() -> Dict[str, Type[Tool]]:
         Dict mapping tool names (str) to tool classes (Type[Tool])
         Example: {'web_search_tool': SandboxWebSearchTool, 'browser_tool': BrowserTool, ...}
     """
+    global _TOOLS_CACHE
+    if _TOOLS_CACHE is not None:
+        return _TOOLS_CACHE
+    
     from core.tools.tool_registry import get_all_tools
-    return get_all_tools()
+    _TOOLS_CACHE = get_all_tools()
+    logger.debug(f"Loaded and cached {len(_TOOLS_CACHE)} tool classes")
+    return _TOOLS_CACHE
 
 
 def _extract_tool_metadata(tool_name: str, tool_class: Type[Tool]) -> Dict[str, Any]:

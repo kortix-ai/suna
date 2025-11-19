@@ -36,6 +36,8 @@ import { CodeBlockCode } from '@/components/ui/code-block';
 import { LoadingState } from '../shared/LoadingState';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
 import { DownloadFormat } from '../utils/presentation-utils';
+import { PresentationSlideCard } from './PresentationSlideCard';
+import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 
 interface SlideMetadata {
   title: string;
@@ -79,9 +81,11 @@ export function PresentationViewer({
   const [backgroundRetryInterval, setBackgroundRetryInterval] = useState<NodeJS.Timeout | null>(null);
 
   const [visibleSlide, setVisibleSlide] = useState<number | null>(null);
-  const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
-  const [fullScreenInitialSlide, setFullScreenInitialSlide] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  
+  // Use shared modal store for full screen viewer
+  const { isOpen, presentationName, sandboxUrl, initialSlide, openPresentation, closePresentation } = usePresentationViewerStore();
+  const viewerState = { isOpen, presentationName, sandboxUrl, initialSlide };
 
   // Extract presentation info from tool data
   const { toolResult } = extractToolData(toolContent);
@@ -367,111 +371,6 @@ export function PresentationViewer({
     }, delay);
   };
 
-  // Create a refresh timestamp when metadata changes
-  const refreshTimestamp = useMemo(() => Date.now(), [metadata]);
-
-  // Memoized slide iframe component to prevent unnecessary re-renders
-  const SlideIframe = useMemo(() => {
-    const SlideIframeComponent = React.memo(({ slide }: { slide: SlideMetadata & { number: number } }) => {
-      const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
-      const [scale, setScale] = useState(1);
-
-      useEffect(() => {
-        if (containerRef) {
-          const updateScale = () => {
-            const containerWidth = containerRef.offsetWidth;
-            const containerHeight = containerRef.offsetHeight;
-            
-            // Calculate scale to fit 1920x1080 into container while maintaining aspect ratio
-            const scaleX = containerWidth / 1920;
-            const scaleY = containerHeight / 1080;
-            const newScale = Math.min(scaleX, scaleY);
-            
-            // Only update if scale actually changed to prevent unnecessary re-renders
-            if (Math.abs(newScale - scale) > 0.001) {
-              setScale(newScale);
-            }
-          };
-
-          // Use a debounced version for resize events to prevent excessive updates
-          let resizeTimeout: NodeJS.Timeout;
-          const debouncedUpdateScale = () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(updateScale, 100);
-          };
-
-          updateScale();
-          window.addEventListener('resize', debouncedUpdateScale);
-          return () => {
-            window.removeEventListener('resize', debouncedUpdateScale);
-            clearTimeout(resizeTimeout);
-          };
-        }
-      }, [containerRef, scale]);
-
-      if (!project?.sandbox?.sandbox_url) {
-        return (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <Presentation className="h-12 w-12 mx-auto mb-4 text-zinc-400" />
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">No slide content to preview</p>
-            </div>
-          </div>
-        );
-      }
-
-      const slideUrl = constructHtmlPreviewUrl(project.sandbox.sandbox_url, slide.file_path);
-      // Add cache-busting to iframe src to ensure fresh content
-      const slideUrlWithCacheBust = `${slideUrl}?t=${refreshTimestamp}`;
-
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-transparent">
-          <div 
-            ref={setContainerRef}
-            className="relative w-full h-full bg-background rounded-lg overflow-hidden"
-            style={{
-              containIntrinsicSize: '1920px 1080px',
-              contain: 'layout style'
-            }}
-          >
-            <iframe
-              key={`slide-${slide.number}-${refreshTimestamp}`} // Key with stable timestamp ensures iframe refreshes when metadata changes
-              src={slideUrlWithCacheBust}
-              title={`Slide ${slide.number}: ${slide.title}`}
-              className="border-0 rounded-xl"
-              sandbox="allow-same-origin allow-scripts"
-              style={{
-                width: '1920px',
-                height: '1080px',
-                border: 'none',
-                display: 'block',
-                transform: `scale(${scale})`,
-                transformOrigin: '0 0',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                willChange: 'transform',
-                backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden'
-              }}
-            />
-          </div>
-        </div>
-      );
-    }, (prevProps, nextProps) => {
-      // Custom comparison function - only re-render if slide number or file_path changes
-      return prevProps.slide.number === nextProps.slide.number && 
-             prevProps.slide.file_path === nextProps.slide.file_path;
-    });
-    
-    SlideIframeComponent.displayName = 'SlideIframeComponent';
-    return SlideIframeComponent;
-  }, [project?.sandbox?.sandbox_url, refreshTimestamp]);
-
-  // Render individual slide using the original approach
-  const renderSlidePreview = useCallback((slide: SlideMetadata & { number: number }) => {
-    return <SlideIframe slide={slide} />;
-  }, [SlideIframe]);
 
   const handleDownload = async (setIsDownloading: (isDownloading: boolean) => void, format: DownloadFormat) => {
     
@@ -519,8 +418,13 @@ export function PresentationViewer({
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    setFullScreenInitialSlide(visibleSlide || currentSlideNumber || slides[0]?.number || 1);
-                    setIsFullScreenOpen(true);
+                    if (openPresentation && project?.sandbox?.sandbox_url && extractedPresentationName) {
+                      openPresentation(
+                        extractedPresentationName,
+                        project.sandbox.sandbox_url,
+                        visibleSlide || currentSlideNumber || slides[0]?.number || 1
+                      );
+                    }
                   }}
                   className="h-8 w-8 p-0"
                   title="Open in full screen"
@@ -673,51 +577,18 @@ export function PresentationViewer({
           <ScrollArea className="h-full">
             <div className="space-y-4 p-4">
               {slides.map((slide) => (
-                <div 
+                <PresentationSlideCard
                   key={slide.number} 
-                  id={`slide-${slide.number}`} 
-                  className={`group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/20 hover:scale-[1.01] transition-all duration-200 ${currentSlideNumber === slide.number && 'ring-2 ring-blue-500/20 shadow-md'}`}
-                >
-                  {/* Slide header */}
-                  <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="h-6 px-2 text-xs font-mono">
-                        #{slide.number}
-                      </Badge>
-                      {slide.title && (
-                        <span className="text-sm text-muted-foreground truncate">
-                          {slide.title}
-                        </span>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setFullScreenInitialSlide(slide.number);
-                        setIsFullScreenOpen(true);
-                      }}
-                      className="h-8 w-8 p-0 opacity-60 group-hover:opacity-100 transition-opacity"
-                      title="Open in full screen"
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  
-                  {/* Slide Preview */}
-                  <div 
-                    className="relative aspect-video bg-muted/30 cursor-pointer"
-                    onClick={() => {
-                      setFullScreenInitialSlide(slide.number);
-                      setIsFullScreenOpen(true);
-                    }}
-                  >
-                    {renderSlidePreview(slide)}
-                    
-                    {/* Subtle hover overlay */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-200" />
-                  </div>
-                </div>
+                  slide={slide}
+                  project={project}
+                  onFullScreenClick={(slideNumber) => {
+                    if (openPresentation && project?.sandbox?.sandbox_url && extractedPresentationName) {
+                      openPresentation(extractedPresentationName, project.sandbox.sandbox_url, slideNumber);
+                    }
+                  }}
+                  className={currentSlideNumber === slide.number ? 'ring-2 ring-blue-500/20 shadow-md' : ''}
+                  refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
+                />
               ))}
             </div>
           </ScrollArea>
@@ -737,20 +608,13 @@ export function PresentationViewer({
         </div>
       </div>
 
-      {/* Full Screen Presentation Viewer */}
+      {/* Full Screen Presentation Viewer Modal */}
       <FullScreenPresentationViewer
-        isOpen={isFullScreenOpen}
-        onClose={() => {
-          setIsFullScreenOpen(false);
-          setFullScreenInitialSlide(null);
-          // Reload metadata after closing full screen viewer in case edits were made
-          setTimeout(() => {
-            loadMetadata();
-          }, 300);
-        }}
-        presentationName={extractedPresentationName}
-        sandboxUrl={project?.sandbox?.sandbox_url}
-        initialSlide={fullScreenInitialSlide || visibleSlide || currentSlideNumber || slides[0]?.number || 1}
+        isOpen={viewerState.isOpen}
+        onClose={closePresentation}
+        presentationName={viewerState.presentationName}
+        sandboxUrl={viewerState.sandboxUrl}
+        initialSlide={viewerState.initialSlide}
       />
     </Card>
   );

@@ -26,6 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from '@/components/ui/progress';
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../file-attachment';
+import { TaskCompletedFeedback } from './complete-tool/TaskCompletedFeedback';
 
 interface CompleteContent {
   summary?: string;
@@ -49,6 +50,8 @@ export function CompleteToolView({
   isStreaming = false,
   onFileClick,
   project,
+  currentIndex,
+  totalCalls,
 }: CompleteToolViewProps) {
   const [completeData, setCompleteData] = useState<CompleteContent>({});
   const [progress, setProgress] = useState(0);
@@ -57,6 +60,7 @@ export function CompleteToolView({
     text,
     attachments,
     status,
+    follow_up_prompts,
     actualIsSuccess,
     actualToolTimestamp,
     actualAssistantTimestamp
@@ -79,11 +83,24 @@ export function CompleteToolView({
           .replace(/<invoke name="complete"[\s\S]*?<\/invoke>/g, '')
           .trim();
 
-        const completeMatch = cleanContent.match(/<complete[^>]*>([^<]*)<\/complete>/);
-        if (completeMatch) {
-          setCompleteData(prev => ({ ...prev, summary: completeMatch[1].trim() }));
-        } else if (cleanContent) {
-          setCompleteData(prev => ({ ...prev, summary: cleanContent }));
+        // During streaming, show the raw content as it streams
+        if (isStreaming) {
+          // Extract text that's being streamed (before complete tag closes)
+          const streamingMatch = cleanContent.match(/<complete[^>]*>([\s\S]*?)(?:<\/complete>|$)/);
+          if (streamingMatch) {
+            setCompleteData(prev => ({ ...prev, summary: streamingMatch[1].trim() }));
+          } else if (cleanContent && !cleanContent.includes('</complete>')) {
+            // If we have content but no closing tag, it's still streaming
+            setCompleteData(prev => ({ ...prev, summary: cleanContent }));
+          }
+        } else {
+          // When not streaming, parse normally
+          const completeMatch = cleanContent.match(/<complete[^>]*>([^<]*)<\/complete>/);
+          if (completeMatch) {
+            setCompleteData(prev => ({ ...prev, summary: completeMatch[1].trim() }));
+          } else if (cleanContent) {
+            setCompleteData(prev => ({ ...prev, summary: cleanContent }));
+          }
         }
 
         const attachmentsMatch = contentStr.match(/attachments=["']([^"']*)["']/i);
@@ -101,7 +118,7 @@ export function CompleteToolView({
         console.error('Error parsing complete content:', e);
       }
     }
-  }, [assistantContent]);
+  }, [assistantContent, isStreaming]);
 
   useEffect(() => {
     if (toolContent && !isStreaming) {
@@ -215,13 +232,16 @@ export function CompleteToolView({
               </div>
             )}
 
-            {/* Text/Summary Section */}
-            {(text || completeData.summary || completeData.result) && (
+            {/* Text/Summary Section - Show during streaming and when completed */}
+            {(text || completeData.summary || completeData.result || (isStreaming && assistantContent)) && (
               <div className="space-y-2">
                 <div className="bg-muted/50 rounded-2xl p-4 border border-border">
                   <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
-                    {text || completeData.summary || completeData.result}
+                    {text || completeData.summary || completeData.result || (isStreaming ? normalizeContentToString(assistantContent)?.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').replace(/<invoke name="complete"[\s\S]*?>/g, '').replace(/<\/complete>/g, '').trim() : '')}
                   </Markdown>
+                  {isStreaming && (
+                    <span className="inline-block h-4 w-0.5 bg-primary ml-1 -mb-1 animate-pulse" />
+                  )}
                 </div>
               </div>
             )}
@@ -376,8 +396,8 @@ export function CompleteToolView({
               </div>
             )}
 
-            {/* Progress Section for Streaming */}
-            {isStreaming && (
+            {/* Progress Section for Streaming - Only show if no text content */}
+            {isStreaming && !text && !completeData.summary && !completeData.result && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
@@ -404,6 +424,18 @@ export function CompleteToolView({
                   No additional details provided
                 </p>
               </div>
+            )}
+
+            {/* Task Completed Feedback */}
+            {!isStreaming && actualIsSuccess && (
+              <TaskCompletedFeedback
+                taskSummary={text || completeData.summary || completeData.result}
+                followUpPrompts={follow_up_prompts && follow_up_prompts.length > 0 ? follow_up_prompts : undefined}
+                onFollowUpClick={(prompt) => {
+                  // TODO: Handle follow-up click - could trigger a new message
+                  console.log('Follow-up clicked:', prompt);
+                }}
+              />
             )}
           </div>
         </ScrollArea>

@@ -12,6 +12,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { cleanUrl, formatTimestamp, getToolTitle } from '../utils';
@@ -115,6 +116,13 @@ export function WebSearchToolView({
                 <AlertTriangle className="h-3.5 w-3.5" />
               )}
               {actualIsSuccess ? 'Search completed successfully' : 'Search failed'}
+            </Badge>
+          )}
+
+          {isStreaming && (
+            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
+              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+              Searching
             </Badge>
           )}
         </div>
@@ -233,9 +241,9 @@ export function WebSearchToolView({
                       ? batchResults[currentQueryIndex].images
                       : images;
                     return currentImages.length > 6 && (
-                      <Button variant="outline" size="sm" className="mt-2 text-xs">
+                    <Button variant="outline" size="sm" className="mt-2 text-xs">
                         View {currentImages.length - 6} more images
-                      </Button>
+                    </Button>
                     );
                   })()}
                 </div>
@@ -323,83 +331,83 @@ export function WebSearchToolView({
                     // Single query mode: original display
                     <>
                       {searchResults.length > 0 && (
-                        <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-4 flex items-center justify-between">
-                          <span>Search Results ({searchResults.length})</span>
-                          <Badge variant="outline" className="text-xs font-normal">
-                            <Clock className="h-3 w-3 mr-1.5 opacity-70" />
-                            {new Date().toLocaleDateString()}
-                          </Badge>
+                <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-4 flex items-center justify-between">
+                  <span>Search Results ({searchResults.length})</span>
+                  <Badge variant="outline" className="text-xs font-normal">
+                    <Clock className="h-3 w-3 mr-1.5 opacity-70" />
+                    {new Date().toLocaleDateString()}
+                  </Badge>
+                </div>
+              )}
+
+                <div className="space-y-4">
+                  {searchResults.map((result, idx) => {
+                  const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
+                  const isExpanded = expandedResults[idx] || false;
+                  const favicon = getFavicon(result.url);
+
+                  return (
+                    <div
+                      key={idx}
+                      className="bg-card border rounded-lg shadow-sm hover:shadow transition-shadow"
+                    >
+                      <div className="p-4">
+                        <div className="flex items-start gap-3 mb-2">
+                          {favicon && (
+                            <img
+                              src={favicon}
+                              alt=""
+                              className="w-5 h-5 mt-1 rounded"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className="text-xs px-2 py-0 h-5 font-normal bg-zinc-50 dark:bg-zinc-800">
+                                <ResultTypeIcon className="h-3 w-3 mr-1 opacity-70" />
+                                {resultTypeLabel}
+                              </Badge>
+                            </div>
+                            <a
+                              href={result.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-md font-medium text-blue-600 dark:text-blue-400 hover:underline line-clamp-1 mb-1"
+                            >
+                              {truncateString(cleanUrl(result.title), 50)}
+                            </a>
+                            <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2 flex items-center">
+                              <Globe className="h-3 w-3 mr-1.5 flex-shrink-0 opacity-70" />
+                              {truncateString(cleanUrl(result.url), 70)}
+                            </div>
+                          </div>
+                          </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="bg-zinc-50 px-4 dark:bg-zinc-800/50 border-t border-zinc-200 dark:border-zinc-800 p-3 flex justify-between items-center">
+                          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                            Source: {cleanUrl(result.url)}
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs bg-white dark:bg-zinc-900"
+                            asChild
+                          >
+                            <a href={result.url} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-3 w-3" />
+                              Visit Site
+                            </a>
+                          </Button>
                         </div>
                       )}
-
-                      <div className="space-y-4">
-                        {searchResults.map((result, idx) => {
-                          const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
-                          const isExpanded = expandedResults[idx] || false;
-                          const favicon = getFavicon(result.url);
-
-                          return (
-                            <div
-                              key={idx}
-                              className="bg-card border rounded-lg shadow-sm hover:shadow transition-shadow"
-                            >
-                              <div className="p-4">
-                                <div className="flex items-start gap-3 mb-2">
-                                  {favicon && (
-                                    <img
-                                      src={favicon}
-                                      alt=""
-                                      className="w-5 h-5 mt-1 rounded"
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = 'none';
-                                      }}
-                                    />
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <Badge variant="outline" className="text-xs px-2 py-0 h-5 font-normal bg-zinc-50 dark:bg-zinc-800">
-                                        <ResultTypeIcon className="h-3 w-3 mr-1 opacity-70" />
-                                        {resultTypeLabel}
-                                      </Badge>
-                                    </div>
-                                    <a
-                                      href={result.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-md font-medium text-blue-600 dark:text-blue-400 hover:underline line-clamp-1 mb-1"
-                                    >
-                                      {truncateString(cleanUrl(result.title), 50)}
-                                    </a>
-                                    <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-2 flex items-center">
-                                      <Globe className="h-3 w-3 mr-1.5 flex-shrink-0 opacity-70" />
-                                      {truncateString(cleanUrl(result.url), 70)}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {isExpanded && (
-                                <div className="bg-zinc-50 px-4 dark:bg-zinc-800/50 border-t border-zinc-200 dark:border-zinc-800 p-3 flex justify-between items-center">
-                                  <div className="text-xs text-zinc-500 dark:text-zinc-400">
-                                    Source: {cleanUrl(result.url)}
-                                  </div>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs bg-white dark:bg-zinc-900"
-                                    asChild
-                                  >
-                                    <a href={result.url} target="_blank" rel="noopener noreferrer">
-                                      <ExternalLink className="h-3 w-3" />
-                                      Visit Site
-                                    </a>
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                    </div>
+                    );
+                  })}
+                </div>
                     </>
                   )}
                 </>
@@ -444,10 +452,10 @@ export function WebSearchToolView({
                       {batchResults.length} queries • {searchResults.length} results
                     </Badge>
                   ) : searchResults.length > 0 && (
-                    <Badge variant="outline" className="h-6 py-0.5">
-                      <Globe className="h-3 w-3" />
-                      {searchResults.length} results
-                    </Badge>
+                <Badge variant="outline" className="h-6 py-0.5">
+                  <Globe className="h-3 w-3" />
+                  {searchResults.length} results
+                </Badge>
                   )}
                 </>
               )}

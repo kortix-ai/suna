@@ -161,7 +161,19 @@
     "threadTitle": "Chat-Titel",
     "editTitle": "Titel bearbeiten",
     "noMessages": "Noch keine Nachrichten",
-    "startConversation": "Starte eine Unterhaltung"
+    "startConversation": "Starte eine Unterhaltung",
+    "taskCompleted": "Aufgabe abgeschlossen",
+    "howWasThisResult": "Wie war dieses Ergebnis?",
+    "rateThisResult": "Dieses Ergebnis bewerten",
+    "feedbackHelpsImprove": "Dein Feedback hilft uns, uns zu verbessern",
+    "additionalFeedbackOptional": "Zusätzliches Feedback (optional)",
+    "helpKortixImprove": "Hilf Kortix mit meinem Feedback, sich zu verbessern",
+    "submit": "Absenden",
+    "submitting": "Wird gesendet...",
+    "suggestedFollowUps": "Vorgeschlagene Nachfragen",
+    "error": "Fehler",
+    "feedbackSubmitFailed": "Feedback konnte nicht übermittelt werden",
+    "feedbackSubmitFailedRetry": "Feedback konnte nicht übermittelt werden. Bitte versuche es erneut."
   },
   "agents": {
     "selectAgent": "Worker wählen",

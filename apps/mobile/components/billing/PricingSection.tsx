@@ -8,7 +8,7 @@ import { PricingTierCard } from './PricingTierCard';
 import { CreditPurchaseModal } from './CreditPurchaseModal';
 import { PRICING_TIERS, getDisplayPrice, type PricingTier, type BillingPeriod } from '@/lib/billing';
 import { useSubscription, useSubscriptionCommitment, billingKeys } from '@/lib/billing';
-import { billingApi, type CreateCheckoutSessionRequest } from '@/lib/billing/api';
+import { startUnifiedPlanCheckout } from '@/lib/billing/unified-checkout';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
@@ -153,7 +153,6 @@ export function PricingSection({
 
   const handleSubscribe = async (tierKey: string, isDowngrade = false) => {
     if (!isAuthenticated) {
-      // Mobile: Navigate to auth
       return;
     }
 
@@ -165,30 +164,17 @@ export function PricingSection({
       handlePlanSelect(tierKey);
       const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : 'monthly';
 
-      const request: CreateCheckoutSessionRequest = {
-        tier_key: tierKey,
-        success_url: returnUrl || 'https://kortix.com',
-        cancel_url: returnUrl || 'https://kortix.com',
-        commitment_type: commitmentType,
-      };
-
-      const response = await billingApi.createCheckoutSession(request);
-
-      // Handle response status (matching frontend logic)
-      if (response.checkout_url || response.url || response.fe_checkout_url) {
-        const checkoutUrl = response.checkout_url || response.url || response.fe_checkout_url;
-        if (checkoutUrl) {
-          await Linking.openURL(checkoutUrl);
+      await startUnifiedPlanCheckout(
+        tierKey,
+        commitmentType,
+        () => {
+          handleSubscriptionUpdate();
+          setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: false }));
+        },
+        () => {
+          setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: false }));
         }
-      } else if (response.status === 'upgraded' || response.status === 'updated') {
-        // Immediate upgrade
-        handleSubscriptionUpdate();
-      } else if (response.status === 'downgrade_scheduled' || response.status === 'scheduled') {
-        // Downgrade scheduled
-        handleSubscriptionUpdate();
-      }
-
-      setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: false }));
+      );
     } catch (error) {
       console.error('❌ Error processing subscription:', error);
       setPlanLoadingStates((prev) => ({ ...prev, [tierKey]: false }));

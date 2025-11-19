@@ -22,35 +22,30 @@ async function getStoredLocale(): Promise<Locale> {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (user?.user_metadata?.locale && locales.includes(user.user_metadata.locale as Locale)) {
-      console.log(`✅ Using user metadata locale: ${user.user_metadata.locale}`);
       return user.user_metadata.locale as Locale;
     }
   } catch (error) {
     // Silently fail - user might not be authenticated
-    console.debug('Could not fetch user locale:', error);
   }
-
+  
   // Priority 2: Check cookie (explicit user preference)
   const cookies = document.cookie.split(';');
   const localeCookie = cookies.find(c => c.trim().startsWith('locale='));
   if (localeCookie) {
     const value = localeCookie.split('=')[1].trim();
     if (locales.includes(value as Locale)) {
-      console.log(`✅ Using cookie locale: ${value}`);
       return value as Locale;
     }
   }
-
+  
   // Priority 3: Check localStorage (explicit user preference)
   const stored = localStorage.getItem('locale');
   if (stored && locales.includes(stored as Locale)) {
-    console.log(`✅ Using localStorage locale: ${stored}`);
     return stored as Locale;
   }
-
+  
   // Priority 4: Geo-detection (default when nothing is explicitly set)
   const geoDetected = detectBestLocale();
-  console.log(`🌍 Using geo-detected locale: ${geoDetected}`);
   return geoDetected;
 }
 
@@ -114,8 +109,6 @@ export function useLanguage() {
           
           if (updateError) {
             console.warn('Failed to save locale to user profile:', updateError);
-          } else {
-            console.log(`💾 Saved locale to user profile (explicit preference): ${newLocale}`);
           }
         } catch (error) {
           console.warn('Error saving locale to user profile:', error);
@@ -123,18 +116,15 @@ export function useLanguage() {
       }
     } catch (error) {
       // User might not be authenticated, continue with cookie/localStorage
-      console.debug('User not authenticated, skipping profile save:', error);
     }
     
     // Priority 2: Store preference in cookie (explicit user preference)
     const cookieValue = `locale=${newLocale}; path=/; max-age=31536000; SameSite=Lax`;
     document.cookie = cookieValue;
-    console.log(`🍪 Setting locale cookie (explicit preference): ${newLocale}`);
     
     // Priority 3: Store in localStorage as backup (explicit user preference)
     if (typeof window !== 'undefined') {
       localStorage.setItem('locale', newLocale);
-      console.log(`💾 Setting locale in localStorage (explicit preference): ${newLocale}`);
     }
 
     // Update local state immediately
@@ -143,8 +133,6 @@ export function useLanguage() {
     // Dispatch custom event to notify I18nProvider and other components
     const event = new CustomEvent(LOCALE_CHANGE_EVENT, { detail: newLocale });
     window.dispatchEvent(event);
-    
-    console.log(`🌍 Language changed to: ${newLocale} (explicit user preference)`);
     
     // Reset changing state after a brief delay
     setTimeout(() => {

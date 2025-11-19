@@ -67,6 +67,25 @@ class ScheduleProvider(TriggerProvider):
         except Exception as e:
             raise ValueError(f"Invalid cron expression: {str(e)}")
         
+        # Block schedules that run more frequently than once per hour
+        cron_parts = config['cron_expression'].split()
+        if len(cron_parts) == 5:
+            minute, hour, day, month, weekday = cron_parts
+            
+            # Check if it runs more frequently than hourly
+            # If minute is '*' or starts with '*/' and hour is '*', it runs more than once per hour
+            if hour == '*' and (minute == '*' or minute.startswith('*/')):
+                raise ValueError("Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.")
+            
+            # Also check for patterns like '*/X' where X < 60 (runs every X minutes)
+            if minute.startswith('*/'):
+                try:
+                    interval = int(minute[2:])
+                    if interval < 60:
+                        raise ValueError("Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.")
+                except ValueError:
+                    pass  # Not a numeric interval, let croniter handle validation
+        
         return config
     
     async def setup_trigger(self, trigger: Trigger) -> bool:

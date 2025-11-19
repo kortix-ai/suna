@@ -1,10 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { FileAttachment } from './file-attachment';
 import { cn } from '@/lib/utils';
 import { Project } from '@/lib/api/projects';
 import { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -58,6 +59,8 @@ export function AttachmentGroup({
     const [isModalOpen, setIsModalOpen] = useState(false);
     // Responsive state - ALWAYS initialize this hook first before any conditionals
     const [isMobile, setIsMobile] = useState(false);
+    // Simple carousel state - show one item at a time - MUST be before any early returns
+    const [currentIndex, setCurrentIndex] = useState(0);
 
     // Constants for height calculation - each row is about 66px (54px height + 12px gap)
     const ROW_HEIGHT = 54; // Height of a single file
@@ -208,10 +211,141 @@ export function AttachmentGroup({
             wrapperStyle: isPreviewFile ? { gridColumn: '1 / -1' } : undefined // Make previewable files span full width like in CompleteToolView
         };
     });
+    
+    // Determine if we should use carousel (4+ attachments)
+    const shouldUseCarousel = layout === 'grid' && uniqueFiles.length >= 4;
+    
+    const canGoPrev = currentIndex > 0;
+    const canGoNext = currentIndex < uniqueFiles.length - 1;
+    
+    const handlePrev = () => {
+        if (canGoPrev) {
+            setCurrentIndex(prev => prev - 1);
+        }
+    };
+    
+    const handleNext = () => {
+        if (canGoNext) {
+            setCurrentIndex(prev => prev + 1);
+        }
+    };
 
     // Now continue with the fully conditional rendering but with pre-computed values
     const renderContent = () => {
         if (layout === 'grid') {
+            // Use carousel for many attachments - show one item at a time
+            if (shouldUseCarousel) {
+                const currentItem = sortedFilesWithMeta[currentIndex];
+                const currentFilePath = getFilePath(currentItem.file);
+                
+                return (
+                    <div className={cn("relative", className)}>
+                        {/* Carousel Navigation */}
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-xs text-muted-foreground">
+                                {uniqueFiles.length} {uniqueFiles.length === 1 ? 'file' : 'files'}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handlePrev}
+                                    disabled={!canGoPrev}
+                                    className="h-7 w-7 p-0 opacity-60 hover:opacity-100 disabled:opacity-30"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <div className="text-xs text-muted-foreground min-w-[60px] text-center">
+                                    {currentIndex + 1} / {uniqueFiles.length}
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleNext}
+                                    disabled={!canGoNext}
+                                    className="h-7 w-7 p-0 opacity-60 hover:opacity-100 disabled:opacity-30"
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                        
+                        {/* Single Item Display */}
+                        <div className="relative">
+                            <div className={cn(
+                                "relative",
+                                currentItem.wrapperClassName
+                            )} style={currentItem.wrapperStyle}>
+                                <FileAttachment
+                                    filepath={currentFilePath}
+                                    onClick={handleFileClick}
+                                    sandboxId={sandboxId}
+                                    showPreview={showPreviews}
+                                    localPreviewUrl={getLocalPreviewUrl(currentItem.file)}
+                                    className={cn(
+                                        "w-full",
+                                        currentItem.isImage ? "h-auto min-h-[54px]" :
+                                            currentItem.isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]"
+                                    )}
+                                    customStyle={
+                                        currentItem.isImage ? {
+                                            width: '100%',
+                                            height: 'auto',
+                                            maxHeight: `${gridImageHeight}px`,
+                                            '--attachment-height': `${gridImageHeight}px`
+                                        } as React.CSSProperties :
+                                            currentItem.isPreviewFile ? {
+                                                gridColumn: '1 / -1',
+                                                width: '100%'
+                                            } : undefined
+                                    }
+                                    collapsed={false}
+                                    project={project}
+                                    isSingleItemGrid={true}
+                                    standalone={standalone}
+                                    alignRight={alignRight}
+                                />
+                                {onRemove && (
+                                    <div
+                                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full
+                                        bg-black dark:bg-white
+                                        border-3 border-sidebar
+                                        text-white dark:text-black flex items-center justify-center
+                                        z-30 cursor-pointer"
+                                        onClick={() => {
+                                            const originalIndex = uniqueFiles.findIndex(f => 
+                                                getFilePath(f) === currentFilePath
+                                            );
+                                            if (originalIndex !== -1) {
+                                                onRemove(originalIndex);
+                                                // Adjust current index if needed
+                                                if (currentIndex >= uniqueFiles.length - 1 && currentIndex > 0) {
+                                                    setCurrentIndex(prev => prev - 1);
+                                                }
+                                            }
+                                        }}
+                                    >
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <div className="flex items-center justify-center w-full h-full">
+                                                        <X size={10} strokeWidth={3} />
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top">
+                                                    <p>Remove file</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            
+            // Regular grid for fewer attachments
             return (
                 <div className={cn(
                     "grid gap-3 auto-rows-max items-start",
@@ -219,8 +353,7 @@ export function AttachmentGroup({
                     uniqueFiles.length === 1 ? "grid-cols-1" :
                         uniqueFiles.length === 2 ? "grid-cols-1 sm:grid-cols-2" :
                             uniqueFiles.length === 3 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
-                                uniqueFiles.length >= 4 ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-3" :
-                                    "grid-cols-1 sm:grid-cols-2",
+                                "grid-cols-1 sm:grid-cols-2",
                     className
                 )}>
                     {sortedFilesWithMeta.map((item, index) => (
