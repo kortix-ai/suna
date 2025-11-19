@@ -203,8 +203,12 @@ class SandboxShellTool(SandboxToolsBase):
             command_id=response.cmd_id
         )
         
+        # Extract the actual log content from the SessionCommandLogsResponse object
+        # The response has .output, .stdout, and .stderr attributes
+        logs_output = logs.output if logs and logs.output else ""
+        
         return {
-            "output": logs,
+            "output": logs_output,
             "exit_code": response.exit_code
         }
 
