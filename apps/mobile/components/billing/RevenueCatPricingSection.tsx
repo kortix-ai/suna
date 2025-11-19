@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, Linking } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Check, X, ShoppingCart } from 'lucide-react-native';
@@ -444,6 +444,19 @@ export function RevenueCatPricingSection({
             </Text>
           )}
         </AnimatedPressable>
+
+        <View className="flex-row justify-center mt-6 gap-6 mb-2">
+          <Pressable onPress={() => Linking.openURL('https://kortix.ai/privacy')}>
+            <Text className="text-xs text-muted-foreground/70 font-roobert-medium underline">
+              Privacy Policy
+            </Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL('https://kortix.ai/terms')}>
+            <Text className="text-xs text-muted-foreground/70 font-roobert-medium underline">
+              Terms of Service
+            </Text>
+          </Pressable>
+        </View>
 
         {error && (
           <Text className="text-sm text-red-500 text-center mt-2">

@@ -354,8 +354,8 @@ class Configuration:
     STRIPE_DEFAULT_PLAN_ID: Optional[str] = None
     STRIPE_DEFAULT_TRIAL_DAYS: Optional[int] = 14
     
-    # # RevenueCat configuration
-    # REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
+    # RevenueCat configuration
+    REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
     
     # Stripe Product IDs
     STRIPE_PRODUCT_ID_PROD: Optional[str] = 'prod_SCl7AQ2C8kK1CD'

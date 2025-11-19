@@ -80,6 +80,10 @@ class RevenueCatService:
         product_id = event.get('product_id')
         price = event.get('price', 0)
         
+        if not self._validate_product_id(product_id):
+            logger.error(f"[REVENUECAT] Skipping INITIAL_PURCHASE for invalid product: {product_id}")
+            return
+        
         logger.info(
             f"[REVENUECAT INITIAL_PURCHASE] ========================================\n"
             f"[REVENUECAT INITIAL_PURCHASE] Handling initial purchase\n"
@@ -107,6 +111,10 @@ class RevenueCatService:
         event = webhook_data.get('event', {})
         app_user_id = event.get('app_user_id')
         product_id = event.get('product_id')
+        
+        if not self._validate_product_id(product_id):
+            logger.error(f"[REVENUECAT] Skipping RENEWAL for invalid product: {product_id}")
+            return
         
         logger.info(f"[REVENUECAT RENEWAL] User {app_user_id} renewed {product_id}")
         
@@ -169,6 +177,10 @@ class RevenueCatService:
                 f"[REVENUECAT PRODUCT_CHANGE] No new_product_id - this might be a "
                 f"cancellation/reactivation, not an actual product change. Skipping."
             )
+            return
+        
+        if not self._validate_product_id(new_product_id):
+            logger.error(f"[REVENUECAT] Skipping PRODUCT_CHANGE for invalid new product: {new_product_id}")
             return
         
         old_tier, old_tier_info = self._get_tier_info(old_product_id) if old_product_id else (None, None)
@@ -363,14 +375,20 @@ class RevenueCatService:
         period_type = self._get_period_type(product_id)
         credits_amount = Decimal(str(tier_info.monthly_credits))
         
+        if period_type == 'yearly':
+            logger.info(f"[REVENUECAT] Yearly plan detected - granting 12x monthly credits")
+            credits_amount *= 12
+        
         event = webhook_data.get('event', {})
         subscription_id = event.get('original_transaction_id') or event.get('id', '')
+        revenuecat_event_id = event.get('id')
         
         logger.info(
             f"[REVENUECAT] Extracted data:\n"
             f"  - Period Type: {period_type}\n"
             f"  - Credits: ${credits_amount}\n"
-            f"  - Subscription ID: {subscription_id}"
+            f"  - Subscription ID: {subscription_id}\n"
+            f"  - Event ID: {revenuecat_event_id}"
         )
         
         db = DBConnection()
@@ -392,7 +410,8 @@ class RevenueCatService:
                 credit_result = await credit_manager.reset_expiring_credits(
                     account_id=app_user_id,
                     new_credits=credits_amount,
-                    description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})"
+                    description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})",
+                    stripe_event_id=revenuecat_event_id
                 )
                 logger.info(f"[REVENUECAT] Credit reset result: {credit_result}")
             else:
@@ -402,7 +421,8 @@ class RevenueCatService:
                     amount=credits_amount,
                     is_expiring=True,
                     description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})",
-                    type='tier_grant'
+                    type='tier_grant',
+                    stripe_event_id=revenuecat_event_id
                 )
                 logger.info(f"[REVENUECAT] Credit add result: {credit_result}")
         except Exception as e:
@@ -491,6 +511,12 @@ class RevenueCatService:
             return
         
         credits_amount = Decimal(str(tier_info.monthly_credits))
+        period_type = self._get_period_type(product_id)
+        
+        if period_type == 'yearly':
+            logger.info(f"[REVENUECAT RENEWAL] Yearly plan renewal - granting 12x monthly credits")
+            credits_amount *= 12
+            
         transaction_id = event.get('transaction_id', '')
         
         logger.info(
@@ -861,24 +887,43 @@ class RevenueCatService:
         tier_info = get_tier_by_name(tier_name)
         return tier_name, tier_info
     
-    def _map_product_to_tier(self, product_id: str) -> str:
-        product_mapping = {
-            'kortix_plus_monthly': 'tier_2_20',
-            'kortix_plus_commitment': 'tier_2_20',
-            'kortix_pro_monthly': 'tier_6_50',
-            'kortix_pro_commitment': 'tier_6_50',
-            'kortix_ultra_monthly': 'tier_25_200',
-            'kortix_ultra_commitment': 'tier_25_200',
-        }
+    PRODUCT_MAPPING = {
+        'kortix_plus_monthly': 'tier_2_20',
+        'kortix_plus_yearly': 'tier_2_20',
+        'kortix_plus_commitment': 'tier_2_20',
+        'kortix_pro_monthly': 'tier_6_50',
+        'kortix_pro_yearly': 'tier_6_50',
+        'kortix_pro_commitment': 'tier_6_50',
+        'kortix_ultra_monthly': 'tier_25_200',
+        'kortix_ultra_yearly': 'tier_25_200',
+        'kortix_ultra_commitment': 'tier_25_200',
+    }
+    
+    VALID_PRODUCT_IDS = set(PRODUCT_MAPPING.keys())
+    
+    def _validate_product_id(self, product_id: str) -> bool:
+        if not product_id:
+            return False
         
-        mapped_tier = product_mapping.get(product_id.lower())
+        if product_id.lower() not in self.VALID_PRODUCT_IDS:
+            logger.error(
+                f"[REVENUECAT] ❌ INVALID PRODUCT ID RECEIVED: '{product_id}'\n"
+                f"Valid product IDs: {self.VALID_PRODUCT_IDS}\n"
+                f"This indicates a configuration mismatch between app and backend!"
+            )
+            return False
+        return True
+    
+    def _map_product_to_tier(self, product_id: str) -> str:
+        mapped_tier = self.PRODUCT_MAPPING.get(product_id.lower())
         if mapped_tier:
             return mapped_tier
         
-        logger.warning(
-            f"[REVENUECAT] Unknown product ID: {product_id}, defaulting to tier_2_20"
+        logger.critical(
+            f"[REVENUECAT] ❌ Unknown product ID: {product_id} - Raising error to trigger retry/alert\n"
+            f"THIS MUST BE FIXED IN CONFIGURATION"
         )
-        return 'tier_2_20'
+        raise ValueError(f"Unknown product ID: {product_id}")
     
     def _get_period_type(self, product_id: str) -> str:
         if not product_id:
