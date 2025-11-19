@@ -59,6 +59,8 @@ export function AttachmentGroup({
     const [isModalOpen, setIsModalOpen] = useState(false);
     // Responsive state - ALWAYS initialize this hook first before any conditionals
     const [isMobile, setIsMobile] = useState(false);
+    // Simple carousel state - show one item at a time - MUST be before any early returns
+    const [currentIndex, setCurrentIndex] = useState(0);
 
     // Constants for height calculation - each row is about 66px (54px height + 12px gap)
     const ROW_HEIGHT = 54; // Height of a single file
@@ -209,9 +211,6 @@ export function AttachmentGroup({
             wrapperStyle: isPreviewFile ? { gridColumn: '1 / -1' } : undefined // Make previewable files span full width like in CompleteToolView
         };
     });
-
-    // Simple carousel state - show one item at a time
-    const [currentIndex, setCurrentIndex] = useState(0);
     
     // Determine if we should use carousel (4+ attachments)
     const shouldUseCarousel = layout === 'grid' && uniqueFiles.length >= 4;
