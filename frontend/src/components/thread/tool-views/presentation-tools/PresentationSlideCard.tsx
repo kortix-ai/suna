@@ -40,36 +40,44 @@ export function PresentationSlideCard({
   }, [project?.sandbox?.sandbox_url, slide.file_path, refreshTimestamp]);
 
   useEffect(() => {
-    if (containerRef) {
-      const updateScale = () => {
-        const containerWidth = containerRef.offsetWidth;
-        const containerHeight = containerRef.offsetHeight;
-        
-        // Calculate scale to fit 1920x1080 into container while maintaining aspect ratio
-        const scaleX = containerWidth / 1920;
-        const scaleY = containerHeight / 1080;
-        const newScale = Math.min(scaleX, scaleY);
-        
-        // Only update if scale actually changed to prevent unnecessary re-renders
-        if (Math.abs(newScale - scale) > 0.001) {
-          setScale(newScale);
-        }
-      };
+    if (!containerRef) return;
 
-      // Use a debounced version for resize events to prevent excessive updates
-      let resizeTimeout: NodeJS.Timeout;
-      const debouncedUpdateScale = () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(updateScale, 100);
-      };
+    const updateScale = () => {
+      const containerWidth = containerRef.offsetWidth;
+      const containerHeight = containerRef.offsetHeight;
+      
+      // Calculate scale to fit 1920x1080 into container while maintaining aspect ratio
+      const scaleX = containerWidth / 1920;
+      const scaleY = containerHeight / 1080;
+      const newScale = Math.min(scaleX, scaleY);
+      
+      // Only update if scale actually changed to prevent unnecessary re-renders
+      if (Math.abs(newScale - scale) > 0.001) {
+        setScale(newScale);
+      }
+    };
 
-      updateScale();
-      window.addEventListener('resize', debouncedUpdateScale);
-      return () => {
-        window.removeEventListener('resize', debouncedUpdateScale);
-        clearTimeout(resizeTimeout);
-      };
-    }
+    // Initial scale calculation
+    updateScale();
+
+    // Use ResizeObserver to watch for container size changes (catches both window and panel resizes)
+    let resizeTimeout: NodeJS.Timeout;
+    const debouncedUpdateScale = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(updateScale, 50); // Reduced debounce for smoother resizing
+    };
+
+    const resizeObserver = new ResizeObserver(debouncedUpdateScale);
+    resizeObserver.observe(containerRef);
+
+    // Also listen to window resize as fallback
+    window.addEventListener('resize', debouncedUpdateScale);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', debouncedUpdateScale);
+      clearTimeout(resizeTimeout);
+    };
   }, [containerRef, scale]);
 
   if (!slidePreviewUrl) {

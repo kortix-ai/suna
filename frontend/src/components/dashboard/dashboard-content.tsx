@@ -107,12 +107,13 @@ export function DashboardContent() {
   const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
-  const { data: threadLimit } = useThreadLimit();
+  const { data: threadLimit, isLoading: isThreadLimitLoading } = useThreadLimit();
   const { data: limits } = useLimits();
   const canCreateThread = threadLimit?.can_create || false;
   
   const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';
-  const showAlert = !canCreateThread && !isDismissed;
+  // Only show alert after loading is complete and limit is actually exceeded
+  const showAlert = !isThreadLimitLoading && !canCreateThread && !isDismissed;
 
   React.useEffect(() => {
     if (agents.length > 0) {

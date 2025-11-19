@@ -102,20 +102,10 @@ export function renderMarkdownContent(
     fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void,
     sandboxId?: string,
     project?: Project,
-    debugMode?: boolean,
     isLatestMessage?: boolean,
     t?: (key: string) => string,
     threadId?: string
 ) {
-    // If in debug mode, just display raw content in a pre tag
-    if (debugMode) {
-        return (
-            <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30 text-foreground">
-                {content}
-            </pre>
-        );
-    }
-
     if (isNewXmlFormat(content)) {
         const contentParts: React.ReactNode[] = [];
         let lastIndex = 0;
@@ -412,7 +402,6 @@ export interface ThreadContentProps {
     streamHookStatus?: string; // Add this prop
     sandboxId?: string; // Add sandboxId prop
     project?: Project; // Add project prop
-    debugMode?: boolean; // Add debug mode parameter
     isPreviewMode?: boolean;
     agentName?: string;
     agentAvatar?: React.ReactNode;
@@ -437,7 +426,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     streamHookStatus = "idle",
     sandboxId,
     project,
-    debugMode = false,
     isPreviewMode = false,
     agentName = 'Suna',
     agentAvatar = <KortixLogo size={16} />,
@@ -770,19 +758,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             }
                                         })();
 
-                                        // In debug mode, display raw message content
-                                        if (debugMode) {
-                                            return (
-                                                <div key={group.key} className="flex justify-end">
-                                                    <div className="flex max-w-[85%] rounded-2xl bg-card px-4 py-3 break-words overflow-hidden">
-                                                        <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto min-w-0 flex-1">
-                                                            {message.content}
-                                                        </pre>
-                                                    </div>
-                                                </div>
-                                            );
-                                        }
-
                                         // Extract attachments from the message content
                                         const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
                                         const attachments = attachmentsMatch
@@ -826,33 +801,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                     <div className="flex max-w-[90%] text-sm break-words overflow-hidden">
                                                         <div className="space-y-2 min-w-0 flex-1">
                                                             {(() => {
-                                                                // In debug mode, just show raw messages content
-                                                                if (debugMode) {
-                                                                    return group.messages.map((message, msgIndex) => {
-                                                                        const msgKey = message.message_id || `raw-msg-${msgIndex}`;
-                                                                        return (
-                                                                            <div key={msgKey} className="mb-4">
-                                                                                <div className="text-xs font-medium text-muted-foreground mb-1">
-                                                                                    Type: {message.type} | ID: {message.message_id || 'no-id'}
-                                                                                </div>
-                                                                                <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                    {JSON.stringify(message.content, null, 2)}
-                                                                                </pre>
-                                                                                {message.metadata && message.metadata !== '{}' && (
-                                                                                    <div className="mt-2">
-                                                                                        <div className="text-xs font-medium text-muted-foreground mb-1">
-                                                                                            Metadata:
-                                                                                        </div>
-                                                                                        <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                            {JSON.stringify(message.metadata, null, 2)}
-                                                                                        </pre>
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        );
-                                                                    });
-                                                                }
-
                                                                 const toolResultsMap = new Map<string | null, UnifiedMessage[]>();
                                                                 group.messages.forEach(msg => {
                                                                     if (msg.type === 'tool') {
@@ -894,7 +842,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                             handleOpenFileViewer,
                                                                             sandboxId,
                                                                             project,
-                                                                            debugMode,
                                                                             isLatestMessage,
                                                                             t,
                                                                             threadId
@@ -918,15 +865,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                             {groupIndex === finalGroupedMessages.length - 1 && !readOnly && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
                                                                 <div className="mt-2">
                                                                     {(() => {
-                                                                        // In debug mode, show raw streaming content
-                                                                        if (debugMode && streamingTextContent) {
-                                                                            return (
-                                                                                <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                    {streamingTextContent}
-                                                                                </pre>
-                                                                            );
-                                                                        }
-
                                                                         let detectedTag: string | null = null;
                                                                         let tagStartIndex = -1;
                                                                         if (streamingTextContent) {
@@ -1069,14 +1007,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                                                                         return (
                                                                             <>
-                                                                                {/* In debug mode, show raw streaming content */}
-                                                                                {debugMode && streamingText ? (
-                                                                                    <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                        {streamingText}
-                                                                                    </pre>
-                                                                                ) : (
-                                                                                    <>
-                                                                                        {textBeforeTag && (
+                                                                                {textBeforeTag && (
                                                                                             <ComposioUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
                                                                                         )}
 
@@ -1101,8 +1032,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                                 startTime={Date.now()} // Tool just started now
                                                                                             />
                                                                                         ) : null}
-                                                                                    </>
-                                                                                )}
                                                                             </>
                                                                         );
                                                                     })()}
@@ -1190,7 +1119,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                     </div>
                                 </div>
                             )}
-                            <div className="!h-48" />
+                            <div className="!h-8" />
                         </div>
                     </div>
                 </div>

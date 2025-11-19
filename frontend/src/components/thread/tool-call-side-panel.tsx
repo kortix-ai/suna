@@ -1,13 +1,12 @@
 'use client';
 
 import { Project } from '@/lib/api/projects';
-import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
-import React, { memo, useMemo, useCallback } from 'react';
+import { getUserFriendlyToolName } from '@/components/thread/utils';
+import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
 import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Minimize2, Globe, Wrench } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +16,6 @@ import { toast } from 'sonner';
 import { HealthCheckedVncIframe } from './HealthCheckedVncIframe';
 import { BrowserHeader } from './tool-views/BrowserToolView';
 import { useTranslations } from 'next-intl';
-
 import {
   Drawer,
   DrawerContent,
@@ -25,6 +23,10 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
+
+// ============================================================================
+// Types & Interfaces
+// ============================================================================
 
 export interface ToolCallInput {
   assistantCall: {
@@ -72,23 +74,33 @@ interface ToolCallSnapshot {
   timestamp: number;
 }
 
+type NavigationMode = 'live' | 'manual';
+type ViewType = 'tools' | 'browser';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
 const FLOATING_LAYOUT_ID = 'tool-panel-float';
 const CONTENT_LAYOUT_ID = 'tool-panel-content';
 
+// ============================================================================
+// Sub-components
+// ============================================================================
+
 interface ViewToggleProps {
-  currentView: 'tools' | 'browser';
-  onViewChange: (view: 'tools' | 'browser') => void;
+  currentView: ViewType;
+  onViewChange: (view: ViewType) => void;
 }
 
-const ViewToggle: React.FC<ViewToggleProps> = memo(function ViewToggle({ currentView, onViewChange }) {
+const ViewToggle = memo(function ViewToggle({ currentView, onViewChange }: ViewToggleProps) {
   return (
     <div className="relative flex items-center gap-1 bg-muted rounded-3xl px-1 py-1">
-      {/* Sliding background */}
       <motion.div
         className="absolute h-7 w-7 bg-white rounded-xl shadow-sm"
         initial={false}
         animate={{
-          x: currentView === 'tools' ? 0 : 32, // 28px button width + 4px gap
+          x: currentView === 'tools' ? 0 : 32,
         }}
         transition={{
           type: "spring",
@@ -97,7 +109,6 @@ const ViewToggle: React.FC<ViewToggleProps> = memo(function ViewToggle({ current
         }}
       />
       
-      {/* Buttons */}
       <Button
         size="sm"
         onClick={() => onViewChange('tools')}
@@ -127,12 +138,10 @@ const ViewToggle: React.FC<ViewToggleProps> = memo(function ViewToggle({ current
   );
 });
 
-// Helper function to generate the computer title
-const getComputerTitle = (agentName?: string): string => {
-  return agentName ? `${agentName}'s Computer` : "Suna's Computer";
-};
+ViewToggle.displayName = 'ViewToggle';
 
-// Reusable header component for the tool panel
+// ============================================================================
+
 interface PanelHeaderProps {
   agentName?: string;
   onClose: () => void;
@@ -142,15 +151,15 @@ interface PanelHeaderProps {
   layoutId?: string;
 }
 
-const PanelHeader: React.FC<PanelHeaderProps> = memo(function PanelHeader({
+const PanelHeader = memo(function PanelHeader({
   agentName,
   onClose,
   isStreaming = false,
   variant = 'desktop',
   showMinimize = false,
   layoutId,
-}) {
-  const title = getComputerTitle(agentName);
+}: PanelHeaderProps) {
+  const title = agentName ? `${agentName}'s Computer` : "Suna's Computer";
   
   if (variant === 'drawer') {
     return (
@@ -175,17 +184,14 @@ const PanelHeader: React.FC<PanelHeaderProps> = memo(function PanelHeader({
 
   if (variant === 'motion') {
     return (
-      <motion.div
-        layoutId={layoutId}
-        className="p-3"
-      >
+      <div className="p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <motion.div layoutId="tool-icon" className="ml-2">
+            <div className="ml-2">
               <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                 {title}
               </h2>
-            </motion.div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -206,7 +212,7 @@ const PanelHeader: React.FC<PanelHeaderProps> = memo(function PanelHeader({
             </Button>
           </div>
         </div>
-      </motion.div>
+      </div>
     );
   }
 
@@ -242,6 +248,269 @@ const PanelHeader: React.FC<PanelHeaderProps> = memo(function PanelHeader({
   );
 });
 
+PanelHeader.displayName = 'PanelHeader';
+
+// ============================================================================
+
+interface NavigationControlsProps {
+  displayIndex: number;
+  displayTotalCalls: number;
+  safeInternalIndex: number;
+  latestIndex: number;
+  isLiveMode: boolean;
+  agentStatus: string;
+  onPrevious: () => void;
+  onNext: () => void;
+  onSliderChange: (value: number[]) => void;
+  onJumpToLive: () => void;
+  onJumpToLatest: () => void;
+  isMobile?: boolean;
+}
+
+const NavigationControls = memo(function NavigationControls({
+  displayIndex,
+  displayTotalCalls,
+  safeInternalIndex,
+  latestIndex,
+  isLiveMode,
+  agentStatus,
+  onPrevious,
+  onNext,
+  onSliderChange,
+  onJumpToLive,
+  onJumpToLatest,
+  isMobile = false,
+}: NavigationControlsProps) {
+  const renderStatusButton = useCallback(() => {
+    const baseClasses = "flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full w-[116px]";
+    const dotClasses = "w-1.5 h-1.5 rounded-full";
+    const textClasses = "text-xs font-medium";
+
+    if (isLiveMode) {
+      if (agentStatus === 'running') {
+        return (
+          <div
+            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
+            onClick={onJumpToLive}
+          >
+            <div className={`${dotClasses} bg-green-500 animate-pulse`} />
+            <span className={`${textClasses} text-green-700 dark:text-green-400`}>Live Updates</span>
+          </div>
+        );
+      } else {
+        return (
+          <div className={`${baseClasses} bg-neutral-50 dark:bg-neutral-900/20 border border-neutral-200 dark:border-neutral-800`}>
+            <div className={`${dotClasses} bg-neutral-500`} />
+            <span className={`${textClasses} text-neutral-700 dark:text-neutral-400`}>Latest Tool</span>
+          </div>
+        );
+      }
+    } else {
+      if (agentStatus === 'running') {
+        return (
+          <div
+            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
+            onClick={onJumpToLive}
+          >
+            <div className={`${dotClasses} bg-green-500 animate-pulse`} />
+            <span className={`${textClasses} text-green-700 dark:text-green-400`}>Jump to Live</span>
+          </div>
+        );
+      } else {
+        return (
+          <div
+            className={`${baseClasses} bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer`}
+            onClick={onJumpToLatest}
+          >
+            <div className={`${dotClasses} bg-blue-500`} />
+            <span className={`${textClasses} text-blue-700 dark:text-blue-400`}>Jump to Latest</span>
+          </div>
+        );
+      }
+    }
+  }, [isLiveMode, agentStatus, onJumpToLive, onJumpToLatest]);
+
+  if (isMobile) {
+    return (
+      <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">
+        <div className="flex items-center justify-between">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onPrevious}
+            disabled={displayIndex <= 0}
+            className="h-8 px-2.5 text-xs"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+            <span>Prev</span>
+          </Button>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium tabular-nums min-w-[44px]">
+              {safeInternalIndex + 1}/{displayTotalCalls}
+            </span>
+            {renderStatusButton()}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onNext}
+            disabled={displayIndex >= displayTotalCalls - 1}
+            className="h-8 px-2.5 text-xs"
+          >
+            <span>Next</span>
+            <ChevronRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-2.5">
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onPrevious}
+            disabled={displayIndex <= 0}
+            className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium tabular-nums px-1 min-w-[44px] text-center">
+            {displayIndex + 1}/{displayTotalCalls}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onNext}
+            disabled={safeInternalIndex >= latestIndex}
+            className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="flex-1 relative">
+          <Slider
+            min={0}
+            max={Math.max(0, displayTotalCalls - 1)}
+            step={1}
+            value={[safeInternalIndex]}
+            onValueChange={onSliderChange}
+            className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-zinc-200 dark:[&>span:first-child]:bg-zinc-800 [&>span:first-child>span]:bg-zinc-500 dark:[&>span:first-child>span]:bg-zinc-400 [&>span:first-child>span]:h-1.5"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          {renderStatusButton()}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+NavigationControls.displayName = 'NavigationControls';
+
+// ============================================================================
+
+interface EmptyStateProps {
+  t: (key: string) => string;
+}
+
+const EmptyState = memo(function EmptyState({ t }: EmptyStateProps) {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 p-8">
+      <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+        <div className="relative">
+          <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center">
+            <Computer className="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-zinc-200 dark:bg-zinc-700 rounded-full flex items-center justify-center">
+            <div className="w-2 h-2 bg-zinc-400 dark:text-zinc-500 rounded-full"></div>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
+            {t('noActionsYet')}
+          </h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+            {t('workerActionsDescription')}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+EmptyState.displayName = 'EmptyState';
+
+// ============================================================================
+
+interface LoadingStateProps {
+  agentName?: string;
+  onClose: () => void;
+  isMobile: boolean;
+}
+
+const LoadingState = memo(function LoadingState({ agentName, onClose, isMobile }: LoadingStateProps) {
+  if (isMobile) {
+    return (
+      <DrawerContent className="h-[85vh]">
+        <PanelHeader 
+          agentName={agentName}
+          onClose={onClose}
+          variant="drawer"
+        />
+        
+        <div className="flex-1 p-4 overflow-auto">
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-20 w-full rounded-md" />
+            <Skeleton className="h-40 w-full rounded-md" />
+            <Skeleton className="h-20 w-full rounded-md" />
+          </div>
+        </div>
+      </DrawerContent>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 pointer-events-none">
+      <div className="p-4 h-full flex items-stretch justify-end pointer-events-auto">
+        <div className="border rounded-2xl flex flex-col shadow-2xl bg-background w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px]">
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex flex-col h-full">
+              <PanelHeader 
+                agentName={agentName}
+                onClose={onClose}
+                showMinimize={true}
+              />
+              <div className="flex-1 p-4 overflow-auto">
+                <div className="space-y-4">
+                  <Skeleton className="h-8 w-32" />
+                  <Skeleton className="h-20 w-full rounded-md" />
+                  <Skeleton className="h-40 w-full rounded-md" />
+                  <Skeleton className="h-20 w-full rounded-md" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+LoadingState.displayName = 'LoadingState';
+
+// ============================================================================
+// Main Component
+// ============================================================================
+
 export function ToolCallSidePanel({
   isOpen,
   onClose,
@@ -259,30 +528,24 @@ export function ToolCallSidePanel({
   compact = false,
 }: ToolCallSidePanelProps) {
   const t = useTranslations('thread');
-  const [dots, setDots] = React.useState('');
-  const [internalIndex, setInternalIndex] = React.useState(0);
-  const [navigationMode, setNavigationMode] = React.useState<'live' | 'manual'>('live');
-  const [toolCallSnapshots, setToolCallSnapshots] = React.useState<ToolCallSnapshot[]>([]);
-  const [isInitialized, setIsInitialized] = React.useState(false);
-
-  // Add copy functionality state
-  // Add view toggle state  
-  const [currentView, setCurrentView] = React.useState<'tools' | 'browser'>('tools');
-  const currentViewRef = React.useRef(currentView);
-  
-  // Update ref when state changes
-  React.useEffect(() => {
-    currentViewRef.current = currentView;
-  }, [currentView]);
+  const [dots, setDots] = useState('');
+  const [internalIndex, setInternalIndex] = useState(0);
+  const [navigationMode, setNavigationMode] = useState<NavigationMode>('live');
+  const [toolCallSnapshots, setToolCallSnapshots] = useState<ToolCallSnapshot[]>([]);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [currentView, setCurrentView] = useState<ViewType>('tools');
+  const currentViewRef = useRef(currentView);
+  const [vncRefreshKey, setVncRefreshKey] = useState(0);
 
   const isMobile = useIsMobile();
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
-
   const sandbox = project?.sandbox;
-  
-  // Add refresh key state for VNC iframe
-  const [vncRefreshKey, setVncRefreshKey] = React.useState(0);
-  
+
+  // Update ref when state changes
+  useEffect(() => {
+    currentViewRef.current = currentView;
+  }, [currentView]);
+
   const handleVncRefresh = useCallback(() => {
     setVncRefreshKey(prev => prev + 1);
   }, []);
@@ -304,7 +567,6 @@ export function ToolCallSidePanel({
     );
   }, [sandbox, vncRefreshKey]);
 
-  // Helper function to check if a tool is browser-related
   const isBrowserTool = useCallback((toolName: string | undefined): boolean => {
     if (!toolName) return false;
     const lowerName = toolName.toLowerCase();
@@ -317,23 +579,19 @@ export function ToolCallSidePanel({
   }, []);
 
   // Handle view toggle visibility and auto-switching logic
-  React.useEffect(() => {
+  useEffect(() => {
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
     const currentSnapshot = toolCallSnapshots[safeIndex];
     const isCurrentSnapshotBrowserTool = isBrowserTool(currentSnapshot?.toolCall.assistantCall?.name);
     
-    // Handle view switching based on agent status
     if (agentStatus === 'idle') {
-      // Switch to tools view when navigating to a non-browser tool
       if (!isCurrentSnapshotBrowserTool && currentViewRef.current === 'browser') {
         setCurrentView('tools');
       }
-      // Switch to browser view when navigating to the latest browser tool
       if (isCurrentSnapshotBrowserTool && currentViewRef.current === 'tools' && safeIndex === toolCallSnapshots.length - 1) {
         setCurrentView('browser');
       }
     } else if (agentStatus === 'running') {
-      // Auto-switch for streaming tools when agent is actively running
       const streamingSnapshot = toolCallSnapshots.find(snapshot => 
         snapshot.toolCall.toolResult?.content === 'STREAMING'
       );
@@ -343,12 +601,10 @@ export function ToolCallSidePanel({
         const toolName = streamingToolCall.assistantCall?.name;
         const isStreamingBrowserTool = isBrowserTool(toolName);
         
-        // Switch to browser view when a browser tool starts streaming and we're in tools view
         if (isStreamingBrowserTool && currentViewRef.current === 'tools') {
           setCurrentView('browser');
         }
         
-        // Switch to tools view when a non-browser tool starts streaming and we're in browser view
         if (!isStreamingBrowserTool && currentViewRef.current === 'browser') {
           setCurrentView('tools');
         }
@@ -360,7 +616,6 @@ export function ToolCallSidePanel({
     onClose();
   }, [onClose]);
 
-  // Memoize snapshot creation to prevent unnecessary recalculations
   const newSnapshots = useMemo(() => {
     return toolCalls.map((toolCall, index) => ({
       id: `${index}-${toolCall.assistantCall.timestamp || Date.now()}`,
@@ -370,7 +625,7 @@ export function ToolCallSidePanel({
     }));
   }, [toolCalls]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const hadSnapshots = toolCallSnapshots.length > 0;
     const hasNewSnapshots = newSnapshots.length > toolCallSnapshots.length;
     setToolCallSnapshots(newSnapshots);
@@ -397,30 +652,22 @@ export function ToolCallSidePanel({
       }
       setIsInitialized(true);
     } else if (hasNewSnapshots && navigationMode === 'live') {
-      // When in live mode and new snapshots arrive, always follow the true latest index.
-      // Display stability for streaming is handled separately by displayToolCall logic.
       setInternalIndex(newSnapshots.length - 1);
     } else if (hasNewSnapshots && navigationMode === 'manual') {
-      // When in manual mode and new snapshots arrive, check if we should auto-switch to live
-      // This happens when the user was at the latest snapshot before new ones arrived
       const wasAtLatest = internalIndex === toolCallSnapshots.length - 1;
       if (wasAtLatest && agentStatus === 'running') {
-        // Auto-switch to live mode when new snapshots arrive and we were at the latest
         setNavigationMode('live');
         setInternalIndex(newSnapshots.length - 1);
       }
     }
-  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus]);
+  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus, newSnapshots]);
 
-  React.useEffect(() => {
-    // This is used to sync the internal index to the current index
-    // Only sync when we're not in live mode, when we're initializing, and when there are tool calls
+  useEffect(() => {
     if ((!isInitialized || navigationMode === 'manual') && toolCallSnapshots.length > 0) {
       setInternalIndex(Math.min(currentIndex, toolCallSnapshots.length - 1));
     }
   }, [currentIndex, toolCallSnapshots.length, isInitialized, navigationMode]);
 
-  // Memoize expensive calculations
   const { safeInternalIndex, currentSnapshot, currentToolCall, totalCalls, latestIndex, completedToolCalls, totalCompletedCalls } = useMemo(() => {
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
     const snapshot = toolCallSnapshots[safeIndex];
@@ -445,10 +692,6 @@ export function ToolCallSidePanel({
     };
   }, [internalIndex, toolCallSnapshots]);
 
-  // Derive a user-facing timeline that is stable and easy to reason about:
-  // - If the current tool is STREAMING, show the last completed result content;
-  // - Counters/slider always show the full timeline length, but the index snaps to
-  //   the last completed step while streaming so the user can still scrub.
   let displayToolCall = currentToolCall;
   let displayIndex = safeInternalIndex;
   const displayTotalCalls = totalCalls;
@@ -462,7 +705,6 @@ export function ToolCallSidePanel({
 
   const isStreaming = displayToolCall?.toolResult?.content === 'STREAMING';
 
-  // Extract actual success value from tool content with fallbacks
   const getActualSuccess = (toolCall: any): boolean => {
     const content = toolCall?.toolResult?.content;
     if (!content) return toolCall?.toolResult?.isSuccess ?? true;
@@ -490,8 +732,7 @@ export function ToolCallSidePanel({
 
   const isSuccess = isStreaming ? true : getActualSuccess(displayToolCall);
 
-  // Copy functions
-  const copyToClipboard = React.useCallback(async (text: string) => {
+  const copyToClipboard = useCallback(async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
       return true;
@@ -501,14 +742,12 @@ export function ToolCallSidePanel({
     }
   }, []);
 
-  const handleCopyContent = React.useCallback(async () => {
+  const handleCopyContent = useCallback(async () => {
     const toolContent = displayToolCall?.toolResult?.content;
     if (!toolContent || toolContent === 'STREAMING') return;
 
-    // Try to extract file content from tool result
     let fileContent = '';
 
-    // If the tool result is JSON, try to extract file content
     try {
       const parsed = JSON.parse(toolContent);
       if (parsed.content && typeof parsed.content === 'string') {
@@ -520,11 +759,9 @@ export function ToolCallSidePanel({
       } else if (parsed.toolOutput && typeof parsed.toolOutput === 'string') {
         fileContent = parsed.toolOutput;
       } else {
-        // If no string content found, stringify the object
         fileContent = JSON.stringify(parsed, null, 2);
       }
     } catch (e) {
-      // If it's not JSON, use the content as is
       fileContent = typeof toolContent === 'string' ? toolContent : JSON.stringify(toolContent, null, 2);
     }
 
@@ -578,74 +815,21 @@ export function ToolCallSidePanel({
   }, [latestIndex, internalNavigate]);
 
   const jumpToLatest = useCallback(() => {
-    // For idle state: jump to the latest completed (same as latestIndex here)
     setNavigationMode('manual');
     setInternalIndex(latestIndex);
     internalNavigate(latestIndex, 'user_explicit');
   }, [latestIndex, internalNavigate]);
 
-  const renderStatusButton = useCallback(() => {
-    const baseClasses = "flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full w-[116px]";
-    const dotClasses = "w-1.5 h-1.5 rounded-full";
-    const textClasses = "text-xs font-medium";
-
-    if (isLiveMode) {
-      if (agentStatus === 'running') {
-        return (
-          <div
-            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
-            onClick={jumpToLive}
-          >
-            <div className={`${dotClasses} bg-green-500 animate-pulse`} />
-            <span className={`${textClasses} text-green-700 dark:text-green-400`}>Live Updates</span>
-          </div>
-        );
-      } else {
-        return (
-          <div className={`${baseClasses} bg-neutral-50 dark:bg-neutral-900/20 border border-neutral-200 dark:border-neutral-800`}>
-            <div className={`${dotClasses} bg-neutral-500`} />
-            <span className={`${textClasses} text-neutral-700 dark:text-neutral-400`}>Latest Tool</span>
-          </div>
-        );
-      }
-    } else {
-      if (agentStatus === 'running') {
-        return (
-          <div
-            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
-            onClick={jumpToLive}
-          >
-            <div className={`${dotClasses} bg-green-500 animate-pulse`} />
-            <span className={`${textClasses} text-green-700 dark:text-green-400`}>Jump to Live</span>
-          </div>
-        );
-      } else {
-        return (
-          <div
-            className={`${baseClasses} bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer`}
-            onClick={jumpToLatest}
-          >
-            <div className={`${dotClasses} bg-blue-500`} />
-            <span className={`${textClasses} text-blue-700 dark:text-blue-400`}>Jump to Latest</span>
-          </div>
-        );
-      }
-    }
-  }, [isLiveMode, agentStatus, jumpToLive, jumpToLatest]);
-
   const handleSliderChange = useCallback(([newValue]: [number]) => {
-    // Slider maps directly over all snapshots for simplicity and correctness
     const bounded = Math.max(0, Math.min(newValue, latestIndex));
     setNavigationMode(bounded === latestIndex ? 'live' : 'manual');
     internalNavigate(bounded, 'user_explicit');
   }, [latestIndex, internalNavigate]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Don't handle side panel shortcuts when document modal is open
-      // console.log('Side panel handler - document modal open:', isDocumentModalOpen, 'key:', event.key);
       if (isDocumentModalOpen) return;
       
       if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
@@ -658,7 +842,7 @@ export function ToolCallSidePanel({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, handleClose, isDocumentModalOpen]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
     const handleSidebarToggle = (event: CustomEvent) => {
       if (event.detail.expanded) {
@@ -677,13 +861,13 @@ export function ToolCallSidePanel({
       );
   }, [isOpen, handleClose]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (externalNavigateToIndex !== undefined && externalNavigateToIndex >= 0 && externalNavigateToIndex < totalCalls) {
       internalNavigate(externalNavigateToIndex, 'external_click');
     }
   }, [externalNavigateToIndex, totalCalls, internalNavigate]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isStreaming) return;
     const interval = setInterval(() => {
       setDots((prev) => {
@@ -700,54 +884,7 @@ export function ToolCallSidePanel({
   }
 
   if (isLoading) {
-    if (isMobile) {
-      return (
-        <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
-          <DrawerContent className="h-[85vh]">
-            <PanelHeader 
-              agentName={agentName}
-              onClose={handleClose}
-              variant="drawer"
-            />
-            
-            <div className="flex-1 p-4 overflow-auto">
-              <div className="space-y-4">
-                <Skeleton className="h-8 w-32" />
-                <Skeleton className="h-20 w-full rounded-md" />
-                <Skeleton className="h-40 w-full rounded-md" />
-                <Skeleton className="h-20 w-full rounded-md" />
-              </div>
-            </div>
-          </DrawerContent>
-        </Drawer>
-      );
-    }
-
-    return (
-      <div className="fixed inset-0 z-30 pointer-events-none">
-        <div className="p-4 h-full flex items-stretch justify-end pointer-events-auto">
-          <div className="border rounded-2xl flex flex-col shadow-2xl bg-background w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px]">
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex flex-col h-full">
-                <PanelHeader 
-                  agentName={agentName}
-                  onClose={handleClose}
-                  showMinimize={true}
-                />
-                <div className="flex-1 p-4 overflow-auto">
-                  <div className="space-y-4">
-                    <Skeleton className="h-8 w-32" />
-                    <Skeleton className="h-20 w-full rounded-md" />
-                    <Skeleton className="h-40 w-full rounded-md" />
-                    <Skeleton className="h-20 w-full rounded-md" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <LoadingState agentName={agentName} onClose={handleClose} isMobile={isMobile} />;
   }
 
   const renderContent = () => {
@@ -760,26 +897,7 @@ export function ToolCallSidePanel({
               onClose={handleClose}
             />
           )}
-          <div className="flex flex-col items-center justify-center flex-1 p-8">
-            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
-              <div className="relative">
-                <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center">
-                  <Computer className="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-zinc-200 dark:bg-zinc-700 rounded-full flex items-center justify-center">
-                  <div className="w-2 h-2 bg-zinc-400 dark:text-zinc-500 rounded-full"></div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
-                  {t('noActionsYet')}
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                  {t('workerActionsDescription')}
-                </p>
-              </div>
-            </div>
-          </div>
+          <EmptyState t={t} />
         </div>
       );
     }
@@ -872,28 +990,23 @@ export function ToolCallSidePanel({
             onClose={handleClose}
             isStreaming={isStreaming}
             variant="motion"
-            layoutId={CONTENT_LAYOUT_ID}
           />
         )}
 
         <div className={`flex-1 ${currentView === 'browser' ? 'overflow-hidden' : 'overflow-hidden'} scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent`}>
-          {/* Always render VNC iframe to maintain connection when available */}
           {persistentVncIframe && (
             <div className={`${currentView === 'browser' ? 'h-full flex flex-col' : 'hidden'}`}>
               <BrowserHeader isConnected={true} onRefresh={handleVncRefresh} viewToggle={<ViewToggle currentView={currentView} onViewChange={setCurrentView} />} />
-              {/* VNC iframe container - unchanged */}
               <div className="flex-1 overflow-hidden grid items-center">
                 {persistentVncIframe}
               </div>
             </div>
           )}
           
-          {/* Show browser not available message when no VNC and browser tab is selected */}
           {!persistentVncIframe && currentView === 'browser' && (
             <div className="h-full flex flex-col">
               <BrowserHeader isConnected={false} viewToggle={<ViewToggle currentView={currentView} onViewChange={setCurrentView} />} />
               
-              {/* Message content */}
               <div className="flex-1 flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
                 <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
                   <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center border-2 border-zinc-200 dark:border-zinc-700">
@@ -912,7 +1025,6 @@ export function ToolCallSidePanel({
             </div>
           )}
           
-          {/* Render tool view when tools tab is selected */}
           {currentView === 'tools' && toolView}
         </div>
       </div>
@@ -935,119 +1047,114 @@ export function ToolCallSidePanel({
           </div>
           
           {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={navigateToPrevious}
-                  disabled={displayIndex <= 0}
-                  className="h-8 px-2.5 text-xs"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5 mr-1" />
-                  <span>Prev</span>
-                </Button>
-
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium tabular-nums min-w-[44px]">
-                    {safeInternalIndex + 1}/{totalCalls}
-                  </span>
-                  {renderStatusButton()}
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={navigateToNext}
-                  disabled={displayIndex >= displayTotalCalls - 1}
-                  className="h-8 px-2.5 text-xs"
-                >
-                  <span>Next</span>
-                  <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                </Button>
-              </div>
-            </div>
+            <NavigationControls
+              displayIndex={displayIndex}
+              displayTotalCalls={displayTotalCalls}
+              safeInternalIndex={safeInternalIndex}
+              latestIndex={latestIndex}
+              isLiveMode={isLiveMode}
+              agentStatus={agentStatus}
+              onPrevious={navigateToPrevious}
+              onNext={navigateToNext}
+              onSliderChange={handleSliderChange}
+              onJumpToLive={jumpToLive}
+              onJumpToLatest={jumpToLatest}
+              isMobile={true}
+            />
           )}
         </DrawerContent>
       </Drawer>
     );
   }
 
-  // Desktop version - use fixed panel
+  // Desktop version
+  // When compact=true, use fixed overlay positioning
+  // When compact=false, assume it's inside a ResizablePanel and fill the container
+  if (compact) {
+    return (
+      <AnimatePresence mode="wait">
+        {isOpen && (
+          <motion.div
+            key="sidepanel"
+            layoutId={FLOATING_LAYOUT_ID}
+            initial={disableInitialAnimation ? { opacity: 1 } : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{
+              opacity: { duration: disableInitialAnimation ? 0 : 0.15 },
+              layout: {
+                type: "spring",
+                stiffness: 400,
+                damping: 35
+              }
+            }}
+            className="m-4 h-[calc(100%-2rem)] w-[calc(100%-2rem)] border rounded-3xl flex flex-col z-30"
+            style={{
+              overflow: 'hidden',
+            }}
+          >
+            <div className="flex-1 flex flex-col overflow-hidden bg-card">
+              {renderContent()}
+            </div>
+            {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
+              <NavigationControls
+                displayIndex={displayIndex}
+                displayTotalCalls={displayTotalCalls}
+                safeInternalIndex={safeInternalIndex}
+                latestIndex={latestIndex}
+                isLiveMode={isLiveMode}
+                agentStatus={agentStatus}
+                onPrevious={navigateToPrevious}
+                onNext={navigateToNext}
+                onSliderChange={handleSliderChange}
+                onJumpToLive={jumpToLive}
+                onJumpToLatest={jumpToLatest}
+                isMobile={false}
+              />
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  // Desktop version inside ResizablePanel - fill container
+  if (!isOpen) {
+    return null;
+  }
+  
   return (
-    <AnimatePresence mode="wait">
-      {isOpen && (
-        <motion.div
-          key="sidepanel"
-          layoutId={FLOATING_LAYOUT_ID}
-          initial={disableInitialAnimation ? { opacity: 1 } : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{
-            opacity: { duration: disableInitialAnimation ? 0 : 0.15 },
-            layout: {
-              type: "spring",
-              stiffness: 400,
-              damping: 35
-            }
-          }}
-          className={compact 
-            ? "m-4 h-[calc(100%-2rem)] w-[calc(100%-2rem)] border rounded-3xl flex flex-col z-30"
-            : "fixed top-2 right-2 bottom-4 border rounded-3xl flex flex-col z-30 w-[40vw] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[645px]"
-          }
-          style={{
-            overflow: 'hidden',
-          }}
-        >
-          <div className="flex-1 flex flex-col overflow-hidden bg-card">
+    <motion.div
+      key="sidepanel-resizable"
+      initial={disableInitialAnimation ? { opacity: 1 } : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{
+        opacity: { 
+          duration: disableInitialAnimation ? 0 : 0.2,
+          ease: [0.4, 0, 0.2, 1]
+        }
+      }}
+      className="h-full w-full flex flex-col border rounded-3xl bg-card overflow-hidden"
+    >
+          <div className="flex-1 flex flex-col overflow-hidden">
             {renderContent()}
           </div>
           {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
-            <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 px-4 py-2.5">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={navigateToPrevious}
-                    disabled={displayIndex <= 0}
-                    className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium tabular-nums px-1 min-w-[44px] text-center">
-                    {displayIndex + 1}/{displayTotalCalls}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={navigateToNext}
-                    disabled={safeInternalIndex >= latestIndex}
-                    className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                <div className="flex-1 relative">
-                  <Slider
-                    min={0}
-                    max={Math.max(0, totalCalls - 1)}
-                    step={1}
-                    value={[safeInternalIndex]}
-                    onValueChange={handleSliderChange}
-                    className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-zinc-200 dark:[&>span:first-child]:bg-zinc-800 [&>span:first-child>span]:bg-zinc-500 dark:[&>span:first-child>span]:bg-zinc-400 [&>span:first-child>span]:h-1.5"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {renderStatusButton()}
-                </div>
-              </div>
-            </div>
+            <NavigationControls
+              displayIndex={displayIndex}
+              displayTotalCalls={displayTotalCalls}
+              safeInternalIndex={safeInternalIndex}
+              latestIndex={latestIndex}
+              isLiveMode={isLiveMode}
+              agentStatus={agentStatus}
+              onPrevious={navigateToPrevious}
+              onNext={navigateToNext}
+              onSliderChange={handleSliderChange}
+              onJumpToLive={jumpToLive}
+              onJumpToLatest={jumpToLatest}
+              isMobile={false}
+            />
           )}
         </motion.div>
-      )}
-    </AnimatePresence>
   );
 }

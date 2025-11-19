@@ -390,8 +390,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       return () => window.removeEventListener('resize', adjustHeight);
     }, [value]);
 
-
-
     useEffect(() => {
       if (autoFocus && textareaRef.current) {
         textareaRef.current.focus();
@@ -857,6 +855,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       </div>
     ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, planModalOpen, setPlanSelectionModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon, buttonLoaderVariant]);
 
+    const isSnackVisible = showToolPreview || !!showSnackbar;
+
     return (
       <div className="mx-auto w-full max-w-4xl relative">
         <div className="relative">
@@ -870,7 +870,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             subscriptionData={subscriptionData}
             onCloseUsage={() => { setShowSnackbar(false); setUserDismissedUsage(true); }}
             onOpenUpgrade={() => setPlanSelectionModalOpen(true)}
-            isVisible={showToolPreview || !!showSnackbar}
+            isVisible={isSnackVisible}
           />
 
           {/* Scroll to bottom button */}
@@ -885,7 +885,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             </button>
           )}
           <Card
-            className={`-mb-2 shadow-none w-full max-w-4xl mx-auto bg-transparent border-none overflow-visible ${enableAdvancedConfig && selectedAgentId ? '' : 'rounded-3xl'} relative z-10`}
+            className={`shadow-none w-full max-w-4xl mx-auto bg-transparent border-none overflow-visible py-0 pb-5 ${isSnackVisible ? 'mt-6' : ''} ${enableAdvancedConfig && selectedAgentId ? '' : 'rounded-3xl'} relative z-10`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={(e) => {
