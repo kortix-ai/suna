@@ -40,7 +40,7 @@ class MessageTool(Tool):
                     "follow_up_answers": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "(Optional) List of suggested follow-up answers or quick responses the user can click to respond quickly. Use when: 1) There are common or likely responses, 2) You want to guide the user toward specific options, 3) Quick responses would improve UX. Each answer should be a concise, actionable response (e.g., \"Yes, proceed\", \"No, cancel\", \"Option A\", \"Let me think about it\"). Maximum 4 suggestions."
+                        "description": "(Optional) List of suggested follow-up answers or responses the user can click to respond quickly. Use when: 1) There are common or likely responses, 2) You want to guide the user toward specific options, 3) Quick responses would improve UX. Each answer can be a short phrase or a more descriptive sentence that clearly communicates the user's intent. Examples: \"Yes, proceed with that approach\", \"No, let's cancel this and try a different method\", \"I'd prefer Option A because it aligns better with our goals\", \"Let me review the details and get back to you\". Longer, more descriptive answers are encouraged as they provide better context. Maximum 4 suggestions."
                     }
                 },
                 "required": ["text"]
@@ -164,7 +164,7 @@ class MessageTool(Tool):
                     "follow_up_prompts": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "(Optional) List of suggested follow-up prompts the user can click to continue working. Use when: 1) There are logical next steps or related tasks, 2) You want to guide the user toward useful follow-up actions, 3) Quick prompts would improve UX. Each prompt should be a concise, actionable request (e.g., \"Generate a detailed speaker script\", \"Create a summary document\", \"Explore this topic in more depth\"). Maximum 4 suggestions."
+                        "description": "(Optional) List of suggested follow-up prompts the user can click to continue working. Use when: 1) There are logical next steps or related tasks, 2) You want to guide the user toward useful follow-up actions, 3) Quick prompts would improve UX. Each prompt should be a clear, actionable request that describes what the user wants to accomplish. Longer, more descriptive prompts are encouraged as they provide better context and clarity. Examples: \"Generate a detailed speaker script for the presentation with talking points for each slide\", \"Create a comprehensive summary document that highlights the key findings and recommendations\", \"Explore this topic in more depth by researching recent developments and industry trends\", \"Refine the design to match our brand guidelines and improve the user experience\". Maximum 4 suggestions."
                     }
                 },
                 "required": []

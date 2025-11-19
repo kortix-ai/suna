@@ -21,9 +21,11 @@ import { ComposioUrlDetector } from './composio-url-detector';
 import { TaskCompletedFeedback } from '@/components/thread/tool-views/complete-tool/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared/prompt-examples';
 
-// Flags to control prompt/answer rendering
-const ENABLE_ASK_PROMPT_SAMPLES = true;
-const ENABLE_COMPLETE_PROMPT_SAMPLES = true;
+// Configuration for prompt/answer rendering
+const PROMPT_SAMPLES_CONFIG = {
+  enableAskSamples: true,
+  enableCompleteSamples: true,
+} as const;
 
 // Helper function to render attachments (keeping original implementation for now)
 export function renderAttachments(attachments: string[], fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void, sandboxId?: string, project?: Project) {
@@ -104,7 +106,8 @@ export function renderMarkdownContent(
     project?: Project,
     isLatestMessage?: boolean,
     t?: (key: string) => string,
-    threadId?: string
+    threadId?: string,
+    onPromptFill?: (message: string) => void
 ) {
     if (isNewXmlFormat(content)) {
         const contentParts: React.ReactNode[] = [];
@@ -172,12 +175,16 @@ export function renderMarkdownContent(
                                 </div>
                             )}
                             {/* Follow-up Answers */}
-                            {isLatestMessage && ENABLE_ASK_PROMPT_SAMPLES && followUpAnswersArray.length > 0 && (
+                            {isLatestMessage && PROMPT_SAMPLES_CONFIG.enableAskSamples && followUpAnswersArray.length > 0 && (
                                 <PromptExamples
                                     prompts={followUpAnswersArray.slice(0, 4).map(answer => ({ text: answer }))}
                                     onPromptClick={(answer) => {
-                                        // TODO: Handle follow-up answer click - could trigger a response
-                                        console.log('Follow-up answer clicked:', answer);
+                                        if (onPromptFill) {
+                                            console.log('Filling ChatInput with follow-up answer from ask tool:', answer);
+                                            onPromptFill(answer);
+                                        } else {
+                                            console.log('Follow-up answer clicked (no fill handler):', answer);
+                                        }
                                     }}
                                     variant="text"
                                     showTitle={true}
@@ -220,10 +227,14 @@ export function renderMarkdownContent(
                             {renderAttachments(attachmentArray, fileViewerHandler, sandboxId, project)}
                             <TaskCompletedFeedback
                                 taskSummary={completeText}
-                                followUpPrompts={isLatestMessage && ENABLE_COMPLETE_PROMPT_SAMPLES && followUpPromptsArray.length > 0 ? followUpPromptsArray : undefined}
+                                followUpPrompts={isLatestMessage && PROMPT_SAMPLES_CONFIG.enableCompleteSamples && followUpPromptsArray.length > 0 ? followUpPromptsArray : undefined}
                                 onFollowUpClick={(prompt) => {
-                                    // TODO: Handle follow-up click - could trigger a new message
-                                    console.log('Follow-up clicked:', prompt);
+                                    if (onPromptFill) {
+                                        console.log('Filling ChatInput with follow-up prompt from complete tool:', prompt);
+                                        onPromptFill(prompt);
+                                    } else {
+                                        console.log('Follow-up clicked (no fill handler):', prompt);
+                                    }
                                 }}
                                 samplePromptsTitle={t ? t('thread.samplePrompts') : 'Sample prompts'}
                                 threadId={threadId}
@@ -409,6 +420,7 @@ export interface ThreadContentProps {
     threadMetadata?: any; // Add thread metadata prop
     scrollContainerRef?: React.RefObject<HTMLDivElement>; // Add scroll container ref prop
     threadId?: string; // Add threadId prop
+    onPromptFill?: (message: string) => void; // Handler for filling ChatInput with prompt text from samples
 }
 
 export const ThreadContent: React.FC<ThreadContentProps> = ({
@@ -433,6 +445,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     threadMetadata,
     scrollContainerRef,
     threadId,
+    onPromptFill,
 }) => {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
@@ -445,8 +458,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     const { preloadFiles } = useFilePreloader();
 
     const containerClassName = isPreviewMode
-        ? "flex-1 overflow-y-auto scrollbar-thin scrollbar-track-secondary/0 scrollbar-thumb-primary/10 scrollbar-thumb-rounded-full hover:scrollbar-thumb-primary/10 px-4 py-4 pb-0"
-        : "flex-1 overflow-y-auto scrollbar-thin scrollbar-track-secondary/0 scrollbar-thumb-primary/10 scrollbar-thumb-rounded-full hover:scrollbar-thumb-primary/10 px-4 py-4 pb-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60";
+        ? "flex-1 overflow-y-auto scrollbar-hide px-4 py-4 pb-0"
+        : "flex-1 overflow-y-auto scrollbar-hide px-4 py-4 pb-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60";
 
     // In playback mode, we use visibleMessages instead of messages
     const displayMessages = readOnly && visibleMessages ? visibleMessages : messages;
@@ -845,7 +858,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                             project,
                                                                             isLatestMessage,
                                                                             t,
-                                                                            threadId
+                                                                            threadId,
+                                                                            onPromptFill
                                                                         );
 
                                                                         elements.push(
@@ -1047,9 +1061,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                     return null;
                                 });
                             })()}
-                            {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent &&
+                            {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
                                 !readOnly &&
-                                (messages.length === 0 || messages[messages.length - 1].type === 'user')) && (
+                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting')) && (
                                     <div ref={latestMessageRef} className='w-full h-22 rounded'>
                                         <div className="flex flex-col gap-2">
                                             {/* Logo positioned above the loader */}

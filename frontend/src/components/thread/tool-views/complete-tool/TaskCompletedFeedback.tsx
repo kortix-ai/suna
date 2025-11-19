@@ -129,7 +129,7 @@ export function TaskCompletedFeedback({
           </div>
           <div className="flex items-center gap-3">
             {!submittedFeedback && (
-              <span className="text-sm text-muted-foreground">How was this result?</span>
+              <span className="text-sm text-muted-foreground">Rate this result</span>
             )}
           <div className="flex items-center gap-0.5">
             {[1, 2, 3, 4, 5].map((value) => {
@@ -196,7 +196,7 @@ export function TaskCompletedFeedback({
       <Dialog open={showRatingModal} onOpenChange={setShowRatingModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>How was this result?</DialogTitle>
+            <DialogTitle>Rate this result</DialogTitle>
             <DialogDescription>
               Your feedback helps us improve
             </DialogDescription>

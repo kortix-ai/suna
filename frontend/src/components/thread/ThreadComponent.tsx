@@ -80,6 +80,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const [filePathList, setFilePathList] = useState<string[] | undefined>(
     undefined,
   );
+  const [chatInputValue, setChatInputValue] = useState('');
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
     useState(false);
   // Use Zustand store for agent selection persistence - skip in shared mode
@@ -517,6 +518,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
       setIsSending(true);
 
+      // Clear the chat input value
+      setChatInputValue('');
+
       // Store the message to add optimistically when agent starts running
       pendingMessageRef.current = message;
 
@@ -602,6 +606,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       setAgentRunId,
       isShared,
       selectedAgentId,
+      setChatInputValue,
     ],
   );
 
@@ -1024,6 +1029,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 agentAvatar={undefined}
                 scrollContainerRef={scrollContainerRef}
                 isPreviewMode={true}
+                onPromptFill={!isShared ? setChatInputValue : undefined}
+                threadId={threadId}
               />
             </div>
           </div>
@@ -1061,6 +1068,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 showScrollToBottomIndicator={showScrollToBottom}
                 onScrollToBottom={scrollToBottom}
                 threadId={threadId}
+                value={chatInputValue}
+                onChange={setChatInputValue}
               />
             </div>
           )}
@@ -1133,6 +1142,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         showScrollToBottomIndicator={showScrollToBottom}
         onScrollToBottom={scrollToBottom}
         bgColor="bg-card"
+        value={chatInputValue}
+        onChange={setChatInputValue}
       />
     </div>
   ) : undefined;
@@ -1194,6 +1205,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           agentAvatar={undefined}
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}
+          onPromptFill={!isShared ? setChatInputValue : undefined}
         />
 
         {isShared && (
