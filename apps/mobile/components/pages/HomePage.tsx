@@ -145,7 +145,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             />
           </View>
         </Pressable>
-        {/* <ChatDrawers
+        <ChatDrawers
           isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
           isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
@@ -153,7 +153,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           onTakePicture={chat.handleTakePicture}
           onChooseImages={chat.handleChooseImages}
           onChooseFiles={chat.handleChooseFiles}
-        /> */}
+        />
         <PlanSelectionModal
           open={isPricingModalOpen}
           onOpenChange={handleClosePricingModal}

@@ -4,7 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { 
+import {
   AlertCircle,
   BarChart3,
   Calendar,
@@ -46,7 +46,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { data: subscriptionData } = useSubscription();
-  
+
   const [dateRange] = React.useState({
     from: new Date(new Date().setDate(new Date().getDate() - 29)),
     to: new Date(),
@@ -86,7 +86,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
 
   const totalConversations = threadRecords.length;
   const averagePerConversation = totalConversations > 0 && summary?.total_credits_used
-    ? summary.total_credits_used / totalConversations 
+    ? summary.total_credits_used / totalConversations
     : 0;
 
   if (isLoading) {
@@ -161,7 +161,7 @@ export function UsageContent({ onThreadPress, onUpgradePress, onTopUpPress }: Us
         )}
       </View>
 
-      <UsageGraph 
+      <UsageGraph
         threadRecords={threadRecords}
         isDark={isDark}
         t={t}
@@ -296,7 +296,7 @@ function UsageGraph({ threadRecords, isDark, t }: UsageGraphProps) {
     if (!threadRecords || threadRecords.length === 0) {
       return Array(20).fill(0).map((_, i) => Math.random() * 30 + 20);
     }
-    
+
     const last20 = threadRecords.slice(0, 20).reverse();
     const maxCredits = Math.max(...last20.map(r => r.credits_used), 1);
     return last20.map(r => (r.credits_used / maxCredits) * 80 + 20);
@@ -304,11 +304,23 @@ function UsageGraph({ threadRecords, isDark, t }: UsageGraphProps) {
 
   const width = 280;
   const height = 80;
-  
+
   const points = graphData.map((value, index) => {
-    const x = (index / (graphData.length - 1)) * width;
-    const y = height - (value / 100) * height;
-    return { x, y };
+    // Validate and clamp values to prevent NaN
+    const safeValue = typeof value === 'number' && !isNaN(value) && isFinite(value)
+      ? Math.max(0, Math.min(100, value))
+      : 0;
+    const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0;
+    const safeLength = graphData.length > 1 ? graphData.length - 1 : 1;
+
+    const x = (safeIndex / safeLength) * width;
+    const y = height - (safeValue / 100) * height;
+
+    // Ensure x and y are valid numbers
+    return {
+      x: isFinite(x) ? x : 0,
+      y: isFinite(y) ? y : height
+    };
   });
 
   const pathData = points.map((point, index) => {
@@ -317,7 +329,10 @@ function UsageGraph({ threadRecords, isDark, t }: UsageGraphProps) {
     }
     const prevPoint = points[index - 1];
     const controlX = (prevPoint.x + point.x) / 2;
-    return `Q ${controlX} ${prevPoint.y}, ${point.x} ${point.y}`;
+    // Validate all values before using in path
+    const safeControlX = isFinite(controlX) ? controlX : point.x;
+    const safePrevY = isFinite(prevPoint.y) ? prevPoint.y : point.y;
+    return `Q ${safeControlX} ${safePrevY}, ${point.x} ${point.y}`;
   }).join(' ');
 
   const strokeColor = isDark ? '#ffffff' : '#000000';

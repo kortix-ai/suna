@@ -24,6 +24,18 @@ export function useAgentManager() {
       name: getCurrentAgent()?.name 
     });
     console.log('⏰ [useAgentManager] Timestamp:', new Date().toISOString());
+    console.log('👁️ [useAgentManager] Current state:', isDrawerVisible);
+    
+    // If already visible, force a re-render by toggling
+    if (isDrawerVisible) {
+      console.log('⚡ [useAgentManager] Drawer already visible - force toggling');
+      setIsDrawerVisible(false);
+      setTimeout(() => {
+        setIsDrawerVisible(true);
+      }, 50);
+      return;
+    }
+    
     console.log('👁️ [useAgentManager] Setting isDrawerVisible to TRUE');
     
     // Dismiss keyboard first for better UX
@@ -36,6 +48,7 @@ export function useAgentManager() {
   };
 
   const closeDrawer = () => {
+    console.log('🔽 [useAgentManager] Closing drawer');
     setIsDrawerVisible(false);
   };
 

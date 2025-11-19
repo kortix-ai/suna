@@ -19,11 +19,11 @@ interface AudioWaveformProps {
  * Each bar represents one time sample from the audio buffer.
  * Scrolls left as new audio comes in (oldest on left, newest on right).
  */
-export function AudioWaveform({ 
+export function AudioWaveform({
   isRecording = false,
   audioLevels = []
 }: AudioWaveformProps) {
-  
+
   if (!isRecording) {
     return null;
   }
@@ -31,7 +31,7 @@ export function AudioWaveform({
   return (
     <View className="flex-row items-center justify-center h-12 w-full gap-[2px] px-4">
       {audioLevels.map((level, index) => (
-        <WaveformBar 
+        <WaveformBar
           key={index}
           audioLevel={level}
           isRecording={isRecording}
@@ -49,22 +49,27 @@ interface WaveformBarProps {
 function WaveformBar({ audioLevel, isRecording }: WaveformBarProps) {
   const height = useSharedValue(3);
   const opacity = useSharedValue(0.3);
-  
+
   React.useEffect(() => {
     if (isRecording) {
+      // Validate audioLevel to prevent NaN
+      const safeAudioLevel = typeof audioLevel === 'number' && !isNaN(audioLevel) && isFinite(audioLevel)
+        ? Math.max(0, Math.min(1, audioLevel)) // Clamp between 0-1
+        : 0;
+
       // Calculate height directly from audio level
       const minHeight = 2; // Lower base for less sensitive look
       const maxHeight = 44; // Slightly lower max
-      const targetHeight = minHeight + (maxHeight - minHeight) * audioLevel;
-      
+      const targetHeight = minHeight + (maxHeight - minHeight) * safeAudioLevel;
+
       // FAST timing animation for instant response (not spring)
       height.value = withTiming(targetHeight, {
         duration: 40, // Even faster for instant feedback
         easing: Easing.out(Easing.ease),
       });
-      
+
       // Opacity follows volume with more subtle range
-      opacity.value = withTiming(0.5 + audioLevel * 0.5, {
+      opacity.value = withTiming(0.5 + safeAudioLevel * 0.5, {
         duration: 40,
         easing: Easing.out(Easing.ease),
       });

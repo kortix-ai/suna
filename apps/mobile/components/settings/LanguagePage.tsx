@@ -1,9 +1,9 @@
 import * as React from 'react';
 import { Pressable, View, ScrollView } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
@@ -32,32 +32,32 @@ interface LanguagePageProps {
 
 export function LanguagePage({ visible, onClose }: LanguagePageProps) {
   const { currentLanguage, availableLanguages, setLanguage, t } = useLanguage();
-  
+
   const handleLanguageSelect = async (languageCode: string) => {
     console.log('🌍 Language selected:', languageCode);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     await setLanguage(languageCode);
   };
-  
+
   const handleClose = React.useCallback(() => {
     console.log('🎯 Language page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
-  
+
   if (!visible) return null;
-  
+
   return (
     <View className="absolute inset-0 z-50">
       <Pressable
         onPress={handleClose}
         className="absolute inset-0 bg-black/50"
       />
-      
+
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1" 
+        <ScrollView
+          className="flex-1"
           showsVerticalScrollIndicator={false}
           removeClippedSubviews={true}
         >
@@ -65,7 +65,7 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
             title={t('language.title')}
             onClose={handleClose}
           />
-          
+
           <View className="px-6 pb-8">
             <View className="mb-3">
               <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
@@ -84,7 +84,7 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
               ))}
             </View>
           </View>
-          
+
           <View className="h-20" />
         </ScrollView>
       </View>
@@ -105,19 +105,19 @@ interface LanguageItemProps {
 function LanguageItem({ language, isSelected, onPress }: LanguageItemProps) {
   const scale = useSharedValue(1);
   const flag = LANGUAGE_FLAGS[language.code] || '🌐';
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  
+
   const handlePressIn = () => {
     scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
   };
-  
+
   const handlePressOut = () => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
-  
+
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -128,9 +128,7 @@ function LanguageItem({ language, isSelected, onPress }: LanguageItemProps) {
     >
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-3 flex-1">
-          <View className={`h-10 w-10 rounded-full items-center justify-center ${
-            isSelected ? 'bg-primary/10' : ''
-          }`}>
+          <View className={`h-10 w-10 rounded-full items-center justify-center`}>
             <Text className="text-2xl">{flag}</Text>
           </View>
           <View className="flex-1">
@@ -142,14 +140,14 @@ function LanguageItem({ language, isSelected, onPress }: LanguageItemProps) {
             </Text>
           </View>
         </View>
-        
+
         {isSelected && (
           <View className="ml-2 h-5 w-5 items-center justify-center rounded-full bg-primary">
-            <Icon 
-              as={Check} 
-              size={12} 
-              className="text-primary-foreground" 
-              strokeWidth={3} 
+            <Icon
+              as={Check}
+              size={12}
+              className="text-primary-foreground"
+              strokeWidth={3}
             />
           </View>
         )}

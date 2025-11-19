@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useAdvancedFeatures } from '@/hooks';
 import { useAuthContext } from '@/contexts';
+import { useSubscription, getPlanName } from '@/lib/billing';
 import type { Conversation, UserProfile, ConversationSection } from '@/components/menu/types';
 
 interface UseSideMenuProps {
@@ -14,11 +15,23 @@ export function useSideMenu({ onNewChat }: UseSideMenuProps = {}) {
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const { user } = useAuthContext();
   
+  // Fetch subscription data to get plan name
+  const { data: subscriptionData } = useSubscription({
+    enabled: !!user,
+  });
+
+  // Get plan name from subscription data
+  const planName = React.useMemo(() => {
+    if (!subscriptionData) return undefined;
+    return getPlanName(subscriptionData, false);
+  }, [subscriptionData]);
+  
   const profile: UserProfile = React.useMemo(() => ({
     id: user?.id || 'guest',
     name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Guest',
     email: user?.email || '',
-  }), [user]); 
+    planName,
+  }), [user, planName]); 
   
   const openMenu = React.useCallback(() => {
     console.log('🎯 Opening side menu');

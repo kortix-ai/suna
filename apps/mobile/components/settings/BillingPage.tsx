@@ -10,9 +10,9 @@ import { View, Pressable, Linking, ScrollView, ActivityIndicator, useColorScheme
 import Svg, { Path, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { 
-  CreditCard, 
-  Clock, 
+import {
+  CreditCard,
+  Clock,
   Infinity,
   ShoppingCart,
   Shield,
@@ -28,9 +28,9 @@ import { SettingsHeader } from './SettingsHeader';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { PlanSelectionModal } from '@/components/billing/PlanSelectionModal';
 import { CreditsPurchasePage } from './CreditsPurchasePage';
-import { 
-  useSubscription, 
-  useCreditBalance, 
+import {
+  useSubscription,
+  useCreditBalance,
   useSubscriptionCommitment,
   useScheduledChanges,
   useCreatePortalSession,
@@ -50,10 +50,10 @@ import type { TierType } from '@/components/menu/types';
 
 // Format date
 function formatDate(dateString: string | number): string {
-  const date = typeof dateString === 'number' 
+  const date = typeof dateString === 'number'
     ? new Date(dateString * 1000)
     : new Date(dateString);
-  
+
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -91,7 +91,7 @@ function getPlanName(subscriptionData: any): string {
   }
 
   const tierKey = subscriptionData?.tier_key || subscriptionData?.tier?.name || subscriptionData?.plan_name;
-  
+
   // Map tier keys to plan names
   const tierMap: Record<string, string> = {
     'tier_2_20': 'Plus',
@@ -116,7 +116,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
   const { user } = useAuthContext();
   const queryClient = useQueryClient();
   const isAuthenticated = !!user;
-  
+
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [showCreditsModal, setShowCreditsModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -161,7 +161,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
 
   // Memoize expensive calculations - only recalculate when data changes
   const planName = React.useMemo(() => getPlanName(subscriptionData), [subscriptionData]);
-  
+
   const tierType = React.useMemo((): TierType => {
     const name = planName.toLowerCase();
     if (name === 'plus') return 'Plus';
@@ -179,18 +179,18 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
     return diffDays > 0 ? diffDays : null;
   }, [creditBalance?.next_credit_grant]);
 
-  const expiringCredits = React.useMemo(() => 
-    creditBalance?.expiring_credits || 0, 
+  const expiringCredits = React.useMemo(() =>
+    creditBalance?.expiring_credits || 0,
     [creditBalance?.expiring_credits]
   );
-  
-  const nonExpiringCredits = React.useMemo(() => 
-    creditBalance?.non_expiring_credits || 0, 
+
+  const nonExpiringCredits = React.useMemo(() =>
+    creditBalance?.non_expiring_credits || 0,
     [creditBalance?.non_expiring_credits]
   );
-  
-  const totalCredits = React.useMemo(() => 
-    creditBalance?.balance || 0, 
+
+  const totalCredits = React.useMemo(() =>
+    creditBalance?.balance || 0,
     [creditBalance?.balance]
   );
 
@@ -206,12 +206,12 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
     return 'N/A';
   }, [subscriptionData?.subscription]);
 
-  const isSubscribed = React.useMemo(() => 
+  const isSubscribed = React.useMemo(() =>
     subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing',
     [subscriptionData?.subscription?.status]
   );
 
-  const isFreeTier = React.useMemo(() => 
+  const isFreeTier = React.useMemo(() =>
     subscriptionData?.tier?.name === 'free',
     [subscriptionData?.tier?.name]
   );
@@ -221,7 +221,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
     return !!(sub?.cancel_at_period_end || sub?.cancel_at || sub?.canceled_at);
   }, [subscriptionData?.subscription]);
 
-  const canPurchaseCredits = React.useMemo(() => 
+  const canPurchaseCredits = React.useMemo(() =>
     subscriptionData?.credits?.can_purchase_credits || false,
     [subscriptionData?.credits?.can_purchase_credits]
   );
@@ -261,17 +261,17 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
 
   const handleCancel = React.useCallback(() => {
     setShowCancelDialog(false);
-    
+
     // Check if user is on RevenueCat
     const provider = subscriptionData?.provider || 'stripe';
-    
+
     if (provider === 'revenuecat') {
       // RevenueCat users must cancel in-app
       const isIOS = require('react-native').Platform.OS === 'ios';
-      const message = isIOS 
+      const message = isIOS
         ? 'To cancel your subscription, please go to:\n\nSettings → [Your Name] → Subscriptions → Kortix'
         : 'To cancel your subscription, please go to:\n\nPlay Store → Subscriptions → Kortix';
-      
+
       require('react-native').Alert.alert(
         'Manage Subscription',
         message,
@@ -281,7 +281,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
       );
       return;
     }
-    
+
     // Stripe cancellation
     cancelSubscriptionMutation.mutate(undefined);
   }, [cancelSubscriptionMutation, subscriptionData]);
@@ -333,8 +333,8 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
         className="absolute inset-0 bg-black/50"
       />
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1" 
+        <ScrollView
+          className="flex-1"
           showsVerticalScrollIndicator={false}
           removeClippedSubviews={true}
         >
@@ -409,7 +409,7 @@ export function BillingPage({ visible, onClose, onOpenCredits, onOpenUsage, aler
                     {t('billing.monthly')}
                   </Text>
                   <Text className="text-[10px] font-roobert text-primary">
-                    {daysUntilRefresh !== null 
+                    {daysUntilRefresh !== null
                       ? t('billing.renewsInDays', { days: daysUntilRefresh })
                       : t('billing.noRenewal')
                     }
@@ -643,7 +643,7 @@ function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
   const { t } = useLanguage();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  
+
   const [dateRange] = React.useState({
     from: new Date(new Date().setDate(new Date().getDate() - 29)),
     to: new Date(),
@@ -678,9 +678,21 @@ function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
   const width = 280;
   const height = 80;
   const points = graphData.map((value, index) => {
-    const x = (index / (graphData.length - 1)) * width;
-    const y = height - (value / 100) * height;
-    return { x, y };
+    // Validate and clamp values to prevent NaN
+    const safeValue = typeof value === 'number' && !isNaN(value) && isFinite(value)
+      ? Math.max(0, Math.min(100, value))
+      : 0;
+    const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0;
+    const safeLength = graphData.length > 1 ? graphData.length - 1 : 1;
+
+    const x = (safeIndex / safeLength) * width;
+    const y = height - (safeValue / 100) * height;
+
+    // Ensure x and y are valid numbers
+    return {
+      x: isFinite(x) ? x : 0,
+      y: isFinite(y) ? y : height
+    };
   });
 
   const pathData = points.map((point, index) => {
@@ -689,14 +701,17 @@ function UsageSection({ visible, onOpenFullUsage }: UsageSectionProps) {
     }
     const prevPoint = points[index - 1];
     const controlX = (prevPoint.x + point.x) / 2;
-    return `Q ${controlX} ${prevPoint.y}, ${point.x} ${point.y}`;
+    // Validate all values before using in path
+    const safeControlX = isFinite(controlX) ? controlX : point.x;
+    const safePrevY = isFinite(prevPoint.y) ? prevPoint.y : point.y;
+    return `Q ${safeControlX} ${safePrevY}, ${point.x} ${point.y}`;
   }).join(' ');
 
   const strokeColor = isDark ? '#ffffff' : '#000000';
 
   return (
     <View className="mb-6">
-      <Pressable 
+      <Pressable
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           onOpenFullUsage();
