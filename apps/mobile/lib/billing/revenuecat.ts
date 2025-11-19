@@ -56,9 +56,11 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
   if (isConfigured) {
     console.log('🔄 RevenueCat already configured, updating user...');
     try {
-      await Purchases.logIn(userId);
+      const { customerInfo } = await Purchases.logIn(userId);
       if (email) {
+        console.log('📧 Setting email for existing RevenueCat customer:', email);
         await Purchases.setEmail(email);
+        console.log('✅ Email set successfully:', email);
       }
       return;
     } catch (error) {
@@ -75,6 +77,8 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
 
   try {
     console.log('🚀 Initializing RevenueCat...');
+    console.log('👤 User ID:', userId);
+    console.log('📧 Email:', email || 'No email provided');
     
     if (__DEV__) {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
@@ -82,9 +86,18 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
 
     Purchases.configure({ apiKey, appUserID: userId });
     
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     if (email) {
       console.log('📧 Setting email for RevenueCat customer:', email);
-      await Purchases.setEmail(email);
+      try {
+        await Purchases.setEmail(email);
+        console.log('✅ Email set successfully:', email);
+      } catch (emailError) {
+        console.error('❌ Error setting email:', emailError);
+      }
+    } else {
+      console.warn('⚠️ No email provided to RevenueCat');
     }
     
     Purchases.addCustomerInfoUpdateListener((customerInfo) => {
@@ -117,13 +130,24 @@ export async function getOfferings(): Promise<PurchasesOffering | null> {
   }
 }
 
-export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerInfo> {
+export async function purchasePackage(pkg: PurchasesPackage, email?: string): Promise<CustomerInfo> {
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
+    
+    if (email) {
+      console.log('📧 Ensuring email is set before purchase:', email);
+      try {
+        await Purchases.setEmail(email);
+        console.log('✅ Email confirmed before purchase');
+      } catch (emailError) {
+        console.warn('⚠️ Could not set email before purchase:', emailError);
+      }
+    }
     
     const { customerInfo } = await Purchases.purchasePackage(pkg);
     
     console.log('✅ Purchase successful');
+    console.log('📊 Customer Info - Original App User ID:', customerInfo.originalAppUserId);
     
     await notifyBackendOfPurchase(customerInfo);
     
@@ -138,13 +162,24 @@ export async function purchasePackage(pkg: PurchasesPackage): Promise<CustomerIn
   }
 }
 
-export async function restorePurchases(): Promise<CustomerInfo> {
+export async function restorePurchases(email?: string): Promise<CustomerInfo> {
   try {
     console.log('🔄 Restoring purchases...');
+    if (email) {
+      console.log('📧 Setting email before restore:', email);
+      try {
+        await Purchases.setEmail(email);
+        console.log('✅ Email set successfully');
+      } catch (emailError) {
+        console.warn('⚠️ Could not set email before restore:', emailError);
+      }
+    }
     
     const customerInfo = await Purchases.restorePurchases();
     
     console.log('✅ Purchases restored');
+    console.log('📊 Active subscriptions:', customerInfo.activeSubscriptions);
+    console.log('📊 Active entitlements:', Object.keys(customerInfo.entitlements.active));
     
     await notifyBackendOfPurchase(customerInfo);
     

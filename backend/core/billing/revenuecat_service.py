@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import hmac
 import hashlib
+import httpx
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.config import config
@@ -64,6 +65,7 @@ class RevenueCatService:
             'EXPIRATION': self._handle_expiration,
             'BILLING_ISSUE': self._handle_billing_issue,
             'PRODUCT_CHANGE': self._handle_product_change,
+            'TRANSFER': self._handle_transfer,
         }
         
         handler = event_handlers.get(event_type)
@@ -154,8 +156,27 @@ class RevenueCatService:
         new_product_id = event.get('new_product_id')
         old_product_id = event.get('product_id')
         
+        logger.info(
+            f"[REVENUECAT PRODUCT_CHANGE] Event details:\n"
+            f"  - app_user_id: {app_user_id}\n"
+            f"  - old_product_id: {old_product_id}\n"
+            f"  - new_product_id: {new_product_id}\n"
+            f"  - Full event: {event}"
+        )
+        
+        if not new_product_id:
+            logger.warning(
+                f"[REVENUECAT PRODUCT_CHANGE] No new_product_id - this might be a "
+                f"cancellation/reactivation, not an actual product change. Skipping."
+            )
+            return
+        
         old_tier, old_tier_info = self._get_tier_info(old_product_id) if old_product_id else (None, None)
         new_tier, new_tier_info = self._get_tier_info(new_product_id)
+        
+        if not new_tier_info:
+            logger.error(f"[REVENUECAT PRODUCT_CHANGE] Unknown new product: {new_product_id}, skipping")
+            return
         
         is_upgrade = False
         is_downgrade = False
@@ -166,10 +187,13 @@ class RevenueCatService:
         
         change_type = "upgrade" if is_upgrade else "downgrade" if is_downgrade else "change"
         
+        old_credits = old_tier_info.monthly_credits if old_tier_info else Decimal('0')
+        new_credits = new_tier_info.monthly_credits if new_tier_info else Decimal('0')
+        
         logger.info(
             f"[REVENUECAT PRODUCT_CHANGE] User {app_user_id} {change_type}: "
-            f"{old_product_id} → {new_product_id} "
-            f"(${old_tier_info.monthly_credits if old_tier_info else 0} → ${new_tier_info.monthly_credits if new_tier_info else 0})"
+            f"{old_product_id or 'none'} → {new_product_id} "
+            f"(${old_credits} → ${new_credits})"
         )
         
         await self._schedule_plan_change_for_period_end(
@@ -195,6 +219,113 @@ class RevenueCatService:
         event = webhook_data.get('event', {})
         app_user_id = event.get('app_user_id')
         logger.warning(f"[REVENUECAT BILLING_ISSUE] Billing issue for user {app_user_id}")
+    
+    async def _handle_transfer(self, webhook_data: Dict) -> None:
+        event = webhook_data.get('event', {})
+        
+        logger.info(
+            f"[REVENUECAT TRANSFER] Full webhook data: {webhook_data}"
+        )
+        
+        transferred_to = event.get('transferred_to', [])
+        transferred_from = event.get('transferred_from', [])
+        product_id = event.get('product_id')
+        price = event.get('price', 0)
+        
+        new_app_user_id = transferred_to[0] if transferred_to else None
+        
+        logger.info(
+            f"[REVENUECAT TRANSFER] Parsed fields:\n"
+            f"  - transferred_to: {transferred_to}\n"
+            f"  - new_app_user_id: {new_app_user_id}\n"
+            f"  - transferred_from: {transferred_from}\n"
+            f"  - product_id: {product_id}\n"
+            f"  - price: {price}"
+        )
+        
+        if not new_app_user_id:
+            logger.error(f"[REVENUECAT TRANSFER] Missing new_app_user_id (transferred_to array is empty), skipping")
+            return
+            
+        if not product_id:
+            logger.warning(f"[REVENUECAT TRANSFER] Missing product_id, will try to infer from accounts")
+            db = DBConnection()
+            client = await db.client
+            
+            if transferred_from:
+                old_app_user_id = transferred_from[0]
+                old_account = await self._get_credit_account(client, old_app_user_id)
+                if old_account and old_account.get('revenuecat_product_id'):
+                    product_id = old_account['revenuecat_product_id']
+                    logger.info(f"[REVENUECAT TRANSFER] Inferred product_id from old account: {product_id}")
+            
+            if not product_id:
+                logger.info(f"[REVENUECAT TRANSFER] Trying new account (may need retry for sync to complete)")
+                
+                import asyncio
+                for attempt in range(3):
+                    new_account = await self._get_credit_account(client, new_app_user_id)
+                    if new_account and new_account.get('revenuecat_product_id'):
+                        product_id = new_account['revenuecat_product_id']
+                        logger.info(f"[REVENUECAT TRANSFER] Inferred product_id from new account (attempt {attempt + 1}): {product_id}")
+                        break
+                    
+                    if attempt < 2:
+                        logger.info(f"[REVENUECAT TRANSFER] No product_id yet, waiting for sync... (attempt {attempt + 1}/3)")
+                        await asyncio.sleep(0.5)
+            
+            if not product_id:
+                logger.error(f"[REVENUECAT TRANSFER] Cannot determine product_id from either account after retries, skipping")
+                return
+        
+        logger.info(
+            f"[REVENUECAT TRANSFER] ========================================\n"
+            f"[REVENUECAT TRANSFER] Subscription transferred TO: {new_app_user_id}\n"
+            f"[REVENUECAT TRANSFER] FROM: {transferred_from}\n"
+            f"[REVENUECAT TRANSFER] Product: {product_id}\n"
+            f"[REVENUECAT TRANSFER] ========================================"
+        )
+        
+        db = DBConnection()
+        client = await db.client
+        
+        for old_app_user_id in transferred_from:
+            logger.info(f"[REVENUECAT TRANSFER] Removing subscription from old account: {old_app_user_id}")
+            
+            old_account = await self._get_credit_account(client, old_app_user_id)
+            if old_account and old_account.get('provider') == 'revenuecat':
+                logger.info(
+                    f"[REVENUECAT TRANSFER] Transitioning old account {old_app_user_id} to free tier "
+                    f"(subscription transferred to {new_app_user_id})"
+                )
+                
+                await self._transition_to_free_tier(old_app_user_id)
+                
+                logger.info(f"[REVENUECAT TRANSFER] ✅ Old account {old_app_user_id} transitioned to free tier")
+            else:
+                logger.info(f"[REVENUECAT TRANSFER] Old account {old_app_user_id} not found or not RevenueCat")
+        
+        logger.info(f"[REVENUECAT TRANSFER] Applying subscription to new account: {new_app_user_id}")
+        
+        if price == 0 or price is None:
+            logger.info(f"[REVENUECAT TRANSFER] Price is 0/None, inferring from product_id")
+            tier_name, tier_info = self._get_tier_info(product_id)
+            if tier_info:
+                price = float(tier_info.monthly_credits)
+                logger.info(f"[REVENUECAT TRANSFER] Inferred price: ${price}")
+        
+        await self._apply_subscription_change(
+            app_user_id=new_app_user_id,
+            product_id=product_id,
+            price=price,
+            event_type='TRANSFER',
+            webhook_data=webhook_data
+        )
+        
+        logger.info(
+            f"[REVENUECAT TRANSFER] ✅ Transfer complete: "
+            f"{transferred_from} → {new_app_user_id}"
+        )
     
     # ============================================================================
     # BUSINESS LOGIC - Core subscription operations
@@ -287,6 +418,34 @@ class RevenueCatService:
             await self._update_account_tier(
                 client, app_user_id, tier_name, subscription_id, product_id
             )
+            
+            final_check = await client.from_('credit_accounts').select(
+                'balance, tier, provider, expiring_credits'
+            ).eq('account_id', app_user_id).execute()
+            
+            if final_check.data:
+                final_balance = final_check.data[0].get('balance', 0)
+                final_tier = final_check.data[0].get('tier')
+                final_expiring = final_check.data[0].get('expiring_credits', 0)
+                
+                logger.info(
+                    f"[REVENUECAT] Final verification: balance=${final_balance}, "
+                    f"tier={final_tier}, expiring=${final_expiring}"
+                )
+                
+                if final_balance == 0 and credits_amount > 0:
+                    logger.error(
+                        f"[REVENUECAT] ❌ CREDITS WERE CLEARED! Re-granting ${credits_amount}..."
+                    )
+                    await credit_manager.add_credits(
+                        account_id=app_user_id,
+                        amount=credits_amount,
+                        is_expiring=True,
+                        description=f"RevenueCat subscription recovery: {tier_info.display_name} ({period_type})",
+                        type='tier_grant'
+                    )
+                    logger.info(f"[REVENUECAT] ✅ Credits re-granted successfully")
+            
             logger.info(f"[REVENUECAT] ✅ _apply_subscription_change COMPLETED for {app_user_id}")
         except Exception as e:
             logger.error(f"[REVENUECAT] ❌ Failed to update tier: {e}", exc_info=True)
@@ -629,6 +788,9 @@ class RevenueCatService:
             'tier': tier_name,
             'provider': 'revenuecat',
             'revenuecat_subscription_id': subscription_id,
+            'stripe_subscription_id': None,
+            'revenuecat_cancelled_at': None,
+            'revenuecat_cancel_at_period_end': None,
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
         
@@ -666,13 +828,25 @@ class RevenueCatService:
             ).eq('account_id', app_user_id).execute()
             
             if after_result.data:
-                logger.info(f"[REVENUECAT] Current state AFTER update: {after_result.data[0]}")
+                final_state = after_result.data[0]
+                logger.info(f"[REVENUECAT] Current state AFTER update: {final_state}")
                 
-                if after_result.data[0].get('tier') != tier_name:
+                if final_state.get('tier') != tier_name:
                     logger.error(
                         f"[REVENUECAT] ❌❌❌ TIER MISMATCH! "
-                        f"Expected: {tier_name}, Got: {after_result.data[0].get('tier')}"
+                        f"Expected: {tier_name}, Got: {final_state.get('tier')} - "
+                        f"This may be due to race condition with Stripe webhook"
                     )
+                    
+                    logger.info(f"[REVENUECAT] 🔄 Retrying tier update to fix race condition...")
+                    retry_update = await client.from_('credit_accounts').update({
+                        'tier': tier_name,
+                        'provider': 'revenuecat',
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('account_id', app_user_id).execute()
+                    
+                    if retry_update.data:
+                        logger.info(f"[REVENUECAT] ✅ Retry successful, tier is now: {retry_update.data[0].get('tier')}")
             
         except Exception as e:
             logger.error(f"[REVENUECAT] ❌ Exception during update: {e}", exc_info=True)
@@ -707,6 +881,9 @@ class RevenueCatService:
         return 'tier_2_20'
     
     def _get_period_type(self, product_id: str) -> str:
+        if not product_id:
+            return 'monthly'
+        
         product_id_lower = product_id.lower()
         
         if 'commitment' in product_id_lower:
@@ -754,11 +931,12 @@ class RevenueCatService:
                 'tier': tier_name,
                 'provider': 'revenuecat',
                 'revenuecat_customer_id': customer_info.get('original_app_user_id'),
+                'revenuecat_product_id': product_id,
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }).eq('account_id', account_id).execute()
             
-            logger.info(f"[REVENUECAT] Synced tier {tier_name} for {account_id}")
-            return {'status': 'synced', 'tier': tier_name}
+            logger.info(f"[REVENUECAT] Synced tier {tier_name} (product: {product_id}) for {account_id}")
+            return {'status': 'synced', 'tier': tier_name, 'product_id': product_id}
             
         except Exception as e:
             logger.error(f"[REVENUECAT] Error syncing customer info: {str(e)}")

@@ -18,7 +18,7 @@ import { useColorScheme } from 'nativewind';
 import { getOfferings, purchasePackage, type RevenueCatProduct } from '@/lib/billing/revenuecat';
 import type { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 import { useQueryClient } from '@tanstack/react-query';
-import { billingKeys, useSubscription, type BillingPeriod } from '@/lib/billing';
+import { billingKeys, useSubscription } from '@/lib/billing';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -44,15 +44,16 @@ export function RevenueCatPricingSection({
 
   const { data: subscriptionData, refetch: refetchSubscription } = useSubscription({ enabled: !!user });
 
-  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly');
   const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPackage, setSelectedPackage] = useState<PurchasesPackage | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const closeButtonScale = useSharedValue(1);
   const purchaseButtonScale = useSharedValue(1);
+  const restoreButtonScale = useSharedValue(1);
 
   const closeButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeButtonScale.value }],
@@ -60,6 +61,10 @@ export function RevenueCatPricingSection({
 
   const purchaseButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: purchaseButtonScale.value }],
+  }));
+
+  const restoreButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: restoreButtonScale.value }],
   }));
 
   useEffect(() => {
@@ -96,7 +101,7 @@ export function RevenueCatPricingSection({
       setError(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      await purchasePackage(selectedPackage);
+      await purchasePackage(selectedPackage, user?.email);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: billingKeys.all });
@@ -113,6 +118,36 @@ export function RevenueCatPricingSection({
       }
     } finally {
       setIsPurchasing(false);
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    if (isRestoring) return;
+
+    try {
+      setIsRestoring(true);
+      setError(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      console.log('🔄 Restoring purchases...');
+      const { restorePurchases } = await import('@/lib/billing/revenuecat');
+      const customerInfo = await restorePurchases(user?.email);
+
+      console.log('✅ Purchases restored:', customerInfo);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      queryClient.invalidateQueries({ queryKey: billingKeys.all });
+      
+      await refetchSubscription();
+      
+      onPurchaseComplete?.();
+      onClose?.();
+    } catch (err: any) {
+      console.error('❌ Restore error:', err);
+      setError(err.message || 'Failed to restore purchases');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setIsRestoring(false);
     }
   };
 
@@ -134,17 +169,9 @@ export function RevenueCatPricingSection({
     return 'Subscription';
   };
 
-  const matchesBillingPeriod = (pkg: PurchasesPackage, period: BillingPeriod): boolean => {
+  const isMonthlyPackage = (pkg: PurchasesPackage): boolean => {
     const identifier = pkg.identifier.toLowerCase();
-    
-    if (period === 'monthly') {
-      return identifier.includes('monthly');
-    } else if (period === 'yearly') {
-      return identifier.includes('yearly') && !identifier.includes('commitment');
-    } else if (period === 'yearly_commitment') {
-      return identifier.includes('commitment');
-    }
-    return false;
+    return identifier.includes('monthly');
   };
 
   const isPopularPackage = (pkg: PurchasesPackage): boolean => {
@@ -195,7 +222,7 @@ export function RevenueCatPricingSection({
     );
   }
 
-  const packages = offerings.availablePackages.filter(pkg => matchesBillingPeriod(pkg, billingPeriod));
+  const packages = offerings.availablePackages.filter(pkg => isMonthlyPackage(pkg));
 
   return (
     <View className="flex-1 bg-background">
@@ -235,90 +262,11 @@ export function RevenueCatPricingSection({
       >
         <AnimatedView 
           entering={FadeIn.duration(600).delay(50)} 
-          className="px-6 mb-4 flex flex-col items-center"
+          className="px-6 mb-4"
         >
-          <Text className="text-2xl font-roobert-semibold text-foreground mb-4">
+          <Text className="text-2xl font-roobert-semibold text-foreground text-center">
             {customTitle || 'Choose Your Plan'}
           </Text>
-          
-          {/* 3-Way Billing Period Tabs */}
-          <View className="flex-row items-center gap-1.5">
-            <AnimatedPressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setBillingPeriod('monthly');
-              }}
-              className={`px-3 py-2 rounded-full ${
-                billingPeriod === 'monthly'
-                  ? 'bg-foreground'
-                  : 'bg-muted/30'
-              }`}
-            >
-              <Text
-                className={`text-xs font-roobert-medium ${
-                  billingPeriod === 'monthly'
-                    ? 'text-background'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                Monthly
-              </Text>
-            </AnimatedPressable>
-            
-            <AnimatedPressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setBillingPeriod('yearly');
-              }}
-              className={`px-3 py-2 rounded-full flex-row items-center gap-1 ${
-                billingPeriod === 'yearly'
-                  ? 'bg-foreground'
-                  : 'bg-muted/30'
-              }`}
-            >
-              <Text
-                className={`text-xs font-roobert-medium ${
-                  billingPeriod === 'yearly'
-                    ? 'text-background'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                Yearly
-              </Text>
-              <View className="bg-primary/20 px-1.5 py-0.5 rounded-full">
-                <Text className="text-[9px] font-roobert-semibold text-primary">
-                  -10%
-                </Text>
-              </View>
-            </AnimatedPressable>
-            
-            <AnimatedPressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setBillingPeriod('yearly_commitment');
-              }}
-              className={`px-3 py-2 rounded-full flex-row items-center gap-1 ${
-                billingPeriod === 'yearly_commitment'
-                  ? 'bg-foreground'
-                  : 'bg-muted/30'
-              }`}
-            >
-              <Text
-                className={`text-xs font-roobert-medium ${
-                  billingPeriod === 'yearly_commitment'
-                    ? 'text-background'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                1 Year
-              </Text>
-              <View className="bg-primary/20 px-1.5 py-0.5 rounded-full">
-                <Text className="text-[9px] font-roobert-semibold text-primary">
-                  -15%
-                </Text>
-              </View>
-            </AnimatedPressable>
-          </View>
         </AnimatedView>
 
         <AnimatedView 
@@ -465,6 +413,34 @@ export function RevenueCatPricingSection({
               !selectedPackage || (selectedPackage && isCurrentPlan(selectedPackage)) ? 'text-muted-foreground' : 'text-background'
             }`}>
               {!selectedPackage ? 'Select a plan' : isCurrentPlan(selectedPackage) ? 'Current Plan' : 'Continue'}
+            </Text>
+          )}
+        </AnimatedPressable>
+
+        <AnimatedPressable
+          onPress={handleRestorePurchases}
+          disabled={isRestoring || isPurchasing}
+          onPressIn={() => {
+            if (!isRestoring && !isPurchasing) {
+              restoreButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+            }
+          }}
+          onPressOut={() => {
+            restoreButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+          }}
+          style={[
+            restoreButtonStyle,
+            {
+              opacity: isRestoring || isPurchasing ? 0.5 : 1,
+            }
+          ]}
+          className="w-full h-12 mt-3 items-center justify-center"
+        >
+          {isRestoring ? (
+            <ActivityIndicator color={isDark ? '#fff' : '#000'} size="small" />
+          ) : (
+            <Text className="text-sm font-roobert-medium text-foreground/70">
+              Restore Purchases
             </Text>
           )}
         </AnimatedPressable>

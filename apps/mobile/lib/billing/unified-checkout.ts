@@ -1,6 +1,7 @@
 import { shouldUseRevenueCat } from './provider';
 import { startPlanCheckout as startStripePlanCheckout, startCreditPurchase as startStripeCreditPurchase } from './checkout';
 import { getOfferings, purchasePackage, presentPaywall } from './revenuecat';
+import { supabase } from '@/api/supabase';
 
 export async function startUnifiedPlanCheckout(
   tierKey: string,
@@ -44,7 +45,8 @@ export async function startUnifiedPlanCheckout(
         return;
       }
 
-      await purchasePackage(pkg);
+      const { data: { user } } = await supabase.auth.getUser();
+      await purchasePackage(pkg, user?.email);
       onSuccess?.();
     } catch (error: any) {
       if (error.userCancelled) {
@@ -89,7 +91,8 @@ export async function startUnifiedCreditPurchase(
         throw new Error(`Credit package not found for amount: ${amount}`);
       }
 
-      await purchasePackage(pkg);
+      const { data: { user } } = await supabase.auth.getUser();
+      await purchasePackage(pkg, user?.email);
       onSuccess?.();
     } catch (error: any) {
       if (error.userCancelled) {

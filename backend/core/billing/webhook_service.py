@@ -1131,7 +1131,7 @@ class WebhookService:
                 logger.error(f"[SUBSCRIPTION DELETED] Error checking for other subscriptions: {e}")
         
         current_account = await client.from_('credit_accounts').select(
-            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id, provider, revenuecat_subscription_id'
+            'trial_status, tier, commitment_type, balance, expiring_credits, non_expiring_credits, stripe_subscription_id, provider, revenuecat_subscription_id, revenuecat_product_id'
         ).eq('account_id', account_id).execute()
         
         if not current_account.data:
@@ -1147,12 +1147,13 @@ class WebhookService:
         current_subscription_id = account_data.get('stripe_subscription_id')
         provider = account_data.get('provider', 'stripe')
         revenuecat_subscription_id = account_data.get('revenuecat_subscription_id')
+        revenuecat_product_id = account_data.get('revenuecat_product_id')
         
-        if provider == 'revenuecat' and revenuecat_subscription_id:
+        if provider == 'revenuecat' or revenuecat_subscription_id or revenuecat_product_id:
             logger.info(
-                f"[SUBSCRIPTION DELETED] Account {account_id} has switched to RevenueCat "
-                f"(provider={provider}, revenuecat_sub={revenuecat_subscription_id}) - "
-                f"skipping Stripe cleanup"
+                f"[SUBSCRIPTION DELETED] Account {account_id} has switched to or is using RevenueCat "
+                f"(provider={provider}, revenuecat_sub={revenuecat_subscription_id}, "
+                f"revenuecat_product={revenuecat_product_id}) - skipping Stripe cleanup"
             )
             return
         

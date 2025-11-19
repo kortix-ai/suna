@@ -12,6 +12,8 @@
 		36B378D13F583DA618C17C86 /* Pods_Kortix.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 06BEAE84633E2C326AAFFAF7 /* Pods_Kortix.framework */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		C59412AB2ECD0F380039EFCE /* Kortix.storekit in Resources */ = {isa = PBXBuildFile; fileRef = C59412AA2ECD0F380039EFCE /* Kortix.storekit */; };
+		C59412AD2ECDA6600039EFCE /* StoreKitTestCertificate.cer in Resources */ = {isa = PBXBuildFile; fileRef = C59412AC2ECDA6600039EFCE /* StoreKitTestCertificate.cer */; };
 		DD882A922F87E38C66209BC7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F43ED1F4B323D134F0ED94E9 /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -24,6 +26,8 @@
 		74805DEE975F6F66C3483C40 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Kortix/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Kortix/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
+		C59412AA2ECD0F380039EFCE /* Kortix.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Kortix.storekit; path = Kortix/Kortix.storekit; sourceTree = "<group>"; };
+		C59412AC2ECDA6600039EFCE /* StoreKitTestCertificate.cer */ = {isa = PBXFileReference; lastKnownFileType = file; path = StoreKitTestCertificate.cer; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -93,6 +97,8 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
+				C59412AA2ECD0F380039EFCE /* Kortix.storekit */,
+				C59412AC2ECDA6600039EFCE /* StoreKitTestCertificate.cer */,
 				13B07FAE1A68108700A75B9A /* Kortix */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
@@ -196,6 +202,8 @@
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				DD882A922F87E38C66209BC7 /* PrivacyInfo.xcprivacy in Resources */,
+				C59412AB2ECD0F380039EFCE /* Kortix.storekit in Resources */,
+				C59412AD2ECDA6600039EFCE /* StoreKitTestCertificate.cer in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
