@@ -259,7 +259,7 @@ export function renderMarkdownContent(
                                     <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                                 </div>
                                 <span className="font-mono text-xs text-foreground">{getUserFriendlyToolName(toolName)}</span>
-                                {paramDisplay && <span className="ml-1 text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                                {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                             </button>
                         </div>
                     );
@@ -369,7 +369,7 @@ export function renderMarkdownContent(
                             <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                         </div>
                         <span className="font-mono text-xs text-foreground">{getUserFriendlyToolName(toolName)}</span>
-                        {paramDisplay && <span className="ml-1 text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
+                        {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                     </button>
                 </div>
             );
@@ -497,9 +497,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         };
     }, [threadMetadata, displayMessages, agentName, agentAvatar]);
 
-    // Simplified scroll handler - flex-column-reverse handles positioning
+    // Scroll handler - trigger parent scroll detection if needed
     const handleScroll = useCallback(() => {
-        // No scroll logic needed with flex-column-reverse
+        // Scroll event will bubble up, parent component handles detection
+        // No additional logic needed here
     }, []);
 
     // No scroll-to-bottom needed with flex-column-reverse
@@ -578,7 +579,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                 // Render scrollable content container with column-reverse
                 <div
                     ref={scrollContainerRef || messagesContainerRef}
-                    className={`${containerClassName} flex flex-col-reverse ${shouldJustifyToTop ? 'justify-end min-h-full' : ''}`}
+                    className={`${containerClassName} min-h-0 flex flex-col-reverse ${shouldJustifyToTop ? 'justify-end min-h-full' : ''}`}
                     onScroll={handleScroll}
                 >
                     <div ref={contentRef} className="mx-auto max-w-3xl md:px-8 min-w-0 w-full">

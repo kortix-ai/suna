@@ -849,33 +849,76 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   // Scroll detection for show/hide scroll-to-bottom button
   useEffect(() => {
-    const handleScroll = () => {
-      if (!scrollContainerRef.current) return;
+    if (!initialLoadCompleted) return;
+
+    const checkScrollPosition = () => {
+      if (!scrollContainerRef.current) {
+        setShowScrollToBottom(false);
+        return;
+      }
 
       const scrollTop = scrollContainerRef.current.scrollTop;
       const scrollHeight = scrollContainerRef.current.scrollHeight;
       const clientHeight = scrollContainerRef.current.clientHeight;
-      const threshold = 100;
+      const threshold = 50;
 
-      // With flex-column-reverse, scrollTop becomes NEGATIVE when scrolling up
-      // Show button when scrollTop < -threshold (scrolled up enough from bottom)
-      const shouldShow = scrollTop < -threshold && scrollHeight > clientHeight;
+      // With flex-column-reverse, scrollTop can be NEGATIVE:
+      // - scrollTop = 0 or negative means we're at the "top" (visually the bottom/newest messages)
+      // - scrollTop becomes more negative as we scroll up (visually) from the bottom
+      // - scrollTop = -(scrollHeight - clientHeight) when fully scrolled up
+      // Show button when scrolled up enough from bottom (scrollTop is negative and less than -threshold)
+      const isScrolledUp = scrollTop < -threshold;
+      const hasScrollableContent = scrollHeight > clientHeight;
+      const shouldShow = isScrolledUp && hasScrollableContent;
+      
       setShowScrollToBottom(shouldShow);
     };
 
     const scrollContainer = scrollContainerRef.current;
-    if (scrollContainer) {
-      scrollContainer.addEventListener('scroll', handleScroll, {
-        passive: true,
-      });
-      // Check initial state
-      setTimeout(() => handleScroll(), 100);
-
-      return () => {
-        scrollContainer.removeEventListener('scroll', handleScroll);
-      };
+    if (!scrollContainer) {
+      setShowScrollToBottom(false);
+      return;
     }
+
+    // Attach scroll listener
+    scrollContainer.addEventListener('scroll', checkScrollPosition, {
+      passive: true,
+    });
+
+    // Also use ResizeObserver to check when content size changes
+    const resizeObserver = new ResizeObserver(() => {
+      checkScrollPosition();
+    });
+    resizeObserver.observe(scrollContainer);
+
+    // Check initial state with multiple timeouts to catch layout changes
+    const timeout1 = setTimeout(checkScrollPosition, 100);
+    const timeout2 = setTimeout(checkScrollPosition, 300);
+    const timeout3 = setTimeout(checkScrollPosition, 500);
+    const timeout4 = setTimeout(checkScrollPosition, 1000);
+
+    return () => {
+      scrollContainer.removeEventListener('scroll', checkScrollPosition);
+      resizeObserver.disconnect();
+      clearTimeout(timeout1);
+      clearTimeout(timeout2);
+      clearTimeout(timeout3);
+      clearTimeout(timeout4);
+    };
   }, [messages, initialLoadCompleted]);
+
+  // Auto-scroll to bottom on initial load
+  useEffect(() => {
+    if (initialLoadCompleted && scrollContainerRef.current && messages.length > 0) {
+      // Small delay to ensure DOM is fully rendered
+      const timeoutId = setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+        }
+      }, 200);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [initialLoadCompleted, messages.length]);
 
   if (!initialLoadCompleted || isLoading) {
     return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} />;

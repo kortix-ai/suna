@@ -177,7 +177,7 @@ export function ThreadLayout({
             variant={variant}
           />
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 scrollbar-minimal">
+          <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
             {children}
           </div>
 
@@ -248,7 +248,7 @@ export function ThreadLayout({
             variant={variant}
           />
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 scrollbar-minimal">
+          <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
             {children}
           </div>
 
