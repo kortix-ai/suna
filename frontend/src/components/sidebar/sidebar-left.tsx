@@ -55,6 +55,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Image from 'next/image';
 import { isLocalMode } from '@/lib/config';
 import { KortixProcessModal } from './kortix-enterprise-modal';
+import { useAuth } from '@/components/AuthProvider';
+import { useProfilePicture } from '@/hooks/profile/use-profile-picture';
 
 import { getPlanIcon, getPlanName } from '@/components/billing/plan-utils';
 import { Kbd } from '../ui/kbd';
@@ -125,6 +127,8 @@ export function SidebarLeft({
   const router = useRouter();
   const [activeView, setActiveView] = useState<'chats' | 'agents' | 'starred'>('chats');
   const [showEnterpriseCard, setShowEnterpriseCard] = useState(true);
+  const { user: authUser } = useAuth();
+  const { profilePictureUrl, isLoading: isProfilePictureLoading } = useProfilePicture();
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -165,31 +169,54 @@ export function SidebarLeft({
 
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchUserData = async () => {
+      if (!authUser) {
+        if (isMounted) {
+          setUser({
+            name: 'Loading...',
+            email: 'loading@example.com',
+            avatar: '',
+            isAdmin: false,
+          });
+        }
+        return;
+      }
+
       const supabase = createClient();
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
+      let isAdmin = false;
+
+      try {
         const { data: roleData } = await supabase
           .from('user_roles')
           .select('role')
-          .eq('user_id', data.user.id)
+          .eq('user_id', authUser.id)
           .in('role', ['admin', 'super_admin']);
-        const isAdmin = roleData && roleData.length > 0;
+        isAdmin = !!(roleData && roleData.length > 0);
+      } catch (error) {
+        console.error('Failed to fetch user roles', error);
+      }
 
+      if (isMounted) {
         setUser({
           name:
-            data.user.user_metadata?.name ||
-            data.user.email?.split('@')[0] ||
+            authUser.user_metadata?.name ||
+            authUser.email?.split('@')[0] ||
             'User',
-          email: data.user.email || '',
-          avatar: data.user.user_metadata?.avatar_url || '', // User avatar (different from agent avatar)
-          isAdmin: isAdmin,
+          email: authUser.email || '',
+          avatar: authUser.user_metadata?.avatar_url || '',
+          isAdmin,
         });
       }
     };
 
     fetchUserData();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authUser]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -229,6 +256,17 @@ export function SidebarLeft({
 
 
 
+
+  const derivedUser = React.useMemo(() => {
+    if (isProfilePictureLoading) {
+      return user;
+    }
+
+    return {
+      ...user,
+      avatar: profilePictureUrl ?? '',
+    };
+  }, [user, profilePictureUrl, isProfilePictureLoading]);
 
   return (
     <Sidebar
@@ -453,7 +491,7 @@ export function SidebarLeft({
       } */}
 
       <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
-        <UserProfileSection user={user} />
+        <UserProfileSection user={derivedUser} />
       </div>
       <SidebarRail />
       <NewAgentDialog

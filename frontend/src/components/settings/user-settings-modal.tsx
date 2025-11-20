@@ -9,6 +9,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -22,6 +23,7 @@ import {
     Info,
     FileText,
     Plug,
+    Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -31,6 +33,7 @@ import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
 import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { useQueryClient } from '@tanstack/react-query';
+import { useProfilePicture } from '@/hooks/profile/use-profile-picture';
 import { 
     useAccountDeletionStatus, 
     useRequestAccountDeletion, 
@@ -227,6 +230,19 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const supabase = createClient();
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const [pendingProfilePicture, setPendingProfilePicture] = useState<File | null>(null);
+    const [pendingRemoval, setPendingRemoval] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+    const {
+        profilePictureUrl,
+        isLoading: isProfilePictureLoading,
+        uploadProfilePicture,
+        deleteProfilePicture,
+        isUploading: isProfileUploading,
+        isDeleting: isProfileDeleting,
+    } = useProfilePicture();
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
@@ -246,6 +262,42 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         fetchUserData();
     }, []);
 
+    useEffect(() => {
+        if (pendingProfilePicture) {
+            const url = URL.createObjectURL(pendingProfilePicture);
+            setPreviewUrl(url);
+            return () => {
+                URL.revokeObjectURL(url);
+            };
+        }
+    }, [pendingProfilePicture]);
+
+    useEffect(() => {
+        if (!pendingProfilePicture && !pendingRemoval) {
+            setPreviewUrl(profilePictureUrl ?? null);
+        }
+    }, [profilePictureUrl, pendingProfilePicture, pendingRemoval]);
+
+    const displayedPictureUrl = pendingRemoval
+        ? null
+        : pendingProfilePicture
+            ? previewUrl
+            : previewUrl ?? profilePictureUrl ?? null;
+    const hasPendingPictureChanges = Boolean(pendingProfilePicture || pendingRemoval);
+    const canRemoveProfilePicture =
+        !pendingRemoval && (Boolean(pendingProfilePicture) || Boolean(displayedPictureUrl));
+
+    const getInitials = (name: string) => {
+        if (!name) return 'U';
+        return name
+            .split(' ')
+            .filter(Boolean)
+            .map((part) => part[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2);
+    };
+
     const handleSave = async () => {
         setIsSaving(true);
         try {
@@ -255,11 +307,21 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
             if (error) throw error;
 
+            let updatedUrl = previewUrl ?? profilePictureUrl ?? null;
+
+            if (pendingProfilePicture) {
+                const result = await uploadProfilePicture(pendingProfilePicture);
+                updatedUrl = result?.profile_picture_url ?? null;
+            } else if (pendingRemoval && profilePictureUrl) {
+                await deleteProfilePicture();
+                updatedUrl = null;
+            }
+
             toast.success('Profile updated successfully');
 
-            setTimeout(() => {
-                window.location.reload();
-            }, 500);
+            setPendingProfilePicture(null);
+            setPendingRemoval(false);
+            setPreviewUrl(updatedUrl);
         } catch (error) {
             console.error('Error updating profile:', error);
             toast.error('Failed to update profile');
@@ -277,6 +339,36 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const handleCancelDeletion = async () => {
         await cancelDeletion.mutateAsync();
         setShowCancelDialog(false);
+    };
+
+    const handleProfilePictureChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            toast.error('Only PNG, JPG, or WEBP images are allowed');
+            event.target.value = '';
+            return;
+        }
+
+        const maxSize = 5 * 1024 * 1024;
+        if (file.size > maxSize) {
+            toast.error('File must be less than 5MB');
+            event.target.value = '';
+            return;
+        }
+
+        setPendingRemoval(false);
+        setPendingProfilePicture(file);
+        event.target.value = '';
+    };
+
+    const handleProfilePictureDelete = async () => {
+        if (!profilePictureUrl && !pendingProfilePicture) return;
+        setPendingProfilePicture(null);
+        setPendingRemoval(true);
+        setPreviewUrl(null);
     };
 
     const formatDate = (dateString: string | null) => {
@@ -332,6 +424,66 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     <p className="text-xs text-muted-foreground">
                         Email cannot be changed from here
                     </p>
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Profile Picture</Label>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                        {isProfilePictureLoading && !profilePictureUrl ? (
+                            <Skeleton className="h-20 w-20 rounded-full" />
+                        ) : (
+                            <div className="relative">
+                                <Avatar className="h-20 w-20">
+                                    <AvatarImage src={displayedPictureUrl ?? undefined} alt={userName || 'Profile picture'} />
+                                    <AvatarFallback>{getInitials(userName || userEmail)}</AvatarFallback>
+                                </Avatar>
+                                {(isProfileUploading || isProfileDeleting || isSaving) && (
+                                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-background/80">
+                                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="space-y-2">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp"
+                                className="hidden"
+                                onChange={handleProfilePictureChange}
+                            />
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={isProfileUploading || isProfileDeleting}
+                                >
+                                    {isProfileUploading ? 'Uploading...' : 'Upload Picture'}
+                                </Button>
+                                {canRemoveProfilePicture && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleProfilePictureDelete}
+                                        disabled={isProfileUploading || isProfileDeleting}
+                                        className="text-muted-foreground hover:text-destructive"
+                                    >
+                                        {isProfileDeleting ? 'Removing...' : 'Remove'}
+                                    </Button>
+                                )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                PNG, JPG, or WEBP. Max 5MB.
+                            </p>
+                            {hasPendingPictureChanges && (
+                                <p className="text-xs text-muted-foreground">
+                                    Changes will be applied when you click Save.
+                                </p>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 

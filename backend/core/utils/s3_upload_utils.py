@@ -5,6 +5,7 @@ Utility functions for handling image operations.
 import base64
 import uuid
 from datetime import datetime
+from typing import Tuple
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
 
@@ -77,3 +78,51 @@ async def upload_image_bytes(image_bytes: bytes, content_type: str = "image/png"
     except Exception as e:
         logger.error(f"Error uploading image bytes: {e}")
         raise RuntimeError(f"Failed to upload image: {str(e)}") 
+
+async def upload_user_profile_picture(
+    user_id: str,
+    image_bytes: bytes,
+    content_type: str = "image/png",
+    bucket_name: str = "user-profile-pictures",
+) -> Tuple[str, str]:
+    """
+    Upload a profile picture for a specific user and return the public URL and storage path.
+    """
+    try:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_id = str(uuid.uuid4())[:8]
+
+        ext = "png"
+        normalized_content_type = (content_type or '').lower()
+        if normalized_content_type in ("image/jpeg", "image/jpg"):
+            ext = "jpg"
+        elif normalized_content_type == "image/webp":
+            ext = "webp"
+        elif normalized_content_type == "image/gif":
+            ext = "gif"
+
+        filename = f"profile_{timestamp}_{unique_id}.{ext}"
+        storage_path = f"{user_id}/{filename}"
+
+        db = DBConnection()
+        client = await db.client
+        await client.storage.from_(bucket_name).upload(
+            storage_path,
+            image_bytes,
+            {"content-type": normalized_content_type or "image/png"}
+        )
+
+        public_url_result = await client.storage.from_(bucket_name).get_public_url(storage_path)
+        if isinstance(public_url_result, dict):
+            public_url = public_url_result.get('publicUrl') or public_url_result.get('public_url')
+        else:
+            public_url = public_url_result
+
+        if not public_url:
+            raise RuntimeError("Supabase did not return a public URL for the uploaded profile picture")
+
+        logger.debug(f"Successfully uploaded profile picture for user {user_id} to {public_url}")
+        return public_url, storage_path
+    except Exception as e:
+        logger.error(f"Error uploading profile picture for user {user_id}: {e}")
+        raise RuntimeError(f"Failed to upload profile picture: {str(e)}")

@@ -15,6 +15,7 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { PlanSelectionModal } from '@/components/billing/pricing/plan-selection-modal';
 import { Suspense } from 'react';
+import { ProfilePictureProvider } from '@/hooks/profile/use-profile-picture';
 
 
 export const viewport: Viewport = {
@@ -204,11 +205,13 @@ export default function RootLayout({
         >
           <AuthProvider>
             <ReactQueryProvider>
-              {children}
-              <Toaster />
-              <Suspense fallback={null}>
-                <PlanSelectionModal />
-              </Suspense>
+              <ProfilePictureProvider>
+                {children}
+                <Toaster />
+                <Suspense fallback={null}>
+                  <PlanSelectionModal />
+                </Suspense>
+              </ProfilePictureProvider>
             </ReactQueryProvider>
           </AuthProvider>
           <Analytics />
