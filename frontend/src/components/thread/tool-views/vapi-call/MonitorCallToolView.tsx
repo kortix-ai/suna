@@ -115,25 +115,42 @@ export function MonitorCallToolView({
     let channel: RealtimeChannel;
 
     const setupSubscription = async () => {
-      // First, do an initial fetch to get current data
-      const { data: currentData } = await supabase
-        .from('vapi_calls')
-        .select('*')
-        .eq('call_id', initialData.call_id)
-        .maybeSingle();
-
-      if (currentData) {
-        console.log('[MonitorCallToolView] Initial data from DB:', {
-          status: currentData.status,
-          transcriptLength: Array.isArray(currentData.transcript) ? currentData.transcript.length : 0
-        });
-        setLiveStatus(currentData.status);
-        if (currentData.transcript) {
-          const transcript = typeof currentData.transcript === 'string'
-            ? JSON.parse(currentData.transcript)
-            : currentData.transcript;
-          setLiveTranscript(Array.isArray(transcript) ? transcript : []);
+      // First, do an initial fetch to get current data via backend API
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
         }
+
+        const response = await fetch(`${API_URL}/vapi/calls/${initialData.call_id}`, {
+          headers,
+        });
+
+        if (response.ok) {
+          const currentData = await response.json();
+
+          if (currentData) {
+            console.log('[MonitorCallToolView] Initial data from DB:', {
+              status: currentData.status,
+              transcriptLength: Array.isArray(currentData.transcript) ? currentData.transcript.length : 0
+            });
+            setLiveStatus(currentData.status);
+            if (currentData.transcript) {
+              const transcript = typeof currentData.transcript === 'string'
+                ? JSON.parse(currentData.transcript)
+                : currentData.transcript;
+              setLiveTranscript(Array.isArray(transcript) ? transcript : []);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[MonitorCallToolView] Error fetching initial call data:', error);
       }
 
       // Set up real-time subscription
@@ -184,37 +201,56 @@ export function MonitorCallToolView({
     queryKey: ['vapi-call', initialData?.call_id],
     queryFn: async () => {
       if (!initialData?.call_id) return null;
-      const supabase = createClient();
+      
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
 
-      // Use maybeSingle() instead of single() to handle 0 rows gracefully
-      const { data, error } = await supabase
-        .from('vapi_calls')
-        .select('*')
-        .eq('call_id', initialData.call_id)
-        .maybeSingle();
+        const response = await fetch(`${API_URL}/vapi/calls/${initialData.call_id}`, {
+          headers,
+        });
 
-      if (error && error.code !== 'PGRST116') {
+        if (!response.ok) {
+          if (response.status === 404) {
+            // Call not found, return initial data to keep showing something
+            return initialData;
+          }
+          console.error('[MonitorCallToolView] Error fetching call data:', response.statusText);
+          return null;
+        }
+
+        const data = await response.json();
+
+        // If no data found, return initial data to keep showing something
+        if (!data) {
+          console.log('[MonitorCallToolView] No data found, using initial data');
+          return {
+            call_id: initialData.call_id,
+            status: initialData.status || 'queued',
+            transcript: initialData.transcript || [],
+            phone_number: initialData.phone_number,
+            is_live: true
+          };
+        }
+
+        console.log('[MonitorCallToolView] Fetched call data:', {
+          status: data.status,
+          transcriptLength: Array.isArray(data.transcript) ? data.transcript.length : 0
+        });
+        return data;
+      } catch (error) {
         console.error('[MonitorCallToolView] Error fetching call data:', error);
         return null;
       }
-
-      // If no data found, return initial data to keep showing something
-      if (!data) {
-        console.log('[MonitorCallToolView] No data found, using initial data');
-        return {
-          call_id: initialData.call_id,
-          status: initialData.status || 'queued',
-          transcript: initialData.transcript || [],
-          phone_number: initialData.phone_number,
-          is_live: true
-        };
-      }
-
-      console.log('[MonitorCallToolView] Fetched call data:', {
-        status: data.status,
-        transcriptLength: Array.isArray(data.transcript) ? data.transcript.length : 0
-      });
-      return data;
     },
     enabled: !!initialData?.call_id,
     refetchInterval: (query) => {

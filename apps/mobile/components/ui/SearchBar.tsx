@@ -24,26 +24,26 @@ interface SearchBarProps {
  * - Accessibility support
  * - Customizable placeholder and styling
  */
-export function SearchBar({ 
-  value, 
-  onChangeText, 
-  placeholder, 
+export function SearchBar({
+  value,
+  onChangeText,
+  placeholder,
   onClear,
   className = ""
 }: SearchBarProps) {
   const { colorScheme } = useColorScheme();
-  
+
   const handleClear = () => {
     console.log('🎯 Clear search');
     onClear?.();
     Keyboard.dismiss();
   };
-  
+
   return (
-    <View 
+    <View
       className={`bg-primary/5 rounded-3xl flex-row items-center px-3 h-12 ${className}`}
     >
-      <Icon 
+      <Icon
         as={Search}
         size={18}
         className="text-muted-foreground"
@@ -55,7 +55,16 @@ export function SearchBar({
         placeholder={placeholder}
         placeholderTextColor={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.4)' : 'rgba(0, 0, 0, 0.4)'}
         className="flex-1 mx-2 text-base font-roobert-medium text-foreground"
-        style={{ fontFamily: 'Roobert-Medium' }}
+        style={{
+          fontFamily: 'Roobert-Medium',
+          height: 48,
+          paddingVertical: 0,
+          paddingTop: 0,
+          paddingBottom: 0,
+          lineHeight: 20,
+          textAlignVertical: 'center',
+          includeFontPadding: false
+        }}
         returnKeyType="search"
         clearButtonMode="never"
         accessibilityLabel={`Search ${placeholder.toLowerCase()}`}
@@ -69,7 +78,7 @@ export function SearchBar({
           accessibilityLabel="Clear search"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Icon 
+          <Icon
             as={X}
             size={16}
             className="text-muted-foreground"

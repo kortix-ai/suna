@@ -248,7 +248,7 @@
     "customWorkers": "Custom Workers",
     "scheduledTriggers": "Scheduled Triggers",
     "appTriggers": "App Triggers",
-    "limitsExceeded": "You ran out of limits. Upgrade your plan to chat more.",
+    "limitsExceeded": "You've reached your chat limit ({current}/{limit}). Upgrade your plan to create more chats.",
     "agentInitiatedSuccessfully": "Agent initiated successfully",
     "aiAssistantReady": "Your AI assistant is ready to help"
   },
@@ -285,7 +285,15 @@
     "noActionsYet": "No actions yet",
     "workerActionsDescription": "Worker actions and results will appear here as they execute",
     "toolIsRunning": "Tool is running",
-    "toolCurrentlyExecuting": "{toolName} is currently executing. Results will appear here when complete."
+    "toolCurrentlyExecuting": "{toolName} is currently executing. Results will appear here when complete.",
+    "rateThisResult": "Rate this result",
+    "feedbackHelpsImprove": "Your feedback helps us improve",
+    "additionalFeedbackOptional": "Additional feedback (optional)",
+    "helpKortixImprove": "Help Kortix improve with the feedback",
+    "submit": "Submit",
+    "submitting": "Submitting...",
+    "feedbackSubmittedSuccess": "Feedback submitted successfully",
+    "feedbackSubmitFailed": "Failed to submit feedback"
   },
   "agents": {
     "title": "Agents",

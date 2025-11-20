@@ -32,6 +32,8 @@ export async function GET(request: NextRequest) {
         // Welcome email is now sent automatically by Supabase database trigger
         // See: backend/supabase/migrations/20251113000000_welcome_email_webhook.sql
 
+        // NOTE: This is server-side route handler, so direct Supabase queries are acceptable
+        // for performance. Only client-side (browser) code should use backend API.
         const { data: accountData } = await supabase
           .schema('basejump')
           .from('accounts')

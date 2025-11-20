@@ -11,6 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2 as CheckIcon } from 'lucide-react-native';
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface FollowUpPrompt {
   icon: React.ComponentType<any>;
@@ -46,6 +47,7 @@ export function TaskCompletedFeedback({
   threadId,
   messageId
 }: TaskCompletedFeedbackProps) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
   const [rating, setRating] = useState<number | null>(null);
@@ -143,11 +145,11 @@ export function TaskCompletedFeedback({
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         const error = await response.json().catch(() => ({ message: response.statusText }));
-        Alert.alert('Error', error.detail?.message || error.message || 'Failed to submit feedback');
+        Alert.alert(t('chat.error'), error.detail?.message || error.message || t('chat.feedbackSubmitFailed'));
       }
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      Alert.alert('Error', 'Failed to submit feedback. Please try again.');
+      Alert.alert(t('chat.error'), t('chat.feedbackSubmitFailedRetry'));
     } finally {
       setIsSubmitting(false);
     }
@@ -172,11 +174,11 @@ export function TaskCompletedFeedback({
         <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
             <Icon as={CheckCircle2} size={16} className="text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-            <Text className="text-sm font-roobert text-muted-foreground">Task completed</Text>
+            <Text className="text-sm font-roobert text-muted-foreground">{t('chat.taskCompleted')}</Text>
           </View>
           <View className="flex-row items-center gap-2">
             {!submittedFeedback && (
-              <Text className="text-sm font-roobert text-muted-foreground">How was this result?</Text>
+              <Text className="text-sm font-roobert text-muted-foreground">{t('chat.howWasThisResult')}</Text>
             )}
             <View className="flex-row items-center gap-1">
               {[1, 2, 3, 4, 5].map((value) => {
@@ -206,7 +208,7 @@ export function TaskCompletedFeedback({
         {promptsToDisplay.length > 0 && (
           <View className="space-y-2">
             <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-              Suggested follow-ups
+              {t('chat.suggestedFollowUps')}
             </Text>
             <View className="space-y-1">
               {promptsToDisplay.map((prompt, index) => {
@@ -267,10 +269,10 @@ export function TaskCompletedFeedback({
           <View className="px-6 pt-4 pb-6 space-y-6">
             <View>
               <Text className="text-xl font-roobert-semibold text-foreground mb-1">
-                How was this result?
+                {t('chat.howWasThisResult')}
               </Text>
               <Text className="text-sm font-roobert text-muted-foreground">
-                Your feedback helps us improve
+                {t('chat.feedbackHelpsImprove')}
               </Text>
             </View>
 
@@ -297,7 +299,7 @@ export function TaskCompletedFeedback({
             {/* Feedback Textarea */}
             <View className="space-y-2">
               <TextInput
-                placeholder="Additional feedback (optional)"
+                placeholder={t('chat.additionalFeedbackOptional')}
                 placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
                 value={feedback}
                 onChangeText={setFeedback}
@@ -329,7 +331,7 @@ export function TaskCompletedFeedback({
                 )}
               </View>
               <Text className="text-sm font-roobert text-foreground flex-1">
-                Help Kortix improve with my feedback
+                {t('chat.helpKortixImprove')}
               </Text>
             </Pressable>
 
@@ -344,14 +346,14 @@ export function TaskCompletedFeedback({
                 disabled={isSubmitting}
                 className="flex-1"
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 onPress={handleSubmitRating}
                 disabled={!rating || isSubmitting}
                 className="flex-1"
               >
-                {isSubmitting ? 'Submitting...' : 'Submit'}
+                {isSubmitting ? t('chat.submitting') : t('chat.submit')}
               </Button>
             </View>
           </View>

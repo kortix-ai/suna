@@ -1,7 +1,7 @@
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Query
+from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Query, Request
 
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 from core.utils.pagination import PaginationParams
@@ -444,7 +444,8 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
 
 @router.get("/agents", response_model=AgentsResponse, summary="List Agents", operation_id="list_agents")
 async def get_agents(
-    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    request: Request,
+    user_id: Optional[str] = Depends(get_optional_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
     search: Optional[str] = Query(None, description="Search in name"),
@@ -458,6 +459,19 @@ async def get_agents(
 ):
     try:
         from .agent_service import AgentService, AgentFilters
+        from core.guest_session import guest_session_service
+        
+        if not user_id:
+            guest_session_id = request.headers.get('X-Guest-Session')
+            if guest_session_id:
+                if isinstance(guest_session_id, list):
+                    guest_session_id = guest_session_id[0]
+
+                session = await guest_session_service.get_or_create_session(request, guest_session_id)
+                user_id = session['session_id']
+                logger.info(f"Guest user fetching agents: {user_id}")
+            else:
+                raise HTTPException(status_code=401, detail="Authentication required")
         
         tools_list = []
         if tools:

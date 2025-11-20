@@ -161,7 +161,19 @@
     "threadTitle": "对话标题",
     "editTitle": "编辑标题",
     "noMessages": "还没有消息",
-    "startConversation": "开始对话"
+    "startConversation": "开始对话",
+    "taskCompleted": "任务已完成",
+    "howWasThisResult": "这个结果怎么样？",
+    "rateThisResult": "评价此结果",
+    "feedbackHelpsImprove": "您的反馈帮助我们改进",
+    "additionalFeedbackOptional": "附加反馈（可选）",
+    "helpKortixImprove": "帮助 Kortix 通过我的反馈改进",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "suggestedFollowUps": "建议的后续问题",
+    "error": "错误",
+    "feedbackSubmitFailed": "反馈提交失败",
+    "feedbackSubmitFailedRetry": "反馈提交失败。请重试。"
   },
   "agents": {
     "selectAgent": "选择 Worker",

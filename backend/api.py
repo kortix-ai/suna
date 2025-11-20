@@ -39,7 +39,10 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 db = DBConnection()
-instance_id = "single"
+# Generate unique instance ID per process/worker
+# This is critical for distributed locking - each worker needs a unique ID
+import uuid
+instance_id = str(uuid.uuid4())[:8]
 
 # Rate limiter state
 ip_tracker = OrderedDict()
@@ -79,10 +82,17 @@ async def lifespan(app: FastAPI):
         from core import limits_api
         limits_api.initialize(db)
         
+        from core.guest_session import guest_session_service
+        guest_session_service.start_cleanup_task()
+        logger.debug("Guest session cleanup task started")
+        
         yield
         
         logger.debug("Cleaning up agent resources")
         await core_api.cleanup()
+        
+        logger.debug("Stopping guest session cleanup task")
+        await guest_session_service.stop_cleanup_task()
         
         try:
             logger.debug("Closing Redis connection")

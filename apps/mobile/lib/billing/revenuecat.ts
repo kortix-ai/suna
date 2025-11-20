@@ -52,12 +52,12 @@ export async function setRevenueCatAttributes(email?: string, displayName?: stri
   }
 }
 
-export async function initializeRevenueCat(userId: string, email?: string): Promise<void> {
+export async function initializeRevenueCat(userId: string, email?: string, canTrack: boolean = false): Promise<void> {
   if (isConfigured) {
     console.log('🔄 RevenueCat already configured, updating user...');
     try {
       const { customerInfo } = await Purchases.logIn(userId);
-      if (email) {
+      if (email && canTrack) {
         console.log('📧 Setting email for existing RevenueCat customer:', email);
         await Purchases.setEmail(email);
         console.log('✅ Email set successfully:', email);
@@ -79,6 +79,7 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
     console.log('🚀 Initializing RevenueCat...');
     console.log('👤 User ID:', userId);
     console.log('📧 Email:', email || 'No email provided');
+    console.log('📊 Tracking allowed:', canTrack);
     
     if (__DEV__) {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
@@ -88,22 +89,28 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
     
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    if (email) {
-      console.log('📧 Setting email for RevenueCat customer:', email);
+    if (email && canTrack) {
+      console.log('📧 Setting email for RevenueCat customer (tracking enabled):', email);
       try {
         await Purchases.setEmail(email);
         console.log('✅ Email set successfully:', email);
       } catch (emailError) {
         console.error('❌ Error setting email:', emailError);
       }
+    } else if (!canTrack) {
+      console.log('⚠️ Tracking disabled - email not set for analytics');
     } else {
       console.warn('⚠️ No email provided to RevenueCat');
     }
     
-    Purchases.addCustomerInfoUpdateListener((customerInfo) => {
-      console.log('📱 Customer info updated:', customerInfo);
-      notifyBackendOfPurchase(customerInfo);
-    });
+    if (canTrack) {
+      Purchases.addCustomerInfoUpdateListener((customerInfo) => {
+        console.log('📱 Customer info updated:', customerInfo);
+        notifyBackendOfPurchase(customerInfo);
+      });
+    } else {
+      console.log('⚠️ Analytics listener not added (tracking disabled)');
+    }
 
     isConfigured = true;
     console.log('✅ RevenueCat initialized successfully');

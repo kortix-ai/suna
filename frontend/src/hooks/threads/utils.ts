@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { getProject as getProjectFromApi, type Project } from "@/lib/api/projects";
+import { backendApi } from "@/lib/api-client";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -130,63 +131,47 @@ export const deleteThread = async (threadId: string, sandboxId?: string): Promis
   
 
 export const getPublicProjects = async (): Promise<Project[]> => {
+    // NOTE: This function should not be called directly anymore
+    // Use usePublicProjectsQuery() hook instead, which derives from cached threads
+    // This is kept for backward compatibility but should be deprecated
+    console.warn('getPublicProjects() called directly - use usePublicProjectsQuery() hook instead');
+    
     try {
-      const supabase = createClient();
-  
-      // Query for threads that are marked as public
-      const { data: publicThreads, error: threadsError } = await supabase
-        .from('threads')
-        .select('project_id')
-        .eq('is_public', true);
-  
-      if (threadsError) {
-        console.error('Error fetching public threads:', threadsError);
+      const { getThreadsPaginated } = await import('@/lib/api/threads');
+      const response = await getThreadsPaginated(undefined, 1, 50);
+
+      if (!response?.threads) {
         return [];
       }
-  
-      // If no public threads found, return empty array
-      if (!publicThreads?.length) {
-        return [];
-      }
-  
-      // Extract unique project IDs from public threads
-      const publicProjectIds = [
-        ...new Set(publicThreads.map((thread) => thread.project_id)),
-      ].filter(Boolean);
-  
-      // If no valid project IDs, return empty array
-      if (!publicProjectIds.length) {
-        return [];
-      }
-  
-      // Get the projects that have public threads
-      const { data: projects, error: projectsError } = await supabase
-        .from('projects')
-        .select('*')
-        .in('project_id', publicProjectIds);
-  
-      if (projectsError) {
-        console.error('Error fetching public projects:', projectsError);
-        return [];
-      }
-  
-      // Map database fields to our Project type
-      const mappedProjects: Project[] = (projects || []).map((project) => ({
-        id: project.project_id,
-        name: project.name || '',
-        description: project.description || '',
-        created_at: project.created_at,
-        updated_at: project.updated_at,
-        sandbox: project.sandbox || {
-          id: '',
-          pass: '',
-          vnc_preview: '',
-          sandbox_url: '',
-        },
-        is_public: true, // Mark these as public projects
-      }));
-  
-      return mappedProjects;
+
+      const threads = response.threads;
+
+      // Filter for public threads and extract unique projects
+      const projectsMap = new Map<string, Project>();
+      
+      threads.forEach((thread: any) => {
+        if (thread.is_public && thread.project_id && thread.project) {
+          const project = thread.project;
+          if (!projectsMap.has(project.project_id)) {
+            projectsMap.set(project.project_id, {
+              id: project.project_id,
+              name: project.name || '',
+              description: project.description || '',
+              created_at: project.created_at,
+              updated_at: project.updated_at,
+              sandbox: project.sandbox || {
+                id: '',
+                pass: '',
+                vnc_preview: '',
+                sandbox_url: '',
+              },
+              is_public: true,
+            });
+          }
+        }
+      });
+
+      return Array.from(projectsMap.values());
     } catch (err) {
       console.error('Error fetching public projects:', err);
       return [];
@@ -206,56 +191,74 @@ export const getPublicProjects = async (): Promise<Project[]> => {
     projectId: string,
     data: Partial<Project>,
   ): Promise<Project> => {
-    const supabase = createClient();
     // Sanity check to avoid update errors
     if (!projectId || projectId === '') {
       console.error('Attempted to update project with invalid ID:', projectId);
       throw new Error('Cannot update project: Invalid project ID');
     }
-  
-    const { data: updatedData, error } = await supabase
-      .from('projects')
-      .update(data)
-      .eq('project_id', projectId)
-      .select()
-      .single();
-  
-    if (error) {
+
+    try {
+      // NOTE: This function is called from mutations, not hooks
+      // We still need to fetch threads to find the thread_id for the update
+      // But we should try to use cached data first via queryClient if available
+      // For now, we'll make a direct call but this could be optimized further
+      const { getThreadsPaginated } = await import('@/lib/api/threads');
+      const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
+
+      if (!threadsResponse?.threads) {
+        throw new Error('Failed to find thread for project');
+      }
+
+      const threadWithProject = threadsResponse.threads.find(
+        (thread: any) => thread.project_id === projectId
+      );
+
+      if (!threadWithProject) {
+        throw new Error(`No thread found for project ${projectId}`);
+      }
+
+      // Update project via thread PATCH endpoint
+      // The backend accepts 'title' for project name and 'is_public' for project visibility
+      const updatePayload: any = {};
+      if (data.name !== undefined) {
+        updatePayload.title = data.name;
+      }
+      if (data.is_public !== undefined) {
+        updatePayload.is_public = data.is_public;
+      }
+
+      const updateResponse = await backendApi.patch(
+        `/threads/${threadWithProject.thread_id}`,
+        updatePayload,
+        { showErrors: true }
+      );
+
+      if (updateResponse.error) {
+        throw new Error(updateResponse.error.message || 'Failed to update project');
+      }
+
+      // Fetch updated project data
+      const updatedProject = await getProject(projectId);
+
+      // Dispatch a custom event to notify components about the project change
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('project-updated', {
+            detail: {
+              projectId,
+              updatedData: {
+                id: updatedProject.id,
+                name: updatedProject.name,
+                description: updatedProject.description,
+              },
+            },
+          }),
+        );
+      }
+
+      return updatedProject;
+    } catch (error) {
       console.error('Error updating project:', error);
       throw error;
     }
-  
-    if (!updatedData) {
-      throw new Error('No data returned from update');
-    }
-  
-    // Dispatch a custom event to notify components about the project change
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('project-updated', {
-          detail: {
-            projectId,
-            updatedData: {
-              id: updatedData.project_id,
-              name: updatedData.name,
-              description: updatedData.description,
-            },
-          },
-        }),
-      );
-    }
-  
-    // Return formatted project data - use same mapping as getProject
-    return {
-      id: updatedData.project_id,
-      name: updatedData.name,
-      description: updatedData.description || '',
-      created_at: updatedData.created_at,
-      sandbox: updatedData.sandbox || {
-        id: '',
-        pass: '',
-        vnc_preview: '',
-        sandbox_url: '',
-      },
-    };
   };

@@ -334,117 +334,30 @@ function LoginContent() {
                       htmlFor="gdprConsent" 
                       className="text-sm text-muted-foreground leading-none cursor-pointer select-none"
                     >
-                      {(() => {
-                        // Get the base translation text
-                        const baseText = t('acceptPrivacyTerms');
-                        const privacyText = t('privacyPolicy');
-                        const termsText = t('termsOfService');
-                        
-                        // For Italian: "Accetto l'<privacyPolicy>Informativa sulla Privacy</privacyPolicy> e i <termsOfService>Termini di Servizio</termsOfService>"
-                        // For English: "I accept the <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>"
-                        // For German: "Ich akzeptiere die <privacyPolicy>Datenschutzerklärung</privacyPolicy> und die <termsOfService>Nutzungsbedingungen</termsOfService>"
-                        
-                        // Parse the string and replace tags with links
-                        const parts: React.ReactNode[] = [];
-                        let lastIndex = 0;
-                        
-                        // Find privacyPolicy tag
-                        const privacyRegex = /<privacyPolicy>(.*?)<\/privacyPolicy>/;
-                        const privacyMatch = baseText.match(privacyRegex);
-                        
-                        if (privacyMatch) {
-                          // Add text before privacyPolicy tag
-                          if (privacyMatch.index! > lastIndex) {
-                            parts.push(baseText.substring(lastIndex, privacyMatch.index!));
-                          }
-                          // Add privacyPolicy link
-                          parts.push(
-                            <a 
-                              key="privacy"
-                              href="https://www.kortix.com/legal?tab=privacy" 
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:underline underline-offset-2 transition-colors text-primary"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {privacyMatch[1]}
-                            </a>
-                          );
-                          lastIndex = privacyMatch.index! + privacyMatch[0].length;
-                        }
-                        
-                        // Find termsOfService tag
-                        const termsRegex = /<termsOfService>(.*?)<\/termsOfService>/;
-                        const termsMatch = baseText.match(termsRegex);
-                        
-                        if (termsMatch) {
-                          // Add text before termsOfService tag
-                          if (termsMatch.index! > lastIndex) {
-                            parts.push(baseText.substring(lastIndex, termsMatch.index!));
-                          }
-                          // Add termsOfService link
-                          parts.push(
-                            <a 
-                              key="terms"
-                              href="https://www.kortix.com/legal?tab=terms"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="hover:underline underline-offset-2 transition-colors text-primary"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {termsMatch[1]}
-                            </a>
-                          );
-                          lastIndex = termsMatch.index! + termsMatch[0].length;
-                        }
-                        
-                        // Add remaining text
-                        if (lastIndex < baseText.length) {
-                          parts.push(baseText.substring(lastIndex));
-                        }
-                        
-                        // If no tags found, fallback to simple text with manual links
-                        if (parts.length === 0) {
-                          // Fallback: try to find the text and replace manually
-                          const privacyIndex = baseText.indexOf(privacyText);
-                          const termsIndex = baseText.indexOf(termsText);
-                          
-                          if (privacyIndex !== -1 && termsIndex !== -1) {
-                            parts.push(baseText.substring(0, privacyIndex));
-                            parts.push(
-                              <a 
-                                key="privacy"
-                                href="https://www.kortix.com/legal?tab=privacy" 
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:underline underline-offset-2 transition-colors text-primary"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {privacyText}
-                              </a>
-                            );
-                            parts.push(baseText.substring(privacyIndex + privacyText.length, termsIndex));
-                            parts.push(
-                              <a 
-                                key="terms"
-                                href="https://www.kortix.com/legal?tab=terms"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:underline underline-offset-2 transition-colors text-primary"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {termsText}
-                              </a>
-                            );
-                            parts.push(baseText.substring(termsIndex + termsText.length));
-                          } else {
-                            // Last resort: just show the text
-                            parts.push(baseText);
-                          }
-                        }
-                        
-                        return <>{parts}</>;
-                      })()}
+                      {t.rich('acceptPrivacyTerms', {
+                        privacyPolicy: (chunks) => (
+                          <a 
+                            href="https://www.kortix.com/legal?tab=privacy" 
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline underline-offset-2 transition-colors text-primary"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {chunks}
+                          </a>
+                        ),
+                        termsOfService: (chunks) => (
+                          <a 
+                            href="https://www.kortix.com/legal?tab=terms"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:underline underline-offset-2 transition-colors text-primary"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {chunks}
+                          </a>
+                        )
+                      })}
                     </label>
                   </div>
                 </>

@@ -56,5 +56,6 @@ export interface UserProfile {
   email: string;
   avatar?: string;
   tier?: TierType;
+  planName?: string; // Plan name from subscription (e.g., 'Plus', 'Pro', 'Ultra')
 }
 

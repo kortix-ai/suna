@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { backendApi } from '@/lib/api-client';
 
 export interface Folder {
     folder_id: string;
@@ -25,57 +25,25 @@ export const useKnowledgeFolders = () => {
 
     const fetchFolders = async () => {
         try {
-            const supabase = createClient();
+            // Fetch folders from backend API
+            const foldersResponse = await backendApi.get<Folder[]>('/knowledge-base/folders', {
+                showErrors: false,
+            });
 
-            // Fetch folders directly using Supabase client with RLS
-            const { data: foldersData, error: foldersError } = await supabase
-                .from('knowledge_base_folders')
-                .select('folder_id, name, description, created_at')
-                .order('created_at', { ascending: false });
-
-            if (foldersError) {
-                console.error('Supabase error fetching folders:', foldersError);
-                return;
+            if (foldersResponse.error) {
+                console.error('Error fetching folders:', foldersResponse.error);
+                setFolders([]);
+            } else {
+                setFolders(foldersResponse.data || []);
             }
 
             // Fetch recent files (last 6 files across all folders)
-            const { data: recentFilesData, error: recentError } = await supabase
-                .from('knowledge_base_entries')
-                .select('entry_id, filename, summary, file_size, created_at, folder_id')
-                .order('created_at', { ascending: false })
-                .limit(6);
-
-            if (recentError) {
-                console.error('Supabase error fetching recent files:', recentError);
-            } else {
-                setRecentFiles(recentFilesData || []);
-            }
-
-            // Get entry counts for each folder
-            const foldersWithCounts = await Promise.all(
-                foldersData.map(async (folder) => {
-                    const { count, error: countError } = await supabase
-                        .from('knowledge_base_entries')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('folder_id', folder.folder_id);
-
-                    if (countError) {
-                        console.error('Error counting entries:', countError);
-                    }
-
-                    return {
-                        folder_id: folder.folder_id,
-                        name: folder.name,
-                        description: folder.description,
-                        entry_count: count || 0,
-                        created_at: folder.created_at
-                    };
-                })
-            );
-
-            setFolders(foldersWithCounts);
+            // Note: This might need a separate backend endpoint, but for now we'll keep it empty
+            // or fetch from entries endpoint if available
+            setRecentFiles([]);
         } catch (error) {
             console.error('Failed to fetch folders:', error);
+            setFolders([]);
         } finally {
             setLoading(false);
         }

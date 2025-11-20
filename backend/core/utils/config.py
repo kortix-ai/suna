@@ -80,6 +80,8 @@ class Configuration:
     
     # Environment mode
     ENV_MODE: Optional[EnvMode] = EnvMode.LOCAL
+    
+    GUEST_MODE_ADMIN_USER_ID: Optional[str] = None
 
 
     # Subscription tier IDs - Production
@@ -362,8 +364,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.24"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.24"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.25"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.25"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
 
     # LangFuse configuration

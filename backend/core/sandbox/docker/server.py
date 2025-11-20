@@ -260,28 +260,41 @@ async def list_html_files():
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))
 
-# Serve HTML files directly at root level
-@app.get("/{file_name}")
-async def serve_html_file(file_name: str):
-    """Serve HTML files directly for viewing"""
+# Serve files at root level
+# This route handles both HTML files and static assets (CSS, JS, images, etc.)
+# Uses :path to handle nested paths like css/style.css or js/script.js
+@app.get("/{file_path:path}")
+async def serve_file(file_path: str):
+    """Serve files from workspace - HTML files as HTML, others as static files"""
     from fastapi import HTTPException
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, FileResponse
     
-    if not file_name.endswith('.html'):
-        raise HTTPException(status_code=404, detail="File must be .html")
+    # Security: prevent directory traversal attacks
+    if '..' in file_path or file_path.startswith('/'):
+        raise HTTPException(status_code=400, detail="Invalid file path")
     
-    file_path = os.path.join(workspace_dir, file_name)
-    if not os.path.exists(file_path):
+    full_file_path = os.path.join(workspace_dir, file_path)
+    
+    # Normalize the path to prevent directory traversal
+    full_file_path = os.path.normpath(full_file_path)
+    workspace_dir_normalized = os.path.normpath(workspace_dir)
+    
+    # Ensure the file is within the workspace directory
+    if not full_file_path.startswith(workspace_dir_normalized):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not os.path.exists(full_file_path) or not os.path.isfile(full_file_path):
         raise HTTPException(status_code=404, detail="File not found")
     
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+    # Serve HTML files with HTMLResponse
+    if file_path.endswith('.html'):
+        with open(full_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return HTMLResponse(content=content)
     
-    return HTMLResponse(content=content)
-
-# Mount static files but exclude them from the specific HTML route above
-# This ensures only the HTML route handles .html files, while StaticFiles handles everything else
-app.mount('/', StaticFiles(directory=workspace_dir), name='site')
+    # Serve all other files (CSS, JS, images, etc.) as static files
+    # FileResponse automatically sets the correct content-type based on file extension
+    return FileResponse(full_file_path)
 
 # This is needed for the import string approach with uvicorn
 if __name__ == '__main__':

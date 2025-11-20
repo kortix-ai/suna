@@ -21,7 +21,7 @@ import {
 import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
-import { useInitiateAgentWithInvalidation, useThreadLimit } from '@/hooks/dashboard/use-initiate-agent';
+import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
 
 import { useAgents } from '@/hooks/agents/use-agents';
 import { PlanSelectionModal } from '@/components/billing/pricing';
@@ -92,8 +92,8 @@ export function DashboardContent() {
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const pricingModalStore = usePricingModalStore();
 
-  const { data: agentsResponse } = useAgents({
-    limit: 100,
+  const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({
+    limit: 50, // Changed from 100 to 50 to match other components
     sort_by: 'name',
     sort_order: 'asc'
   });
@@ -102,18 +102,21 @@ export function DashboardContent() {
   const selectedAgent = selectedAgentId
     ? agents.find(agent => agent.agent_id === selectedAgentId)
     : null;
+  const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
   const displayName = selectedAgent?.name || 'Suna';
   const agentAvatar = undefined;
-  const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
+  // Show Suna modes while loading (assume Suna is default) or when Suna agent is selected
+  const isSunaAgent = isLoadingAgents 
+    ? true // Show Suna modes while loading
+    : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
-  const { data: threadLimit, isLoading: isThreadLimitLoading } = useThreadLimit();
-  const { data: limits } = useLimits();
-  const canCreateThread = threadLimit?.can_create || false;
+  const { data: limits, isLoading: isLimitsLoading } = useLimits();
+  const canCreateThread = limits?.thread_count?.can_create || false;
   
   const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';
   // Only show alert after loading is complete and limit is actually exceeded
-  const showAlert = !isThreadLimitLoading && !canCreateThread && !isDismissed;
+  const showAlert = !isLimitsLoading && !canCreateThread && !isDismissed;
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -455,7 +458,12 @@ export function DashboardContent() {
                               transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
                             }}
                           >
-                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>{t('limitsExceeded')}</span>
+                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>
+                              {t('limitsExceeded', { 
+                                current: limits?.thread_count?.current_count ?? 0, 
+                                limit: limits?.thread_count?.limit ?? 0 
+                              })}
+                            </span>
                             <div className='flex items-center -mb-3.5'>
                               <Button 
                                 size='sm' 

@@ -220,7 +220,7 @@
     "customWorkers": "カスタム Workers",
     "scheduledTriggers": "スケジュールトリガー",
     "appTriggers": "アプリトリガー",
-    "limitsExceeded": "制限に達しました。プランをアップグレードしてもっとチャットしよう。",
+    "limitsExceeded": "チャットの制限に達しました（{current}/{limit}）。プランをアップグレードしてもっとチャットを作成しよう。",
     "agentInitiatedSuccessfully": "エージェントが正常に開始されました",
     "aiAssistantReady": "AIアシスタントがヘルプの準備ができています"
   },
@@ -257,7 +257,15 @@
     "noActionsYet": "まだアクションなし",
     "workerActionsDescription": "Workerのアクションと結果は実行時にここに表示されます",
     "toolIsRunning": "ツールが実行中です",
-    "toolCurrentlyExecuting": "{toolName} が現在実行中です。完了すると結果がここに表示されます。"
+    "toolCurrentlyExecuting": "{toolName} が現在実行中です。完了すると結果がここに表示されます。",
+    "rateThisResult": "この結果を評価",
+    "feedbackHelpsImprove": "フィードバックは改善に役立ちます",
+    "additionalFeedbackOptional": "追加のフィードバック（任意）",
+    "helpKortixImprove": "フィードバックでKortixの改善にご協力ください",
+    "submit": "送信",
+    "submitting": "送信中...",
+    "feedbackSubmittedSuccess": "フィードバックが正常に送信されました",
+    "feedbackSubmitFailed": "フィードバックの送信に失敗しました"
   },
   "agents": {
     "title": "エージェント",

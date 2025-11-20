@@ -10,42 +10,95 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
+import { KortixLogo } from '@/components/ui/KortixLogo';
+import { useColorScheme } from 'nativewind';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface AgentSelectorProps {
   onPress?: () => void;
   compact?: boolean;
+  isGuestMode?: boolean
 }
 
-/**
- * AgentSelector Component
- * Displays current agent with avatar and name, opens drawer on press
- * 
- * Compact mode: Shows only avatar with small chevron overlay (minimal space)
- * Full mode: Shows avatar, name, and chevron (default)
- */
-export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
+export function AgentSelector({ onPress, compact = true, isGuestMode = false }: AgentSelectorProps) {
   const { getCurrentAgent, isLoading, agents } = useAgent();
   const agent = getCurrentAgent();
   const scale = useSharedValue(1);
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
-  // Show loading state only if agents are actually loading
-  if (isLoading || agents.length === 0) {
-    return (
-      <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
-        <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
-        <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
-      </View>
-    );
+  if(!isGuestMode){
+    if (isLoading || agents.length === 0) {
+      return (
+        <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
+          <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
+          <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
+        </View>
+      );
+    }
   }
 
-  // Show "Select Agent" if agents are loaded but none selected
   if (!agent) {
+    if (isGuestMode) {
+      if (compact) {
+        return (
+          <AnimatedPressable
+            onPressIn={() => {
+              scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+            }}
+            onPressOut={() => {
+              scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+            }}
+            onPress={onPress}
+            className="relative"
+            style={animatedStyle}
+          >
+            <View className="rounded-md bg-primary items-center justify-center" style={{ width: 22, height: 22 }}>
+              <KortixLogo size={12} variant="symbol" color={isDark ? 'light' : 'dark'} />
+            </View>
+            <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
+              <Icon
+                as={ChevronDown}
+                size={8}
+                className="text-foreground"
+                strokeWidth={2.5}
+              />
+            </View>
+          </AnimatedPressable>
+        );
+      }
+      
+      return (
+        <AnimatedPressable
+          onPressIn={() => {
+            scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+          }}
+          onPressOut={() => {
+            scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+          }}
+          onPress={onPress}
+          className="flex-row items-center gap-1.5 rounded-2xl px-3.5 py-2"
+          style={animatedStyle}
+        >
+          <View className="rounded-md bg-primary items-center justify-center" style={{ width: 22, height: 22 }}>
+            <KortixLogo size={12} variant="symbol" color={isDark ? 'light' : 'dark'} />
+          </View>
+          <Text className="text-foreground text-sm font-roobert-medium">Suna</Text>
+          <Icon
+            as={ChevronDown}
+            size={15}
+            className="text-foreground/60 pt-0.5"
+            strokeWidth={2}
+          />
+        </AnimatedPressable>
+      );
+    }
+    
     return (
       <AnimatedPressable
         onPressIn={() => {
@@ -73,7 +126,6 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   }
 
   if (compact) {
-    // Minimal version: just avatar with chevron badge
     return (
       <AnimatedPressable
         onPressIn={() => {
@@ -87,7 +139,6 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         style={animatedStyle}
       >
         <AgentAvatar agent={agent} size={26} />
-        {/* Small chevron indicator */}
         <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
           <Icon
             as={ChevronDown}
@@ -100,7 +151,6 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     );
   }
 
-  // Full version with name
   return (
     <AnimatedPressable
       onPressIn={() => {
@@ -113,11 +163,8 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
       className="flex-row items-center gap-1.5 rounded-2xl px-3.5 py-2"
       style={animatedStyle}
     >
-      {/* Agent info with avatar */}
       <AgentAvatar agent={agent} size={19} />
       <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
-
-      {/* Chevron down */}
       <Icon
         as={ChevronDown}
         size={15}

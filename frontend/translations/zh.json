@@ -220,7 +220,7 @@
     "customWorkers": "自定义 Workers",
     "scheduledTriggers": "计划触发器",
     "appTriggers": "应用触发器",
-    "limitsExceeded": "你已达到限制。升级你的计划以进行更多聊天。",
+    "limitsExceeded": "你已达到聊天限制（{current}/{limit}）。升级你的计划以创建更多聊天。",
     "agentInitiatedSuccessfully": "智能体启动成功",
     "aiAssistantReady": "你的 AI 助手已准备好帮助"
   },
@@ -257,7 +257,15 @@
     "noActionsYet": "还没有操作",
     "workerActionsDescription": "Worker 操作和结果将在此处显示",
     "toolIsRunning": "工具正在运行",
-    "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。"
+    "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。",
+    "rateThisResult": "评价此结果",
+    "feedbackHelpsImprove": "您的反馈帮助我们改进",
+    "additionalFeedbackOptional": "附加反馈（可选）",
+    "helpKortixImprove": "帮助 Kortix 通过您的反馈改进",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "feedbackSubmittedSuccess": "反馈提交成功",
+    "feedbackSubmitFailed": "反馈提交失败"
   },
   "agents": {
     "title": "智能体",

@@ -8,13 +8,13 @@ import { useBillingContext } from '@/contexts/BillingContext';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { 
-  Plus, 
-  Check, 
-  Briefcase, 
-  FileText, 
-  BookOpen, 
-  Zap, 
+import {
+  Plus,
+  Check,
+  Briefcase,
+  FileText,
+  BookOpen,
+  Zap,
   Layers,
   Search as SearchIcon,
   ChevronRight,
@@ -26,8 +26,8 @@ import {
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View, ScrollView, Keyboard, Alert } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
+import Animated, {
+  useAnimatedStyle,
   withTiming,
   useSharedValue,
   FadeIn,
@@ -62,15 +62,15 @@ type ViewState = 'main' | 'agents' | 'models' | 'integrations' | 'composio' | 'c
 
 function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
-  
+
   return (
     <Pressable
       onPress={onPress}
       className="flex-row items-center active:opacity-70"
     >
-      <ArrowLeft 
-        size={20} 
-        color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} 
+      <ArrowLeft
+        size={20}
+        color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
       />
     </Pressable>
   );
@@ -86,17 +86,20 @@ export function AgentDrawer({
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
-  
+
   const agentContext = useAgent();
   const { agents, selectedAgentId, selectedModelId, selectAgent, selectModel, isLoading, loadAgents } = agentContext;
-  
+
   const { data: modelsData, isLoading: modelsLoading } = useAvailableModels();
-  
+
   const { hasActiveSubscription, subscriptionData } = useBillingContext();
-  
+
   const models = modelsData?.models || [];
   const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
-  
+
+  const isOpeningRef = React.useRef(false);
+  const timeoutRef = React.useRef<number | null>(null);
+
   const selectedModel = React.useMemo(() => {
     if (selectedModelId) {
       const model = models.find(m => m.id === selectedModelId);
@@ -104,35 +107,35 @@ export function AgentDrawer({
     }
     return models.find(m => m.id === selectedAgent?.model) || models.find(m => m.recommended);
   }, [selectedModelId, models, selectedAgent]);
-  
+
   const [currentView, setCurrentView] = React.useState<ViewState>('main');
   const [selectedComposioApp, setSelectedComposioApp] = React.useState<any>(null);
   const [selectedComposioProfile, setSelectedComposioProfile] = React.useState<any>(null);
-  const [customMcpConfig, setCustomMcpConfig] = React.useState<{serverName: string; url: string; tools: any[]} | null>(null);
-  
-  const searchableAgents = React.useMemo(() => 
-    agents.map(agent => ({ ...agent, id: agent.agent_id })), 
+  const [customMcpConfig, setCustomMcpConfig] = React.useState<{ serverName: string; url: string; tools: any[] } | null>(null);
+
+  const searchableAgents = React.useMemo(() =>
+    agents.map(agent => ({ ...agent, id: agent.agent_id })),
     [agents]
   );
   const { query: agentQuery, results: agentResults, clearSearch: clearAgentSearch, updateQuery: updateAgentQuery } = useSearch(searchableAgents, ['name', 'description']);
-  const processedAgentResults = React.useMemo(() => 
-    agentResults.map(result => ({ ...result, agent_id: result.id })), 
+  const processedAgentResults = React.useMemo(() =>
+    agentResults.map(result => ({ ...result, agent_id: result.id })),
     [agentResults]
   );
-  
-  const searchableModels = React.useMemo(() => 
-    models.map(model => ({ ...model, name: model.display_name })), 
+
+  const searchableModels = React.useMemo(() =>
+    models.map(model => ({ ...model, name: model.display_name })),
     [models]
   );
   const { query: modelQuery, results: modelResults, clearSearch: clearModelSearch, updateQuery: updateModelQuery } = useSearch(searchableModels, ['display_name', 'short_name']);
-  
+
   const { freeModels, premiumModels } = React.useMemo(() => {
     const resultsToUse = modelQuery ? modelResults : models;
     const free = resultsToUse.filter(m => !m.requires_subscription).sort((a, b) => (b.priority || 0) - (a.priority || 0));
     const premium = resultsToUse.filter(m => m.requires_subscription).sort((a, b) => (b.priority || 0) - (a.priority || 0));
     return { freeModels: free, premiumModels: premium };
   }, [models, modelQuery, modelResults]);
-  
+
   // Check if user can access a model
   const canAccessModel = React.useCallback((model: Model) => {
     // If model doesn't require subscription, it's accessible
@@ -141,30 +144,57 @@ export function AgentDrawer({
     return hasActiveSubscription;
   }, [hasActiveSubscription]);
 
+  // Track actual drawer state changes
+  const handleSheetChange = React.useCallback((index: number) => {
+    console.log('🎭 [AgentDrawer] Sheet index changed:', index, '| Resetting guard');
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (index === -1) {
+      // Drawer fully closed - reset guard immediately
+      console.log('🎭 [AgentDrawer] Drawer closed - guard reset');
+      isOpeningRef.current = false;
+    } else if (index >= 0) {
+      // Drawer opened successfully - can safely reset guard
+      console.log('🎭 [AgentDrawer] Drawer opened - guard reset');
+      isOpeningRef.current = false;
+    }
+  }, []);
+
   // Handle visibility changes
   React.useEffect(() => {
-    console.log('🎭 [AgentDrawer] Visibility changed:', visible);
-    if (visible) {
+    console.log('🎭 [AgentDrawer] Visibility changed:', visible, '| Guard:', isOpeningRef.current);
+    if (visible && !isOpeningRef.current) {
       console.log('✅ [AgentDrawer] Opening drawer with haptic feedback');
-      
+      isOpeningRef.current = true;
+
+      // Fallback: reset guard after 500ms if onChange doesn't fire
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        console.log('🎭 [AgentDrawer] Fallback timeout - resetting guard');
+        isOpeningRef.current = false;
+      }, 500);
+
       // Ensure keyboard is dismissed when drawer opens
       Keyboard.dismiss();
-      
+
       // Refetch agents when drawer opens to ensure fresh data
       console.log('🔄 Refetching agents when drawer opens...');
       loadAgents();
-      
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       bottomSheetRef.current?.snapToIndex(0);
       setCurrentView('main'); // Reset to main view when opening
-    } else {
+    } else if (!visible) {
       console.log('❌ [AgentDrawer] Closing drawer');
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       bottomSheetRef.current?.close();
       // Clear searches when closing
       clearAgentSearch();
       clearModelSearch();
     }
-  }, [visible, clearAgentSearch, clearModelSearch, loadAgents]);
+  }, [visible, clearAgentSearch, clearModelSearch, loadAgents, handleSheetChange]);
 
   // Navigation functions
   const navigateToView = React.useCallback((view: ViewState) => {
@@ -180,7 +210,7 @@ export function AgentDrawer({
 
   const handleModelPress = React.useCallback((model: Model) => {
     console.log('🎯 Model Selected:', model.display_name);
-    
+
     // Check if user can access this model
     if (!canAccessModel(model)) {
       console.log('🔒 Model requires subscription');
@@ -189,8 +219,8 @@ export function AgentDrawer({
         `${model.display_name} requires an active subscription. Upgrade to access premium models with enhanced capabilities.`,
         [
           { text: 'Maybe Later', style: 'cancel' },
-          { 
-            text: 'Upgrade Now', 
+          {
+            text: 'Upgrade Now',
             onPress: () => {
               // TODO: Navigate to billing screen
               console.log('Navigate to billing');
@@ -200,7 +230,7 @@ export function AgentDrawer({
       );
       return;
     }
-    
+
     // Store selected model in context - will be used when starting agent
     if (selectModel) {
       selectModel(model.id);
@@ -211,7 +241,7 @@ export function AgentDrawer({
   }, [navigateToView, canAccessModel, selectModel]);
 
   const integrationsScale = useSharedValue(1);
-  
+
   const integrationsAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: integrationsScale.value }],
   }));
@@ -219,7 +249,7 @@ export function AgentDrawer({
   const handleIntegrationsPress = React.useCallback(() => {
     console.log('🔌 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     if (!selectedAgent) {
       Alert.alert(
         'No Agent Selected',
@@ -228,7 +258,7 @@ export function AgentDrawer({
       );
       return;
     }
-    
+
     setCurrentView('integrations');
   }, [selectedAgent]);
 
@@ -257,7 +287,7 @@ export function AgentDrawer({
     <View>
       <View className="pb-3" style={{ overflow: 'visible' }}>
         <View className="flex-row items-center justify-between mb-3">
-          <Text 
+          <Text
             style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             className="text-sm font-roobert-medium"
           >
@@ -287,7 +317,7 @@ export function AgentDrawer({
           />
         ) : (
           <View className="py-4 items-center">
-            <Text 
+            <Text
               style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
               className="text-sm font-roobert"
             >
@@ -298,15 +328,15 @@ export function AgentDrawer({
       </View>
 
       {/* Divider */}
-      <View 
+      <View
         style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-        className="h-px w-full my-3" 
+        className="h-px w-full my-3"
       />
 
       {/* Models Section */}
       <View className="pb-3">
         <View className="flex-row items-center justify-between mb-3">
-          <Text 
+          <Text
             style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             className="text-sm font-roobert-medium"
           >
@@ -325,7 +355,7 @@ export function AgentDrawer({
           />
         ) : (
           <View className="py-4 items-center">
-            <Text 
+            <Text
               style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
               className="text-sm font-roobert"
             >
@@ -335,10 +365,10 @@ export function AgentDrawer({
         )}
       </View>
 
-      <AnimatedPressable 
+      <AnimatedPressable
         style={[
           integrationsAnimatedStyle,
-          { 
+          {
             borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
             borderWidth: 1,
             borderOpacity: 0.5,
@@ -356,13 +386,13 @@ export function AgentDrawer({
       </AnimatedPressable>
       {advancedFeaturesEnabled && (
         <>
-          <View 
+          <View
             style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-            className="h-px w-full my-3" 
+            className="h-px w-full my-3"
           />
           <View className="pb-2">
             <View className="flex-row items-center justify-between mb-2.5">
-              <Text 
+              <Text
                 style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
                 className="text-sm font-roobert-medium"
               >
@@ -370,8 +400,8 @@ export function AgentDrawer({
               </Text>
             </View>
             <View className="flex-row gap-1.5 opacity-75">
-              <Pressable 
-                style={{ 
+              <Pressable
+                style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                 }}
@@ -380,8 +410,8 @@ export function AgentDrawer({
               >
                 <Briefcase size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-              <Pressable 
-                style={{ 
+              <Pressable
+                style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                 }}
@@ -390,8 +420,8 @@ export function AgentDrawer({
               >
                 <FileText size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-              <Pressable 
-                style={{ 
+              <Pressable
+                style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                 }}
@@ -400,9 +430,9 @@ export function AgentDrawer({
               >
                 <BookOpen size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
-              
-              <Pressable 
-                style={{ 
+
+              <Pressable
+                style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                 }}
@@ -423,13 +453,13 @@ export function AgentDrawer({
       <View className="flex-row items-center mb-4">
         <BackButton onPress={() => navigateToView('main')} />
         <View className="flex-1 ml-3">
-          <Text 
+          <Text
             style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
             className="text-xl font-roobert-semibold"
           >
             {t('agents.selectAgent')}
           </Text>
-          <Text 
+          <Text
             style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
             className="text-sm font-roobert"
           >
@@ -450,7 +480,7 @@ export function AgentDrawer({
 
       {/* Workers List */}
       <View className="flex-row items-center justify-between mb-3">
-        <Text 
+        <Text
           style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
           className="text-sm font-roobert-medium"
         >
@@ -499,13 +529,13 @@ export function AgentDrawer({
         <View className="flex-row items-center mb-4">
           <BackButton onPress={() => navigateToView('main')} />
           <View className="flex-1 ml-3">
-            <Text 
+            <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
               className="text-xl font-roobert-semibold"
             >
               {t('models.selectModel')}
             </Text>
-            <Text 
+            <Text
               style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
               className="text-sm font-roobert"
             >
@@ -526,7 +556,7 @@ export function AgentDrawer({
 
         {modelsLoading ? (
           <View className="py-8 items-center">
-            <Text 
+            <Text
               style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
               className="text-sm font-roobert"
             >
@@ -537,7 +567,7 @@ export function AgentDrawer({
           <>
             {freeModels.length > 0 && (
               <View className="mb-4">
-                <Text 
+                <Text
                   style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
                   className="text-xs font-roobert-medium mb-3 uppercase tracking-wide"
                 >
@@ -567,14 +597,14 @@ export function AgentDrawer({
               <View>
                 <View className="flex-row items-center mb-3">
                   <Crown size={14} color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} />
-                  <Text 
+                  <Text
                     style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
                     className="text-xs font-roobert-medium ml-1.5 uppercase tracking-wide"
                   >
                     {hasActiveSubscription ? 'Premium Models' : 'Additional Models'}
                   </Text>
                 </View>
-                
+
                 {/* Show max 3 premium models if user doesn't have subscription */}
                 {!hasActiveSubscription ? (
                   <>
@@ -595,10 +625,10 @@ export function AgentDrawer({
                         </View>
                       )}
                     />
-                    
+
                     {/* Upgrade CTA */}
-                    <View 
-                      style={{ 
+                    <View
+                      style={{
                         backgroundColor: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.03)',
                         borderColor: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
                       }}
@@ -606,7 +636,7 @@ export function AgentDrawer({
                     >
                       <View className="flex-row items-start mb-2">
                         <Crown size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-                        <Text 
+                        <Text
                           style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
                           className="text-sm font-roobert-semibold ml-2 flex-1"
                         >
@@ -623,7 +653,7 @@ export function AgentDrawer({
                         }}
                         className="py-2.5 rounded-xl items-center active:opacity-80"
                       >
-                        <Text 
+                        <Text
                           style={{ color: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}
                           className="text-sm font-roobert-semibold"
                         >
@@ -654,7 +684,7 @@ export function AgentDrawer({
             )}
             {freeModels.length === 0 && premiumModels.length === 0 && (
               <View className="py-8 items-center">
-                <Text 
+                <Text
                   style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
                   className="text-sm font-roobert"
                 >
@@ -674,16 +704,16 @@ export function AgentDrawer({
       index={-1}
       snapPoints={['90%']}
       enablePanDownToClose
-      onChange={(index) => index === -1 && onClose()}
+      onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ 
-        backgroundColor: colorScheme === 'dark' 
-          ? '#161618' 
+      backgroundStyle={{
+        backgroundColor: colorScheme === 'dark'
+          ? '#161618'
           : '#FFFFFF',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{ 
+      handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
         width: 36,
         height: 5,
@@ -704,32 +734,32 @@ export function AgentDrawer({
             {renderMainView()}
           </Animated.View>
         )}
-        
+
         {currentView === 'agents' && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
             {renderAgentsView()}
           </Animated.View>
         )}
-        
+
         {currentView === 'models' && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
             {renderModelsView()}
           </Animated.View>
         )}
-        
+
         {currentView === 'integrations' && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <IntegrationsPageContent 
+            <IntegrationsPageContent
               onBack={() => setCurrentView('main')}
               noPadding={true}
               onNavigate={(view) => setCurrentView(view as ViewState)}
             />
           </Animated.View>
         )}
-        
+
         {currentView === 'composio' && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <ComposioAppsContent 
+            <ComposioAppsContent
               onBack={() => setCurrentView('integrations')}
               onAppSelect={(app) => {
                 setSelectedComposioApp(app);
@@ -739,7 +769,7 @@ export function AgentDrawer({
             />
           </Animated.View>
         )}
-        
+
         {currentView === 'composio-detail' && selectedComposioApp && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
             <ComposioAppDetailContent
@@ -759,7 +789,7 @@ export function AgentDrawer({
             />
           </Animated.View>
         )}
-        
+
         {currentView === 'composio-connector' && selectedComposioApp && selectedAgent && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
             <ComposioConnectorContent
@@ -780,7 +810,7 @@ export function AgentDrawer({
             />
           </Animated.View>
         )}
-        
+
         {currentView === 'composio-tools' && selectedComposioApp && selectedComposioProfile && selectedAgent && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
             <ComposioToolsContent
@@ -796,10 +826,10 @@ export function AgentDrawer({
             />
           </Animated.View>
         )}
-        
+
         {currentView === 'customMcp' && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
-            <CustomMcpContent 
+            <CustomMcpContent
               onBack={() => setCurrentView('integrations')}
               noPadding={true}
               onSave={(config) => {
@@ -815,7 +845,7 @@ export function AgentDrawer({
             />
           </Animated.View>
         )}
-        
+
         {currentView === 'customMcp-tools' && customMcpConfig && (
           <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
             <CustomMcpToolsContent

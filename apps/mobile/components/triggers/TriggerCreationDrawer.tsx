@@ -11,8 +11,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
-import { 
-  Clock, Sparkles, ChevronRight, Check, Zap, 
+import {
+  Clock, Sparkles, ChevronRight, Check, Zap,
   Target, Calendar as CalendarIcon
 } from 'lucide-react-native';
 import { useAgent } from '@/contexts/AgentContext';
@@ -58,24 +58,24 @@ const WEEKDAYS = [
 /**
  * TypeCard Component - Card for trigger type selection
  */
-function TypeCard({ 
-  icon: IconComponent, 
-  title, 
-  subtitle, 
-  onPress 
-}: { 
-  icon: any; 
-  title: string; 
-  subtitle: string; 
+function TypeCard({
+  icon: IconComponent,
+  title,
+  subtitle,
+  onPress
+}: {
+  icon: any;
+  title: string;
+  subtitle: string;
   onPress: () => void;
 }) {
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  
+
   const bgColor = colorScheme === 'dark' ? '#161618' : '#FFFFFF';
   const borderColor = colorScheme === 'dark' ? '#232324' : '#DCDCDC';
   const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
@@ -100,7 +100,7 @@ function TypeCard({
         }
       ]}
     >
-      <View 
+      <View
         style={{
           width: 48,
           height: 48,
@@ -134,40 +134,52 @@ export function TriggerCreationDrawer({
   onTriggerCreated
 }: TriggerCreationDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const isOpeningRef = React.useRef(false);
   const snapPoints = React.useMemo(() => ['85%'], []);
   const { colorScheme } = useColorScheme();
   const { selectedAgentId } = useAgent();
-  
+
   // Wizard state
   const [currentStep, setCurrentStep] = useState<TriggerStep>('type');
   const [selectedType, setSelectedType] = useState<'schedule' | 'event' | null>(null);
-  
+
   // Form data
   const [triggerName, setTriggerName] = useState('');
   const [description, setDescription] = useState('');
   const [agentPrompt, setAgentPrompt] = useState('');
-  
+
   // Schedule configuration
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('preset');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [cronExpression, setCronExpression] = useState('');
-  
+
   // Recurring schedule state
   const [recurringType, setRecurringType] = useState<RecurringType>('daily');
   const [selectedHour, setSelectedHour] = useState('9');
   const [selectedMinute, setSelectedMinute] = useState('0');
   const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>(['1', '2', '3', '4', '5']);
   const [selectedMonthDays, setSelectedMonthDays] = useState<string[]>(['1']);
-  
+
   const createTriggerMutation = useCreateTrigger();
+
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Handle visibility changes
   useEffect(() => {
-    if (visible) {
+    if (visible && !isOpeningRef.current) {
+      isOpeningRef.current = true;
+
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        console.log('🚪 [TriggerCreationDrawer] Fallback timeout - resetting guard');
+        isOpeningRef.current = false;
+      }, 500);
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       console.log('🚪 Trigger Creation Drawer Opened');
       bottomSheetRef.current?.snapToIndex(0);
-    } else {
+    } else if (!visible) {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       bottomSheetRef.current?.close();
     }
   }, [visible]);
@@ -186,7 +198,13 @@ export function TriggerCreationDrawer({
   );
 
   const handleSheetChange = React.useCallback((index: number) => {
+    console.log('🚪 [TriggerCreationDrawer] Sheet index changed:', index);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     if (index === -1) {
+      isOpeningRef.current = false;
       onClose();
       // Reset form when closed
       setTimeout(() => {
@@ -199,6 +217,8 @@ export function TriggerCreationDrawer({
         setSelectedPreset('');
         setCronExpression('');
       }, 300);
+    } else if (index >= 0) {
+      isOpeningRef.current = false;
     }
   }, [onClose]);
 
@@ -268,7 +288,7 @@ export function TriggerCreationDrawer({
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      
+
       let finalCron = '';
       if (scheduleMode === 'preset') {
         finalCron = cronExpression;
@@ -283,7 +303,7 @@ export function TriggerCreationDrawer({
         return;
       }
 
-      const config = selectedType === 'schedule' 
+      const config = selectedType === 'schedule'
         ? { cron_expression: finalCron, agent_prompt: agentPrompt, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
         : { agent_prompt: agentPrompt || 'Process event', trigger_slug: 'event' };
 
@@ -299,7 +319,7 @@ export function TriggerCreationDrawer({
 
       console.log('✅ Trigger created successfully:', result.trigger_id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
+
       onTriggerCreated?.(result.trigger_id);
       onClose();
     } catch (error) {
@@ -317,10 +337,10 @@ export function TriggerCreationDrawer({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ 
+      backgroundStyle={{
         backgroundColor: bgColor
       }}
-      handleIndicatorStyle={{ 
+      handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
         width: 36,
         height: 5,
@@ -335,7 +355,7 @@ export function TriggerCreationDrawer({
         overflow: 'hidden'
       }}
     >
-      <BottomSheetScrollView 
+      <BottomSheetScrollView
         className="flex-1 px-6"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 40 }}
@@ -343,21 +363,21 @@ export function TriggerCreationDrawer({
       >
         {/* Header */}
         <View className="pt-6 pb-4">
-          <Text 
-            style={{ 
-              color: textColor, 
-              fontSize: 20, 
-              fontWeight: '600' 
+          <Text
+            style={{
+              color: textColor,
+              fontSize: 20,
+              fontWeight: '600'
             }}
           >
             {currentStep === 'type' ? 'Create Trigger' : `${selectedType === 'schedule' ? 'Schedule' : 'Event'} Trigger`}
           </Text>
-          <Text 
-            style={{ 
-              color: mutedColor, 
-              fontSize: 14, 
-              opacity: 0.6, 
-              marginTop: 4 
+          <Text
+            style={{
+              color: mutedColor,
+              fontSize: 14,
+              opacity: 0.6,
+              marginTop: 4
             }}
           >
             {currentStep === 'type' ? 'Choose a trigger type' : 'Configure your trigger'}
@@ -394,14 +414,14 @@ export function TriggerCreationDrawer({
                 onChangeText={setTriggerName}
                 placeholder="Daily report"
                 placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                style={{ 
-                  padding: 12, 
-                  borderRadius: 12, 
-                  borderWidth: 1.5, 
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
                   borderColor,
                   backgroundColor: inputBg,
-                  fontSize: 16, 
-                  color: textColor 
+                  fontSize: 16,
+                  color: textColor
                 }}
               />
             </View>
@@ -425,12 +445,12 @@ export function TriggerCreationDrawer({
                       backgroundColor: scheduleMode === mode ? '#3B82F610' : 'transparent',
                     }}
                   >
-                    <Text 
-                      style={{ 
-                        textAlign: 'center', 
-                        fontSize: 13, 
-                        fontWeight: '500', 
-                        color: scheduleMode === mode ? '#3B82F6' : textColor 
+                    <Text
+                      style={{
+                        textAlign: 'center',
+                        fontSize: 13,
+                        fontWeight: '500',
+                        color: scheduleMode === mode ? '#3B82F6' : textColor
                       }}
                     >
                       {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -455,18 +475,18 @@ export function TriggerCreationDrawer({
                     marginBottom: 8,
                   }}
                 >
-                  <Icon 
-                    as={preset.icon} 
-                    size={18} 
-                    color={selectedPreset === preset.id ? '#3B82F6' : textColor} 
+                  <Icon
+                    as={preset.icon}
+                    size={18}
+                    color={selectedPreset === preset.id ? '#3B82F6' : textColor}
                   />
-                  <Text 
-                    style={{ 
-                      flex: 1, 
-                      marginLeft: 12, 
-                      fontSize: 14, 
-                      fontWeight: '500', 
-                      color: selectedPreset === preset.id ? '#3B82F6' : textColor 
+                  <Text
+                    style={{
+                      flex: 1,
+                      marginLeft: 12,
+                      fontSize: 14,
+                      fontWeight: '500',
+                      color: selectedPreset === preset.id ? '#3B82F6' : textColor
                     }}
                   >
                     {preset.name}
@@ -492,12 +512,12 @@ export function TriggerCreationDrawer({
                           backgroundColor: recurringType === type ? '#3B82F610' : 'transparent',
                         }}
                       >
-                        <Text 
-                          style={{ 
-                            textAlign: 'center', 
-                            fontSize: 12, 
-                            fontWeight: '500', 
-                            color: recurringType === type ? '#3B82F6' : textColor 
+                        <Text
+                          style={{
+                            textAlign: 'center',
+                            fontSize: 12,
+                            fontWeight: '500',
+                            color: recurringType === type ? '#3B82F6' : textColor
                           }}
                         >
                           {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -514,16 +534,16 @@ export function TriggerCreationDrawer({
                       keyboardType="number-pad"
                       maxLength={2}
                       placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      style={{ 
-                        width: 60, 
-                        padding: 8, 
-                        borderRadius: 8, 
-                        borderWidth: 1.5, 
+                      style={{
+                        width: 60,
+                        padding: 8,
+                        borderRadius: 8,
+                        borderWidth: 1.5,
                         borderColor,
                         backgroundColor: inputBg,
-                        textAlign: 'center', 
-                        fontSize: 16, 
-                        color: textColor 
+                        textAlign: 'center',
+                        fontSize: 16,
+                        color: textColor
                       }}
                     />
                     <Text style={{ fontSize: 20, color: textColor, alignSelf: 'center' }}>:</Text>
@@ -534,16 +554,16 @@ export function TriggerCreationDrawer({
                       keyboardType="number-pad"
                       maxLength={2}
                       placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      style={{ 
-                        width: 60, 
-                        padding: 8, 
-                        borderRadius: 8, 
-                        borderWidth: 1.5, 
+                      style={{
+                        width: 60,
+                        padding: 8,
+                        borderRadius: 8,
+                        borderWidth: 1.5,
                         borderColor,
                         backgroundColor: inputBg,
-                        textAlign: 'center', 
-                        fontSize: 16, 
-                        color: textColor 
+                        textAlign: 'center',
+                        fontSize: 16,
+                        color: textColor
                       }}
                     />
                   </View>
@@ -563,11 +583,11 @@ export function TriggerCreationDrawer({
                             backgroundColor: selectedWeekdays.includes(day.value) ? '#3B82F610' : 'transparent',
                           }}
                         >
-                          <Text 
-                            style={{ 
-                              fontSize: 12, 
-                              fontWeight: '500', 
-                              color: selectedWeekdays.includes(day.value) ? '#3B82F6' : textColor 
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: '500',
+                              color: selectedWeekdays.includes(day.value) ? '#3B82F6' : textColor
                             }}
                           >
                             {day.label}
@@ -577,20 +597,20 @@ export function TriggerCreationDrawer({
                     </View>
                   )}
 
-                  <View 
-                    style={{ 
-                      padding: 12, 
-                      borderRadius: 12, 
-                      backgroundColor: previewBg, 
-                      marginBottom: 12 
+                  <View
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      backgroundColor: previewBg,
+                      marginBottom: 12
                     }}
                   >
-                    <Text 
-                      style={{ 
-                        fontSize: 12, 
-                        fontFamily: 'monospace', 
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: 'monospace',
                         color: textColor,
-                        opacity: 0.6 
+                        opacity: 0.6
                       }}
                     >
                       {generateRecurringCron()}
@@ -606,15 +626,15 @@ export function TriggerCreationDrawer({
                   onChangeText={setCronExpression}
                   placeholder="0 9 * * 1-5"
                   placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                  style={{ 
-                    padding: 12, 
-                    borderRadius: 12, 
-                    borderWidth: 1.5, 
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
                     borderColor,
                     backgroundColor: inputBg,
-                    fontFamily: 'monospace', 
-                    fontSize: 14, 
-                    color: textColor 
+                    fontFamily: 'monospace',
+                    fontSize: 14,
+                    color: textColor
                   }}
                 />
               )}
@@ -632,15 +652,15 @@ export function TriggerCreationDrawer({
                 placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                 multiline
                 numberOfLines={3}
-                style={{ 
-                  padding: 12, 
-                  borderRadius: 12, 
-                  borderWidth: 1.5, 
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
                   borderColor,
                   backgroundColor: inputBg,
-                  fontSize: 14, 
-                  color: textColor, 
-                  textAlignVertical: 'top' 
+                  fontSize: 14,
+                  color: textColor,
+                  textAlignVertical: 'top'
                 }}
               />
             </View>
@@ -696,46 +716,46 @@ export function TriggerCreationDrawer({
                 onChangeText={setTriggerName}
                 placeholder="Event processor"
                 placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                style={{ 
-                  padding: 12, 
-                  borderRadius: 12, 
-                  borderWidth: 1.5, 
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
                   borderColor,
                   backgroundColor: inputBg,
-                  fontSize: 16, 
-                  color: textColor 
+                  fontSize: 16,
+                  color: textColor
                 }}
               />
             </View>
 
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-              <Pressable 
-                onPress={handleBack} 
-                style={({ pressed }) => [{ 
-                  flex: 1, 
-                  padding: 16, 
-                  borderRadius: 12, 
-                  borderWidth: 1.5, 
+              <Pressable
+                onPress={handleBack}
+                style={({ pressed }) => [{
+                  flex: 1,
+                  padding: 16,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
                   borderColor,
                   backgroundColor: bgColor,
-                  alignItems: 'center', 
-                  opacity: pressed ? 0.7 : 1 
+                  alignItems: 'center',
+                  opacity: pressed ? 0.7 : 1
                 }]}
               >
                 <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>
                   Back
                 </Text>
               </Pressable>
-              <Pressable 
-                onPress={handleCreate} 
+              <Pressable
+                onPress={handleCreate}
                 disabled={createTriggerMutation.isPending}
-                style={({ pressed }) => [{ 
-                  flex: 1, 
-                  padding: 16, 
-                  borderRadius: 12, 
-                  backgroundColor: textColor, 
-                  alignItems: 'center', 
-                  opacity: pressed || createTriggerMutation.isPending ? 0.7 : 1 
+                style={({ pressed }) => [{
+                  flex: 1,
+                  padding: 16,
+                  borderRadius: 12,
+                  backgroundColor: textColor,
+                  alignItems: 'center',
+                  opacity: pressed || createTriggerMutation.isPending ? 0.7 : 1
                 }]}
               >
                 <Text style={{ fontSize: 16, fontWeight: '600', color: bgColor }}>

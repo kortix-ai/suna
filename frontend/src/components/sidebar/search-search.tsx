@@ -14,7 +14,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { useProjects, useThreads } from '@/hooks/sidebar/use-sidebar';
+import { useProjects, useThreads, processThreadsWithProjects } from '@/hooks/sidebar/use-sidebar';
+import { Project } from '@/lib/api/projects';
 import Link from 'next/link';
 
 // Thread with associated project info for display in sidebar & search
@@ -38,9 +39,29 @@ export function SidebarSearch() {
   const { state } = useSidebar();
 
   // Use React Query hooks
-  const { data: projects = [], isLoading: projectsLoading } = useProjects();
-  const { data: allThreads = [], isLoading: threadsLoading } = useThreads();
+  const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useProjects();
+  const { data: threadsResponse, isLoading: threadsLoading, error: threadsError } = useThreads();
+  
+  const allThreads = threadsResponse?.threads || [];
   const isLoading = projectsLoading || threadsLoading;
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 Search: Hook data', {
+      projectsLoading,
+      threadsLoading,
+      projectsCount: projects.length,
+      threadsCount: allThreads.length,
+      projectsError: projectsError?.message,
+      threadsError: threadsError?.message,
+      firstProject: projects[0] ? { id: projects[0].id, name: projects[0].name } : null,
+      firstThread: allThreads[0] ? { 
+        thread_id: allThreads[0].thread_id, 
+        project_id: allThreads[0].project_id,
+        hasProject: !!(allThreads[0] as any).project
+      } : null
+    });
+  }, [projectsLoading, threadsLoading, projects.length, allThreads.length, projectsError, threadsError, projects, allThreads]);
 
   // Helper to sort threads by updated_at (most recent first)
   const sortThreads = (
@@ -53,48 +74,64 @@ export function SidebarSearch() {
 
   // Process threads with project data when data changes
   useEffect(() => {
-    if (!projects.length || !allThreads.length) {
+    // Don't process if still loading
+    if (isLoading) {
+      return;
+    }
+    
+    // If we have no threads, clear everything
+    if (!allThreads.length) {
       setThreads([]);
       setFilteredThreads([]);
       return;
     }
-
-    // Create a map of projects by ID for faster lookups
-    const projectsById = new Map();
-    projects.forEach((project) => {
-      projectsById.set(project.id, project);
-    });
-
-    // Create display objects for threads with their project info
-    const threadsWithProjects: ThreadWithProject[] = [];
-
-    for (const thread of allThreads) {
-      const projectId = thread.project_id;
-      // Skip threads without a project ID
-      if (!projectId) continue;
-
-      // Get the associated project
-      const project = projectsById.get(projectId);
-      if (!project) continue;
-
-      let displayName = project.name || 'Unnamed Project';
-
-      // Add to our list
-      threadsWithProjects.push({
-        threadId: thread.thread_id,
-        projectId: projectId,
-        projectName: displayName,
-        url: `/projects/${projectId}/thread/${thread.thread_id}`,
-        updatedAt:
-          thread.updated_at || project.updated_at || new Date().toISOString(),
+    
+    // Extract projects from threads if projects array is empty
+    // This handles the case where getProjects() might not have extracted projects correctly
+    let effectiveProjects = projects;
+    if (!projects.length) {
+      const projectsMap = new Map<string, Project>();
+      allThreads.forEach((thread: any) => {
+        if (thread.project && thread.project_id) {
+          const project = thread.project;
+          if (!projectsMap.has(project.project_id)) {
+            projectsMap.set(project.project_id, {
+              id: project.project_id,
+              name: project.name || '',
+              description: project.description || '',
+              created_at: project.created_at,
+              updated_at: project.updated_at,
+              sandbox: project.sandbox || {
+                id: '',
+                pass: '',
+                vnc_preview: '',
+                sandbox_url: '',
+              },
+              icon_name: project.icon_name,
+            });
+          }
+        }
       });
+      effectiveProjects = Array.from(projectsMap.values());
+      console.log('🔍 Search: Extracted projects from threads', { count: effectiveProjects.length });
     }
+    
+    // Use the utility function that handles project extraction from threads
+    const threadsWithProjects = processThreadsWithProjects(allThreads, effectiveProjects);
+    
+    console.log('🔍 Search: Processed threads', { 
+      inputThreads: allThreads.length, 
+      inputProjects: projects.length,
+      effectiveProjects: effectiveProjects.length,
+      outputThreads: threadsWithProjects.length,
+      sampleThread: threadsWithProjects[0]
+    });
 
     // Set threads, ensuring consistent sort order
     const sortedThreads = sortThreads(threadsWithProjects);
     setThreads(sortedThreads);
     setFilteredThreads(sortedThreads);
-  }, [projects, allThreads]);
+  }, [projects, allThreads, isLoading]);
 
   // Filter threads based on search query
   const filterThreads = useCallback(

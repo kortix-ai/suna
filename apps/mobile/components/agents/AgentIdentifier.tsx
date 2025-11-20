@@ -13,30 +13,17 @@ import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
 import { useColorScheme } from 'nativewind';
 import type { Agent } from '@/api/types';
+import { KortixLogo } from '@/components/ui/KortixLogo';
+import { useGuestMode } from '@/contexts';
 
 interface AgentIdentifierProps extends ViewProps {
-  /** Agent ID to fetch and display */
   agentId?: string | null;
-  /** Direct agent object (bypasses lookup) */
   agent?: Agent;
-  /** Avatar size in pixels */
   size?: number;
-  /** Whether to show the agent name */
   showName?: boolean;
-  /** Text size variant */
   textSize?: 'xs' | 'sm' | 'base';
 }
 
-/**
- * AgentIdentifier - Shows agent avatar with optional name
- * 
- * Usage:
- * ```tsx
- * <AgentIdentifier agentId="super-worker" size={24} showName />
- * <AgentIdentifier agent={myAgent} size={32} />
- * <AgentIdentifier /> // Uses current selected agent
- * ```
- */
 export function AgentIdentifier({
   agentId,
   agent: providedAgent,
@@ -47,25 +34,54 @@ export function AgentIdentifier({
   ...props
 }: AgentIdentifierProps) {
   const { agents, selectedAgentId } = useAgent();
+  const { isGuestMode } = useGuestMode();
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   
-  // Get agent from ID or use provided agent or fallback to current agent
-  const agent = useMemo(() => {
-    if (providedAgent) return providedAgent;
-    if (agentId) {
-      const found = agents.find(a => a.agent_id === agentId);
-      if (found) return found;
-    }
-    // Fallback to selected agent
-    const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
-    return selectedAgent || agents[0] || null;
-  }, [agentId, providedAgent, agents, selectedAgentId]);
-
+  console.log('[AgentIdentifier] isGuestMode:', isGuestMode, 'agentId:', agentId);
+  
   const textSizeClass = {
     xs: 'text-xs',
     sm: 'text-sm',
     base: 'text-base',
   }[textSize];
+
+  const agent = useMemo(() => {
+    if (isGuestMode) {
+      console.log('[AgentIdentifier] In guest mode, returning null agent');
+      return null;
+    }
+    if (providedAgent) return providedAgent;
+    if (agentId) {
+      const found = agents.find(a => a.agent_id === agentId);
+      if (found) return found;
+    }
+    const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
+    return selectedAgent || agents[0] || null;
+  }, [agentId, providedAgent, agents, selectedAgentId, isGuestMode]);
+
+  if (isGuestMode) {
+    console.log('[AgentIdentifier] Rendering guest mode view with Suna');
+    return (
+      <View 
+        className="flex-row items-center gap-1.5"
+        style={style}
+        {...props}
+      >
+        <View className="rounded-md bg-primary items-center justify-center" style={{ width: size, height: size }}>
+          <KortixLogo size={size * 0.55} variant="symbol" color={isDark ? 'light' : 'dark'} />
+        </View>
+        {showName && (
+          <Text 
+            className={`${textSizeClass} font-medium opacity-50`} 
+            style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+          >
+            Suna
+          </Text>
+        )}
+      </View>
+    );
+  }
 
   if (!agent) {
     return (

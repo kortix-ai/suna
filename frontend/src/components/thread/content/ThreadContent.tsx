@@ -1052,6 +1052,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                     })()}
                                                                 </div>
                                                             )}
+
+                                                            {/* Show loader when agent is running but not streaming, inside the last assistant group */}
+                                                            {groupIndex === finalGroupedMessages.length - 1 && 
+                                                                !readOnly && 
+                                                                (agentStatus === 'running' || agentStatus === 'connecting') && 
+                                                                !streamingTextContent && 
+                                                                !streamingToolCall &&
+                                                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                                                                <div className="mt-2">
+                                                                    <AgentLoader />
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1061,9 +1073,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                     return null;
                                 });
                             })()}
+                            {/* Show loader as new assistant group only when there's no assistant group (last message is user or no messages) and agent is running */}
                             {((agentStatus === 'running' || agentStatus === 'connecting') && !streamingTextContent && !streamingToolCall &&
                                 !readOnly &&
-                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting')) && (
+                                (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
+                                (displayMessages.length === 0 || displayMessages[displayMessages.length - 1].type === 'user')) && (
                                     <div ref={latestMessageRef} className='w-full h-22 rounded'>
                                         <div className="flex flex-col gap-2">
                                             {/* Logo positioned above the loader */}

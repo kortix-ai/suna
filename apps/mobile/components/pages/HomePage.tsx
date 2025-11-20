@@ -15,7 +15,7 @@ interface HomePageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
-  onOpenAuthDrawer: () => void;
+  isGuestMode?: boolean;
 }
 
 export interface HomePageRef {
@@ -26,7 +26,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   onMenuPress,
   chat,
   isAuthenticated,
-  onOpenAuthDrawer,
+  isGuestMode = false,
 }, ref) => {
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
@@ -99,6 +99,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               onMenuPress={onMenuPress}
               onUpgradePress={handleUpgradePress}
               onCreditsPress={handleCreditsPress}
+              isGuestMode={isGuestMode}
             />
             <View className="absolute inset-0" pointerEvents="none">
               <BackgroundLogo />
@@ -112,12 +113,12 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               }}
               onSendAudio={audioHandlers.handleSendAudio}
               onAttachPress={chat.openAttachmentDrawer}
-              onAgentPress={agentManager.openDrawer}
+              onAgentPress={isGuestMode ? () => {} : agentManager.openDrawer}
               onAudioRecord={audioHandlers.handleStartRecording}
               onCancelRecording={audioHandlers.handleCancelRecording}
               onStopAgentRun={chat.stopAgent}
               placeholder={chat.getPlaceholder()}
-              agent={agentManager.selectedAgent || undefined}
+              agent={isGuestMode ? undefined : (agentManager.selectedAgent || undefined)}
               isRecording={audioRecorder.isRecording}
               recordingDuration={audioRecorder.recordingDuration}
               audioLevel={audioRecorder.audioLevel}
@@ -138,22 +139,22 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
                 chatInputRef.current?.focusInput();
               }}
               isAuthenticated={isAuthenticated}
-              onOpenAuthDrawer={onOpenAuthDrawer}
               isAgentRunning={chat.isAgentRunning}
               isSendingMessage={chat.isSendingMessage}
               isTranscribing={isTranscribing}
+              isGuestMode={isGuestMode}
             />
           </View>
         </Pressable>
-        {/* <ChatDrawers
-          isAgentDrawerVisible={agentManager.isDrawerVisible}
+        <ChatDrawers
+          isAgentDrawerVisible={!isGuestMode && agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
           isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
           onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
           onTakePicture={chat.handleTakePicture}
           onChooseImages={chat.handleChooseImages}
           onChooseFiles={chat.handleChooseFiles}
-        /> */}
+        />
         <PlanSelectionModal
           open={isPricingModalOpen}
           onOpenChange={handleClosePricingModal}

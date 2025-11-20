@@ -162,7 +162,19 @@
     "threadTitle": "Titre du chat",
     "editTitle": "Modifier le titre",
     "noMessages": "Pas encore de messages",
-    "startConversation": "Commence une conversation"
+    "startConversation": "Commence une conversation",
+    "taskCompleted": "Tâche terminée",
+    "howWasThisResult": "Comment était ce résultat ?",
+    "rateThisResult": "Évaluer ce résultat",
+    "feedbackHelpsImprove": "Vos commentaires nous aident à nous améliorer",
+    "additionalFeedbackOptional": "Commentaire supplémentaire (optionnel)",
+    "helpKortixImprove": "Aidez Kortix à s'améliorer avec mes commentaires",
+    "submit": "Envoyer",
+    "submitting": "Envoi en cours...",
+    "suggestedFollowUps": "Suggestions de suivi",
+    "error": "Erreur",
+    "feedbackSubmitFailed": "Échec de l'envoi du commentaire",
+    "feedbackSubmitFailedRetry": "Échec de l'envoi du commentaire. Veuillez réessayer."
   },
   "agents": {
     "selectAgent": "Choisir un Worker",

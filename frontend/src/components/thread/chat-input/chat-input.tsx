@@ -279,12 +279,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const { data: agentsResponse } = useAgents({}, { enabled: isLoggedIn });
+    const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({}, { enabled: isLoggedIn });
     const agents = agentsResponse?.agents || [];
 
     // Check if selected agent is Suna based on agent data
+    // While loading, default to Suna (assume Suna is the default agent)
     const selectedAgent = agents.find(agent => agent.agent_id === selectedAgentId);
-    const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
+    const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
+    const isSunaAgent = isLoadingAgents 
+        ? true // Show Suna modes while loading
+        : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
     const { initializeFromAgents } = useAgentSelection();
     useImperativeHandle(ref, () => ({

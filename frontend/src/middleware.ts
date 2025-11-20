@@ -220,6 +220,8 @@ export async function middleware(request: NextRequest) {
     }
 
     // Only check billing for protected routes that require active subscription
+    // NOTE: Middleware is server-side code, so direct Supabase queries are acceptable here
+    // for performance reasons. Only client-side (browser) code should use backend API.
     if (PROTECTED_ROUTES.some(route => pathname.startsWith(route))) {
       const { data: accounts } = await supabase
         .schema('basejump')

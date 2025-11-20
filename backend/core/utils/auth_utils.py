@@ -5,12 +5,9 @@ import jwt
 from jwt.exceptions import PyJWTError
 from core.utils.logger import structlog
 from core.utils.config import config
-import os
-import base64
-import hashlib
-import hmac
 from core.services.supabase import DBConnection
 from core.services import redis
+from core.utils.logger import logger, structlog
 
 async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
     if not config.KORTIX_ADMIN_API_KEY:
@@ -194,18 +191,33 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"}
         )
+
+
+async def get_optional_user_id_from_jwt(request: Request) -> Optional[str]:
+    try:
+        return await verify_and_get_user_id_from_jwt(request)
+    except HTTPException:
+        return None
+
     
 async def get_user_id_from_stream_auth(
     request: Request,
-    token: Optional[str] = None
+    token: Optional[str] = None,
+    guest_session: Optional[str] = None
 ) -> str:
+    logger.debug(f"🔐 get_user_id_from_stream_auth called - has_token: {bool(token)}, has_guest_session: {bool(guest_session)}")
+    
     try:
         try:
-            return await verify_and_get_user_id_from_jwt(request)
+            user_id = await verify_and_get_user_id_from_jwt(request)
+            logger.debug(f"✅ Authenticated via JWT header: {user_id[:8]}...")
+            return user_id
         except HTTPException:
+            logger.debug("❌ JWT header auth failed")
             pass
         
         if token:
+            logger.debug("🔑 Attempting token query param auth")
             try:
                 payload = _decode_jwt_safely(token)
                 user_id = payload.get('sub')
@@ -215,10 +227,28 @@ async def get_user_id_from_stream_auth(
                         user_id=user_id,
                         auth_method="jwt_query"
                     )
+                    logger.debug(f"✅ Authenticated via token param: {user_id[:8]}...")
                     return user_id
-            except Exception:
+            except Exception as e:
+                logger.debug(f"❌ Token param auth failed: {str(e)}")
                 pass
         
+        if guest_session:
+            logger.debug(f"👤 Attempting guest session auth: {guest_session[:8]}...")
+            from core.guest_session import guest_session_service
+            guest_session_data = await guest_session_service.get_or_create_session(request, guest_session)
+            if guest_session_data:
+                session_id = guest_session_data['session_id']
+                structlog.contextvars.bind_contextvars(
+                    user_id=session_id,
+                    auth_method="guest_session"
+                )
+                logger.debug(f"✅ Guest session authenticated for streaming: {session_id[:8]}...")
+                return session_id
+            else:
+                logger.error("❌ Guest session data retrieval failed")
+        
+        logger.error("❌ No valid authentication method succeeded")
         raise HTTPException(
             status_code=401,
             detail="No valid authentication credentials found",
