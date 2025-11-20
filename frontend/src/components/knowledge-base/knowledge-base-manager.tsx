@@ -43,6 +43,7 @@ import { EditSummaryModal } from './edit-summary-modal';
 import { KBDeleteConfirmDialog } from './kb-delete-confirm-dialog';
 import { useKnowledgeFolders, type Folder, type Entry } from '@/hooks/knowledge-base/use-folders';
 import { FileNameValidator } from '@/lib/validation';
+import { backendApi } from '@/lib/api-client';
 import { createClient } from '@/lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -443,16 +444,15 @@ export function KnowledgeBaseManager({
         }
 
         try {
-            const supabase = createClient();
+            const response = await backendApi.put(
+                `/knowledge-base/folders/${editingFolder}`,
+                { name: trimmedName },
+                { showErrors: false }
+            );
 
-            const { error } = await supabase
-                .from('knowledge_base_folders')
-                .update({ name: trimmedName })
-                .eq('folder_id', editingFolder);
-
-            if (error) {
-                console.error('Supabase error:', error);
-                if (error.message?.includes('duplicate') || error.code === '23505') {
+            if (response.error) {
+                console.error('Error updating folder:', response.error);
+                if (response.error.message?.includes('duplicate') || response.error.code === '23505') {
                     toast.error('A folder with this name already exists');
                 } else {
                     toast.error('Failed to rename folder');

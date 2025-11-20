@@ -19,7 +19,7 @@ router = APIRouter(tags=["threads"])
 async def get_user_threads(
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
-    limit: Optional[int] = Query(1000, ge=1, le=1000, description="Number of items per page (max 1000)")
+    limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
     """Get all threads for the current user with associated project data."""
     logger.debug(f"Fetching threads with project data for user: {user_id} (page={page}, limit={limit})")

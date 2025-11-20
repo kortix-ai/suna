@@ -13,6 +13,7 @@ import {
   X,
   History,
   ChevronRight,
+  ChevronLeft,
   Zap,
   Folder
 } from "lucide-react"
@@ -59,9 +60,11 @@ import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, 
 import { projectKeys, threadKeys } from '@/hooks/threads/keys';
 import { useThreadAgentStatuses } from '@/hooks/threads';
 import { formatDateForList } from '@/lib/utils/date-formatting';
-import { Thread, getThreadsPaginated } from '@/lib/api/threads';
-import { useQuery } from '@tanstack/react-query';
+import { Thread, getThreadsPaginated, type ThreadsResponse } from '@/lib/api/threads';
+import { useThreads } from '@/hooks/threads/use-threads';
 import { useTranslations } from 'next-intl';
+import { useMemo } from 'react';
+import { Project } from '@/lib/api/projects';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -254,10 +257,8 @@ export function NavAgents() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [allThreads, setAllThreads] = useState<Thread[]>([]);
   const pageLimit = 50;
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const savedScrollPositionRef = useRef<number | null>(null);
 
   const {
     data: projects = [],
@@ -265,16 +266,21 @@ export function NavAgents() {
     error: projectsError
   } = useProjects();
 
-  // Use paginated threads API directly
+  // Use unified paginated threads hook - returns full ThreadsResponse with pagination
   const {
     data: threadsResponse,
     isLoading: isThreadsLoading,
     error: threadsError
-  } = useQuery({
-    queryKey: [...threadKeys.lists(), 'paginated', currentPage, pageLimit],
-    queryFn: () => getThreadsPaginated(undefined, currentPage, pageLimit),
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+  } = useThreads({
+    page: currentPage,
+    limit: pageLimit,
+  });
+  
+  console.log('📋 NavAgents: useThreads response', { 
+    threadsCount: threadsResponse?.threads?.length || 0,
+    pagination: threadsResponse?.pagination,
+    isThreadsLoading,
+    currentPage 
   });
 
   const { mutate: deleteThreadMutation, isPending: isDeletingSingle } = useDeleteThread();
@@ -283,22 +289,14 @@ export function NavAgents() {
     isPending: isDeletingMultiple
   } = useDeleteMultipleThreads();
 
-  // Accumulate threads as we load more pages
-  useEffect(() => {
-    if (threadsResponse?.threads) {
-      if (currentPage === 1) {
-        // Reset threads on first page
-        setAllThreads(threadsResponse.threads);
-      } else {
-        // Append new threads for subsequent pages
-        setAllThreads(prev => {
-          const existingIds = new Set(prev.map(t => t.thread_id));
-          const newThreads = threadsResponse.threads.filter(t => !existingIds.has(t.thread_id));
-          return [...prev, ...newThreads];
-        });
-      }
-    }
-  }, [threadsResponse, currentPage]);
+  // Use threads directly from response
+  const currentThreads = threadsResponse?.threads || [];
+  
+  console.log('📋 NavAgents: Current threads', {
+    currentThreadsLength: currentThreads.length,
+    currentPage,
+    hasProjectData: !!currentThreads[0]?.project
+  });
 
   // Reset pagination when total thread count changes (e.g., after deletion)
   const previousTotalRef = useRef<number | undefined>(undefined);
@@ -311,17 +309,59 @@ export function NavAgents() {
         currentTotal < previousTotalRef.current &&
         currentPage > 1) {
         setCurrentPage(1);
-        setAllThreads([]);
       }
 
       previousTotalRef.current = currentTotal;
     }
   }, [threadsResponse?.pagination, currentPage]);
 
-  // Always process threads if we have them, even while loading more
-  const combinedThreads: ThreadWithProject[] =
-    !isProjectsLoading && allThreads.length > 0 && projects.length > 0 ?
-      processThreadsWithProjects(allThreads, projects) : [];
+  // Process threads directly - backend already provides project data!
+  // No need to map threads to projects, just transform the data structure
+  const combinedThreads: ThreadWithProject[] = useMemo(() => {
+    if (currentThreads.length === 0) {
+      console.log('📦 NavAgents: No threads to process');
+      return [];
+    }
+    
+    const processed: ThreadWithProject[] = [];
+    
+    for (const thread of currentThreads) {
+      const projectId = thread.project_id;
+      const project = thread.project; // Backend already provides this!
+      
+      if (!projectId || !project) {
+        console.log('📦 NavAgents: Thread missing project data', {
+          thread_id: thread.thread_id,
+          project_id: projectId,
+          hasProject: !!project
+        });
+        continue;
+      }
+      
+      const displayName = project.name || 'Unnamed Project';
+      const iconName = project.icon_name;
+      
+      processed.push({
+        threadId: thread.thread_id,
+        projectId: projectId,
+        projectName: displayName,
+        url: `/projects/${projectId}/thread/${thread.thread_id}`,
+        updatedAt: thread.updated_at || project.updated_at || new Date().toISOString(),
+        iconName: iconName,
+      });
+    }
+    
+    console.log('📦 NavAgents: Processed threads', {
+      inputCount: currentThreads.length,
+      outputCount: processed.length,
+      sample: processed[0]
+    });
+    
+    // Sort by updated_at
+    return processed.sort((a, b) => 
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+  }, [currentThreads]);
 
   // Separate trigger threads from regular threads
   const regularThreads = combinedThreads.filter(thread => !thread.projectName?.startsWith('Trigger: '));
@@ -329,40 +369,46 @@ export function NavAgents() {
 
   const groupedThreads: GroupedThreads = groupThreadsByDate(regularThreads);
   const groupedTriggerThreads: GroupedThreads = groupThreadsByDate(triggerThreads);
+  
+  // Debug logging for grouped threads
+  console.log('📋 NavAgents: Grouped threads', {
+    combinedCount: combinedThreads.length,
+    regularCount: regularThreads.length,
+    triggerCount: triggerThreads.length,
+    groupedKeys: Object.keys(groupedThreads),
+    groupedCounts: Object.entries(groupedThreads).map(([key, threads]) => ({ [key]: threads.length }))
+  });
 
-  // Check if there are more threads to load
-  const hasMore = threadsResponse?.pagination &&
-    threadsResponse.pagination.page < threadsResponse.pagination.pages;
+  // Pagination helpers
+  const pagination = threadsResponse?.pagination;
+  const totalPages = pagination?.pages || 1;
+  const canGoPrevious = currentPage > 1;
+  const canGoNext = currentPage < totalPages;
+  
+  console.log('📋 NavAgents: Pagination state', {
+    threadsResponseExists: !!threadsResponse,
+    paginationExists: !!pagination,
+    pagination,
+    totalPages,
+    currentPage,
+    canGoPrevious,
+    canGoNext
+  });
 
-  const handleLoadMore = () => {
-    if (hasMore && !isThreadsLoading) {
-      // Save current scroll position and height before loading more
-      const scrollContainer = scrollContainerRef.current;
-      if (scrollContainer) {
-        savedScrollPositionRef.current = scrollContainer.scrollTop;
-      }
-
-      setCurrentPage(prev => prev + 1);
+  const handlePreviousPage = () => {
+    if (canGoPrevious) {
+      setCurrentPage(prev => prev - 1);
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
-  // Restore scroll position after new threads are loaded
-  useEffect(() => {
-    if (savedScrollPositionRef.current !== null && !isThreadsLoading && allThreads.length > 0) {
-      const scrollContainer = scrollContainerRef.current;
-      if (scrollContainer) {
-        // Use requestAnimationFrame for smoother scroll restoration
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (scrollContainer && savedScrollPositionRef.current !== null) {
-              scrollContainer.scrollTop = savedScrollPositionRef.current;
-              savedScrollPositionRef.current = null;
-            }
-          });
-        });
-      }
+  const handleNextPage = () => {
+    if (canGoNext) {
+      setCurrentPage(prev => prev + 1);
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [isThreadsLoading, allThreads.length]);
+  };
+
 
   // Track agent running status for all threads
   const threadIds = combinedThreads.map(thread => thread.threadId);
@@ -525,10 +571,10 @@ export function NavAgents() {
       // Store threadToDelete in a local variable since it might be cleared
       const deletedThread = { ...threadToDelete };
 
-      // Get sandbox ID from projects data
+      // Get sandbox ID from thread's project data (backend already provides this)
       const thread = combinedThreads.find(t => t.threadId === threadId);
-      const project = projects.find(p => p.id === thread?.projectId);
-      const sandboxId = project?.sandbox?.id;
+      const currentThread = currentThreads.find(t => t.thread_id === threadId);
+      const sandboxId = currentThread?.project?.sandbox?.id;
 
       // Use the centralized deletion system with completion callback
       await performDelete(
@@ -583,9 +629,9 @@ export function NavAgents() {
             threadIds: threadIdsToDelete,
             threadSandboxMap: Object.fromEntries(
               threadIdsToDelete.map(threadId => {
-                const thread = combinedThreads.find(t => t.threadId === threadId);
-                const project = projects.find(p => p.id === thread?.projectId);
-                return [threadId, project?.sandbox?.id || ''];
+                const currentThread = currentThreads.find(t => t.thread_id === threadId);
+                const sandboxId = currentThread?.project?.sandbox?.id || '';
+                return [threadId, sandboxId];
               }).filter(([, sandboxId]) => sandboxId)
             ),
             onProgress: handleDeletionProgress
@@ -748,39 +794,40 @@ export function NavAgents() {
                   </div>
                 ))}
 
-                {/* Show skeleton loaders while loading more threads */}
-                {isThreadsLoading && allThreads.length > 0 && (
-                  <div className="space-y-1 mt-1">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                      <div key={`loading-skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
-                        <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
-                        <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
-                        <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Load More section - simple and minimal */}
-                {threadsResponse?.pagination && threadsResponse.pagination.total > pageLimit && !isThreadsLoading && (
-                  <div className="px-2 py-3">
-                    {hasMore ? (
+                {/* Minimal pagination controls */}
+                {pagination && totalPages > 1 && (
+                  <div className="px-2 py-2">
+                    <div className="flex items-center justify-center gap-3">
                       <button
-                        onClick={handleLoadMore}
+                        onClick={handlePreviousPage}
+                        disabled={!canGoPrevious || isThreadsLoading}
                         className={cn(
-                          "w-full py-2 px-3 text-xs text-muted-foreground",
-                          "hover:text-foreground hover:bg-accent/50",
-                          "transition-colors rounded-md",
-                          "flex items-center justify-center gap-2"
+                          "p-1.5 text-xs transition-opacity",
+                          canGoPrevious && !isThreadsLoading
+                            ? "text-muted-foreground hover:text-foreground opacity-70 hover:opacity-100"
+                            : "text-muted-foreground/30 cursor-not-allowed"
                         )}
                       >
-                        <span>Load more ({threadsResponse.pagination.total - allThreads.length} remaining)</span>
+                        <ChevronLeft className="h-3.5 w-3.5" />
                       </button>
-                    ) : (
-                      <div className="text-center py-2 text-xs text-muted-foreground">
-                        All threads loaded
-                      </div>
-                    )}
+                      
+                      <span className="text-xs text-muted-foreground/70">
+                        {currentPage}/{totalPages}
+                      </span>
+                      
+                      <button
+                        onClick={handleNextPage}
+                        disabled={!canGoNext || isThreadsLoading}
+                        className={cn(
+                          "p-1.5 text-xs transition-opacity",
+                          canGoNext && !isThreadsLoading
+                            ? "text-muted-foreground hover:text-foreground opacity-70 hover:opacity-100"
+                            : "text-muted-foreground/30 cursor-not-allowed"
+                        )}
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 )}
               </>

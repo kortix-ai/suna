@@ -48,6 +48,7 @@ import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { useAdminRole } from '@/hooks/admin';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { useSubscriptionData } from '@/stores/subscription-store';
@@ -166,18 +167,15 @@ export function SidebarLeft({
   }, [pathname, searchParams, isMobile, setOpenMobile]);
 
 
+  // Use React Query hook for admin role instead of direct fetch
+  const { data: adminRoleData } = useAdminRole();
+  const isAdmin = adminRoleData?.isAdmin ?? false;
+
   useEffect(() => {
     const fetchUserData = async () => {
       const supabase = createClient();
       const { data } = await supabase.auth.getUser();
       if (data.user) {
-        const { data: roleData } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', data.user.id)
-          .in('role', ['admin', 'super_admin']);
-        const isAdmin = roleData && roleData.length > 0;
-
         setUser({
           name:
             data.user.user_metadata?.name ||
@@ -185,13 +183,13 @@ export function SidebarLeft({
             'User',
           email: data.user.email || '',
           avatar: data.user.user_metadata?.avatar_url || '', // User avatar (different from agent avatar)
-          isAdmin: isAdmin,
+          isAdmin: isAdmin, // Use React Query cached value
         });
       }
     };
 
     fetchUserData();
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

@@ -35,7 +35,8 @@ export function AgentCreationModal({ open, onOpenChange, onSuccess }: AgentCreat
   const [chatDescription, setChatDescription] = useState('');
 
   const createNewAgentMutation = useCreateNewAgent();
-  const { data: templates, isLoading } = useKortixTeamTemplates();
+  // Only fetch templates when modal is open to avoid unnecessary API calls
+  const { data: templates, isLoading } = useKortixTeamTemplates({ enabled: open });
 
   const displayTemplates = templates?.templates?.slice(0, 6) || [];
 

@@ -220,7 +220,7 @@
     "customWorkers": "自定义 Workers",
     "scheduledTriggers": "计划触发器",
     "appTriggers": "应用触发器",
-    "limitsExceeded": "你已达到限制。升级你的计划以进行更多聊天。",
+    "limitsExceeded": "你已达到聊天限制（{current}/{limit}）。升级你的计划以创建更多聊天。",
     "agentInitiatedSuccessfully": "智能体启动成功",
     "aiAssistantReady": "你的 AI 助手已准备好帮助"
   },

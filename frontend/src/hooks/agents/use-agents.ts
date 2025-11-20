@@ -8,19 +8,111 @@ import { AgentCountLimitError, CustomWorkerLimitError } from '@/lib/api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useTranslations } from 'next-intl';
 
+// Default params for agent queries - standardize to avoid duplicate fetches
+const DEFAULT_AGENT_PARAMS: AgentsParams = {
+  limit: 50, // Standardized to 50 to match thread queries and avoid duplicate fetches
+  sort_by: 'name',
+  sort_order: 'asc',
+};
+
+/**
+ * Smart hook that uses React Query cache efficiently.
+ * - Normalizes empty params to use default params (to consolidate queries)
+ * - Uses placeholderData from cached queries to avoid unnecessary refetches
+ * - Shares cache between similar queries
+ */
 export const useAgents = (
   params: AgentsParams = {},
   customOptions?: Omit<
     UseQueryOptions<Awaited<ReturnType<typeof getAgents>>, Error, Awaited<ReturnType<typeof getAgents>>, ReturnType<typeof agentKeys.list>>,
-    'queryKey' | 'queryFn'
+    'queryKey' | 'queryFn' | 'placeholderData'
   >,
 ) => {
+  const queryClient = useQueryClient();
+  
+  // Normalize params: always include defaults unless explicitly overridden
+  // This ensures all queries use consistent parameters and share cache
+  const normalizedParams = useMemo(() => {
+    // Start with defaults
+    const normalized: AgentsParams = {
+      limit: DEFAULT_AGENT_PARAMS.limit,
+      sort_by: DEFAULT_AGENT_PARAMS.sort_by,
+      sort_order: DEFAULT_AGENT_PARAMS.sort_order,
+    };
+    
+    // Override with provided params
+    if (params.limit !== undefined) normalized.limit = params.limit;
+    if (params.sort_by !== undefined) normalized.sort_by = params.sort_by;
+    if (params.sort_order !== undefined) normalized.sort_order = params.sort_order;
+    
+    // Only include page if it's explicitly set AND > 1 (page 1 is default)
+    if (params.page !== undefined && params.page > 1) {
+      normalized.page = params.page;
+    }
+    
+    // Include search/filter params if provided
+    if (params.search) normalized.search = params.search;
+    if (params.has_default !== undefined) normalized.has_default = params.has_default;
+    if (params.has_mcp_tools !== undefined) normalized.has_mcp_tools = params.has_mcp_tools;
+    if (params.has_agentpress_tools !== undefined) normalized.has_agentpress_tools = params.has_agentpress_tools;
+    if (params.tools) normalized.tools = params.tools;
+    if (params.content_type !== undefined) normalized.content_type = params.content_type;
+    
+    return normalized;
+  }, [params]);
+  
+  // Get placeholder data from any existing agent list query in cache
+  // This allows us to reuse cached data from other queries with different params
+  const placeholderData = useMemo(() => {
+    // Check if we already have data for this exact query
+    const exactMatch = queryClient.getQueryData<Awaited<ReturnType<typeof getAgents>>>(
+      agentKeys.list(normalizedParams)
+    );
+    if (exactMatch) return exactMatch;
+    
+    // Try to find any cached agent list query
+    const allAgentQueries = queryClient.getQueriesData<Awaited<ReturnType<typeof getAgents>>>({ 
+      queryKey: agentKeys.lists() 
+    });
+    
+    // Find the most complete cached query (prefer ones with more agents)
+    let bestMatch: Awaited<ReturnType<typeof getAgents>> | undefined;
+    let maxAgents = 0;
+    
+    for (const [_, data] of allAgentQueries) {
+      if (data?.agents && data.agents.length > maxAgents) {
+        maxAgents = data.agents.length;
+        bestMatch = data;
+      }
+    }
+    
+    // If we have cached data and the params don't include search/filters,
+    // we can use the cached data as placeholder to show data immediately
+    const hasSearchOrFilters = normalizedParams.search || 
+                               normalizedParams.has_default !== undefined || 
+                               normalizedParams.has_mcp_tools !== undefined || 
+                               normalizedParams.has_agentpress_tools !== undefined ||
+                               normalizedParams.tools || 
+                               normalizedParams.content_type;
+    
+    // Only use placeholder if we don't have search/filters that would change results
+    // and if we're not requesting a specific page (since pagination changes results)
+    const isPaginated = normalizedParams.page !== undefined && normalizedParams.page > 1;
+    
+    if (bestMatch && !hasSearchOrFilters && !isPaginated) {
+      return bestMatch;
+    }
+    
+    return undefined;
+  }, [queryClient, normalizedParams]);
+  
   return useQuery({
-    queryKey: agentKeys.list(params),
-    queryFn: () => getAgents(params),
+    queryKey: agentKeys.list(normalizedParams),
+    queryFn: () => getAgents(normalizedParams),
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     enabled: true, // Default to enabled, can be overridden
+    placeholderData, // Use cached data from other queries as placeholder
     ...customOptions,
   });
 };

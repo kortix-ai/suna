@@ -1,17 +1,20 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
-import { createClient } from '@/lib/supabase/client';
+import { backendApi } from '@/lib/api-client';
 import { GetAccountsResponse } from '@usebasejump/shared';
 
 export const useAccounts = (options?: Partial<UseQueryOptions<GetAccountsResponse>> & { enabled?: boolean }) => {
-  const supabaseClient = createClient();
   return useQuery<GetAccountsResponse>({
     queryKey: ['accounts'],
     queryFn: async () => {
-      const { data, error } = await supabaseClient.rpc('get_accounts');
-      if (error) {
-        throw new Error(error.message);
+      const response = await backendApi.get<GetAccountsResponse>('/accounts', {
+        showErrors: false,
+      });
+      
+      if (response.error) {
+        throw new Error(response.error.message || 'Failed to fetch accounts');
       }
-      return data;
+      
+      return response.data || [];
     },
     enabled: options?.enabled !== false,
     ...options,

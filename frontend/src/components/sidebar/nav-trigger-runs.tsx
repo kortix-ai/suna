@@ -81,13 +81,13 @@ export function NavTriggerRuns() {
     } = useProjects();
 
     const {
-        data: threads = [],
+        data: threadsResponse,
         isLoading: isThreadsLoading,
         error: threadsError,
     } = useThreads();
 
     const combinedThreads: ThreadWithProject[] =
-        !isProjectsLoading && !isThreadsLoading ? processThreadsWithProjects(threads, projects) : [];
+        !isProjectsLoading && !isThreadsLoading ? processThreadsWithProjects(threadsResponse?.threads || [], projects) : [];
 
     // Filter only trigger threads (threads with projectName starting with "Trigger: ")
     const triggerThreads = combinedThreads.filter((thread) =>

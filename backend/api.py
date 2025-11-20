@@ -39,7 +39,10 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 db = DBConnection()
-instance_id = "single"
+# Generate unique instance ID per process/worker
+# This is critical for distributed locking - each worker needs a unique ID
+import uuid
+instance_id = str(uuid.uuid4())[:8]
 
 # Rate limiter state
 ip_tracker = OrderedDict()

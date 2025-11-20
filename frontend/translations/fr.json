@@ -220,7 +220,7 @@
     "customWorkers": "Workers Personnalisés",
     "scheduledTriggers": "Triggers Programmées",
     "appTriggers": "Triggers d'App",
-    "limitsExceeded": "Tu as atteint tes limites. Améliore ton plan pour chater plus.",
+    "limitsExceeded": "Tu as atteint ta limite de chats ({current}/{limit}). Améliore ton plan pour créer plus de chats.",
     "agentInitiatedSuccessfully": "Agent démarré avec succès",
     "aiAssistantReady": "Ton assistant IA est prêt à aider"
   },

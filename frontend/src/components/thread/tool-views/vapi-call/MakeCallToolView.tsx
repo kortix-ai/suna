@@ -37,23 +37,40 @@ export function MakeCallToolView({
     queryKey: ['vapi-call', callData?.call_id],
     queryFn: async () => {
       if (!callData?.call_id) return null;
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('vapi_calls')
-        .select('*')
-        .eq('call_id', callData.call_id)
-        .single();
+      
+      try {
+        const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (session?.access_token) {
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
 
-      if (error) {
+        const response = await fetch(`${API_URL}/vapi/calls/${callData.call_id}`, {
+          headers,
+        });
+
+        if (!response.ok) {
+          console.error('[MakeCallToolView] Error fetching call:', response.statusText);
+          return null;
+        }
+
+        const data = await response.json();
+
+        console.log('[MakeCallToolView] Fetched call data:', {
+          status: data?.status,
+          transcriptLength: Array.isArray(data?.transcript) ? data.transcript.length : 0
+        });
+        return data;
+      } catch (error) {
         console.error('[MakeCallToolView] Error fetching call:', error);
         return null;
       }
-
-      console.log('[MakeCallToolView] Fetched call data:', {
-        status: data?.status,
-        transcriptLength: Array.isArray(data?.transcript) ? data.transcript.length : 0
-      });
-      return data;
     },
     enabled: !!callData?.call_id,
     refetchInterval: (query) => {

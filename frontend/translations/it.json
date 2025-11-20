@@ -249,7 +249,7 @@
     "customWorkers": "Worker personalizzati",
     "scheduledTriggers": "Trigger pianificati",
     "appTriggers": "Trigger app",
-    "limitsExceeded": "Hai finito i limiti. Migliora ora.",
+    "limitsExceeded": "Hai raggiunto il limite delle chat ({current}/{limit}). Aggiorna il tuo piano per creare più chat.",
     "agentInitiatedSuccessfully": "Agente avviato con successo",
     "aiAssistantReady": "Il tuo assistente AI è pronto ad aiutare"
   },

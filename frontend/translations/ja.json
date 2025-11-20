@@ -220,7 +220,7 @@
     "customWorkers": "カスタム Workers",
     "scheduledTriggers": "スケジュールトリガー",
     "appTriggers": "アプリトリガー",
-    "limitsExceeded": "制限に達しました。プランをアップグレードしてもっとチャットしよう。",
+    "limitsExceeded": "チャットの制限に達しました（{current}/{limit}）。プランをアップグレードしてもっとチャットを作成しよう。",
     "agentInitiatedSuccessfully": "エージェントが正常に開始されました",
     "aiAssistantReady": "AIアシスタントがヘルプの準備ができています"
   },

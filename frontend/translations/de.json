@@ -249,7 +249,7 @@
     "customWorkers": "Benutzerdefinierte Worker",
     "scheduledTriggers": "Geplante Trigger",
     "appTriggers": "App-Trigger",
-    "limitsExceeded": "Du hast deine Limits erreicht. Upgraden deinen Plan, um mehr zu chatten.",
+    "limitsExceeded": "Du hast dein Chat-Limit erreicht ({current}/{limit}). Upgraden deinen Plan, um mehr Chats zu erstellen.",
     "agentInitiatedSuccessfully": "Agent erfolgreich gestartet",
     "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen"
   },

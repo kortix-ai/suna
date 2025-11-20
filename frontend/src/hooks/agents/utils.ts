@@ -171,7 +171,8 @@ export const getAgents = async (params: AgentsParams = {}): Promise<AgentsRespon
     }
 
     const queryParams = new URLSearchParams();
-    if (params.page) queryParams.append('page', params.page.toString());
+    // Only include page if it's > 1 (page 1 is default, so we don't need to send it)
+    if (params.page && params.page > 1) queryParams.append('page', params.page.toString());
     if (params.limit) queryParams.append('limit', params.limit.toString());
     if (params.search) queryParams.append('search', params.search);
     if (params.sort_by) queryParams.append('sort_by', params.sort_by);

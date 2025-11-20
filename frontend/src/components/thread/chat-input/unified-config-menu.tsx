@@ -83,8 +83,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [searchQuery]);
 
     // Fetch agents with proper pagination and search
+    // Note: sort params will be normalized by useAgents hook
     const agentsParams = useMemo(() => ({
-        page: currentPage,
+        page: currentPage > 1 ? currentPage : undefined, // Only include if > 1
         limit: 50,
         search: debouncedSearchQuery || undefined,
     }), [currentPage, debouncedSearchQuery]);
@@ -105,8 +106,18 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [agentsResponse, currentPage, debouncedSearchQuery]);
 
     const agents: any[] = allAgents;
-
-
+    
+    // Find Suna agent for default display
+    const sunaAgent = useMemo(() => {
+        return agents.find(a => a.metadata?.is_suna_default === true);
+    }, [agents]);
+    
+    // Create a placeholder Suna agent object for loading state
+    const placeholderSunaAgent = useMemo(() => ({
+        agent_id: undefined,
+        name: 'Suna',
+        metadata: { is_suna_default: true }
+    }), []);
 
     // Only fetch integration icons when authenticated AND the menu is open
     const iconsEnabled = isLoggedIn && isOpen;
@@ -169,9 +180,18 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [onAgentSelect]);
 
     const displayAgent = useMemo(() => {
-        const found = agents.find(a => a.agent_id === selectedAgentId) || agents[0];
-        return found;
-    }, [agents, selectedAgentId]);
+        // If we have a selected agent, use it
+        if (selectedAgentId) {
+            const found = agents.find(a => a.agent_id === selectedAgentId);
+            if (found) return found;
+        }
+        
+        // Try to find Suna agent (default agent) first
+        if (sunaAgent) return sunaAgent;
+        
+        // Fallback to first agent or undefined (will show "Suna" as default)
+        return agents[0];
+    }, [agents, selectedAgentId, sunaAgent]);
 
     const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers' | 'tools') => {
         if (!selectedAgentId && !displayAgent?.agent_id) {
@@ -182,8 +202,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [selectedAgentId, displayAgent?.agent_id]);
 
     const renderAgentIcon = useCallback((agent: any) => {
+        // If agent is undefined/null but we're showing Suna, use Suna icon
+        if (!agent && (isLoading || sunaAgent)) {
+            return <AgentAvatar isSunaDefault={true} agentName="Suna" size={32} className="flex-shrink-0 !border-0" />;
+        }
         return <AgentAvatar agent={agent} agentId={agent?.agent_id} size={32} className="flex-shrink-0 !border-0" />;
-    }, []);
+    }, [isLoading, sunaAgent]);
 
     return (
         <>
@@ -197,9 +221,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     >
                         {onAgentSelect ? (
                             <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
-                                {renderAgentIcon(displayAgent)}
+                                {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
                                 <span className="truncate text-sm font-medium">
-                                    {displayAgent?.name || t('superWorker')}
+                                    {displayAgent?.name || 'Suna'}
                                 </span>
                                 <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                             </div>
@@ -226,9 +250,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     <DropdownMenuSub>
                                         <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
                                             <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                {renderAgentIcon(displayAgent)}
+                                                {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
                                             </div>
-                                            <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || t('superWorker')}</span>
+                                            <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Suna'}</span>
                                         </DropdownMenuSubTrigger>
                                         <DropdownMenuPortal>
                                             <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>

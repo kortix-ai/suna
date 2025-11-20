@@ -1,7 +1,6 @@
-import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
-import { NoAccessTokenAvailableError } from './errors';
+import { getThreadsPaginated } from './threads';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -22,124 +21,74 @@ export type Project = {
   [key: string]: any;
 };
 
-export const getProjects = async (): Promise<Project[]> => {
-  try {
-    const response = await backendApi.get<{ threads: any[] }>('/threads', {
-      showErrors: false,
-    });
+// Note: getProjects() is no longer used directly
+// Use useProjects() hook instead, which derives projects from cached threads
+// This avoids duplicate API calls
 
-    if (response.error) {
-      console.error('Error getting projects from threads:', response.error);
-      return [];
-    }
-
-    if (!response.data?.threads) {
-      return [];
-    }
-
-    const projectsMap = new Map<string, Project>();
-    
-    response.data.threads.forEach((thread: any) => {
-      if (thread.project) {
-        const project = thread.project;
-        if (!projectsMap.has(project.project_id)) {
-          projectsMap.set(project.project_id, {
-            id: project.project_id,
-            name: project.name || '',
-            description: project.description || '',
-            created_at: project.created_at,
-            updated_at: project.updated_at,
-            sandbox: project.sandbox || {
-              id: '',
-              pass: '',
-              vnc_preview: '',
-              sandbox_url: '',
-            },
-            icon_name: project.icon_name,
-          });
-        }
-      }
-    });
-
-    return Array.from(projectsMap.values());
-  } catch (err) {
-    console.error('Error fetching projects:', err);
-    handleApiError(err, { operation: 'load projects', resource: 'projects' });
-    return [];
-  }
-};
-
+// Note: getProject() should not be called directly anymore
+// Use useProjectQuery() hook instead, which derives from cached threads
+// This is kept for backward compatibility but should be deprecated
 export const getProject = async (projectId: string): Promise<Project> => {
-  const supabase = createClient();
-
+  console.warn('getProject() called directly - use useProjectQuery() hook instead');
+  
   try {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('project_id', projectId)
-      .single();
+    // Get project by finding a thread with this project_id
+    // This makes a direct API call - prefer useProjectQuery() hook instead
+    const response = await getThreadsPaginated(undefined, 1, 50);
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        throw new Error(`Project not found or not accessible: ${projectId}`);
-      }
-      throw error;
+    if (!response?.threads) {
+      throw new Error(`Project not found: ${projectId}`);
     }
 
-    if (data.sandbox?.id) {
+    // Find thread with matching project_id
+    const threadWithProject = response.threads.find(
+      (thread: any) => thread.project_id === projectId && thread.project
+    );
+
+    if (!threadWithProject?.project) {
+      throw new Error(`Project not found or not accessible: ${projectId}`);
+    }
+
+    const projectData = threadWithProject.project;
+
+    // Ensure sandbox is active if it exists
+    if (projectData.sandbox?.id) {
       const ensureSandboxActive = async () => {
         const maxRetries = 5;
         const baseDelay = 2000;
         
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           try {
-            const {
-              data: { session },
-            } = await supabase.auth.getSession();
-
-            const headers: Record<string, string> = {
-              'Content-Type': 'application/json',
-            };
-
-            if (session?.access_token) {
-              headers['Authorization'] = `Bearer ${session.access_token}`;
-            }
-
-            const response = await fetch(
-              `${API_URL}/project/${projectId}/sandbox/ensure-active`,
-              {
-                method: 'POST',
-                headers,
-              },
+            const sandboxResponse = await backendApi.post(
+              `/project/${projectId}/sandbox/ensure-active`,
+              {},
+              { showErrors: false }
             );
 
-            if (!response.ok) {
-              const errorText = await response
-                .text()
-                .catch(() => 'No error details available');
-              
+            if (sandboxResponse.error) {
               if (attempt < maxRetries - 1) {
                 const delay = Math.min(baseDelay * Math.pow(2, attempt), 30000);
-                console.log(`Sandbox ensure-active failed (${response.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
+                console.log(`Sandbox ensure-active failed (${sandboxResponse.error.code}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue;
               }
               
               console.warn(
-                `Failed to ensure sandbox is active after all retries: ${response.status} ${response.statusText}`,
-                errorText,
+                `Failed to ensure sandbox is active after all retries: ${sandboxResponse.error.message}`,
               );
               return;
             }
             
             try {
-              const result = await response.json();
-              const sandboxId = result.sandbox_id;
-              console.log('Sandbox is active:', sandboxId);
-              
-              window.dispatchEvent(new CustomEvent('sandbox-active', {
-                detail: { sandboxId, projectId }
-              }));
+              const result = sandboxResponse.data;
+              const sandboxId = result?.sandbox_id;
+              if (sandboxId) {
+                console.log('Sandbox is active:', sandboxId);
+                
+                window.dispatchEvent(new CustomEvent('sandbox-active', {
+                  detail: { sandboxId, projectId }
+                }));
+              }
             } catch (parseError) {
               console.warn('Sandbox active but failed to parse response:', parseError);
             }
@@ -160,17 +109,19 @@ export const getProject = async (projectId: string): Promise<Project> => {
     }
 
     const mappedProject: Project = {
-      id: data.project_id,
-      name: data.name || '',
-      description: data.description || '',
-      is_public: data.is_public || false,
-      created_at: data.created_at,
-      sandbox: data.sandbox || {
+      id: projectData.project_id,
+      name: projectData.name || '',
+      description: projectData.description || '',
+      is_public: projectData.is_public || false,
+      created_at: projectData.created_at,
+      updated_at: projectData.updated_at,
+      sandbox: projectData.sandbox || {
         id: '',
         pass: '',
         vnc_preview: '',
         sandbox_url: '',
       },
+      icon_name: projectData.icon_name,
     };
 
     return mappedProject;
@@ -185,172 +136,65 @@ export const createProject = async (
   projectData: { name: string; description: string },
   accountId?: string,
 ): Promise<Project> => {
-  const supabase = createClient();
+  try {
+    // Projects are created via thread creation endpoint
+    // The backend creates both thread and project together
+    const response = await backendApi.post<{ thread_id: string; project_id: string }>(
+      '/threads',
+      { name: projectData.name },
+      { showErrors: true }
+    );
 
-  if (!accountId) {
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (response.error) {
+      handleApiError(response.error, { operation: 'create project', resource: 'project' });
+      throw new Error(response.error.message || 'Failed to create project');
+    }
 
-    if (userError) throw userError;
-    if (!userData.user)
-      throw new Error('You must be logged in to create a project');
+    if (!response.data?.project_id) {
+      throw new Error('Failed to create project: no project_id returned');
+    }
 
-    accountId = userData.user.id;
-  }
-
-  const { data, error } = await supabase
-    .from('projects')
-    .insert({
-      name: projectData.name,
-      description: projectData.description || null,
-      account_id: accountId,
-    })
-    .select()
-    .single();
-
-  if (error) {
+    // Fetch the created project to return full data
+    const project = await getProject(response.data.project_id);
+    
+    return project;
+  } catch (error) {
     handleApiError(error, { operation: 'create project', resource: 'project' });
     throw error;
   }
-
-  const project = {
-    id: data.project_id,
-    name: data.name,
-    description: data.description || '',
-    created_at: data.created_at,
-    sandbox: { id: '', pass: '', vnc_preview: '' },
-  };
-  return project;
-};
-
-export const updateProject = async (
-  projectId: string,
-  data: Partial<Project>,
-): Promise<Project> => {
-  const supabase = createClient();
-
-  if (!projectId || projectId === '') {
-    console.error('Attempted to update project with invalid ID:', projectId);
-    throw new Error('Cannot update project: Invalid project ID');
-  }
-
-  const { data: updatedData, error } = await supabase
-    .from('projects')
-    .update(data)
-    .eq('project_id', projectId)
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Error updating project:', error);
-    handleApiError(error, { operation: 'update project', resource: `project ${projectId}` });
-    throw error;
-  }
-
-  if (!updatedData) {
-    const noDataError = new Error('No data returned from update');
-    handleApiError(noDataError, { operation: 'update project', resource: `project ${projectId}` });
-    throw noDataError;
-  }
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('project-updated', {
-        detail: {
-          projectId,
-          updatedData: {
-            id: updatedData.project_id,
-            name: updatedData.name,
-            description: updatedData.description,
-          },
-        },
-      }),
-    );
-  }
-
-  const project = {
-    id: updatedData.project_id,
-    name: updatedData.name,
-    description: updatedData.description || '',
-    created_at: updatedData.created_at,
-    sandbox: updatedData.sandbox || {
-      id: '',
-      pass: '',
-      vnc_preview: '',
-      sandbox_url: '',
-    },
-  };
-  return project;
 };
 
 export const deleteProject = async (projectId: string): Promise<void> => {
-  const supabase = createClient();
-  const { error } = await supabase
-    .from('projects')
-    .delete()
-    .eq('project_id', projectId);
+  try {
+    // Projects are deleted via thread deletion
+    // First, find a thread with this project_id using paginated API
+    const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
 
-  if (error) {
+    if (!threadsResponse?.threads) {
+      handleApiError(new Error('Failed to fetch threads'), { operation: 'delete project', resource: `project ${projectId}` });
+      throw new Error('Failed to find thread for project');
+    }
+
+    const threadWithProject = threadsResponse.threads.find(
+      (thread: any) => thread.project_id === projectId
+    );
+
+    if (!threadWithProject) {
+      throw new Error(`No thread found for project ${projectId}`);
+    }
+
+    // Delete the thread (which also deletes the project)
+    const deleteResponse = await backendApi.delete(`/threads/${threadWithProject.thread_id}`, {
+      showErrors: true,
+    });
+
+    if (deleteResponse.error) {
+      handleApiError(deleteResponse.error, { operation: 'delete project', resource: `project ${projectId}` });
+      throw new Error(deleteResponse.error.message || 'Failed to delete project');
+    }
+  } catch (error) {
     handleApiError(error, { operation: 'delete project', resource: `project ${projectId}` });
     throw error;
-  }
-};
-
-export const getPublicProjects = async (): Promise<Project[]> => {
-  try {
-    const supabase = createClient();
-
-    const { data: publicThreads, error: threadsError } = await supabase
-      .from('threads')
-      .select('project_id')
-      .eq('is_public', true);
-
-    if (threadsError) {
-      console.error('Error fetching public threads:', threadsError);
-      return [];
-    }
-
-    if (!publicThreads?.length) {
-      return [];
-    }
-
-    const publicProjectIds = [
-      ...new Set(publicThreads.map((thread) => thread.project_id)),
-    ].filter(Boolean);
-
-    if (!publicProjectIds.length) {
-      return [];
-    }
-
-    const { data: projects, error: projectsError } = await supabase
-      .from('projects')
-      .select('*')
-      .in('project_id', publicProjectIds);
-
-    if (projectsError) {
-      console.error('Error fetching public projects:', projectsError);
-      return [];
-    }
-
-    const mappedProjects: Project[] = (projects || []).map((project) => ({
-      id: project.project_id,
-      name: project.name || '',
-      description: project.description || '',
-      created_at: project.created_at,
-      updated_at: project.updated_at,
-      sandbox: project.sandbox || {
-        id: '',
-        pass: '',
-        vnc_preview: '',
-        sandbox_url: '',
-      },
-      is_public: true,
-    }));
-
-    return mappedProjects;
-  } catch (err) {
-    console.error('Error fetching public projects:', err);
-    handleApiError(err, { operation: 'load public projects', resource: 'public projects' });
-    return [];
   }
 };
 

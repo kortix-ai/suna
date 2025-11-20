@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { MessageCircle, Clock } from 'lucide-react';
 import {
@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { ThreadIcon } from './thread-icon';
-import { useThreads, useProjects, processThreadsWithProjects } from '@/hooks/sidebar/use-sidebar';
+import { useThreads } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { useSidebar } from '@/components/ui/sidebar';
 
@@ -24,16 +24,51 @@ interface ThreadSearchModalProps {
     onOpenChange: (open: boolean) => void;
 }
 
+type ThreadWithProject = {
+    threadId: string;
+    projectId: string;
+    projectName: string;
+    url: string;
+    updatedAt: string;
+    iconName?: string;
+};
+
 export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps) {
     const [search, setSearch] = useState('');
     const router = useRouter();
     const isMobile = useIsMobile();
     const { setOpenMobile } = useSidebar();
 
-    const { data: threads = [] } = useThreads();
-    const { data: projects = [] } = useProjects();
+    // Use same limit as nav-agents to share cache (limit: 50)
+    const { data: threadsResponse } = useThreads({ page: 1, limit: 50 });
 
-    const combinedThreads = processThreadsWithProjects(threads, projects);
+    // Process threads directly from backend data - backend already provides project info
+    const combinedThreads = useMemo(() => {
+        const threads = threadsResponse?.threads || [];
+        if (!threads.length) return [];
+        
+        const processed: ThreadWithProject[] = [];
+        
+        for (const thread of threads) {
+            const projectId = thread.project_id;
+            const project = thread.project;
+            
+            if (!projectId || !project) continue;
+            
+            processed.push({
+                threadId: thread.thread_id,
+                projectId: projectId,
+                projectName: project.name || 'Unnamed Project',
+                url: `/projects/${projectId}/thread/${thread.thread_id}`,
+                updatedAt: thread.updated_at || project.updated_at || new Date().toISOString(),
+                iconName: project.icon_name,
+            });
+        }
+        
+        return processed.sort((a, b) => 
+            new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+    }, [threadsResponse]);
 
     const filtered = search
         ? combinedThreads.filter((t) =>

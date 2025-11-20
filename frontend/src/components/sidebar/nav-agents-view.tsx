@@ -133,7 +133,7 @@ export function NavAgentsView() {
         isLoading: isAgentsLoading,
         error: agentsError
     } = useAgents({
-        limit: 100,
+        limit: 50, // Changed from 100 to 50 to match other components
         sort_by: 'updated_at',
         sort_order: 'desc'
     });

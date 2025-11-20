@@ -1,5 +1,5 @@
 import { useQuery, UseQueryOptions } from '@tanstack/react-query';
-import { createClient } from '@/lib/supabase/client';
+import { backendApi } from '@/lib/api-client';
 import { useAuth } from '@/components/AuthProvider';
 
 interface AdminRoleResponse {
@@ -11,7 +11,6 @@ export const useAdminRole = (
   options?: Partial<UseQueryOptions<AdminRoleResponse>>
 ) => {
   const { user } = useAuth();
-  const supabaseClient = createClient();
 
   return useQuery<AdminRoleResponse>({
     queryKey: ['admin-role', user?.id],
@@ -20,25 +19,22 @@ export const useAdminRole = (
         return { isAdmin: false, role: null };
       }
 
-      const { data: roleData, error } = await supabaseClient
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .in('role', ['admin', 'super_admin'])
-        .maybeSingle();
+      const response = await backendApi.get<AdminRoleResponse>('/user-roles', {
+        showErrors: false,
+      });
 
-      if (error) {
-        console.error('Error fetching admin role:', error);
+      if (response.error) {
+        console.error('Error fetching admin role:', response.error);
         return { isAdmin: false, role: null };
       }
 
-      return {
-        isAdmin: !!roleData,
-        role: roleData?.role as 'admin' | 'super_admin' | null,
-      };
+      return response.data || { isAdmin: false, role: null };
     },
     enabled: !!user && (options?.enabled !== false),
-    staleTime: 5 * 60 * 1000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+    refetchOnWindowFocus: false,
+    refetchOnMount: false, // Don't refetch if we have cached data
     ...options,
   });
 };
