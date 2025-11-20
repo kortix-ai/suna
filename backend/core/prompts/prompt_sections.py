@@ -1241,20 +1241,20 @@ def should_include_section(section_key: str, enabled_tools: dict, enabled_mcps: 
     Returns:
         Boolean indicating whether to include the section
     """
-    # Map section keys to tool names
+    # Map section keys to tool names (must match tool_registry.py)
     section_to_tools = {
         'web_search': ['web_search_tool'],
         'browser_automation': ['browser_tool'],
-        'visual_input': ['sb_vision_tool', 'load_image'],
-        'web_development': ['sb_shell_tool', 'sb_files_tool'],  # Needs both or at least files
-        'designer_tool': ['designer_tool', 'designer_create_or_edit'],
-        'image_generation': ['image_edit_or_generate'],
+        'visual_input': ['sb_vision_tool'],
+        'web_development': ['sb_shell_tool', 'sb_files_tool'],
+        'designer_tool': ['sb_design_tool'],
+        'image_generation': ['sb_image_edit_tool'],
         'data_providers': ['data_providers_tool'],
         'people_company_search': ['people_search_tool', 'company_search_tool'],
-        'file_upload': ['upload_file'],
-        'presentation_creation': ['sb_presentation_tool', 'create_slide'],
-        'knowledge_base': ['init_kb', 'search_files', 'ls_kb', 'cleanup_kb'],
-        'global_knowledge_base': ['global_kb_sync', 'global_kb_create_folder', 'global_kb_upload_file', 'global_kb_list_contents'],
+        'file_upload': ['sb_upload_file_tool'],
+        'presentation_creation': ['sb_presentation_tool'],
+        'knowledge_base': ['sb_kb_tool'],
+        'global_knowledge_base': ['sb_kb_tool'],
     }
     
     required_tools = section_to_tools.get(section_key, [])

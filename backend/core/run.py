@@ -350,23 +350,22 @@ class PromptManager:
                                   xml_tool_calling: bool = True,
                                   user_id: Optional[str] = None) -> dict:
         
-        # Build modular prompt based on agent's enabled tools
+        # Use pre-built system prompt from DB if available (already modular)
         # Note: For versioned agents, the system_prompt is pre-built and stored in DB
         # during version creation (see version_service.py create_version)
-        default_system_content = get_system_prompt(agent_config)
+        if agent_config and agent_config.get('system_prompt'):
+            system_content = agent_config['system_prompt'].strip()
+            logger.debug(f"📋 Using DB system_prompt ({len(system_content)} chars)")
+        else:
+            # Fallback: Build modular prompt on-the-fly (rare case, only if DB is empty)
+            system_content = get_system_prompt(agent_config)
+            logger.debug(f"📋 Built fallback modular prompt ({len(system_content)} chars)")
         
         # if "anthropic" not in model_name.lower():
         #     sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')
         #     with open(sample_response_path, 'r') as file:
         #         sample_response = file.read()
-        #     default_system_content = default_system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
-        
-        # Use pre-built system prompt from DB if available (already modular)
-        # Otherwise fall back to building modular prompt on-the-fly
-        if agent_config and agent_config.get('system_prompt'):
-            system_content = agent_config['system_prompt'].strip()
-        else:
-            system_content = default_system_content
+        #     system_content = system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
         
         # Check if agent has builder tools enabled - append the full builder prompt
         if agent_config:
