@@ -286,7 +286,15 @@
     "noActionsYet": "Noch keine Aktionen",
     "workerActionsDescription": "Worker-Aktionen und Ergebnisse werden hier angezeigt, wenn sie ausgeführt werden",
     "toolIsRunning": "Tool läuft",
-    "toolCurrentlyExecuting": "{toolName} wird derzeit ausgeführt. Ergebnisse werden hier angezeigt, wenn sie abgeschlossen sind."
+    "toolCurrentlyExecuting": "{toolName} wird derzeit ausgeführt. Ergebnisse werden hier angezeigt, wenn sie abgeschlossen sind.",
+    "rateThisResult": "Dieses Ergebnis bewerten",
+    "feedbackHelpsImprove": "Dein Feedback hilft uns, uns zu verbessern",
+    "additionalFeedbackOptional": "Zusätzliches Feedback (optional)",
+    "helpKortixImprove": "Hilf Kortix mit deinem Feedback, sich zu verbessern",
+    "submit": "Absenden",
+    "submitting": "Wird gesendet...",
+    "feedbackSubmittedSuccess": "Feedback erfolgreich übermittelt",
+    "feedbackSubmitFailed": "Feedback konnte nicht übermittelt werden"
   },
   "agents": {
     "title": "Agenten",

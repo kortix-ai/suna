@@ -21,25 +21,30 @@ interface AttachmentDrawerProps {
  * - Zero custom UI overhead
  * - Native haptic feedback
  */
-export function AttachmentDrawer({ 
-  visible, 
-  onClose, 
+export function AttachmentDrawer({
+  visible,
+  onClose,
   onTakePicture,
   onChooseImages,
   onChooseFiles
 }: AttachmentDrawerProps) {
   const { t } = useLanguage();
-
-  // Handle visibility changes
-  React.useEffect(() => {
-    if (visible) {
-      console.log('📎 [AttachmentDrawer] Opening native action sheet');
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      showAttachmentOptions();
-    }
-  }, [visible]);
+  const isOpeningRef = React.useRef(false);
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const showAttachmentOptions = React.useCallback(() => {
+    if (isOpeningRef.current) {
+      console.log('📎 [AttachmentDrawer] Already opening, skipping');
+      return;
+    }
+    isOpeningRef.current = true;
+
+    // Safety timeout: reset if ActionSheet doesn't respond within 2 seconds
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      console.log('📎 [AttachmentDrawer] Timeout - resetting guard');
+      isOpeningRef.current = false;
+    }, 2000);
     const options = [
       t('attachments.takePicture'),
       t('attachments.chooseImages'),
@@ -47,23 +52,35 @@ export function AttachmentDrawer({
       'Cancel'
     ];
 
+    const clearGuard = () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      isOpeningRef.current = false;
+    };
+
     const actions = [
       () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        clearGuard();
         onClose();
         setTimeout(onTakePicture, 100);
       },
       () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        clearGuard();
         onClose();
         setTimeout(onChooseImages, 100);
       },
       () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        clearGuard();
         onClose();
         setTimeout(onChooseFiles, 100);
       },
       () => {
+        clearGuard();
         onClose();
       }
     ];
@@ -78,6 +95,8 @@ export function AttachmentDrawer({
         (buttonIndex) => {
           if (buttonIndex !== undefined && buttonIndex < actions.length) {
             actions[buttonIndex]();
+          } else {
+            clearGuard();
           }
         }
       );
@@ -107,6 +126,17 @@ export function AttachmentDrawer({
       );
     }
   }, [onTakePicture, onChooseImages, onChooseFiles, onClose, t]);
+
+  // Handle visibility changes
+  React.useEffect(() => {
+    if (visible && !isOpeningRef.current) {
+      console.log('📎 [AttachmentDrawer] Opening native action sheet');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      showAttachmentOptions();
+    } else if (!visible) {
+      isOpeningRef.current = false;
+    }
+  }, [visible, showAttachmentOptions]);
 
   // This component doesn't render anything - it's just a controller
   return null;

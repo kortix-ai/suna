@@ -104,13 +104,13 @@ export function TaskCompletedFeedback({
       if (response.success && response.data) {
         setSubmittedFeedback(response.data);
         setShowRatingModal(false);
-        toast.success('Feedback submitted successfully');
+        toast.success(t('thread.feedbackSubmittedSuccess'));
       } else {
-        toast.error('Failed to submit feedback');
+        toast.error(t('thread.feedbackSubmitFailed'));
       }
     } catch (error) {
       console.error('Error submitting feedback:', error);
-      toast.error('Failed to submit feedback');
+      toast.error(t('thread.feedbackSubmitFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -129,7 +129,7 @@ export function TaskCompletedFeedback({
           </div>
           <div className="flex items-center gap-3">
             {!submittedFeedback && (
-              <span className="text-sm text-muted-foreground">Rate this result</span>
+              <span className="text-sm text-muted-foreground">{t('thread.rateThisResult')}</span>
             )}
           <div className="flex items-center gap-0.5">
             {[1, 2, 3, 4, 5].map((value) => {
@@ -196,9 +196,9 @@ export function TaskCompletedFeedback({
       <Dialog open={showRatingModal} onOpenChange={setShowRatingModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rate this result</DialogTitle>
+            <DialogTitle>{t('thread.rateThisResult')}</DialogTitle>
             <DialogDescription>
-              Your feedback helps us improve
+              {t('thread.feedbackHelpsImprove')}
             </DialogDescription>
           </DialogHeader>
 
@@ -251,7 +251,7 @@ export function TaskCompletedFeedback({
             {/* Feedback Textarea */}
             <div className="space-y-2">
               <Textarea
-                placeholder="Additional feedback (optional)"
+                placeholder={t('thread.additionalFeedbackOptional')}
                 value={feedback}
                 onChange={(e) => setFeedback(e.target.value)}
                 className="min-h-[100px] resize-none"
@@ -269,17 +269,17 @@ export function TaskCompletedFeedback({
                 htmlFor="help-improve"
                 className="text-sm text-foreground cursor-pointer"
               >
-                Help Kortix improve with the feedback
+                {t('thread.helpKortixImprove')}
               </label>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowRatingModal(false)} disabled={isSubmitting}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleSubmitRating} disabled={!rating || isSubmitting}>
-              {isSubmitting ? 'Submitting...' : 'Submit'}
+              {isSubmitting ? t('thread.submitting') : t('thread.submit')}
             </Button>
           </DialogFooter>
         </DialogContent>

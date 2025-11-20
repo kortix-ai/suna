@@ -188,7 +188,19 @@
     "threadTitle": "Chat title",
     "editTitle": "Edit title",
     "noMessages": "No messages yet",
-    "startConversation": "Start a conversation"
+    "startConversation": "Start a conversation",
+    "taskCompleted": "Task completed",
+    "howWasThisResult": "How was this result?",
+    "rateThisResult": "Rate this result",
+    "feedbackHelpsImprove": "Your feedback helps us improve",
+    "additionalFeedbackOptional": "Additional feedback (optional)",
+    "helpKortixImprove": "Help Kortix improve with my feedback",
+    "submit": "Submit",
+    "submitting": "Submitting...",
+    "suggestedFollowUps": "Suggested follow-ups",
+    "error": "Error",
+    "feedbackSubmitFailed": "Failed to submit feedback",
+    "feedbackSubmitFailedRetry": "Failed to submit feedback. Please try again."
   },
   "thresdPage": {
     "threadActions": "Thread Actions",
