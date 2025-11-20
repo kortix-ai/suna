@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Request
 
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess, get_optional_user_id_from_jwt
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from core.utils.config import config, EnvMode
@@ -17,17 +17,30 @@ router = APIRouter(tags=["threads"])
 
 @router.get("/threads", summary="List User Threads", operation_id="list_user_threads")
 async def get_user_threads(
-    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    request: Request,
+    user_id: Optional[str] = Depends(get_optional_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(1000, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
-    """Get all threads for the current user with associated project data."""
+    from core.guest_session import guest_session_service
+    
+    if not user_id:
+        guest_session_id = request.headers.get('X-Guest-Session')
+        if guest_session_id:
+            if isinstance(guest_session_id, list):
+                guest_session_id = guest_session_id[0]
+
+            session = guest_session_service.get_or_create_session(request, guest_session_id)
+            user_id = session['session_id']
+            logger.info(f"Guest user fetching threads: {user_id}")
+        else:
+            raise HTTPException(status_code=401, detail="Authentication required")
+    
     logger.debug(f"Fetching threads with project data for user: {user_id} (page={page}, limit={limit})")
     client = await utils.db.client
     try:
         offset = (page - 1) * limit
         
-        # Get total count first (efficient count query)
         count_result = await client.table('threads').select('*', count='exact').eq('account_id', user_id).execute()
         total_count = count_result.count or 0
         
@@ -43,7 +56,6 @@ async def get_user_threads(
                 }
             }
         
-        # Fetch only the requested page using database-level pagination
         threads_result = await client.table('threads')\
             .select('*')\
             .eq('account_id', user_id)\
@@ -53,14 +65,12 @@ async def get_user_threads(
         
         paginated_threads = threads_result.data
         
-        # Extract unique project IDs from threads that have them
         project_ids = [
             thread['project_id'] for thread in paginated_threads 
             if thread.get('project_id')
         ]
         unique_project_ids = list(set(project_ids)) if project_ids else []
         
-        # Fetch projects if we have project IDs
         projects_by_id = {}
         if unique_project_ids:
             from core.utils.query_utils import batch_query_in
@@ -73,28 +83,16 @@ async def get_user_threads(
                 in_values=unique_project_ids
             )
             
-            # logger.debug(f"[API] Retrieved {len(projects_data)} projects")
-            
-            # DEBUG: Log first project to see if icon_name exists
-            # if projects_data and len(projects_data) > 0:
-            #     logger.debug(f"[API] FIRST PROJECT RAW FROM DB: {projects_data[0]}")
-            #     logger.debug(f"[API] FIRST PROJECT ICON_NAME: {projects_data[0].get('icon_name', 'NOT FOUND')}")
-            
-            # Create a lookup map of projects by ID
             projects_by_id = {
                 project['project_id']: project 
                 for project in projects_data
             }
         
-        # Map threads with their associated projects
         mapped_threads = []
         for thread in paginated_threads:
             project_data = None
             if thread.get('project_id') and thread['project_id'] in projects_by_id:
                 project = projects_by_id[thread['project_id']]
-                
-                # DEBUG: Log what we're getting from the project
-                # logger.debug(f"[API] Mapping project {project['project_id']}: icon_name = {project.get('icon_name', 'MISSING')}")
                 
                 project_data = {
                     "project_id": project['project_id'],
@@ -106,10 +104,7 @@ async def get_user_threads(
                     "created_at": project['created_at'],
                     "updated_at": project['updated_at']
                 }
-                
-                # DEBUG: Log the mapped project_data
-                # logger.debug(f"[API] Mapped project_data: {project_data}")
-            
+
             mapped_thread = {
                 "thread_id": thread['thread_id'],
                 "project_id": thread.get('project_id'),
@@ -122,8 +117,6 @@ async def get_user_threads(
             mapped_threads.append(mapped_thread)
         
         total_pages = (total_count + limit - 1) // limit if total_count else 0
-        
-        # logger.debug(f"[API] Mapped threads for frontend: {len(mapped_threads)} threads, {len(projects_by_id)} unique projects")
         
         return {
             "threads": mapped_threads,
@@ -144,20 +137,15 @@ async def get_thread(
     thread_id: str,
     request: Request
 ):
-    """Get a specific thread by ID with complete related data.
-    Supports both authenticated and anonymous access (for public threads)."""
     logger.debug(f"Fetching thread: {thread_id}")
     client = await utils.db.client
     
-    # Try to get user_id from JWT (optional for public threads)
     from core.utils.auth_utils import get_optional_user_id
     user_id = await get_optional_user_id(request)
     
     try:
-        # Verify access (handles both authenticated and public thread access)
         await verify_and_authorize_thread_access(client, thread_id, user_id)
         
-        # Get the thread data
         thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
         
         if not thread_result.data:
@@ -165,30 +153,26 @@ async def get_thread(
         
         thread = thread_result.data[0]
         
-        # Get associated project if thread has a project_id
         project_data = None
         if thread.get('project_id'):
             project_result = await client.table('projects').select('*').eq('project_id', thread['project_id']).execute()
             
             if project_result.data:
                 project = project_result.data[0]
-                # logger.debug(f"[API] Raw project from DB for thread {thread_id}")
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
                     "description": project.get('description', ''),
                     "sandbox": project.get('sandbox', {}),
                     "is_public": project.get('is_public', False),
-                    "icon_name": project.get('icon_name'),  # Include icon for thread display
+                    "icon_name": project.get('icon_name'),
                     "created_at": project['created_at'],
                     "updated_at": project['updated_at']
                 }
         
-        # Get message count for the thread
         message_count_result = await client.table('messages').select('message_id', count='exact').eq('thread_id', thread_id).execute()
         message_count = message_count_result.count if message_count_result.count is not None else 0
         
-        # Get recent agent runs for the thread
         agent_runs_result = await client.table('agent_runs').select('*').eq('thread_id', thread_id).order('created_at', desc=True).execute()
         agent_runs_data = []
         if agent_runs_result.data:
@@ -203,7 +187,6 @@ async def get_thread(
                 "created_at": run['created_at']
             } for run in agent_runs_result.data]
         
-        # Map thread data for frontend (matching actual DB structure)
         mapped_thread = {
             "thread_id": thread['thread_id'],
             "project_id": thread.get('project_id'),
@@ -216,7 +199,6 @@ async def get_thread(
             "recent_agent_runs": agent_runs_data
         }
         
-        # logger.debug(f"[API] Mapped thread for frontend: {thread_id} with {message_count} messages and {len(agent_runs_data)} recent runs")
         return mapped_thread
         
     except HTTPException:
@@ -230,11 +212,6 @@ async def create_thread(
     name: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """
-    Create a new thread without starting an agent run.
-
-    [WARNING] Keep in sync with initiate endpoint.
-    """
     if not name:
         name = "New Project"
     logger.debug(f"Creating new thread with name: {name}")
@@ -279,7 +256,6 @@ async def create_thread(
         project_id = project.data[0]['project_id']
         logger.debug(f"Created new project: {project_id}")
 
-        # 2. Create Sandbox
         sandbox_id = None
         try:
             sandbox_pass = str(uuid.uuid4())
@@ -287,7 +263,6 @@ async def create_thread(
             sandbox_id = sandbox.id
             logger.debug(f"Created new sandbox {sandbox_id} for project {project_id}")
             
-            # Get preview links
             vnc_link = await sandbox.get_preview_link(6080)
             website_link = await sandbox.get_preview_link(8080)
             vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
@@ -307,7 +282,6 @@ async def create_thread(
                     logger.error(f"Error deleting sandbox: {str(e)}")
             raise Exception("Failed to create sandbox")
 
-        # Update project with sandbox info
         update_result = await client.table('projects').update({
             'sandbox': {
                 'id': sandbox_id, 
@@ -327,7 +301,6 @@ async def create_thread(
                     logger.error(f"Error deleting sandbox: {str(e)}")
             raise Exception("Database update failed")
 
-        # 3. Create Thread
         thread_data = {
             "thread_id": str(uuid.uuid4()), 
             "project_id": project_id, 
@@ -351,7 +324,6 @@ async def create_thread(
 
     except Exception as e:
         logger.error(f"Error creating thread: {str(e)}\n{traceback.format_exc()}")
-        # TODO: Clean up created project/thread if creation fails mid-way
         raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
 
 @router.get("/threads/{thread_id}/messages", summary="Get Thread Messages", operation_id="get_thread_messages")
@@ -360,16 +332,12 @@ async def get_thread_messages(
     request: Request,
     order: str = Query("desc", description="Order by created_at: 'asc' or 'desc'")
 ):
-    """Get all messages for a thread, fetching in batches of 1000 from the DB to avoid large queries.
-    Supports both authenticated and anonymous access (for public threads)."""
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await utils.db.client
     
-    # Try to get user_id from JWT (optional for public threads)
     from core.utils.auth_utils import get_optional_user_id
     user_id = await get_optional_user_id(request)
     
-    # Verify access (handles both authenticated and public thread access)
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
         batch_size = 1000
@@ -394,13 +362,47 @@ async def get_thread_messages(
 @router.post("/threads/{thread_id}/messages/add", summary="Add Message to Thread", operation_id="add_message_to_thread")
 async def add_message_to_thread(
     thread_id: str,
+    request: Request,
     message: str = Body(..., embed=True),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    user_id: Optional[str] = Depends(get_optional_user_id_from_jwt),
 ):
-    """Add a message to a thread"""
+    from core.guest_session import guest_session_service
+    
     logger.debug(f"Adding message to thread: {thread_id}")
     client = await utils.db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    
+    if not user_id:
+        guest_session_id = request.headers.get('X-Guest-Session')
+        if guest_session_id:
+            if isinstance(guest_session_id, list):
+                guest_session_id = guest_session_id[0]
+            session = guest_session_service.get_or_create_session(request, guest_session_id)
+            user_id = session['session_id']
+            logger.info(f"Guest user adding message to thread: {user_id}")
+        else:
+            raise HTTPException(status_code=401, detail="Authentication required")
+    
+    thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
+    if not thread_result.data:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    
+    thread_data = thread_result.data[0]
+    
+    if thread_data['account_id'] == user_id:
+        logger.debug(f"User {user_id} owns thread {thread_id}")
+    else:
+        agent_runs_result = await client.table('agent_runs').select('metadata').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()
+        if agent_runs_result.data:
+            metadata = agent_runs_result.data[0].get('metadata', {})
+            actual_user_id = metadata.get('actual_user_id')
+            if actual_user_id != user_id:
+                logger.error(f"Guest {user_id} unauthorized for thread {thread_id} (belongs to {actual_user_id})")
+                raise HTTPException(status_code=403, detail="Not authorized to access this thread")
+            logger.debug(f"Guest {user_id} authorized for thread {thread_id}")
+        else:
+            logger.error(f"No agent runs found for thread {thread_id}")
+            raise HTTPException(status_code=403, detail="Not authorized to access this thread")
+    
     try:
         message_result = await client.table('messages').insert({
             'thread_id': thread_id,
@@ -422,7 +424,6 @@ async def create_message(
     message_data: MessageCreateRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Create a new message in a thread."""
     logger.debug(f"Creating message in thread: {thread_id}")
     client = await utils.db.client
     
@@ -439,7 +440,7 @@ async def create_message(
             "thread_id": thread_id,
             "type": message_data.type,
             "is_llm_message": message_data.is_llm_message,
-            "content": message_payload,  # Store as JSONB object, not JSON string
+            "content": message_payload,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
@@ -463,12 +464,10 @@ async def delete_message(
     message_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Delete a message from a thread."""
     logger.debug(f"Deleting message from thread: {thread_id}")
     client = await utils.db.client
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
-        # Don't allow users to delete the "status" messages
         await client.table('messages').delete().eq('message_id', message_id).eq('is_llm_message', True).eq('thread_id', thread_id).execute()
         return {"message": "Message deleted successfully"}
     except Exception as e:
@@ -483,7 +482,6 @@ async def update_thread(
     is_public: Optional[bool] = Body(None, embed=True),
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
 ):
-    """Update thread title (updates the associated project name) and/or public status."""
     logger.debug(f"Updating thread: {thread_id}")
     client = await utils.db.client
     
@@ -491,7 +489,6 @@ async def update_thread(
         if title is None and is_public is None:
             raise HTTPException(status_code=400, detail="No update data provided")
         
-        # Get the thread to find its project_id
         thread_result = await client.table('threads').select('project_id, metadata').eq('thread_id', thread_id).execute()
         if not thread_result.data:
             raise HTTPException(status_code=404, detail="Thread not found")
@@ -499,7 +496,6 @@ async def update_thread(
         thread = thread_result.data[0]
         project_id = thread.get('project_id')
         
-        # Update project name if title provided and thread has a project
         if title is not None and project_id:
             logger.debug(f"Updating project {project_id} name to: {title}")
             project_result = await client.table('projects').update({
@@ -509,28 +505,23 @@ async def update_thread(
             if not project_result.data:
                 raise HTTPException(status_code=500, detail="Failed to update project name")
         
-        # Build thread update data
         thread_update_data = {}
         
-        # Also store title in thread metadata as fallback
         if title is not None:
             current_metadata = thread.get('metadata', {}) or {}
             current_metadata['title'] = title
             thread_update_data['metadata'] = current_metadata
         
-        # Update is_public if provided
         if is_public is not None:
             thread_update_data['is_public'] = is_public
             logger.debug(f"Updating thread {thread_id} is_public to: {is_public}")
             
-            # Also update project if it exists
             if project_id:
                 logger.debug(f"Updating project {project_id} is_public to: {is_public}")
                 await client.table('projects').update({
                     'is_public': is_public
                 }).eq('project_id', project_id).execute()
         
-        # Update thread if we have any updates
         if thread_update_data:
             thread_update = await client.table('threads').update(thread_update_data).eq('thread_id', thread_id).execute()
             
@@ -539,7 +530,6 @@ async def update_thread(
         
         logger.debug(f"Successfully updated thread: {thread_id}")
         
-        # Return the updated thread with project data
         return await get_thread(thread_id, request)
         
     except HTTPException:
@@ -553,12 +543,10 @@ async def delete_thread(
     thread_id: str,
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
 ):
-    """Delete a thread and all associated data (messages, agent runs, project, sandbox)."""
     logger.debug(f"Deleting thread: {thread_id}")
     client = await utils.db.client
     
     try:
-        # Get the thread to find its project_id and sandbox
         thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
         if not thread_result.data:
             raise HTTPException(status_code=404, detail="Thread not found")
@@ -567,14 +555,12 @@ async def delete_thread(
         project_id = thread.get('project_id')
         sandbox_id = None
         
-        # Get sandbox ID from project if it exists
         if project_id:
             project_result = await client.table('projects').select('sandbox').eq('project_id', project_id).execute()
             if project_result.data and project_result.data[0].get('sandbox'):
                 sandbox_data = project_result.data[0]['sandbox']
                 sandbox_id = sandbox_data.get('id') if isinstance(sandbox_data, dict) else None
         
-        # Delete sandbox if it exists
         if sandbox_id:
             try:
                 logger.debug(f"Deleting sandbox {sandbox_id} for thread {thread_id}")
@@ -582,24 +568,19 @@ async def delete_thread(
                 logger.debug(f"Successfully deleted sandbox {sandbox_id}")
             except Exception as e:
                 logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
-                # Continue with deletion even if sandbox deletion fails
         
-        # Delete agent runs for the thread
         logger.debug(f"Deleting agent runs for thread {thread_id}")
         await client.table('agent_runs').delete().eq('thread_id', thread_id).execute()
         
-        # Delete messages for the thread
         logger.debug(f"Deleting messages for thread {thread_id}")
         await client.table('messages').delete().eq('thread_id', thread_id).execute()
         
-        # Delete the thread itself
         logger.debug(f"Deleting thread {thread_id}")
         thread_delete_result = await client.table('threads').delete().eq('thread_id', thread_id).execute()
         
         if not thread_delete_result.data:
             raise HTTPException(status_code=500, detail="Failed to delete thread")
         
-        # Delete the project if it exists
         if project_id:
             logger.debug(f"Deleting project {project_id}")
             await client.table('projects').delete().eq('project_id', project_id).execute()

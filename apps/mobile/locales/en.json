@@ -94,6 +94,7 @@
     "confirmationEmailSent": "Confirmation link sent to",
     "openEmailAppBtn": "Open Email App",
     "openGmailBtn": "Open Gmail App",
+    "browseAsGuest": "Browse as Guest",
     "validationErrors": {
       "emailPasswordRequired": "Please enter both email and password",
       "passwordsNoMatch": "Passwords don't match",

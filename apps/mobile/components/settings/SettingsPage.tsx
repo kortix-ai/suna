@@ -23,7 +23,7 @@ import {
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
-import { NameEditPage, placeholderImageUrl } from './NameEditPage';
+import { NameEditPage } from './NameEditPage';
 import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { BillingPage } from './BillingPage';
@@ -34,7 +34,8 @@ import { SettingsHeader } from './SettingsHeader';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
-import { ProfilePicture } from './ProfilePicture';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
+import { useGuestMode } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -49,6 +50,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const { user, signOut } = useAuthContext();
   const { t } = useLanguage();
   const router = useRouter();
+  const { isGuestMode } = useGuestMode();
   const [isLanguagePageVisible, setIsLanguagePageVisible] = React.useState(false);
   const [isNameEditPageVisible, setIsNameEditPageVisible] = React.useState(false);
   const [isThemePageVisible, setIsThemePageVisible] = React.useState(false);
@@ -59,7 +61,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
   const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
 
-  const isGuest = !user;
+  const isGuest = !user || isGuestMode;
 
   const { data: deletionStatus } = useAccountDeletionStatus({
     enabled: visible && !isGuest,
@@ -98,8 +100,17 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleBilling = React.useCallback(() => {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (isGuestMode) {
+      useAuthDrawerStore.getState().openAuthDrawer({
+        title: 'Sign up to continue',
+        message: 'Create an account to manage your billing and subscription'
+      });
+      return;
+    }
+    
     setIsBillingPageVisible(true);
-  }, []);
+  }, [isGuestMode]);
 
   const handleIntegrations = React.useCallback(() => {
     console.log('🎯 Integrations pressed');
@@ -122,14 +133,32 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleBeta = React.useCallback(() => {
     console.log('🎯 Beta pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (isGuestMode) {
+      useAuthDrawerStore.getState().openAuthDrawer({
+        title: 'Sign up to continue',
+        message: 'Create an account to access beta features'
+      });
+      return;
+    }
+    
     setIsBetaPageVisible(true);
-  }, []);
+  }, [isGuestMode]);
 
   const handleAccountDeletion = React.useCallback(() => {
     console.log('🎯 Account deletion pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (isGuestMode) {
+      useAuthDrawerStore.getState().openAuthDrawer({
+        title: 'Sign up to continue',
+        message: 'Create an account to manage your account settings'
+      });
+      return;
+    }
+    
     setIsAccountDeletionPageVisible(true);
-  }, []);
+  }, [isGuestMode]);
 
   const handleSignOut = React.useCallback(async () => {
     console.log('🎯 Sign Out pressed');
@@ -251,6 +280,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
           onNameUpdated={(newName) => {
             console.log('✅ Name updated to:', newName);
           }}
+          isGuestMode={isGuestMode}
         />
       </AnimatedPageWrapper>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import EventSource from 'react-native-sse';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
 import { API_URL, getAuthToken } from '@/api/config';
 import { safeJsonParse } from '@/lib/utils/message-grouping';
@@ -590,9 +591,30 @@ export function useAgentStream(
         updateStatus('connecting');
         setAgentRunId(runId);
 
+        // Get auth credentials (token for authenticated users, guest session for guests)
         const token = await getAuthToken();
-        const url = `${API_URL}/agent-run/${runId}/stream?token=${token}`;
+        const guestSessionId = await AsyncStorage.getItem('@kortix_guest_session_id');
+        const isGuestModeFlag = await AsyncStorage.getItem('@kortix_guest_mode');
         
+        console.log('[useAgentStream] 🔐 Auth check:', {
+          hasToken: !!token,
+          hasGuestSession: !!guestSessionId,
+          isGuestMode: isGuestModeFlag,
+          guestSessionId: guestSessionId?.substring(0, 8) + '...'
+        });
+        
+        let url = `${API_URL}/agent-run/${runId}/stream`;
+        if (token) {
+          url += `?token=${token}`;
+          console.log('[useAgentStream] ✅ Using token auth for stream');
+        } else if (guestSessionId) {
+          url += `?guest_session=${guestSessionId}`;
+          console.log('[useAgentStream] ✅ Using guest session auth for stream:', guestSessionId);
+        } else {
+          console.error('[useAgentStream] ❌ NO AUTH CREDENTIALS AVAILABLE!');
+        }
+        
+        console.log('[useAgentStream] 🌐 Stream URL:', url.replace(/guest_session=[^&]+/, 'guest_session=[HIDDEN]').replace(/token=[^&]+/, 'token=[HIDDEN]'));
         const eventSource = new EventSource(url);
 
         eventSource.addEventListener('message', (event: any) => {

@@ -21,9 +21,10 @@ interface TopNavProps {
   onMenuPress?: () => void;
   onUpgradePress?: () => void;
   onCreditsPress?: () => void;
+  isGuestMode?: boolean;
 }
 
-export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavProps) {
+export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMode = false }: TopNavProps) {
   const { colorScheme } = useColorScheme();
   const { data: subscriptionData } = useSubscription();
   const { data: creditBalance, refetch: refetchCredits } = useCreditBalance();
@@ -90,7 +91,7 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
         onPress={handleMenuPress}
         style={[
           menuAnimatedStyle,
-          { top: 8.5 } // 70.5 - 62 = 8.5px from container top
+          { top: 8.5 }
         ]}
         accessibilityRole="button"
         accessibilityLabel="Open menu"
@@ -98,48 +99,57 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
       >
         <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
-      <View className="absolute right-6 flex-row items-center gap-2" >
-        {isFreeTier && (
+      
+      {isGuestMode ? (
+        <View className="absolute left-0 right-0 items-center justify-center" style={{ top: 8.5 }}>
+          <Text className="text-base font-roobert-medium text-muted-foreground">
+            Temporary Chat
+          </Text>
+        </View>
+      ) : (
+        <View className="absolute right-6 flex-row items-center gap-2" >
+          {isFreeTier && (
+            <AnimatedPressable
+              onPressIn={() => {
+                rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              }}
+              onPressOut={() => {
+                rightUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
+              onPress={handleUpgradePress}
+              className="flex-row h-9 px-3 items-center gap-1.5 bg-primary border-[1.5px] border-primary rounded-full"
+              style={rightUpgradeAnimatedStyle}
+              accessibilityRole="button"
+              accessibilityLabel="Upgrade"
+            >
+              <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
+              <Text className="text-xs font-roobert-semibold text-primary-foreground">
+                Upgrade
+              </Text>
+            </AnimatedPressable>
+          )}
+
           <AnimatedPressable
             onPressIn={() => {
-              rightUpgradeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              creditsScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
             }}
             onPressOut={() => {
-              rightUpgradeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              creditsScale.value = withSpring(1, { damping: 15, stiffness: 400 });
             }}
-            onPress={handleUpgradePress}
-            className="flex-row h-9 px-3 items-center gap-1.5 bg-primary border-[1.5px] border-primary rounded-full"
-            style={rightUpgradeAnimatedStyle}
+            onPress={handleCreditsPress}
+            className="flex-row items-center gap-2 bg-primary/5 rounded-full px-3 py-1.5"
+            style={creditsAnimatedStyle}
             accessibilityRole="button"
-            accessibilityLabel="Upgrade"
+            accessibilityLabel="View usage"
+            accessibilityHint="Opens usage details"
           >
-            <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
-            <Text className="text-xs font-roobert-semibold text-primary-foreground">
-              Upgrade
+            <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
+            <Text className="text-sm font-roobert-semibold text-primary">
+              {formatCredits(creditBalance?.balance || 0)}
             </Text>
           </AnimatedPressable>
-        )}
-
-        <AnimatedPressable
-          onPressIn={() => {
-            creditsScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-          }}
-          onPressOut={() => {
-            creditsScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-          }}
-          onPress={handleCreditsPress}
-          className="flex-row items-center gap-2 bg-primary/5 rounded-full px-3 py-1.5"
-          style={creditsAnimatedStyle}
-          accessibilityRole="button"
-          accessibilityLabel="View usage"
-          accessibilityHint="Opens usage details"
-        >
-          <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
-          <Text className="text-sm font-roobert-semibold text-primary">
-            {formatCredits(creditBalance?.balance || 0)}
-          </Text>
-        </AnimatedPressable>
-      </View>
+        </View>
+      )}
     </View>
   );
 }

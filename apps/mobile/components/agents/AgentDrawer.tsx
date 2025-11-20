@@ -98,7 +98,7 @@ export function AgentDrawer({
   const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
 
   const isOpeningRef = React.useRef(false);
-  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
+  const timeoutRef = React.useRef<number | null>(null);
 
   const selectedModel = React.useMemo(() => {
     if (selectedModelId) {
