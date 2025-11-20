@@ -3,7 +3,7 @@ import '@/global.css';
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
-import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, GuestModeProvider, useAuthContext, useGuestMode } from '@/contexts';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, GuestModeProvider, TrackingProvider, useAuthContext, useGuestMode } from '@/contexts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
@@ -171,46 +171,48 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <LanguageProvider>
-          <GuestModeProvider>
-            <AuthProvider>
-              <BillingProvider>
-                <AgentProvider>
-                  <AdvancedFeaturesProvider>
-                    <BottomSheetModalProvider>
-                      <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                        <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                        <AuthProtection>
-                          <Stack 
-                            screenOptions={{ 
-                              headerShown: false,
-                              animation: 'fade',
-                            }}
-                          >
-                            <Stack.Screen name="index" options={{ animation: 'none' }} />
-                            <Stack.Screen name="setting-up" />
-                            <Stack.Screen name="onboarding" />
-                            <Stack.Screen name="home" />
-                            <Stack.Screen name="auth" />
-                            <Stack.Screen name="trigger-detail" />
-                            <Stack.Screen 
-                              name="tool-modal" 
-                              options={{ 
-                                presentation: 'modal',
-                                animation: 'slide_from_bottom',
-                              }} 
-                            />
-                          </Stack>
-                        </AuthProtection>
-                        <PortalHost />
-                      </ThemeProvider>
-                    </BottomSheetModalProvider>
-                  </AdvancedFeaturesProvider>
-                </AgentProvider>
-              </BillingProvider>
-            </AuthProvider>
-          </GuestModeProvider>
-        </LanguageProvider>
+        <TrackingProvider>
+          <LanguageProvider>
+            <GuestModeProvider>
+              <AuthProvider>
+                <BillingProvider>
+                  <AgentProvider>
+                    <AdvancedFeaturesProvider>
+                      <BottomSheetModalProvider>
+                        <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                          <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+                          <AuthProtection>
+                            <Stack 
+                              screenOptions={{ 
+                                headerShown: false,
+                                animation: 'fade',
+                              }}
+                            >
+                              <Stack.Screen name="index" options={{ animation: 'none' }} />
+                              <Stack.Screen name="setting-up" />
+                              <Stack.Screen name="onboarding" />
+                              <Stack.Screen name="home" />
+                              <Stack.Screen name="auth" />
+                              <Stack.Screen name="trigger-detail" />
+                              <Stack.Screen 
+                                name="tool-modal" 
+                                options={{ 
+                                  presentation: 'modal',
+                                  animation: 'slide_from_bottom',
+                                }} 
+                              />
+                            </Stack>
+                          </AuthProtection>
+                          <PortalHost />
+                        </ThemeProvider>
+                      </BottomSheetModalProvider>
+                    </AdvancedFeaturesProvider>
+                  </AgentProvider>
+                </BillingProvider>
+              </AuthProvider>
+            </GuestModeProvider>
+          </LanguageProvider>
+        </TrackingProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );

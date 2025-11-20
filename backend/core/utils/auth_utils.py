@@ -236,7 +236,7 @@ async def get_user_id_from_stream_auth(
         if guest_session:
             logger.debug(f"👤 Attempting guest session auth: {guest_session[:8]}...")
             from core.guest_session import guest_session_service
-            guest_session_data = guest_session_service.get_or_create_session(request, guest_session)
+            guest_session_data = await guest_session_service.get_or_create_session(request, guest_session)
             if guest_session_data:
                 session_id = guest_session_data['session_id']
                 structlog.contextvars.bind_contextvars(

@@ -30,7 +30,7 @@ async def get_user_threads(
             if isinstance(guest_session_id, list):
                 guest_session_id = guest_session_id[0]
 
-            session = guest_session_service.get_or_create_session(request, guest_session_id)
+            session = await guest_session_service.get_or_create_session(request, guest_session_id)
             user_id = session['session_id']
             logger.info(f"Guest user fetching threads: {user_id}")
         else:
@@ -376,7 +376,7 @@ async def add_message_to_thread(
         if guest_session_id:
             if isinstance(guest_session_id, list):
                 guest_session_id = guest_session_id[0]
-            session = guest_session_service.get_or_create_session(request, guest_session_id)
+            session = await guest_session_service.get_or_create_session(request, guest_session_id)
             user_id = session['session_id']
             logger.info(f"Guest user adding message to thread: {user_id}")
         else:

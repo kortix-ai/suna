@@ -110,7 +110,7 @@ async def _load_agent_config(client, agent_id: Optional[str], account_id: str, u
         logger.debug(f"[AGENT LOAD] Loading default agent")
         
         from core.guest_session import guest_session_service
-        is_guest = guest_session_service.is_guest_session(account_id)
+        is_guest = await guest_session_service.is_guest_session(account_id)
         
         if is_new_thread and not is_guest:
             from core.utils.ensure_suna import ensure_suna_installed
@@ -158,7 +158,7 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
     """
     # Skip billing checks for guest users (they have message limits instead)
     from core.guest_session import guest_session_service
-    if guest_session_service.is_guest_session(account_id):
+    if await guest_session_service.is_guest_session(account_id):
         logger.info(f"✅ Guest user - skipping billing checks, using free tier models")
         return  # Guest users bypass billing checks
     
@@ -498,9 +498,9 @@ async def unified_agent_start(
         if isinstance(guest_session_id, list):
             guest_session_id = guest_session_id[0]
         
-        guest_session = guest_session_service.get_or_create_session(request, guest_session_id)
+        guest_session = await guest_session_service.get_or_create_session(request, guest_session_id)
         
-        can_send, error = guest_session_service.check_message_limit(guest_session['session_id'])
+        can_send, error = await guest_session_service.check_message_limit(guest_session['session_id'])
         if not can_send:
             raise HTTPException(status_code=403, detail=error)
         
@@ -573,7 +573,7 @@ async def unified_agent_start(
             
             # Check billing and limits (skip for guest users)
             from core.guest_session import guest_session_service
-            if not guest_session_service.is_guest_session(thread_account_id):
+            if not await guest_session_service.is_guest_session(thread_account_id):
                 await _check_billing_and_limits(client, thread_account_id, model_name, check_project_limit=False)
             
             # Get effective model
@@ -631,9 +631,9 @@ async def unified_agent_start(
             
             if guest_session:
                 from core.guest_session import guest_session_service
-                updated_session = guest_session_service.increment_message_count(guest_session['session_id'])
-                guest_session_service.add_thread_to_session(guest_session['session_id'], thread_id)
-                response['guest_session'] = guest_session_service.get_session_info(guest_session['session_id'])
+                updated_session = await guest_session_service.increment_message_count(guest_session['session_id'])
+                await guest_session_service.add_thread_to_session(guest_session['session_id'], thread_id)
+                response['guest_session'] = await guest_session_service.get_session_info(guest_session['session_id'])
             
             return response
         
@@ -657,7 +657,7 @@ async def unified_agent_start(
             # Check billing and limits (including project and thread limits)
             # Skip for guest users
             from core.guest_session import guest_session_service
-            is_guest = guest_session_service.is_guest_session(account_id)
+            is_guest = await guest_session_service.is_guest_session(account_id)
             
             if not is_guest:
                 await _check_billing_and_limits(client, account_id, model_name, check_project_limit=True)
@@ -768,9 +768,9 @@ async def unified_agent_start(
             
             if guest_session:
                 from core.guest_session import guest_session_service
-                updated_session = guest_session_service.increment_message_count(guest_session['session_id'])
-                guest_session_service.add_thread_to_session(guest_session['session_id'], thread_id)
-                response['guest_session'] = guest_session_service.get_session_info(guest_session['session_id'])
+                updated_session = await guest_session_service.increment_message_count(guest_session['session_id'])
+                await guest_session_service.add_thread_to_session(guest_session['session_id'], thread_id)
+                response['guest_session'] = await guest_session_service.get_session_info(guest_session['session_id'])
             
             return response
     

@@ -3,28 +3,37 @@ from datetime import datetime, timedelta
 import hashlib
 import uuid
 import json
+import asyncio
 from fastapi import HTTPException, Request
 from core.utils.logger import logger
+from core.services import redis
 
 SESSION_DURATION_HOURS = 24
-GUEST_MESSAGE_LIMIT = 5
-IP_HOURLY_LIMIT = 99999999
-IP_DAILY_LIMIT = 9999999000
+GUEST_MESSAGE_LIMIT = 3
+IP_HOURLY_LIMIT = 10
+IP_DAILY_LIMIT = 30
+CLEANUP_INTERVAL_HOURS = 1
 
+REDIS_KEY_PREFIX_SESSION = "guest_session:"
+REDIS_KEY_PREFIX_IP_HOURLY = "guest_ip_hourly:"
+REDIS_KEY_PREFIX_IP_DAILY = "guest_ip_daily:"
 
 class GuestSessionService:
     def __init__(self):
-        self._sessions = {}
-        self._ip_limits = {}
+        self._cleanup_task: Optional[asyncio.Task] = None
+        self._cleanup_running = False
     
     @staticmethod
     def is_guest_request(user_id: Optional[str]) -> bool:
         return user_id is None or user_id == ""
     
-    def is_guest_session(self, session_id: str) -> bool:
+    async def is_guest_session(self, session_id: str) -> bool:
         if not session_id:
             return False
-        return session_id in self._sessions
+        session_key = f"{REDIS_KEY_PREFIX_SESSION}{session_id}"
+        exists = await redis.get_client()
+        result = await exists.exists(session_key)
+        return result > 0
     
     def _get_ip_address(self, request: Request) -> str:
         forwarded = request.headers.get("X-Forwarded-For")
@@ -35,36 +44,30 @@ class GuestSessionService:
     def _hash_ip(self, ip: str) -> str:
         return hashlib.sha256(ip.encode()).hexdigest()[:16]
     
-    def _check_ip_rate_limit(self, ip_hash: str) -> Tuple[bool, Optional[str]]:
+    async def _check_ip_rate_limit(self, ip_hash: str) -> Tuple[bool, Optional[str]]:
         now = datetime.utcnow()
+        client = await redis.get_client()
         
-        if ip_hash not in self._ip_limits:
-            self._ip_limits[ip_hash] = {
-                'hourly': [],
-                'daily': [],
-                'created_at': now
-            }
+        hourly_key = f"{REDIS_KEY_PREFIX_IP_HOURLY}{ip_hash}"
+        daily_key = f"{REDIS_KEY_PREFIX_IP_DAILY}{ip_hash}"
         
-        limits = self._ip_limits[ip_hash]
+        hourly_count = await client.incr(hourly_key)
+        if hourly_count == 1:
+            await client.expire(hourly_key, 3600)
         
-        one_hour_ago = now - timedelta(hours=1)
-        one_day_ago = now - timedelta(days=1)
+        daily_count = await client.incr(daily_key)
+        if daily_count == 1:
+            await client.expire(daily_key, 86400)
         
-        limits['hourly'] = [t for t in limits['hourly'] if t > one_hour_ago]
-        limits['daily'] = [t for t in limits['daily'] if t > one_day_ago]
-        
-        if len(limits['hourly']) >= IP_HOURLY_LIMIT:
+        if hourly_count > IP_HOURLY_LIMIT:
             return False, "Too many requests. Please try again in an hour or create an account."
         
-        if len(limits['daily']) >= IP_DAILY_LIMIT:
+        if daily_count > IP_DAILY_LIMIT:
             return False, "Daily limit reached. Please create an account to continue."
-        
-        limits['hourly'].append(now)
-        limits['daily'].append(now)
         
         return True, None
     
-    def get_or_create_session(
+    async def get_or_create_session(
         self, 
         request: Request,
         session_id: Optional[str] = None
@@ -76,7 +79,7 @@ class GuestSessionService:
         ip = self._get_ip_address(request)
         ip_hash = self._hash_ip(ip)
         
-        allowed, error = self._check_ip_rate_limit(ip_hash)
+        allowed, error = await self._check_ip_rate_limit(ip_hash)
         if not allowed:
             raise HTTPException(
                 status_code=429,
@@ -87,20 +90,27 @@ class GuestSessionService:
                 }
             )
         
-        if session_id and session_id in self._sessions:
-            session = self._sessions[session_id]
+        client = await redis.get_client()
+        
+        if session_id:
+            session_key = f"{REDIS_KEY_PREFIX_SESSION}{session_id}"
+            session_data = await client.get(session_key)
             
-            if datetime.fromisoformat(session['expires_at']) < datetime.utcnow():
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        'error': 'session_expired',
-                        'message': 'Your trial session has expired. Create an account to continue.',
-                        'action': 'signup_required'
-                    }
-                )
-            
-            return session
+            if session_data:
+                session = json.loads(session_data)
+                
+                if datetime.fromisoformat(session['expires_at']) < datetime.utcnow():
+                    await client.delete(session_key)
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            'error': 'session_expired',
+                            'message': 'Your trial session has expired. Create an account to continue.',
+                            'action': 'signup_required'
+                        }
+                    )
+                
+                return session
         
         new_session_id = session_id if session_id else str(uuid.uuid4())
         now = datetime.utcnow()
@@ -115,21 +125,27 @@ class GuestSessionService:
             'is_guest': True
         }
         
-        self._sessions[new_session_id] = session
+        session_key = f"{REDIS_KEY_PREFIX_SESSION}{new_session_id}"
+        ttl_seconds = SESSION_DURATION_HOURS * 3600
+        await client.setex(session_key, ttl_seconds, json.dumps(session))
         
         logger.info(f"Created new guest session: {new_session_id}")
         
         return session
     
-    def check_message_limit(self, session_id: str) -> Tuple[bool, Optional[Dict]]:
-        if session_id not in self._sessions:
+    async def check_message_limit(self, session_id: str) -> Tuple[bool, Optional[Dict]]:
+        client = await redis.get_client()
+        session_key = f"{REDIS_KEY_PREFIX_SESSION}{session_id}"
+        session_data = await client.get(session_key)
+        
+        if not session_data:
             return False, {
                 'error': 'session_not_found',
                 'message': 'Session not found. Please refresh the app.',
                 'action': 'refresh_required'
             }
         
-        session = self._sessions[session_id]
+        session = json.loads(session_data)
         
         if session['messages_sent'] >= session['messages_limit']:
             return False, {
@@ -142,28 +158,55 @@ class GuestSessionService:
         
         return True, None
     
-    def increment_message_count(self, session_id: str) -> Dict[str, Any]:
-        if session_id not in self._sessions:
+    async def increment_message_count(self, session_id: str) -> Dict[str, Any]:
+        client = await redis.get_client()
+        session_key = f"{REDIS_KEY_PREFIX_SESSION}{session_id}"
+        session_data = await client.get(session_key)
+        
+        if not session_data:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        session = self._sessions[session_id]
+        session = json.loads(session_data)
         session['messages_sent'] += 1
         session['last_message_at'] = datetime.utcnow().isoformat()
+        
+        ttl = await client.ttl(session_key)
+        if ttl > 0:
+            await client.setex(session_key, ttl, json.dumps(session))
+        else:
+            ttl_seconds = SESSION_DURATION_HOURS * 3600
+            await client.setex(session_key, ttl_seconds, json.dumps(session))
         
         logger.info(f"Guest session {session_id}: {session['messages_sent']}/{session['messages_limit']} messages used")
         
         return session
     
-    def add_thread_to_session(self, session_id: str, thread_id: str):
-        if session_id in self._sessions:
-            if thread_id not in self._sessions[session_id]['thread_ids']:
-                self._sessions[session_id]['thread_ids'].append(thread_id)
+    async def add_thread_to_session(self, session_id: str, thread_id: str):
+        client = await redis.get_client()
+        session_key = f"{REDIS_KEY_PREFIX_SESSION}{session_id}"
+        session_data = await client.get(session_key)
+        
+        if session_data:
+            session = json.loads(session_data)
+            if thread_id not in session['thread_ids']:
+                session['thread_ids'].append(thread_id)
+                
+                ttl = await client.ttl(session_key)
+                if ttl > 0:
+                    await client.setex(session_key, ttl, json.dumps(session))
+                else:
+                    ttl_seconds = SESSION_DURATION_HOURS * 3600
+                    await client.setex(session_key, ttl_seconds, json.dumps(session))
     
-    def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
-        if session_id not in self._sessions:
+    async def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
+        client = await redis.get_client()
+        session_key = f"{REDIS_KEY_PREFIX_SESSION}{session_id}"
+        session_data = await client.get(session_key)
+        
+        if not session_data:
             return None
         
-        session = self._sessions[session_id]
+        session = json.loads(session_data)
         messages_remaining = session['messages_limit'] - session['messages_sent']
         
         return {
@@ -175,18 +218,57 @@ class GuestSessionService:
             'show_signup_prompt': messages_remaining <= 2
         }
     
-    def cleanup_expired_sessions(self):
+    async def cleanup_expired_sessions(self):
+        client = await redis.get_client()
+        pattern = f"{REDIS_KEY_PREFIX_SESSION}*"
+        keys = await client.keys(pattern)
+        
         now = datetime.utcnow()
-        expired = []
+        expired_count = 0
         
-        for session_id, session in self._sessions.items():
-            if datetime.fromisoformat(session['expires_at']) < now:
-                expired.append(session_id)
+        for key in keys:
+            session_data = await client.get(key)
+            if session_data:
+                try:
+                    session = json.loads(session_data)
+                    if datetime.fromisoformat(session['expires_at']) < now:
+                        await client.delete(key)
+                        session_id = key.replace(REDIS_KEY_PREFIX_SESSION, '')
+                        logger.info(f"Cleaned up expired guest session: {session_id}")
+                        expired_count += 1
+                except (json.JSONDecodeError, KeyError) as e:
+                    logger.warning(f"Error parsing session data for key {key}: {e}")
+                    await client.delete(key)
+                    expired_count += 1
         
-        for session_id in expired:
-            del self._sessions[session_id]
-            logger.info(f"Cleaned up expired guest session: {session_id}")
-        
-        return len(expired)
+        return expired_count
+    
+    async def _cleanup_loop(self):
+        while self._cleanup_running:
+            try:
+                expired_count = await self.cleanup_expired_sessions()
+                if expired_count > 0:
+                    logger.info(f"Cleaned up {expired_count} expired guest sessions")
+            except Exception as e:
+                logger.error(f"Error in guest session cleanup loop: {e}")
+            
+            await asyncio.sleep(CLEANUP_INTERVAL_HOURS * 3600)
+    
+    def start_cleanup_task(self):
+        if not self._cleanup_running:
+            self._cleanup_running = True
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            logger.info("Guest session cleanup task started")
+    
+    async def stop_cleanup_task(self):
+        if self._cleanup_running:
+            self._cleanup_running = False
+            if self._cleanup_task:
+                self._cleanup_task.cancel()
+                try:
+                    await self._cleanup_task
+                except asyncio.CancelledError:
+                    pass
+            logger.info("Guest session cleanup task stopped")
 
 guest_session_service = GuestSessionService()

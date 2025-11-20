@@ -461,15 +461,13 @@ async def get_agents(
         from .agent_service import AgentService, AgentFilters
         from core.guest_session import guest_session_service
         
-        # Handle guest mode
         if not user_id:
             guest_session_id = request.headers.get('X-Guest-Session')
             if guest_session_id:
-                # Ensure guest_session_id is a string (headers can sometimes return lists)
                 if isinstance(guest_session_id, list):
                     guest_session_id = guest_session_id[0]
-                # Guest user - create/get session and use as user_id
-                session = guest_session_service.get_or_create_session(request, guest_session_id)
+
+                session = await guest_session_service.get_or_create_session(request, guest_session_id)
                 user_id = session['session_id']
                 logger.info(f"Guest user fetching agents: {user_id}")
             else:
