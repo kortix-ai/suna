@@ -226,9 +226,6 @@ export function useAddMessage(
   });
 }
 
-/**
- * Unified agent start hook - works for both new and existing threads
- */
 export function useUnifiedAgentStart(
   options?: UseMutationOptions<
     { thread_id: string; agent_run_id: string; status: string },
@@ -240,9 +237,6 @@ export function useUnifiedAgentStart(
 
   return useMutation({
     mutationFn: async ({ threadId, prompt, files, modelName, agentId }) => {
-      const token = await getAuthToken();
-      if (!token) throw new Error('Authentication required');
-
       const formData = new FormData();
       
       if (threadId) formData.append('thread_id', threadId);
@@ -254,15 +248,39 @@ export function useUnifiedAgentStart(
         files.forEach((file) => formData.append('files', file as any));
       }
 
+      const authHeaders = await getAuthHeaders();
+      const headers: Record<string, string> = {};
+      Object.entries(authHeaders).forEach(([key, value]) => {
+        if (key !== 'Content-Type' && typeof value === 'string') {
+          headers[key] = value;
+        }
+      });
+
       const res = await fetch(`${API_URL}/agent/start`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers,
         body: formData,
       });
 
       if (!res.ok) {
-        const error = await res.text().catch(() => 'Unknown error');
-        throw new Error(`Failed to start agent: ${res.status} - ${error}`);
+        const errorText = await res.text().catch(() => 'Unknown error');
+        
+        if (res.status === 429) {
+          let errorDetail;
+          try {
+            errorDetail = JSON.parse(errorText);
+          } catch {
+            errorDetail = { detail: { message: 'Too many requests' } };
+          }
+          
+          const error: any = new Error(errorDetail.detail?.message || 'Rate limit exceeded');
+          error.code = 'RATE_LIMIT_EXCEEDED';
+          error.status = 429;
+          error.detail = errorDetail.detail;
+          throw error;
+        }
+        
+        throw new Error(`Failed to start agent: ${res.status} - ${errorText}`);
       }
       
       return res.json();

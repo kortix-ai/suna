@@ -1,36 +1,30 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
-  withSpring,
-  useAnimatedKeyboard,
-  FadeIn,
-  withRepeat,
   withTiming,
   useSharedValue,
   withDelay,
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
-import { ThreadContent, ToolCallPanel, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
+import { ThreadContent, ToolCallPanel, ChatInputSection, ChatDrawers } from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
 import { FileManagerScreen } from '@/components/files';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle, X, RefreshCw } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
+import { useGuestMode } from '@/contexts';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
-  onOpenAuthDrawer: () => void;
 }
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
@@ -230,9 +224,8 @@ export function ThreadPage({
   onMenuPress,
   chat,
   isAuthenticated,
-  onOpenAuthDrawer,
 }: ThreadPageProps) {
-  // Use shared chat commons hook
+  const { isGuestMode } = useGuestMode();
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -242,14 +235,11 @@ export function ThreadPage({
   const [isFileManagerVisible, setIsFileManagerVisible] = React.useState(false);
   const [selectedFilePath, setSelectedFilePath] = React.useState<string | undefined>();
 
-  // Thread actions hooks
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
 
-  // Get full thread data with sandbox info
   const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
 
-  // Refetch thread data when file manager opens to ensure latest sandbox info
   React.useEffect(() => {
     if (isFileManagerVisible) {
       console.log('[ThreadPage] File manager opened - refetching thread/sandbox data...');
@@ -310,14 +300,12 @@ export function ThreadPage({
     }
   }, []);
 
-  // Scroll to bottom function
   const scrollToBottom = React.useCallback(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
   }, []);
 
-  // Pull to refresh handler
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
       console.log('⚠️ Cannot refresh while streaming');
@@ -337,7 +325,6 @@ export function ThreadPage({
     }
   }, [chat]);
 
-  // Ensure thread content is loaded when ThreadPage mounts or thread changes
   const hasInitializedRef = React.useRef(false);
   const lastThreadIdRef = React.useRef<string | undefined>(undefined);
 
@@ -499,8 +486,6 @@ export function ThreadPage({
           </ScrollView>
         )}
       </View>
-
-      {/* Scroll to Bottom Button - Positioned above chat input */}
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
@@ -513,11 +498,9 @@ export function ThreadPage({
         </Pressable>
       )}
 
-
-      {/* Thread Header */}
       <ThreadHeader
-        threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
-        onTitleChange={async (newTitle) => {
+        threadTitle={isGuestMode ? 'Temporary Chat' : (fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title)}
+        onTitleChange={isGuestMode ? undefined : async (newTitle) => {
           console.log('📝 Thread title changed to:', newTitle);
           try {
             await chat.updateThreadTitle(newTitle);
@@ -527,25 +510,23 @@ export function ThreadPage({
         }}
         onMenuPress={onMenuPress}
         onActionsPress={() => setIsThreadActionsVisible(true)}
+        isGuestMode={isGuestMode}
       />
 
-      {/* Chat Input Section with Gradient */}
       <ChatInputSection
         value={chat.inputValue}
         onChangeText={chat.setInputValue}
         onSendMessage={(content, agentId, agentName) => {
-          // Both ChatInputSection and sendMessage expect non-null strings
-          // This should never receive empty strings from ChatInput
           chat.sendMessage(content, agentId, agentName);
         }}
         onSendAudio={audioHandlers.handleSendAudio}
         onAttachPress={chat.openAttachmentDrawer}
-        onAgentPress={agentManager.openDrawer}
+        onAgentPress={isGuestMode ? () => {} : agentManager.openDrawer}
         onAudioRecord={audioHandlers.handleStartRecording}
         onCancelRecording={audioHandlers.handleCancelRecording}
         onStopAgentRun={chat.stopAgent}
         placeholder={chat.getPlaceholder()}
-        agent={agentManager.selectedAgent || undefined}
+        agent={isGuestMode ? undefined : (agentManager.selectedAgent || undefined)}
         isRecording={audioRecorder.isRecording}
         recordingDuration={audioRecorder.recordingDuration}
         audioLevel={audioRecorder.audioLevel}
@@ -556,15 +537,14 @@ export function ThreadPage({
         selectedQuickActionOption={chat.selectedQuickActionOption}
         onClearQuickAction={chat.clearQuickAction}
         isAuthenticated={isAuthenticated}
-        onOpenAuthDrawer={onOpenAuthDrawer}
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
         isTranscribing={isTranscribing}
+        isGuestMode={isGuestMode}
       />
 
-      {/* Shared Drawers */}
       <ChatDrawers
-        isAgentDrawerVisible={agentManager.isDrawerVisible}
+        isAgentDrawerVisible={!isGuestMode && agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
@@ -573,7 +553,6 @@ export function ThreadPage({
         onChooseFiles={chat.handleChooseFiles}
       />
 
-      {/* Thread Actions Drawer */}
       <ThreadActionsDrawer
         visible={isThreadActionsVisible}
         onClose={() => setIsThreadActionsVisible(false)}
@@ -587,7 +566,6 @@ export function ThreadPage({
             setIsThreadActionsVisible(false);
           } catch (error) {
             console.error('Failed to share thread:', error);
-            // Error is already shown by the native share dialog or caught silently if user cancels
           }
         }}
         onFiles={() => {
@@ -619,8 +597,6 @@ export function ThreadPage({
                   try {
                     console.log('🗑️ Deleting thread:', threadTitle);
                     await deleteThreadMutation.mutateAsync(chat.activeThread.id);
-
-                    // Navigate to home after successful deletion
                     chat.startNewChat();
                     if (router.canGoBack()) {
                       router.back();
@@ -638,7 +614,6 @@ export function ThreadPage({
         }}
       />
 
-      {/* Tool Call Panel - Native modal with automatic background scaling on iOS */}
       <ToolCallPanel
         visible={!!chat.selectedToolData}
         onClose={() => chat.setSelectedToolData(null)}
@@ -646,7 +621,6 @@ export function ThreadPage({
         initialIndex={chat.selectedToolData?.initialIndex || 0}
       />
 
-      {/* File Manager Modal */}
       <Modal
         visible={isFileManagerVisible}
         animationType="slide"
@@ -698,8 +672,6 @@ export function ThreadPage({
           </View>
         )}
       </Modal>
-
-      {/* Dynamic Island Pull Refresh Animation - Rendered last to be on top of everything */}
       <DynamicIslandRefresh isRefreshing={isRefreshing} insets={insets} />
     </View>
   );

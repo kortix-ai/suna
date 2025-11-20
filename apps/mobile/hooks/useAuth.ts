@@ -7,6 +7,14 @@ import { makeRedirectUri } from 'expo-auth-session';
 import { Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
+
+let useTracking: any = null;
+try {
+  const TrackingModule = require('@/contexts/TrackingContext');
+  useTracking = TrackingModule.useTracking;
+} catch (e) {
+  console.warn('⚠️ TrackingContext not available');
+}
 import type {
   AuthState,
   SignInCredentials,
@@ -17,24 +25,12 @@ import type {
 } from '@/lib/utils/auth-types';
 import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 
-// Configure WebBrowser for OAuth
 WebBrowser.maybeCompleteAuthSession();
 
-/**
- * Custom hook for Supabase authentication
- * 
- * Provides authentication state and methods for:
- * - Email/password sign in
- * - Email/password sign up
- * - OAuth providers (Google, GitHub, Apple)
- * - Password reset
- * - Sign out
- * 
- * @example
- * const { signIn, signUp, signOut, user, isAuthenticated } = useAuth();
- */
 export function useAuth() {
   const queryClient = useQueryClient();
+  const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
+  const { canTrack, isLoading: trackingLoading } = trackingState;
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     session: null,
@@ -44,11 +40,9 @@ export function useAuth() {
 
   const [error, setError] = useState<AuthError | null>(null);
 
-  // Initialize auth state
   useEffect(() => {
     console.log('🔐 Initializing auth state');
     
-    // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
       console.log('📊 Initial session:', session ? 'Active' : 'None');
       setAuthState({
@@ -60,14 +54,18 @@ export function useAuth() {
 
       if (session?.user && shouldUseRevenueCat()) {
         try {
-          await initializeRevenueCat(session.user.id, session.user.email);
+          if (canTrack) {
+            console.log('✅ Tracking authorized, initializing RevenueCat with analytics');
+          } else {
+            console.log('⚠️ Tracking not authorized, initializing RevenueCat without analytics');
+          }
+          await initializeRevenueCat(session.user.id, session.user.email, canTrack);
         } catch (error) {
           console.warn('⚠️ Failed to initialize RevenueCat:', error);
         }
       }
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
         console.log('🔄 Auth state changed:', _event);
@@ -80,7 +78,12 @@ export function useAuth() {
 
         if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
           try {
-            await initializeRevenueCat(session.user.id, session.user.email);
+            if (canTrack) {
+              console.log('✅ Tracking authorized, initializing RevenueCat with analytics');
+            } else {
+              console.log('⚠️ Tracking not authorized, initializing RevenueCat without analytics');
+            }
+            await initializeRevenueCat(session.user.id, session.user.email, canTrack);
           } catch (error) {
             console.warn('⚠️ Failed to initialize RevenueCat:', error);
           }
@@ -89,11 +92,8 @@ export function useAuth() {
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [canTrack, trackingLoading]);
 
-  /**
-   * Sign in with email and password
-   */
   const signIn = useCallback(async ({ email, password }: SignInCredentials) => {
     try {
       console.log('🎯 Sign in attempt:', email);
@@ -124,9 +124,6 @@ export function useAuth() {
     }
   }, []);
 
-  /**
-   * Sign up with email and password
-   */
   const signUp = useCallback(
     async ({ email, password, fullName }: SignUpCredentials) => {
       try {

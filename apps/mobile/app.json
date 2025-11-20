@@ -19,7 +19,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSUserTrackingUsageDescription": "This app uses analytics to improve your experience and understand how features are used. Your data helps us make the app better for everyone."
+      }
     },
     "android": {
       "edgeToEdgeEnabled": true,
@@ -46,6 +49,12 @@
         "expo-audio",
         {
           "microphonePermission": "Allow $(PRODUCT_NAME) to record audio for transcription."
+        }
+      ],
+      [
+        "expo-tracking-transparency",
+        {
+          "userTrackingPermission": "This app uses analytics to improve your experience and understand how features are used. Your data helps us make the app better for everyone."
         }
       ],
       [

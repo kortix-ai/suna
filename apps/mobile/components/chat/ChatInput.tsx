@@ -16,6 +16,7 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -46,10 +47,10 @@ interface ChatInputProps extends ViewProps {
   selectedQuickActionOption?: string | null;
   onClearQuickAction?: () => void;
   isAuthenticated?: boolean;
-  onOpenAuthDrawer?: () => void;
   isAgentRunning?: boolean;
   isSendingMessage?: boolean;
   isTranscribing?: boolean;
+  isGuestMode?: boolean;
 }
 
 /**
@@ -89,10 +90,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   selectedQuickActionOption,
   onClearQuickAction,
   isAuthenticated = true,
-  onOpenAuthDrawer,
   isAgentRunning = false,
   isSendingMessage = false,
   isTranscribing = false,
+  isGuestMode = false,
   style,
   ...props
 }, ref) => {
@@ -236,11 +237,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       // Dismiss keyboard first for better UX
       Keyboard.dismiss();
 
-      // Wait for keyboard to dismiss, then open auth screen
       setTimeout(() => {
         console.log('🔐 Opening auth screen after keyboard dismissal');
-        onOpenAuthDrawer?.();
-      }, 200); // Small delay for smooth transition
+        useAuthDrawerStore.getState().openAuthDrawer();
+      }, 200);
 
       return;
     }
@@ -262,10 +262,9 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       // Cancel recording first
       onCancelRecording?.();
 
-      // Wait a bit, then open auth screen
       setTimeout(() => {
         console.log('🔐 Opening auth screen after canceling recording');
-        onOpenAuthDrawer?.();
+        useAuthDrawerStore.getState().openAuthDrawer();
       }, 200);
 
       return;
@@ -471,10 +470,11 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
 
               {/* Right Actions */}
               <View className="flex-row items-center gap-2">
-                {/* Agent Selector with Full Name */}
-                <AgentSelector onPress={onAgentPress} compact={false} />
-
-                {/* Send/Stop/Audio Button */}
+                <AgentSelector 
+                  isGuestMode={isGuestMode}
+                  onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ title: 'Sign up to continue', message: 'Please sign up or sign in to create and select workers, connect apps and much more' }) : onAgentPress} 
+                  compact={false} 
+                />
                 <AnimatedPressable
                   onPressIn={() => {
                     sendScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });

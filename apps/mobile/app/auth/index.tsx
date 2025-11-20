@@ -4,12 +4,12 @@ import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Eye, EyeOff, Check, MailCheck, ArrowLeft, Mail } from 'lucide-react-native';
+import { Eye, EyeOff, Check, MailCheck, Mail } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
-import { useLanguage } from '@/contexts';
+import { useLanguage, useGuestMode } from '@/contexts';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 import * as Haptics from 'expo-haptics';
@@ -22,7 +22,6 @@ import Animated, {
   FadeIn,
   withTiming,
   withDelay,
-  withSequence,
   Easing,
 } from 'react-native-reanimated';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -30,6 +29,7 @@ import { KortixLogo } from '@/components/ui/KortixLogo';
 import { BackgroundLogo } from '@/components/home';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { GuestModeConsent } from '@/components/auth/GuestModeConsent';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -142,10 +142,12 @@ export default function AuthScreen() {
   const { colorScheme } = useColorScheme();
   const { signIn, signUp, signInWithOAuth, isLoading } = useAuth();
   const { hasCompletedOnboarding } = useOnboarding();
+  const { enableGuestMode } = useGuestMode();
   
   const [currentView, setCurrentView] = React.useState<AuthView>('welcome');
   const [showEmailConfirmation, setShowEmailConfirmation] = React.useState(false);
   const [registrationEmail, setRegistrationEmail] = React.useState('');
+  const [showGuestConsent, setShowGuestConsent] = React.useState(false);
   
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
@@ -277,9 +279,33 @@ export default function AuthScreen() {
           showsVerticalScrollIndicator={false}
         >
           {currentView === 'welcome' && (
-            <WelcomeView onSignUp={showSignUp} onSignIn={showSignIn} />
+            <WelcomeView 
+              onSignUp={showSignUp} 
+              onSignIn={showSignIn}
+              onGuestModePress={() => {
+                console.log('🔵 Guest mode button pressed');
+                setShowGuestConsent(true);
+                console.log('🔵 showGuestConsent set to true');
+              }}
+            />
           )}
         </ScrollView>
+
+        <GuestModeConsent
+          visible={showGuestConsent}
+          onAccept={async () => {
+            setShowGuestConsent(false);
+            await enableGuestMode();
+            router.replace('/home');
+          }}
+          onDecline={() => {
+            setShowGuestConsent(false);
+            showSignUp();
+          }}
+          onDismiss={() => {
+            setShowGuestConsent(false);
+          }}
+        />
 
         <AnimatedPageWrapper visible={currentView === 'sign-in'} onClose={showWelcome}>
           <SignInView
@@ -348,11 +374,21 @@ export default function AuthScreen() {
   );
 }
 
-function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: () => void }) {
+function WelcomeView({ 
+  onSignUp, 
+  onSignIn, 
+  onGuestModePress 
+}: { 
+  onSignUp: () => void; 
+  onSignIn: () => void;
+  onGuestModePress: () => void;
+}) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
   const scale1 = useSharedValue(1);
   const scale2 = useSharedValue(1);
+  const scale3 = useSharedValue(1);
   const [acceptedTerms, setAcceptedTerms] = React.useState(false);
 
   const animatedStyle1 = useAnimatedStyle(() => ({
@@ -361,6 +397,10 @@ function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: (
 
   const animatedStyle2 = useAnimatedStyle(() => ({
     transform: [{ scale: scale2.value }],
+  }));
+
+  const animatedStyle3 = useAnimatedStyle(() => ({
+    transform: [{ scale: scale3.value }],
   }));
 
   const isDark = colorScheme === 'dark';
@@ -507,6 +547,30 @@ function WelcomeView({ onSignUp, onSignIn }: { onSignUp: () => void; onSignIn: (
         >
           <Text className="text-foreground text-[16px] font-roobert-medium">
             {t('auth.logIn')}
+          </Text>
+        </AnimatedPressable>
+
+        <AnimatedPressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            onGuestModePress();
+          }}
+          onPressIn={() => {
+            scale3.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+          }}
+          onPressOut={() => {
+            scale3.value = withSpring(1, { damping: 15, stiffness: 400 });
+          }}
+          style={[animatedStyle3, { 
+            backgroundColor: 'transparent',
+            height: 56,
+            borderRadius: 28,
+            justifyContent: 'center',
+            alignItems: 'center',
+          }]}
+        >
+          <Text className="text-muted-foreground text-[16px] font-roobert">
+            {t('auth.browseAsGuest')}
           </Text>
         </AnimatedPressable>
       </View>

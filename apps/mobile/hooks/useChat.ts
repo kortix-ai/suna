@@ -3,8 +3,9 @@ import { Alert, Keyboard } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
 import type { UnifiedMessage } from '@/api/types';
-import { useLanguage } from '@/contexts';
+import { useLanguage, useGuestMode } from '@/contexts';
 import type { ToolMessagePair } from '@/components/chat';
 import {
   useThreads,
@@ -29,6 +30,7 @@ import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -103,6 +105,8 @@ export interface UseChatReturn {
 export function useChat(): UseChatReturn {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { exitGuestMode } = useGuestMode();
   
   const { selectedModelId, selectedAgentId } = useAgent();
   const { data: modelsData } = useAvailableModels();
@@ -136,7 +140,7 @@ export function useChat(): UseChatReturn {
       return hasActiveSubscription;
     });
   }, [availableModels, hasActiveSubscription]);
-  
+
   useEffect(() => {
     if (selectedModelId && accessibleModels.length > 0) {
       const isModelAccessible = accessibleModels.some(m => m.id === selectedModelId);
@@ -604,7 +608,15 @@ export function useChat(): UseChatReturn {
         } catch (agentStartError: any) {
           console.error('[useChat] Error starting agent for new thread:', agentStartError);
           
-          // Handle specific billing-related errors
+          if (agentStartError?.code === 'RATE_LIMIT_EXCEEDED' || agentStartError?.status === 429) {
+            console.log('⏱️ Rate limit exceeded - showing auth drawer');
+            useAuthDrawerStore.getState().openAuthDrawer({
+              title: 'Sign up to continue',
+              message: 'You\'ve reached the guest message limit. Please sign up to continue chatting.'
+            });
+            return;
+          }
+          
           const errorMessage = agentStartError?.message || '';
           if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
             console.log('💳 Project limit exceeded - opening billing modal');
@@ -736,6 +748,16 @@ export function useChat(): UseChatReturn {
           setAttachments([]);
         } catch (sendMessageError: any) {
           console.error('[useChat] Error sending message to existing thread:', sendMessageError);
+          
+          if (sendMessageError?.code === 'RATE_LIMIT_EXCEEDED' || sendMessageError?.status === 429) {
+            console.log('⏱️ Rate limit exceeded - showing auth drawer');
+            useAuthDrawerStore.getState().openAuthDrawer({
+              title: 'Sign up to continue',
+              message: 'You\'ve reached the guest message limit. Please sign up to continue chatting.'
+            });
+            return;
+          }
+          
           const errorMessage = sendMessageError?.message || '';
           if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
             console.log('💳 Project limit exceeded - opening billing modal');
@@ -919,6 +941,7 @@ export function useChat(): UseChatReturn {
   const closeAttachmentDrawer = useCallback(() => {
     setIsAttachmentDrawerVisible(false);
   }, []);
+
 
   const transcribeAndAddToInput = useCallback(async (audioUri: string) => {
     try {

@@ -80,6 +80,8 @@ class Configuration:
     
     # Environment mode
     ENV_MODE: Optional[EnvMode] = EnvMode.LOCAL
+    
+    GUEST_MODE_ADMIN_USER_ID: Optional[str] = None
 
 
     # Subscription tier IDs - Production

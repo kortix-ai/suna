@@ -1,0 +1,57 @@
+{
+    "cli": {
+      "version": ">= 5.9.0",
+      "appVersionSource": "remote"
+    },
+    "build": {
+      "development": {
+        "developmentClient": true,
+        "distribution": "internal"
+      },
+      "preview": {
+        "distribution": "internal"
+      },
+      "production": {
+        "ios": {
+          "simulator": false,
+          "autoIncrement": true
+        },
+        "env": {
+          "EXPO_PUBLIC_SUPABASE_URL": "https://your-project.supabase.co",
+          "EXPO_PUBLIC_SUPABASE_ANON_KEY": "anon-key",
+          "EXPO_PUBLIC_BACKEND_URL": "https://staging.kortix.ai/api"
+        }
+      },
+      "testflight": {
+        "environment": "preview",
+        "ios": {
+          "simulator": false,
+          "distribution": "store",
+          "autoIncrement": true
+        },
+        "env": {
+          "EXPO_PUBLIC_SUPABASE_URL": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA",
+          "EXPO_PUBLIC_SUPABASE_ANON_KEY": "your-supabase-anon-key",
+          "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.suna.so/api"
+        }
+      }
+    },
+    "submit": {
+      "production": {
+        "ios": {
+          "appleId": "your-apple-id@example.com",
+          "ascAppId": "your-app-store-connect-app-id",
+          "appleTeamId": "your-apple-team-id"
+        }
+      },
+      "testflight": {
+        "ios": {
+          "appleId": "your-apple-id@example.com",
+          "ascAppId": "your-app-store-connect-app-id",
+          "appleTeamId": "your-apple-team-id"
+        }
+      }
+    }
+  }
+  
+  

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 import stripe
 from core.credits import credit_service
 from core.services.supabase import DBConnection
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_user_id_from_jwt
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.utils.cache import Cache
@@ -420,9 +420,20 @@ async def deduct_token_usage(
 
 @router.get("/balance")
 async def get_credit_balance(
-    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+    account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
 ) -> Dict:
     from .config import CREDITS_PER_DOLLAR
+    
+    if not account_id:
+        return {
+            'balance': 0,
+            'expiring_credits': 0,
+            'non_expiring_credits': 0,
+            'tier': 'guest',
+            'tier_name': 'Guest',
+            'trial_status': None,
+            'trial_ends_at': None
+        }
     
     db = DBConnection()
     client = await db.client
@@ -501,9 +512,18 @@ async def stripe_webhook(request: Request):
 
 @router.get("/subscription")
 async def get_subscription(
-    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+    account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
 ) -> Dict:
     try:
+        if not account_id:
+            return {
+                'has_subscription': False,
+                'tier': 'guest',
+                'tier_name': 'Guest',
+                'status': None,
+                'plan_name': None
+            }
+        
         subscription_info = await subscription_service.get_subscription(account_id)
         
         balance = await credit_service.get_balance(account_id)
@@ -1296,13 +1316,44 @@ async def get_usage_history(
 
 @router.get("/available-models")
 async def get_available_models(
-    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+    account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
 ) -> Dict:
     try:
         from core.ai_models import model_manager
         from core.services.supabase import DBConnection
-        # Use the implemented get_allowed_models_for_user function
-        
+
+        if not account_id:
+            logger.info(f"Guest user requesting models: {account_id}")
+            all_models = model_manager.list_available_models(tier=None, include_disabled=False)
+            model_info = []
+            
+            for model_data in all_models:
+                if model_data.get("requires_subscription", False):
+                    continue
+                    
+                input_cost = model_data["pricing"]["input_per_million"] if model_data["pricing"] else None
+                output_cost = model_data["pricing"]["output_per_million"] if model_data["pricing"] else None
+                
+                model_info.append({
+                    "id": model_data["id"],
+                    "display_name": model_data["name"],
+                    "short_name": model_data.get("aliases", [model_data["name"]])[0] if model_data.get("aliases") else model_data["name"],
+                    "requires_subscription": False,
+                    "input_cost_per_million_tokens": float(Decimal(str(input_cost)) * TOKEN_PRICE_MULTIPLIER) if input_cost else None,
+                    "output_cost_per_million_tokens": float(Decimal(str(output_cost)) * TOKEN_PRICE_MULTIPLIER) if output_cost else None,
+                    "context_window": model_data["context_window"],
+                    "capabilities": model_data["capabilities"],
+                    "recommended": model_data["recommended"],
+                    "priority": model_data["priority"]
+                })
+            
+            return {
+                "models": model_info,
+                "subscription_tier": "Guest (Free Tier)",
+                "total_models": len(model_info)
+            }
+            
+
         if config.ENV_MODE == EnvMode.LOCAL:
             logger.debug("Running in local development mode - all models available")
             all_models = model_manager.list_available_models(include_disabled=False)

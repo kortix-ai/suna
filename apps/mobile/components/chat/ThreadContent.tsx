@@ -1,11 +1,10 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Pressable, Linking, ActivityIndicator } from 'react-native';
+import { View, Pressable, Linking } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
 import { safeJsonParse } from '@/lib/utils/message-grouping';
 import {
-  preprocessTextOnlyTools,
   parseXmlToolCalls,
   isNewXmlFormat,
   parseToolMessage,
@@ -19,8 +18,6 @@ import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles'
 import { AgentIdentifier } from '@/components/agents';
 import {
   FileAttachmentsGrid,
-  extractFileReferences,
-  removeFileReferences
 } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
 import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
@@ -98,12 +95,13 @@ interface MarkdownContentProps {
   content: string;
   handleToolClick?: (assistantMessageId: string | null, toolName: string) => void;
   messageId?: string | null;
+  threadId?: string;
   onFilePress?: (filePath: string) => void;
   sandboxId?: string;
   isLatestMessage?: boolean;
 }
 
-function MarkdownContent({ content, handleToolClick, messageId, onFilePress, sandboxId, isLatestMessage }: MarkdownContentProps) {
+function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, isLatestMessage }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
 
   const processedContent = useMemo(() => {
@@ -223,10 +221,9 @@ function MarkdownContent({ content, handleToolClick, messageId, onFilePress, san
               
               <TaskCompletedFeedback
                 taskSummary={completeText}
-                threadId={message.thread_id}
-                messageId={messageId}
+                threadId={threadId || ''}
+                messageId={messageId || ''}
                 onFollowUpClick={(prompt) => {
-                  // TODO: Handle follow-up click - could trigger a new message
                   console.log('Follow-up clicked:', prompt);
                 }}
               />
@@ -776,6 +773,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                         content={parsedContent.content}
                         handleToolClick={handleToolClick}
                         messageId={message.message_id}
+                        threadId={message.thread_id}
                         onFilePress={onFilePress}
                         sandboxId={sandboxId}
                         isLatestMessage={isLatestMessage}
