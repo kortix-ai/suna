@@ -31,12 +31,22 @@ redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramati
 
 dramatiq.set_broker(redis_broker)
 
+# 🔥 WARMUP AT WORKER STARTUP (not on first request)
+# This runs when dramatiq imports this module (worker process start)
+logger.info("🚀 Worker process starting, warming up tool cache...")
+from core.utils.tool_discovery import warm_up_tools_cache
+warm_up_tools_cache()
+logger.info("✅ Worker process ready, tool cache warmed")
+
 _initialized = False
 db = DBConnection()
 instance_id = ""
 
 async def initialize():
-    """Initialize the agent API with resources from the main API."""
+    """Initialize async resources (Redis, DB) on first request.
+    
+    Note: Tool cache warmup already happened at module import time.
+    """
     global db, instance_id, _initialized
 
     if _initialized:
@@ -45,16 +55,12 @@ async def initialize():
     if not instance_id:
         instance_id = str(uuid.uuid4())[:8]
     
-    logger.info(f"Initializing worker with Redis at {redis_host}:{redis_port}")
+    logger.info(f"Initializing worker async resources with Redis at {redis_host}:{redis_port}")
     await retry(lambda: redis.initialize_async())
     await db.initialize()
-    
-    # Pre-load tool classes to avoid first-request delay
-    from core.utils.tool_discovery import warm_up_tools_cache
-    warm_up_tools_cache()
 
     _initialized = True
-    logger.info(f"✅ Worker initialized successfully with instance ID: {instance_id}")
+    logger.info(f"✅ Worker async resources initialized successfully (instance: {instance_id})")
 
 @dramatiq.actor
 async def check_health(key: str):
