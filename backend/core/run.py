@@ -350,7 +350,10 @@ class PromptManager:
                                   xml_tool_calling: bool = True,
                                   user_id: Optional[str] = None) -> dict:
         
-        default_system_content = get_system_prompt()
+        # Build modular prompt based on agent's enabled tools
+        # Note: For versioned agents, the system_prompt is pre-built and stored in DB
+        # during version creation (see version_service.py create_version)
+        default_system_content = get_system_prompt(agent_config)
         
         # if "anthropic" not in model_name.lower():
         #     sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')
@@ -358,7 +361,8 @@ class PromptManager:
         #         sample_response = file.read()
         #     default_system_content = default_system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
         
-        # Start with agent's normal system prompt or default
+        # Use pre-built system prompt from DB if available (already modular)
+        # Otherwise fall back to building modular prompt on-the-fly
         if agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
         else:

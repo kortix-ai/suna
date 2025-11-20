@@ -234,6 +234,29 @@ class VersionService:
         
         normalized_custom_mcps = self._normalize_custom_mcps(custom_mcps)
         
+        # 🎯 REBUILD MODULAR SYSTEM PROMPT based on enabled tools
+        # This ensures the system prompt always matches the current tool configuration
+        try:
+            from core.prompts.prompt import get_system_prompt
+            
+            # Build agent config for modular prompt generation
+            agent_config_for_prompt = {
+                'agentpress_tools': agentpress_tools,
+                'custom_mcp': normalized_custom_mcps
+            }
+            
+            # Generate modular prompt based on enabled tools
+            rebuilt_system_prompt = get_system_prompt(agent_config_for_prompt)
+            
+            logger.info(f"🔄 Rebuilt modular system prompt for agent {agent_id}: {len(rebuilt_system_prompt)} chars (was {len(system_prompt)} chars)")
+            
+            # Use the rebuilt prompt instead of the passed one
+            system_prompt = rebuilt_system_prompt
+            
+        except Exception as e:
+            logger.error(f"Failed to rebuild modular prompt, using original: {e}")
+            # Fallback to original system_prompt if rebuild fails
+        
         version = AgentVersion(
             version_id=str(uuid4()),
             agent_id=agent_id,
