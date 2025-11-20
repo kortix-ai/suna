@@ -96,16 +96,6 @@ async def _find_shared_suna_agent(client):
 
 
 async def _load_agent_config(client, agent_id: Optional[str], account_id: str, user_id: str, is_new_thread: bool = False):
-    """
-    Load agent configuration. Returns agent_config dict or None.
-    
-    Args:
-        client: Database client
-        agent_id: Optional agent ID to load
-        account_id: Account ID for default agent lookup
-        user_id: User ID for authorization
-        is_new_thread: If True, ensures Suna is installed for new threads
-    """
     from .agent_loader import get_agent_loader
     loader = await get_agent_loader()
     
@@ -542,18 +532,10 @@ async def unified_agent_start(
         logger.debug(f"Resolved model name: {model_name}")
     
     try:
-        # ====================================================================
-        # Branch: Existing Thread vs New Thread
-        # ====================================================================
-        
         if thread_id:
-            # ================================================================
-            # EXISTING THREAD PATH
-            # ================================================================
             logger.debug(f"Starting agent on existing thread: {thread_id}")
             structlog.contextvars.bind_contextvars(thread_id=thread_id)
             
-            # Validate thread exists and get metadata
             thread_result = await client.table('threads').select('project_id', 'account_id', 'metadata').eq('thread_id', thread_id).execute()
             
             if not thread_result.data:
@@ -564,9 +546,19 @@ async def unified_agent_start(
             thread_account_id = thread_data.get('account_id')
             thread_metadata = thread_data.get('metadata', {})
             
-            # Verify access
             if thread_account_id != user_id:
-                await verify_and_authorize_thread_access(client, thread_id, user_id)
+                agent_runs_result = await client.table('agent_runs').select('metadata').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()
+                if agent_runs_result.data:
+                    metadata = agent_runs_result.data[0].get('metadata', {})
+                    actual_user_id = metadata.get('actual_user_id')
+                    if actual_user_id != user_id:
+                        logger.error(f"User {user_id} unauthorized for thread {thread_id} (belongs to {actual_user_id})")
+                        await verify_and_authorize_thread_access(client, thread_id, user_id)
+                    else:
+                        logger.debug(f"Guest {user_id} authorized for thread {thread_id} via actual_user_id")
+                else:
+                    logger.debug(f"No agent runs found, falling back to standard auth check")
+                    await verify_and_authorize_thread_access(client, thread_id, user_id)
             
             structlog.contextvars.bind_contextvars(
                 project_id=project_id,
@@ -575,7 +567,9 @@ async def unified_agent_start(
             )
             
             # Load agent configuration
-            agent_config = await _load_agent_config(client, agent_id, thread_account_id, user_id, is_new_thread=False)
+            # For agent loading, use thread_account_id as the user_id (this is the actual owner of the agents)
+            # Guest sessions use admin's agents, so we need to load with admin's permissions
+            agent_config = await _load_agent_config(client, agent_id, thread_account_id, thread_account_id, is_new_thread=False)
             
             # Check billing and limits (skip for guest users)
             from core.guest_session import guest_session_service
@@ -656,7 +650,9 @@ async def unified_agent_start(
             logger.debug(f"Creating new thread with prompt and {len(files)} files")
             
             # Load agent configuration
-            agent_config = await _load_agent_config(client, agent_id, account_id, user_id, is_new_thread=True)
+            # For agent loading, use account_id as the user_id (this is the actual owner of the agents)
+            # Guest sessions use admin's agents, so we need to load with admin's permissions
+            agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=True)
             
             # Check billing and limits (including project and thread limits)
             # Skip for guest users
