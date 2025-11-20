@@ -2355,8 +2355,7 @@ def get_system_prompt(agent_config: dict = None):
     try:
         from .prompt_sections import (
             should_include_section,
-            SECTION_CONTENT,
-            get_toolkit_section
+            SECTION_CONTENT
         )
         
         # Get enabled tools from agent config
@@ -2389,31 +2388,15 @@ def get_system_prompt(agent_config: dict = None):
         
         logger.debug(f"Included {len(tool_sections)} tool sections: {included_sections}")
         
-        # Add toolkit-specific sections from Composio/MCP integrations
-        toolkit_sections = []
-        included_toolkits = []
-        if enabled_mcps:
-            for mcp in enabled_mcps:
-                toolkit_slug = mcp.get('toolkit_slug') or mcp.get('name', '').lower()
-                toolkit_prompt = get_toolkit_section(toolkit_slug)
-                if toolkit_prompt:
-                    toolkit_sections.append(toolkit_prompt)
-                    included_toolkits.append(toolkit_slug)
-        
-        if included_toolkits:
-            logger.debug(f"Included {len(toolkit_sections)} toolkit sections: {included_toolkits}")
-        
         # Combine all sections
         final_prompt = base_prompt
         if tool_sections:
             final_prompt += "\n\n" + "\n\n".join(tool_sections)
-        if toolkit_sections:
-            final_prompt += "\n\n# CONNECTED INTEGRATIONS\n\n" + "\n\n".join(toolkit_sections)
         
         # Add the rest of the prompt (methodology, task management, etc.)
         final_prompt += "\n\n" + _get_methodology_and_guidelines()
         
-        logger.info(f"🎯 Built modular prompt: {len(final_prompt)} chars (base + {len(tool_sections)} tool sections + {len(toolkit_sections)} toolkits)")
+        logger.info(f"🎯 Built modular prompt: {len(final_prompt)} chars (base + {len(tool_sections)} tool sections)")
         
         return final_prompt
         
