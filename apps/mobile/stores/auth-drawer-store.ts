@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 
+type AuthMode = 'choose' | 'sign-in' | 'sign-up';
+
 interface AuthDrawerState {
   isOpen: boolean;
   title?: string;
   message?: string;
+  mode?: AuthMode;
   onSuccess?: () => void;
-  openAuthDrawer: (options?: { title?: string; message?: string; onSuccess?: () => void }) => void;
+  openAuthDrawer: (options?: { title?: string; message?: string; mode?: AuthMode; onSuccess?: () => void }) => void;
   closeAuthDrawer: () => void;
 }
 
@@ -13,12 +16,14 @@ export const useAuthDrawerStore = create<AuthDrawerState>((set) => ({
   isOpen: false,
   title: undefined,
   message: undefined,
+  mode: undefined,
   onSuccess: undefined,
   openAuthDrawer: (options) =>
     set({
       isOpen: true,
-      title: options?.title || 'Create an Account',
-      message: options?.message || 'Sign up or log in to continue',
+      title: options?.title,
+      message: options?.message,
+      mode: options?.mode,
       onSuccess: options?.onSuccess,
     }),
   closeAuthDrawer: () =>
@@ -26,6 +31,7 @@ export const useAuthDrawerStore = create<AuthDrawerState>((set) => ({
       isOpen: false,
       title: undefined,
       message: undefined,
+      mode: undefined,
       onSuccess: undefined,
     }),
 }));

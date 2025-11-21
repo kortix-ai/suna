@@ -45,7 +45,7 @@ export function ProfileSection({ profile, onPress }: ProfileSectionProps) {
   const scale = useSharedValue(1);
   
   // Get user data from auth context or fallback to profile prop
-  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || profile?.name || t('auth.guest');
+  const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || profile?.name || t('auth.guest.label');
   const userAvatar = user?.user_metadata?.avatar_url || profile?.avatar;
   const isGuest = !user;
   

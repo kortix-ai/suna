@@ -13,6 +13,8 @@ import * as Haptics from 'expo-haptics';
 import { useSubscription, useCreditBalance } from '@/lib/billing';
 import { useColorScheme } from 'nativewind';
 import { formatCredits } from '@/lib/utils/credit-formatter';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
+import { useLanguage } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -26,12 +28,15 @@ interface TopNavProps {
 
 export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMode = false }: TopNavProps) {
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const { data: subscriptionData } = useSubscription();
   const { data: creditBalance, refetch: refetchCredits } = useCreditBalance();
   const menuScale = useSharedValue(1);
   const upgradeScale = useSharedValue(1);
   const creditsScale = useSharedValue(1);
   const rightUpgradeScale = useSharedValue(1);
+  const signUpButtonScale = useSharedValue(1);
+  const loginButtonScale = useSharedValue(1);
 
   React.useEffect(() => {
     refetchCredits();
@@ -51,6 +56,14 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
 
   const rightUpgradeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: rightUpgradeScale.value }],
+  }));
+
+  const signUpButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: signUpButtonScale.value }],
+  }));
+
+  const loginButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: loginButtonScale.value }],
   }));
 
   const handleMenuPress = () => {
@@ -73,13 +86,30 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
     onCreditsPress?.();
   };
 
+  const handleSignUpPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    useAuthDrawerStore.getState().openAuthDrawer({
+      title: t('auth.drawer.signUpUnlock'),
+      message: t('auth.drawer.signUpUnlockMessage'),
+      mode: 'sign-up'
+    });
+  };
+
+  const handleLoginPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    useAuthDrawerStore.getState().openAuthDrawer({
+      title: t('auth.drawer.welcomeBack'),
+      message: t('auth.drawer.welcomeBackMessage'),
+      mode: 'sign-in'
+    });
+  };
+
   const currentTier = subscriptionData?.tier?.name || subscriptionData?.tier_key || 'free';
   const isFreeTier = currentTier === 'free' || !subscriptionData;
   const buttonWidth = 163;
 
   return (
     <View className="absolute top-[62px] left-0 right-0 flex-row items-center h-[41px] px-0 z-50">
-      {/* Menu Icon - positioned at left: 24px, top: 70.5px (relative to screen) */}
       <AnimatedPressable
         onPressIn={() => {
           menuScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -101,10 +131,42 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
       </AnimatedPressable>
       
       {isGuestMode ? (
-        <View className="absolute left-0 right-0 items-center justify-center" style={{ top: 8.5 }}>
-          <Text className="text-base font-roobert-medium text-muted-foreground">
-            Temporary Chat
-          </Text>
+        <View className="absolute right-6 flex-row items-center gap-2">
+          <AnimatedPressable
+            onPressIn={() => {
+              loginButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+            }}
+            onPressOut={() => {
+              loginButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+            }}
+            onPress={handleLoginPress}
+            className="flex-row h-9 px-3 items-center gap-1.5 bg-primary rounded-full"
+            style={loginButtonAnimatedStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Log In"
+          >
+            <Text className="text-xs font-roobert-semibold text-primary-foreground">
+              {t('auth.logIn')}
+            </Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable
+            onPressIn={() => {
+              signUpButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+            }}
+            onPressOut={() => {
+              signUpButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+            }}
+            onPress={handleSignUpPress}
+            className="flex-row h-9 px-3 items-center gap-1.5 bg-primary/5 rounded-full"
+            style={signUpButtonAnimatedStyle}
+            accessibilityRole="button"
+            accessibilityLabel="Sign Up"
+          >
+            <Text className="text-xs font-roobert-semibold text-foreground">
+              {t('auth.signUp')}
+            </Text>
+          </AnimatedPressable>
         </View>
       ) : (
         <View className="absolute right-6 flex-row items-center gap-2" >
@@ -124,7 +186,7 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
             >
               <Icon as={Sparkles} size={14} className="text-primary-foreground" strokeWidth={2.5} />
               <Text className="text-xs font-roobert-semibold text-primary-foreground">
-                Upgrade
+                {t('billing.upgrade')}
               </Text>
             </AnimatedPressable>
           )}
