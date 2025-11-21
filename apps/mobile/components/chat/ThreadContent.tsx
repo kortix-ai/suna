@@ -183,7 +183,7 @@ function MarkdownContent({ content, handleToolClick, messageId, threadId, onFile
               >
                 {askText}
               </Markdown>
-              
+
               <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
                 <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
                 <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
@@ -218,7 +218,7 @@ function MarkdownContent({ content, handleToolClick, messageId, threadId, onFile
               >
                 {completeText}
               </Markdown>
-              
+
               <TaskCompletedFeedback
                 taskSummary={completeText}
                 threadId={threadId || ''}
@@ -355,9 +355,9 @@ const ToolCard = React.memo(function ToolCard({
       <Pressable
         onPress={onPress}
         disabled={!onPress}
-        className="flex-row items-center gap-3 p-3 rounded-3xl border border-neutral-400/50 dark:border-neutral-700 bg-neutral-200 dark:bg-neutral-800 active:opacity-70"
+        className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card"
       >
-        <View className="h-8 w-8 rounded-xl border border-neutral-400/50 dark:border-neutral-700 items-center justify-center bg-primary/10">
+        <View className="h-8 w-8 rounded-xl border border-border items-center justify-center bg-background">
           <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
         </View>
         <View className="flex-1">
@@ -378,9 +378,9 @@ const ToolCard = React.memo(function ToolCard({
     <Pressable
       onPress={onPress}
       disabled={!onPress}
-      className="flex-row items-center gap-3 p-3 rounded-3xl bg-primary/10 active:opacity-70"
+      className="flex-row items-center gap-3 p-3 rounded-3xl bg-card border border-border"
     >
-      <View className={`h-8 w-8 rounded-xl items-center justify-center ${isError ? 'bg-destructive/10' : 'bg-primary/10'}`}>
+      <View className={`h-8 w-8 rounded-xl items-center justify-center border border-border ${isError ? 'bg-destructive/10' : 'bg-background'}`}>
         <Icon
           as={isError ? AlertCircle : IconComponent}
           size={16}

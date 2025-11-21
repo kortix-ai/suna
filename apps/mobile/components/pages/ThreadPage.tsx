@@ -521,7 +521,7 @@ export function ThreadPage({
         }}
         onSendAudio={audioHandlers.handleSendAudio}
         onAttachPress={chat.openAttachmentDrawer}
-        onAgentPress={isGuestMode ? () => {} : agentManager.openDrawer}
+        onAgentPress={isGuestMode ? () => { } : agentManager.openDrawer}
         onAudioRecord={audioHandlers.handleStartRecording}
         onCancelRecording={audioHandlers.handleCancelRecording}
         onStopAgentRun={chat.stopAgent}
@@ -619,6 +619,11 @@ export function ThreadPage({
         onClose={() => chat.setSelectedToolData(null)}
         toolMessages={chat.selectedToolData?.toolMessages || []}
         initialIndex={chat.selectedToolData?.initialIndex || 0}
+        project={fullThreadData?.project ? {
+          id: fullThreadData.project.id,
+          name: fullThreadData.project.name,
+          sandbox_id: fullThreadData.project.sandbox?.id
+        } : undefined}
       />
 
       <Modal

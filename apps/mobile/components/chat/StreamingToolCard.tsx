@@ -61,7 +61,7 @@ function extractToolNameFromStream(content: string): string | null {
   if (oldFormatMatch) {
     return oldFormatMatch[1].replace(/_/g, '-');
   }
-  
+
   return null;
 }
 
@@ -128,7 +128,7 @@ function extractStreamingContent(content: string, toolName: string): string {
   if (STREAMABLE_TOOLS.WEB_TOOLS.has(toolName)) {
     const queryMatch = content.match(/<parameter\s+name=["']query["']>([\s\S]*?)(<\/parameter>|$)/i);
     const urlMatch = content.match(/<parameter\s+name=["']url["']>([\s\S]*?)(<\/parameter>|$)/i);
-    
+
     if (queryMatch && queryMatch[1]) {
       return queryMatch[1].trim();
     }
@@ -156,7 +156,7 @@ interface StreamingToolCardProps {
 
 export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content }) => {
   const scrollViewRef = useRef<ScrollView>(null);
-  
+
   const toolInfo = useMemo(() => {
     const rawToolName = extractToolNameFromStream(content);
     if (!rawToolName) return null;
@@ -185,8 +185,8 @@ export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content })
 
   if (!toolInfo) {
     return (
-      <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-neutral-400/50 dark:border-neutral-700 bg-neutral-200 dark:bg-neutral-800">
-        <View className="h-8 w-8 rounded-xl border border-neutral-400/50 dark:border-neutral-700 items-center justify-center bg-primary/10">
+      <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
+        <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
           <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
         </View>
         <View className="flex-1">
@@ -202,8 +202,8 @@ export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content })
 
   if (!shouldShowContent) {
     return (
-      <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-neutral-400/50 dark:border-neutral-700 bg-neutral-200 dark:bg-neutral-800">
-        <View className="h-8 w-8 rounded-xl border border-neutral-400/50 dark:border-neutral-700 items-center justify-center bg-primary/10">
+      <View className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card">
+        <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
           <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
         </View>
         <View className="flex-1">
@@ -221,9 +221,9 @@ export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content })
   }
 
   return (
-    <View className="rounded-3xl border border-neutral-400/50 dark:border-neutral-700 bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
+    <View className="rounded-3xl border border-border bg-card overflow-hidden">
       <View className="flex-row items-center gap-3 p-3 border-b border-border">
-        <View className="h-8 w-8 rounded-xl border border-neutral-400/50 dark:border-neutral-700 items-center justify-center bg-primary/10">
+        <View className="h-8 w-8 rounded-xl border border-border bg-background items-center justify-center">
           <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
         </View>
         <View className="flex-1">
@@ -237,15 +237,15 @@ export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content })
           )}
         </View>
       </View>
-      
-      <ScrollView 
+
+      <ScrollView
         ref={scrollViewRef}
         className="max-h-[300px] bg-card"
         showsVerticalScrollIndicator={true}
       >
         <View className="p-3">
-          <Text 
-            className="text-xs text-foreground font-roobert-mono" 
+          <Text
+            className="text-xs text-foreground font-roobert-mono"
             style={{ fontFamily: 'monospace' }}
           >
             {streamingContent}

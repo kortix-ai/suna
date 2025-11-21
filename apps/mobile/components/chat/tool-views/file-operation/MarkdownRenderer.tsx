@@ -24,13 +24,16 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     let codeBlockLang = '';
     let inList = false;
     let listItems: string[] = [];
+    let keyCounter = 0;
+
+    const getKey = () => `md-${keyCounter++}`;
 
     const flushList = () => {
       if (listItems.length > 0) {
         elements.push(
-          <View key={elements.length} className="mb-4">
+          <View key={getKey()} className="mb-4">
             {listItems.map((item, idx) => (
-              <View key={idx} className="flex-row items-start mb-2">
+              <View key={`list-item-${idx}`} className="flex-row items-start mb-2">
                 <Text className="text-sm font-roobert text-foreground/60 mr-2">•</Text>
                 <Text className="text-sm font-roobert text-foreground/90 flex-1">{item}</Text>
               </View>
@@ -46,7 +49,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       if (line.startsWith('```')) {
         if (inCodeBlock) {
           elements.push(
-            <View key={index} className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
+            <View key={getKey()} className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
               <Text className="text-xs font-mono text-foreground/80 leading-5">
                 {codeBlockContent.join('\n')}
               </Text>
@@ -66,12 +69,12 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         flushList();
         const level = line.match(/^#+/)?.[0].length || 1;
         const text = line.replace(/^#+\s*/, '');
-        
+
         const fontSize = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : level === 3 ? 'text-lg' : 'text-base';
         const marginBottom = level <= 2 ? 'mb-4' : 'mb-3';
-        
+
         elements.push(
-          <Text key={index} className={`font-roobert-semibold text-foreground ${fontSize} ${marginBottom}`}>
+          <Text key={getKey()} className={`font-roobert-semibold text-foreground ${fontSize} ${marginBottom}`}>
             {text}
           </Text>
         );
@@ -87,7 +90,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         flushList();
         const text = line.replace(/^>\s*/, '');
         elements.push(
-          <View key={index} className="border-l-4 border-primary/30 pl-4 mb-4">
+          <View key={getKey()} className="border-l-4 border-primary/30 pl-4 mb-4">
             <Text className="text-sm font-roobert text-foreground/80 italic">
               {text}
             </Text>
@@ -95,19 +98,19 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
         );
       } else if (line.trim() === '') {
         flushList();
-        elements.push(<View key={index} className="h-4" />);
+        elements.push(<View key={getKey()} className="h-4" />);
       } else {
         flushList();
-        
+
         let processedLine = line;
-        
+
         processedLine = processedLine.replace(/\*\*(.*?)\*\*/g, '$1');
         processedLine = processedLine.replace(/\*(.*?)\*/g, '$1');
         processedLine = processedLine.replace(/`([^`]+)`/g, '$1');
         processedLine = processedLine.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-        
+
         elements.push(
-          <Text key={index} className="text-sm font-roobert text-foreground/90 leading-6 mb-2">
+          <Text key={getKey()} className="text-sm font-roobert text-foreground/90 leading-6 mb-2">
             {processedLine}
           </Text>
         );
@@ -118,7 +121,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
 
     if (inCodeBlock && codeBlockContent.length > 0) {
       elements.push(
-        <View key={elements.length} className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
+        <View key={getKey()} className="bg-muted/30 border border-border rounded-xl p-4 mb-4">
           <Text className="text-xs font-mono text-foreground/80 leading-5">
             {codeBlockContent.join('\n')}
           </Text>

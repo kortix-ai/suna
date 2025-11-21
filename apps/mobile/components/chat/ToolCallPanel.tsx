@@ -22,6 +22,11 @@ interface ToolCallPanelProps {
   onClose: () => void;
   toolMessages: ToolMessagePair[];
   initialIndex?: number;
+  project?: {
+    id: string;
+    name: string;
+    sandbox_id?: string;
+  };
 }
 
 export function ToolCallPanel({
@@ -29,6 +34,7 @@ export function ToolCallPanel({
   onClose,
   toolMessages,
   initialIndex = 0,
+  project,
 }: ToolCallPanelProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
@@ -48,7 +54,7 @@ export function ToolCallPanel({
   }, [visible, initialIndex]);
 
   const currentPair = toolMessages[currentIndex];
-  
+
   const toolData = useMemo(() => {
     if (!currentPair?.toolMessage) return null;
     return parseToolMessage(currentPair.toolMessage.content);
@@ -112,10 +118,10 @@ export function ToolCallPanel({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ 
+      backgroundStyle={{
         backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF'
       }}
-      handleIndicatorStyle={{ 
+      handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
         width: 36,
         height: 5,
@@ -130,7 +136,7 @@ export function ToolCallPanel({
         overflow: 'hidden'
       }}
     >
-      <BottomSheetScrollView 
+      <BottomSheetScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 20 }}
@@ -151,12 +157,13 @@ export function ToolCallPanel({
             toolMessage={currentPair.toolMessage}
             currentIndex={currentIndex}
             totalCalls={toolMessages.length}
+            project={project}
           />
         )}
       </BottomSheetScrollView>
 
       {toolMessages.length > 1 && (
-        <View 
+        <View
           className="border-t border-border bg-card px-6"
           style={{
             paddingTop: 12,
@@ -167,24 +174,22 @@ export function ToolCallPanel({
             <Pressable
               onPress={handlePrev}
               disabled={isPrevDisabled}
-              className={`flex-row items-center px-4 py-2 rounded-2xl ${
-                isPrevDisabled
+              className={`flex-row items-center px-4 py-2 rounded-2xl ${isPrevDisabled
                   ? 'bg-secondary/50 opacity-40'
                   : 'bg-secondary active:bg-secondary/80'
-              }`}
+                }`}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Icon 
-                as={ChevronLeft} 
-                size={16} 
-                className={isPrevDisabled ? 'text-foreground/30' : 'text-foreground/60'} 
+              <Icon
+                as={ChevronLeft}
+                size={16}
+                className={isPrevDisabled ? 'text-foreground/30' : 'text-foreground/60'}
               />
-              <Text 
-                className={`text-sm ml-1 font-roobert-medium ${
-                  isPrevDisabled 
-                    ? 'text-foreground/30' 
+              <Text
+                className={`text-sm ml-1 font-roobert-medium ${isPrevDisabled
+                    ? 'text-foreground/30'
                     : 'text-foreground/60'
-                }`}
+                  }`}
               >
                 Prev
               </Text>
@@ -199,26 +204,24 @@ export function ToolCallPanel({
             <Pressable
               onPress={handleNext}
               disabled={isNextDisabled}
-              className={`flex-row items-center px-4 py-2 rounded-2xl ${
-                isNextDisabled
+              className={`flex-row items-center px-4 py-2 rounded-2xl ${isNextDisabled
                   ? 'bg-secondary/50 opacity-40'
                   : 'bg-secondary active:bg-secondary/80'
-              }`}
+                }`}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text 
-                className={`text-sm mr-1 font-roobert-medium ${
-                  isNextDisabled
-                    ? 'text-foreground/30' 
+              <Text
+                className={`text-sm mr-1 font-roobert-medium ${isNextDisabled
+                    ? 'text-foreground/30'
                     : 'text-foreground/60'
-                }`}
+                  }`}
               >
                 Next
               </Text>
-              <Icon 
-                as={ChevronRight} 
-                size={16} 
-                className={isNextDisabled ? 'text-foreground/30' : 'text-foreground/60'} 
+              <Icon
+                as={ChevronRight}
+                size={16}
+                className={isNextDisabled ? 'text-foreground/30' : 'text-foreground/60'}
               />
             </Pressable>
           </View>
