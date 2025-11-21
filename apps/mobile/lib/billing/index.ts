@@ -1,17 +1,3 @@
-/**
- * Billing Module
- * 
- * Centralized billing functionality
- * - API client & types
- * - React Query hooks
- * - Checkout flows
- * - Pricing data
- * 
- * Note: useBillingCheck is NOT exported here to avoid circular dependency
- * with BillingContext. Import it from '@/hooks' or '@/lib/billing/validation' directly.
- */
-
-// Re-export everything from submodules (except validation to avoid circular dependency)
 export * from './api';
 export * from './hooks';
 export * from './pricing';
@@ -21,8 +7,8 @@ export * from './provider';
 export * from './revenuecat';
 export * from './unified-checkout';
 export * from './plan-utils';
+export { invalidateCreditsAfterPurchase } from './hooks';
 
-// Named exports for convenience
 export { billingApi } from './api';
 export { usageApi } from './usage-api';
 export {
@@ -42,6 +28,7 @@ export {
   initializeRevenueCat,
   setRevenueCatAttributes,
   getOfferings,
+  getOfferingById,
   purchasePackage,
   restorePurchases,
   getCustomerInfo,

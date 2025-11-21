@@ -18,7 +18,7 @@ import { useColorScheme } from 'nativewind';
 import { getOfferings, purchasePackage, type RevenueCatProduct } from '@/lib/billing/revenuecat';
 import type { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 import { useQueryClient } from '@tanstack/react-query';
-import { billingKeys, useSubscription } from '@/lib/billing';
+import { billingKeys, invalidateCreditsAfterPurchase, useSubscription } from '@/lib/billing';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -75,7 +75,7 @@ export function RevenueCatPricingSection({
     try {
       setIsLoading(true);
       setError(null);
-      const fetchedOfferings = await getOfferings();
+      const fetchedOfferings = await getOfferings(true);
       
       if (fetchedOfferings) {
         setOfferings(fetchedOfferings);
@@ -105,6 +105,7 @@ export function RevenueCatPricingSection({
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: billingKeys.all });
+      invalidateCreditsAfterPurchase(queryClient);
       
       await refetchSubscription();
       

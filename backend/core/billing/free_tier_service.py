@@ -49,6 +49,21 @@ class FreeTierService:
             
             stripe_customer_id = customer_result.data[0]['id'] if customer_result.data and len(customer_result.data) > 0 else None
             
+            if stripe_customer_id:
+                try:
+                    await self.stripe.Customer.retrieve_async(stripe_customer_id)
+                    logger.info(f"[FREE TIER] Verified existing Stripe customer {stripe_customer_id} for {account_id}")
+                except stripe.error.InvalidRequestError as e:
+                    if 'No such customer' in str(e):
+                        logger.warning(f"[FREE TIER] Customer {stripe_customer_id} not found in Stripe, will create new customer")
+                        await client.schema('basejump').from_('billing_customers')\
+                            .delete()\
+                            .eq('account_id', account_id)\
+                            .execute()
+                        stripe_customer_id = None
+                    else:
+                        raise
+            
             if not email:
                 account_result = await client.schema('basejump').from_('accounts').select(
                     'primary_owner_user_id'

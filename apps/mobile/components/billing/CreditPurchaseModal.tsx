@@ -1,18 +1,12 @@
-/**
- * Credit Purchase Modal Component
- * 
- * Matches frontend credit-purchase.tsx functionality
- * Modal overlay for purchasing additional credits
- */
-
 import React, { useState } from 'react';
 import { View, Pressable, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { AlertCircle } from 'lucide-react-native';
 import { formatCredits } from '@/lib/utils/credit-formatter';
-import { startUnifiedCreditPurchase } from '@/lib/billing/unified-checkout';
+import { startUnifiedCreditPurchase, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface CreditPurchaseModalProps {
   open: boolean;
@@ -48,6 +42,7 @@ export function CreditPurchaseModal({
   const [customAmount, setCustomAmount] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const handlePurchase = async (amount: number) => {
     if (amount < 10) {
@@ -68,6 +63,7 @@ export function CreditPurchaseModal({
         () => {
           setIsProcessing(false);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          invalidateCreditsAfterPurchase(queryClient);
           onPurchaseComplete?.();
           onOpenChange(false);
           setSelectedPackage(null);

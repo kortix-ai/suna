@@ -33,6 +33,23 @@ class PaymentService:
         if not customer_result.data or len(customer_result.data) == 0:
             raise HTTPException(status_code=400, detail="No billing customer found")
         
+        customer_id = customer_result.data[0]['id']
+        
+        try:
+            await StripeAPIWrapper.safe_stripe_call(
+                stripe.Customer.retrieve_async,
+                customer_id
+            )
+            logger.info(f"[PAYMENT] Verified Stripe customer {customer_id} for account {account_id}")
+        except stripe.error.InvalidRequestError as e:
+            if 'No such customer' in str(e):
+                logger.error(f"[PAYMENT] Customer {customer_id} not found in Stripe for account {account_id}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Your billing customer record is invalid. Please contact support or try subscribing again."
+                )
+            raise
+        
         purchase_id = None
         try:
             purchase_record = await client.table('credit_purchases').insert({
@@ -56,7 +73,7 @@ class PaymentService:
         
         try:
             session = await StripeAPIWrapper.create_checkout_session(
-                customer=customer_result.data[0]['id'],
+                customer=customer_id,
                 payment_method_types=['card'],
                 line_items=[{
                     'price_data': {

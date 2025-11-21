@@ -292,6 +292,14 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       handleSendMessage();
     } else {
       // Start audio recording
+      if (!isAuthenticated) {
+        console.log('🔐 Guest user tried to record audio, showing auth drawer');
+        useAuthDrawerStore.getState().openAuthDrawer({
+          title: 'Sign in to Chat',
+          message: 'Create an account or log in to start chatting with AI agents.'
+        });
+        return;
+      }
       console.log('🎤 Audio record button pressed');
       onAudioRecord?.();
     }
@@ -388,6 +396,18 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   ref={textInputRef}
                   value={value}
                   onChangeText={onChangeText}
+                  onFocus={() => {
+                    if (!isAuthenticated) {
+                      console.log('🔐 Guest user focused chat input, showing auth drawer');
+                      textInputRef.current?.blur();
+                      setTimeout(() => {
+                        useAuthDrawerStore.getState().openAuthDrawer({
+                          title: 'Sign in to Chat',
+                          message: 'Create an account or log in to start chatting with AI workers.'
+                        });
+                      }, 100);
+                    }
+                  }}
                   placeholder={effectivePlaceholder}
                   placeholderTextColor={
                     colorScheme === 'dark'
@@ -428,7 +448,16 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   onPressOut={() => {
                     attachScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
-                  onPress={onAttachPress}
+                  onPress={() => {
+                    if (!isAuthenticated) {
+                      useAuthDrawerStore.getState().openAuthDrawer({
+                        title: 'Sign in to Chat',
+                        message: 'Create an account or log in to start chatting with AI agents.'
+                      });
+                    } else {
+                      onAttachPress?.();
+                    }
+                  }}
                   disabled={isSendingMessage || isAgentRunning || isTranscribing}
                   className="border border-border rounded-[18px] w-10 h-10 items-center justify-center"
                   style={[

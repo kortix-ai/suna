@@ -24,7 +24,7 @@ export default function AppScreen() {
   const pageNav = usePageNavigation();
   const homePageRef = React.useRef<HomePageRef>(null);
   
-  const canSendMessages = isAuthenticated || isGuestMode;
+  const canSendMessages = isAuthenticated;
   
   React.useEffect(() => {
     if (threadId && threadId !== chat.activeThread?.id) {
