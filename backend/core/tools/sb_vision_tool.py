@@ -277,6 +277,87 @@ class SandboxVisionTool(SandboxToolsBase):
     @openapi_schema({
         "type": "function",
         "function": {
+            "name": "load_image_instructions",
+            "description": "REQUIRED FIRST STEP BEFORE LOADING AN IMAGE: Load detailed image loading workflow and requirements. You MUST call this before loading any images to understand the image loading workflow, best practices, and limitations.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    })
+    async def load_image_instructions(self) -> ToolResult:
+        """Load detailed image loading workflow and requirements"""
+        try:
+            return self.success_response({
+                "message": "Image loading workflow and requirements loaded successfully",
+                "instructions": """
+                    ### VISUAL INPUT & IMAGE CONTEXT MANAGEMENT
+                    - You MUST use the 'load_image' tool to see image files. There is NO other way to access visual information.
+                    * Provide the relative path to the image in the `/workspace` directory.
+                    * Example: 
+                        <function_calls>
+                        <invoke name="load_image">
+                        <parameter name="file_path">docs/diagram.png</parameter>
+                        </invoke>
+                        </function_calls>
+                    * ALWAYS use this tool when visual information from a file is necessary for your task.
+                    * Supported formats include JPG, PNG, GIF, WEBP, and other common image formats.
+                    * Maximum file size limit is 10 MB.
+
+                    **🔴 CRITICAL IMAGE CONTEXT MANAGEMENT 🔴**
+
+                    **⚠️ HARD LIMIT: Maximum 3 images can be loaded in context at any time.**
+
+                    Images consume SIGNIFICANT context tokens (1000+ tokens per image). With a strict 3-image limit, you MUST manage image context intelligently and strategically.
+
+                    **WHEN TO KEEP IMAGES LOADED:**
+                    - User wants to recreate, reproduce, or rebuild what's in the image
+                    - Writing code based on image content (UI from screenshots, diagrams, wireframes, etc.)
+                    - Editing, modifying, or iterating on the image content
+                    - Task requires ACTIVE VISUAL REFERENCE to the image
+                    - User asks questions that need you to SEE the image to answer accurately
+                    - In the middle of a multi-step task involving the image
+                    - Creating designs, mockups, or interfaces based on the image
+
+                    **⚠️ IMPORTANT**: If the task REQUIRES seeing the image to complete it correctly, DO NOT clear it prematurely or your work will fail! Keep the image loaded throughout the entire task.
+
+                    **WHEN TO CLEAR IMAGES (use clear_images_from_context tool):**
+                    - Task is complete and images are no longer needed
+                    - User moves to a different topic unrelated to the images
+                    - You only needed to extract information/text from images (already done)
+                    - Just describing or analyzing images (description complete)
+                    - You've reached the 3-image limit and need to load new images
+                    - Conversation no longer requires visual reference
+
+                    **CONTEXT MANAGEMENT BEST PRACTICES:**
+                    1. **Strict Limit**: You can only have 3 images loaded at once - manage slots carefully
+                    2. **Be Strategic**: Only load images when you actually need to see them
+                    3. **Keep During Work**: If recreating a UI, keep the screenshot loaded throughout implementation
+                    4. **Clear After Completion**: Once the image-based task is done, clear images to free slots
+                    5. **Proactive Clearing**: When starting a new image task, clear old images first
+                    6. **Write Notes**: Document important details from images if you might need them later
+                    7. **Reload if Needed**: You can always reload an image later with load_image if required
+
+                    **CRITICAL WARNINGS:**
+                    - HARD LIMIT: Cannot load more than 3 images at any time
+                    - If you try to load a 4th image, it will fail until you clear some images
+                    - Clearing too early while working on image-based tasks = incomplete/failed work
+                    - Find the balance: Keep images loaded during active work, clear them when done
+                    - The image files remain in the sandbox - clearing only removes them from conversation context
+
+                    **EXAMPLE WORKFLOW:**
+                    1. Load screenshot.png for UI recreation → Keep loaded during entire implementation → Clear when done
+                    2. If user asks to work on new image but you have 3 loaded → Clear old images first → Load new ones
+                    3. For comparing multiple images → Load up to 3, do comparison, clear when analysis complete
+                """
+            })
+        except Exception as e:
+            return self.fail_response(f"Failed to load image loading workflow and requirements: {str(e)}")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
             "name": "load_image",
             "description": """Loads an image file into conversation context from the /workspace directory or from a URL so you can see and analyze it.
 

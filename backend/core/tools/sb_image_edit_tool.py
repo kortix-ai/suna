@@ -24,6 +24,89 @@ class SandboxImageEditTool(SandboxToolsBase):
         self.thread_id = thread_id
         self.thread_manager = thread_manager
 
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "load_image_edit_instructions",
+            "description": "REQUIRED FIRST STEP BEFORE EDITING AN IMAGE: Load detailed image editing workflow and requirements. You MUST call this before editing any images to understand the image editing workflow, best practices, and limitations.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    })
+    async def load_image_edit_instructions(self) -> ToolResult:
+        """Load detailed image editing workflow and requirements"""
+        try:
+            return self.success_response({
+                "message": "Image editing workflow and requirements loaded successfully",
+                "instructions": """
+                    ### IMAGE GENERATION & EDITING (GENERAL)
+                    - Use the 'image_edit_or_generate' tool to generate new images from a prompt or to edit an existing image file (no mask support)
+                    
+                    **CRITICAL: USE EDIT MODE FOR MULTI-TURN IMAGE MODIFICATIONS**
+                    * **When user wants to modify an existing image:** ALWAYS use mode="edit" with the image_path parameter
+                    * **When user wants to create a new image:** Use mode="generate" without image_path
+                    * **MULTI-TURN WORKFLOW:** If you've generated an image and user asks for ANY follow-up changes, ALWAYS use edit mode
+                    * **ASSUME FOLLOW-UPS ARE EDITS:** When user says "change this", "add that", "make it different", etc. - use edit mode
+                    * **Image path sources:** Can be a workspace file path (e.g., "generated_image_abc123.png") OR a full URL
+                    
+                    **GENERATE MODE (Creating new images):**
+                    * Set mode="generate" and provide a descriptive prompt
+                    * Example:
+                        <function_calls>
+                        <invoke name="image_edit_or_generate">
+                        <parameter name="mode">generate</parameter>
+                        <parameter name="prompt">A futuristic cityscape at sunset with neon lights</parameter>
+                        </invoke>
+                        </function_calls>
+                    
+                    **EDIT MODE (Modifying existing images):**
+                    * Set mode="edit", provide editing prompt, and specify the image_path
+                    * Use this when user asks to: modify, change, add to, remove from, or alter existing images
+                    * Example with workspace file:
+                        <function_calls>
+                        <invoke name="image_edit_or_generate">
+                        <parameter name="mode">edit</parameter>
+                        <parameter name="prompt">Add a red hat to the person in the image</parameter>
+                        <parameter name="image_path">generated_image_abc123.png</parameter>
+                        </invoke>
+                        </function_calls>
+                    * Example with URL:
+                        <function_calls>
+                        <invoke name="image_edit_or_generate">
+                        <parameter name="mode">edit</parameter>
+                        <parameter name="prompt">Change the background to a mountain landscape</parameter>
+                        <parameter name="image_path">https://example.com/images/photo.png</parameter>
+                        </invoke>
+                        </function_calls>
+                    
+                    **MULTI-TURN WORKFLOW EXAMPLE:**
+                    * Step 1 - User: "Create a logo for my company"
+                        → Use generate mode: creates "generated_image_abc123.png"
+                    * Step 2 - User: "Can you make it more colorful?"
+                        → Use edit mode with "generated_image_abc123.png" (AUTOMATIC - this is a follow-up)
+                    * Step 3 - User: "Add some text to it"
+                        → Use edit mode with the most recent image (AUTOMATIC - this is another follow-up)
+                    
+                    **MANDATORY USAGE RULES:**
+                    * ALWAYS use this tool for any image creation or editing tasks
+                    * NEVER attempt to generate or edit images by any other means
+                    * MUST use edit mode when user asks to edit, modify, change, or alter an existing image
+                    * MUST use generate mode when user asks to create a new image from scratch
+                    * **MULTI-TURN CONVERSATION RULE:** If you've created an image and user provides ANY follow-up feedback or requests changes, AUTOMATICALLY use edit mode with the previous image
+                    * **FOLLOW-UP DETECTION:** User phrases like "can you change...", "make it more...", "add a...", "remove the...", "make it different" = EDIT MODE
+                    * After image generation/editing, ALWAYS display the result using the ask tool with the image attached
+                    * The tool automatically saves images to the workspace with unique filenames
+                    * **REMEMBER THE LAST IMAGE:** Always use the most recently generated image filename for follow-up edits
+                    * **OPTIONAL CLOUD SHARING:** Ask user if they want to upload images: "Would you like me to upload this image to secure cloud storage for sharing?"
+                    * **CLOUD WORKFLOW (if requested):** Generate/Edit → Save to workspace → Ask user → Upload to "file-uploads" bucket if requested → Share public URL with user
+                """
+            })
+        except Exception as e:
+            return self.fail_response(f"Failed to load image editing workflow and requirements: {str(e)}")
+
     @openapi_schema(
         {
             "type": "function",

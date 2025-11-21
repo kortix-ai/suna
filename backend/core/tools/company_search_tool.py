@@ -295,3 +295,150 @@ class CompanySearchTool(Tool):
         except Exception as e:
             logger.error(f"Company search failed: {repr(e)}", exc_info=True)
             return self.fail_response("An error occurred during the search. Please try again.")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "load_company_search_instructions",
+            "description": "REQUIRED FIRST STEP BEFORE SEARCHING FOR COMPANIES: Load detailed company search workflow and requirements. You MUST call this before using company_search to understand the mandatory clarification workflow, cost implications, and best practices.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    })
+    async def load_company_search_instructions(self) -> ToolResult:
+        """Load detailed company search workflow and requirements"""
+        try:
+            return self.success_response({
+                "message": "Company search workflow and requirements loaded successfully",
+                "instructions": """
+                    ### COMPANY SEARCH TOOL - PAID SERVICE
+                    
+                    **🔴 CRITICAL: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL 🔴**
+                    
+                    **PURPOSE & COST:**
+                    - **Purpose**: Find and research companies based on various criteria
+                    - **Cost**: $0.54 per search (returns 10 results)
+                    - **What it does**: Searches for companies and enriches results with company information, websites, and details
+                    - **When to use**: When users need to find companies by industry, location, size, or other business criteria
+                    
+                    **MANDATORY CLARIFICATION & CONFIRMATION WORKFLOW - NO EXCEPTIONS:**
+                    
+                    **STEP 1: ASK DETAILED CLARIFYING QUESTIONS (ALWAYS REQUIRED)**
+                    Before even thinking about confirming the search, you MUST ask clarifying questions to make the query as specific and targeted as possible. Each search costs $0.54, so precision is critical.
+                    
+                    **Required Clarification Areas:**
+                    - **Industry/Sector**: What specific industry? (e.g., "tech" vs "B2B SaaS" vs "AI/ML infrastructure")
+                    - **Location**: Geographic focus? (city, region, country, remote-first)
+                    - **Company Stage**: Startup, growth stage, enterprise? Funding stage (seed, Series A-D, public)?
+                    - **Company Size**: Employee count range? Revenue range?
+                    - **Technology/Focus**: What technology stack or business focus?
+                    - **Other Criteria**: Founded when? Specific markets? B2B vs B2C?
+                    
+                    **STEP 2: REFINE THE QUERY**
+                    After getting clarification, construct a detailed, specific search query that incorporates all the details. Show the user the refined query you plan to use.
+                    
+                    **STEP 3: CONFIRM WITH COST**
+                    Only after clarifying and refining, ask for confirmation with cost clearly stated.
+                    
+                    **COMPLETE WORKFLOW:**
+                    1. **CLARIFY**: Ask 3-5 specific questions to understand exactly what they're looking for
+                    2. **REFINE**: Build a detailed, targeted search query based on their answers
+                    3. **CONFIRM**: Show them the refined query and ask for confirmation with cost explanation
+                    4. **WAIT**: Wait for explicit "yes" or confirmation from the user
+                    5. **EXECUTE**: Only then execute company_search
+                    
+                    **CONFIRMATION MESSAGE TEMPLATE:**
+                    ```
+                    I can search for [description of search] using the Company Search tool.
+                    
+                    ⚠️ Cost: $0.54 per search (returns 10 results)
+                    
+                    This will find [what they'll get from the search].
+                    
+                    Would you like me to proceed with this search?
+                    ```
+                    
+                    **SEARCH QUERY BEST PRACTICES:**
+                    - Use natural language to describe company criteria
+                    - Include industry, location, size, or other relevant factors
+                    - Examples of good queries:
+                      * "AI startups in San Francisco with Series A funding"
+                      * "E-commerce companies in Austin with 50-200 employees"
+                      * "Healthcare technology companies in Boston"
+                      * "B2B SaaS companies with over $10M revenue"
+                    
+                    **ENRICHMENT CAPABILITIES:**
+                    - Company Search can enrich results with custom data (default: Company website, funding information, and key details)
+                    - You can specify what additional information to find about each company
+                    - Example: "Company website, recent funding rounds, and leadership team"
+                    
+                    **CRITICAL RULES:**
+                    1. ⛔ NEVER call company_search without FIRST asking clarifying questions
+                    2. ⛔ NEVER proceed to confirmation without gathering specific search criteria
+                    3. ⛔ NEVER execute without explicit user confirmation via 'ask' tool
+                    4. ⛔ NEVER batch multiple searches without individual clarifications and confirmations
+                    5. ⛔ NEVER use vague or general queries - always refine with user input first
+                    6. ✅ ALWAYS ask 3-5 clarifying questions before confirming
+                    7. ✅ ALWAYS show the refined query to the user before confirming
+                    8. ✅ ALWAYS explain the cost ($0.54 per search) in your confirmation request
+                    9. ✅ ALWAYS wait for explicit "yes" or confirmation from the user
+                    10. ✅ If user says no or hesitates, DO NOT proceed with the search
+                    11. ✅ After getting confirmation, execute the search and present results clearly
+                    12. ✅ If results are insufficient, ask before doing another search (with new clarifications)
+                    
+                    **EXAMPLE WORKFLOW:**
+                    
+                    User: "Find me some AI companies"
+                    
+                    You (Step 1 - CLARIFY): "I can help you find AI companies! To make this search as specific as possible, let me ask:
+                    
+                    1. What specific area of AI? (generative AI, computer vision, NLP, robotics, AI infrastructure, MLOps, etc.)
+                    2. What location or region? (San Francisco, NYC, Europe, or any location)
+                    3. Company stage? (early-stage startup, Series A-C, late-stage, public companies)
+                    4. Company size? (less than 50 employees, 50-200, 200+, or any size)
+                    5. Any specific focus? (B2B, B2C, enterprise, consumer products)
+                    6. Other criteria? (funding amount, founded date, specific sub-sector)
+                    
+                    These details will help me find the most relevant companies for your needs."
+                    
+                    [Wait for user response]
+                    
+                    User: "Generative AI, San Francisco, Series A or B, between 20-100 employees"
+                    
+                    You (Step 2 - REFINE & CONFIRM): "Excellent! Here's the targeted search I'll run:
+                    
+                    🔍 **Query**: 'Generative AI companies in San Francisco with Series A or Series B funding, 20-100 employees, building AI products'
+                    
+                    ⚠️ **Cost**: $0.54 per search (returns up to 10 companies with enriched information including websites, funding details, and company profiles)
+                    
+                    This will find generative AI startups in San Francisco matching your specific criteria. Would you like me to proceed?"
+                    
+                    [Wait for confirmation]
+                    
+                    User: "Yes, please"
+                    
+                    You: [Now execute company_search tool with the refined query]
+                    
+                    **WHY CLARIFICATION IS CRITICAL:**
+                    - Each search costs $0.54 - precision saves money
+                    - Vague queries return irrelevant results, wasting the user's money
+                    - Specific queries yield better, more actionable results
+                    - You only get 10 results per search, so make them count
+                    - Better to spend 2 minutes clarifying than waste money on a bad search
+                    - Users appreciate thoroughness when their money is involved
+                    
+                    **REMEMBER**: This is a PAID tool - treat it with the same care as spending the user's money. ALWAYS:
+                    1. Ask 3-5 clarifying questions FIRST
+                    2. Refine the query based on answers
+                    3. Show the refined query to the user
+                    4. Get explicit "yes" confirmation with cost clearly stated
+                    5. Only then execute the search
+                    
+                    Never skip the clarification step - it's the difference between a valuable search and wasted money.
+                """
+            })
+        except Exception as e:
+            return self.fail_response(f"Failed to load company search instructions: {str(e)}")
