@@ -9,6 +9,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import { useLanguage } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -23,6 +24,7 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const { t } = useLanguage();
 
   const scale1 = useSharedValue(1);
   const scale2 = useSharedValue(1);
@@ -119,11 +121,11 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
             </View>
 
             <Text className="text-3xl font-roobert-semibold text-foreground leading-tight mb-3">
-              Browse Without{'\n'}an Account
+              {t('auth.guest.title')}
             </Text>
             
             <Text className="text-base text-muted-foreground leading-relaxed">
-              Try Kortix with limited features. No signup required!
+              {t('auth.guest.description')}
             </Text>
           </View>
           <View className="w-full gap-4 pb-8">
@@ -148,7 +150,7 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
                 fontSize: 16,
                 fontFamily: 'Roobert-Medium',
               }}>
-                Continue as Guest
+                {t('auth.guest.continue')}
               </Text>
             </AnimatedPressable>
 
@@ -171,25 +173,25 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
               }]}
             >
               <Text className="text-foreground text-[16px] font-roobert">
-                Sign Up Instead
+                {t('auth.guest.signUp')}
               </Text>
             </AnimatedPressable>
 
             <View className="flex-row flex-wrap">
               <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
-                By continuing, you agree to our{' '}
+                {t('auth.guest.agreement')}{' '}
               </Text>
               <TouchableOpacity onPress={handleOpenTerms}>
                 <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
-                  Terms of Service
+                  {t('auth.guest.terms')}
                 </Text>
               </TouchableOpacity>
               <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
-                {' '}and{' '}
+                {' '}{t('auth.guest.and')}{' '}
               </Text>
               <TouchableOpacity onPress={handleOpenPrivacy}>
                 <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
-                  Privacy Policy
+                  {t('auth.guest.privacy')}
                 </Text>
               </TouchableOpacity>
               <Text className="text-[14px] font-roobert text-muted-foreground leading-5">

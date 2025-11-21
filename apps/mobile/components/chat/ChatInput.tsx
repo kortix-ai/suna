@@ -295,8 +295,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       if (!isAuthenticated) {
         console.log('🔐 Guest user tried to record audio, showing auth drawer');
         useAuthDrawerStore.getState().openAuthDrawer({
-          title: 'Sign in to Chat',
-          message: 'Create an account or log in to start chatting with AI agents.'
+          title: t('auth.drawer.signInToChat'),
+          message: t('auth.drawer.signInToChatMessage')
         });
         return;
       }
@@ -402,8 +402,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                       textInputRef.current?.blur();
                       setTimeout(() => {
                         useAuthDrawerStore.getState().openAuthDrawer({
-                          title: 'Sign in to Chat',
-                          message: 'Create an account or log in to start chatting with AI workers.'
+                          title: t('auth.drawer.signInToChat'),
+                          message: t('auth.drawer.signInToChatMessage')
                         });
                       }, 100);
                     }
@@ -451,8 +451,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   onPress={() => {
                     if (!isAuthenticated) {
                       useAuthDrawerStore.getState().openAuthDrawer({
-                        title: 'Sign in to Chat',
-                        message: 'Create an account or log in to start chatting with AI agents.'
+                        title: t('auth.drawer.signInToChat'),
+                        message: t('auth.drawer.signInToChatMessage')
                       });
                     } else {
                       onAttachPress?.();
@@ -501,7 +501,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
               <View className="flex-row items-center gap-2">
                 <AgentSelector 
                   isGuestMode={isGuestMode}
-                  onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ title: 'Sign up to continue', message: 'Please sign up or sign in to create and select workers, connect apps and much more' }) : onAgentPress} 
+                  onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ title: t('auth.drawer.signUpToContinue'), message: t('auth.drawer.signUpToContinueMessage') }) : onAgentPress} 
                   compact={false} 
                 />
                 <AnimatedPressable

@@ -24,13 +24,17 @@ type AuthMode = 'choose' | 'sign-in' | 'sign-up';
 export function AuthDrawer() {
   const { 
     isOpen, 
-    title = 'Create an Account', 
-    message = 'Sign up or log in to continue',
+    title: storeTitle, 
+    message: storeMessage,
+    mode,
     onSuccess,
     closeAuthDrawer 
   } = useAuthDrawerStore();
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
+  
+  const title = storeTitle || t('auth.drawer.defaultTitle');
+  const message = storeMessage || t('auth.drawer.defaultMessage');
   const isDark = colorScheme === 'dark';
   const { signIn, signUp, signInWithOAuth, isLoading } = useAuth();
   const { exitGuestMode } = useGuestMode();
@@ -53,6 +57,8 @@ export function AuthDrawer() {
   const emailInputRef = React.useRef<TextInput>(null);
   const passwordInputRef = React.useRef<TextInput>(null);
   const confirmPasswordInputRef = React.useRef<TextInput>(null);
+  const wasOpenRef = React.useRef(false);
+  const cleanupTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const animatedStyle1 = useAnimatedStyle(() => ({
     transform: [{ scale: scale1.value }],
@@ -63,27 +69,39 @@ export function AuthDrawer() {
   }));
 
   React.useEffect(() => {
-    console.log('🎯 AuthDrawer isOpen changed:', isOpen, 'authMode:', authMode);
-    if (isOpen) {
-      setAuthMode('choose');
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+    if (isOpen && !wasOpen) {
+      if (cleanupTimeoutRef.current) {
+        clearTimeout(cleanupTimeoutRef.current);
+        cleanupTimeoutRef.current = null;
+      }
+
+      const targetMode = mode || 'choose';
+      setAuthMode(targetMode);
       setEmail('');
       setPassword('');
       setConfirmPassword('');
       setError('');
       setAcceptedTerms(false);
+      
       setTimeout(() => {
-        console.log('🚀 Expanding drawer, ref exists:', !!bottomSheetRef.current);
         bottomSheetRef.current?.expand();
       }, 100);
-    } else {
+    } else if (!isOpen && wasOpen) {
       bottomSheetRef.current?.close();
     }
-  }, [isOpen]);
+  }, [isOpen, mode]);
 
   const handleClose = () => {
+    closeAuthDrawer();
     bottomSheetRef.current?.close();
-    setTimeout(() => {
-      closeAuthDrawer();
+    
+    if (cleanupTimeoutRef.current) {
+      clearTimeout(cleanupTimeoutRef.current);
+    }
+
+    cleanupTimeoutRef.current = setTimeout(() => {
       setAuthMode('choose');
       setEmail('');
       setPassword('');
@@ -205,7 +223,7 @@ export function AuthDrawer() {
       handleIndicatorStyle={{ 
         backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
       }}
-      keyboardBehavior="interactive"
+      keyboardBehavior="fillParent"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       backdropComponent={renderBackdrop}
