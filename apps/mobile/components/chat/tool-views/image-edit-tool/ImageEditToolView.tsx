@@ -8,15 +8,23 @@ import { extractImageEditData } from './_utils';
 import { FileAttachmentRenderer } from '@/components/chat/FileAttachmentRenderer';
 
 export function ImageEditToolView({ toolData, isStreaming = false, assistantMessage, project }: ToolViewProps) {
-  const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
-  const extractedData = extractImageEditData(toolData, sandboxId);
-  const { mode, prompt, generatedImagePath, imagePath, width, height, error, success } = extractedData;
-  
-  console.log('🖼️ [ImageEditToolView] Data:', {
+  const fallbackSandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
+  const extractedData = extractImageEditData(toolData, fallbackSandboxId);
+  const { mode, prompt, generatedImagePath, imagePath, width, height, error, success, sandboxId: extractedSandboxId } = extractedData;
+
+  // Prefer extracted sandbox ID from tool output, fallback to project/message
+  const sandboxId = extractedSandboxId || fallbackSandboxId;
+
+  console.log('🖼️ [ImageEditToolView] Full extraction:', {
+    mode,
+    prompt,
     generatedImagePath,
+    imagePath,
     sandboxId,
-    args: toolData.arguments,
-    output: toolData.result.output
+    toolDataArgs: toolData.arguments,
+    toolDataResult: toolData.result,
+    projectSandboxId: project?.sandbox_id,
+    assistantSandboxId: assistantMessage?.sandbox_id
   });
 
   if (isStreaming) {
@@ -79,47 +87,34 @@ export function ImageEditToolView({ toolData, isStreaming = false, assistantMess
               {mode === 'edit' ? 'Edited' : 'Generated'}
             </Text>
           </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Success' : 'Failed'}
-            </Text>
-          </View>
         </View>
 
         {prompt && (
-          <View className="bg-muted/50 rounded-xl p-4 border border-border">
-            <View className="flex-row items-center gap-2 mb-2">
-              <Icon as={Sparkles} size={14} className="text-purple-500" />
-              <Text className="text-xs font-roobert-medium text-muted-foreground">Prompt</Text>
-            </View>
-            <Text className="text-sm font-roobert text-foreground" selectable>
-              {prompt}
+          <View className="gap-2">
+            <Text className="text-sm font-roobert-medium text-foreground/70">
+              Prompt
             </Text>
+            <View className="bg-card border border-border rounded-2xl p-4">
+              <Text className="text-sm font-roobert text-foreground/90" selectable>
+                {prompt}
+              </Text>
+            </View>
           </View>
         )}
 
         {(width || height) && (
           <View className="flex-row gap-2">
             {width && (
-              <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
-                <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">Width</Text>
+              <View className="bg-card border border-border rounded-2xl p-3 flex-1">
+                <Text className="text-xs font-roobert-medium text-foreground/50 mb-1">Width</Text>
                 <Text className="text-lg font-roobert-semibold text-foreground">
                   {width}px
                 </Text>
               </View>
             )}
             {height && (
-              <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
-                <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">Height</Text>
+              <View className="bg-card border border-border rounded-2xl p-3 flex-1">
+                <Text className="text-xs font-roobert-medium text-foreground/50 mb-1">Height</Text>
                 <Text className="text-lg font-roobert-semibold text-foreground">
                   {height}px
                 </Text>
@@ -128,13 +123,30 @@ export function ImageEditToolView({ toolData, isStreaming = false, assistantMess
           </View>
         )}
 
-        {generatedImagePath && sandboxId && (
-          <FileAttachmentRenderer
-            filePath={generatedImagePath}
-            sandboxId={sandboxId}
-            showName={false}
-            showPreview={true}
-          />
+        {generatedImagePath && sandboxId ? (
+          <View className="gap-2">
+            <Text className="text-sm font-roobert-medium text-foreground/70">
+              Generated Image
+            </Text>
+            <FileAttachmentRenderer
+              filePath={generatedImagePath}
+              sandboxId={sandboxId}
+              showName={false}
+              showPreview={true}
+            />
+          </View>
+        ) : (
+          <View className="py-8 items-center">
+            <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
+              <Icon as={Wand2} size={32} className="text-muted-foreground" />
+            </View>
+            <Text className="text-base font-roobert-medium text-foreground mb-1">
+              No Image Generated
+            </Text>
+            <Text className="text-sm font-roobert text-muted-foreground text-center">
+              The image could not be loaded
+            </Text>
+          </View>
         )}
       </View>
     </ScrollView>

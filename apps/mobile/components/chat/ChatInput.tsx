@@ -1,7 +1,8 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Square, Loader2 } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Loader2 } from 'lucide-react-native';
+import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps } from 'react-native';
@@ -499,10 +500,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
 
               {/* Right Actions */}
               <View className="flex-row items-center gap-2">
-                <AgentSelector 
+                <AgentSelector
                   isGuestMode={isGuestMode}
-                  onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ title: t('auth.drawer.signUpToContinue'), message: t('auth.drawer.signUpToContinueMessage') }) : onAgentPress} 
-                  compact={false} 
+                  onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ title: t('auth.drawer.signUpToContinue'), message: t('auth.drawer.signUpToContinueMessage') }) : onAgentPress}
+                  compact={false}
                 />
                 <AnimatedPressable
                   onPressIn={() => {
@@ -528,17 +529,16 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                         strokeWidth={2}
                       />
                     </AnimatedView>
+                  ) : isAgentRunning ? (
+                    <StopIcon
+                      size={22}
+                      className="text-background"
+                    />
                   ) : (
                     <Icon
-                      as={
-                        isAgentRunning
-                          ? Square
-                          : hasContent
-                            ? CornerDownLeft
-                            : AudioLines
-                      }
-                      size={isAgentRunning ? 14 : 18}
-                      className={isAgentRunning ? "text-background" : "text-primary-foreground"}
+                      as={hasContent ? CornerDownLeft : AudioLines}
+                      size={18}
+                      className="text-primary-foreground"
                       strokeWidth={2}
                     />
                   )}

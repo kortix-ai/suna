@@ -8,10 +8,10 @@ import { View, ScrollView, Pressable, Alert, TextInput, RefreshControl } from 'r
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
-import { 
-  Upload, 
-  FolderPlus, 
-  Trash2, 
+import {
+  Upload,
+  FolderPlus,
+  Trash2,
   Coffee,
   X,
   Check,
@@ -35,7 +35,7 @@ import { FileItem } from './FileItem';
 import { FileBreadcrumb } from './FileBreadcrumb';
 import { FileViewer } from './FileViewer';
 
-import { 
+import {
   useSandboxFiles,
   useUploadFileToSandbox,
   useDeleteSandboxFile,
@@ -48,20 +48,20 @@ function normalizePath(path: string | null | undefined): string {
   if (!path || typeof path !== 'string') return '/workspace';
   const trimmed = path.trim();
   if (trimmed === '' || trimmed === '/') return '/workspace';
-  return trimmed.startsWith('/workspace') 
-    ? trimmed 
+  return trimmed.startsWith('/workspace')
+    ? trimmed
     : `/workspace/${trimmed.replace(/^\//, '')}`;
 }
 
 function getBreadcrumbSegments(path: string) {
   const normalized = normalizePath(path);
   const cleanPath = normalized.replace(/^\/workspace\/?/, '');
-  
+
   if (!cleanPath) return [];
-  
+
   const parts = cleanPath.split('/').filter(Boolean);
   let currentPath = '/workspace';
-  
+
   return parts.map((part, index) => {
     currentPath = `${currentPath}/${part}`;
     return {
@@ -97,7 +97,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
     }
     return '/workspace';
   });
-  
+
   // Viewer state
   const [viewerVisible, setViewerVisible] = useState(!!initialFilePath);
   const [selectedFile, setSelectedFile] = useState<SandboxFile | null>(() => {
@@ -138,9 +138,9 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
 
   // Track previous streaming state
   const wasStreamingRef = React.useRef(isStreaming);
-  
+
   // Refetch when streaming ends
-  React.useEffect(() => { 
+  React.useEffect(() => {
     if (wasStreamingRef.current && !isStreaming) {
       console.log('[FileManagerScreen] Streaming ended, refetching files...');
       // Delay refetch to ensure backend has processed files
@@ -217,7 +217,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
       if (result.canceled) return;
 
       const file = result.assets[0];
-      
+
       await uploadMutation.mutateAsync({
         sandboxId,
         file: {
@@ -245,7 +245,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
       if (result.canceled) return;
 
       const asset = result.assets[0];
-      
+
       await uploadMutation.mutateAsync({
         sandboxId,
         file: {
@@ -289,13 +289,13 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
   const insets = useSafeAreaInsets();
 
   return (
-    <View 
+    <View
       className="flex-1"
       style={{ backgroundColor: isDark ? '#121215' : '#f8f8f8' }}
     >
       {/* Header with proper safe area */}
-      <View 
-        style={{ 
+      <View
+        style={{
           paddingTop: insets.top,
           backgroundColor: isDark ? '#121215' : '#ffffff',
           borderBottomWidth: 1,
@@ -311,11 +311,11 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
           </Text>
 
           <View className="flex-row items-center gap-1">
-            <AnimatedPressable 
+            <AnimatedPressable
               onPress={handleUploadImage}
               className="p-2.5 rounded-xl active:opacity-70"
-              style={{ 
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)' 
+              style={{
+                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)'
               }}
             >
               <Icon
@@ -325,11 +325,11 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                 strokeWidth={2}
               />
             </AnimatedPressable>
-            <AnimatedPressable 
+            <AnimatedPressable
               onPress={() => setShowCreateFolder(true)}
               className="p-2.5 rounded-xl active:opacity-70"
-              style={{ 
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)' 
+              style={{
+                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)'
               }}
             >
               <Icon
@@ -339,11 +339,11 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                 strokeWidth={2}
               />
             </AnimatedPressable>
-            <AnimatedPressable 
+            <AnimatedPressable
               onPress={onClose}
               className="p-2.5 rounded-xl active:opacity-70 ml-1"
-              style={{ 
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)' 
+              style={{
+                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)'
               }}
             >
               <Icon
@@ -359,7 +359,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
 
       {/* Breadcrumb */}
       {breadcrumbs.length > 0 && (
-        <View 
+        <View
           className="py-2.5"
           style={{
             backgroundColor: isDark ? '#121215' : '#ffffff',
@@ -374,7 +374,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
             <KortixLoader size="large" />
-            <Text 
+            <Text
               className="text-sm mt-4 font-roobert"
               style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             >
@@ -383,10 +383,10 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
           </View>
         ) : error ? (
           <View className="flex-1 items-center justify-center p-8">
-            <View 
+            <View
               className="w-16 h-16 rounded-2xl items-center justify-center mb-4"
-              style={{ 
-                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)' 
+              style={{
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)'
               }}
             >
               <Icon
@@ -396,24 +396,24 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                 strokeWidth={2}
               />
             </View>
-            <Text 
+            <Text
               className="text-lg font-roobert-semibold text-center mb-2"
               style={{ color: isDark ? '#f8f8f8' : '#121215' }}
             >
               Failed to load files
             </Text>
-            <Text 
+            <Text
               className="text-sm text-center mb-6 font-roobert"
               style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             >
               {error?.message || 'An error occurred while loading files'}
             </Text>
-            <Pressable 
+            <Pressable
               onPress={() => refetch()}
-              className="px-8 py-3.5 rounded-xl active:opacity-80"
+              className="px-8 py-3.5 rounded-2xl active:opacity-80"
               style={{ backgroundColor: isDark ? '#f8f8f8' : '#121215' }}
             >
-              <Text 
+              <Text
                 className="text-sm font-roobert-medium"
                 style={{ color: isDark ? '#121215' : '#f8f8f8' }}
               >
@@ -423,10 +423,10 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
           </View>
         ) : !files || files.length === 0 ? (
           <View className="flex-1 items-center justify-center p-8">
-            <View 
+            <View
               className="w-20 h-20 rounded-2xl items-center justify-center mb-4"
-              style={{ 
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.03)' 
+              style={{
+                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.03)'
               }}
             >
               <Icon
@@ -436,13 +436,13 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                 strokeWidth={1.5}
               />
             </View>
-            <Text 
+            <Text
               className="text-base font-roobert-semibold text-center mb-2"
               style={{ color: isDark ? '#f8f8f8' : '#121215' }}
             >
               This folder is empty
             </Text>
-            <Text 
+            <Text
               className="text-sm text-center font-roobert"
               style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
             >
@@ -450,8 +450,8 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
             </Text>
           </View>
         ) : (
-          <ScrollView 
-            className="flex-1 px-4 py-3" 
+          <ScrollView
+            className="flex-1 px-4 py-3"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 20 }}
           >
@@ -474,7 +474,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                 onLongPress={handleFileLongPress}
               />
             ))}
-            
+
             {/* Bottom spacing for safe area */}
             <View style={{ height: 20 }} />
           </ScrollView>
@@ -483,8 +483,8 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
 
       {/* Create Folder Dialog */}
       {showCreateFolder && (
-        <View 
-          className="absolute inset-0 items-center justify-center" 
+        <View
+          className="absolute inset-0 items-center justify-center"
           style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
         >
           <Animated.View
@@ -526,7 +526,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
                   setShowCreateFolder(false);
                   setNewFolderName('');
                 }}
-                className="flex-1 px-4 py-3.5 rounded-xl active:opacity-70"
+                className="flex-1 px-4 py-3.5 rounded-2xl active:opacity-70"
                 style={{
                   backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
                 }}
@@ -542,18 +542,18 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
               <Pressable
                 onPress={handleCreateFolder}
                 disabled={!newFolderName.trim()}
-                className="flex-1 px-4 py-3.5 rounded-xl active:opacity-90"
+                className="flex-1 px-4 py-3.5 rounded-2xl active:opacity-90"
                 style={{
-                  backgroundColor: newFolderName.trim() 
+                  backgroundColor: newFolderName.trim()
                     ? (isDark ? '#f8f8f8' : '#121215')
                     : (isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)'),
                   opacity: newFolderName.trim() ? 1 : 0.5,
                 }}
               >
-                <Text 
+                <Text
                   className="text-center font-roobert-medium"
-                  style={{ 
-                    color: newFolderName.trim() 
+                  style={{
+                    color: newFolderName.trim()
                       ? (isDark ? '#121215' : '#f8f8f8')
                       : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'),
                   }}

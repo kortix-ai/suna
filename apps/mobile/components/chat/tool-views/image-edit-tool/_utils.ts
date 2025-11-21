@@ -9,6 +9,7 @@ export interface ImageEditData {
   height?: number;
   error?: string;
   success: boolean;
+  sandboxId?: string;
 }
 
 const parseContent = (content: any): any => {
@@ -27,6 +28,7 @@ export function extractImageEditData(toolData: ParsedToolData, sandboxId?: strin
   
   let generatedImagePath: string | undefined;
   let error: string | undefined;
+  let extractedSandboxId: string | undefined;
   
   if (result.output) {
     const output = typeof result.output === 'string' 
@@ -36,6 +38,12 @@ export function extractImageEditData(toolData: ParsedToolData, sandboxId?: strin
     if (output && typeof output === 'object') {
       generatedImagePath = output.generated_image_path || output.image_path || output.file_path || output.path;
       error = output.error;
+      extractedSandboxId = output.sandbox_id;
+      
+      // If we have a path but it doesn't start with /, prefix with /workspace/
+      if (generatedImagePath && !generatedImagePath.startsWith('/')) {
+        generatedImagePath = `/workspace/${generatedImagePath}`;
+      }
     } else if (typeof output === 'string') {
       const imagePathMatch = output.match(/Image saved as:\s*([^\s.]+\.(png|jpg|jpeg|webp|gif))/i) ||
                             output.match(/(\/workspace\/[^\s]+\.(png|jpg|jpeg|webp))/i) ||
@@ -59,7 +67,8 @@ export function extractImageEditData(toolData: ParsedToolData, sandboxId?: strin
     width: args?.width,
     height: args?.height,
     error,
-    success: result.success ?? true
+    success: result.success ?? true,
+    sandboxId: extractedSandboxId || sandboxId
   };
 }
 
