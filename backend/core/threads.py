@@ -374,13 +374,15 @@ async def add_message_to_thread(
     if not user_id:
         guest_session_id = request.headers.get('X-Guest-Session')
         if guest_session_id:
-            if isinstance(guest_session_id, list):
-                guest_session_id = guest_session_id[0]
-            session = await guest_session_service.get_or_create_session(request, guest_session_id)
-            user_id = session['session_id']
-            logger.info(f"Guest user adding message to thread: {user_id}")
-        else:
-            raise HTTPException(status_code=401, detail="Authentication required")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    'error': 'guest_chat_disabled',
+                    'message': 'Chat is not available in guest mode. Please sign up or log in to continue.',
+                    'action': 'signup_required'
+                }
+            )
+        raise HTTPException(status_code=401, detail="Authentication required")
     
     thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
     if not thread_result.data:

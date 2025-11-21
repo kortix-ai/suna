@@ -491,21 +491,16 @@ async def unified_agent_start(
     guest_session = None
     if not user_id:
         guest_session_id = request.headers.get('X-Guest-Session')
-        if not guest_session_id:
-            raise HTTPException(status_code=401, detail="Authentication required or X-Guest-Session header missing")
-        
-        # Ensure guest_session_id is a string (headers can sometimes return lists)
-        if isinstance(guest_session_id, list):
-            guest_session_id = guest_session_id[0]
-        
-        guest_session = await guest_session_service.get_or_create_session(request, guest_session_id)
-        
-        can_send, error = await guest_session_service.check_message_limit(guest_session['session_id'])
-        if not can_send:
-            raise HTTPException(status_code=403, detail=error)
-        
-        user_id = guest_session['session_id']
-        logger.info(f"Guest session {user_id}: {guest_session['messages_sent']}/{guest_session['messages_limit']} messages used")
+        if guest_session_id:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    'error': 'guest_chat_disabled',
+                    'message': 'Chat is not available in guest mode. Please sign up or log in to continue.',
+                    'action': 'signup_required'
+                }
+            )
+        raise HTTPException(status_code=401, detail="Authentication required")
     
     if not utils.instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
