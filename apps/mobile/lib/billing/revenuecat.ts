@@ -120,12 +120,36 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
   }
 }
 
-export async function getOfferings(): Promise<PurchasesOffering | null> {
+export async function getOfferings(forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
   try {
+    if (forceRefresh) {
+      console.log('🔄 Forcing fresh offerings fetch from RevenueCat...');
+      try {
+        const currentAppUserId = (await Purchases.getCustomerInfo()).originalAppUserId;
+        console.log('🔄 Resetting SDK to clear cache...');
+        
+        await Purchases.invalidateCustomerInfoCache();
+        await Purchases.syncPurchases();
+        
+        if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
+          await Purchases.logOut();
+          await Purchases.logIn(currentAppUserId);
+          console.log('✅ SDK reset completed with logout/login cycle');
+        } else {
+          console.log('⚠️ User is anonymous, skipping logout/login cycle');
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (resetError) {
+        console.warn('⚠️ Cache reset failed, continuing with getOfferings:', resetError);
+      }
+    }
+    
     const offerings = await Purchases.getOfferings();
     
     if (offerings.current) {
       console.log('✅ Current offering:', offerings.current.identifier);
+      console.log('📦 Available packages:', offerings.current.availablePackages.map(p => p.identifier).join(', '));
       return offerings.current;
     }
     
@@ -133,6 +157,48 @@ export async function getOfferings(): Promise<PurchasesOffering | null> {
     return null;
   } catch (error) {
     console.error('❌ Error fetching offerings:', error);
+    throw error;
+  }
+}
+
+export async function getOfferingById(offeringId: string, forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
+  try {
+    if (forceRefresh) {
+      console.log(`🔄 Forcing fresh fetch for offering: ${offeringId}...`);
+      try {
+        const currentAppUserId = (await Purchases.getCustomerInfo()).originalAppUserId;
+        console.log('🔄 Resetting SDK to clear cache...');
+        
+        await Purchases.invalidateCustomerInfoCache();
+        await Purchases.syncPurchases();
+        
+        if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
+          await Purchases.logOut();
+          await Purchases.logIn(currentAppUserId);
+          console.log('✅ SDK reset completed with logout/login cycle');
+        } else {
+          console.log('⚠️ User is anonymous, skipping logout/login cycle');
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (resetError) {
+        console.warn('⚠️ Cache reset failed, continuing with getOfferings:', resetError);
+      }
+    }
+    
+    const offerings = await Purchases.getOfferings();
+    const offering = offerings.all[offeringId];
+    
+    if (offering) {
+      console.log(`✅ Found offering: ${offeringId}`);
+      console.log('📦 Available packages:', offering.availablePackages.map(p => p.identifier).join(', '));
+      return offering;
+    }
+    
+    console.warn(`⚠️ Offering '${offeringId}' not found. Available offerings:`, Object.keys(offerings.all));
+    return null;
+  } catch (error) {
+    console.error(`❌ Error fetching offering '${offeringId}':`, error);
     throw error;
   }
 }
@@ -299,7 +365,7 @@ export async function checkSubscriptionStatus(): Promise<{
 
 export async function presentPaywall(): Promise<void> {
   try {
-    const offerings = await getOfferings();
+    const offerings = await getOfferings(true);
     if (!offerings) {
       throw new Error('No offerings available to display');
     }
@@ -310,4 +376,3 @@ export async function presentPaywall(): Promise<void> {
     throw error;
   }
 }
-

@@ -2,14 +2,15 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Infinity, Clock, Sparkles, Info } from 'lucide-react-native';
+import { Infinity, Clock, Sparkles, Info, Wallet } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
-import { startCreditPurchase } from '@/lib/billing';
+import { startUnifiedCreditPurchase, shouldUseRevenueCat, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import { formatCredits } from '@/lib/utils/credit-formatter';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface CreditsPurchasePageProps {
   visible: boolean;
@@ -20,6 +21,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
   const { t } = useLanguage();
   const { creditBalance, refetchBalance } = useBillingContext();
   const [purchasing, setPurchasing] = React.useState<number | null>(null);
+  const queryClient = useQueryClient();
 
   const handleClose = () => {
     console.log('🎯 Credits purchase page closed');
@@ -27,13 +29,14 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
     onClose();
   };
 
-  const handlePurchase = async (amount: number) => {
+  const handlePurchase = async (amount: number, packageId?: string) => {
     try {
       setPurchasing(amount);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      await startCreditPurchase(amount, () => {
+      await startUnifiedCreditPurchase(amount, packageId, () => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        invalidateCreditsAfterPurchase(queryClient);
         refetchBalance();
         handleClose();
       }, () => {
@@ -66,9 +69,14 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
         
         <View className="px-6">
           <View className="mb-4 items-center pt-4">
-            <Text className="mb-2 text-5xl font-roobert-semibold text-foreground tracking-tight">
-              {formatCredits(totalCredits)}
-            </Text>
+            <View className="flex-row items-center gap-3">
+              <View className="h-10 -mt-2 w-10 items-center justify-center rounded-full bg-green-500">
+                <Icon as={Wallet} size={20} className="text-white" />
+              </View>
+              <Text className="text-5xl font-roobert-semibold text-foreground tracking-tight">
+                {formatCredits(totalCredits)}
+              </Text>
+            </View>
             <Text className="text-sm font-roobert text-muted-foreground">
               {t('billing.availableCredits')}
             </Text>
@@ -116,6 +124,8 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
             onPurchase={handlePurchase}
             purchasing={purchasing}
             t={t}
+            useRevenueCat={shouldUseRevenueCat()}
+            offeringId="topups"
           />
         </View>
       </ScrollView>

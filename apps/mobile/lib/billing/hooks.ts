@@ -8,6 +8,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryClient,
   type UseMutationOptions,
   type UseQueryOptions,
 } from '@tanstack/react-query';
@@ -64,6 +65,28 @@ export const billingKeys = {
   scheduledChanges: () => [...billingKeys.all, 'scheduled-changes'] as const,
   threadUsage: (params: UseThreadUsageParams) => [...billingKeys.all, 'thread-usage', params] as const,
 };
+
+export function invalidateCreditsAfterPurchase(queryClient: QueryClient) {
+  console.log('💳 Invalidating credit balance after purchase...');
+  
+  queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
+  queryClient.invalidateQueries({ queryKey: billingKeys.status() });
+  
+  setTimeout(() => {
+    queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
+    queryClient.invalidateQueries({ queryKey: billingKeys.status() });
+  }, 3000);
+  
+  setTimeout(() => {
+    queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
+    queryClient.invalidateQueries({ queryKey: billingKeys.status() });
+  }, 6000);
+
+  setTimeout(() => {
+    queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
+    queryClient.invalidateQueries({ queryKey: billingKeys.status() });
+  }, 9000);
+}
 
 // ============================================================================
 // Query Hooks
