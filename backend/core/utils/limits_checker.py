@@ -14,10 +14,10 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         
         try:
             from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
             tier_name = tier_info['name']
             concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
-            logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit}")
+            logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit} (fresh from DB)")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, using global default")
             concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
@@ -97,10 +97,10 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
         
         try:
             from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
             tier_name = tier_info['name']
             agent_limit = tier_info.get('custom_workers_limit', 1)
-            logger.debug(f"Account {account_id} subscription tier: {tier_name}, agent/worker limit: {agent_limit}")
+            logger.debug(f"Account {account_id} subscription tier: {tier_name}, agent/worker limit: {agent_limit} (fresh from DB)")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
             tier_name = 'free'
@@ -288,11 +288,11 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
         
         try:
             from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
             tier_name = tier_info['name']
             scheduled_limit = tier_info.get('scheduled_triggers_limit', 1)
             app_limit = tier_info.get('app_triggers_limit', 2)
-            logger.debug(f"Account {account_id} tier: {tier_name}, scheduled limit: {scheduled_limit}, app limit: {app_limit}")
+            logger.debug(f"Account {account_id} tier: {tier_name}, scheduled limit: {scheduled_limit}, app limit: {app_limit} (fresh from DB)")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
             tier_name = 'free'
@@ -362,10 +362,10 @@ async def check_custom_worker_limit(client, account_id: str) -> Dict[str, Any]:
         
         try:
             from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
             tier_name = tier_info['name']
             worker_limit = tier_info.get('custom_workers_limit', 0)
-            logger.debug(f"Account {account_id} tier: {tier_name}, custom workers limit: {worker_limit}")
+            logger.debug(f"Account {account_id} tier: {tier_name}, custom workers limit: {worker_limit} (fresh from DB)")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
             tier_name = 'free'
@@ -406,10 +406,10 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
         
         try:
             from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
             tier_name = tier_info['name']
             thread_limit = tier_info.get('thread_limit', 10)
-            logger.debug(f"Account {account_id} tier: {tier_name}, thread limit: {thread_limit}")
+            logger.debug(f"Account {account_id} tier: {tier_name}, thread limit: {thread_limit} (fresh from DB)")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
             tier_name = 'free'
