@@ -295,3 +295,150 @@ class PeopleSearchTool(Tool):
         except Exception as e:
             logger.error(f"People search failed: {repr(e)}", exc_info=True)
             return self.fail_response("An error occurred during the search. Please try again.")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "load_people_search_instructions",
+            "description": "REQUIRED FIRST STEP BEFORE SEARCHING FOR PEOPLE: Load detailed people search workflow and requirements. You MUST call this before using people_search to understand the mandatory clarification workflow, cost implications, and best practices.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    })
+    async def load_people_search_instructions(self) -> ToolResult:
+        """Load detailed people search workflow and requirements"""
+        try:
+            return self.success_response({
+                "message": "People search workflow and requirements loaded successfully",
+                "instructions": """
+                    ### PEOPLE SEARCH TOOL - PAID SERVICE
+                    
+                    **🔴 CRITICAL: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL 🔴**
+                    
+                    **PURPOSE & COST:**
+                    - **Purpose**: Find and research people with professional background information using natural language queries
+                    - **Cost**: $0.54 per search (returns 10 results)
+                    - **What it does**: Searches for people based on criteria like job title, company, location, skills, and enriches results with LinkedIn profiles
+                    - **When to use**: When users need to find specific professionals, potential candidates, leads, or research people in specific roles/companies
+                    
+                    **MANDATORY CLARIFICATION & CONFIRMATION WORKFLOW - NO EXCEPTIONS:**
+                    
+                    **STEP 1: ASK DETAILED CLARIFYING QUESTIONS (ALWAYS REQUIRED)**
+                    Before even thinking about confirming the search, you MUST ask clarifying questions to make the query as specific and targeted as possible. Each search costs $0.54, so precision is critical.
+                    
+                    **Required Clarification Areas:**
+                    - **Job Title/Role**: What specific role or title? (e.g., "engineer" vs "Senior Machine Learning Engineer")
+                    - **Industry/Company Type**: What industry or type of company? (e.g., "tech companies" vs "Series B SaaS startups")
+                    - **Location**: What geographic area? (e.g., "Bay Area" vs "San Francisco downtown" vs "remote")
+                    - **Experience Level**: Junior, mid-level, senior, executive?
+                    - **Specific Companies**: Any target companies or company sizes?
+                    - **Skills/Technologies**: Any specific technical skills, tools, or expertise?
+                    - **Additional Criteria**: Recent job changes, specific backgrounds, education, etc.
+                    
+                    **STEP 2: REFINE THE QUERY**
+                    After getting clarification, construct a detailed, specific search query that incorporates all the details. Show the user the refined query you plan to use.
+                    
+                    **STEP 3: CONFIRM WITH COST**
+                    Only after clarifying and refining, ask for confirmation with cost clearly stated.
+                    
+                    **COMPLETE WORKFLOW:**
+                    1. **CLARIFY**: Ask 3-5 specific questions to understand exactly what they're looking for
+                    2. **REFINE**: Build a detailed, targeted search query based on their answers
+                    3. **CONFIRM**: Show them the refined query and ask for confirmation with cost explanation
+                    4. **WAIT**: Wait for explicit "yes" or confirmation from the user
+                    5. **EXECUTE**: Only then execute people_search
+                    
+                    **CONFIRMATION MESSAGE TEMPLATE:**
+                    ```
+                    I can search for [description of search] using the People Search tool.
+                    
+                    ⚠️ Cost: $0.54 per search (returns 10 results)
+                    
+                    This will find [what they'll get from the search].
+                    
+                    Would you like me to proceed with this search?
+                    ```
+                    
+                    **SEARCH QUERY BEST PRACTICES:**
+                    - Use descriptive, natural language queries
+                    - Include job titles, companies, locations, skills, or experience
+                    - Examples of good queries:
+                      * "Senior Python developers with machine learning experience at Google"
+                      * "Marketing managers at Fortune 500 companies in New York"
+                      * "CTOs at AI startups in San Francisco"
+                      * "Sales directors with 10+ years experience in SaaS companies"
+                    
+                    **ENRICHMENT CAPABILITIES:**
+                    - People Search can enrich results with custom data (default: LinkedIn profile URL)
+                    - You can specify what additional information to find about each person
+                    - Example: "LinkedIn profile URL and current company website"
+                    
+                    **CRITICAL RULES:**
+                    1. ⛔ NEVER call people_search without FIRST asking clarifying questions
+                    2. ⛔ NEVER proceed to confirmation without gathering specific search criteria
+                    3. ⛔ NEVER execute without explicit user confirmation via 'ask' tool
+                    4. ⛔ NEVER batch multiple searches without individual clarifications and confirmations
+                    5. ⛔ NEVER use vague or general queries - always refine with user input first
+                    6. ✅ ALWAYS ask 3-5 clarifying questions before confirming
+                    7. ✅ ALWAYS show the refined query to the user before confirming
+                    8. ✅ ALWAYS explain the cost ($0.54 per search) in your confirmation request
+                    9. ✅ ALWAYS wait for explicit "yes" or confirmation from the user
+                    10. ✅ If user says no or hesitates, DO NOT proceed with the search
+                    11. ✅ After getting confirmation, execute the search and present results clearly
+                    12. ✅ If results are insufficient, ask before doing another search (with new clarifications)
+                    
+                    **EXAMPLE WORKFLOW:**
+                    
+                    User: "I need to find software engineers at Tesla"
+                    
+                    You (Step 1 - CLARIFY): "I can help you find software engineers at Tesla! To create the most targeted search, let me ask a few questions:
+                    
+                    1. What level of seniority? (junior, mid-level, senior, staff, principal)
+                    2. Any specific engineering domains? (backend, frontend, ML/AI, infrastructure, embedded systems, autonomous driving, battery tech)
+                    3. What location? (Palo Alto HQ, Austin Gigafactory, Berlin, or any location)
+                    4. Any specific technologies or skills you're looking for? (Python, C++, ROS, computer vision, etc.)
+                    5. Current employees only, or including people who recently left Tesla?
+                    
+                    These details will ensure we find exactly the right profiles."
+                    
+                    [Wait for user response]
+                    
+                    User: "Senior level, working on autonomous driving software, Python and C++, based in Palo Alto"
+                    
+                    You (Step 2 - REFINE & CONFIRM): "Perfect! Here's the refined search I'll execute:
+                    
+                    🔍 **Query**: 'Senior software engineers at Tesla working on autonomous driving and self-driving technology in Palo Alto, with Python and C++ expertise'
+                    
+                    ⚠️ **Cost**: $0.54 per search (returns up to 10 results with LinkedIn profiles and detailed background)
+                    
+                    This will find senior autonomous driving engineers at Tesla matching your criteria. Would you like me to proceed?"
+                    
+                    [Wait for confirmation]
+                    
+                    User: "Yes, go ahead"
+                    
+                    You: [Now execute people_search tool with the refined query]
+                    
+                    **WHY CLARIFICATION IS CRITICAL:**
+                    - Each search costs $0.54 - precision saves money
+                    - Vague queries return irrelevant results, wasting the user's money
+                    - Specific queries yield better, more actionable results
+                    - You only get 10 results per search, so make them count
+                    - Better to spend 2 minutes clarifying than waste money on a bad search
+                    - Users appreciate thoroughness when their money is involved
+                    
+                    **REMEMBER**: This is a PAID tool - treat it with the same care as spending the user's money. ALWAYS:
+                    1. Ask 3-5 clarifying questions FIRST
+                    2. Refine the query based on answers
+                    3. Show the refined query to the user
+                    4. Get explicit "yes" confirmation with cost clearly stated
+                    5. Only then execute the search
+                    
+                    Never skip the clarification step - it's the difference between a valuable search and wasted money.
+                """
+            })
+        except Exception as e:
+            return self.fail_response(f"Failed to load people search instructions: {str(e)}")
