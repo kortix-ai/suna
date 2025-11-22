@@ -324,6 +324,9 @@ class Configuration:
     REDIS_HOST: Optional[str] = "localhost"
     REDIS_PORT: Optional[int] = 6379
     REDIS_PASSWORD: Optional[str] = None
+    REDIS_USERNAME: Optional[str] = None  # Required for Redis Cloud
+    REDIS_MAX_CONNECTIONS: Optional[int] = 10  # Max connections per process (default 10)
+    REDIS_DRAMATIQ_MAX_CONNECTIONS: Optional[int] = 5  # Max connections for Dramatiq broker per process (default 5)
     REDIS_SSL: Optional[bool] = True
     
     # Daytona sandbox configuration (optional - sandbox features disabled if not configured)
@@ -365,6 +368,10 @@ class Configuration:
     SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.25"
     SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.25"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
+    
+    # Debug configuration
+    # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
+    DEBUG_SAVE_LLM_IO: Optional[bool] = True
 
     # LangFuse configuration
     LANGFUSE_PUBLIC_KEY: Optional[str] = None

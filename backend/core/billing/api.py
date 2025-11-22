@@ -83,6 +83,70 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
         logger.error(f"[COST_CALC] Error calculating token cost for model '{model}': {e}")
         return Decimal('0.01')
 
+def calculate_cached_token_cost(cached_tokens: int, model: str) -> Decimal:
+    """Calculate cost for cached token reads using actual cached pricing from registry."""
+    try:
+        resolved_model = model_manager.resolve_model_id(model)
+        model_obj = model_manager.get_model(resolved_model)
+        
+        if model_obj and model_obj.pricing:
+            # Use actual cached read price if available, otherwise fallback to regular input price
+            cached_price_per_million = model_obj.pricing.cached_read_cost_per_million_tokens
+            if cached_price_per_million is None:
+                logger.warning(f"[COST_CALC] No cached pricing for model '{model}', using regular input price")
+                cached_price_per_million = model_obj.pricing.input_cost_per_million_tokens
+            
+            cached_cost = Decimal(cached_tokens) / Decimal('1000000') * Decimal(str(cached_price_per_million))
+            total_cost = cached_cost * TOKEN_PRICE_MULTIPLIER
+            
+            logger.debug(f"[COST_CALC] Cached tokens: {cached_tokens}, price=${cached_price_per_million}/M, cost=${cached_cost:.6f}, total with markup=${total_cost:.6f}")
+            return total_cost
+        
+        logger.warning(f"[COST_CALC] No pricing found for cached tokens for model '{model}', using default calculation")
+        # Fallback: use regular input price
+        return calculate_token_cost(cached_tokens, 0, model)
+    except Exception as e:
+        logger.error(f"[COST_CALC] Error calculating cached token cost for model '{model}': {e}")
+        return calculate_token_cost(cached_tokens, 0, model)
+
+def calculate_cache_write_cost(cache_creation_tokens: int, model: str, cache_ttl: Optional[str] = "1h") -> Decimal:
+    """
+    Calculate cost for cache write operations using actual cache write pricing from registry.
+    
+    Args:
+        cache_creation_tokens: Number of tokens used to create the cache
+        model: Model identifier
+        cache_ttl: Cache TTL - "5m" for 5-minute cache writes, "1h" for 1-hour cache writes (default: "1h")
+    """
+    try:
+        resolved_model = model_manager.resolve_model_id(model)
+        model_obj = model_manager.get_model(resolved_model)
+        
+        if model_obj and model_obj.pricing:
+            # Determine which cache write price to use based on TTL
+            if cache_ttl == "5m":
+                cache_write_price_per_million = model_obj.pricing.cache_write_5m_cost_per_million_tokens
+            else:  # Default to 1h
+                cache_write_price_per_million = model_obj.pricing.cache_write_1h_cost_per_million_tokens
+            
+            # Fallback to regular input price if cache write pricing not available
+            if cache_write_price_per_million is None:
+                logger.warning(f"[COST_CALC] No {cache_ttl} cache write pricing for model '{model}', using regular input price")
+                cache_write_price_per_million = model_obj.pricing.input_cost_per_million_tokens
+            
+            cache_write_cost = Decimal(cache_creation_tokens) / Decimal('1000000') * Decimal(str(cache_write_price_per_million))
+            total_cost = cache_write_cost * TOKEN_PRICE_MULTIPLIER
+            
+            logger.debug(f"[COST_CALC] Cache write tokens: {cache_creation_tokens}, TTL={cache_ttl}, price=${cache_write_price_per_million}/M, cost=${cache_write_cost:.6f}, total with markup=${total_cost:.6f}")
+            return total_cost
+        
+        logger.warning(f"[COST_CALC] No pricing found for cache write tokens for model '{model}', using default calculation")
+        # Fallback: use regular input price
+        return calculate_token_cost(cache_creation_tokens, 0, model)
+    except Exception as e:
+        logger.error(f"[COST_CALC] Error calculating cache write cost for model '{model}': {e}")
+        return calculate_token_cost(cache_creation_tokens, 0, model)
+
 async def calculate_credit_breakdown(account_id: str, client) -> Dict:
     current_balance = await credit_service.get_balance(account_id)
     current_balance = float(current_balance)

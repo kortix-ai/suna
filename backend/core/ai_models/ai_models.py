@@ -26,6 +26,9 @@ class ModelCapability(Enum):
 class ModelPricing:
     input_cost_per_million_tokens: float
     output_cost_per_million_tokens: float
+    cached_read_cost_per_million_tokens: Optional[float] = None  # Cache hits & refreshes
+    cache_write_5m_cost_per_million_tokens: Optional[float] = None  # 5-minute cache writes
+    cache_write_1h_cost_per_million_tokens: Optional[float] = None  # 1-hour cache writes
     
     @property
     def input_cost_per_token(self) -> float:
@@ -34,6 +37,24 @@ class ModelPricing:
     @property
     def output_cost_per_token(self) -> float:
         return self.output_cost_per_million_tokens / 1_000_000
+    
+    @property
+    def cached_read_cost_per_token(self) -> float:
+        if self.cached_read_cost_per_million_tokens is None:
+            return self.input_cost_per_token  # Fallback to regular input price if not specified
+        return self.cached_read_cost_per_million_tokens / 1_000_000
+    
+    @property
+    def cache_write_5m_cost_per_token(self) -> float:
+        if self.cache_write_5m_cost_per_million_tokens is None:
+            return self.input_cost_per_token  # Fallback to regular input price if not specified
+        return self.cache_write_5m_cost_per_million_tokens / 1_000_000
+    
+    @property
+    def cache_write_1h_cost_per_token(self) -> float:
+        if self.cache_write_1h_cost_per_million_tokens is None:
+            return self.input_cost_per_token  # Fallback to regular input price if not specified
+        return self.cache_write_1h_cost_per_million_tokens / 1_000_000
 
 
 @dataclass
@@ -165,6 +186,9 @@ class Model:
             "pricing": {
                 "input_cost_per_million_tokens": self.pricing.input_cost_per_million_tokens,
                 "output_cost_per_million_tokens": self.pricing.output_cost_per_million_tokens,
+                "cached_read_cost_per_million_tokens": self.pricing.cached_read_cost_per_million_tokens,
+                "cache_write_5m_cost_per_million_tokens": self.pricing.cache_write_5m_cost_per_million_tokens,
+                "cache_write_1h_cost_per_million_tokens": self.pricing.cache_write_1h_cost_per_million_tokens,
             } if self.pricing else None,
             "enabled": self.enabled,
             "beta": self.beta,

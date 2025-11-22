@@ -300,16 +300,14 @@ export function ThreadLayout({
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {sandboxId && (
-        <FileViewerModal
-          open={fileViewerOpen}
-          onOpenChange={setFileViewerOpen}
-          sandboxId={sandboxId}
-          initialFilePath={fileToView}
-          project={project || undefined}
-          filePathList={filePathList}
-        />
-      )}
+      <FileViewerModal
+        open={fileViewerOpen}
+        onOpenChange={setFileViewerOpen}
+        sandboxId={sandboxId || ''}
+        initialFilePath={fileToView}
+        projectId={projectId}
+        filePathList={filePathList}
+      />
     </div>
   );
 }

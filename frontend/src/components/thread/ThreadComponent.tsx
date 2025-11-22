@@ -54,6 +54,7 @@ import { fileQueryKeys } from '@/hooks/files';
 import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 import { useTranslations } from 'next-intl';
+import { backendApi } from '@/lib/api-client';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -628,15 +629,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleOpenFileViewer = useCallback(
     (filePath?: string, filePathList?: string[]) => {
-      if (filePath) {
-        setFileToView(filePath);
-      } else {
-        setFileToView(null);
+      // Invalidate project query to ensure fresh data when opening modal
+      // The modal's refetchOnMount will handle the actual refetch
+      if (projectId) {
+        queryClient.invalidateQueries({
+          queryKey: threadKeys.project(projectId),
+          refetchType: 'active',
+        });
       }
+      
+      setFileToView(filePath || null);
       setFilePathList(filePathList);
       setFileViewerOpen(true);
     },
-    [],
+    [projectId, queryClient],
   );
 
   const toolViewAssistant = useCallback(

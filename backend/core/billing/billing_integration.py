@@ -1,6 +1,6 @@
 from decimal import Decimal
 from typing import Optional, Dict, Tuple, List
-from core.billing.api import calculate_token_cost
+from core.billing.api import calculate_token_cost, calculate_cached_token_cost, calculate_cache_write_cost
 from core.billing.credit_manager import credit_manager
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
@@ -44,25 +44,29 @@ class BillingIntegration:
         if config.ENV_MODE == EnvMode.LOCAL:
             return {'success': True, 'cost': 0, 'new_balance': 999999}
 
-        if cache_read_tokens > 0:
-            from decimal import Decimal
-            non_cached_prompt_tokens = prompt_tokens - cache_read_tokens
+        # Handle cache reads and writes separately with actual pricing
+        if cache_read_tokens > 0 or cache_creation_tokens > 0:
+            non_cached_prompt_tokens = prompt_tokens - cache_read_tokens - cache_creation_tokens
             
-            # Handle None model gracefully
-            model_lower = model.lower() if model else ''
-            if any(provider in model_lower for provider in ['anthropic', 'claude', 'sonnet']):
-                cache_discount = Decimal('0.1')
-            elif any(provider in model_lower for provider in ['gpt', 'openai', 'gpt-4o']):
-                cache_discount = Decimal('0.5')
-            else:
-                cache_discount = Decimal('0.5')
+            # Calculate costs for each component
+            cached_read_cost = Decimal('0')
+            cache_write_cost = Decimal('0')
+
+            if cache_read_tokens > 0:
+                # Use actual cached read pricing from registry
+                cached_read_cost = calculate_cached_token_cost(cache_read_tokens, model)
             
-            cached_cost = calculate_token_cost(cache_read_tokens, 0, model)
-            cached_cost = cached_cost * cache_discount
+            if cache_creation_tokens > 0:
+                # Use actual cache write pricing from registry
+                # We use 5-minute cache writes (ephemeral without TTL) as per prompt_caching.py
+                cache_write_cost = calculate_cache_write_cost(cache_creation_tokens, model, cache_ttl="5m")
+            
+            # Regular non-cached tokens
             non_cached_cost = calculate_token_cost(non_cached_prompt_tokens, completion_tokens, model)
-            cost = cached_cost + non_cached_cost
             
-            logger.info(f"[BILLING] Cost breakdown: cached=${cached_cost:.6f} + regular=${non_cached_cost:.6f} = total=${cost:.6f}")
+            cost = cached_read_cost + cache_write_cost + non_cached_cost
+            
+            logger.info(f"[BILLING] Cost breakdown: cached_read=${cached_read_cost:.6f} + cache_write=${cache_write_cost:.6f} + regular=${non_cached_cost:.6f} = total=${cost:.6f}")
         else:
             cost = calculate_token_cost(prompt_tokens, completion_tokens, model)
         

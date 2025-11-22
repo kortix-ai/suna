@@ -113,18 +113,6 @@ export const getThreadsPaginated = async (projectId?: string, page: number = 1, 
       };
     }
 
-    // Log raw response to see what backend returns
-    if (response.data.threads && response.data.threads.length > 0) {
-      const firstThread = response.data.threads[0];
-      console.log('🧵 getThreadsPaginated: Raw thread from backend', {
-        thread_id: firstThread.thread_id,
-        project_id: firstThread.project_id,
-        hasProject: !!firstThread.project,
-        allKeys: Object.keys(firstThread),
-        projectKeys: firstThread.project ? Object.keys(firstThread.project) : []
-      });
-    }
-    
     let threads = response.data.threads.map((thread: any) => ({
       thread_id: thread.thread_id,
       project_id: thread.project_id,

@@ -35,7 +35,10 @@ class ModelRegistry:
             ],
             pricing=ModelPricing(
                 input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00
+                output_cost_per_million_tokens=5.00,
+                cached_read_cost_per_million_tokens=0.10,  # Cache hits & refreshes
+                cache_write_5m_cost_per_million_tokens=1.25,  # 5-minute cache writes
+                cache_write_1h_cost_per_million_tokens=2.00  # 1-hour cache writes
             ),
             tier_availability=["paid"],
             priority=102,
@@ -58,7 +61,10 @@ class ModelRegistry:
             ],
             pricing=ModelPricing(
                 input_cost_per_million_tokens=3.00,
-                output_cost_per_million_tokens=15.00
+                output_cost_per_million_tokens=15.00,
+                cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
+                cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
+                cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
             ),
             tier_availability=["paid"],
             priority=101,
@@ -85,7 +91,10 @@ class ModelRegistry:
             ],
             pricing=ModelPricing(
                 input_cost_per_million_tokens=3.00,
-                output_cost_per_million_tokens=15.00
+                output_cost_per_million_tokens=15.00,
+                cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
+                cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
+                cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
             ),
             tier_availability=["paid"],
             priority=100,

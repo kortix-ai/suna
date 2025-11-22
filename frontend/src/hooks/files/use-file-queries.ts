@@ -264,12 +264,14 @@ export function useDirectoryQuery(
       if (!sandboxId || !normalizedPath) {
         throw new Error('Missing required parameters');
       }
+      // Ensure we're fetching the correct path
       return await listSandboxFiles(sandboxId, normalizedPath);
     },
     enabled: Boolean(sandboxId && normalizedPath && (options.enabled !== false)),
-    staleTime: options.staleTime || 30 * 1000, // 30 seconds for directory listings
+    staleTime: options.staleTime !== undefined ? options.staleTime : 0, // Always refetch when path changes
     gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 2,
+    refetchOnMount: true, // Always refetch when component mounts with new path
   });
 }
 

@@ -1,10 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { threadKeys, projectKeys } from "./keys";
-import { updateProject } from "./utils";
+import { getProject, updateProject } from "./utils";
 import { createProject, deleteProject } from "@/lib/api/projects";
 import { toast } from 'sonner';
 import { handleApiError } from '@/lib/error-handler';
-import { useThreads } from './use-threads';
 import { useMemo } from 'react';
 import { Project } from '@/lib/api/projects';
 import { ThreadsResponse } from '@/lib/api/threads';
@@ -12,26 +11,17 @@ import { ThreadsResponse } from '@/lib/api/threads';
 export const useProjectQuery = (projectId: string | undefined, options?) => {
   const queryClient = useQueryClient();
   
-  // Try to get project from cached threads first
+  // Try to get project from cached threads ONLY (don't fetch threads list!)
   const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
   const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
   
-  // Also use the hook to ensure data is loaded
-  const { data: threadsResponse, isLoading: threadsLoading } = useThreads({
-    page: 1,
-    limit: 50,
-  });
-  
-  const threads = threadsResponse?.threads || [];
-  
-  // Derive project from cached threads (no API call!)
+  // Derive project from cached threads ONLY (no API call to threads list!)
   const project = useMemo(() => {
     const cachedThreadsData = cachedThreads?.threads || [];
-    const threadsToSearch = cachedThreadsData.length > 0 ? cachedThreadsData : threads;
     
-    if (!projectId || !threadsToSearch.length) return undefined;
+    if (!projectId || !cachedThreadsData.length) return undefined;
     
-    const threadWithProject = threadsToSearch.find(
+    const threadWithProject = cachedThreadsData.find(
       (thread: any) => thread.project_id === projectId && thread.project
     );
     
@@ -53,34 +43,34 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
       },
       icon_name: projectData.icon_name,
     } as Project;
-  }, [projectId, cachedThreads, threads]);
+  }, [projectId, cachedThreads]);
   
   return useQuery<Project>({
     queryKey: threadKeys.project(projectId || ""),
     queryFn: async () => {
-      // If we have the project from cache, return it
-      if (project) return project;
-      
-      // Otherwise, reject (shouldn't happen if threads are loaded)
-      throw new Error(`Project ${projectId} not found in cached threads`);
+      // Fetch fresh data from API
+      const projectData = await getProject(projectId!);
+      return projectData;
     },
     enabled: !!projectId && (options?.enabled !== false),
     retry: 1,
-    initialData: project, // Use cached data immediately
+    initialData: project, // Use cached data immediately if available
+    refetchOnWindowFocus: false, // Don't refetch on window focus (too aggressive)
+    refetchOnMount: true, // Refetch when component mounts
+    staleTime: 10 * 1000, // Consider fresh for 10 seconds
     ...options,
   });
 };
 
 export const useProjects = (options?) => {
-  // Get threads from React Query cache (shared with all other components)
-  const { data: threadsResponse, isLoading: threadsLoading } = useThreads({
-    page: 1,
-    limit: 50,
-  });
+  const queryClient = useQueryClient();
   
-  const threads = threadsResponse?.threads || [];
+  // Get threads from React Query cache ONLY (don't fetch!)
+  const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
+  const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
+  const threads = cachedThreads?.threads || [];
   
-  // Derive projects from threads data (no additional API call!)
+  // Derive projects from cached threads data ONLY (no API call!)
   const projects = useMemo(() => {
     if (!threads.length) return [];
     
@@ -113,21 +103,20 @@ export const useProjects = (options?) => {
   
   return {
     data: projects,
-    isLoading: threadsLoading,
+    isLoading: false, // Not loading since we're only using cache
     error: undefined,
   };
 };
 
 export const usePublicProjectsQuery = (options?) => {
-  // Get threads from React Query cache (shared with all other components)
-  const { data: threadsResponse, isLoading: threadsLoading } = useThreads({
-    page: 1,
-    limit: 50,
-  });
+  const queryClient = useQueryClient();
   
-  const threads = threadsResponse?.threads || [];
+  // Get threads from React Query cache ONLY (don't fetch!)
+  const threadsQueryKey = [...threadKeys.lists(), 'paginated', 1, 50];
+  const cachedThreads = queryClient.getQueryData<ThreadsResponse>(threadsQueryKey);
+  const threads = cachedThreads?.threads || [];
   
-  // Derive public projects from threads data (no additional API call!)
+  // Derive public projects from cached threads data ONLY (no API call!)
   const publicProjects = useMemo(() => {
     if (!threads.length) return [];
     
@@ -161,7 +150,7 @@ export const usePublicProjectsQuery = (options?) => {
   
   return {
     data: publicProjects,
-    isLoading: threadsLoading,
+    isLoading: false, // Not loading since we're only using cache
     error: undefined,
   };
 };
@@ -176,7 +165,7 @@ export const useCreateProject = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
       queryClient.invalidateQueries({ queryKey: threadKeys.projects() });
-      queryClient.invalidateQueries({ queryKey: threadKeys.lists() }); // Invalidate threads to refresh projects
+      // Don't invalidate threads list - only invalidate specific project queries
       toast.success('Project created successfully');
     },
     onError: (error) => {
@@ -204,7 +193,7 @@ export const useUpdateProjectMutation = () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.details(variables.projectId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.projects() });
       queryClient.invalidateQueries({ queryKey: threadKeys.project(variables.projectId) });
-      queryClient.invalidateQueries({ queryKey: threadKeys.lists() }); // Invalidate threads to refresh projects
+      // Don't invalidate threads list - only invalidate specific project
     },
   });
 };
@@ -220,7 +209,7 @@ export const useDeleteProject = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
       queryClient.invalidateQueries({ queryKey: threadKeys.projects() });
-      queryClient.invalidateQueries({ queryKey: threadKeys.lists() }); // Invalidate threads to refresh projects
+      // Don't invalidate threads list - only invalidate specific project queries
       toast.success('Project deleted successfully');
     },
     onError: (error) => {

@@ -552,7 +552,11 @@ def get_recent_messages_within_token_limit(messages: List[Dict[str, Any]], token
     return recent_messages
 
 def format_conversation_for_cache(messages: List[Dict[str, Any]]) -> str:
-    """Format conversation messages into a single text block for caching."""
+    """
+    Format conversation messages into a single text block for caching.
+    Uses clear separators between messages for readability.
+    The </function_calls> tags are naturally preserved from the conversation history.
+    """
     formatted_parts = []
     
     for msg in messages:
@@ -571,11 +575,19 @@ def format_conversation_for_cache(messages: List[Dict[str, Any]]) -> str:
         else:
             text_content = str(content)
         
-        # Clean up and format
+        # Clean up content
         text_content = text_content.strip()
         if text_content:
-            role_indicator = "User" if role == "user" else "Assistant" if role == "assistant" else role.title()
-            formatted_parts.append(f"{role_indicator}: {text_content}")
+            # Format based on role with separators
+            if role == "user":
+                # User messages - just content with separator
+                formatted_parts.append(f"---\n{text_content}\n---")
+            elif role == "assistant":
+                # Assistant messages - preserve as-is (tool calls already have </function_calls>)
+                formatted_parts.append(f"---\nAssistant: {text_content}\n---")
+            else:
+                # Other roles (shouldn't happen in normal flow)
+                formatted_parts.append(f"---\n{role.title()}: {text_content}\n---")
     
     return "\n\n".join(formatted_parts)
 

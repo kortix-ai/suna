@@ -12,10 +12,13 @@ import json
 import re
 import uuid
 import asyncio
+import os
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union, Callable, Literal
 from dataclasses import dataclass
 from core.utils.logger import logger
+from core.utils.config import config as global_config
 from core.agentpress.tool import ToolResult
 from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.xml_tool_parser import XMLToolParser
@@ -27,6 +30,8 @@ from core.utils.json_helpers import (
     to_json_string, format_for_yield
 )
 from litellm import token_counter
+
+# Note: Debug stream saving is controlled by global_config.DEBUG_SAVE_LLM_IO
 
 # Type alias for XML result adding strategy
 XmlAddingStrategy = Literal["user_message", "assistant_message", "inline_edit"]
@@ -61,7 +66,6 @@ class ProcessorConfig:
         execute_on_stream: For streaming, execute tools as they appear vs. at the end
         tool_execution_strategy: How to execute multiple tools ("sequential" or "parallel")
         xml_adding_strategy: How to add XML tool results to the conversation
-        max_xml_tool_calls: Maximum number of XML tool calls to process (0 = no limit)
     """
 
     xml_tool_calling: bool = True  
@@ -71,7 +75,6 @@ class ProcessorConfig:
     execute_on_stream: bool = False
     tool_execution_strategy: ToolExecutionStrategy = "sequential"
     xml_adding_strategy: XmlAddingStrategy = "assistant_message"
-    max_xml_tool_calls: int = 0  # 0 means no limit
     
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -80,9 +83,6 @@ class ProcessorConfig:
             
         if self.xml_adding_strategy not in ["user_message", "assistant_message", "inline_edit"]:
             raise ValueError("xml_adding_strategy must be 'user_message', 'assistant_message', or 'inline_edit'")
-        
-        if self.max_xml_tool_calls < 0:
-            raise ValueError("max_xml_tool_calls must be a non-negative integer (0 = no limit)")
 
 class ResponseProcessor:
     """Processes LLM responses, extracting and executing tool calls."""
@@ -335,7 +335,22 @@ class ResponseProcessor:
 
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
 
+            # Setup debug file saving for raw stream output (if enabled)
+            debug_file = None
+            debug_file_json = None
+            raw_chunks_data = []  # Store all chunk data for JSONL export
+            
+            if global_config.DEBUG_SAVE_LLM_IO:
+                debug_dir = Path("debug_streams")
+                debug_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                debug_file = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.txt"
+                debug_file_json = debug_dir / f"stream_{thread_id[:8]}_{timestamp}_{auto_continue_count + 1}.jsonl"
+                
+                logger.info(f"📁 Saving raw stream output to: {debug_file}")
+            
             chunk_count = 0
+            
             async for chunk in llm_response:
                 # Check for cancellation before processing each chunk
                 if cancellation_event.is_set():
@@ -355,18 +370,71 @@ class ResponseProcessor:
                 if chunk_count == 1 or (chunk_count % 1000 == 0) or hasattr(chunk, 'usage'):
                     logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
+                # Save raw chunk data for debugging (if enabled)
+                if global_config.DEBUG_SAVE_LLM_IO:
+                    try:
+                        chunk_data = {
+                            "chunk_num": chunk_count,
+                            "timestamp": current_time,
+                            "has_choices": hasattr(chunk, 'choices') and bool(chunk.choices),
+                            "has_delta": hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'delta'),
+                            "has_content": False,
+                            "content": None,
+                            "has_reasoning": False,
+                            "reasoning_content": None,
+                            "finish_reason": None,
+                            "has_usage": hasattr(chunk, 'usage') and chunk.usage is not None,
+                            "usage": None,
+                        }
+                        
+                        if hasattr(chunk, 'choices') and chunk.choices:
+                            delta = chunk.choices[0].delta if hasattr(chunk.choices[0], 'delta') else None
+                            if delta:
+                                if hasattr(delta, 'content') and delta.content:
+                                    chunk_data["has_content"] = True
+                                    chunk_data["content"] = str(delta.content)
+                                if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                                    chunk_data["has_reasoning"] = True
+                                    chunk_data["reasoning_content"] = str(delta.reasoning_content)
+                            if hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
+                                chunk_data["finish_reason"] = chunk.choices[0].finish_reason
+                        
+                        if hasattr(chunk, 'usage') and chunk.usage:
+                            chunk_data["usage"] = {
+                                "prompt_tokens": getattr(chunk.usage, 'prompt_tokens', None),
+                                "completion_tokens": getattr(chunk.usage, 'completion_tokens', None),
+                                "total_tokens": getattr(chunk.usage, 'total_tokens', None),
+                                "cached_tokens": getattr(chunk.usage.prompt_tokens_details, 'cached_tokens', None) if hasattr(chunk.usage, 'prompt_tokens_details') else None,
+                                "cache_creation_tokens": getattr(chunk.usage, 'cache_creation_input_tokens', None),
+                            }
+                        
+                        raw_chunks_data.append(chunk_data)
+                        
+                        # Write to JSONL file incrementally
+                        with open(debug_file_json, 'a', encoding='utf-8') as f:
+                            f.write(json.dumps(chunk_data, ensure_ascii=False) + '\n')
+                    except Exception as e:
+                        logger.debug(f"Error saving chunk data: {e}")
+                
                 # Store the complete LiteLLM response chunk when we get usage data
                 if hasattr(chunk, 'usage') and chunk.usage and final_llm_response is None:
-                    logger.info(f"🔍 STORING COMPLETE LiteLLM RESPONSE CHUNK AS RECEIVED")
                     final_llm_response = chunk  # Store the entire chunk object as-is
-                    logger.info(f"🔍 STORED MODEL: {getattr(chunk, 'model', 'NO_MODEL')}")
-                    logger.info(f"🔍 STORED USAGE: {chunk.usage}")
-                    logger.info(f"🔍 STORED RESPONSE TYPE: {type(chunk)}")
+                    model = getattr(chunk, 'model', 'unknown')
+                    usage = chunk.usage
+                    logger.info(f"📊 Usage captured - Model: {model}, Usage: {usage}")
+
 
                 if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
-                    logger.debug(f"Detected finish_reason: {finish_reason}")
-
+                    if finish_reason == "stop":
+                        # Check if stop token appeared in content
+                        if "|||STOP_AGENT|||" in accumulated_content:
+                            logger.info(f"🛑 Stop sequence triggered - |||STOP_AGENT||| detected in content")
+                        elif "<function_calls>" in accumulated_content:
+                            logger.info(f"🛑 Stop sequence triggered after function call")
+                        else:
+                            logger.debug(f"Natural completion at chunk #{chunk_count}")
+                        
                 if hasattr(chunk, 'choices') and chunk.choices:
                     delta = chunk.choices[0].delta if hasattr(chunk.choices[0], 'delta') else None
                     
@@ -396,24 +464,20 @@ class ResponseProcessor:
                         # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
                         current_xml_content += chunk_content
 
-                        if not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
-                            # Yield ONLY content chunk (don't save)
-                            now_chunk = datetime.now(timezone.utc).isoformat()
-                            yield {
-                                "sequence": __sequence,
-                                "message_id": None, "thread_id": thread_id, "type": "assistant",
-                                "is_llm_message": True,
-                                "content": to_json_string({"role": "assistant", "content": chunk_content}),
-                                "metadata": to_json_string({"stream_status": "chunk", "thread_run_id": thread_run_id}),
-                                "created_at": now_chunk, "updated_at": now_chunk
-                            }
-                            __sequence += 1
-                        else:
-                            # logger.debug("XML tool call limit reached - not yielding more content chunks")
-                            self.trace.event(name="xml_tool_call_limit_reached", level="DEFAULT", status_message=(f"XML tool call limit reached - not yielding more content chunks"))
+                        # Yield ONLY content chunk (don't save)
+                        now_chunk = datetime.now(timezone.utc).isoformat()
+                        yield {
+                            "sequence": __sequence,
+                            "message_id": None, "thread_id": thread_id, "type": "assistant",
+                            "is_llm_message": True,
+                            "content": to_json_string({"role": "assistant", "content": chunk_content}),
+                            "metadata": to_json_string({"stream_status": "chunk", "thread_run_id": thread_run_id}),
+                            "created_at": now_chunk, "updated_at": now_chunk
+                        }
+                        __sequence += 1
 
-                        # --- Process XML Tool Calls (if enabled and limit not reached) ---
-                        if config.xml_tool_calling and not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
+                        # --- Process XML Tool Calls (if enabled) ---
+                        if config.xml_tool_calling:
                             xml_chunks = self._extract_xml_chunks(current_xml_content)
                             for xml_chunk in xml_chunks:
                                 current_xml_content = current_xml_content.replace(xml_chunk, "", 1)
@@ -439,11 +503,6 @@ class ResponseProcessor:
                                             "tool_index": tool_index, "context": context
                                         })
                                         tool_index += 1
-
-                                    if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
-                                        logger.info(f"Reached XML tool call limit ({config.max_xml_tool_calls})")
-                                        finish_reason = "xml_tool_limit_reached"
-                                        break # Stop processing more XML chunks in this delta
 
                     # --- Process Native Tool Call Chunks ---
                     if config.native_tool_calling and delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
@@ -510,27 +569,77 @@ class ResponseProcessor:
                                 })
                                 tool_index += 1
 
-                if finish_reason == "xml_tool_limit_reached":
-                    logger.info("XML tool limit reached - stopping immediately without draining stream")
-                    self.trace.event(name="xml_tool_limit_reached_immediate_stop", level="DEFAULT", status_message=(f"XML tool limit reached - stopping immediately to prevent further LLM token generation"))
-                    # Immediately break from the loop to stop consuming chunks
-                    # This prevents the LLM from continuing to generate tokens in the background
-                    break
-
-            logger.info(f"Stream complete. Total chunks: {chunk_count}")
+            # Log when stream naturally ends
+            if finish_reason == "stop":
+                logger.info(f"✅ Stream naturally ended after stop sequence. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
+            else:
+                logger.info(f"Stream complete. Total chunks: {chunk_count}, finish_reason: {finish_reason}")
+            logger.info(f"📝 Accumulated content length: {len(accumulated_content)} chars")
+            
+            # Save summary to debug file
+            # Save debug summary and accumulated content (if enabled)
+            if global_config.DEBUG_SAVE_LLM_IO:
+                try:
+                    summary = {
+                        "thread_id": thread_id,
+                        "thread_run_id": thread_run_id,
+                        "llm_call_number": auto_continue_count + 1,
+                        "total_chunks": chunk_count,
+                        "finish_reason": finish_reason,
+                        "accumulated_content_length": len(accumulated_content),
+                        "xml_tool_call_count": xml_tool_call_count,
+                        "first_chunk_time": first_chunk_time,
+                        "last_chunk_time": last_chunk_time,
+                        "final_usage": None,
+                    }
+                    
+                    # Calculate response time
+                    if first_chunk_time and last_chunk_time:
+                        summary["response_time_ms"] = (last_chunk_time - first_chunk_time) * 1000
+                    else:
+                        summary["response_time_ms"] = None
+                    
+                    if final_llm_response and hasattr(final_llm_response, 'usage') and final_llm_response.usage:
+                        summary["final_usage"] = {
+                            "prompt_tokens": getattr(final_llm_response.usage, 'prompt_tokens', None),
+                            "completion_tokens": getattr(final_llm_response.usage, 'completion_tokens', None),
+                            "total_tokens": getattr(final_llm_response.usage, 'total_tokens', None),
+                            "cached_tokens": getattr(final_llm_response.usage.prompt_tokens_details, 'cached_tokens', None) if hasattr(final_llm_response.usage, 'prompt_tokens_details') else None,
+                            "cache_creation_tokens": getattr(final_llm_response.usage, 'cache_creation_input_tokens', None),
+                        }
+                    
+                    # Write summary to text file
+                    with open(debug_file, 'w', encoding='utf-8') as f:
+                        f.write("=" * 80 + "\n")
+                        f.write("STREAM DEBUG SUMMARY\n")
+                        f.write("=" * 80 + "\n\n")
+                        f.write(json.dumps(summary, indent=2, ensure_ascii=False) + "\n\n")
+                        f.write("=" * 80 + "\n")
+                        f.write("ACCUMULATED CONTENT\n")
+                        f.write("=" * 80 + "\n\n")
+                        f.write(accumulated_content + "\n\n")
+                        f.write("=" * 80 + "\n")
+                        f.write(f"Total chunks: {chunk_count}\n")
+                        f.write(f"Chunks with content: {sum(1 for c in raw_chunks_data if c.get('has_content'))}\n")
+                        f.write(f"Chunks with reasoning: {sum(1 for c in raw_chunks_data if c.get('has_reasoning'))}\n")
+                        f.write(f"Chunks with usage: {sum(1 for c in raw_chunks_data if c.get('has_usage'))}\n")
+                        f.write(f"Chunks with finish_reason: {sum(1 for c in raw_chunks_data if c.get('finish_reason'))}\n")
+                    
+                    logger.info(f"✅ Saved stream debug files: {debug_file} and {debug_file_json}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error saving stream debug summary: {e}")
+            
+            # Note: We already appended </invoke> and/or </function_calls> when we detected finish_reason == "stop" above
+            # This ensures XML parsing happens with complete XML before we exit the loop
             
             # Calculate response time if we have timing data
             response_ms = None
             if first_chunk_time and last_chunk_time:
                 response_ms = (last_chunk_time - first_chunk_time) * 1000
             
-            # Log what we captured
-            if final_llm_response:
-                logger.info(f"✅ Captured complete LiteLLM response object")
-                logger.info(f"🔍 RESPONSE MODEL: {getattr(final_llm_response, 'model', 'NO_MODEL')}")
-                logger.info(f"🔍 RESPONSE USAGE: {getattr(final_llm_response, 'usage', 'NO_USAGE')}")
-            else:
-                logger.warning("⚠️ No complete LiteLLM response captured from streaming chunks")
+            # Verify usage was captured
+            if not final_llm_response:
+                logger.warning("⚠️ No usage data captured from streaming chunks")
 
 
             tool_results_buffer = []
@@ -594,29 +703,12 @@ class ResponseProcessor:
                         yielded_tool_indices.add(tool_idx)
 
 
-            if finish_reason == "xml_tool_limit_reached":
-                finish_content = {"status_type": "finish", "finish_reason": "xml_tool_limit_reached"}
-                finish_msg_obj = await self.add_message(
-                    thread_id=thread_id, type="status", content=finish_content, 
-                    is_llm_message=False, metadata={"thread_run_id": thread_run_id}
-                )
-                if finish_msg_obj: yield format_for_yield(finish_msg_obj)
-                logger.debug(f"Stream finished with reason: xml_tool_limit_reached after {xml_tool_call_count} XML tool calls")
-                self.trace.event(name="stream_finished_with_reason_xml_tool_limit_reached_after_xml_tool_calls", level="DEFAULT", status_message=(f"Stream finished with reason: xml_tool_limit_reached after {xml_tool_call_count} XML tool calls"))
-
-            should_auto_continue = (can_auto_continue and finish_reason == 'length')
+            # Only auto-continue for 'length' or 'tool_calls' finish reasons (not 'stop' or others)
+            # Don't auto-continue if agent should terminate (ask/complete tool executed)
+            should_auto_continue = (can_auto_continue and finish_reason in ['length', 'tool_calls'] and not agent_should_terminate)
 
             # Don't save partial response if user stopped (cancelled)
-            # But do save for other early stops like XML limit reached
             if accumulated_content and not should_auto_continue and finish_reason != "cancelled":
-                # ... (Truncate accumulated_content logic) ...
-                if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls and xml_chunks_buffer:
-                    last_xml_chunk = xml_chunks_buffer[-1]
-                    last_chunk_end_pos = accumulated_content.find(last_xml_chunk) + len(last_xml_chunk)
-                    if last_chunk_end_pos > 0:
-                        accumulated_content = accumulated_content[:last_chunk_end_pos]
-
-                # ... (Extract complete_native_tool_calls logic) ...
                 # Update complete_native_tool_calls from buffer (initialized earlier)
                 if config.native_tool_calling:
                     for idx, tc_buf in tool_calls_buffer.items():
@@ -629,8 +721,14 @@ class ResponseProcessor:
                                 })
                             except json.JSONDecodeError: continue
 
+                # Remove stop token from content if present (Bedrock may include it due to batch generation)
+                final_content = accumulated_content
+                if "|||STOP_AGENT|||" in final_content:
+                    final_content = final_content.replace("|||STOP_AGENT|||", "").strip()
+                    logger.debug("Removed |||STOP_AGENT||| stop token from assistant message")
+
                 message_data = { # Dict to be saved in 'content'
-                    "role": "assistant", "content": accumulated_content,
+                    "role": "assistant", "content": final_content,
                     "tool_calls": complete_native_tool_calls or None
                 }
 
@@ -670,17 +768,14 @@ class ResponseProcessor:
                             "arguments": tc["function"]["arguments"], # Already parsed object
                             "id": tc["id"]
                         })
-                 # Gather XML tool calls from buffer (up to limit)
+                 # Gather XML tool calls from buffer
                 parsed_xml_data = []
                 if config.xml_tool_calling:
                     # Reparse remaining content just in case (should be empty if processed correctly)
                     xml_chunks = self._extract_xml_chunks(current_xml_content)
                     xml_chunks_buffer.extend(xml_chunks)
-                    # Process only chunks not already handled in the stream loop
-                    remaining_limit = config.max_xml_tool_calls - xml_tool_call_count if config.max_xml_tool_calls > 0 else len(xml_chunks_buffer)
-                    xml_chunks_to_process = xml_chunks_buffer[:remaining_limit] # Ensure limit is respected
 
-                    for chunk in xml_chunks_to_process:
+                    for chunk in xml_chunks_buffer:
                          parsed_result = self._parse_xml_tool_call(chunk)
                          if parsed_result:
                              tool_call, parsing_details = parsed_result
@@ -793,12 +888,19 @@ class ResponseProcessor:
                              self.trace.event(name="failed_to_save_tool_result_for_index", level="ERROR", status_message=(f"Failed to save tool result for index {tool_idx}, not yielding result message."))
                              # Optionally yield error status for saving failure?
 
+            # --- Re-check auto-continue after tool executions ---
+            # The should_auto_continue flag was set earlier, but tool executions may have set agent_should_terminate
+            # We need to re-check before yielding the finish status (which triggers auto-continue)
+            if agent_should_terminate:
+                logger.debug("Agent termination flag set after tool execution - disabling auto-continue")
+                should_auto_continue = False
+            
             # --- Final Finish Status ---
-            if finish_reason and finish_reason != "xml_tool_limit_reached":
+            if finish_reason:
                 finish_content = {"status_type": "finish", "finish_reason": finish_reason}
-                # Add metadata to indicate tools were detected (for auto-continue detection)
-                # Check if tools were actually detected during this run
-                if xml_tool_call_count > 0 or len(complete_native_tool_calls) > 0:
+                # Only set tools_executed for 'tool_calls' finish_reason (not for 'stop' or other reasons)
+                # This ensures auto-continue only triggers for 'tool_calls' or 'length', not for stop sequences
+                if finish_reason == 'tool_calls' and (xml_tool_call_count > 0 or len(complete_native_tool_calls) > 0) and not agent_should_terminate:
                     finish_content["tools_executed"] = True
                 finish_msg_obj = await self.add_message(
                     thread_id=thread_id, type="status", content=finish_content, 
@@ -814,11 +916,11 @@ class ResponseProcessor:
                 # Set finish reason to indicate termination
                 finish_reason = "agent_terminated"
                 
-                # Save and yield termination status
+                # Save and yield termination status with agent_should_terminate metadata for run.py
                 finish_content = {"status_type": "finish", "finish_reason": "agent_terminated"}
                 finish_msg_obj = await self.add_message(
                     thread_id=thread_id, type="status", content=finish_content, 
-                    is_llm_message=False, metadata={"thread_run_id": thread_run_id}
+                    is_llm_message=False, metadata={"thread_run_id": thread_run_id, "agent_should_terminate": True}
                 )
                 if finish_msg_obj: yield format_for_yield(finish_msg_obj)
                 
@@ -888,12 +990,9 @@ class ResponseProcessor:
                             
                             # Log the complete response object for debugging
                             logger.info(f"🔍 COMPLETE RESPONSE OBJECT: {final_llm_response}")
-                            logger.info(f"🔍 RESPONSE OBJECT TYPE: {type(final_llm_response)}")
-                            logger.info(f"🔍 RESPONSE OBJECT DICT: {final_llm_response.__dict__ if hasattr(final_llm_response, '__dict__') else 'NO_DICT'}")
                             
                             # Serialize the complete response object as-is
                             llm_end_content = self._serialize_model_response(final_llm_response)
-                            logger.info(f"🔍 SERIALIZED CONTENT: {llm_end_content}")
                             
                             # Add streaming flag and response timing if available
                             llm_end_content["streaming"] = True
@@ -915,9 +1014,9 @@ class ResponseProcessor:
                             ]
                             llm_end_content["llm_response_id"] = llm_response_id
                                 
-                            # DEBUG: Log the actual response usage
-                            logger.info(f"🔍 RESPONSE PROCESSOR COMPLETE USAGE (normal): {llm_end_content.get('usage', 'NO_USAGE')}")
-                            logger.info(f"🔍 FINAL LLM END CONTENT: {llm_end_content}")
+                            # Log the complete usage info
+                            # usage_info = llm_end_content.get('usage', {})
+                            # logger.info(f"📊 Final usage: prompt={usage_info.get('prompt_tokens')}, completion={usage_info.get('completion_tokens')}, cached={usage_info.get('prompt_tokens_details', {}).get('cached_tokens')}")
                             
                             llm_end_msg_obj = await self.add_message(
                                 thread_id=thread_id,
@@ -932,9 +1031,9 @@ class ResponseProcessor:
                             llm_response_end_saved = True
                             # Yield to stream for real-time context usage updates
                             if llm_end_msg_obj: yield format_for_yield(llm_end_msg_obj)
+                            logger.info(f"✅ llm_response_end saved for call #{auto_continue_count + 1}")
                         else:
                             logger.warning("⚠️ No complete LiteLLM response available, skipping llm_response_end")
-                        logger.info(f"✅ llm_response_end saved for call #{auto_continue_count + 1} (normal completion)")
                     except Exception as e:
                         logger.error(f"Error saving llm_response_end: {str(e)}")
                         self.trace.event(name="error_saving_llm_response_end", level="ERROR", status_message=(f"Error saving llm_response_end: {str(e)}"))
@@ -1148,17 +1247,6 @@ class ResponseProcessor:
                          content = response_message.content
                          if config.xml_tool_calling:
                              parsed_xml_data = self._parse_xml_tool_calls(content)
-                             if config.max_xml_tool_calls > 0 and len(parsed_xml_data) > config.max_xml_tool_calls:
-                                 # Truncate content and tool data if limit exceeded
-                                 # ... (Truncation logic similar to streaming) ...
-                                 if parsed_xml_data:
-                                     xml_chunks = self._extract_xml_chunks(content)[:config.max_xml_tool_calls]
-                                     if xml_chunks:
-                                         last_chunk = xml_chunks[-1]
-                                         last_chunk_pos = content.find(last_chunk)
-                                         if last_chunk_pos >= 0: content = content[:last_chunk_pos + len(last_chunk)]
-                                 parsed_xml_data = parsed_xml_data[:config.max_xml_tool_calls]
-                                 finish_reason = "xml_tool_limit_reached"
                              all_tool_data.extend(parsed_xml_data)
 
                      if config.native_tool_calling and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
@@ -1557,7 +1645,7 @@ class ResponseProcessor:
 
             logger.debug(f"✅ Tool execution completed successfully")
             # logger.debug(f"📤 Result type: {type(result)}")
-            logger.debug(f"📤 Result: {result}")
+            # logger.debug(f"📤 Result: {result}")
 
             # Validate result is a ToolResult object
             if not isinstance(result, ToolResult):
@@ -2003,21 +2091,29 @@ class ResponseProcessor:
                 # If parsing fails, keep the original string
                 pass
 
-        structured_result_v1 = {
+        # For LLM: Just return the clean result without duplicating arguments
+        if for_llm:
+            return {
+                "success": result.success if hasattr(result, 'success') else True,
+                "output": output, 
+                "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
+            }
+        
+        # For Frontend: Keep the full tool_execution wrapper with arguments 
+        # (needed for fallback extraction of session_name, command, etc.)
+        return {
             "tool_execution": {
                 "function_name": function_name,
                 "xml_tag_name": xml_tag_name,
                 "tool_call_id": tool_call_id,
-                "arguments": arguments,
+                "arguments": arguments,  # Frontend uses this for fallback extraction
                 "result": {
                     "success": result.success if hasattr(result, 'success') else True,
                     "output": output, 
                     "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
-                },
+                }
             }
-        } 
-            
-        return structured_result_v1
+        }
 
     def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None, parsing_details: Optional[Dict[str, Any]] = None) -> ToolExecutionContext:
         """Create a tool execution context with display name and parsing details populated."""

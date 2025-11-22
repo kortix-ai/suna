@@ -237,8 +237,16 @@ export const getPublicProjects = async (): Promise<Project[]> => {
         throw new Error(updateResponse.error.message || 'Failed to update project');
       }
 
-      // Fetch updated project data
-      const updatedProject = await getProject(projectId);
+      // Don't fetch project data here - let React Query handle it via invalidation
+      // The mutation will invalidate the project query, causing it to refetch automatically
+
+      // Build updated project data from the update payload
+      const updatedProjectData = {
+        id: projectId,
+        name: data.name !== undefined ? data.name : threadWithProject.project?.name || '',
+        description: threadWithProject.project?.description || '',
+        is_public: data.is_public !== undefined ? data.is_public : threadWithProject.project?.is_public || false,
+      };
 
       // Dispatch a custom event to notify components about the project change
       if (typeof window !== 'undefined') {
@@ -246,17 +254,14 @@ export const getPublicProjects = async (): Promise<Project[]> => {
           new CustomEvent('project-updated', {
             detail: {
               projectId,
-              updatedData: {
-                id: updatedProject.id,
-                name: updatedProject.name,
-                description: updatedProject.description,
-              },
+              updatedData: updatedProjectData,
             },
           }),
         );
       }
 
-      return updatedProject;
+      // Return the updated project data (partial, full data will be refetched by React Query)
+      return updatedProjectData as Project;
     } catch (error) {
       console.error('Error updating project:', error);
       throw error;

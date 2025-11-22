@@ -14,20 +14,30 @@ import dramatiq
 import uuid
 from core.agentpress.thread_manager import ThreadManager
 from core.services.supabase import DBConnection
-from core.services import redis
 from dramatiq.brokers.redis import RedisBroker
-import os
 from core.services.langfuse import langfuse
 from core.utils.retry import retry
+import os
 
 import sentry_sdk
 from typing import Dict, Any
 
-redis_host = os.getenv('REDIS_HOST', 'redis')
-redis_port = int(os.getenv('REDIS_PORT', 6379))
+# Get Redis configuration from centralized service
+redis_config = redis.get_redis_config()
+redis_host = redis_config["host"]
+redis_port = redis_config["port"]
+redis_password = redis_config["password"]
+redis_username = redis_config["username"]
 
-logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}")
-redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
+# Configure Dramatiq broker using centralized Redis config
+# Use URL format if username/password are provided (required for Redis Cloud)
+if redis_config["url"]:
+    auth_info = f" (user={redis_username})" if redis_username else ""
+    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}{auth_info}")
+    redis_broker = RedisBroker(url=redis_config["url"], middleware=[dramatiq.middleware.AsyncIO()])
+else:
+    logger.info(f"🔧 Configuring Dramatiq broker with Redis at {redis_host}:{redis_port}")
+    redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramatiq.middleware.AsyncIO()])
 
 dramatiq.set_broker(redis_broker)
 
@@ -45,7 +55,7 @@ async def initialize():
     if not instance_id:
         instance_id = str(uuid.uuid4())[:8]
     
-    logger.info(f"Initializing worker with Redis at {redis_host}:{redis_port}")
+    logger.info(f"Initializing worker with Redis at {redis_config['host']}:{redis_config['port']}")
     await retry(lambda: redis.initialize_async())
     await db.initialize()
     
@@ -303,12 +313,23 @@ async def run_agent_background(
             except asyncio.CancelledError: pass
             except Exception as e: logger.warning(f"Error during stop_checker cancellation: {e}")
 
-        # Close pubsub connection
+        # Close pubsub connection - ensure it always happens
         if pubsub:
+            pubsub_cleaned = False
             try:
                 await pubsub.unsubscribe()
                 await pubsub.close()
+                pubsub_cleaned = True
                 logger.debug(f"Closed pubsub connection for {agent_run_id}")
+            except asyncio.CancelledError:
+                # Still cleanup on cancellation
+                if not pubsub_cleaned:
+                    try:
+                        await pubsub.unsubscribe()
+                        await pubsub.close()
+                        logger.debug(f"Closed pubsub connection after cancellation for {agent_run_id}")
+                    except Exception:
+                        pass  # Ignore errors during cancellation cleanup
             except Exception as e:
                 logger.warning(f"Error closing pubsub for {agent_run_id}: {str(e)}")
 

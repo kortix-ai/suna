@@ -15,6 +15,7 @@ from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from run_agent_background import run_agent_background
+import dramatiq
 
 from core.ai_models import model_manager
 
@@ -253,15 +254,23 @@ async def _trigger_agent_background(agent_run_id: str, thread_id: str, project_i
     """
     request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-    run_agent_background.send(
-        agent_run_id=agent_run_id,
-        thread_id=thread_id,
-        instance_id=utils.instance_id,
-        project_id=project_id,
-        model_name=effective_model,
-        agent_config=agent_config,
-        request_id=request_id,
-    )
+    logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+    
+    try:
+        message = run_agent_background.send(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            instance_id=utils.instance_id,
+            project_id=project_id,
+            model_name=effective_model,
+            agent_config=agent_config,
+            request_id=request_id,
+        )
+        message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
+        logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
+    except Exception as e:
+        logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
+        raise
 
 
 async def _handle_file_uploads(files: List[UploadFile], sandbox, project_id: str, prompt: str = "") -> str:
@@ -1055,12 +1064,25 @@ async def stream_agent_run(
         finally:
             terminate_stream = True
             # Graceful shutdown order: unsubscribe → close → cancel
+            # Ensure cleanup happens even on cancellation
+            pubsub_cleaned = False
             try:
                 if 'pubsub' in locals() and pubsub:
                     await pubsub.unsubscribe(response_channel, control_channel)
                     await pubsub.close()
+                    pubsub_cleaned = True
+                    logger.debug(f"PubSub cleaned up for {agent_run_id}")
+            except asyncio.CancelledError:
+                # Still try to cleanup on cancellation
+                if 'pubsub' in locals() and pubsub and not pubsub_cleaned:
+                    try:
+                        await pubsub.unsubscribe(response_channel, control_channel)
+                        await pubsub.close()
+                        logger.debug(f"PubSub cleaned up after cancellation for {agent_run_id}")
+                    except Exception:
+                        pass  # Ignore errors during cancellation cleanup
             except Exception as e:
-                logger.debug(f"Error during pubsub cleanup for {agent_run_id}: {e}")
+                logger.warning(f"Error during pubsub cleanup for {agent_run_id}: {e}")
 
             if listener_task:
                 listener_task.cancel()

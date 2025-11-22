@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -60,7 +60,8 @@ export function FullScreenPresentationViewer({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
-  const [backgroundRetryInterval, setBackgroundRetryInterval] = useState<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasLoadedRef = useRef(false);
   const [showControls, setShowControls] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
@@ -82,8 +83,17 @@ export function FullScreenPresentationViewer({
   };
 
   // Load metadata with retry logic
-  const loadMetadata = useCallback(async (retryCount = 0, maxRetries = 5) => {
-    if (!presentationName || !sandboxUrl) return;
+  const loadMetadata = useCallback(async (retryCount = 0, maxRetries = Infinity) => {
+    // Don't load if we already successfully loaded metadata
+    if (hasLoadedRef.current) {
+      return;
+    }
+    
+    // If sandbox URL isn't available yet, wait and don't set loading state
+    if (!presentationName || !sandboxUrl) {
+      setIsLoading(false);
+      return;
+    }
     
     setIsLoading(true);
     setError(null);
@@ -99,7 +109,7 @@ export function FullScreenPresentationViewer({
       );
       
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
-      console.log(`Loading presentation metadata (attempt ${retryCount + 1}/${maxRetries + 1}):`, urlWithCacheBust);
+      console.log(`Loading presentation metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
       
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
@@ -109,13 +119,14 @@ export function FullScreenPresentationViewer({
       if (response.ok) {
         const data = await response.json();
         setMetadata(data);
+        hasLoadedRef.current = true; // Mark as successfully loaded
         console.log('Successfully loaded presentation metadata:', data);
         setIsLoading(false);
         
-        // Clear background retry interval on success
-        if (backgroundRetryInterval) {
-          clearInterval(backgroundRetryInterval);
-          setBackgroundRetryInterval(null);
+        // Clear any pending retry timeout on success
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
         }
         
         return; // Success, exit early
@@ -125,65 +136,67 @@ export function FullScreenPresentationViewer({
     } catch (err) {
       console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
       
-      // If we haven't reached max retries, try again with exponential backoff
-      if (retryCount < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Cap at 10 seconds
-        console.log(`Retrying in ${delay}ms...`);
-        
-        setTimeout(() => {
-          loadMetadata(retryCount + 1, maxRetries);
-        }, delay);
-        
-        return; // Don't set error state yet, we're retrying
-      }
+      // Calculate delay with exponential backoff, capped at 10 seconds
+      // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
+      const delay = retryCount < 5 
+        ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
+        : 5000; // Consistent 5 second intervals after that
       
-      // All retries exhausted, set error and start background retry
-      setError('Failed to load presentation metadata after multiple attempts');
-      setIsLoading(false);
+      console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
       
-      // Start background retry every 10 seconds
-      if (!backgroundRetryInterval) {
-        const interval = setInterval(() => {
-          console.log('Background retry attempt...');
-          loadMetadata(0, 2); // Fewer retries for background attempts
-        }, 10000);
-        setBackgroundRetryInterval(interval);
-      }
+      // Keep retrying indefinitely - don't set error state
+      retryTimeoutRef.current = setTimeout(() => {
+        loadMetadata(retryCount + 1, maxRetries);
+      }, delay);
+      
+      return; // Keep loading state, don't set error
     }
-  }, [presentationName, sandboxUrl, backgroundRetryInterval]);
+  }, [presentationName, sandboxUrl]);
 
   useEffect(() => {
     if (isOpen) {
-      // Clear any existing background retry when opening
-      if (backgroundRetryInterval) {
-        clearInterval(backgroundRetryInterval);
-        setBackgroundRetryInterval(null);
+      // Reset loaded flag when opening (so we can reload if needed)
+      hasLoadedRef.current = false;
+      
+      // Clear any existing retry timeout when opening
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
-      loadMetadata();
+      
+      // Only start loading if we have the required data
+      if (presentationName && sandboxUrl) {
+        loadMetadata();
+      } else {
+        setIsLoading(false);
+      }
       setCurrentSlide(initialSlide);
     } else {
-      // Clear background retry when closing
-      if (backgroundRetryInterval) {
-        clearInterval(backgroundRetryInterval);
-        setBackgroundRetryInterval(null);
+      // Clear retry timeout when closing
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     }
-  }, [isOpen, loadMetadata, initialSlide, backgroundRetryInterval]);
+  }, [isOpen, presentationName, sandboxUrl, initialSlide]);
 
-  // Cleanup background retry interval on unmount
+  // Cleanup retry timeout on unmount
   useEffect(() => {
     return () => {
-      if (backgroundRetryInterval) {
-        clearInterval(backgroundRetryInterval);
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
       }
     };
-  }, [backgroundRetryInterval]);
+  }, []);
 
   // Reload metadata when exiting editor mode to refresh with latest changes
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
     
-    if (!showEditor) {
+    if (!showEditor && isOpen) {
+      // Reset loaded flag so we can reload after editor changes
+      hasLoadedRef.current = false;
+      
       // Add a small delay to allow the editor to save changes
       timeoutId = setTimeout(() => {
         loadMetadata();
@@ -195,7 +208,8 @@ export function FullScreenPresentationViewer({
         clearTimeout(timeoutId);
       }
     };
-  }, [showEditor, loadMetadata]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showEditor, isOpen]);
 
   // Navigation functions
   const goToNextSlide = useCallback(() => {
@@ -497,41 +511,12 @@ export function FullScreenPresentationViewer({
 
       {/* Main Content Area */}
       <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 p-2 min-h-0">
-        {isLoading ? (
+        {isLoading || !currentSlideData ? (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-600 mx-auto mb-4"></div>
             <p className="text-zinc-700 dark:text-zinc-300">
               {retryAttempt > 0 ? `Retrying... (attempt ${retryAttempt + 1})` : 'Loading presentation...'}
             </p>
-          </div>
-        ) : error ? (
-          <div className="text-center">
-            <p className="mb-4 text-zinc-700 dark:text-zinc-300">Error: {error}</p>
-            {retryAttempt > 0 && (
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-4">
-                Attempted {retryAttempt + 1} times
-              </p>
-            )}
-            {backgroundRetryInterval && (
-              <p className="text-xs text-blue-500 dark:text-blue-400 mb-4 flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Retrying in background...
-              </p>
-            )}
-            <Button 
-              onClick={() => loadMetadata()} 
-              variant="outline"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Retrying...
-                </>
-              ) : (
-                'Try Again'
-              )}
-            </Button>
           </div>
         ) : currentSlideData ? (
           <div className="w-full h-full flex flex-col">

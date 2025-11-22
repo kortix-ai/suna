@@ -16,6 +16,36 @@ _init_lock = asyncio.Lock()
 REDIS_KEY_TTL = 3600 * 24  # 24 hour TTL as safety mechanism
 
 
+def get_redis_config():
+    """Get Redis configuration from environment variables.
+    
+    Returns:
+        dict: Dictionary with host, port, password, username, and url keys
+    """
+    load_dotenv()
+    
+    redis_host = os.getenv("REDIS_HOST", "redis")
+    redis_port = int(os.getenv("REDIS_PORT", 6379))
+    redis_password = os.getenv("REDIS_PASSWORD", "")
+    redis_username = os.getenv("REDIS_USERNAME", None)
+    
+    # Build Redis URL for clients that support it (like Dramatiq)
+    if redis_username and redis_password:
+        redis_url = f"redis://{redis_username}:{redis_password}@{redis_host}:{redis_port}"
+    elif redis_password:
+        redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}"
+    else:
+        redis_url = None
+    
+    return {
+        "host": redis_host,
+        "port": redis_port,
+        "password": redis_password,
+        "username": redis_username,
+        "url": redis_url,
+    }
+
+
 def initialize():
     """Initialize Redis connection pool and client using environment variables."""
     global client, pool
@@ -24,31 +54,40 @@ def initialize():
     load_dotenv()
 
     # Get Redis configuration
-    redis_host = os.getenv("REDIS_HOST", "redis")
-    redis_port = int(os.getenv("REDIS_PORT", 6379))
-    redis_password = os.getenv("REDIS_PASSWORD", "")
+    config = get_redis_config()
+    redis_host = config["host"]
+    redis_port = config["port"]
+    redis_password = config["password"]
+    redis_username = config["username"]
     
     # Connection pool configuration - optimized for production
-    max_connections = 128            # Reasonable limit for production
+    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "128"))
     socket_timeout = 15.0            # 15 seconds socket timeout
     connect_timeout = 10.0           # 10 seconds connection timeout
     retry_on_timeout = not (os.getenv("REDIS_RETRY_ON_TIMEOUT", "True").lower() != "true")
 
-    logger.info(f"Initializing Redis connection pool to {redis_host}:{redis_port} with max {max_connections} connections")
+    auth_info = f"user={redis_username} " if redis_username else ""
+    logger.info(f"Initializing Redis connection pool to {redis_host}:{redis_port} {auth_info}with max {max_connections} connections")
 
     # Create connection pool with production-optimized settings
-    pool = redis.ConnectionPool(
-        host=redis_host,
-        port=redis_port,
-        password=redis_password,
-        decode_responses=True,
-        socket_timeout=socket_timeout,
-        socket_connect_timeout=connect_timeout,
-        socket_keepalive=True,
-        retry_on_timeout=retry_on_timeout,
-        health_check_interval=30,
-        max_connections=max_connections,
-    )
+    pool_kwargs = {
+        "host": redis_host,
+        "port": redis_port,
+        "password": redis_password,
+        "decode_responses": True,
+        "socket_timeout": socket_timeout,
+        "socket_connect_timeout": connect_timeout,
+        "socket_keepalive": True,
+        "retry_on_timeout": retry_on_timeout,
+        "health_check_interval": 30,
+        "max_connections": max_connections,
+    }
+    
+    # Add username if provided (required for Redis Cloud)
+    if redis_username:
+        pool_kwargs["username"] = redis_username
+    
+    pool = redis.ConnectionPool(**pool_kwargs)
 
     # Create Redis client from connection pool
     client = redis.Redis(connection_pool=pool)
@@ -121,6 +160,46 @@ async def get_client():
     return client
 
 
+async def get_connection_info():
+    """Get diagnostic information about Redis connections.
+    
+    Returns:
+        dict: Dictionary with connection pool stats and Redis server info
+    """
+    try:
+        redis_client = await get_client()
+        
+        # Get connection pool stats
+        pool_info = {}
+        if pool:
+            pool_info = {
+                "max_connections": pool.max_connections,
+                "created_connections": pool.created_connections if hasattr(pool, 'created_connections') else None,
+            }
+        
+        # Get Redis server info about clients
+        info = await redis_client.info("clients")
+        server_info = {
+            "connected_clients": info.get("connected_clients", 0),
+            "client_recent_max_input_buffer": info.get("client_recent_max_input_buffer", 0),
+            "client_recent_max_output_buffer": info.get("client_recent_max_output_buffer", 0),
+        }
+        
+        # Get current connection count from pool if available
+        if pool and hasattr(pool, '_available_connections'):
+            pool_info["available_connections"] = len(pool._available_connections)
+        if pool and hasattr(pool, '_in_use_connections'):
+            pool_info["in_use_connections"] = len(pool._in_use_connections)
+        
+        return {
+            "pool": pool_info,
+            "server": server_info,
+        }
+    except Exception as e:
+        logger.error(f"Error getting Redis connection info: {e}")
+        return {"error": str(e)}
+
+
 # Basic Redis operations
 async def set(key: str, value: str, ex: int = None, nx: bool = False):
     """Set a Redis key."""
@@ -151,6 +230,30 @@ async def create_pubsub():
     """Create a Redis pubsub object."""
     redis_client = await get_client()
     return redis_client.pubsub()
+
+
+class PubSubContextManager:
+    """Context manager for Redis PubSub to ensure proper cleanup."""
+    def __init__(self, channels=None):
+        self.channels = channels or []
+        self.pubsub = None
+    
+    async def __aenter__(self):
+        redis_client = await get_client()
+        self.pubsub = redis_client.pubsub()
+        if self.channels:
+            await self.pubsub.subscribe(*self.channels)
+        return self.pubsub
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.pubsub:
+            try:
+                if self.channels:
+                    await self.pubsub.unsubscribe(*self.channels)
+                await self.pubsub.close()
+            except Exception as e:
+                logger.warning(f"Error closing pubsub in context manager: {e}")
+        return False  # Don't suppress exceptions
 
 
 # List operations

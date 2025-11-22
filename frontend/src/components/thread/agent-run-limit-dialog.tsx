@@ -181,7 +181,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
       
       return {
         queryKey: threadKeys.project(projectId || ""),
-        queryFn: () => projectId ? getProject(projectId) : null,
+        queryFn: () => projectId ? getProject(projectId, { suppressWarning: true }) : null,
         enabled: open && !!projectId,
         retry: 1,
       };

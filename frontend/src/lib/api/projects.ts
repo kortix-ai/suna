@@ -25,11 +25,19 @@ export type Project = {
 // Use useProjects() hook instead, which derives projects from cached threads
 // This avoids duplicate API calls
 
-// Note: getProject() should not be called directly anymore
+// Note: getProject() should not be called directly in React components
 // Use useProjectQuery() hook instead, which derives from cached threads
-// This is kept for backward compatibility but should be deprecated
-export const getProject = async (projectId: string): Promise<Project> => {
-  console.warn('getProject() called directly - use useProjectQuery() hook instead');
+// This is kept for backward compatibility in server-side code and utility functions
+export const getProject = async (projectId: string, options?: { suppressWarning?: boolean }): Promise<Project> => {
+  // Only warn in client-side React components, not in server-side or utility functions
+  if (typeof window !== 'undefined' && !options?.suppressWarning) {
+    // Check if we're in a React component by checking the call stack
+    const stack = new Error().stack || '';
+    const isInReactComponent = stack.includes('useProjectQuery') || stack.includes('useQueries') || stack.includes('queryFn');
+    if (!isInReactComponent) {
+      console.warn('getProject() called directly - use useProjectQuery() hook instead');
+    }
+  }
   
   try {
     // Get project by finding a thread with this project_id
@@ -155,7 +163,7 @@ export const createProject = async (
     }
 
     // Fetch the created project to return full data
-    const project = await getProject(response.data.project_id);
+    const project = await getProject(response.data.project_id, { suppressWarning: true });
     
     return project;
   } catch (error) {
