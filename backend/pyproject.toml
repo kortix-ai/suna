@@ -89,6 +89,7 @@ dependencies = [
   "reportlab>=4.0.0",
   "freestyle>=0.0.17",
   "anthropic>=0.69.0",
+  "novu>=2.1.0",
 ]
 
 [project.urls]

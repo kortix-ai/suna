@@ -1265,6 +1265,32 @@ class WebhookService:
                 await self.handle_subscription_renewal(invoice, event.id)
             else:
                 await self.handle_subscription_renewal(invoice, event.id)
+        
+        try:
+            from core.notifications.notification_service import notification_service
+            subscription_id = invoice.get('subscription')
+            if subscription_id:
+                subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+                account_id = subscription.metadata.get('account_id')
+                
+                if account_id:
+                    account_users = await client.schema('basejump').from_('account_user')\
+                        .select('user_id')\
+                        .eq('account_id', account_id)\
+                        .execute()
+                    
+                    if account_users.data:
+                        for account_user in account_users.data:
+                            user_id = account_user.get('user_id')
+                            if user_id:
+                                await notification_service.send_payment_succeeded_notification(
+                                    user_id=user_id,
+                                    amount=invoice.get('amount_paid', 0) / 100,
+                                    currency=invoice.get('currency', 'usd').upper(),
+                                    plan_name=subscription.get('metadata', {}).get('plan_name')
+                                )
+        except Exception as notif_error:
+            logger.warning(f"Failed to send payment success notification: {notif_error}")
 
     async def _handle_trial_subscription(self, subscription, account_id, new_tier, client):
         if not subscription.get('trial_end'):
@@ -1702,6 +1728,26 @@ class WebhookService:
                     logger.info(f"[WEBHOOK] Marked payment as failed for account {account_id}")
                 except Exception as update_error:
                     logger.warning(f"[WEBHOOK] Could not update payment status (non-critical): {update_error}")
+                
+                try:
+                    from core.notifications.notification_service import notification_service
+                    account_users = await client.schema('basejump').from_('account_user')\
+                        .select('user_id')\
+                        .eq('account_id', account_id)\
+                        .execute()
+                    
+                    if account_users.data:
+                        for account_user in account_users.data:
+                            user_id = account_user.get('user_id')
+                            if user_id:
+                                await notification_service.send_payment_failed_notification(
+                                    user_id=user_id,
+                                    amount=invoice.get('amount_due', 0) / 100,
+                                    currency=invoice.get('currency', 'usd').upper(),
+                                    reason=invoice.get('last_finalization_error', {}).get('message') if invoice.get('last_finalization_error') else None
+                                )
+                except Exception as notif_error:
+                    logger.warning(f"Failed to send payment failure notification: {notif_error}")
                 
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing payment failure: {e}")
