@@ -1,14 +1,13 @@
 from decimal import Decimal
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
-from core.utils.supabase import DBConnection
+from core.services.supabase import DBConnection
 from core.billing.config import get_tier_by_name
 import logging
 
 logger = logging.getLogger(__name__)
 
 class RenewalService:
-    
     def __init__(self):
         self.db = DBConnection()
     
