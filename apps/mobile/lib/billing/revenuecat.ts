@@ -36,6 +36,21 @@ export interface RevenueCatSubscriptionInfo {
 
 let isConfigured = false;
 
+export async function logoutRevenueCat(): Promise<void> {
+  try {
+    console.log('🚪 Logging out from RevenueCat...');
+    const customerInfo = await Purchases.getCustomerInfo();
+    const wasAnonymous = customerInfo.originalAppUserId.startsWith('$RCAnonymousID:');
+    await Purchases.logOut();
+    isConfigured = false;
+    console.log('✅ RevenueCat logout successful');
+    console.log(`🔓 ${wasAnonymous ? 'Anonymous' : 'User'} subscription detached from device`);
+  } catch (error) {
+    console.error('❌ Error logging out from RevenueCat:', error);
+    isConfigured = false;
+  }
+}
+
 export async function setRevenueCatAttributes(email?: string, displayName?: string, phoneNumber?: string): Promise<void> {
   try {
     if (email) {
@@ -228,13 +243,14 @@ export async function restorePurchases(email?: string): Promise<CustomerInfo> {
   try {
     console.log('🔄 Restoring purchases...');
     console.warn('⚠️ SECURITY WARNING: Restore will link this Apple ID subscription to current account');
-    console.warn('⚠️ If subscription belongs to another account, that account will lose access');
+    console.warn('⚠️ Backend will validate transfer - only allows if emails match');
+    console.warn('⚠️ Transfer between different user accounts will be BLOCKED');
     
     if (email) {
       console.log('📧 Setting email before restore:', email);
       try {
         await Purchases.setEmail(email);
-        console.log('✅ Email set successfully');
+        console.log('✅ Email set successfully - needed for backend validation');
       } catch (emailError) {
         console.warn('⚠️ Could not set email before restore:', emailError);
       }

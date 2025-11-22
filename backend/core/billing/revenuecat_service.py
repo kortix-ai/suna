@@ -253,7 +253,7 @@ class RevenueCatService:
         logger.info(
             f"[REVENUECAT TRANSFER] Full webhook data: {webhook_data}"
         )
-        
+
         transferred_to = event.get('transferred_to', [])
         transferred_from = event.get('transferred_from', [])
         product_id = event.get('product_id')
@@ -275,59 +275,79 @@ class RevenueCatService:
             logger.info(f"[REVENUECAT TRANSFER] Transfer to anonymous user, allowing")
             return
         
+        db = DBConnection()
+        client = await db.client
+        
         if transferred_from_valid:
             logger.warning(
-                f"[REVENUECAT TRANSFER] 🚨 SECURITY ALERT: Subscription being transferred "
+                f"[REVENUECAT TRANSFER] 🚨 SECURITY CHECK: Subscription being transferred "
                 f"from legitimate account(s): {transferred_from_valid} → {new_app_user_id}"
             )
-            logger.warning(
-                f"[REVENUECAT TRANSFER] This could be legitimate (user got new device) "
-                f"OR abuse (someone stealing subscription)"
-            )
-            
-            db = DBConnection()
-            client = await db.client
-            
-            for old_user_id in transferred_from_valid:
-                old_account = await self._get_credit_account(client, old_user_id)
-                if old_account:
-                    old_email = old_account.get('email')
-                    old_tier = old_account.get('tier')
-                    logger.warning(
-                        f"[REVENUECAT TRANSFER] Old account being removed: "
-                        f"user_id={old_user_id}, email={old_email}, tier={old_tier}"
-                    )
             
             new_account = await self._get_credit_account(client, new_app_user_id)
-            if new_account:
-                new_email = new_account.get('email')
-                logger.warning(
-                    f"[REVENUECAT TRANSFER] New account receiving subscription: "
-                    f"user_id={new_app_user_id}, email={new_email}"
+            new_email = new_account.get('email') if new_account else None
+            
+            is_same_user = False
+            for old_user_id in transferred_from_valid:
+                old_account = await self._get_credit_account(client, old_user_id)
+                old_email = old_account.get('email') if old_account else None
+                old_tier = old_account.get('tier') if old_account else None
+                
+                logger.info(
+                    f"[REVENUECAT TRANSFER] Checking transfer: "
+                    f"from={old_user_id} (email={old_email}, tier={old_tier}) → "
+                    f"to={new_app_user_id} (email={new_email})"
                 )
+                
+                if old_email and new_email and old_email.lower() == new_email.lower():
+                    is_same_user = True
+                    logger.info(
+                        f"[REVENUECAT TRANSFER] ✅ SAME USER DETECTED (emails match: {old_email})"
+                    )
+                    break
+            
+            if is_same_user:
+                logger.info(
+                    f"[REVENUECAT TRANSFER] ✅ ALLOWING TRANSFER - Same user restoring subscription\n"
+                    f"This is legitimate: user logged back in or got new device"
+                )
+                
+                await client.from_('audit_logs').insert({
+                    'event_type': 'revenuecat_transfer_allowed_same_user',
+                    'account_id': new_app_user_id,
+                    'metadata': {
+                        'transferred_from': transferred_from_valid,
+                        'transferred_to': new_app_user_id,
+                        'product_id': product_id,
+                        'email': new_email,
+                        'reason': 'same_user_email_match',
+                        'webhook_data': webhook_data
+                    },
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                }).execute()
+            else:
+                old_emails_list = [old_account.get('email') for old_account in [await self._get_credit_account(client, uid) for uid in transferred_from_valid] if old_account]
+                
+                await client.from_('audit_logs').insert({
+                    'event_type': 'revenuecat_transfer_blocked',
+                    'account_id': new_app_user_id,
+                    'metadata': {
+                        'transferred_from': transferred_from_valid,
+                        'transferred_to': new_app_user_id,
+                        'product_id': product_id,
+                        'old_emails': old_emails_list,
+                        'new_email': new_email,
+                        'reason': 'different_user_emails',
+                        'webhook_data': webhook_data,
+                        'note': 'If this is a legitimate email change by same user, admin can manually transfer'
+                    },
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                }).execute()
+                
+                logger.warning(f"[REVENUECAT TRANSFER] Audit log created for blocked transfer")
+                return
         else:
             logger.info(f"[REVENUECAT TRANSFER] Transfer from anonymous account only - likely legitimate first login")
-        
-        if transferred_from_valid and len(transferred_from_valid) > 0:
-            db = DBConnection()
-            client = await db.client
-            
-            await client.from_('audit_logs').insert({
-                'event_type': 'revenuecat_transfer_blocked',
-                'account_id': new_app_user_id,
-                'metadata': {
-                    'transferred_from': transferred_from_valid,
-                    'transferred_to': new_app_user_id,
-                    'product_id': product_id,
-                    'reason': 'subscription_theft_prevention',
-                    'webhook_data': webhook_data
-                },
-                'created_at': datetime.now(timezone.utc).isoformat()
-            }).execute()
-            
-            logger.info(f"[REVENUECAT TRANSFER] Audit log created for blocked transfer")
-            
-            return
             
         if not product_id:
             logger.warning(f"[REVENUECAT TRANSFER] Missing product_id, will try to infer from accounts")
