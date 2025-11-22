@@ -36,6 +36,21 @@ export interface RevenueCatSubscriptionInfo {
 
 let isConfigured = false;
 
+export async function logoutRevenueCat(): Promise<void> {
+  try {
+    console.log('🚪 Logging out from RevenueCat...');
+    const customerInfo = await Purchases.getCustomerInfo();
+    const wasAnonymous = customerInfo.originalAppUserId.startsWith('$RCAnonymousID:');
+    await Purchases.logOut();
+    isConfigured = false;
+    console.log('✅ RevenueCat logout successful');
+    console.log(`🔓 ${wasAnonymous ? 'Anonymous' : 'User'} subscription detached from device`);
+  } catch (error) {
+    console.error('❌ Error logging out from RevenueCat:', error);
+    isConfigured = false;
+  }
+}
+
 export async function setRevenueCatAttributes(email?: string, displayName?: string, phoneNumber?: string): Promise<void> {
   try {
     if (email) {
@@ -54,19 +69,7 @@ export async function setRevenueCatAttributes(email?: string, displayName?: stri
 
 export async function initializeRevenueCat(userId: string, email?: string, canTrack: boolean = false): Promise<void> {
   if (isConfigured) {
-    console.log('🔄 RevenueCat already configured, updating user...');
-    try {
-      const { customerInfo } = await Purchases.logIn(userId);
-      if (email && canTrack) {
-        console.log('📧 Setting email for existing RevenueCat customer:', email);
-        await Purchases.setEmail(email);
-        console.log('✅ Email set successfully:', email);
-      }
-      return;
-    } catch (error) {
-      console.error('❌ Error logging in to RevenueCat:', error);
-      throw error;
-    }
+    return;
   }
 
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
@@ -114,6 +117,7 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
 
     isConfigured = true;
     console.log('✅ RevenueCat initialized successfully');
+    console.log('🔒 SECURITY: Subscription is now locked to this account');
   } catch (error) {
     console.error('❌ Error initializing RevenueCat:', error);
     throw error;
@@ -238,11 +242,15 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
 export async function restorePurchases(email?: string): Promise<CustomerInfo> {
   try {
     console.log('🔄 Restoring purchases...');
+    console.warn('⚠️ SECURITY WARNING: Restore will link this Apple ID subscription to current account');
+    console.warn('⚠️ Backend will validate transfer - only allows if emails match');
+    console.warn('⚠️ Transfer between different user accounts will be BLOCKED');
+    
     if (email) {
       console.log('📧 Setting email before restore:', email);
       try {
         await Purchases.setEmail(email);
-        console.log('✅ Email set successfully');
+        console.log('✅ Email set successfully - needed for backend validation');
       } catch (emailError) {
         console.warn('⚠️ Could not set email before restore:', emailError);
       }

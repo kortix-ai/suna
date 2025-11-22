@@ -1003,6 +1003,26 @@ class WebhookService:
             await subscription_service.handle_subscription_change(subscription, previous_attributes)
     
     async def _handle_subscription_updated(self, event, subscription, client):
+        account_id = subscription.metadata.get('account_id')
+        if not account_id:
+            customer_result = await client.schema('basejump').from_('billing_customers')\
+                .select('account_id')\
+                .eq('id', subscription['customer'])\
+                .execute()
+            if customer_result.data and customer_result.data[0].get('account_id'):
+                account_id = customer_result.data[0]['account_id']
+
+        if account_id:
+            try:
+                billing_anchor = datetime.fromtimestamp(subscription['billing_cycle_anchor'], tz=timezone.utc)
+                await client.from_('credit_accounts').update({
+                    'stripe_subscription_status': subscription.status,
+                    'billing_cycle_anchor': billing_anchor.isoformat()
+                }).eq('account_id', account_id).execute()
+                logger.info(f"[WEBHOOK] Synced status='{subscription.status}' & anchor='{billing_anchor}' for {account_id}")
+            except Exception as e:
+                logger.error(f"[WEBHOOK] Error syncing subscription status: {e}")
+
         previous_attributes = event.data.get('previous_attributes', {})
         prev_status = previous_attributes.get('status')
         prev_default_payment = previous_attributes.get('default_payment_method')
