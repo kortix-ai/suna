@@ -140,11 +140,10 @@ function BillingPeriodToggle({
   setBillingPeriod: (period: 'monthly' | 'yearly' | 'yearly_commitment') => void;
 }) {
   const t = useTranslations('billing');
-  const isYearly = billingPeriod === 'yearly_commitment' || billingPeriod === 'yearly';
 
   return (
-    <div className="flex items-center justify-center w-full">
-      <div className="flex gap-2 items-center">
+    <div className="flex flex-col items-center justify-center w-full gap-4">
+      <div className="flex gap-2 items-center flex-wrap justify-center">
         <Button
           variant={billingPeriod === 'monthly' ? 'default' : 'outline'}
           onClick={() => setBillingPeriod('monthly')}
@@ -156,23 +155,27 @@ function BillingPeriodToggle({
           {t('monthly')}
         </Button>
         <Button
-          variant={billingPeriod === 'yearly_commitment' ? 'default' : 'outline'}
-          onClick={() => setBillingPeriod('yearly_commitment')}
+          variant={billingPeriod === 'yearly' ? 'default' : 'outline'}
+          onClick={() => setBillingPeriod('yearly')}
           className={cn(
             "flex items-center gap-1.5 border-[1.5px]",
-            billingPeriod === 'yearly_commitment' ? 'border-primary' : 'border-border'
+            billingPeriod === 'yearly' ? 'border-primary' : 'border-border'
           )}
         >
           {t('yearly')}
           <span className={cn(
             "px-1.5 py-0.5 rounded-full text-xs font-medium",
-            isYearly
+            billingPeriod === 'yearly'
               ? "bg-background/90 text-primary"
               : "bg-muted/80 text-primary dark:bg-muted"
           )}>
-            {t('discount')}
+            15% OFF
           </span>
         </Button>
+      </div>
+      <div className="text-xs text-muted-foreground text-center max-w-2xl">
+        {billingPeriod === 'monthly' && 'Pay monthly, get credits monthly. Cancel anytime.'}
+        {billingPeriod === 'yearly' && 'Pay upfront for the year, get credits monthly. 15% discount. Cancel anytime, effective at period end.'}
       </div>
     </div>
   );
@@ -205,14 +208,15 @@ function PricingTier({
     }
 
     if (billingPeriod === 'yearly_commitment') {
-      // Calculate the yearly commitment price (15% off regular monthly)
       const regularPrice = parseFloat(tier.price.slice(1));
       const discountedPrice = Math.round(regularPrice * 0.85);
       console.log(`[${tier.name}] Yearly Commitment: $${regularPrice} -> $${discountedPrice}`);
       return `$${discountedPrice}`;
     } else if (billingPeriod === 'yearly' && tier.yearlyPrice) {
-      console.log(`[${tier.name}] Yearly: ${tier.yearlyPrice}`);
-      return tier.yearlyPrice;
+      const yearlyTotal = tier.yearlyPrice;
+      const monthlyEquivalent = Math.round(parseFloat(yearlyTotal.slice(1)) / 12);
+      console.log(`[${tier.name}] Yearly: ${yearlyTotal} (${monthlyEquivalent}/mo)`);
+      return `$${monthlyEquivalent}`;
     }
 
     console.log(`[${tier.name}] Monthly: ${tier.price}`);
@@ -598,21 +602,24 @@ function PricingTier({
               </div>
               <div className="flex items-center gap-1 mt-1">
                 <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">12mo commit</Badge>
               </div>
             </div>
           ) : billingPeriod === 'yearly' && tier.yearlyPrice && displayPrice !== '$0' ? (
             <div className="flex flex-col">
               <div className="flex items-baseline gap-2">
-                <PriceDisplay price={`$${Math.round(parseFloat(tier.yearlyPrice.slice(1)) / 12)}`} isCompact={insideDialog} />
+                <PriceDisplay price={displayPrice} isCompact={insideDialog} />
                 {tier.discountPercentage && (
                   <span className="text-xs line-through text-muted-foreground">
-                    ${Math.round(parseFloat(tier.originalYearlyPrice?.slice(1) || '0') / 12)}
+                    ${tier.price.slice(1)}
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex flex-col gap-0.5 mt-1">
                 <span className="text-xs text-muted-foreground">{t('perMonth')}</span>
-                <span className="text-xs text-muted-foreground">{t('billedYearly')}</span>
+                <span className="text-xs font-medium text-primary">
+                  {tier.yearlyPrice} billed annually
+                </span>
               </div>
             </div>
           ) : (

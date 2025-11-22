@@ -276,6 +276,10 @@ def get_price_type(price_id: str) -> str:
     
     return 'monthly'
 
+def get_plan_type(price_id: str) -> str:
+    price_type = get_price_type(price_id)
+    return price_type
+
 def get_thread_limit(tier_name: str) -> int:
     tier = TIERS.get(tier_name)
     return tier.thread_limit if tier else TIERS['free'].thread_limit
