@@ -103,16 +103,6 @@ class RevenueCatService:
             logger.error(f"[REVENUECAT] Skipping INITIAL_PURCHASE for invalid product: {product_id}")
             return
         
-        logger.info(
-            f"[REVENUECAT INITIAL_PURCHASE] ========================================\n"
-            f"[REVENUECAT INITIAL_PURCHASE] Handling initial purchase\n"
-            f"[REVENUECAT INITIAL_PURCHASE] User: {app_user_id}\n"
-            f"[REVENUECAT INITIAL_PURCHASE] Product: {product_id}\n"
-            f"[REVENUECAT INITIAL_PURCHASE] Price: ${price}\n"
-            f"[REVENUECAT INITIAL_PURCHASE] Full event data: {event}\n"
-            f"[REVENUECAT INITIAL_PURCHASE] ========================================"
-        )
-        
         try:
             await self._apply_subscription_change(
                 app_user_id=app_user_id,
@@ -182,15 +172,7 @@ class RevenueCatService:
         app_user_id = event.get('app_user_id')
         new_product_id = event.get('new_product_id')
         old_product_id = event.get('product_id')
-        
-        logger.info(
-            f"[REVENUECAT PRODUCT_CHANGE] Event details:\n"
-            f"  - app_user_id: {app_user_id}\n"
-            f"  - old_product_id: {old_product_id}\n"
-            f"  - new_product_id: {new_product_id}\n"
-            f"  - Full event: {event}"
-        )
-        
+
         if not new_product_id:
             logger.warning(
                 f"[REVENUECAT PRODUCT_CHANGE] No new_product_id - this might be a "
@@ -239,16 +221,6 @@ class RevenueCatService:
         transaction_id = event.get('id') or event.get('transaction_id')
         purchased_at_ms = event.get('purchased_at_ms') or event.get('event_timestamp_ms')
         
-        logger.info(
-            f"[REVENUECAT ONE_TIME] ========================================\n"
-            f"[REVENUECAT ONE_TIME] Handling one-time purchase\n"
-            f"[REVENUECAT ONE_TIME] User: {app_user_id}\n"
-            f"[REVENUECAT ONE_TIME] Product: {product_id}\n"
-            f"[REVENUECAT ONE_TIME] Price: ${price}\n"
-            f"[REVENUECAT ONE_TIME] Transaction ID: {transaction_id}\n"
-            f"[REVENUECAT ONE_TIME] Full event: {event}\n"
-            f"[REVENUECAT ONE_TIME] ========================================"
-        )
         
         if not transaction_id:
             logger.error(f"[REVENUECAT ONE_TIME] No transaction ID found, using fallback")
@@ -290,29 +262,12 @@ class RevenueCatService:
             if not user_id.startswith('$RCAnonymousID:')
         ]
         
-        logger.info(
-            f"[REVENUECAT TRANSFER] Parsed fields:\n"
-            f"  - transferred_to: {transferred_to}\n"
-            f"  - new_app_user_id: {new_app_user_id}\n"
-            f"  - transferred_from (raw): {transferred_from}\n"
-            f"  - transferred_from_valid (excluding anonymous IDs): {transferred_from_valid}\n"
-            f"  - product_id: {product_id}\n"
-            f"  - price: {price}"
-        )
         
         if not new_app_user_id:
             logger.error(f"[REVENUECAT TRANSFER] Missing new_app_user_id (transferred_to array is empty), skipping")
             return
         
         if new_app_user_id.startswith('$RCAnonymousID:'):
-            logger.info(
-                f"[REVENUECAT TRANSFER] Transfer destination is anonymous ID: {new_app_user_id}\n"
-                f"This typically means:\n"
-                f"  - User logged out or reinstalled app\n"
-                f"  - RevenueCat is tracking the subscription but user hasn't logged in yet\n"
-                f"  - We'll process this subscription when they log in and transfer FROM anonymous TO real user ID\n"
-                f"Skipping for now - no database account to update."
-            )
             return
             
         if not product_id:
@@ -345,14 +300,6 @@ class RevenueCatService:
             if not product_id:
                 logger.error(f"[REVENUECAT TRANSFER] Cannot determine product_id from either account after retries, skipping")
                 return
-        
-        logger.info(
-            f"[REVENUECAT TRANSFER] ========================================\n"
-            f"[REVENUECAT TRANSFER] Subscription transferred TO: {new_app_user_id}\n"
-            f"[REVENUECAT TRANSFER] FROM: {transferred_from}\n"
-            f"[REVENUECAT TRANSFER] Product: {product_id}\n"
-            f"[REVENUECAT TRANSFER] ========================================"
-        )
         
         db = DBConnection()
         client = await db.client
@@ -410,45 +357,21 @@ class RevenueCatService:
         event_type: str,
         webhook_data: Dict
     ) -> None:
-        logger.info(
-            f"[REVENUECAT] ========================================\n"
-            f"[REVENUECAT] _apply_subscription_change START\n"
-            f"[REVENUECAT] User: {app_user_id}\n"
-            f"[REVENUECAT] Product: {product_id}\n"
-            f"[REVENUECAT] Event Type: {event_type}\n"
-            f"[REVENUECAT] ========================================"
-        )
-        
+
         tier_name, tier_info = self._get_tier_info(product_id)
         if not tier_info:
             logger.error(f"[REVENUECAT] ❌ Unknown tier for product: {product_id}, ABORTING")
             return
         
-        logger.info(
-            f"[REVENUECAT] Tier mapping successful:\n"
-            f"  - Tier Name: {tier_name}\n"
-            f"  - Display Name: {tier_info.display_name}\n"
-            f"  - Credits: {tier_info.monthly_credits}"
-        )
-        
         period_type = self._get_period_type(product_id)
         credits_amount = Decimal(str(tier_info.monthly_credits))
         
         if period_type == 'yearly':
-            logger.info(f"[REVENUECAT] Yearly plan detected - granting 12x monthly credits")
             credits_amount *= 12
         
         event = webhook_data.get('event', {})
         subscription_id = event.get('original_transaction_id') or event.get('id', '')
         revenuecat_event_id = event.get('id')
-        
-        logger.info(
-            f"[REVENUECAT] Extracted data:\n"
-            f"  - Period Type: {period_type}\n"
-            f"  - Credits: ${credits_amount}\n"
-            f"  - Subscription ID: {subscription_id}\n"
-            f"  - Event ID: {revenuecat_event_id}"
-        )
         
         db = DBConnection()
         client = await db.client

@@ -281,13 +281,24 @@ class WebhookService:
                     
                     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                    
+                    from core.billing.config import get_plan_type
+                    from dateutil.relativedelta import relativedelta
+                    plan_type = get_plan_type(price_id)
+                    
+                    if plan_type == 'yearly':
+                        next_grant_date = billing_anchor + relativedelta(months=1)
+                        logger.info(f"[WEBHOOK TRIAL CONVERSION] Yearly plan detected - setting next_credit_grant to 1 month from now: {next_grant_date}")
+                    
                     expires_at = next_grant_date
                     
                     await client.from_('credit_accounts').update({
                         'trial_status': 'converted',
                         'converted_to_paid_at': datetime.now(timezone.utc).isoformat(),
                         'tier': tier_name,
+                        'plan_type': plan_type,
                         'stripe_subscription_id': subscription['id'],
+                        'stripe_subscription_status': subscription.get('status', 'active'),
                         'billing_cycle_anchor': billing_anchor.isoformat(),
                         'next_credit_grant': next_grant_date.isoformat()
                     }).eq('account_id', account_id).execute()
@@ -440,6 +451,14 @@ class WebhookService:
                     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                     
+                    from core.billing.config import get_plan_type
+                    from dateutil.relativedelta import relativedelta
+                    plan_type = get_plan_type(price_id)
+                    
+                    if plan_type == 'yearly':
+                        next_grant_date = billing_anchor + relativedelta(months=1)
+                        logger.info(f"[WEBHOOK DEFAULT] Yearly plan detected - setting next_credit_grant to 1 month from now: {next_grant_date}")
+                    
                     from decimal import Decimal
                     await credit_manager.add_credits(
                         account_id=account_id,
@@ -453,7 +472,9 @@ class WebhookService:
                     
                     update_data = {
                         'tier': tier_info.name,
+                        'plan_type': plan_type,
                         'stripe_subscription_id': subscription['id'],
+                        'stripe_subscription_status': subscription.get('status', 'active'),
                         'billing_cycle_anchor': billing_anchor.isoformat(),
                         'next_credit_grant': next_grant_date.isoformat(),
                         'last_grant_date': billing_anchor.isoformat()
@@ -653,13 +674,17 @@ class WebhookService:
                             
                             if subscription.status == 'incomplete':
                                 logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to {tier_info.name} (payment pending)")
+                                from core.billing.config import get_plan_type
+                                plan_type = get_plan_type(price_id)
+                                
                                 await client.from_('credit_accounts').update({
                                     'tier': tier_info.name,
+                                    'plan_type': plan_type,
                                     'stripe_subscription_id': subscription['id'],
                                     'billing_cycle_anchor': billing_anchor.isoformat(),
                                     'next_credit_grant': next_grant_date.isoformat()
                                 }).eq('account_id', account_id).execute()
-                                logger.info(f"[WEBHOOK] Updated tier to {tier_info.name}, waiting for payment to grant credits")
+                                logger.info(f"[WEBHOOK] Updated tier to {tier_info.name}, plan_type to {plan_type}, waiting for payment to grant credits")
                                 
                             elif subscription.status == 'active':
                                 logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to paid")
@@ -675,8 +700,12 @@ class WebhookService:
                                 
                                 logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from {current_tier} tier")
                                 
+                                from core.billing.config import get_plan_type
+                                plan_type = get_plan_type(price_id)
+                                
                                 await client.from_('credit_accounts').update({
                                     'tier': tier_info.name,
+                                    'plan_type': plan_type,
                                     'stripe_subscription_id': subscription['id'],
                                     'billing_cycle_anchor': billing_anchor.isoformat(),
                                     'next_credit_grant': next_grant_date.isoformat(),
@@ -1190,7 +1219,8 @@ class WebhookService:
                 'tier': 'none',
                 'expiring_credits': 0.00,
                 'balance': new_balance,
-                'stripe_subscription_id': None
+                'stripe_subscription_id': None,
+                'stripe_subscription_status': 'canceled'
             }).eq('account_id', account_id).execute()
             
             if expiring_credits > 0:

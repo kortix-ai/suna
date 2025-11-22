@@ -768,13 +768,18 @@ class SubscriptionService:
             
             new_tier_info = get_tier_by_price_id(price_id)
             if new_tier_info:
+                from core.billing.config import get_plan_type
+                plan_type = get_plan_type(price_id)
+                
                 await client.from_('credit_accounts').update({
                     'tier': new_tier_info.name,
+                    'plan_type': plan_type,
                     'stripe_subscription_id': subscription['id'],
+                    'stripe_subscription_status': subscription.get('status', 'active'),
                     'billing_cycle_anchor': billing_anchor.isoformat(),
                     'next_credit_grant': datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc).isoformat()
                 }).eq('account_id', account_id).execute()
-                logger.info(f"[RENEWAL BLOCK] Updated subscription metadata only (no credits granted)")
+                logger.info(f"[RENEWAL BLOCK] Updated subscription metadata only (no credits granted), plan_type: {plan_type}, status: {subscription.get('status')}")
             await Cache.invalidate(f"subscription_tier:{account_id}")
             return
         
@@ -1161,11 +1166,15 @@ class SubscriptionService:
             await Cache.invalidate(f"subscription_tier:{account_id}")
             return
         
+        from core.billing.config import get_plan_type
+        plan_type = get_plan_type(price_id)
+        
         billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
         next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
         
         await client.from_('credit_accounts').update({
             'tier': new_tier_info.name,
+            'plan_type': plan_type,
             'stripe_subscription_id': subscription['id'],
             'billing_cycle_anchor': billing_anchor.isoformat(),
             'next_credit_grant': next_grant_date.isoformat()
