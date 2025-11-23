@@ -1,6 +1,5 @@
 from typing import Dict, Type, Any, List, Optional, Callable
 from core.agentpress.tool import Tool, SchemaType
-from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.utils.logger import logger
 import json
 
@@ -171,6 +170,8 @@ class ToolRegistry:
         
         # If this is a builder tool, append the comprehensive agent builder prompt
         if tool_name in BUILDER_TOOLS:
+            # Lazy import to avoid circular dependency
+            from core.prompts.agent_builder_prompt import get_agent_builder_prompt
             builder_prompt = get_agent_builder_prompt()
             
             if instructions:
