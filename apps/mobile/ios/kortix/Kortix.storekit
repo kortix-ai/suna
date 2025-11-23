@@ -116,7 +116,7 @@
     "_developerTeamID" : "T8G9J33433",
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_lastSynchronizedDate" : 785354977.88890803,
+    "_lastSynchronizedDate" : 785603492.40048504,
     "_locale" : "en_US",
     "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "USA",
@@ -168,6 +168,34 @@
           "codeOffers" : [
 
           ],
+          "displayPrice" : "204.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6755636621",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Access to premium AI models, more limits",
+              "displayName" : "Kortix Plus Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "kortix_plus_yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Kortix Plus Yearly",
+          "subscriptionGroupID" : "21835808",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
           "displayPrice" : "50.0",
           "familyShareable" : false,
           "groupNumber" : 2,
@@ -183,6 +211,34 @@
           "productID" : "kortix_pro_monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Kortix Pro Monthly",
+          "subscriptionGroupID" : "21835808",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "509.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6755639188",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Access to premium AI models, more limits",
+              "displayName" : "Kortix Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "kortix_pro_yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Kortix Pro Yearly",
           "subscriptionGroupID" : "21835808",
           "type" : "RecurringSubscription",
           "winbackOffers" : [

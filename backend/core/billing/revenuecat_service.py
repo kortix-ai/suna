@@ -248,7 +248,7 @@ class RevenueCatService:
         event = webhook_data.get('event', {})
         
         logger.warning(
-            f"[REVENUECAT TRANSFER] 🚨 TRANSFER EVENT DETECTED - Validating for security"
+            f"[REVENUECAT TRANSFER] 🚨 TRANSFER EVENT DETECTED - ALL AUTO-TRANSFERS DISABLED"
         )
         logger.info(
             f"[REVENUECAT TRANSFER] Full webhook data: {webhook_data}"
@@ -266,22 +266,24 @@ class RevenueCatService:
             if not user_id.startswith('$RCAnonymousID:')
         ]
         
-        
         if not new_app_user_id:
             logger.error(f"[REVENUECAT TRANSFER] Missing new_app_user_id (transferred_to array is empty), skipping")
             return
         
         if new_app_user_id.startswith('$RCAnonymousID:'):
-            logger.info(f"[REVENUECAT TRANSFER] Transfer to anonymous user, allowing")
+            logger.info(f"[REVENUECAT TRANSFER] Transfer to anonymous user, skipping")
             return
         
         db = DBConnection()
         client = await db.client
         
+        logger.warning(
+            f"[REVENUECAT TRANSFER] Transfer detected: {transferred_from} → {new_app_user_id}"
+        )
+        
         if transferred_from_valid:
             logger.warning(
-                f"[REVENUECAT TRANSFER] 🚨 SECURITY CHECK: Subscription being transferred "
-                f"from legitimate account(s): {transferred_from_valid} → {new_app_user_id}"
+                f"[REVENUECAT TRANSFER] 🔒 Real account transfer - validating emails"
             )
             
             new_account = await self._get_credit_account(client, new_app_user_id)
@@ -291,111 +293,97 @@ class RevenueCatService:
             for old_user_id in transferred_from_valid:
                 old_account = await self._get_credit_account(client, old_user_id)
                 old_email = old_account.get('email') if old_account else None
-                old_tier = old_account.get('tier') if old_account else None
                 
                 logger.info(
-                    f"[REVENUECAT TRANSFER] Checking transfer: "
-                    f"from={old_user_id} (email={old_email}, tier={old_tier}) → "
-                    f"to={new_app_user_id} (email={new_email})"
+                    f"[REVENUECAT TRANSFER] Checking: "
+                    f"from={old_user_id} (email={old_email}) → to={new_app_user_id} (email={new_email})"
                 )
                 
                 if old_email and new_email and old_email.lower() == new_email.lower():
                     is_same_user = True
-                    logger.info(
-                        f"[REVENUECAT TRANSFER] ✅ SAME USER DETECTED (emails match: {old_email})"
-                    )
+                    logger.info(f"[REVENUECAT TRANSFER] ✅ SAME USER - emails match: {old_email}")
                     break
             
-            if is_same_user:
-                logger.info(
-                    f"[REVENUECAT TRANSFER] ✅ ALLOWING TRANSFER - Same user restoring subscription\n"
-                    f"This is legitimate: user logged back in or got new device"
+            if not is_same_user:
+                logger.error(
+                    f"[REVENUECAT TRANSFER] ⛔ BLOCKED - Different users detected\n"
+                    f"From: {transferred_from_valid} → To: {new_app_user_id}\n"
+                    f"This is likely subscription sharing abuse"
                 )
                 
                 await client.from_('audit_logs').insert({
-                    'event_type': 'revenuecat_transfer_allowed_same_user',
+                    'event_type': 'revenuecat_transfer_blocked_different_users',
                     'account_id': new_app_user_id,
                     'metadata': {
                         'transferred_from': transferred_from_valid,
                         'transferred_to': new_app_user_id,
                         'product_id': product_id,
-                        'email': new_email,
-                        'reason': 'same_user_email_match',
-                        'webhook_data': webhook_data
-                    },
-                    'created_at': datetime.now(timezone.utc).isoformat()
-                }).execute()
-            else:
-                old_emails_list = [old_account.get('email') for old_account in [await self._get_credit_account(client, uid) for uid in transferred_from_valid] if old_account]
-                
-                await client.from_('audit_logs').insert({
-                    'event_type': 'revenuecat_transfer_blocked',
-                    'account_id': new_app_user_id,
-                    'metadata': {
-                        'transferred_from': transferred_from_valid,
-                        'transferred_to': new_app_user_id,
-                        'product_id': product_id,
-                        'old_emails': old_emails_list,
-                        'new_email': new_email,
-                        'reason': 'different_user_emails',
+                        'price': price,
+                        'reason': 'different_user_emails_or_missing_accounts',
                         'webhook_data': webhook_data,
-                        'note': 'If this is a legitimate email change by same user, admin can manually transfer'
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'security_note': 'Blocked to prevent subscription sharing between different users'
                     },
                     'created_at': datetime.now(timezone.utc).isoformat()
                 }).execute()
                 
-                logger.warning(f"[REVENUECAT TRANSFER] Audit log created for blocked transfer")
                 return
-        else:
-            logger.info(f"[REVENUECAT TRANSFER] Transfer from anonymous account only - likely legitimate first login")
             
+            logger.info(f"[REVENUECAT TRANSFER] ✅ ALLOWING - Same user restoring subscription")
+            
+            await client.from_('audit_logs').insert({
+                'event_type': 'revenuecat_transfer_allowed_same_user',
+                'account_id': new_app_user_id,
+                'metadata': {
+                    'transferred_from': transferred_from_valid,
+                    'transferred_to': new_app_user_id,
+                    'product_id': product_id,
+                    'email': new_email,
+                    'reason': 'same_user_email_match',
+                    'webhook_data': webhook_data
+                },
+                'created_at': datetime.now(timezone.utc).isoformat()
+            }).execute()
+        else:
+            logger.warning(
+                f"[REVENUECAT TRANSFER] ⛔ BLOCKED - Anonymous transfer\n"
+                f"User should purchase directly, not restore anonymous subscriptions"
+            )
+            
+            await client.from_('audit_logs').insert({
+                'event_type': 'revenuecat_transfer_blocked_anonymous',
+                'account_id': new_app_user_id,
+                'metadata': {
+                    'transferred_from': transferred_from,
+                    'transferred_to': new_app_user_id,
+                    'product_id': product_id,
+                    'reason': 'anonymous_transfer_blocked',
+                    'webhook_data': webhook_data,
+                    'security_note': 'Blocked anonymous transfers to prevent device sharing abuse'
+                },
+                'created_at': datetime.now(timezone.utc).isoformat()
+            }).execute()
+            
+            return
+        
         if not product_id:
-            logger.warning(f"[REVENUECAT TRANSFER] Missing product_id, will try to infer from accounts")
-            db = DBConnection()
-            client = await db.client
+            logger.warning(f"[REVENUECAT TRANSFER] Missing product_id, inferring from accounts")
             
             if transferred_from_valid:
                 old_app_user_id = transferred_from_valid[0]
                 old_account = await self._get_credit_account(client, old_app_user_id)
                 if old_account and old_account.get('revenuecat_product_id'):
                     product_id = old_account['revenuecat_product_id']
-                    logger.info(f"[REVENUECAT TRANSFER] Inferred product_id from old account: {product_id}")
+                    logger.info(f"[REVENUECAT TRANSFER] Inferred product: {product_id}")
             
             if not product_id:
-                logger.info(f"[REVENUECAT TRANSFER] Trying new account (may need retry for sync to complete)")
-                
-                import asyncio
-                for attempt in range(3):
-                    new_account = await self._get_credit_account(client, new_app_user_id)
-                    if new_account and new_account.get('revenuecat_product_id'):
-                        product_id = new_account['revenuecat_product_id']
-                        logger.info(f"[REVENUECAT TRANSFER] Inferred product_id from new account (attempt {attempt + 1}): {product_id}")
-                        break
-                    
-                    if attempt < 2:
-                        logger.info(f"[REVENUECAT TRANSFER] No product_id yet, waiting for sync... (attempt {attempt + 1}/3)")
-                        await asyncio.sleep(0.5)
-            
-            if not product_id:
-                logger.error(f"[REVENUECAT TRANSFER] Cannot determine product_id from either account after retries, skipping")
+                logger.error(f"[REVENUECAT TRANSFER] Cannot determine product_id, aborting")
                 return
         
-        db = DBConnection()
-        client = await db.client
-        
-        logger.info(
-            f"[REVENUECAT TRANSFER] ✅ ALLOWING TRANSFER (from anonymous account only)\n"
-            f"This is likely a legitimate first-time purchase link"
-        )
-        
-        logger.info(f"[REVENUECAT TRANSFER] Applying subscription to new account: {new_app_user_id}")
-        
         if price == 0 or price is None:
-            logger.info(f"[REVENUECAT TRANSFER] Price is 0/None, inferring from product_id")
             tier_name, tier_info = self._get_tier_info(product_id)
             if tier_info:
                 price = float(tier_info.monthly_credits)
-                logger.info(f"[REVENUECAT TRANSFER] Inferred price: ${price}")
         
         await self._apply_subscription_change(
             app_user_id=new_app_user_id,
@@ -405,10 +393,7 @@ class RevenueCatService:
             webhook_data=webhook_data
         )
         
-        logger.info(
-            f"[REVENUECAT TRANSFER] ✅ Transfer complete: "
-            f"{transferred_from_valid} → {new_app_user_id}"
-        )
+        logger.info(f"[REVENUECAT TRANSFER] ✅ Transfer complete: {transferred_from_valid} → {new_app_user_id}")
     
     # ============================================================================
     # BUSINESS LOGIC - Core subscription operations
@@ -436,14 +421,11 @@ class RevenueCatService:
         billing_cycle_anchor = None
         
         if period_type == 'yearly':
-            # New Yearly Plan: Credits monthly, charged annually
             plan_type = 'yearly'
             billing_cycle_anchor = datetime.now(timezone.utc)
             next_credit_grant = billing_cycle_anchor + relativedelta(months=1)
-            # credits_amount stays as monthly amount (e.g. 50 not 600)
             logger.info(f"[REVENUECAT] Yearly plan detected - setting up monthly refill schedule")
         elif period_type == 'yearly_commitment':
-            # Legacy: All credits upfront
             plan_type = 'yearly_commitment'
             credits_amount *= 12
         
@@ -1133,11 +1115,11 @@ class RevenueCatService:
     
     async def sync_customer_info(self, account_id: str, customer_info: Dict) -> Dict:
         try:
-            logger.info(f"[REVENUECAT] Syncing customer info for {account_id}")
+            logger.info(f"[REVENUECAT SYNC] Syncing customer info for {account_id}")
             
             active_subscriptions = customer_info.get('active_subscriptions', [])
             if not active_subscriptions:
-                logger.info(f"[REVENUECAT] No active subscriptions for {account_id}")
+                logger.info(f"[REVENUECAT SYNC] No active subscriptions for {account_id}")
                 return {'status': 'no_active_subscription'}
             
             product_id = active_subscriptions[0]
@@ -1145,6 +1127,73 @@ class RevenueCatService:
             
             db = DBConnection()
             client = await db.client
+            
+            current_account = await self._get_credit_account(client, account_id)
+            current_email = current_account.get('email') if current_account else None
+            current_provider = current_account.get('provider') if current_account else None
+            current_tier = current_account.get('tier') if current_account else None
+            current_rc_sub_id = current_account.get('revenuecat_subscription_id') if current_account else None
+            
+            logger.info(
+                f"[REVENUECAT SYNC] Current state: email={current_email}, "
+                f"provider={current_provider}, tier={current_tier}, rc_sub_id={current_rc_sub_id}"
+            )
+            
+            if current_provider == 'revenuecat' and current_tier and current_tier != 'none':
+                logger.info(
+                    f"[REVENUECAT SYNC] ✅ Account already has RevenueCat subscription "
+                    f"(tier: {current_tier}), allowing sync update"
+                )
+            elif current_provider == 'stripe' and current_tier and current_tier != 'none' and current_tier != 'free':
+                logger.error(
+                    f"[REVENUECAT SYNC] ⛔ BLOCKED - Account has active Stripe subscription "
+                    f"(tier: {current_tier}). Cannot sync RevenueCat subscription."
+                )
+                
+                await client.from_('audit_logs').insert({
+                    'event_type': 'revenuecat_sync_blocked_stripe_active',
+                    'account_id': account_id,
+                    'metadata': {
+                        'current_provider': current_provider,
+                        'current_tier': current_tier,
+                        'attempted_product': product_id,
+                        'attempted_tier': tier_name,
+                        'reason': 'stripe_subscription_active',
+                        'security_note': 'User has active Stripe subscription, blocking RevenueCat sync to prevent conflicts'
+                    },
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                }).execute()
+                
+                raise HTTPException(
+                    status_code=409,
+                    detail="You already have an active Stripe subscription. Please cancel it before using RevenueCat."
+                )
+            elif current_provider != 'revenuecat' or not current_tier or current_tier in ['none', 'free']:
+                logger.error(
+                    f"[REVENUECAT SYNC] ⛔ BLOCKED - Account has no existing RevenueCat subscription. "
+                    f"New subscriptions must go through webhooks for security validation."
+                )
+                
+                await client.from_('audit_logs').insert({
+                    'event_type': 'revenuecat_sync_blocked_no_existing_subscription',
+                    'account_id': account_id,
+                    'metadata': {
+                        'current_provider': current_provider,
+                        'current_tier': current_tier,
+                        'attempted_product': product_id,
+                        'attempted_tier': tier_name,
+                        'reason': 'no_existing_revenuecat_subscription',
+                        'security_note': 'Sync endpoint only allows updates to existing subscriptions. New subscriptions/transfers must go through webhooks for email validation.'
+                    },
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                }).execute()
+                
+                raise HTTPException(
+                    status_code=403,
+                    detail="Sync only updates existing subscriptions. New subscriptions are processed via webhooks. Please wait a few seconds and refresh."
+                )
+            
+            logger.info(f"[REVENUECAT SYNC] ✅ Syncing tier {tier_name} (product: {product_id})")
             
             await client.from_('credit_accounts').update({
                 'tier': tier_name,
@@ -1154,11 +1203,13 @@ class RevenueCatService:
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }).eq('account_id', account_id).execute()
             
-            logger.info(f"[REVENUECAT] Synced tier {tier_name} (product: {product_id}) for {account_id}")
+            logger.info(f"[REVENUECAT SYNC] Synced tier {tier_name} (product: {product_id}) for {account_id}")
             return {'status': 'synced', 'tier': tier_name, 'product_id': product_id}
             
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"[REVENUECAT] Error syncing customer info: {str(e)}")
+            logger.error(f"[REVENUECAT SYNC] Error syncing customer info: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator, Linking } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, Linking, Alert, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Check, X, ShoppingCart } from 'lucide-react-native';
@@ -18,7 +18,8 @@ import { useColorScheme } from 'nativewind';
 import { getOfferings, purchasePackage, type RevenueCatProduct } from '@/lib/billing/revenuecat';
 import type { PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
 import { useQueryClient } from '@tanstack/react-query';
-import { billingKeys, invalidateCreditsAfterPurchase, useSubscription } from '@/lib/billing';
+import { billingKeys, invalidateCreditsAfterPurchase, useSubscription, type BillingPeriod } from '@/lib/billing';
+import { BillingPeriodToggle } from './BillingPeriodToggle';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -50,6 +51,7 @@ export function RevenueCatPricingSection({
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly');
 
   const closeButtonScale = useSharedValue(1);
   const purchaseButtonScale = useSharedValue(1);
@@ -70,6 +72,22 @@ export function RevenueCatPricingSection({
   useEffect(() => {
     loadOfferings();
   }, []);
+
+  useEffect(() => {
+    if (offerings && offerings.availablePackages.length > 0) {
+      const filteredPackages = offerings.availablePackages.filter(pkg => {
+        if (billingPeriod === 'monthly') {
+          return isMonthlyPackage(pkg);
+        } else {
+          return isYearlyPackage(pkg);
+        }
+      });
+      
+      if (filteredPackages.length > 0) {
+        setSelectedPackage(filteredPackages[0]);
+      }
+    }
+  }, [billingPeriod, offerings]);
 
   const loadOfferings = async () => {
     try {
@@ -100,6 +118,38 @@ export function RevenueCatPricingSection({
       setIsPurchasing(true);
       setError(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      const Purchases = await import('react-native-purchases');
+      const customerInfo = await Purchases.default.getCustomerInfo();
+      
+      const hasActiveSubscription = 
+        Object.keys(customerInfo.entitlements.active).length > 0 ||
+        customerInfo.activeSubscriptions.length > 0;
+
+      if (hasActiveSubscription) {
+        const activeProductIds = customerInfo.activeSubscriptions;
+        const platformName = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
+        
+        console.log('🚫 Blocking purchase - device already has active subscription:', activeProductIds);
+        
+        const errorMessage = `This ${platformName} already has an active subscription. Please use "Restore Purchases" instead.`;
+        
+        Alert.alert(
+          'Subscription Already Exists',
+          `This ${platformName} is already linked to an active subscription.`,
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel'
+            }
+          ]
+        );
+        
+        setError(errorMessage);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setIsPurchasing(false);
+        return;
+      }
 
       await purchasePackage(selectedPackage, user?.email);
 
@@ -175,9 +225,14 @@ export function RevenueCatPricingSection({
     return identifier.includes('monthly');
   };
 
+  const isYearlyPackage = (pkg: PurchasesPackage): boolean => {
+    const identifier = pkg.identifier.toLowerCase();
+    return identifier.includes('yearly') || identifier.includes('annual') || identifier.includes('commitment');
+  };
+
   const isPopularPackage = (pkg: PurchasesPackage): boolean => {
     const identifier = pkg.identifier.toLowerCase();
-    return identifier.includes('pro') || identifier.includes('plus');
+    return identifier.includes('plus');
   };
 
   const isCurrentPlan = (pkg: PurchasesPackage): boolean => {
@@ -191,6 +246,22 @@ export function RevenueCatPricingSection({
     
     return currentProductId.toLowerCase() === packageProductId.toLowerCase() ||
            currentProductId.toLowerCase() === packageIdentifier.toLowerCase();
+  };
+
+  const getPlanName = (pkg: PurchasesPackage): string => {
+    const identifier = pkg.identifier.toLowerCase();
+    
+    if (identifier.includes('plus')) {
+      return 'Plus';
+    }
+    if (identifier.includes('pro')) {
+      return 'Pro';
+    }
+    if (identifier.includes('ultra')) {
+      return 'Ultra';
+    }
+    
+    return pkg.product.title || pkg.identifier;
   };
 
   if (isLoading) {
@@ -223,7 +294,15 @@ export function RevenueCatPricingSection({
     );
   }
 
-  const packages = offerings.availablePackages.filter(pkg => isMonthlyPackage(pkg));
+  const packages = offerings.availablePackages
+    .filter(pkg => {
+      if (billingPeriod === 'monthly') {
+        return isMonthlyPackage(pkg);
+      } else {
+        return isYearlyPackage(pkg);
+      }
+    })
+    .sort((a, b) => a.product.price - b.product.price);
 
   return (
     <View className="flex-1 bg-background">
@@ -271,6 +350,16 @@ export function RevenueCatPricingSection({
         </AnimatedView>
 
         <AnimatedView 
+          entering={FadeIn.duration(600).delay(150)} 
+          className="px-6 mb-6"
+        >
+          <BillingPeriodToggle 
+            billingPeriod={billingPeriod} 
+            setBillingPeriod={setBillingPeriod} 
+          />
+        </AnimatedView>
+
+        <AnimatedView 
           entering={FadeIn.duration(600).delay(200)} 
           className="px-6 mb-6"
         >
@@ -311,7 +400,7 @@ export function RevenueCatPricingSection({
                   <View className="flex-1">
                     <View className="flex-row items-center gap-2 mb-1">
                       <Text className="text-base font-roobert-semibold text-foreground">
-                        {product.title || pkg.identifier}
+                        {getPlanName(pkg)}
                       </Text>
                       {isCurrent && (
                         <View className="bg-green-500 rounded-full px-2 py-0.5">

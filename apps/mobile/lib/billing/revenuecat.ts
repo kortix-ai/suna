@@ -211,6 +211,25 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
     
+    const currentCustomerInfo = await Purchases.getCustomerInfo();
+    
+    const hasActiveSubscription = 
+      Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
+      currentCustomerInfo.activeSubscriptions.length > 0;
+
+    if (hasActiveSubscription) {
+      const activeProductIds = currentCustomerInfo.activeSubscriptions;
+      console.log('🚫 BLOCKING PURCHASE - Device already has active subscription:', activeProductIds);
+      console.log('🔒 Security: Preventing subscription sharing/transfer abuse');
+      
+      const error: any = new Error(
+        'This device already has an active subscription. Please use "Restore Purchases" to access your existing subscription.'
+      );
+      error.code = 'SUBSCRIPTION_ALREADY_EXISTS';
+      error.userCancelled = false;
+      throw error;
+    }
+    
     if (email) {
       console.log('📧 Ensuring email is set before purchase:', email);
       try {
@@ -328,7 +347,11 @@ async function notifyBackendOfPurchase(customerInfo: CustomerInfo): Promise<void
       }),
     });
 
-    if (!response.ok) {
+    if (response.status === 403) {
+      console.log('ℹ️ Sync rejected - waiting for webhook validation');
+      console.log('📡 New subscriptions are processed via webhooks for security');
+      console.log('⏳ Your subscription will be activated within 30 seconds once validated');
+    } else if (!response.ok) {
       console.warn('⚠️ Backend notification failed:', response.status);
     } else {
       console.log('✅ Backend notified successfully');

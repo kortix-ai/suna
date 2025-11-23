@@ -43,7 +43,7 @@ export function BillingPeriodToggle({
   }));
 
   return (
-    <View className="flex-row items-center bg-muted/20 p-0.5 rounded-full">
+    <View className="flex-row items-center bg-muted/20 p-0.5 rounded-full max-w-[280px] self-center">
       <AnimatedPressable
         onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -56,14 +56,14 @@ export function BillingPeriodToggle({
           monthlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         style={monthlyStyle}
-        className={`flex-1 h-7 px-2 rounded-full items-center justify-center ${
+        className={`flex-1 h-6 px-2 rounded-full items-center justify-center ${
           billingPeriod === 'monthly'
             ? 'bg-foreground'
             : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-xs font-roobert-medium ${
+          className={`text-[11px] font-roobert-medium ${
             billingPeriod === 'monthly'
               ? 'text-background'
               : 'text-muted-foreground'
@@ -85,14 +85,14 @@ export function BillingPeriodToggle({
           yearlyScale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         style={yearlyStyle}
-        className={`flex-1 h-7 px-2 rounded-full flex-row items-center justify-center gap-1 ${
+        className={`flex-1 h-6 px-2 rounded-full flex-row items-center justify-center gap-1 ${
           billingPeriod === 'yearly_commitment'
             ? 'bg-foreground'
             : 'bg-transparent'
         }`}
       >
         <Text
-          className={`text-xs font-roobert-medium ${
+          className={`text-[11px] font-roobert-medium ${
             billingPeriod === 'yearly_commitment'
               ? 'text-background'
               : 'text-muted-foreground'
@@ -107,7 +107,7 @@ export function BillingPeriodToggle({
               : 'bg-primary/10'
           }`}
         >
-          <Text className={`text-[9px] font-roobert-semibold ${
+          <Text className={`text-[8px] font-roobert-semibold ${
             isYearly ? 'text-primary' : 'text-primary'
           }`}>
             {t('billing.save15Percent')}
