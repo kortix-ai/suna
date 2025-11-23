@@ -2,14 +2,15 @@ import * as React from 'react';
 import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { 
+import {
   ArrowLeft,
   CheckCircle2,
   Search,
   AlertCircle
 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
-import { 
+import {
   useComposioTools,
   useUpdateComposioTools,
   type ComposioApp,
@@ -17,10 +18,10 @@ import {
   type ComposioTool
 } from '@/hooks/useComposio';
 import { ToolkitIcon } from './ToolkitIcon';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -43,9 +44,10 @@ export function ComposioToolsContent({
   noPadding = false
 }: ComposioToolsContentProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const { data: toolsData, isLoading, error, refetch } = useComposioTools(profile.profile_id);
   const { mutate: updateTools, isPending: isSaving } = useUpdateComposioTools();
-  
+
   const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set());
 
   const tools = toolsData?.tools || [];
@@ -91,35 +93,37 @@ export function ComposioToolsContent({
   }, [agentId, profile.profile_id, selectedTools, updateTools, app.name, onComplete, t]);
 
   return (
-    <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
+    <View className={noPadding ? "pb-6" : "pb-6"}>
+      {/* Header with back button, title, and description */}
+      <View className="flex-row items-center mb-4">
         {onBack && (
           <Pressable
             onPress={onBack}
-            className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
+            className="flex-row items-center active:opacity-70"
           >
-            <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
+            <ArrowLeft
+              size={20}
+              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+            />
           </Pressable>
         )}
-        
-        <View className="mb-8">
-          <View className="flex-row items-center gap-4 mb-2">
-            <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
-              <ToolkitIcon 
-                slug={app.slug} 
-                name={app.name} 
-                size="sm" 
-              />
-            </View>
-            <View className="flex-1">
-              <Text className="text-2xl font-roobert-bold text-foreground">
-                {app.name}
-              </Text>
-            </View>
-          </View>
-          <Text className="text-base font-roobert text-muted-foreground mt-2">
+        <View className="flex-1 ml-3">
+          <Text
+            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+            className="text-xl font-roobert-semibold"
+          >
+            {app.name}
+          </Text>
+          <Text
+            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+            className="text-sm font-roobert"
+          >
             {profile.profile_name}
           </Text>
         </View>
+      </View>
+
+      <View className={noPadding ? "" : "px-0"}>
 
         <View className="flex-row items-center justify-between mb-6">
           <Text className="text-sm font-roobert-medium text-muted-foreground uppercase tracking-wider">
@@ -191,6 +195,7 @@ export function ComposioToolsContent({
           label={isSaving ? t('integrations.toolsSelector.addingTools') : selectedTools.size === 0 ? t('integrations.toolsSelector.selectTools') : selectedTools.size === 1 ? t('integrations.toolsSelector.addTool', { count: selectedTools.size }) : t('integrations.toolsSelector.addTools', { count: selectedTools.size })}
           rounded="full"
         />
+      </View>
     </View>
   );
 }
@@ -209,45 +214,43 @@ interface ContinueButtonProps {
   rounded?: 'full' | '2xl';
 }
 
-const ContinueButton = React.memo(({ 
-  onPress, 
-  disabled = false, 
-  label, 
+const ContinueButton = React.memo(({
+  onPress,
+  disabled = false,
+  label,
   isLoading = false,
   rounded = 'full'
 }: ContinueButtonProps) => {
   const scale = useSharedValue(1);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  
+
   const handlePressIn = React.useCallback(() => {
     if (!disabled) {
       scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
     }
   }, [scale, disabled]);
-  
+
   const handlePressOut = React.useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   }, [scale]);
-  
+
   return (
-    <AnimatedPressable 
+    <AnimatedPressable
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
       disabled={disabled}
-      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${
-        disabled ? 'bg-muted/20' : 'bg-foreground'
-      }`}
+      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${disabled ? 'bg-muted/20' : 'bg-foreground'
+        }`}
     >
       <View className="flex-row items-center gap-2">
         {isLoading && <ActivityIndicator size="small" color="#fff" />}
-        <Text className={`text-base font-roobert-semibold ${
-          disabled ? 'text-muted-foreground' : 'text-background'
-        }`}>
+        <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
+          }`}>
           {label}
         </Text>
       </View>
@@ -259,31 +262,29 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
   return (
     <Pressable
       onPress={onToggle}
-      className={`flex-row items-start gap-3 p-4 rounded-3xl mb-2 active:opacity-80 ${
-        selected 
-          ? 'bg-primary/10' 
+      className={`flex-row items-start gap-3 p-4 rounded-3xl mb-2 active:opacity-80 ${selected
+          ? 'bg-primary/10'
           : 'bg-muted/5'
-      }`}
+        }`}
     >
-      <View className={`w-6 h-6 rounded-full items-center justify-center mt-0.5 ${
-        selected ? 'bg-primary' : 'bg-transparent border-2 border-muted-foreground/30'
-      }`}>
+      <View className={`w-6 h-6 rounded-full items-center justify-center mt-0.5 ${selected ? 'bg-primary' : 'bg-transparent border-2 border-muted-foreground/30'
+        }`}>
         {selected && (
-          <Icon 
-            as={CheckCircle2} 
-            size={16} 
-            className="text-primary-foreground" 
+          <Icon
+            as={CheckCircle2}
+            size={16}
+            className="text-primary-foreground"
             strokeWidth={2.5}
           />
         )}
       </View>
-      
+
       <View className="flex-1">
         <Text className="font-roobert-semibold text-foreground mb-1">
           {tool.name}
         </Text>
-        <Text 
-          className="text-sm font-roobert text-muted-foreground leading-relaxed" 
+        <Text
+          className="text-sm font-roobert text-muted-foreground leading-relaxed"
           numberOfLines={2}
           ellipsizeMode="tail"
         >
