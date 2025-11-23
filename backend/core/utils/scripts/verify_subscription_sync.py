@@ -14,7 +14,7 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
-from billing.config import get_tier_by_price_id, TIERS
+from core.billing.shared.config import get_tier_by_price_id, TIERS
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 

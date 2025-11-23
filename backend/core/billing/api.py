@@ -11,13 +11,14 @@ from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.ai_models import model_manager
-from .config import (
+from .shared.config import (
     TOKEN_PRICE_MULTIPLIER, 
     get_tier_by_name,
     TIERS,
     CREDITS_PER_DOLLAR
 )
-from .credit_manager import credit_manager
+from .credits.calculator import calculate_token_cost
+from .credits.manager import credit_manager
 from .webhook_service import webhook_service
 from .subscription_service import subscription_service
 from .trial_service import trial_service
@@ -58,30 +59,6 @@ class TokenUsageRequest(BaseModel):
 class CancelSubscriptionRequest(BaseModel):
     feedback: Optional[str] = None
 
-def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str) -> Decimal:
-    try:
-        logger.debug(f"[COST_CALC] Calculating cost for model '{model}' with {prompt_tokens} prompt + {completion_tokens} completion tokens")
-        
-        resolved_model = model_manager.resolve_model_id(model)
-        logger.debug(f"[COST_CALC] Model '{model}' resolved to '{resolved_model}'")
-        
-        model_obj = model_manager.get_model(resolved_model)
-        
-        if model_obj and model_obj.pricing:
-            input_cost = Decimal(prompt_tokens) / Decimal('1000000') * Decimal(str(model_obj.pricing.input_cost_per_million_tokens))
-            output_cost = Decimal(completion_tokens) / Decimal('1000000') * Decimal(str(model_obj.pricing.output_cost_per_million_tokens))
-            total_cost = (input_cost + output_cost) * TOKEN_PRICE_MULTIPLIER
-            
-            logger.debug(f"[COST_CALC] Model '{model}' pricing: input=${model_obj.pricing.input_cost_per_million_tokens}/M, output=${model_obj.pricing.output_cost_per_million_tokens}/M")
-            logger.debug(f"[COST_CALC] Calculated: input=${input_cost:.6f}, output=${output_cost:.6f}, total with {TOKEN_PRICE_MULTIPLIER}x markup=${total_cost:.6f}")
-            
-            return total_cost
-        
-        logger.warning(f"[COST_CALC] No pricing found for model '{model}' (resolved: '{resolved_model}'), using default $0.01")
-        return Decimal('0.01')
-    except Exception as e:
-        logger.error(f"[COST_CALC] Error calculating token cost for model '{model}': {e}")
-        return Decimal('0.01')
 
 async def calculate_credit_breakdown(account_id: str, client) -> Dict:
     current_balance = await credit_service.get_balance(account_id)
@@ -187,7 +164,7 @@ async def check_status(
             "is_trial": is_trial
         }
         
-        from .config import CREDITS_PER_DOLLAR
+        from .shared.config import CREDITS_PER_DOLLAR
         
         return {
             "can_run": can_run,
@@ -221,7 +198,7 @@ async def get_project_limits(account_id: str = Depends(verify_and_get_user_id_fr
             projects_result = await db.client.table('projects').select('project_id').eq('account_id', account_id).execute()
             current_count = len(projects_result.data or [])
             
-            from .config import get_project_limit, get_tier_by_name
+            from .shared.config import get_project_limit, get_tier_by_name
             project_limit = get_project_limit(tier)
             tier_info = get_tier_by_name(tier)
             
@@ -399,7 +376,7 @@ async def deduct_token_usage(
         balance = await credit_manager.get_balance(account_id)
         return {'success': True, 'cost': 0, 'new_balance': balance['total']}
 
-    result = await credit_manager.use_credits(
+    result = await credit_manager.deduct_credits(
         account_id=account_id,
         amount=cost,
         description=f"Usage: {usage.model} ({usage.prompt_tokens}+{usage.completion_tokens} tokens)",
@@ -422,7 +399,7 @@ async def deduct_token_usage(
 async def get_credit_balance(
     account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
 ) -> Dict:
-    from .config import CREDITS_PER_DOLLAR
+    from .shared.config import CREDITS_PER_DOLLAR
     
     if not account_id:
         return {
@@ -551,7 +528,7 @@ async def get_subscription(
             display_plan_name = tier_info.get('display_name', tier_info['name'])
             is_trial = False
         
-        from .config import CREDITS_PER_DOLLAR, get_price_type
+        from .shared.config import CREDITS_PER_DOLLAR, get_price_type
         
         credit_account = subscription_info.get('credit_account', {})
         provider = credit_account.get('provider', 'stripe') if credit_account else 'stripe'
@@ -695,7 +672,7 @@ async def create_checkout_session(
         from core.utils.ensure_suna import ensure_suna_installed
         await ensure_suna_installed(account_id)
             
-        from .config import get_tier_by_name
+        from .shared.config import get_tier_by_name
         from .free_tier_service import free_tier_service
         tier = get_tier_by_name(request.tier_key)
         if not tier:
@@ -1595,7 +1572,7 @@ async def preview_proration(
         current_price = current_item.price
         new_price = await StripeAPIWrapper.retrieve_price(new_price_id)
         
-        from billing.config import get_tier_by_price_id
+        from .shared.config import get_tier_by_price_id
         
         current_tier = get_tier_by_price_id(current_price.id)
         new_tier = get_tier_by_price_id(new_price_id)
@@ -1690,7 +1667,7 @@ async def get_tier_configurations() -> Dict:
     This endpoint is PUBLIC and does not require authentication.
     """
     try:
-        from .config import TIERS
+        from .shared.config import TIERS
         
         tier_configs = []
         for tier_key, tier in TIERS.items():

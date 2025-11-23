@@ -8,7 +8,7 @@ from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.distributed_lock import WebhookLock, RenewalLock, DistributedLock
-from .config import (
+from .shared.config import (
     get_tier_by_price_id, 
     get_tier_by_name,
     TIERS, 
@@ -18,7 +18,7 @@ from .config import (
     is_commitment_price_id,
     get_commitment_duration_months
 )
-from .credit_manager import credit_manager
+from .credits.manager import credit_manager
 from .stripe_circuit_breaker import StripeAPIWrapper
 
 
@@ -282,7 +282,7 @@ class WebhookService:
                     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                     
-                    from core.billing.config import get_plan_type
+                    from core.billing.shared.config import get_plan_type
                     from dateutil.relativedelta import relativedelta
                     plan_type = get_plan_type(price_id)
                     
@@ -451,7 +451,7 @@ class WebhookService:
                     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                     
-                    from core.billing.config import get_plan_type
+                    from core.billing.shared.config import get_plan_type
                     from dateutil.relativedelta import relativedelta
                     plan_type = get_plan_type(price_id)
                     
@@ -674,7 +674,7 @@ class WebhookService:
                             
                             if subscription.status == 'incomplete':
                                 logger.info(f"[WEBHOOK] User {account_id} upgrading from {current_tier} tier to {tier_info.name} (payment pending)")
-                                from core.billing.config import get_plan_type
+                                from core.billing.shared.config import get_plan_type
                                 plan_type = get_plan_type(price_id)
                                 
                                 await client.from_('credit_accounts').update({
@@ -700,7 +700,7 @@ class WebhookService:
                                 
                                 logger.info(f"[WEBHOOK] Granted {tier_info.monthly_credits} credits to {account_id} for upgrade from {current_tier} tier")
                                 
-                                from core.billing.config import get_plan_type
+                                from core.billing.shared.config import get_plan_type
                                 plan_type = get_plan_type(price_id)
                                 
                                 await client.from_('credit_accounts').update({

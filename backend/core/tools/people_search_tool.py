@@ -9,8 +9,8 @@ from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
-from core.billing.credit_manager import CreditManager
-from core.billing.config import TOKEN_PRICE_MULTIPLIER
+from core.billing.credits.manager import CreditManager
+from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
 from core.services.supabase import DBConnection
 
 @tool_metadata(

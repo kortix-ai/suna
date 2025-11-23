@@ -20,7 +20,7 @@ from datetime import datetime, timezone, timedelta
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
-from .config import is_commitment_price_id, get_commitment_duration_months
+from .shared.config import is_commitment_price_id, get_commitment_duration_months
 
 if config.STRIPE_SECRET_KEY:
     stripe.api_key = config.STRIPE_SECRET_KEY

@@ -5,8 +5,8 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
-from .credit_manager import credit_manager
-from .config import get_tier_by_price_id
+from .credits.manager import credit_manager
+from .shared.config import get_tier_by_price_id
 from .stripe_circuit_breaker import StripeAPIWrapper
 
 

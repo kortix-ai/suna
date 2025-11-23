@@ -96,23 +96,6 @@ TIERS: Dict[str, Tier] = {
         scheduled_triggers_limit=10,
         app_triggers_limit=25
     ),
-    'tier_12_100': Tier(
-        name='tier_12_100',
-        price_ids=[
-            config.STRIPE_TIER_12_100_ID,
-            config.STRIPE_TIER_12_100_YEARLY_ID
-        ],
-        monthly_credits=Decimal('100.00'),
-        display_name='Team',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=1000,
-        thread_limit=1000,
-        concurrent_runs=10,
-        custom_workers_limit=10,
-        scheduled_triggers_limit=20,
-        app_triggers_limit=50
-    ),
     'tier_25_200': Tier(
         name='tier_25_200',
         price_ids=[
@@ -130,57 +113,6 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
         app_triggers_limit=100
-    ),
-    'tier_50_400': Tier(
-        name='tier_50_400',
-        price_ids=[
-            config.STRIPE_TIER_50_400_ID,
-            config.STRIPE_TIER_50_400_YEARLY_ID
-        ],
-        monthly_credits=Decimal('400.00'),
-        display_name='Enterprise',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=5000,
-        thread_limit=5000,
-        concurrent_runs=50,
-        custom_workers_limit=50,
-        scheduled_triggers_limit=100,
-        app_triggers_limit=250
-    ),
-    'tier_125_800': Tier(
-        name='tier_125_800',
-        price_ids=[
-            config.STRIPE_TIER_125_800_ID,
-            config.STRIPE_TIER_125_800_YEARLY_ID
-        ],
-        monthly_credits=Decimal('800.00'),
-        display_name='Enterprise Plus',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=10000,
-        thread_limit=10000,
-        concurrent_runs=100,
-        custom_workers_limit=100,
-        scheduled_triggers_limit=250,
-        app_triggers_limit=500
-    ),
-    'tier_200_1000': Tier(
-        name='tier_200_1000',
-        price_ids=[
-            config.STRIPE_TIER_200_1000_ID,
-            config.STRIPE_TIER_200_1000_YEARLY_ID
-        ],
-        monthly_credits=Decimal('1000.00'),
-        display_name='Ultimate',
-        can_purchase_credits=False,
-        models=['all'],
-        project_limit=25000,
-        thread_limit=25000,
-        concurrent_runs=250,
-        custom_workers_limit=250,
-        scheduled_triggers_limit=500,
-        app_triggers_limit=1000
     ),
 }
 
@@ -264,11 +196,7 @@ def get_price_type(price_id: str) -> str:
     yearly_price_ids = [
         config.STRIPE_TIER_2_20_YEARLY_ID,
         config.STRIPE_TIER_6_50_YEARLY_ID,
-        config.STRIPE_TIER_12_100_YEARLY_ID,
-        config.STRIPE_TIER_25_200_YEARLY_ID,
-        config.STRIPE_TIER_50_400_YEARLY_ID,
-        config.STRIPE_TIER_125_800_YEARLY_ID,
-        config.STRIPE_TIER_200_1000_YEARLY_ID
+        config.STRIPE_TIER_25_200_YEARLY_ID
     ]
     
     if price_id in yearly_price_ids:
@@ -312,4 +240,4 @@ def get_tier_limits(tier_name: str) -> Dict:
         'agent_limit': tier.custom_workers_limit,
         'can_purchase_credits': tier.can_purchase_credits,
         'models': tier.models
-    } 
+    }

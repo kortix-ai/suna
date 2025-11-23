@@ -11,8 +11,8 @@ from core.utils.logger import logger
 from core.utils.config import config
 from core.utils.distributed_lock import WebhookLock, DistributedLock
 from dateutil.relativedelta import relativedelta
-from .credit_manager import credit_manager
-from .config import get_tier_by_name, CREDITS_PER_DOLLAR
+from .credits.manager import credit_manager
+from .shared.config import get_tier_by_name, CREDITS_PER_DOLLAR
 
 
 class RevenueCatService:

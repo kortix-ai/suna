@@ -9,7 +9,7 @@ from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.distributed_lock import DistributedLock
-from .config import (
+from .shared.config import (
     get_tier_by_price_id, 
     TIERS, 
     TRIAL_DURATION_DAYS,
@@ -19,7 +19,7 @@ from .config import (
     get_commitment_duration_months,
     get_price_type
 )
-from .credit_manager import credit_manager
+from .credits.manager import credit_manager
 from .idempotency import (
     generate_checkout_idempotency_key,
     generate_subscription_modify_idempotency_key
@@ -768,7 +768,7 @@ class SubscriptionService:
             
             new_tier_info = get_tier_by_price_id(price_id)
             if new_tier_info:
-                from core.billing.config import get_plan_type
+                from core.billing.shared.config import get_plan_type
                 plan_type = get_plan_type(price_id)
                 
                 await client.from_('credit_accounts').update({
@@ -1103,7 +1103,7 @@ class SubscriptionService:
         # IMPORTANT: If trial is active but tier is 'none', use TRIAL_TIER
         # This handles cases where trial was activated but tier wasn't set properly
         if trial_status == 'active' and tier_name == 'none':
-            from .config import TRIAL_TIER
+            from .shared.config import TRIAL_TIER
             tier_name = TRIAL_TIER
             logger.info(f"[TIER] Trial active but tier=none for {account_id}, using TRIAL_TIER: {TRIAL_TIER}")
         
@@ -1130,7 +1130,7 @@ class SubscriptionService:
     async def get_allowed_models_for_user(self, user_id: str, client=None) -> List[str]:
         try:
             from core.ai_models import model_manager
-            from core.billing.config import is_model_allowed
+            from core.billing.shared.config import is_model_allowed
 
             tier_info = await self.get_user_subscription_tier(user_id)
             tier_name = tier_info['name']
@@ -1166,7 +1166,7 @@ class SubscriptionService:
             await Cache.invalidate(f"subscription_tier:{account_id}")
             return
         
-        from core.billing.config import get_plan_type
+        from core.billing.shared.config import get_plan_type
         plan_type = get_plan_type(price_id)
         
         billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)

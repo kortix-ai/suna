@@ -5,13 +5,13 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
-from .config import (
+from .shared.config import (
     TRIAL_ENABLED,
     TRIAL_DURATION_DAYS,
     TRIAL_TIER,
     TRIAL_CREDITS,
 )
-from .credit_manager import credit_manager
+from .credits.manager import credit_manager
 from .idempotency import generate_trial_idempotency_key
 from .stripe_circuit_breaker import StripeAPIWrapper
 

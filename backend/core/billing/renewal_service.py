@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
 from core.services.supabase import DBConnection
-from core.billing.config import get_tier_by_name
+from core.billing.shared.config import get_tier_by_name
 import logging
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ class RenewalService:
         monthly_credits = tier.monthly_credits
         
         try:
-            from core.billing.credit_manager import credit_manager
+            from core.billing.credits.manager import credit_manager
             
             result = await credit_manager.add_credits(
                 account_id=account_id,

@@ -4,7 +4,7 @@ from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
-from .config import FREE_TIER_INITIAL_CREDITS
+from .shared.config import FREE_TIER_INITIAL_CREDITS
 
 class FreeTierService:
     def __init__(self):
