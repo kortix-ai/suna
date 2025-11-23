@@ -10,7 +10,7 @@ import {
   AlertCircle,
   Info
 } from 'lucide-react-native';
-import { SettingsHeader } from '../SettingsHeader';
+import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
   useDiscoverCustomMcpTools,
@@ -40,6 +40,7 @@ interface CustomMcpContentProps {
 
 export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMcpContentProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const { mutate: discoverTools, isPending: isValidating } = useDiscoverCustomMcpTools();
 
   const [step, setStep] = React.useState<'config' | 'tools'>('config');
@@ -145,31 +146,36 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
         />
       ) : (
         <View className="flex-1">
-          <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
+          {/* Header with back button, title, and description */}
+          <View className="flex-row items-center mb-4">
             {onBack && (
               <Pressable
                 onPress={onBack}
-                className="items-center justify-center w-10 h-10 mb-4 active:opacity-70 rounded-full bg-primary/10"
+                className="flex-row items-center active:opacity-70"
               >
-                <ArrowLeft size={20} className="text-foreground" />
+                <ArrowLeft
+                  size={20}
+                  color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+                />
               </Pressable>
             )}
-
-            <View className="mb-8">
-              <View className="flex-row items-center gap-4 mb-2">
-                <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
-                  <Icon as={Globe} size={24} className="text-primary" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-2xl font-roobert-bold text-foreground">
-                    {t('integrations.customMcp.title')}
-                  </Text>
-                </View>
-              </View>
-              <Text className="text-base font-roobert text-muted-foreground mt-2">
+            <View className="flex-1 ml-3">
+              <Text
+                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+                className="text-xl font-roobert-semibold"
+              >
+                {t('integrations.customMcp.title')}
+              </Text>
+              <Text
+                style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+                className="text-sm font-roobert"
+              >
                 {t('integrations.customMcp.description')}
               </Text>
             </View>
+          </View>
+
+          <View className={noPadding ? "pb-6" : "pb-6"}>
 
             <View className="space-y-6">
               <Input
@@ -222,6 +228,7 @@ export function CustomMcpContent({ onBack, noPadding = false, onSave }: CustomMc
 
 export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const { mutate: discoverTools, isPending: isValidating } = useDiscoverCustomMcpTools();
 
   const [step, setStep] = React.useState<'config' | 'tools'>('config');
@@ -350,31 +357,36 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
           />
         ) : (
           <>
-            <SettingsHeader
-              title={t('integrations.customMcp.title')}
-              onClose={handleClose}
-            />
-
             <ScrollView
               className="flex-1"
               showsVerticalScrollIndicator={false}
             >
-
               <View className="px-6 pb-6">
-                <View className="mb-8">
-                  <View className="flex-row items-center gap-4 mb-2">
-                    <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
-                      <Icon as={Globe} size={24} className="text-primary" />
-                    </View>
-                    <View className="flex-1">
-                      <Text className="text-2xl font-roobert-bold text-foreground">
-                        {t('integrations.customMcp.title')}
-                      </Text>
-                    </View>
+                {/* Header with back button, title, and description */}
+                <View className="flex-row items-center mb-4 mt-4">
+                  <Pressable
+                    onPress={handleClose}
+                    className="flex-row items-center active:opacity-70"
+                  >
+                    <ArrowLeft
+                      size={20}
+                      color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+                    />
+                  </Pressable>
+                  <View className="flex-1 ml-3">
+                    <Text
+                      style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+                      className="text-xl font-roobert-semibold"
+                    >
+                      {t('integrations.customMcp.title')}
+                    </Text>
+                    <Text
+                      style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+                      className="text-sm font-roobert"
+                    >
+                      {t('integrations.customMcp.description')}
+                    </Text>
                   </View>
-                  <Text className="text-base font-roobert text-muted-foreground mt-2">
-                    {t('integrations.customMcp.description')}
-                  </Text>
                 </View>
 
                 <View className="space-y-6">
