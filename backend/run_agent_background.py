@@ -255,14 +255,13 @@ async def run_agent_background(
              
              try:
                  from core.notifications.notification_service import notification_service
-                 thread_info = await client.table('threads').select('thread_id, user_id, title').eq('thread_id', thread_id).maybe_single().execute()
+                 thread_info = await client.table('threads').select('account_id').eq('thread_id', thread_id).maybe_single().execute()
                  if thread_info and thread_info.data:
-                     user_id = thread_info.data.get('user_id')
-                     thread_title = thread_info.data.get('title', 'Task')
-                     if user_id:
+                     account_id = thread_info.data.get('account_id')
+                     if account_id:
                          await notification_service.send_task_completion_notification(
-                             user_id=user_id,
-                             task_name=thread_title,
+                             user_id=account_id,
+                             task_name=agent_config.get('name', 'Task') if agent_config else 'Task',
                              thread_id=thread_id,
                              agent_name=agent_config.get('name') if agent_config else None,
                              result_summary="Task completed successfully"
@@ -276,6 +275,24 @@ async def run_agent_background(
 
         # Update DB status
         await update_agent_run_status(client, agent_run_id, final_status, error=error_message)
+
+        # Send failure notification if agent signaled failure
+        if final_status == "failed" and error_message:
+            try:
+                from core.notifications.notification_service import notification_service
+                thread_info = await client.table('threads').select('account_id').eq('thread_id', thread_id).maybe_single().execute()
+                if thread_info and thread_info.data:
+                    user_id = thread_info.data.get('account_id')
+                    if user_id:
+                        await notification_service.send_task_failed_notification(
+                            user_id=user_id,
+                            task_name=agent_config.get('name', 'Task') if agent_config else 'Task',
+                            task_url=f"/thread/{thread_id}",
+                            failure_reason=error_message,
+                            first_name='User'
+                        )
+            except Exception as notif_error:
+                logger.warning(f"Failed to send failure notification: {notif_error}")
 
         # Publish final control signal (END_STREAM or ERROR)
         control_signal = "END_STREAM" if final_status == "completed" else "ERROR" if final_status == "failed" else "STOP"
@@ -296,17 +313,16 @@ async def run_agent_background(
         
         try:
             from core.notifications.notification_service import notification_service
-            thread_info = await client.table('threads').select('thread_id, user_id, title').eq('thread_id', thread_id).maybe_single().execute()
+            thread_info = await client.table('threads').select('account_id').eq('thread_id', thread_id).maybe_single().execute()
             if thread_info and thread_info.data:
-                user_id = thread_info.data.get('user_id')
-                thread_title = thread_info.data.get('title', 'Task')
+                user_id = thread_info.data.get('account_id')
                 if user_id:
                     await notification_service.send_task_failed_notification(
                         user_id=user_id,
-                        task_name=thread_title,
-                        thread_id=thread_id,
-                        error_message=error_message,
-                        agent_name=agent_config.get('name') if agent_config else None
+                        task_name=agent_config.get('name', 'Task') if agent_config else 'Task',
+                        task_url=f"/thread/{thread_id}",
+                        failure_reason=error_message,
+                        first_name='User'
                     )
         except Exception as notif_error:
             logger.warning(f"Failed to send failure notification: {notif_error}")

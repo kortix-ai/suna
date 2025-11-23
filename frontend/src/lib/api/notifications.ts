@@ -1,4 +1,6 @@
-import { API_BASE_URL } from './config';
+import { isStagingMode } from '@/lib/config';
+import { backendApi } from '../api-client';
+
 
 export interface NotificationSettings {
   user_id: string;
@@ -35,48 +37,49 @@ export interface NotificationLog {
 }
 
 export class NotificationAPI {
-  private async fetchWithAuth(endpoint: string, options: RequestInit = {}) {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(error.detail || `Request failed: ${response.status}`);
+  private checkEnabled() {
+    if (!isStagingMode()) {
+      throw new Error('Notifications are only available in staging mode');
     }
-
-    return response.json();
   }
 
   async getSettings(): Promise<NotificationSettings> {
-    const data = await this.fetchWithAuth('/api/notifications/settings');
-    return data.settings;
+    this.checkEnabled();
+    const response = await backendApi.get<{ settings: NotificationSettings }>('/notifications/settings');
+    if (!response.success || !response.data) {
+      throw new Error('Failed to fetch notification settings');
+    }
+    return response.data.settings;
   }
 
   async updateSettings(settings: Partial<NotificationSettings>): Promise<NotificationSettings> {
-    const data = await this.fetchWithAuth('/api/notifications/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
-    return data.settings;
+    this.checkEnabled();
+    const response = await backendApi.put<{ settings: NotificationSettings }>(
+      '/notifications/settings',
+      settings
+    );
+    if (!response.success || !response.data) {
+      throw new Error('Failed to update notification settings');
+    }
+    return response.data.settings;
   }
 
   async registerDeviceToken(tokenRequest: DeviceTokenRequest): Promise<void> {
-    await this.fetchWithAuth('/api/notifications/device-token', {
-      method: 'POST',
-      body: JSON.stringify(tokenRequest),
-    });
+    this.checkEnabled();
+    const response = await backendApi.post('/notifications/device-token', tokenRequest);
+    if (!response.success) {
+      throw new Error('Failed to register device token');
+    }
   }
 
   async unregisterDeviceToken(deviceToken: string): Promise<void> {
-    await this.fetchWithAuth(`/api/notifications/device-token/${encodeURIComponent(deviceToken)}`, {
-      method: 'DELETE',
-    });
+    this.checkEnabled();
+    const response = await backendApi.delete(
+      `/notifications/device-token/${encodeURIComponent(deviceToken)}`
+    );
+    if (!response.success) {
+      throw new Error('Failed to unregister device token');
+    }
   }
 
   async sendTestNotification(
@@ -84,17 +87,19 @@ export class NotificationAPI {
     message: string = 'This is a test notification',
     channels?: string[]
   ): Promise<void> {
-    await this.fetchWithAuth('/api/notifications/test', {
-      method: 'POST',
-      body: JSON.stringify({
-        title,
-        message,
-        channels,
-      }),
+    this.checkEnabled();
+    const response = await backendApi.post('/notifications/test', {
+      title,
+      message,
+      channels,
     });
+    if (!response.success) {
+      throw new Error('Failed to send test notification');
+    }
   }
 
   async getLogs(limit: number = 50, offset: number = 0, eventType?: string): Promise<NotificationLog[]> {
+    this.checkEnabled();
     const params = new URLSearchParams({
       limit: limit.toString(),
       offset: offset.toString(),
@@ -104,8 +109,13 @@ export class NotificationAPI {
       params.append('event_type', eventType);
     }
 
-    const data = await this.fetchWithAuth(`/api/notifications/logs?${params}`);
-    return data.logs;
+    const response = await backendApi.get<{ logs: NotificationLog[] }>(
+      `/notifications/logs?${params}`
+    );
+    if (!response.success || !response.data) {
+      throw new Error('Failed to fetch notification logs');
+    }
+    return response.data.logs;
   }
 }
 

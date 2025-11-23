@@ -3,10 +3,19 @@ from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
 from core.auth import get_current_user
 from core.utils.logger import logger
+from core.utils.config import config, EnvMode
 from .notification_service import notification_service
 from .models import NotificationChannel, NotificationEvent, NotificationPriority
 
 router = APIRouter(tags=["notifications"], prefix="/notifications")
+
+
+def check_notifications_enabled():
+    if config.ENV_MODE != EnvMode.STAGING:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Notifications are only available in staging mode (current mode: {config.ENV_MODE.value})"
+        )
 
 
 class NotificationSettingsUpdate(BaseModel):
@@ -47,6 +56,7 @@ class SendNotificationRequest(BaseModel):
 
 @router.get("/settings")
 async def get_notification_settings(current_user: dict = Depends(get_current_user)):
+    check_notifications_enabled()
     try:
         user_id = current_user.get('id')
         settings = await notification_service.get_user_notification_settings(user_id)
@@ -66,6 +76,7 @@ async def update_notification_settings(
     settings_update: NotificationSettingsUpdate,
     current_user: dict = Depends(get_current_user)
 ):
+    check_notifications_enabled()
     try:
         user_id = current_user.get('id')
         
@@ -99,6 +110,7 @@ async def register_device_token(
     token_request: DeviceTokenRequest,
     current_user: dict = Depends(get_current_user)
 ):
+    check_notifications_enabled()
     try:
         user_id = current_user.get('id')
         
@@ -129,6 +141,7 @@ async def unregister_device_token(
     device_token: str,
     current_user: dict = Depends(get_current_user)
 ):
+    check_notifications_enabled()
     try:
         user_id = current_user.get('id')
         
@@ -157,6 +170,7 @@ async def send_test_notification(
     test_request: TestNotificationRequest,
     current_user: dict = Depends(get_current_user)
 ):
+    check_notifications_enabled()
     try:
         user_id = current_user.get('id')
         
@@ -187,6 +201,7 @@ async def send_notification_admin(
     notification_request: SendNotificationRequest,
     current_user: dict = Depends(get_current_user)
 ):
+    check_notifications_enabled()
     try:
         result = await notification_service.send_notification(
             event_type=notification_request.event_type,
@@ -214,6 +229,7 @@ async def get_notification_logs(
     event_type: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
+    check_notifications_enabled()
     try:
         from core.services.supabase import DBConnection
         user_id = current_user.get('id')

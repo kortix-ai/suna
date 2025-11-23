@@ -1,29 +1,23 @@
 import os
 from typing import Dict, List, Optional, Any
-from novu.api import EventApi
-from novu.config import NovuConfig
-from novu.dto.subscriber import SubscriberDto
-from novu.api.subscriber import SubscriberApi
+import novu_py
+from novu_py import Novu
 from core.utils.logger import logger
+from core.utils.config import config, EnvMode
 from .models import NotificationChannel, NotificationEvent, NotificationPayload
 
 
 class NovuService:
     def __init__(self):
-        self.api_key = os.getenv('NOVU_API_KEY')
+        self.enabled = config.ENV_MODE == EnvMode.STAGING
+        self.api_key = os.getenv('NOVU_SECRET_KEY')
         self.backend_url = os.getenv('NOVU_BACKEND_URL', 'https://api.novu.co')
         
-        if not self.api_key:
-            logger.warning("NOVU_API_KEY not found in environment variables")
-            self.event_api = None
-            self.subscriber_api = None
+        if not self.enabled:
+            logger.info(f"Novu service disabled (only enabled in staging mode, current mode: {config.ENV_MODE.value})")
+        elif not self.api_key:
+            logger.warning("NOVU_SECRET_KEY not found in environment variables")
         else:
-            config = NovuConfig()
-            config.api_key = self.api_key
-            config.backend_url = self.backend_url
-            
-            self.event_api = EventApi(config=config)
-            self.subscriber_api = SubscriberApi(config=config)
             logger.info(f"Novu service initialized with backend URL: {self.backend_url}")
     
     async def trigger_notification(
@@ -36,8 +30,12 @@ class NovuService:
         override_email: Optional[str] = None,
         override_channels: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        if not self.event_api:
-            logger.error("Cannot send notification: NOVU_API_KEY not configured")
+        if not self.enabled:
+            logger.debug(f"Notification skipped (not in staging mode): {event_name}")
+            return {"success": False, "error": "Notifications only enabled in staging mode"}
+        
+        if not self.api_key:
+            logger.error("Cannot send notification: NOVU_SECRET_KEY not configured")
             return {"success": False, "error": "Novu not configured"}
         
         try:
@@ -47,26 +45,43 @@ class NovuService:
                 name=subscriber_name
             )
             
-            trigger_payload = {
-                "name": event_name,
-                "to": {
-                    "subscriberId": user_id,
-                },
-                "payload": payload,
+            to_kwargs = {
+                "subscriber_id": user_id,
             }
             
-            if override_email:
-                trigger_payload["to"]["email"] = override_email
+            if subscriber_email:
+                to_kwargs["email"] = subscriber_email
+            
+            if subscriber_name:
+                name_parts = subscriber_name.split()
+                to_kwargs["first_name"] = name_parts[0] if name_parts else ""
+                if len(name_parts) > 1:
+                    to_kwargs["last_name"] = " ".join(name_parts[1:])
+            
+            trigger_request = novu_py.TriggerEventRequestDto(
+                workflow_id=event_name,
+                to=user_id,
+                payload=payload,
+            )
             
             if override_channels:
-                trigger_payload["overrides"] = override_channels
+                trigger_request.overrides = override_channels
             
-            response = self.event_api.trigger(**trigger_payload)
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                response = novu.trigger(trigger_event_request_dto=trigger_request)
             
             logger.info(f"Novu notification triggered: {event_name} for user {user_id}")
+            
+            transaction_id = None
+            if hasattr(response, 'data') and response.data:
+                transaction_id = getattr(response.data, 'transaction_id', None)
+            
             return {
                 "success": True,
-                "transaction_id": response.get("data", {}).get("transactionId"),
+                "transaction_id": transaction_id,
                 "response": response
             }
             
@@ -83,28 +98,48 @@ class NovuService:
         avatar: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None
     ) -> bool:
-        if not self.subscriber_api:
-            logger.error("Cannot upsert subscriber: NOVU_API_KEY not configured")
+        if not self.enabled:
+            return True
+        
+        if not self.api_key:
+            logger.error("Cannot upsert subscriber: NOVU_SECRET_KEY not configured")
             return False
         
         try:
-            subscriber_data = {
-                "subscriberId": user_id,
-            }
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                first_name = None
+                last_name = None
+                if name:
+                    name_parts = name.split()
+                    first_name = name_parts[0] if name_parts else None
+                    if len(name_parts) > 1:
+                        last_name = " ".join(name_parts[1:])
+                
+                try:
+                    create_dto = novu_py.CreateSubscriberRequestDto(
+                        subscriber_id=user_id,
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        phone=phone,
+                        avatar=avatar,
+                        data=data,
+                    )
+                    novu.subscribers.create(create_subscriber_request_dto=create_dto)
+                except Exception:
+                    patch_dto = novu_py.PatchSubscriberRequestDto(
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        phone=phone,
+                        avatar=avatar,
+                        data=data,
+                    )
+                    novu.subscribers.patch(subscriber_id=user_id, patch_subscriber_request_dto=patch_dto)
             
-            if email:
-                subscriber_data["email"] = email
-            if name:
-                subscriber_data["firstName"] = name.split()[0] if name else ""
-                subscriber_data["lastName"] = " ".join(name.split()[1:]) if len(name.split()) > 1 else ""
-            if phone:
-                subscriber_data["phone"] = phone
-            if avatar:
-                subscriber_data["avatar"] = avatar
-            if data:
-                subscriber_data["data"] = data
-            
-            self.subscriber_api.identify(**subscriber_data)
             logger.debug(f"Subscriber upserted: {user_id}")
             return True
             
@@ -118,16 +153,25 @@ class NovuService:
         provider_id: str,
         credentials: Dict[str, Any]
     ) -> bool:
-        if not self.subscriber_api:
-            logger.error("Cannot update subscriber credentials: NOVU_API_KEY not configured")
+        if not self.enabled:
+            return True
+        
+        if not self.api_key:
+            logger.error("Cannot update subscriber credentials: NOVU_SECRET_KEY not configured")
             return False
         
         try:
-            self.subscriber_api.update_subscriber_credentials(
-                subscriber_id=user_id,
-                provider_id=provider_id,
-                credentials=credentials
-            )
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                creds_dto = novu_py.ChannelCredentialsDto(**credentials)
+                
+                novu.subscribers.credentials.update(
+                    subscriber_id=user_id,
+                    provider_id=provider_id,
+                    channel_credentials_dto=creds_dto
+                )
             logger.info(f"Updated credentials for subscriber {user_id}, provider {provider_id}")
             return True
             
@@ -142,21 +186,29 @@ class NovuService:
         channel: Optional[str] = None,
         enabled: bool = True
     ) -> bool:
-        if not self.subscriber_api:
-            logger.error("Cannot set subscriber preference: NOVU_API_KEY not configured")
+        if not self.enabled:
+            return True
+        
+        if not self.api_key:
+            logger.error("Cannot set subscriber preference: NOVU_SECRET_KEY not configured")
             return False
         
         try:
-            preference_data = {
-                "subscriberId": user_id,
-                "templateId": template_id,
-                "enabled": enabled
-            }
-            
-            if channel:
-                preference_data["channel"] = channel
-            
-            self.subscriber_api.update_subscriber_preference(**preference_data)
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                update_data = {}
+                if channel:
+                     update_data = {"channel": {channel: enabled}}
+                else:
+                     update_data = {"enabled": enabled}
+
+                novu.subscribers.preferences.update(
+                    subscriber_id=user_id,
+                    workflow_id=template_id,
+                    update_subscriber_preference_request_dto=update_data
+                )
             logger.info(f"Updated preference for subscriber {user_id}, template {template_id}")
             return True
             
@@ -165,12 +217,19 @@ class NovuService:
             return False
     
     async def delete_subscriber(self, user_id: str) -> bool:
-        if not self.subscriber_api:
-            logger.error("Cannot delete subscriber: NOVU_API_KEY not configured")
+        if not self.enabled:
+            return True
+        
+        if not self.api_key:
+            logger.error("Cannot delete subscriber: NOVU_SECRET_KEY not configured")
             return False
         
         try:
-            self.subscriber_api.delete(subscriber_id=user_id)
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                novu.subscribers.delete(subscriber_id=user_id)
             logger.info(f"Subscriber deleted: {user_id}")
             return True
             
@@ -179,18 +238,58 @@ class NovuService:
             return False
     
     async def get_subscriber(self, user_id: str) -> Optional[Dict[str, Any]]:
-        if not self.subscriber_api:
-            logger.error("Cannot get subscriber: NOVU_API_KEY not configured")
+        if not self.enabled:
+            return None
+        
+        if not self.api_key:
+            logger.error("Cannot get subscriber: NOVU_SECRET_KEY not configured")
             return None
         
         try:
-            response = self.subscriber_api.get(subscriber_id=user_id)
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                # Using retrieve instead of get
+                response = novu.subscribers.retrieve(subscriber_id=user_id)
             return response
             
         except Exception as e:
             logger.error(f"Error getting subscriber {user_id}: {str(e)}")
             return None
     
+    async def trigger_workflow(
+        self,
+        workflow_id: str,
+        subscriber_id: str,
+        payload: Dict[str, Any]
+    ) -> bool:
+        if not self.enabled:
+            return False
+        
+        if not self.api_key:
+            logger.error("Cannot trigger workflow: NOVU_SECRET_KEY not configured")
+            return False
+        
+        try:
+            with Novu(
+                server_url=self.backend_url,
+                secret_key=self.api_key,
+            ) as novu:
+                response = novu.trigger(
+                    trigger_event_request_dto=novu_py.TriggerEventRequestDto(
+                        workflow_id=workflow_id,
+                        to='6920a59dfaa9c95d04b47334',
+                        payload=payload
+                    )
+                )
+
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error triggering workflow {workflow_id}: {str(e)}")
+            return False
+
     async def register_push_token(
         self,
         user_id: str,
@@ -198,8 +297,11 @@ class NovuService:
         device_token: str,
         device_type: str = "mobile"
     ) -> bool:
-        if not self.subscriber_api:
-            logger.error("Cannot register push token: NOVU_API_KEY not configured")
+        if not self.enabled:
+            return True
+        
+        if not self.api_key:
+            logger.error("Cannot register push token: NOVU_SECRET_KEY not configured")
             return False
         
         try:

@@ -110,21 +110,20 @@ class NotificationService:
         self,
         user_id: str,
         task_name: str,
-        thread_id: str,
-        error_message: str,
-        agent_name: Optional[str] = None
+        task_url: str,
+        failure_reason: str,
+        first_name: Optional[str] = None
     ) -> Dict[str, Any]:
-        return await self.send_notification(
-            event_type=NotificationEvent.TASK_FAILED,
-            user_id=user_id,
-            data={
-                "task_name": task_name,
-                "thread_id": thread_id,
-                "agent_name": agent_name or "AI Agent",
-                "error_message": error_message,
-                "view_url": f"/thread/{thread_id}"
-            },
-            priority=NotificationPriority.HIGH
+        payload = {
+            "first_name": first_name,
+            "task_name": task_name,
+            "task_url": task_url,
+            "failure_reason": failure_reason
+        }
+        return await self.novu.trigger_workflow(
+            workflow_id='task-failed',
+            subscriber_id=user_id,
+            payload=payload
         )
     
     async def send_payment_succeeded_notification(
@@ -208,7 +207,7 @@ class NotificationService:
             client = await self.db.client
             response = await client.table('notification_settings').select('*').eq('user_id', user_id).maybe_single().execute()
             
-            if response.data:
+            if response and response.data:
                 return UserNotificationSettings(**response.data)
             return None
             
@@ -378,12 +377,14 @@ class NotificationService:
     async def _get_user_info(self, user_id: str) -> Dict[str, Any]:
         try:
             client = await self.db.client
-            response = await client.table('users').select('email, raw_user_meta_data').eq('id', user_id).maybe_single().execute()
             
-            if response.data:
-                email = response.data.get('email')
-                metadata = response.data.get('raw_user_meta_data', {})
-                name = metadata.get('full_name') or metadata.get('name') or email.split('@')[0] if email else None
+            user_response = await client.auth.admin.get_user_by_id(user_id)
+            
+            if user_response and user_response.user:
+                user = user_response.user
+                email = user.email
+                metadata = user.user_metadata or {}
+                name = metadata.get('full_name') or metadata.get('name') or (email.split('@')[0] if email else None)
                 
                 return {
                     "email": email,

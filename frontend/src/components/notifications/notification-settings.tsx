@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { notificationAPI, type NotificationSettings } from '@/lib/api/notifications';
+import { isStagingMode } from '@/lib/config';
 
 export function NotificationSettingsPanel() {
   const [settings, setSettings] = useState<NotificationSettings | null>(null);
@@ -16,7 +17,11 @@ export function NotificationSettingsPanel() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    loadSettings();
+    if (isStagingMode()) {
+      loadSettings();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
   const loadSettings = async () => {
