@@ -211,13 +211,16 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
     
+    const isOneTimePurchase = pkg.identifier.toLowerCase().includes('topup') || 
+                              pkg.identifier.toLowerCase().includes('credit');
+    
     const currentCustomerInfo = await Purchases.getCustomerInfo();
     
     const hasActiveSubscription = 
       Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
       currentCustomerInfo.activeSubscriptions.length > 0;
 
-    if (hasActiveSubscription) {
+    if (hasActiveSubscription && !isOneTimePurchase) {
       const activeProductIds = currentCustomerInfo.activeSubscriptions;
       console.log('🚫 BLOCKING PURCHASE - Device already has active subscription:', activeProductIds);
       console.log('🔒 Security: Preventing subscription sharing/transfer abuse');
@@ -228,6 +231,10 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
       error.code = 'SUBSCRIPTION_ALREADY_EXISTS';
       error.userCancelled = false;
       throw error;
+    }
+    
+    if (isOneTimePurchase) {
+      console.log('💰 One-time credit purchase detected - bypassing subscription guard');
     }
     
     if (email) {
