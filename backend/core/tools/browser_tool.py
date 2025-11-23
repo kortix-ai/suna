@@ -33,6 +33,46 @@ class BrowserTool(SandboxToolsBase):
     - browser_screenshot: Take screenshots
     """
 
+    TOOL_INSTRUCTIONS = """
+### BROWSER AUTOMATION CAPABILITIES
+- **CORE BROWSER FUNCTIONS:**
+* `browser_navigate_to(url)` - Navigate to any URL
+* `browser_act(action, variables, iframes, filePath)` - Perform ANY browser action using natural language
+    - Examples: "click the login button", "fill in email with user@example.com", "scroll down", "select option from dropdown"
+    - Supports variables for secure data entry (not shared with LLM providers)
+    - Handles iframes when needed
+    - CRITICAL: Include filePath parameter for ANY action involving file uploads to prevent accidental file dialog triggers
+* `browser_extract_content(instruction, iframes)` - Extract structured content from pages
+    - Example: "extract all product prices", "get apartment listings with address and price"
+* `browser_screenshot(name)` - Take screenshots of the current page
+
+- **WHAT YOU CAN DO:**
+* Navigate to any URL and browse websites
+* Click buttons, links, and any interactive elements
+* Fill out forms with text, numbers, emails, etc.
+* Select options from dropdowns and menus
+* Scroll pages (up, down, to specific elements)
+* Handle dynamic content and JavaScript-heavy sites
+* Extract structured data from pages
+* Take screenshots at any point
+* Press keyboard keys (Enter, Escape, Tab, etc.)
+* Handle iframes and embedded content
+* Upload files (use filePath parameter in browser_act)
+* Navigate browser history (go back, forward)
+* Wait for content to load
+* The browser is in a sandboxed environment, so nothing to worry about
+
+- **CRITICAL BROWSER VALIDATION WORKFLOW:**
+* Every browser action automatically provides a screenshot - ALWAYS review it carefully
+* When entering values (phone numbers, emails, text), explicitly verify the screenshot shows the exact values you intended
+* Only report success when visual confirmation shows the exact intended values are present
+* For any data entry action, your response should include: "Verified: [field] shows [actual value]" or "Error: Expected [intended] but field shows [actual]"
+* The screenshot is automatically included with every browser action - use it to verify results
+* Never assume form submissions worked correctly without reviewing the provided screenshot
+* **SCREENSHOT SHARING:** To share browser screenshots permanently, use `upload_file` with `bucket_name="browser-screenshots"`
+* **CAPTURE & UPLOAD WORKFLOW:** Browser action → Screenshot generated → Upload to cloud → Share URL for documentation
+* **IMPORTANT:** browser-screenshots bucket is ONLY for actual browser screenshots, not generated images or other content
+"""
 
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -335,66 +375,6 @@ class BrowserTool(SandboxToolsBase):
 
     # Core Functions Only
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_browser_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE USING THE BROWSER TOOL: Load detailed browser automation workflow and validation requirements. You MUST call this before using browser tools to understand validation workflow, screenshot verification, and best practices.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_browser_instructions(self) -> ToolResult:
-        """Load detailed browser usage instructions"""
-        try:
-            return self.success_response({
-                "message": "Browser usage instructions loaded successfully",
-                "instructions": """
-                    ### BROWSER AUTOMATION CAPABILITIES
-                    - **CORE BROWSER FUNCTIONS:**
-                    * `browser_navigate_to(url)` - Navigate to any URL
-                    * `browser_act(action, variables, iframes, filePath)` - Perform ANY browser action using natural language
-                        - Examples: "click the login button", "fill in email with user@example.com", "scroll down", "select option from dropdown"
-                        - Supports variables for secure data entry (not shared with LLM providers)
-                        - Handles iframes when needed
-                        - CRITICAL: Include filePath parameter for ANY action involving file uploads to prevent accidental file dialog triggers
-                    * `browser_extract_content(instruction, iframes)` - Extract structured content from pages
-                        - Example: "extract all product prices", "get apartment listings with address and price"
-                    * `browser_screenshot(name)` - Take screenshots of the current page
-
-                    - **WHAT YOU CAN DO:**
-                    * Navigate to any URL and browse websites
-                    * Click buttons, links, and any interactive elements
-                    * Fill out forms with text, numbers, emails, etc.
-                    * Select options from dropdowns and menus
-                    * Scroll pages (up, down, to specific elements)
-                    * Handle dynamic content and JavaScript-heavy sites
-                    * Extract structured data from pages
-                    * Take screenshots at any point
-                    * Press keyboard keys (Enter, Escape, Tab, etc.)
-                    * Handle iframes and embedded content
-                    * Upload files (use filePath parameter in browser_act)
-                    * Navigate browser history (go back, forward)
-                    * Wait for content to load
-                    * The browser is in a sandboxed environment, so nothing to worry about
-
-                    - **CRITICAL BROWSER VALIDATION WORKFLOW:**
-                    * Every browser action automatically provides a screenshot - ALWAYS review it carefully
-                    * When entering values (phone numbers, emails, text), explicitly verify the screenshot shows the exact values you intended
-                    * Only report success when visual confirmation shows the exact intended values are present
-                    * For any data entry action, your response should include: "Verified: [field] shows [actual value]" or "Error: Expected [intended] but field shows [actual]"
-                    * The screenshot is automatically included with every browser action - use it to verify results
-                    * Never assume form submissions worked correctly without reviewing the provided screenshot
-                    * **SCREENSHOT SHARING:** To share browser screenshots permanently, use `upload_file` with `bucket_name="browser-screenshots"`
-                    * **CAPTURE & UPLOAD WORKFLOW:** Browser action → Screenshot generated → Upload to cloud → Share URL for documentation
-                    * **IMPORTANT:** browser-screenshots bucket is ONLY for actual browser screenshots, not generated images or other content
-                """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load browser usage instructions: {str(e)}")
 
     @openapi_schema({
         "type": "function",

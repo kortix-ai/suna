@@ -20,6 +20,117 @@ class SandboxShellTool(SandboxToolsBase):
     """Tool for executing tasks in a Daytona sandbox with browser-use capabilities. 
     Uses sessions for maintaining state between commands and provides comprehensive process management."""
 
+    TOOL_INSTRUCTIONS = """### SHELL & TERMINAL OPERATIONS WORKFLOW
+
+**CLI TOOLS PREFERENCE:**
+* Always prefer CLI tools over Python scripts when possible
+* CLI tools are generally faster and more efficient for:
+  1. File operations and content extraction
+  2. Text processing and pattern matching
+  3. System operations and file management
+  4. Data transformation and filtering
+* Use Python only when:
+  1. Complex logic is required
+  2. CLI tools are insufficient
+  3. Custom processing is needed
+  4. Integration with other Python code is necessary
+* HYBRID APPROACH: Combine Python and CLI as needed - use Python for logic and data processing, CLI for system operations and utilities
+
+**CLI OPERATIONS BEST PRACTICES:**
+- Use terminal commands for system operations, file manipulations, and quick tasks
+- For command execution, you have two approaches:
+  1. Synchronous Commands (blocking):
+     * Use for quick operations that complete within 60 seconds
+     * Commands run directly and wait for completion
+     * IMPORTANT: Do not use for long-running operations as they will timeout after 60 seconds
+  
+  2. Asynchronous Commands (non-blocking):
+     * Use `blocking="false"` (or omit `blocking`, as it defaults to false) for any command that might take longer than 60 seconds or for starting background services
+     * Commands run in background and return immediately
+     * Common use cases: Development servers (React, Express, etc.), build processes, long-running data processing, background services
+
+**SESSION MANAGEMENT:**
+* Each command must specify a session_name
+* Use consistent session names for related commands
+* Different sessions are isolated from each other
+* Example: Use "build" session for build commands, "dev" for development servers
+* Sessions maintain state between commands
+
+**COMMAND EXECUTION GUIDELINES:**
+* For commands that might take longer than 60 seconds, ALWAYS use `blocking="false"` (or omit `blocking`)
+* Do not rely on increasing timeout for long-running commands if they are meant to run in the background
+* Use proper session names for organization
+* Chain commands with && for sequential execution
+* Use | for piping output between commands
+* Redirect output to files for long-running processes
+
+**COMMAND BEST PRACTICES:**
+- Avoid commands requiring confirmation; actively use -y or -f flags for automatic confirmation
+- Avoid commands with excessive output; save to files when necessary
+- Chain multiple commands with operators to minimize interruptions and improve efficiency:
+  1. Use && for sequential execution: `command1 && command2 && command3`
+  2. Use || for fallback execution: `command1 || command2`
+  3. Use ; for unconditional execution: `command1; command2`
+  4. Use | for piping output: `command1 | command2`
+  5. Use > and >> for output redirection: `command > file` or `command >> file`
+- Use pipe operator to pass command outputs, simplifying operations
+- Use non-interactive `bc` for simple calculations, Python for complex math; never calculate mentally
+- Use `uptime` command when users explicitly request sandbox status check or wake-up
+
+**TEXT & DATA PROCESSING:**
+IMPORTANT: Use the `cat` command to view contents of small files (100 kb or less). For files larger than 100 kb, use commands like `head`, `tail` to preview or read only part of the file.
+
+- Distinguish between small and large text files:
+  1. ls -lh: Get file size - Use `ls -lh <file_path>` to get file size
+- Small text files (100 kb or less):
+  1. cat: View contents of small files - Use `cat <file_path>` to view the entire file
+- Large text files (over 100 kb):
+  1. head/tail: View file parts - Use `head <file_path>` or `tail <file_path>` to preview content
+  2. less: View large files interactively
+  3. grep, awk, sed: For searching, extracting, or transforming data in large files
+- File Analysis:
+  1. file: Determine file type
+  2. wc: Count words/lines
+- Data Processing:
+  1. jq: JSON processing - Use for JSON extraction and transformation
+  2. csvkit: CSV processing - csvcut (Extract columns), csvgrep (Filter rows), csvstat (Get statistics)
+  3. xmlstarlet: XML processing - Use for XML extraction and transformation
+
+**REGEX & CLI DATA PROCESSING:**
+- CLI Tools Usage:
+  1. grep: Search files using regex patterns
+     - Use -i for case-insensitive search
+     - Use -r for recursive directory search
+     - Use -l to list matching files
+     - Use -n to show line numbers
+     - Use -A, -B, -C for context lines
+  2. head/tail: View file beginnings/endings (for large files)
+     - Use -n to specify number of lines
+     - Use -f to follow file changes
+  3. awk: Pattern scanning and processing
+     - Use for column-based data processing
+     - Use for complex text transformations
+  4. find: Locate files and directories
+     - Use -name for filename patterns
+     - Use -type for file types
+  5. wc: Word count and line counting
+     - Use -l for line count
+     - Use -w for word count
+     - Use -c for character count
+- Regex Patterns:
+  1. Use for precise text matching
+  2. Combine with CLI tools for powerful searches
+  3. Save complex patterns to files for reuse
+  4. Test patterns with small samples first
+  5. Use extended regex (-E) for complex patterns
+- Data Processing Workflow:
+  1. Use grep to locate relevant files
+  2. Use cat for small files (<=100kb) or head/tail for large files (>100kb) to preview content
+  3. Use awk for data extraction
+  4. Use wc to verify results
+  5. Chain commands with pipes for efficiency
+"""
+
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self._sessions: Dict[str, str] = {}  # Maps session names to session IDs
@@ -454,135 +565,3 @@ class SandboxShellTool(SandboxToolsBase):
             await self._execute_raw_command("tmux kill-server 2>/dev/null || true")
         except:
             pass
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_shell_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE RUNNING COMMANDS: Load detailed shell/terminal workflow and CLI best practices. You MUST call this before executing commands to understand session management, command chaining, and data processing workflows.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_shell_instructions(self) -> ToolResult:
-        """Load detailed shell/terminal workflow and requirements"""
-        try:
-            return self.success_response({
-                "message": "Shell/terminal workflow and requirements loaded successfully",
-                "instructions": """
-                    ### SHELL & TERMINAL OPERATIONS WORKFLOW
-                    
-                    **CLI TOOLS PREFERENCE:**
-                    * Always prefer CLI tools over Python scripts when possible
-                    * CLI tools are generally faster and more efficient for:
-                      1. File operations and content extraction
-                      2. Text processing and pattern matching
-                      3. System operations and file management
-                      4. Data transformation and filtering
-                    * Use Python only when:
-                      1. Complex logic is required
-                      2. CLI tools are insufficient
-                      3. Custom processing is needed
-                      4. Integration with other Python code is necessary
-                    * HYBRID APPROACH: Combine Python and CLI as needed - use Python for logic and data processing, CLI for system operations and utilities
-                    
-                    **CLI OPERATIONS BEST PRACTICES:**
-                    - Use terminal commands for system operations, file manipulations, and quick tasks
-                    - For command execution, you have two approaches:
-                      1. Synchronous Commands (blocking):
-                         * Use for quick operations that complete within 60 seconds
-                         * Commands run directly and wait for completion
-                         * IMPORTANT: Do not use for long-running operations as they will timeout after 60 seconds
-                      
-                      2. Asynchronous Commands (non-blocking):
-                         * Use `blocking="false"` (or omit `blocking`, as it defaults to false) for any command that might take longer than 60 seconds or for starting background services
-                         * Commands run in background and return immediately
-                         * Common use cases: Development servers (React, Express, etc.), build processes, long-running data processing, background services
-                    
-                    **SESSION MANAGEMENT:**
-                    * Each command must specify a session_name
-                    * Use consistent session names for related commands
-                    * Different sessions are isolated from each other
-                    * Example: Use "build" session for build commands, "dev" for development servers
-                    * Sessions maintain state between commands
-                    
-                    **COMMAND EXECUTION GUIDELINES:**
-                    * For commands that might take longer than 60 seconds, ALWAYS use `blocking="false"` (or omit `blocking`)
-                    * Do not rely on increasing timeout for long-running commands if they are meant to run in the background
-                    * Use proper session names for organization
-                    * Chain commands with && for sequential execution
-                    * Use | for piping output between commands
-                    * Redirect output to files for long-running processes
-                    
-                    **COMMAND BEST PRACTICES:**
-                    - Avoid commands requiring confirmation; actively use -y or -f flags for automatic confirmation
-                    - Avoid commands with excessive output; save to files when necessary
-                    - Chain multiple commands with operators to minimize interruptions and improve efficiency:
-                      1. Use && for sequential execution: `command1 && command2 && command3`
-                      2. Use || for fallback execution: `command1 || command2`
-                      3. Use ; for unconditional execution: `command1; command2`
-                      4. Use | for piping output: `command1 | command2`
-                      5. Use > and >> for output redirection: `command > file` or `command >> file`
-                    - Use pipe operator to pass command outputs, simplifying operations
-                    - Use non-interactive `bc` for simple calculations, Python for complex math; never calculate mentally
-                    - Use `uptime` command when users explicitly request sandbox status check or wake-up
-                    
-                    **TEXT & DATA PROCESSING:**
-                    IMPORTANT: Use the `cat` command to view contents of small files (100 kb or less). For files larger than 100 kb, use commands like `head`, `tail` to preview or read only part of the file.
-                    
-                    - Distinguish between small and large text files:
-                      1. ls -lh: Get file size - Use `ls -lh <file_path>` to get file size
-                    - Small text files (100 kb or less):
-                      1. cat: View contents of small files - Use `cat <file_path>` to view the entire file
-                    - Large text files (over 100 kb):
-                      1. head/tail: View file parts - Use `head <file_path>` or `tail <file_path>` to preview content
-                      2. less: View large files interactively
-                      3. grep, awk, sed: For searching, extracting, or transforming data in large files
-                    - File Analysis:
-                      1. file: Determine file type
-                      2. wc: Count words/lines
-                    - Data Processing:
-                      1. jq: JSON processing - Use for JSON extraction and transformation
-                      2. csvkit: CSV processing - csvcut (Extract columns), csvgrep (Filter rows), csvstat (Get statistics)
-                      3. xmlstarlet: XML processing - Use for XML extraction and transformation
-                    
-                    **REGEX & CLI DATA PROCESSING:**
-                    - CLI Tools Usage:
-                      1. grep: Search files using regex patterns
-                         - Use -i for case-insensitive search
-                         - Use -r for recursive directory search
-                         - Use -l to list matching files
-                         - Use -n to show line numbers
-                         - Use -A, -B, -C for context lines
-                      2. head/tail: View file beginnings/endings (for large files)
-                         - Use -n to specify number of lines
-                         - Use -f to follow file changes
-                      3. awk: Pattern scanning and processing
-                         - Use for column-based data processing
-                         - Use for complex text transformations
-                      4. find: Locate files and directories
-                         - Use -name for filename patterns
-                         - Use -type for file types
-                      5. wc: Word count and line counting
-                         - Use -l for line count
-                         - Use -w for word count
-                         - Use -c for character count
-                    - Regex Patterns:
-                      1. Use for precise text matching
-                      2. Combine with CLI tools for powerful searches
-                      3. Save complex patterns to files for reuse
-                      4. Test patterns with small samples first
-                      5. Use extended regex (-E) for complex patterns
-                    - Data Processing Workflow:
-                      1. Use grep to locate relevant files
-                      2. Use cat for small files (<=100kb) or head/tail for large files (>100kb) to preview content
-                      3. Use awk for data extraction
-                      4. Use wc to verify results
-                      5. Chain commands with pipes for efficiency
-                """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load shell instructions: {str(e)}")

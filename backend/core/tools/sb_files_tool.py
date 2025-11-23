@@ -24,6 +24,77 @@ from typing import Optional
 class SandboxFilesTool(SandboxToolsBase):
     """Tool for executing file system operations in a Daytona sandbox. All operations are performed relative to the /workspace directory."""
 
+    TOOL_INSTRUCTIONS = """### FILE OPERATIONS WORKFLOW
+
+**CORE CAPABILITIES:**
+- Creating, reading, modifying, and deleting files
+- Organizing files into directories/folders
+- Converting between file formats
+- Searching through file contents
+- Batch processing multiple files
+- AI-powered intelligent file editing with natural language instructions, using the `edit_file` tool exclusively
+
+**FILE MANAGEMENT BEST PRACTICES:**
+- Use file tools for reading, writing, appending, and editing to avoid string escape issues in shell commands
+- Actively save intermediate results and store different types of reference information in separate files
+- When merging text files, must use append mode of file writing tool to concatenate content to target file
+- Create organized file structures with clear naming conventions
+- Store different types of data in appropriate formats
+
+**MANDATORY FILE EDITING STRATEGY:**
+- **You MUST use the `edit_file` tool for ALL file modifications.** This is not a preference, but a requirement.
+- It is a powerful and intelligent tool that can handle everything from simple text replacements to complex code refactoring.
+- DO NOT use any other method like `echo` or `sed` to modify files.
+
+**How to use `edit_file`:**
+1. Provide a clear, natural language `instructions` parameter describing the change (e.g., "I am adding error handling to the login function")
+2. Provide the `code_edit` parameter showing the exact changes, using `// ... existing code ...` to represent unchanged parts of the file
+
+**Examples:**
+- Update Task List: Mark tasks as complete when finished
+- Improve a large file: Your `code_edit` would show the changes efficiently while skipping unchanged parts
+
+**The `edit_file` tool is your ONLY tool for changing files. Using other tools for file modification is strictly forbidden.**
+
+**FILE-BASED OUTPUT SYSTEM:**
+For large outputs and complex content, use files instead of long responses:
+
+**WHEN TO USE FILES:**
+- Detailed reports, analyses, or documentation (500+ words)
+- Code projects with multiple files
+- Data analysis results with visualizations
+- Research summaries with multiple sources
+- Technical documentation or guides
+- Any content that would be better as an editable artifact
+
+**CRITICAL FILE CREATION RULES:**
+- **ONE FILE PER REQUEST:** For a single user request, create ONE file and edit it throughout the entire process
+- **EDIT LIKE AN ARTIFACT:** Treat the file as a living document that you continuously update and improve
+- **APPEND AND UPDATE:** Add new sections, update existing content, and refine the file as you work
+- **NO MULTIPLE FILES:** Never create separate files for different parts of the same request
+- **COMPREHENSIVE DOCUMENT:** Build one comprehensive file that contains all related content
+- Use descriptive filenames that indicate the overall content purpose
+- Create files in appropriate formats (markdown, HTML, Python, etc.)
+- Include proper structure with headers, sections, and formatting
+- Make files easily editable and shareable
+- Attach files when sharing with users via 'ask' tool
+- Use files as persistent artifacts that users can reference and modify
+- **ASK BEFORE UPLOADING:** Ask users if they want files uploaded: "Would you like me to upload this file to secure cloud storage for sharing?"
+- **CONDITIONAL CLOUD PERSISTENCE:** Upload deliverables only when specifically requested for sharing or external access
+
+**FILE SHARING WORKFLOW:**
+1. Create comprehensive file with all content
+2. Edit and refine the file as needed
+3. **ASK USER:** "Would you like me to upload this file to secure cloud storage for sharing?"
+4. **Upload only if requested** using 'upload_file' for controlled access
+5. Share the secure signed URL with the user (note: expires in 24 hours) - only if uploaded
+
+**EXAMPLE FILE USAGE:**
+- Single request → `travel_plan.md` (contains itinerary, accommodation, packing list, etc.) → Ask user about upload → Upload only if requested
+- Single request → `research_report.md` (contains all findings, analysis, conclusions) → Ask user about upload → Upload only if requested
+- Single request → `project_guide.md` (contains setup, implementation, testing, documentation) → Ask user about upload → Upload only if requested
+"""
+
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.SNIPPET_LINES = 4  # Number of context lines to show around edits
@@ -642,95 +713,3 @@ class SandboxFilesTool(SandboxToolsBase):
     #         return self.fail_response(f"File '{file_path}' appears to be binary and cannot be read as text")
     #     except Exception as e:
     #         return self.fail_response(f"Error reading file: {str(e)}")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_files_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE WORKING WITH FILES: Load detailed file operations workflow and requirements. You MUST call this before performing file operations to understand best practices, file editing strategies, and output management.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_files_instructions(self) -> ToolResult:
-        """Load detailed file operations workflow and requirements"""
-        try:
-            return self.success_response({
-                "message": "File operations workflow and requirements loaded successfully",
-                "instructions": """
-                    ### FILE OPERATIONS WORKFLOW
-                    
-                    **CORE CAPABILITIES:**
-                    - Creating, reading, modifying, and deleting files
-                    - Organizing files into directories/folders
-                    - Converting between file formats
-                    - Searching through file contents
-                    - Batch processing multiple files
-                    - AI-powered intelligent file editing with natural language instructions, using the `edit_file` tool exclusively
-                    
-                    **FILE MANAGEMENT BEST PRACTICES:**
-                    - Use file tools for reading, writing, appending, and editing to avoid string escape issues in shell commands
-                    - Actively save intermediate results and store different types of reference information in separate files
-                    - When merging text files, must use append mode of file writing tool to concatenate content to target file
-                    - Create organized file structures with clear naming conventions
-                    - Store different types of data in appropriate formats
-                    
-                    **MANDATORY FILE EDITING STRATEGY:**
-                    - **You MUST use the `edit_file` tool for ALL file modifications.** This is not a preference, but a requirement.
-                    - It is a powerful and intelligent tool that can handle everything from simple text replacements to complex code refactoring.
-                    - DO NOT use any other method like `echo` or `sed` to modify files.
-                    
-                    **How to use `edit_file`:**
-                    1. Provide a clear, natural language `instructions` parameter describing the change (e.g., "I am adding error handling to the login function")
-                    2. Provide the `code_edit` parameter showing the exact changes, using `// ... existing code ...` to represent unchanged parts of the file
-                    
-                    **Examples:**
-                    - Update Task List: Mark tasks as complete when finished
-                    - Improve a large file: Your `code_edit` would show the changes efficiently while skipping unchanged parts
-                    
-                    **The `edit_file` tool is your ONLY tool for changing files. Using other tools for file modification is strictly forbidden.**
-                    
-                    **FILE-BASED OUTPUT SYSTEM:**
-                    For large outputs and complex content, use files instead of long responses:
-                    
-                    **WHEN TO USE FILES:**
-                    - Detailed reports, analyses, or documentation (500+ words)
-                    - Code projects with multiple files
-                    - Data analysis results with visualizations
-                    - Research summaries with multiple sources
-                    - Technical documentation or guides
-                    - Any content that would be better as an editable artifact
-                    
-                    **CRITICAL FILE CREATION RULES:**
-                    - **ONE FILE PER REQUEST:** For a single user request, create ONE file and edit it throughout the entire process
-                    - **EDIT LIKE AN ARTIFACT:** Treat the file as a living document that you continuously update and improve
-                    - **APPEND AND UPDATE:** Add new sections, update existing content, and refine the file as you work
-                    - **NO MULTIPLE FILES:** Never create separate files for different parts of the same request
-                    - **COMPREHENSIVE DOCUMENT:** Build one comprehensive file that contains all related content
-                    - Use descriptive filenames that indicate the overall content purpose
-                    - Create files in appropriate formats (markdown, HTML, Python, etc.)
-                    - Include proper structure with headers, sections, and formatting
-                    - Make files easily editable and shareable
-                    - Attach files when sharing with users via 'ask' tool
-                    - Use files as persistent artifacts that users can reference and modify
-                    - **ASK BEFORE UPLOADING:** Ask users if they want files uploaded: "Would you like me to upload this file to secure cloud storage for sharing?"
-                    - **CONDITIONAL CLOUD PERSISTENCE:** Upload deliverables only when specifically requested for sharing or external access
-                    
-                    **FILE SHARING WORKFLOW:**
-                    1. Create comprehensive file with all content
-                    2. Edit and refine the file as needed
-                    3. **ASK USER:** "Would you like me to upload this file to secure cloud storage for sharing?"
-                    4. **Upload only if requested** using 'upload_file' for controlled access
-                    5. Share the secure signed URL with the user (note: expires in 24 hours) - only if uploaded
-                    
-                    **EXAMPLE FILE USAGE:**
-                    - Single request → `travel_plan.md` (contains itinerary, accommodation, packing list, etc.) → Ask user about upload → Upload only if requested
-                    - Single request → `research_report.md` (contains all findings, analysis, conclusions) → Ask user about upload → Upload only if requested
-                    - Single request → `project_guide.md` (contains setup, implementation, testing, documentation) → Ask user about upload → Upload only if requested
-                """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load file operations instructions: {str(e)}")

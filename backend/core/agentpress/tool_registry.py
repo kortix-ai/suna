@@ -89,17 +89,86 @@ class ToolRegistry:
             logger.warning(f"Tool not found: {tool_name}")
         return tool
 
-    def get_openapi_schemas(self) -> List[Dict[str, Any]]:
+    def get_openapi_schemas(self, core_only: bool = False) -> List[Dict[str, Any]]:
         """Get OpenAPI schemas for function calling.
+        
+        Args:
+            core_only: If True, only return schemas for minimal core tools (messaging + tool_loader)
         
         Returns:
             List of OpenAPI-compatible schema definitions
         """
-        schemas = [
-            tool_info['schema'].schema 
-            for tool_info in self.tools.values()
-            if tool_info['schema'].schema_type == SchemaType.OPENAPI
-        ]
-        # logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
+        # Define truly minimal core tools (only messaging and tool loading)
+        MINIMAL_CORE_TOOLS = {'ExpandMessageTool', 'MessageTool', 'TaskListTool', 'ToolLoaderTool'}
+        
+        schemas = []
+        for tool_info in self.tools.values():
+            if tool_info['schema'].schema_type == SchemaType.OPENAPI:
+                if core_only:
+                    instance = tool_info['instance']
+                    class_name = instance.__class__.__name__
+                    # Only include minimal core tools
+                    if class_name in MINIMAL_CORE_TOOLS:
+                        schemas.append(tool_info['schema'].schema)
+                else:
+                    schemas.append(tool_info['schema'].schema)
+        
+        # logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas (core_only={core_only})")
         return schemas
+    
+    def get_tool_schemas(self, tool_name: str) -> Dict[str, Any]:
+        """Get all OpenAPI schemas and instructions for a specific tool.
+        
+        Args:
+            tool_name: Tool name from centralized registry (e.g., 'browser_tool', 'sb_presentation_tool')
+            
+        Returns:
+            Dict containing:
+                - tool_name: The tool identifier
+                - class_name: The tool class name
+                - schemas: List of OpenAPI schemas for all methods in that tool
+                - instructions: Tool instructions if available (from TOOL_INSTRUCTIONS attribute)
+        """
+        from core.tools.tool_registry import get_tool_info
+        
+        # Look up tool class name from centralized registry
+        tool_info = get_tool_info(tool_name)
+        if not tool_info:
+            logger.warning(f"Tool {tool_name} not found in centralized registry")
+            return {
+                "tool_name": tool_name,
+                "error": f"Tool '{tool_name}' not found in registry"
+            }
+        
+        _, _, class_name = tool_info
+        
+        # Find all methods belonging to this tool class
+        tool_schemas = []
+        tool_instance = None
+        
+        for method_name, method_info in self.tools.items():
+            instance = method_info['instance']
+            if instance.__class__.__name__ == class_name:
+                tool_instance = instance
+                schema = method_info['schema']
+                if schema.schema_type == SchemaType.OPENAPI:
+                    tool_schemas.append(schema.schema)
+        
+        # Check if tool has TOOL_INSTRUCTIONS attribute
+        instructions = None
+        if tool_instance and hasattr(tool_instance, 'TOOL_INSTRUCTIONS'):
+            instructions = tool_instance.TOOL_INSTRUCTIONS
+        
+        result = {
+            "tool_name": tool_name,
+            "class_name": class_name,
+            "schemas": tool_schemas,
+        }
+        
+        if instructions:
+            result["instructions"] = instructions
+        
+        logger.debug(f"Retrieved {len(tool_schemas)} schemas for tool {tool_name} ({class_name})")
+        
+        return result
 

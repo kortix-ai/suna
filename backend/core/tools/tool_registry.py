@@ -18,6 +18,7 @@ CORE_TOOLS = [
     ('expand_msg_tool', 'core.tools.expand_msg_tool', 'ExpandMessageTool'),
     ('message_tool', 'core.tools.message_tool', 'MessageTool'),
     ('task_list_tool', 'core.tools.task_list_tool', 'TaskListTool'),
+    ('tool_loader', 'core.tools.tool_loader', 'ToolLoaderTool'),
 ]
 
 # Sandbox tools - File system, shell, and workspace operations

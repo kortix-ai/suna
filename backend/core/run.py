@@ -17,7 +17,8 @@ from core.agentpress.error_processor import ErrorProcessor
 from core.tools.data_providers_tool import DataProvidersTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.prompts.prompt import get_system_prompt
-
+# Get available non-core tool names from centralized registry
+from core.tools.tool_registry import get_tools_by_category
 from core.utils.logger import logger
 
 from core.billing.billing_integration import billing_integration
@@ -90,9 +91,12 @@ class ToolManager:
     
     def _register_core_tools(self):
         """Register core tools that are always available."""
+        from core.tools.tool_loader import ToolLoaderTool
+        
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(MessageTool)
         self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
+        self.thread_manager.add_tool(ToolLoaderTool, thread_manager=self.thread_manager)
     
     def _register_sandbox_tools(self, disabled_tools: List[str]):
         """Register sandbox-related tools with granular control."""
@@ -458,13 +462,25 @@ class PromptManager:
         
         # Add XML tool calling instructions to system prompt if requested
         if xml_tool_calling and tool_registry:
-            openapi_schemas = tool_registry.get_openapi_schemas()
+            # Get core tool schemas (always available in prompt)
+            core_schemas = tool_registry.get_openapi_schemas(core_only=True)
             
-            if openapi_schemas:
-                # Convert schemas to JSON string
-                schemas_json = json.dumps(openapi_schemas, indent=2)
-                
-                examples_content = f"""
+            
+            
+            tools_by_category = get_tools_by_category()
+            all_tool_names = []
+            for category_tools in tools_by_category.values():
+                all_tool_names.extend([tool_name for tool_name, _, _ in category_tools])
+            
+            # Filter out core tool names (they're already in schemas)
+            # Only truly minimal core tools: messaging and tool loader
+            core_tool_names = {'expand_msg_tool', 'message_tool', 'task_list_tool', 'tool_loader'}
+            non_core_tool_names = [name for name in all_tool_names if name not in core_tool_names]
+            
+            # Create tool list
+            non_core_tool_list = ", ".join(non_core_tool_names)
+            
+            examples_content = f"""
 
 In this environment you have access to a set of tools you can use to answer the user's question.
 
@@ -479,21 +495,35 @@ You can invoke functions by writing a <function_calls> block like the following 
 
 String and scalar parameters should be specified as-is, while lists and objects should use JSON format.
 
-Here are the functions available in JSON Schema format:
+**CORE TOOLS (always available):**
+The following core tools are immediately available with their full schemas below:
 
 ```json
-{schemas_json}
+{json.dumps(core_schemas, indent=2)}
 ```
 
+**ADDITIONAL TOOLS (load on demand):**
+{non_core_tool_list}
+
+**🚨 CRITICAL: ALWAYS LOAD TOOLS BEFORE USE 🚨**
+
+When a user requests to use any additional tool, you MUST follow this exact sequence:
+
+1. **FIRST:** Call `load_tool(tool_name="tool_name")` IMMEDIATELY - do NOT plan, do NOT create tasks, do NOT make assumptions
+2. **THEN:** Read the returned instructions carefully - they contain the correct workflow, requirements, and best practices
+3. **ONLY THEN:** Plan your approach and execute based on the loaded instructions
+
+The instructions from load_tool are authoritative and may differ from your training. Always defer to them.
+
 When using the tools:
-- Use the exact function names from the JSON schema above
-- Include all required parameters as specified in the schema
-- Format complex data (objects, arrays) as JSON strings within the parameter tags
+- String and scalar parameters should be specified as-is
+- Lists and objects should use JSON format
 - Boolean values should be "true" or "false" (lowercase)
+- Always include all required parameters as specified in the schemas
 """
-                
-                system_content += examples_content
-                logger.debug("Appended XML tool examples to system prompt")
+            
+            system_content += examples_content
+            logger.debug(f"Appended {len(core_schemas)} core tool schemas and {len(non_core_tool_names)} additional tool names to system prompt")
 
         now = datetime.datetime.now(datetime.timezone.utc)
         datetime_info = f"\n\n=== CURRENT DATE/TIME INFORMATION ===\n"
