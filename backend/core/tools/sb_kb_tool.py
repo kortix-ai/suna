@@ -19,6 +19,128 @@ class SandboxKbTool(SandboxToolsBase):
     """Tool for knowledge base operations using kb-fusion binary in a Daytona sandbox.
     Provides search capabilities and maintenance operations for knowledge bases."""
 
+    TOOL_INSTRUCTIONS = """### KNOWLEDGE BASE SEMANTIC SEARCH
+
+**LOCAL KNOWLEDGE BASE (SANDBOX FILES):**
+* Use `init_kb` to initialize kb-fusion binary before performing semantic searches
+* Set sync_global_knowledge_base=false by default (only for local sandbox files)
+* Use `search_files` to perform intelligent content discovery across documents with natural language queries
+* Provide the FULL path to files/documents and your search queries
+* IMPORTANT NOTE: FULL FILE PATH IS REQUIRED - NO FILENAME ONLY
+
+**Example - Initialize KB:**
+<function_calls>
+<invoke name="init_kb">
+<parameter name="sync_global_knowledge_base">false</parameter>
+</invoke>
+</function_calls>
+
+**Example - Search Files:**
+<function_calls>
+<invoke name="search_files">
+<parameter name="path">/workspace/documents/dataset.txt</parameter>
+<parameter name="queries">["What is the main topic?", "Key findings summary"]</parameter>
+</invoke>
+</function_calls>
+
+* ALWAYS use this tool when you need to find specific information within large documents or datasets
+* Use `ls_kb` to list all indexed LOCAL IN SANDBOX files and their status
+* Use `cleanup_kb` for maintenance operations (operation: default|remove_files|clear_embeddings|clear_all)
+
+**Example - Cleanup KB:**
+<function_calls>
+<invoke name="cleanup_kb">
+<parameter name="operation">default</parameter>
+</invoke>
+</function_calls>
+
+---
+
+### GLOBAL KNOWLEDGE BASE MANAGEMENT
+
+**PURPOSE:**
+* Use `global_kb_sync` to download your assigned knowledge base files to the sandbox
+* Files are synced to `root/knowledge-base-global/` with proper folder structure
+* Use this when users ask vague questions without specific file uploads or references
+
+**Example - Sync Global KB:**
+<function_calls>
+<invoke name="global_kb_sync">
+</invoke>
+</function_calls>
+
+* After syncing, you can reference files like `root/knowledge-base-global/Documentation/api-guide.md`
+
+---
+
+**CRUD OPERATIONS FOR GLOBAL KNOWLEDGE BASE:**
+
+**CREATE:**
+* `global_kb_create_folder` - Create new folders to organize files
+
+Example:
+<function_calls>
+<invoke name="global_kb_create_folder">
+<parameter name="name">Documentation</parameter>
+</invoke>
+</function_calls>
+
+* `global_kb_upload_file` - Upload files from sandbox to global knowledge base (USE FULL PATH)
+
+Example:
+<function_calls>
+<invoke name="global_kb_upload_file">
+<parameter name="sandbox_file_path">workspace/analysis.txt</parameter>
+<parameter name="folder_name">Documentation</parameter>
+</invoke>
+</function_calls>
+
+**READ:**
+* `global_kb_list_contents` - View all folders and files in global knowledge base with their IDs
+
+Example:
+<function_calls>
+<invoke name="global_kb_list_contents">
+</invoke>
+</function_calls>
+
+**DELETE:**
+* `global_kb_delete_item` - Remove files or folders using their ID (get IDs from global_kb_list_contents)
+
+Example:
+<function_calls>
+<invoke name="global_kb_delete_item">
+<parameter name="item_type">file</parameter>
+<parameter name="item_id">123e4567-e89b-12d3-a456-426614174000</parameter>
+</invoke>
+</function_calls>
+
+**ENABLE/DISABLE:**
+* `global_kb_enable_item` - Enable or disable KB files for this agent (controls what gets synced)
+
+Example:
+<function_calls>
+<invoke name="global_kb_enable_item">
+<parameter name="item_type">file</parameter>
+<parameter name="item_id">123e4567-e89b-12d3-a456-426614174000</parameter>
+<parameter name="enabled">true</parameter>
+</invoke>
+</function_calls>
+
+---
+
+**WORKFLOW:**
+1. Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access
+2. Structure is 1-level deep: folders contain files only (no nested folders)
+
+**BEST PRACTICES:**
+* Use local KB for workspace files
+* Use global KB for persistent, cross-session knowledge
+* Always provide full file paths for searches
+* Use natural language queries for semantic search
+* Clean up KB regularly to maintain performance
+"""
+
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.kb_version = "0.1.1"
@@ -857,146 +979,3 @@ Agent ID: {agent_id}
             
         except Exception as e:
             return self.fail_response(f"Failed to list knowledge base contents: {str(e)}")
-    
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_kb_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE USING KNOWLEDGE BASE: Load detailed knowledge base workflow and requirements. You MUST call this before using KB tools to understand semantic search, global KB management, and best practices.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_kb_instructions(self) -> ToolResult:
-        """Load detailed knowledge base workflow and requirements"""
-        try:
-            return self.success_response({
-                "message": "Knowledge base workflow and requirements loaded successfully",
-                "instructions": """
-                    ### KNOWLEDGE BASE SEMANTIC SEARCH
-                    
-                    **LOCAL KNOWLEDGE BASE (SANDBOX FILES):**
-                    * Use `init_kb` to initialize kb-fusion binary before performing semantic searches
-                    * Set sync_global_knowledge_base=false by default (only for local sandbox files)
-                    * Use `search_files` to perform intelligent content discovery across documents with natural language queries
-                    * Provide the FULL path to files/documents and your search queries
-                    * IMPORTANT NOTE: FULL FILE PATH IS REQUIRED - NO FILENAME ONLY
-                    
-                    **Example - Initialize KB:**
-                    <function_calls>
-                    <invoke name="init_kb">
-                    <parameter name="sync_global_knowledge_base">false</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    **Example - Search Files:**
-                    <function_calls>
-                    <invoke name="search_files">
-                    <parameter name="path">/workspace/documents/dataset.txt</parameter>
-                    <parameter name="queries">["What is the main topic?", "Key findings summary"]</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    * ALWAYS use this tool when you need to find specific information within large documents or datasets
-                    * Use `ls_kb` to list all indexed LOCAL IN SANDBOX files and their status
-                    * Use `cleanup_kb` for maintenance operations (operation: default|remove_files|clear_embeddings|clear_all)
-                    
-                    **Example - Cleanup KB:**
-                    <function_calls>
-                    <invoke name="cleanup_kb">
-                    <parameter name="operation">default</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    ---
-                    
-                    ### GLOBAL KNOWLEDGE BASE MANAGEMENT
-                    
-                    **PURPOSE:**
-                    * Use `global_kb_sync` to download your assigned knowledge base files to the sandbox
-                    * Files are synced to `root/knowledge-base-global/` with proper folder structure
-                    * Use this when users ask vague questions without specific file uploads or references
-                    
-                    **Example - Sync Global KB:**
-                    <function_calls>
-                    <invoke name="global_kb_sync">
-                    </invoke>
-                    </function_calls>
-                    
-                    * After syncing, you can reference files like `root/knowledge-base-global/Documentation/api-guide.md`
-                    
-                    ---
-                    
-                    **CRUD OPERATIONS FOR GLOBAL KNOWLEDGE BASE:**
-                    
-                    **CREATE:**
-                    * `global_kb_create_folder` - Create new folders to organize files
-                    
-                    Example:
-                    <function_calls>
-                    <invoke name="global_kb_create_folder">
-                    <parameter name="name">Documentation</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    * `global_kb_upload_file` - Upload files from sandbox to global knowledge base (USE FULL PATH)
-                    
-                    Example:
-                    <function_calls>
-                    <invoke name="global_kb_upload_file">
-                    <parameter name="sandbox_file_path">workspace/analysis.txt</parameter>
-                    <parameter name="folder_name">Documentation</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    **READ:**
-                    * `global_kb_list_contents` - View all folders and files in global knowledge base with their IDs
-                    
-                    Example:
-                    <function_calls>
-                    <invoke name="global_kb_list_contents">
-                    </invoke>
-                    </function_calls>
-                    
-                    **DELETE:**
-                    * `global_kb_delete_item` - Remove files or folders using their ID (get IDs from global_kb_list_contents)
-                    
-                    Example:
-                    <function_calls>
-                    <invoke name="global_kb_delete_item">
-                    <parameter name="item_type">file</parameter>
-                    <parameter name="item_id">123e4567-e89b-12d3-a456-426614174000</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    **ENABLE/DISABLE:**
-                    * `global_kb_enable_item` - Enable or disable KB files for this agent (controls what gets synced)
-                    
-                    Example:
-                    <function_calls>
-                    <invoke name="global_kb_enable_item">
-                    <parameter name="item_type">file</parameter>
-                    <parameter name="item_id">123e4567-e89b-12d3-a456-426614174000</parameter>
-                    <parameter name="enabled">true</parameter>
-                    </invoke>
-                    </function_calls>
-                    
-                    ---
-                    
-                    **WORKFLOW:**
-                    1. Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access
-                    2. Structure is 1-level deep: folders contain files only (no nested folders)
-                    
-                    **BEST PRACTICES:**
-                    * Use local KB for workspace files
-                    * Use global KB for persistent, cross-session knowledge
-                    * Always provide full file paths for searches
-                    * Use natural language queries for semantic search
-                    * Clean up KB regularly to maintain performance
-                """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load KB instructions: {str(e)}")

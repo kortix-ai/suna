@@ -24,6 +24,111 @@ import time
 class SandboxWebSearchTool(SandboxToolsBase):
     """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""
 
+    TOOL_INSTRUCTIONS = """### WEB SEARCH & CONTENT EXTRACTION WORKFLOW
+
+**WEB SEARCH CAPABILITIES:**
+- Searching the web for up-to-date information with direct question answering
+- **BATCH SEARCHING:** Execute multiple queries concurrently for faster research - provide an array of queries to search multiple topics simultaneously
+- Retrieving relevant images related to search queries
+- Getting comprehensive search results with titles, URLs, and snippets
+- Finding recent news, articles, and information beyond training data
+- Scraping webpage content for detailed information extraction when needed
+
+**RESEARCH BEST PRACTICES:**
+1. ALWAYS use a multi-source approach for thorough research:
+   * Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
+   * ALWAYS use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic
+   * Only use scrape-webpage when you need detailed content not available in the search results
+   * Utilize data providers for real-time, accurate data when available
+   * Only use browser tools when scrape-webpage fails or interaction is needed
+
+2. Data Provider Priority:
+   * ALWAYS check if a data provider exists for your research topic
+   * Use data providers as the primary source when available
+   * Data providers offer real-time, accurate data for: LinkedIn, Twitter, Zillow, Amazon, Yahoo Finance, Active Jobs
+   * Only fall back to web search when no data provider is available
+
+3. Research Workflow:
+   a. First check for relevant data providers
+   b. If no data provider exists:
+      - **MANDATORY**: Use web-search in BATCH MODE with multiple queries to get direct answers, images, and relevant URLs efficiently
+      - ALWAYS use `web_search(query=["aspect1", "aspect2", "aspect3"])` format when researching multiple aspects
+      - **CRITICAL**: When researching any topic with multiple dimensions (overview, features, pricing, demographics, use cases, etc.), ALWAYS use batch mode instead of sequential searches
+      - Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"])` runs all searches in parallel
+      - Only if you need specific details not found in search results: Use scrape-webpage on specific URLs
+      - Only if scrape-webpage fails or page requires interaction: Use browser automation tools
+   c. Cross-reference information from multiple sources
+   d. Verify data accuracy and freshness
+   e. Document sources and timestamps
+
+**WEB SEARCH BEST PRACTICES:**
+1. **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently
+   - This dramatically speeds up research when investigating multiple aspects of a topic
+   - Example: `web_search(query=["topic overview", "use cases", "user demographics", "pricing"])` executes all searches in parallel
+
+2. **WHEN TO USE BATCH MODE:**
+   - Researching multiple related topics simultaneously (overview, use cases, demographics, pricing, etc.)
+   - Gathering comprehensive information across different aspects of a subject
+   - Performing parallel searches for faster results
+   - When you need to cover multiple angles of investigation quickly
+
+3. **WHEN TO USE SINGLE QUERY MODE:**
+   - Simple, focused searches for specific information
+   - Follow-up searches based on previous results
+   - When you need to refine a search iteratively
+
+4. Use specific, targeted questions to get direct answers from web-search
+5. Include key terms and contextual information in search queries
+6. Filter search results by date when freshness is important
+7. Review the direct answer, images, and search results
+8. Analyze multiple search results to cross-validate information
+
+**CONTENT EXTRACTION DECISION TREE:**
+1. ALWAYS start with web-search using BATCH MODE to get direct answers, images, and search results efficiently
+2. Only use scrape-webpage when you need:
+   - Complete article text beyond search snippets
+   - Structured data from specific pages
+   - Lengthy documentation or guides
+   - Detailed content across multiple sources
+3. Never use scrape-webpage when:
+   - You can get the same information from a data provider
+   - You can download the file and directly use it (CSV, JSON, TXT, PDF)
+   - Web-search already answers the query
+   - Only basic facts or information are needed
+   - Only a high-level overview is needed
+4. Only use browser tools if scrape-webpage fails or interaction is required:
+   - Use browser automation for: dynamic content loading, JavaScript-heavy sites, pages requiring login, interactive elements, infinite scroll pages, form submissions
+   - DO NOT use browser tools directly unless interaction is required
+5. Maintain this strict workflow order: web-search → scrape-webpage (if necessary) → browser tools (if needed)
+
+**WEB CONTENT EXTRACTION:**
+1. Verify URL validity before scraping
+2. Extract and save content to files for further processing
+3. Parse content using appropriate tools based on content type
+4. Respect web content limitations - not all content may be accessible
+5. Extract only the relevant portions of web content
+6. **ASK BEFORE UPLOADING:** Ask users if they want scraped data uploaded
+7. **CONDITIONAL RESEARCH DELIVERABLES:** Scrape → Process → Save → Ask user about upload → Share URL only if requested
+
+**DATA FRESHNESS:**
+1. Always check publication dates of search results
+2. Prioritize recent sources for time-sensitive information
+3. Use date filters to ensure information relevance
+4. Provide timestamp context when sharing web search information
+5. Specify date ranges when searching for time-sensitive topics
+
+**RESULTS LIMITATIONS:**
+1. Acknowledge when content is not accessible or behind paywalls
+2. Be transparent about scraping limitations when relevant
+3. Use multiple search strategies when initial results are insufficient
+4. Consider search result score when evaluating relevance
+5. Try alternative queries if initial search results are inadequate
+
+**TIME CONTEXT FOR RESEARCH:**
+* CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use the current date/time values provided at runtime as reference points
+* Never use outdated information or assume different dates
+"""
+
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         # Load environment variables
@@ -501,131 +606,6 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 "error": error_message
             }
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_web_search_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE WEB SEARCHING: Load detailed web search workflow and best practices. You MUST call this before performing web searches to understand batch searching, content extraction decision trees, and research workflows.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_web_search_instructions(self) -> ToolResult:
-        """Load detailed web search workflow and requirements"""
-        try:
-            return self.success_response({
-                "message": "Web search workflow and requirements loaded successfully",
-                "instructions": """
-                    ### WEB SEARCH & CONTENT EXTRACTION WORKFLOW
-                    
-                    **WEB SEARCH CAPABILITIES:**
-                    - Searching the web for up-to-date information with direct question answering
-                    - **BATCH SEARCHING:** Execute multiple queries concurrently for faster research - provide an array of queries to search multiple topics simultaneously
-                    - Retrieving relevant images related to search queries
-                    - Getting comprehensive search results with titles, URLs, and snippets
-                    - Finding recent news, articles, and information beyond training data
-                    - Scraping webpage content for detailed information extraction when needed
-                    
-                    **RESEARCH BEST PRACTICES:**
-                    1. ALWAYS use a multi-source approach for thorough research:
-                       * Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
-                       * ALWAYS use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic
-                       * Only use scrape-webpage when you need detailed content not available in the search results
-                       * Utilize data providers for real-time, accurate data when available
-                       * Only use browser tools when scrape-webpage fails or interaction is needed
-                    
-                    2. Data Provider Priority:
-                       * ALWAYS check if a data provider exists for your research topic
-                       * Use data providers as the primary source when available
-                       * Data providers offer real-time, accurate data for: LinkedIn, Twitter, Zillow, Amazon, Yahoo Finance, Active Jobs
-                       * Only fall back to web search when no data provider is available
-                    
-                    3. Research Workflow:
-                       a. First check for relevant data providers
-                       b. If no data provider exists:
-                          - **MANDATORY**: Use web-search in BATCH MODE with multiple queries to get direct answers, images, and relevant URLs efficiently
-                          - ALWAYS use `web_search(query=["aspect1", "aspect2", "aspect3"])` format when researching multiple aspects
-                          - **CRITICAL**: When researching any topic with multiple dimensions (overview, features, pricing, demographics, use cases, etc.), ALWAYS use batch mode instead of sequential searches
-                          - Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"])` runs all searches in parallel
-                          - Only if you need specific details not found in search results: Use scrape-webpage on specific URLs
-                          - Only if scrape-webpage fails or page requires interaction: Use browser automation tools
-                       c. Cross-reference information from multiple sources
-                       d. Verify data accuracy and freshness
-                       e. Document sources and timestamps
-                    
-                    **WEB SEARCH BEST PRACTICES:**
-                    1. **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently
-                       - This dramatically speeds up research when investigating multiple aspects of a topic
-                       - Example: `web_search(query=["topic overview", "use cases", "user demographics", "pricing"])` executes all searches in parallel
-                    
-                    2. **WHEN TO USE BATCH MODE:**
-                       - Researching multiple related topics simultaneously (overview, use cases, demographics, pricing, etc.)
-                       - Gathering comprehensive information across different aspects of a subject
-                       - Performing parallel searches for faster results
-                       - When you need to cover multiple angles of investigation quickly
-                    
-                    3. **WHEN TO USE SINGLE QUERY MODE:**
-                       - Simple, focused searches for specific information
-                       - Follow-up searches based on previous results
-                       - When you need to refine a search iteratively
-                    
-                    4. Use specific, targeted questions to get direct answers from web-search
-                    5. Include key terms and contextual information in search queries
-                    6. Filter search results by date when freshness is important
-                    7. Review the direct answer, images, and search results
-                    8. Analyze multiple search results to cross-validate information
-                    
-                    **CONTENT EXTRACTION DECISION TREE:**
-                    1. ALWAYS start with web-search using BATCH MODE to get direct answers, images, and search results efficiently
-                    2. Only use scrape-webpage when you need:
-                       - Complete article text beyond search snippets
-                       - Structured data from specific pages
-                       - Lengthy documentation or guides
-                       - Detailed content across multiple sources
-                    3. Never use scrape-webpage when:
-                       - You can get the same information from a data provider
-                       - You can download the file and directly use it (CSV, JSON, TXT, PDF)
-                       - Web-search already answers the query
-                       - Only basic facts or information are needed
-                       - Only a high-level overview is needed
-                    4. Only use browser tools if scrape-webpage fails or interaction is required:
-                       - Use browser automation for: dynamic content loading, JavaScript-heavy sites, pages requiring login, interactive elements, infinite scroll pages, form submissions
-                       - DO NOT use browser tools directly unless interaction is required
-                    5. Maintain this strict workflow order: web-search → scrape-webpage (if necessary) → browser tools (if needed)
-                    
-                    **WEB CONTENT EXTRACTION:**
-                    1. Verify URL validity before scraping
-                    2. Extract and save content to files for further processing
-                    3. Parse content using appropriate tools based on content type
-                    4. Respect web content limitations - not all content may be accessible
-                    5. Extract only the relevant portions of web content
-                    6. **ASK BEFORE UPLOADING:** Ask users if they want scraped data uploaded
-                    7. **CONDITIONAL RESEARCH DELIVERABLES:** Scrape → Process → Save → Ask user about upload → Share URL only if requested
-                    
-                    **DATA FRESHNESS:**
-                    1. Always check publication dates of search results
-                    2. Prioritize recent sources for time-sensitive information
-                    3. Use date filters to ensure information relevance
-                    4. Provide timestamp context when sharing web search information
-                    5. Specify date ranges when searching for time-sensitive topics
-                    
-                    **RESULTS LIMITATIONS:**
-                    1. Acknowledge when content is not accessible or behind paywalls
-                    2. Be transparent about scraping limitations when relevant
-                    3. Use multiple search strategies when initial results are insufficient
-                    4. Consider search result score when evaluating relevance
-                    5. Try alternative queries if initial search results are inadequate
-                    
-                    **TIME CONTEXT FOR RESEARCH:**
-                    * CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use the current date/time values provided at runtime as reference points
-                    * Never use outdated information or assume different dates
-                """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load web search instructions: {str(e)}")
 
 
 if __name__ == "__main__":

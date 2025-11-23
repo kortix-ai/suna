@@ -19,30 +19,7 @@ import base64
 class SandboxImageEditTool(SandboxToolsBase):
     """Tool for generating or editing images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
 
-    def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
-        super().__init__(project_id, thread_manager)
-        self.thread_id = thread_id
-        self.thread_manager = thread_manager
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_image_edit_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE EDITING AN IMAGE: Load detailed image editing workflow and requirements. You MUST call this before editing any images to understand the image editing workflow, best practices, and limitations.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_image_edit_instructions(self) -> ToolResult:
-        """Load detailed image editing workflow and requirements"""
-        try:
-            return self.success_response({
-                "message": "Image editing workflow and requirements loaded successfully",
-                "instructions": """
-                    ### IMAGE GENERATION & EDITING (GENERAL)
+    TOOL_INSTRUCTIONS = """### IMAGE GENERATION & EDITING (GENERAL)
                     - Use the 'image_edit_or_generate' tool to generate new images from a prompt or to edit an existing image file (no mask support)
                     
                     **CRITICAL: USE EDIT MODE FOR MULTI-TURN IMAGE MODIFICATIONS**
@@ -103,9 +80,12 @@ class SandboxImageEditTool(SandboxToolsBase):
                     * **OPTIONAL CLOUD SHARING:** Ask user if they want to upload images: "Would you like me to upload this image to secure cloud storage for sharing?"
                     * **CLOUD WORKFLOW (if requested):** Generate/Edit → Save to workspace → Ask user → Upload to "file-uploads" bucket if requested → Share public URL with user
                 """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load image editing workflow and requirements: {str(e)}")
+
+    def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
+        super().__init__(project_id, thread_manager)
+        self.thread_id = thread_id
+        self.thread_manager = thread_manager
+
 
     @openapi_schema(
         {

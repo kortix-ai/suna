@@ -17,77 +17,7 @@ import base64
     visible=True
 )
 class SandboxDesignerTool(SandboxToolsBase):
-    def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
-        super().__init__(project_id, thread_manager)
-        self.thread_id = thread_id
-        self.thread_manager = thread_manager
-        self.designs_dir = "/workspace/designs"
-        
-        self.social_media_sizes = {
-            "instagram_square": (1080, 1080),
-            "instagram_portrait": (1080, 1350),
-            "instagram_story": (1080, 1920),
-            "instagram_landscape": (1080, 566),
-            "facebook_post": (1200, 630),
-            "facebook_cover": (1640, 859),
-            "facebook_story": (1080, 1920),
-            "twitter_post": (1024, 512),
-            "twitter_header": (1500, 500),
-            "linkedin_post": (1200, 627),
-            "linkedin_banner": (1584, 396),
-            "linkedin_article": (1280, 1920),
-            "youtube_thumbnail": (1280, 720),
-            "youtube_banner": (2560, 1440),
-            "pinterest_pin": (1000, 1500),
-            "pinterest_square": (1000, 1000),
-            "tiktok_video": (1080, 1920),
-            "whatsapp_status": (1080, 1920),
-            "google_ads_square": (250, 250),
-            "google_ads_medium": (300, 250),
-            "google_ads_large": (336, 280),
-            "google_ads_banner": (728, 90),
-            "google_ads_leaderboard": (970, 250),
-            "google_ads_skyscraper": (160, 600),
-            "facebook_ads_feed": (1080, 1080),
-            "facebook_ads_story": (1080, 1920),
-            "display_ad_billboard": (970, 250),
-            "display_ad_square": (300, 300),
-            "display_ad_vertical": (300, 600),
-            "email_header": (600, 200),
-            "blog_header": (1920, 1080),
-            "presentation_16_9": (1920, 1080),
-            "presentation_4_3": (1024, 768),
-            "business_card": (1050, 600),
-            "flyer_a4": (2480, 3508),
-            "poster_a3": (3508, 4961),
-        }
-        
-    async def _ensure_designs_directory(self):
-        await self._ensure_sandbox()
-        try:
-            await self.sandbox.fs.make_dir(self.designs_dir)
-        except:
-            pass
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "load_designer_instructions",
-            "description": "REQUIRED FIRST STEP BEFORE CREATING A DESIGN: Load detailed design creation workflow and requirements. You MUST call this before creating any designs to understand the design creation workflow, best practices, and limitations.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def load_designer_instructions(self) -> ToolResult:
-        """Load detailed design creation workflow and requirements"""
-        try:
-            return self.success_response({
-                "message": "Design creation workflow and requirements loaded successfully",
-                "instructions": """
-                    ### PROFESSIONAL DESIGN CREATION & EDITING (DESIGNER TOOL)
+    TOOL_INSTRUCTIONS = """### PROFESSIONAL DESIGN CREATION & EDITING (DESIGNER TOOL)
                     - Use the 'designer_create_or_edit' tool for creating professional, high-quality designs optimized for social media, advertising, and marketing
                     
                     **CRITICAL DESIGNER TOOL USAGE RULES:**
@@ -174,9 +104,58 @@ class SandboxDesignerTool(SandboxToolsBase):
                     * The AI will automatically optimize the image dimensions based on the platform preset
                     * All platform-specific aspect ratios are properly handled (square, portrait, landscape, ultra-wide, etc.)
                 """
-            })
-        except Exception as e:
-            return self.fail_response(f"Failed to load design creation workflow and requirements: {str(e)}")
+
+    def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
+        super().__init__(project_id, thread_manager)
+        self.thread_id = thread_id
+        self.thread_manager = thread_manager
+        self.designs_dir = "/workspace/designs"
+        
+        self.social_media_sizes = {
+            "instagram_square": (1080, 1080),
+            "instagram_portrait": (1080, 1350),
+            "instagram_story": (1080, 1920),
+            "instagram_landscape": (1080, 566),
+            "facebook_post": (1200, 630),
+            "facebook_cover": (1640, 859),
+            "facebook_story": (1080, 1920),
+            "twitter_post": (1024, 512),
+            "twitter_header": (1500, 500),
+            "linkedin_post": (1200, 627),
+            "linkedin_banner": (1584, 396),
+            "linkedin_article": (1280, 1920),
+            "youtube_thumbnail": (1280, 720),
+            "youtube_banner": (2560, 1440),
+            "pinterest_pin": (1000, 1500),
+            "pinterest_square": (1000, 1000),
+            "tiktok_video": (1080, 1920),
+            "whatsapp_status": (1080, 1920),
+            "google_ads_square": (250, 250),
+            "google_ads_medium": (300, 250),
+            "google_ads_large": (336, 280),
+            "google_ads_banner": (728, 90),
+            "google_ads_leaderboard": (970, 250),
+            "google_ads_skyscraper": (160, 600),
+            "facebook_ads_feed": (1080, 1080),
+            "facebook_ads_story": (1080, 1920),
+            "display_ad_billboard": (970, 250),
+            "display_ad_square": (300, 300),
+            "display_ad_vertical": (300, 600),
+            "email_header": (600, 200),
+            "blog_header": (1920, 1080),
+            "presentation_16_9": (1920, 1080),
+            "presentation_4_3": (1024, 768),
+            "business_card": (1050, 600),
+            "flyer_a4": (2480, 3508),
+            "poster_a3": (3508, 4961),
+        }
+        
+    async def _ensure_designs_directory(self):
+        await self._ensure_sandbox()
+        try:
+            await self.sandbox.fs.make_dir(self.designs_dir)
+        except:
+            pass
 
     @openapi_schema(
         {
