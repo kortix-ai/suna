@@ -7,7 +7,6 @@ from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.logger import logger, structlog
 from core.utils.config import config, EnvMode
-from run_agent_background import run_agent_background
 from core.billing.billing_integration import billing_integration
 from .trigger_service import TriggerEvent, TriggerResult
 
@@ -358,6 +357,9 @@ class AgentExecutor:
         agent_run_id = agent_run.data[0]['id']
         
         await self._register_agent_run(agent_run_id)
+        
+        # Lazy import to avoid circular dependency at module initialization
+        from run_agent_background import run_agent_background
         
         run_agent_background.send(
             agent_run_id=agent_run_id,
