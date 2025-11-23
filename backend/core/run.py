@@ -10,7 +10,6 @@ from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
 from dotenv import load_dotenv
 from core.utils.config import config, EnvMode
-from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.response_processor import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
@@ -368,19 +367,6 @@ class PromptManager:
         else:
             system_content = default_system_content
         
-        # Check if agent has builder tools enabled - append the full builder prompt
-        if agent_config:
-            agentpress_tools = agent_config.get('agentpress_tools', {})
-            has_builder_tools = any(
-                agentpress_tools.get(tool, False) 
-                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
-            )
-            
-            if has_builder_tools:
-                # Append the full agent builder prompt to the existing system prompt
-                builder_prompt = get_agent_builder_prompt()
-                system_content += f"\n\n{builder_prompt}"
-        
         # Add agent knowledge base context if available
         if agent_config and client and 'agent_id' in agent_config:
             try:
@@ -720,6 +706,7 @@ class AgentRunner:
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
         logger.debug(f"model_name received: {self.config.model_name}")
+        logger.debug(f"system_message: {system_message}")
         iteration_count = 0
         continue_execution = True
 

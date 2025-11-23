@@ -1,7 +1,17 @@
 from typing import Dict, Type, Any, List, Optional, Callable
 from core.agentpress.tool import Tool, SchemaType
+from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.utils.logger import logger
 import json
+
+# Builder tools that should load the comprehensive agent builder prompt
+BUILDER_TOOLS = {
+    'agent_config_tool',
+    'mcp_search_tool',
+    'credential_profile_tool',
+    'trigger_tool',
+    'agent_creation_tool'
+}
 
 
 class ToolRegistry:
@@ -158,6 +168,17 @@ class ToolRegistry:
         instructions = None
         if tool_instance and hasattr(tool_instance, 'TOOL_INSTRUCTIONS'):
             instructions = tool_instance.TOOL_INSTRUCTIONS
+        
+        # If this is a builder tool, append the comprehensive agent builder prompt
+        if tool_name in BUILDER_TOOLS:
+            builder_prompt = get_agent_builder_prompt()
+            
+            if instructions:
+                instructions = f"{instructions}\n\n{builder_prompt}"
+            else:
+                instructions = builder_prompt
+            
+            logger.debug(f"Appended agent builder prompt to {tool_name}")
         
         result = {
             "tool_name": tool_name,

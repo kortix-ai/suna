@@ -26,7 +26,7 @@ class ToolLoaderTool(Tool):
         "type": "function",
         "function": {
             "name": "load_tool",
-            "description": "🚨 MANDATORY FIRST STEP: Load tool schemas and instructions BEFORE using any non-core tool. This must be your FIRST action when a user requests a tool - do NOT plan, create tasks, or make assumptions until AFTER loading instructions. The returned instructions contain the authoritative workflow and requirements that supersede your training data.",
+            "description": "🚨 MANDATORY FIRST STEP: Load tool schemas and instructions BEFORE using any non-core tool. This must be your FIRST action when a user requests a tool - do NOT plan, create tasks, or make assumptions until AFTER loading instructions. The returned instructions contain the authoritative workflow and requirements that supersede your training data. For agent building/configuration tasks, loading any builder tool (agent_config_tool, mcp_search_tool, credential_profile_tool, trigger_tool, agent_creation_tool) will provide comprehensive agent building guidance.",
             "parameters": {
                 "type": "object",
                 "properties": {
