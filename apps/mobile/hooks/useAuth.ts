@@ -352,9 +352,7 @@ export function useAuth() {
     }
   }, []);
 
-  /**
-   * Update password (after reset)
-   */
+
   const updatePassword = useCallback(async (newPassword: string) => {
     try {
       console.log('🎯 Password update attempt');
@@ -450,14 +448,21 @@ export function useAuth() {
 
     try {
       console.log('🎯 Sign out initiated');
+      if (shouldUseRevenueCat()) {
+        try {
+          const { logoutRevenueCat } = require('@/lib/billing/revenuecat');
+          await logoutRevenueCat();
+          console.log('✅ RevenueCat logout completed - subscription detached from device');
+        } catch (rcError) {
+          console.warn('⚠️  RevenueCat logout failed (non-critical):', rcError);
+        }
+      }
 
-      // Step 1: Try global sign out (preferred method)
       const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
 
       if (globalError) {
         console.warn('⚠️  Global sign out failed:', globalError.message);
         
-        // Step 2: Fallback to local-only sign out
         const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
         
         if (localError) {
@@ -465,18 +470,14 @@ export function useAuth() {
         }
       }
 
-      // Step 3: Nuclear option - manually clear all Supabase data
       await clearSupabaseStorage();
 
-      // Step 4: Clear app-specific data
       await clearAppData();
 
-      // Step 5: Clear React Query cache (threads, agents, workers, etc.)
       console.log('🗑️  Clearing React Query cache...');
       queryClient.clear();
       console.log('✅ React Query cache cleared');
 
-      // Step 6: Force React state update
       forceSignOutState();
 
       console.log('✅ Sign out completed successfully - all data cleared');
@@ -485,14 +486,13 @@ export function useAuth() {
     } catch (error: any) {
       console.error('❌ Sign out exception:', error);
 
-      // Emergency cleanup - ensure sign out completes
       await clearSupabaseStorage().catch(() => {});
       await clearAppData().catch(() => {});
-      queryClient.clear(); // Also clear React Query cache on error
+      queryClient.clear();
       forceSignOutState();
 
       console.log('✅ Sign out completed (with errors handled) - all data cleared');
-      return { success: true }; // Always return success to prevent UI lock
+      return { success: true };
     }
   }, [queryClient]);
 
