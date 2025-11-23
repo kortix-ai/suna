@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Wrench
 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
   useComposioProfiles,

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert, Switch } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -291,8 +291,8 @@ export function ComposioConnectorContent({
                 setSelectedProfileId('new');
               }}
               className={`flex-row items-center p-4 rounded-3xl active:opacity-80 ${selectedConnectionType === 'new'
-                  ? 'bg-primary/10'
-                  : 'bg-muted/5'
+                ? 'bg-primary/10'
+                : 'bg-muted/5'
                 }`}
             >
               <View className={`w-10 h-10 rounded-xl items-center justify-center ${selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
@@ -327,34 +327,35 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.ProfileCreate) {
     return (
-      <View className="flex-1">
-        <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
+      <View className={noPadding ? "pb-6" : "pb-6"}>
+        {/* Header with back button, title, and description */}
+        <View className="flex-row items-center mb-4">
           <Pressable
             onPress={handleBack}
-            className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
+            className="flex-row items-center active:opacity-70"
           >
-            <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
+            <ArrowLeft
+              size={20}
+              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+            />
           </Pressable>
-
-          <View className="mb-8">
-            <View className="flex-row items-center gap-4 mb-2">
-              <View className="w-14 h-14 rounded-2xl bg-background border border-border/40 items-center justify-center">
-                <ToolkitIcon
-                  slug={app.slug}
-                  name={app.name}
-                  size="sm"
-                />
-              </View>
-              <View className="flex-1">
-                <Text className="text-2xl font-roobert-bold text-foreground">
-                  {app.name}
-                </Text>
-              </View>
-            </View>
-            <Text className="text-base font-roobert text-muted-foreground mt-2">
+          <View className="flex-1 ml-3">
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="text-xl font-roobert-semibold"
+            >
+              {app.name}
+            </Text>
+            <Text
+              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+              className="text-sm font-roobert"
+            >
               {t('integrations.connector.chooseNameForConnection')}
             </Text>
           </View>
+        </View>
+
+        <View className={noPadding ? "" : "px-0"}>
 
           <View className="mb-8">
             <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
@@ -366,8 +367,8 @@ export function ComposioConnectorContent({
                 onChangeText={setProfileName}
                 placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
                 className={`bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground pr-12 ${nameAvailability && !nameAvailability.available ? 'border-2 border-red-500/50' :
-                    nameAvailability && nameAvailability.available && profileName.length > 0 ? 'border border-border/40' :
-                      'border border-border/40'
+                  nameAvailability && nameAvailability.available && profileName.length > 0 ? 'border border-border/40' :
+                    'border border-border/40'
                   }`}
                 placeholderTextColor="rgba(156, 163, 175, 0.5)"
                 autoFocus
@@ -434,44 +435,42 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.Connecting) {
     return (
-      <View className="flex-1">
-        <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-          <View className="items-center pt-12 pb-12">
-            <View className="w-20 h-20 rounded-2xl bg-muted/5 border border-border/40 items-center justify-center mb-6">
-              <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
-            </View>
-            <Text className="text-2xl font-roobert-bold text-foreground mb-2 text-center">
-              {t('integrations.connector.completeInBrowser')}
-            </Text>
-            <Text className="text-base font-roobert text-muted-foreground text-center mb-8 px-8 leading-relaxed">
-              {t('integrations.connector.authenticateInstructions')}
-            </Text>
+      <View className={noPadding ? "pb-6" : "pb-6"}>
+        <View className="items-center pt-12 pb-12">
+          <View className="w-20 h-20 rounded-2xl bg-muted/5 border border-border/40 items-center justify-center mb-6">
+            <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
+          </View>
+          <Text className="text-2xl font-roobert-bold text-foreground mb-2 text-center">
+            {t('integrations.connector.completeInBrowser')}
+          </Text>
+          <Text className="text-base font-roobert text-muted-foreground text-center mb-8 px-8 leading-relaxed">
+            {t('integrations.connector.authenticateInstructions')}
+          </Text>
 
-            {redirectUrl && (
-              <Pressable
-                onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
-                className="mb-6 active:opacity-70"
-              >
-                <Text className="text-sm font-roobert-medium text-foreground underline">
-                  {t('integrations.connector.reopenBrowser')}
-                </Text>
-              </Pressable>
-            )}
-
-            <ContinueButton
-              onPress={handleAuthComplete}
-              label={t('integrations.connector.completedAuthentication')}
-            />
-
+          {redirectUrl && (
             <Pressable
-              onPress={handleBack}
-              className="py-2 mt-4 active:opacity-70"
+              onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
+              className="mb-6 active:opacity-70"
             >
-              <Text className="text-sm font-roobert text-muted-foreground">
-                {t('integrations.connector.goBack')}
+              <Text className="text-sm font-roobert-medium text-foreground underline">
+                {t('integrations.connector.reopenBrowser')}
               </Text>
             </Pressable>
-          </View>
+          )}
+
+          <ContinueButton
+            onPress={handleAuthComplete}
+            label={t('integrations.connector.completedAuthentication')}
+          />
+
+          <Pressable
+            onPress={handleBack}
+            className="py-2 mt-4 active:opacity-70"
+          >
+            <Text className="text-sm font-roobert text-muted-foreground">
+              {t('integrations.connector.goBack')}
+            </Text>
+          </Pressable>
         </View>
       </View>
     );
@@ -479,19 +478,17 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.Success) {
     return (
-      <View className="flex-1">
-        <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-          <View className="items-center pt-16 pb-12">
-            <View className="w-20 h-20 rounded-full bg-green-500/10 items-center justify-center mb-6">
-              <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
-            </View>
-            <Text className="text-2xl font-roobert-bold text-foreground mb-2">
-              {t('integrations.connector.allSet')}
-            </Text>
-            <Text className="text-base font-roobert text-muted-foreground text-center px-8">
-              {t('integrations.connector.connectionReady', { app: app.name })}
-            </Text>
+      <View className={noPadding ? "pb-6" : "pb-6"}>
+        <View className="items-center pt-16 pb-12">
+          <View className="w-20 h-20 rounded-full bg-green-500/10 items-center justify-center mb-6">
+            <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
           </View>
+          <Text className="text-2xl font-roobert-bold text-foreground mb-2">
+            {t('integrations.connector.allSet')}
+          </Text>
+          <Text className="text-base font-roobert text-muted-foreground text-center px-8">
+            {t('integrations.connector.connectionReady', { app: app.name })}
+          </Text>
         </View>
       </View>
     );
@@ -509,15 +506,34 @@ export function ComposioConnector({
   agentId
 }: ComposioConnectorProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
 
   if (!visible) return null;
 
   return (
     <View className="flex-1">
-      <SettingsHeader
-        title={t('integrations.connector.connectTo', { app: app.name })}
-        onClose={onClose}
-      />
+      <View className="px-6 pt-6">
+        {/* Header with back button */}
+        <View className="flex-row items-center mb-4">
+          <Pressable
+            onPress={onClose}
+            className="flex-row items-center active:opacity-70"
+          >
+            <ArrowLeft
+              size={20}
+              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+            />
+          </Pressable>
+          <View className="flex-1 ml-3">
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="text-xl font-roobert-semibold"
+            >
+              {t('integrations.connector.connectTo', { app: app.name })}
+            </Text>
+          </View>
+        </View>
+      </View>
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <ComposioConnectorContent
@@ -597,8 +613,8 @@ const ProfileListItem = React.memo(({ profile, isSelected, onPress }: ProfileLis
     <Pressable
       onPress={onPress}
       className={`flex-row items-center p-4 rounded-3xl active:opacity-80 mb-2 ${isSelected
-          ? 'bg-primary/10'
-          : 'bg-muted/5'
+        ? 'bg-primary/10'
+        : 'bg-muted/5'
         }`}
     >
       <View className={`w-10 h-10 rounded-xl items-center justify-center ${isSelected ? 'bg-primary' : 'bg-muted/30'

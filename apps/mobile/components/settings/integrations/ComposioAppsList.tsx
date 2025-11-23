@@ -3,6 +3,7 @@ import { View, ScrollView, Pressable, ActivityIndicator, RefreshControl } from '
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ArrowLeft, Search, CheckCircle2 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useComposioApps, type ComposioApp } from '@/hooks/useComposio';
 import * as Haptics from 'expo-haptics';
@@ -23,6 +24,7 @@ interface ComposioAppsContentProps {
 
 export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false }: ComposioAppsContentProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const { data: appsData, isLoading, error, refetch } = useComposioApps();
   const [searchQuery, setSearchQuery] = React.useState('');
 
@@ -144,7 +146,7 @@ const AppCard = React.memo(({ app, onPress }: AppCardProps) => {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="flex-row gap-2 items-center gap-4 p-4 bg-primary/5 mb-4 rounded-3xl"
+      className="flex-row gap-4 items-center p-4 bg-primary/5 mb-4 rounded-3xl"
     >
       <ToolkitIcon slug={app.slug} name={app.name} size="sm" />
       <View className="flex-1">
