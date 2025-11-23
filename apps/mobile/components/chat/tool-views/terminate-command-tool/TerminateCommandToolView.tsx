@@ -8,7 +8,7 @@ import { extractTerminateCommandData } from './_utils';
 
 export function TerminateCommandToolView({ toolData, isStreaming = false }: ToolViewProps) {
   const { sessionName, output, success } = extractTerminateCommandData(toolData);
-  
+
   const lines = output ? output.split('\n') : [];
 
   if (isStreaming) {
@@ -46,30 +46,28 @@ export function TerminateCommandToolView({ toolData, isStreaming = false }: Tool
               {sessionName || 'Session'}
             </Text>
           </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
+          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${success ? 'bg-primary/10' : 'bg-destructive/10'
             }`}>
+            <Icon
+              as={success ? CheckCircle2 : AlertCircle}
+              size={12}
+              className={success ? 'text-primary' : 'text-destructive'}
+            />
+            <Text className={`text-xs font-roobert-medium ${success ? 'text-primary' : 'text-destructive'
+              }`}>
               {success ? 'Terminated' : 'Failed'}
             </Text>
           </View>
         </View>
 
-        <View className="bg-zinc-900 dark:bg-zinc-950 rounded-xl p-4 border border-zinc-700 dark:border-zinc-800">
+        <View className="bg-card border border-border rounded-2xl p-4">
           <View className="flex-row items-center gap-2 mb-3">
-            <Icon as={Power} size={16} className="text-zinc-400" />
-            <Text className="text-sm font-roobert-medium text-zinc-300">Session</Text>
+            <Icon as={Power} size={16} className="text-foreground/60" />
+            <Text className="text-sm font-roobert-medium text-foreground/70">Session</Text>
           </View>
           <View className="flex-row items-center gap-2">
             <Text className="text-red-500" selectable>●</Text>
-            <Text className="text-sm font-roobert-mono text-zinc-300 flex-1" selectable>
+            <Text className="text-sm font-roobert-mono text-foreground flex-1" selectable>
               {sessionName || 'Unknown'}
             </Text>
           </View>
@@ -80,21 +78,18 @@ export function TerminateCommandToolView({ toolData, isStreaming = false }: Tool
             <Text className="text-sm font-roobert-medium text-foreground/70">
               Result
             </Text>
-            <View className="bg-zinc-900 dark:bg-zinc-950 rounded-xl overflow-hidden border border-zinc-700 dark:border-zinc-800">
-              <View className="bg-zinc-800 dark:bg-zinc-900 px-3 py-2 border-b border-zinc-700 dark:border-zinc-800">
-                <Text className="text-xs font-roobert-medium text-zinc-300">Termination Output</Text>
-              </View>
-              <View className="p-3">
+            <View className="rounded-2xl p-4 border bg-card border-border" style={{ maxHeight: 400 }}>
+              <ScrollView showsVerticalScrollIndicator={false}>
                 {lines.map((line, idx) => (
-                  <Text 
+                  <Text
                     key={idx}
-                    className="text-xs font-roobert-mono text-zinc-300 leading-5"
+                    className="text-sm font-roobert-mono text-foreground/80 leading-5"
                     selectable
                   >
                     {line || ' '}
                   </Text>
                 ))}
-              </View>
+              </ScrollView>
             </View>
           </View>
         )}

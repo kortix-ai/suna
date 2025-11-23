@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { TextInput, View } from 'react-native';
-import { Text } from '@/components/ui/text';
+import { Input } from '@/components/ui/input';
 import type { AuthInputProps } from './types';
 
 /**
@@ -30,30 +29,21 @@ export function AuthInput({
   error,
 }: AuthInputProps) {
   return (
-    <View className="w-full">
-      <View className="bg-card h-12 rounded-2xl border border-border">
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor="hsl(var(--muted-foreground))"
-          secureTextEntry={secureTextEntry}
-          autoCapitalize={autoCapitalize}
-          autoComplete={autoComplete as any}
-          autoCorrect={false}
-          keyboardType={keyboardType}
-          returnKeyType={returnKeyType}
-          onSubmitEditing={onSubmitEditing}
-          style={{ fontFamily: 'Roobert-Regular' }}
-          className="flex-1 h-full px-4 text-foreground text-[15px]"
-        />
-      </View>
-      {error && (
-        <Text className="text-destructive text-sm font-roobert mt-2 px-1">
-          {error}
-        </Text>
-      )}
-    </View>
+    <Input
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      secureTextEntry={secureTextEntry}
+      autoCapitalize={autoCapitalize}
+      autoComplete={autoComplete as any}
+      autoCorrect={false}
+      keyboardType={keyboardType}
+      returnKeyType={returnKeyType}
+      onSubmitEditing={onSubmitEditing}
+      error={error}
+      wrapperClassName="bg-card border border-border"
+      inputClassName="text-[15px]"
+    />
   );
 }
 
