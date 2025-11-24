@@ -26,6 +26,8 @@ class CreditService:
         if use_cache and self.cache:
             cached = await self.cache.get(cache_key)
             if cached:
+                if isinstance(cached, dict):
+                    return Decimal(str(cached.get('total', 0)))
                 return Decimal(cached)
         
         try:
@@ -93,7 +95,7 @@ class CreditService:
                 balance = Decimal('0')
         
         if self.cache:
-            await self.cache.set(cache_key, str(balance), ttl=300)
+            await self.cache.set(cache_key, {'total': float(balance), 'account_id': user_id}, ttl=300)
         
         return balance
     
