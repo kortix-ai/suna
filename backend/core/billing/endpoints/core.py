@@ -330,7 +330,7 @@ async def get_available_models(
             'models': [
                 {
                     'id': model['id'],
-                    'name': model['name'], 
+                    'display_name': model['name'],
                     'provider': model['provider'],
                     'allowed': True,
                     'reason': 'Local development mode'
