@@ -1,3 +1,5 @@
+import { ToolCallData, ToolResultData } from '../types';
+
 export interface TriggerData {
   provider: string;
   slug: string;
@@ -17,32 +19,21 @@ export interface CreateEventTriggerData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractCreateEventTriggerData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): CreateEventTriggerData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: CreateEventTriggerData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     slug: null,
     profile_id: null,
@@ -52,82 +43,49 @@ export function extractCreateEventTriggerData(
     agent_prompt: null,
     message: null,
     trigger: null,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  try {
-    if (toolContent) {
-      let content = toolContent;
-      
-      if (typeof toolContent === 'string') {
-        try {
-          content = JSON.parse(toolContent);
-        } catch (e) {
-          // Keep original content if parsing fails
-        }
-      }
-
-      if (content && typeof content === 'object' && content.content) {
-        try {
-          const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
-          content = nestedContent;
-        } catch (e) {
-          // Keep original content if parsing fails
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool_execution) {
-        const toolExecution = content.tool_execution;
-        if (toolExecution.result && toolExecution.result.success) {
-          const args = toolExecution.arguments;
-          const output = toolExecution.result.output;
-
-          if (args && output) {
-            return {
-              ...defaultResult,
-              slug: args.slug || null,
-              profile_id: args.profile_id || null,
-              connected_account_id: args.connected_account_id || null,
-              trigger_config: args.trigger_config || null,
-              name: args.name || null,
-              agent_prompt: args.agent_prompt || null,
-              message: output.message || null,
-              trigger: output.trigger || null,
-              actualIsSuccess: true
-            };
-          }
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool === 'create-event-trigger') {
-        const parameters = content.parameters;
-        const output = content.output;
-        
-        if (parameters && output) {
-          return {
-            ...defaultResult,
-            slug: parameters.slug || null,
-            profile_id: parameters.profile_id || null,
-            connected_account_id: parameters.connected_account_id || null,
-            trigger_config: parameters.trigger_config || null,
-            name: parameters.name || null,
-            agent_prompt: parameters.agent_prompt || null,
-            message: output.message || null,
-            trigger: output.trigger || null,
-            actualIsSuccess: output.success !== false
-          };
-        }
-      }
-    }
-
-    if (assistantContent) {
-      // Handle assistant content if needed
-    }
-
-    return defaultResult;
-  } catch (error) {
+  if (!toolResult?.output) {
     return defaultResult;
   }
+
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
+    }
+  }
+
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  return {
+    slug: parsedOutput.slug || args.slug || null,
+    profile_id: parsedOutput.profile_id || args.profile_id || null,
+    connected_account_id: parsedOutput.connected_account_id || args.connected_account_id || null,
+    trigger_config: parsedOutput.trigger_config || args.trigger_config || null,
+    name: parsedOutput.name || args.name || null,
+    agent_prompt: parsedOutput.agent_prompt || args.agent_prompt || null,
+    message: parsedOutput.message || null,
+    trigger: parsedOutput.trigger || null,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
 }

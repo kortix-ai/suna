@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '../types';
 
 export interface WebSearchResult {
   title: string;
@@ -32,17 +32,33 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractWebSearchData(toolData: ParsedToolData): WebSearchData {
-  const { arguments: args, result } = toolData;
+export function extractWebSearchData(
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true
+): WebSearchData {
+  // Parse arguments
+  let args: Record<string, any> = {};
+  if (toolCall.arguments) {
+    if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
+      args = toolCall.arguments;
+    } else if (typeof toolCall.arguments === 'string') {
+      try {
+        args = JSON.parse(toolCall.arguments);
+      } catch {
+        args = {};
+      }
+    }
+  }
   
   let query = args?.query || null;
   let results: WebSearchResult[] = [];
   let images: string[] = [];
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     // Check if this is a batch search response
     if (output.batch_mode === true && Array.isArray(output.results)) {
@@ -105,7 +121,7 @@ export function extractWebSearchData(toolData: ParsedToolData): WebSearchData {
     query,
     results,
     images,
-    success: result.success ?? true,
+    success: toolResult?.success ?? isSuccess,
     isBatch: false
   };
 }

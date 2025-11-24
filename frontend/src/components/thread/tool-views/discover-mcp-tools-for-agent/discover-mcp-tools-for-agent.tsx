@@ -28,21 +28,44 @@ import { extractDiscoverMcpToolsData } from './_utils';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 export function DiscoverMcpToolsForAgentToolView({
-  name = 'discover-mcp-tools-for-agent',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-
+  // All hooks must be called unconditionally at the top
   const [isToolsExpanded, setIsToolsExpanded] = useState(false);
+
+  // Extract data first (before conditional return) so we can use toolkit_slug in hook
+  const extractedData = toolCall ? extractDiscoverMcpToolsData(
+    toolCall,
+    toolResult,
+    isSuccess,
+    toolTimestamp,
+    assistantTimestamp
+  ) : null;
+
+  const toolkit_slug = extractedData?.toolkit_slug || null;
+
+  // Hook must be called unconditionally - use safe default
+  const { data: iconData } = useComposioToolkitIcon(toolkit_slug || '', {
+    enabled: !!toolkit_slug
+  });
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall || !extractedData) {
+    console.warn('DiscoverMcpToolsForAgentToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     profile_name,
     toolkit_name,
-    toolkit_slug,
     tools,
     tool_names,
     total_tools,
@@ -50,18 +73,7 @@ export function DiscoverMcpToolsForAgentToolView({
     actualIsSuccess,
     actualToolTimestamp,
     actualAssistantTimestamp
-  } = extractDiscoverMcpToolsData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
-
-  const toolTitle = getToolTitle(name);
-  const { data: iconData } = useComposioToolkitIcon(toolkit_slug || '', {
-    enabled: !!toolkit_slug
-  });
+  } = extractedData;
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

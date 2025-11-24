@@ -22,14 +22,21 @@ import { extractUpdateAgentData } from './_utils';
 import { AgentAvatar } from '../../content/agent-avatar';
 
 export function UpdateAgentToolView({
-  name = 'update-agent',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('UpdateAgentToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     name: agentName,
@@ -49,14 +56,12 @@ export function UpdateAgentToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractUpdateAgentData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const getEnabledToolsCount = () => {
     if (!agentpress_tools) return 0;

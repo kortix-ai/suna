@@ -87,6 +87,16 @@ export interface ParsedMetadata {
     arguments: Record<string, any> | string; // String when partial JSON, object when complete
     source: 'native' | 'xml';
   }>;
+  // Tool message metadata fields
+  function_name?: string; // Tool function name
+  tool_call_id?: string; // Tool call ID
+  result?: {
+    output: any;
+    success: boolean;
+    error?: string | null;
+  };
+  return_format?: 'native' | 'xml';
+  assistant_message_id?: string; // Link tool result back to assistant message
   [key: string]: any;
 }
 

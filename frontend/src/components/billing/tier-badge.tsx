@@ -100,9 +100,8 @@ export function TierBadge({
         <img
           src={planIcon}
           alt={planName}
-          width={iconSize}
-          height={iconSize}
           className="object-contain"
+          style={{ width: `${iconSize}px`, height: `${iconSize}px` }}
         />
       </div>
     );
@@ -116,9 +115,8 @@ export function TierBadge({
       <img
         src={planIcon}
         alt={planName}
-        width={config.height}
-        height={config.height}
         className={cn("object-contain", className)}
+        style={{ height: `${config.height}px`, width: 'auto' }}
       />
     </div>
   );

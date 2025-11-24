@@ -3,7 +3,7 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage } from '@/api/types';
-import { parseToolMessage } from '@/lib/utils/tool-parser';
+import { extractToolData } from '@/lib/utils/tool-data-extractor';
 import { getToolViewComponent } from './tool-views';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
@@ -49,12 +49,16 @@ export function ToolCallPanel({
 
   const currentPair = toolMessages[currentIndex];
   
-  const toolData = useMemo(() => {
-    if (!currentPair?.toolMessage) return null;
-    return parseToolMessage(currentPair.toolMessage.content);
+  // Extract tool call and tool result from messages
+  const { toolCall, toolResult } = useMemo(() => {
+    if (!currentPair?.toolMessage) return { toolCall: null, toolResult: null };
+    return extractToolData(currentPair.assistantMessage, currentPair.toolMessage);
   }, [currentPair]);
 
-  const { toolName } = toolData || { toolName: 'Error' };
+  const toolName = useMemo(() => {
+    if (!toolCall) return 'Error';
+    return toolCall.function_name.replace(/_/g, '-');
+  }, [toolCall]);
 
   const ToolViewComponent = useMemo(() => {
     return getToolViewComponent(toolName);
@@ -135,7 +139,7 @@ export function ToolCallPanel({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 20 }}
       >
-        {!currentPair || !toolData ? (
+        {!currentPair || !toolCall ? (
           <View className="flex-1 justify-center items-center px-6 py-12">
             <Text className="text-foreground font-roobert-semibold text-lg mb-4">
               Error Loading Tool Data
@@ -146,9 +150,11 @@ export function ToolCallPanel({
           </View>
         ) : (
           <ToolViewComponent
-            toolData={toolData}
-            assistantMessage={currentPair.assistantMessage}
-            toolMessage={currentPair.toolMessage}
+            toolCall={toolCall}
+            toolResult={toolResult || undefined}
+            assistantTimestamp={currentPair.assistantMessage?.created_at}
+            toolTimestamp={currentPair.toolMessage?.created_at}
+            isSuccess={toolResult?.success !== false}
             currentIndex={currentIndex}
             totalCalls={toolMessages.length}
           />

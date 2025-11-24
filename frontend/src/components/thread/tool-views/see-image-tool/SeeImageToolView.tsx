@@ -271,9 +271,8 @@ export function SeeImageToolView({
   if (!isClearTool && !filePath) {
     return (
       <GenericToolView
-        name={name}
-        assistantContent={assistantContent}
-        toolContent={toolContent}
+        toolCall={toolCall}
+        toolResult={toolResult}
         assistantTimestamp={assistantTimestamp}
         toolTimestamp={toolTimestamp}
         isSuccess={isSuccess}

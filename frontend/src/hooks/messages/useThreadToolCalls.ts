@@ -117,11 +117,24 @@ export function useThreadToolCalls(
         }
 
         const toolIndex = historicalToolPairs.length;
+        // Normalize arguments - handle both string and object types
+        let normalizedArguments: Record<string, any> = {};
+        if (matchingToolCall.arguments) {
+          if (typeof matchingToolCall.arguments === 'object' && matchingToolCall.arguments !== null) {
+            normalizedArguments = matchingToolCall.arguments;
+          } else if (typeof matchingToolCall.arguments === 'string') {
+            try {
+              normalizedArguments = JSON.parse(matchingToolCall.arguments);
+            } catch {
+              normalizedArguments = {};
+            }
+          }
+        }
         historicalToolPairs.push({
           toolCall: {
             tool_call_id: matchingToolCall.tool_call_id,
             function_name: matchingToolCall.function_name,
-            arguments: matchingToolCall.arguments || {},
+            arguments: normalizedArguments,
             source: matchingToolCall.source || 'xml',
           },
           toolResult: {
@@ -271,7 +284,19 @@ export function useThreadToolCalls(
             toolCall: {
               tool_call_id: metadataToolCall.tool_call_id,
               function_name: metadataToolCall.function_name,
-              arguments: metadataToolCall.arguments || {},
+              arguments: (() => {
+                const args = metadataToolCall.arguments;
+                if (!args) return {};
+                if (typeof args === 'object' && args !== null) return args;
+                if (typeof args === 'string') {
+                  try {
+                    return JSON.parse(args);
+                  } catch {
+                    return {};
+                  }
+                }
+                return {};
+              })(),
               source: metadataToolCall.source || 'native',
             },
             // No result yet - still streaming
@@ -281,11 +306,24 @@ export function useThreadToolCalls(
 
           if (existingIndex !== -1) {
             // Update existing streaming tool
+            const args = metadataToolCall.arguments;
+            let normalizedArgs: Record<string, any> = {};
+            if (args) {
+              if (typeof args === 'object' && args !== null) {
+                normalizedArgs = args;
+              } else if (typeof args === 'string') {
+                try {
+                  normalizedArgs = JSON.parse(args);
+                } catch {
+                  normalizedArgs = {};
+                }
+              }
+            }
             updated[existingIndex] = {
               ...updated[existingIndex],
               toolCall: {
                 ...updated[existingIndex].toolCall,
-                arguments: metadataToolCall.arguments || {},
+                arguments: normalizedArgs,
               },
             };
           } else {

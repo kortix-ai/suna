@@ -135,7 +135,8 @@ export function PresentationViewer({
   }
 
   // Get tool title for display
-  const toolTitle = getToolTitle(name || 'presentation-viewer');
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'presentation-viewer';
+  const toolTitle = getToolTitle(name);
 
   // Helper function to sanitize filename (matching backend logic)
   const sanitizeFilename = (name: string): string => {

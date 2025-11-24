@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractWebSearchData, cleanUrl, getFavicon } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
-  const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolData);
+export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isStreaming }: ToolViewProps) {
+  const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolCall, toolResult, isSuccess);
   const isLoading = isStreaming && results.length === 0 && images.length === 0;
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
 

@@ -278,25 +278,41 @@ class ContextManager:
                 }
     
     def is_tool_result_message(self, msg: Dict[str, Any]) -> bool:
-        """Check if a message is a tool result message."""
-        if not isinstance(msg, dict) or not ("content" in msg and msg['content']):
+        """Check if a message is a tool result message.
+        
+        Detects tool results from:
+        1. Native tool calls: role="tool" 
+        2. Native tool calls: has tool_call_id field
+        3. XML tool calls: role="user" with JSON content containing tool result structure
+        """
+        if not isinstance(msg, dict):
             return False
-        content = msg['content']
-        if isinstance(content, str) and "ToolResult" in content: 
+        
+        # Native tool calls have role="tool"
+        if msg.get('role') == 'tool':
             return True
-        if isinstance(content, dict) and "tool_execution" in content: 
+        
+        # Native tool calls have tool_call_id
+        if 'tool_call_id' in msg:
             return True
-        if isinstance(content, dict) and "interactive_elements" in content: 
-            return True
-        if isinstance(content, str):
-            try:
-                parsed_content = json.loads(content)
-                if isinstance(parsed_content, dict) and "tool_execution" in parsed_content: 
-                    return True
-                if isinstance(parsed_content, dict) and "interactive_elements" in content: 
-                    return True
-            except (json.JSONDecodeError, TypeError):
-                pass
+        
+        # XML tool calls have role="user" - check if content looks like a tool result
+        if msg.get('role') == 'user':
+            content = msg.get('content')
+            if isinstance(content, str):
+                # Check if content is JSON (tool results are often JSON)
+                try:
+                    parsed = json.loads(content)
+                    # Tool results typically have success/output/error structure or specific tool fields
+                    if isinstance(parsed, dict):
+                        # Check for common tool result indicators
+                        if 'success' in parsed or 'output' in parsed or 'error' in parsed:
+                            return True
+                        if 'interactive_elements' in parsed:
+                            return True
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        
         return False
     
     async def update_old_tool_outputs_in_db(

@@ -6,8 +6,8 @@ import { StopCircle, CheckCircle2, AlertCircle, Terminal, Power } from 'lucide-r
 import type { ToolViewProps } from '../types';
 import { extractTerminateCommandData } from './_utils';
 
-export function TerminateCommandToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { sessionName, output, success } = extractTerminateCommandData(toolData);
+export function TerminateCommandToolView({ toolCall, toolResult, isSuccess = true, isStreaming = false }: ToolViewProps) {
+  const { sessionName, output, success } = extractTerminateCommandData(toolCall, toolResult, isSuccess);
   
   const lines = output ? output.split('\n') : [];
 

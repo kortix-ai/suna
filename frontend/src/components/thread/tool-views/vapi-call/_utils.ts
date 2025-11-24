@@ -60,17 +60,6 @@ export interface WaitForCallCompletionData {
   message?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 import { ToolCallData, ToolResultData } from '../types';
 
 export function extractMakeCallData(
@@ -125,45 +114,20 @@ export function extractMakeCallData(
   }
 }
 
-export function extractCallStatusData(toolContent: string | undefined): CallStatusData | null {
-  if (!toolContent) return null;
+export function extractCallStatusData(toolResult?: ToolResultData): CallStatusData | null {
+  if (!toolResult?.output) return null;
 
   try {
-    const parsed = parseContent(toolContent);
-    
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
     let output: any = {};
-    if ('output' in parsed && typeof parsed.output === 'object') {
-      output = parsed.output;
-    }
-
-    else if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
-      const toolExecution = parsed.tool_execution;
-      
-      let parsedOutput = toolExecution.result?.output;
-      if (typeof parsedOutput === 'string') {
-        try {
-          parsedOutput = JSON.parse(parsedOutput);
-        } catch (e) {
-          parsedOutput = {};
-        }
-      }
-      output = parsedOutput || {};
-    }
-
-    else if ('content' in parsed && typeof parsed.content === 'string') {
+    
+    if (typeof toolResult.output === 'string') {
       try {
-        const innerParsed = JSON.parse(parsed.content);
-        return extractCallStatusData(JSON.stringify(innerParsed));
+        output = JSON.parse(toolResult.output);
       } catch (e) {
         return null;
       }
-    }
-    else if ('call_id' in parsed || 'status' in parsed) {
-      output = parsed;
+    } else if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
     }
 
     let transcript = output.transcript;
@@ -216,34 +180,20 @@ export function extractCallStatusData(toolContent: string | undefined): CallStat
   }
 }
 
-export function extractEndCallData(toolContent: string | undefined): EndCallData | null {
-  if (!toolContent) return null;
+export function extractEndCallData(toolResult?: ToolResultData): EndCallData | null {
+  if (!toolResult?.output) return null;
 
   try {
-    const parsed = parseContent(toolContent);
+    let output: any = {};
     
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
-    let output = parsed;
-
-    if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
-      const toolExecution = parsed.tool_execution;
-      
-      let parsedOutput = toolExecution.result?.output;
-      if (typeof parsedOutput === 'string') {
-        try {
-          parsedOutput = JSON.parse(parsedOutput);
-        } catch (e) {
-          parsedOutput = {};
-        }
+    if (typeof toolResult.output === 'string') {
+      try {
+        output = JSON.parse(toolResult.output);
+      } catch (e) {
+        return null;
       }
-      output = parsedOutput || {};
-    }
-
-    if ('output' in parsed && typeof parsed.output === 'object') {
-      output = parsed.output;
+    } else if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
     }
 
     return {
@@ -257,34 +207,20 @@ export function extractEndCallData(toolContent: string | undefined): EndCallData
   }
 }
 
-export function extractListCallsData(toolContent: string | undefined): ListCallsData | null {
-  if (!toolContent) return null;
+export function extractListCallsData(toolResult?: ToolResultData): ListCallsData | null {
+  if (!toolResult?.output) return null;
 
   try {
-    const parsed = parseContent(toolContent);
+    let output: any = {};
     
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
-    let output = parsed;
-
-    if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
-      const toolExecution = parsed.tool_execution;
-      
-      let parsedOutput = toolExecution.result?.output;
-      if (typeof parsedOutput === 'string') {
-        try {
-          parsedOutput = JSON.parse(parsedOutput);
-        } catch (e) {
-          parsedOutput = {};
-        }
+    if (typeof toolResult.output === 'string') {
+      try {
+        output = JSON.parse(toolResult.output);
+      } catch (e) {
+        return null;
       }
-      output = parsedOutput || {};
-    }
-
-    if ('output' in parsed && typeof parsed.output === 'object') {
-      output = parsed.output;
+    } else if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
     }
 
     return {
@@ -323,46 +259,20 @@ export function formatDuration(seconds: number | undefined): string {
   return `${secs}s`;
 }
 
-export function extractWaitForCallCompletionData(toolContent: string | undefined): WaitForCallCompletionData | null {
-  if (!toolContent) return null;
+export function extractWaitForCallCompletionData(toolResult?: ToolResultData): WaitForCallCompletionData | null {
+  if (!toolResult?.output) return null;
 
   try {
-    const parsed = parseContent(toolContent);
-    
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
     let output: any = {};
-
-    // Handle direct format: { tool, parameters, output, success }
-    if ('output' in parsed && typeof parsed.output === 'object') {
-      output = parsed.output;
-    }
-    // Handle nested format: { tool_execution: { arguments, result } }
-    else if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
-      const toolExecution = parsed.tool_execution;
-      
-      const result = toolExecution.result || {};
-      
-      if (typeof result.output === 'string') {
-        try {
-          output = JSON.parse(result.output);
-        } catch (e) {
-          output = {};
-        }
-      } else if (typeof result.output === 'object') {
-        output = result.output || {};
-      }
-    }
-    // Handle content wrapper: { content: { ... } }
-    else if ('content' in parsed && typeof parsed.content === 'string') {
+    
+    if (typeof toolResult.output === 'string') {
       try {
-        const innerParsed = JSON.parse(parsed.content);
-        return extractWaitForCallCompletionData(JSON.stringify(innerParsed));
+        output = JSON.parse(toolResult.output);
       } catch (e) {
         return null;
       }
+    } else if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
     }
 
     return {
@@ -387,4 +297,3 @@ export const statusConfig = {
   ended: { label: 'Ended', color: 'bg-gray-500/10 text-gray-600 dark:text-gray-400' },
   failed: { label: 'Failed', color: 'bg-red-500/10 text-red-600 dark:text-red-400' },
 };
-

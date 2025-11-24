@@ -12,13 +12,6 @@ import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
 import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView';
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
-import { PaperSearchToolView } from '../paper-search-tool/PaperSearchToolView';
-import { PaperDetailsToolView } from '../paper-details-tool/PaperDetailsToolView';
-import { AuthorSearchToolView } from '../author-search-tool/AuthorSearchToolView';
-import { AuthorDetailsToolView } from '../author-details-tool/AuthorDetailsToolView';
-import { AuthorPapersToolView } from '../author-papers-tool/AuthorPapersToolView';
-import { PaperCitationsToolView } from '../paper-citations-tool/PaperCitationsToolView';
-import { PaperReferencesToolView } from '../paper-references-tool/PaperReferencesToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
@@ -96,13 +89,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'web-search': WebSearchToolView,
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
-  'paper-search': PaperSearchToolView,
-  'get-paper-details': PaperDetailsToolView,
-  'search-authors': AuthorSearchToolView,
-  'get-author-details': AuthorDetailsToolView,
-  'get-author-papers': AuthorPapersToolView,
-  'get-paper-citations': PaperCitationsToolView,
-  'get-paper-references': PaperReferencesToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
@@ -273,18 +259,11 @@ export function useToolView(toolName: string): ToolViewComponent {
 
 
 export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
-  // Defensive check - ensure toolCall is defined
-  if (!toolCall || !toolCall.function_name) {
-    console.warn('ToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
-    // Fallback to GenericToolView with error handling
-    return <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />;
-  }
-
-  // Extract tool name from function_name
-  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  // Extract tool name from function_name (handle undefined case)
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'default';
   
   // Get file path directly from tool call arguments (from metadata)
-  const filePath = toolCall.arguments?.file_path || toolCall.arguments?.target_file;
+  const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file;
 
   // check if the file path is a presentation slide
   const { isValid: isPresentationSlide, presentationName, slideNumber } = parsePresentationSlidePath(filePath);
@@ -306,6 +285,13 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
 
   // use the tool view component - hook must be called unconditionally
   const ToolViewComponent = useToolView(effectiveToolName);
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall || !toolCall.function_name) {
+    console.warn('ToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
+    // Fallback to GenericToolView with error handling
+    return <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />;
+  }
 
   // if the file path is a presentation slide, we need to modify the tool result to match the expected structure for PresentationViewer
   let modifiedToolResult = toolResult;

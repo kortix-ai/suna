@@ -20,7 +20,6 @@ import {
   extractFilePath,
   extractFileContent,
   extractStreamingFileContent,
-  extractToolData,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CsvRenderer } from './CsvRenderer';
@@ -30,45 +29,59 @@ import * as Haptics from 'expo-haptics';
 
 
 export function FileOperationToolView({ 
-  toolData, 
-  isStreaming = false, 
-  assistantMessage,
-  toolMessage 
+  toolCall,
+  toolResult,
+  isStreaming = false,
+  isSuccess = true,
 }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
+
   const [copied, setCopied] = useState(false);
   const [showFullContent, setShowFullContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'source' | 'preview'>('preview');
 
-  const parseContent = (content: any): any => {
-    if (typeof content === 'string') {
-      try {
-        return JSON.parse(content);
-      } catch (e) {
-        return content;
-      }
-    }
-    return content;
-  };
-
-  const operation = getOperationType(toolData.toolName);
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const operation = getOperationType(name);
   const configs = getOperationConfigs();
   const config = configs[operation];
   const OperationIcon = config.icon;
 
-  let filePath: string | null = null;
+  // Extract from toolCall.arguments
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  let filePath: string | null = args.file_path || 
+                                args.path || 
+                                args.target_path ||
+                                args.target_file ||
+                                args.filename ||
+                                null;
+
   let fileContent: string | null = null;
 
-  filePath = toolData.arguments?.file_path || 
-             toolData.arguments?.path || 
-             toolData.arguments?.target_path ||
-             toolData.arguments?.target_file ||
-             toolData.arguments?.filename ||
-             null;
+  // Extract from toolResult.output
+  if (toolResult?.output) {
+    let output: any = toolResult.output;
+    if (typeof output === 'string') {
+      try {
+        output = JSON.parse(output);
+      } catch {
+        // Keep as string if not JSON
+      }
+    }
 
-  if (operation === 'read') {
-    if (toolData.result?.output) {
-      const output = parseContent(toolData.result.output);
-      
+    if (operation === 'read') {
       if (typeof output === 'string') {
         const lowerOutput = output.toLowerCase();
         if (!lowerOutput.includes('successfully') || output.length > 200) {
@@ -77,67 +90,36 @@ export function FileOperationToolView({
       } else if (output && typeof output === 'object') {
         fileContent = output.content || output.data || JSON.stringify(output, null, 2);
       }
-    }
-  } else if (operation === 'create' || operation === 'rewrite') {
-    fileContent = toolData.arguments?.file_contents ||  
-                  toolData.arguments?.content || 
-                  toolData.arguments?.contents || 
-                  toolData.arguments?.file_content ||
-                  toolData.arguments?.text ||
-                  toolData.arguments?.data ||
-                  null;
-    
-    // Ensure it's a string
-    if (fileContent && typeof fileContent !== 'string') {
-      fileContent = JSON.stringify(fileContent, null, 2);
-    }
-  } else if (operation === 'edit' || operation === 'str-replace') {
-    // For edit/str-replace, check result.output.updated_content first
-    if (toolData.result?.output) {
-      const output = parseContent(toolData.result.output);
-      
-      // Check for updated_content in the output object
-      if (output && typeof output === 'object' && output.updated_content) {
-        fileContent = output.updated_content;
-      } else if (output && typeof output === 'object' && output.new_content) {
-        fileContent = output.new_content;
+    } else if (operation === 'edit' || operation === 'str-replace') {
+      if (output && typeof output === 'object') {
+        fileContent = output.updated_content || output.new_content || null;
       } else if (typeof output === 'string' && !output.toLowerCase().includes('successfully')) {
         fileContent = output;
       }
     }
-    
-    // If still no content, check arguments
-    if (!fileContent) {
-      fileContent = toolData.arguments?.new_str || 
-                    toolData.arguments?.new_string || 
-                    toolData.arguments?.new_content ||
-                    toolData.arguments?.code_edit ||  // Sometimes edit content is in code_edit
+  }
+
+  // Extract from arguments for create/rewrite/edit operations
+  if (!fileContent) {
+    if (operation === 'create' || operation === 'rewrite') {
+      fileContent = args.file_contents ||  
+                    args.content || 
+                    args.contents || 
+                    args.file_content ||
+                    args.text ||
+                    args.data ||
+                    null;
+      
+      if (fileContent && typeof fileContent !== 'string') {
+        fileContent = JSON.stringify(fileContent, null, 2);
+      }
+    } else if (operation === 'edit' || operation === 'str-replace') {
+      fileContent = args.new_str || 
+                    args.new_string || 
+                    args.new_content ||
+                    args.code_edit ||
                     null;
     }
-  }
-
-  // If still no content for non-delete operations, try to extract from messages as fallback
-  if (!fileContent && operation !== 'delete' && assistantMessage?.content) {
-    const assistantContent = assistantMessage.content;
-    const toolName = operation === 'create' ? 'create-file' : 
-                    operation === 'edit' ? 'edit-file' : 
-                    operation === 'rewrite' ? 'full-file-rewrite' : 'read-file';
-    
-    fileContent = isStreaming
-      ? extractStreamingFileContent(assistantContent, toolName) || ''
-      : extractFileContent(assistantContent, toolName);
-  }
-
-  // Debug logging
-  if (!fileContent && operation !== 'delete' && !isStreaming) {
-    console.log('FileOperationToolView - Debug:', {
-      operation,
-      toolName: toolData.toolName,
-      arguments: toolData.arguments,
-      resultOutput: toolData.result?.output,
-      resultType: typeof toolData.result?.output,
-      filePath
-    });
   }
 
   // Process file info
@@ -159,7 +141,7 @@ export function FileOperationToolView({
   const charCount = fileContent?.length || 0;
   
   const FileIcon = getFileIcon(fileName);
-  const success = toolData.result?.success !== false;
+  const success = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   const handleCopy = async () => {
     if (!fileContent) return;

@@ -84,22 +84,19 @@ export function ExportToolView({
   onFileClick,
   project,
 }: ExportToolViewProps) {
-  // Defensive check - handle cases where toolCall might be undefined
-  if (!toolCall) {
-    console.warn('ExportToolView: toolCall is undefined. Tool views should use structured props.');
-    return null;
-  }
-
+  // All hooks must be called unconditionally at the top
   // Auth for file downloads
   const { session } = useAuth();
   
-  // Determine format from function name
-  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  // Download state
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Determine format from function name (handle undefined case)
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-to-pptx';
   const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
   const config = formatConfigs[format];
-  const IconComponent = config.icon;
 
-  // Extract the export data from tool result
+  // Extract the export data from tool result (must be before early return)
   const {
     presentationName,
     filePath,
@@ -116,7 +113,7 @@ export function ExportToolView({
           ? JSON.parse(output) 
           : output;
         return {
-          presentationName: parsed.presentation_name || toolCall.arguments?.presentation_name,
+          presentationName: parsed.presentation_name || toolCall?.arguments?.presentation_name,
           filePath: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
           downloadUrl: parsed.download_url,
           totalSlides: parsed.total_slides,
@@ -128,18 +125,23 @@ export function ExportToolView({
         console.error('Error parsing tool result:', e);
         // Fallback: try to extract from arguments
         return {
-          presentationName: toolCall.arguments?.presentation_name,
+          presentationName: toolCall?.arguments?.presentation_name,
         };
       }
     }
     // Fallback: extract from arguments
     return {
-      presentationName: toolCall.arguments?.presentation_name,
+      presentationName: toolCall?.arguments?.presentation_name,
     };
-  }, [toolResult, config.fileProperty, toolCall.arguments]);
+  }, [toolResult, config.fileProperty, toolCall?.arguments]);
 
-  // Download state
-  const [isDownloading, setIsDownloading] = useState(false);
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('ExportToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const IconComponent = config.icon;
 
   // Download handlers
   const handleDownload = async (downloadFormat: DownloadFormat) => {
@@ -364,10 +366,20 @@ export function ExportToolView({
 
 // Export convenience wrappers
 export function ExportToPptxToolView(props: ExportToolViewProps) {
-  return <ExportToolView {...props} name="export_to_pptx" />;
+  // Create modified toolCall with correct function_name
+  const modifiedToolCall = props.toolCall ? {
+    ...props.toolCall,
+    function_name: 'export_to_pptx'
+  } : props.toolCall;
+  return <ExportToolView {...props} toolCall={modifiedToolCall} />;
 }
 
 export function ExportToPdfToolView(props: ExportToolViewProps) {
-  return <ExportToolView {...props} name="export_to_pdf" />;
+  // Create modified toolCall with correct function_name
+  const modifiedToolCall = props.toolCall ? {
+    ...props.toolCall,
+    function_name: 'export_to_pdf'
+  } : props.toolCall;
+  return <ExportToolView {...props} toolCall={modifiedToolCall} />;
 }
 

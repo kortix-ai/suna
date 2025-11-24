@@ -29,22 +29,28 @@ import {
 } from './_utils';
 
 export function ListDocumentsToolView({
-  name = 'list_documents',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
   const [editorFilePath, setEditorFilePath] = useState<string | null>(null);
   
-  const data = extractDocsData(toolContent);
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('ListDocumentsToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const data = extractDocsData(toolResult);
 
   if (isStreaming || !data) {
     return <LoadingState title="Loading Documents..." />;
@@ -259,7 +265,7 @@ export function ListDocumentsToolView({
         onOpenChange={setFileViewerOpen}
         sandboxId={data?.sandbox_id || project?.id || ''}
         initialFilePath={selectedDocPath}
-        project={project}
+        projectId={project?.id}
       />
     )}
     

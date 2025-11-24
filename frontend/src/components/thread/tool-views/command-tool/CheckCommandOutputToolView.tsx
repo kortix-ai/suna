@@ -90,6 +90,11 @@ const extractCheckCommandOutputData_OLD = (
 
     // Try to extract from tool content first (most likely to have the result)
     const toolParsed = parseContent(toolContent);
+    let sessionName: string | null = null;
+    let output: string | null = null;
+    let status: string | null = null;
+    let actualIsSuccess = isSuccess;
+    const actualTimestamp = toolTimestamp || assistantTimestamp;
 
     if (toolParsed && typeof toolParsed === 'object') {
         // First, try to extract directly from tool_execution (the actual format being used)

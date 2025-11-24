@@ -8,16 +8,22 @@ import { extractWaitForCallCompletionData, formatDuration, statusConfig } from '
 import { getToolTitle } from '../utils';
 
 export function WaitForCallCompletionToolView({
-  name = 'wait-for-call-completion',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const data = extractWaitForCallCompletionData(toolContent);
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('WaitForCallCompletionToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
+  const data = extractWaitForCallCompletionData(toolResult);
 
   if (!data) {
     return <div className="text-sm text-muted-foreground">No call completion data available</div>;
@@ -60,9 +66,6 @@ export function WaitForCallCompletionToolView({
       </CardHeader>
 
       <CardContent className="p-4 space-y-4">
-        {assistantContent && (
-          <div className="text-sm text-foreground">{assistantContent}</div>
-        )}
 
         <div className="bg-muted/30 rounded-lg p-4 border border-border space-y-3">
           <div className="flex items-center justify-between">

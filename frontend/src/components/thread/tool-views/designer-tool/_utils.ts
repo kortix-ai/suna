@@ -1,42 +1,51 @@
-import { extractToolData, normalizeContentToString } from '../utils';
+import { ToolCallData, ToolResultData } from '../types';
 
-interface DesignerData {
-  mode?: string;
-  prompt?: string;
-  designStyle?: string;
-  platformPreset?: string;
-  width?: number;
-  height?: number;
-  quality?: string;
-  imagePath?: string;
+export interface DesignerData {
+  mode: string | null;
+  prompt: string | null;
+  designStyle: string | null;
+  platformPreset: string | null;
+  width: number | null;
+  height: number | null;
+  quality: string | null;
+  imagePath: string | null;
   generatedImagePath?: string;
   designUrl?: string;
   status?: string;
   error?: string;
+  sandbox_id?: string;
   actualIsSuccess: boolean;
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
-  sandbox_id?: string;
 }
 
 export function extractDesignerData(
-  assistantContent: string | object | undefined | null,
-  toolContent: string | object | undefined | null,
-  isSuccess: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): DesignerData {
-  const assistantData = extractToolData(assistantContent);
-  const toolData = extractToolData(toolContent);
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
 
-  const mode = assistantData.arguments?.mode;
-  const prompt = assistantData.arguments?.prompt;
-  const designStyle = assistantData.arguments?.design_style;
-  const platformPreset = assistantData.arguments?.platform_preset;
-  const width = assistantData.arguments?.width;
-  const height = assistantData.arguments?.height;
-  const quality = assistantData.arguments?.quality;
-  const imagePath = assistantData.arguments?.image_path;
+  const mode = args.mode || null;
+  const prompt = args.prompt || null;
+  const designStyle = args.design_style || null;
+  const platformPreset = args.platform_preset || null;
+  const width = args.width || null;
+  const height = args.height || null;
+  const quality = args.quality || null;
+  const imagePath = args.image_path || null;
 
   let generatedImagePath: string | undefined;
   let designUrl: string | undefined;
@@ -47,36 +56,21 @@ export function extractDesignerData(
   const actualAssistantTimestamp = assistantTimestamp;
   let sandbox_id: string | undefined;
 
-  if (toolContent && typeof toolContent === 'object') {
-    const tc = toolContent as any;
+  if (toolResult?.output) {
+    let output: any = toolResult.output;
     
-    if (tc.sandbox_id) {
-      sandbox_id = tc.sandbox_id;
-    }
-    
-    if (tc.tool_execution?.result?.output) {
-      const output = tc.tool_execution.result.output;
-      actualIsSuccess = tc.tool_execution.result.success !== false;
-      
-      if (typeof output === 'object' && output !== null) {
-        if (output.design_path) {
-          generatedImagePath = output.design_path;
-        }
-        if (output.design_url) {
-          designUrl = output.design_url;
-        }
-        if (output.message) {
-          status = output.message;
-        }
-        if (output.success !== undefined) {
-          actualIsSuccess = output.success;
-        }
-        if (output.sandbox_id) {
-          sandbox_id = output.sandbox_id;
-        }
-      } else if (typeof output === 'string') {
+    if (typeof output === 'string') {
+      try {
+        output = JSON.parse(output);
+      } catch (e) {
+        // If parsing fails, treat as a simple status message
         status = output;
+        if (output.includes('error') || output.includes('Error') || output.includes('Failed')) {
+          error = output;
+          actualIsSuccess = false;
+        }
         
+        // Try to extract path from string
         const pathMatch = output.match(/Design saved at:\s*([^\s]+)/i);
         if (pathMatch) {
           generatedImagePath = pathMatch[1];
@@ -86,77 +80,34 @@ export function extractDesignerData(
             generatedImagePath = anyPathMatch[1];
           }
         }
-        
-        if (output.includes('error') || output.includes('Error') || output.includes('Failed')) {
-          error = output;
-          actualIsSuccess = false;
-        }
       }
     }
-    
-    if (tc.metadata?.frontend_content?.tool_execution?.result?.output) {
-      const output = tc.metadata.frontend_content.tool_execution.result.output;
-      if (typeof output === 'object' && output !== null) {
-        if (!generatedImagePath && output.design_path) {
-          generatedImagePath = output.design_path;
-        }
-        if (!designUrl && output.design_url) {
-          designUrl = output.design_url;
-        }
-      } else if (typeof output === 'string' && !generatedImagePath) {
-        const pathMatch = output.match(/(\/workspace\/designs\/[^\s]+\.png)/i);
-        if (pathMatch) {
-          generatedImagePath = pathMatch[1];
-        }
+
+    if (typeof output === 'object' && output !== null) {
+      if (output.design_path) {
+        generatedImagePath = output.design_path;
+      }
+      if (output.design_url) {
+        designUrl = output.design_url;
+      }
+      if (output.message) {
+        status = output.message;
+      }
+      if (output.success !== undefined) {
+        actualIsSuccess = output.success;
+      }
+      if (output.sandbox_id) {
+        sandbox_id = output.sandbox_id;
       }
     }
   }
 
-  if (!generatedImagePath && toolContent) {
-    const toolResult = toolData.toolResult;
-    
-    if (toolResult?.toolOutput && typeof toolResult.toolOutput === 'string') {
-      const result = toolResult.toolOutput;
-      
-      const fullPathMatch = result.match(/(\/workspace\/designs\/[^\s]+\.png)/i);
-      if (fullPathMatch) {
-        generatedImagePath = fullPathMatch[1];
-      } else {
-        const filenameMatch = result.match(/(?:Design saved (?:as|at):\s*)?(design_\d+x\d+_[\w]+\.png)/i);
-        if (filenameMatch) {
-          generatedImagePath = `/workspace/designs/${filenameMatch[1]}`;
-        }
-      }
-
-      status = result;
-
-      if (result.includes('error') || result.includes('Error') || result.includes('Failed')) {
-        error = result;
-        actualIsSuccess = false;
-      } else if (result.includes('Successfully')) {
-        actualIsSuccess = true;
-      }
-    }
-    
-    if (toolResult?.isSuccess !== undefined) {
-      actualIsSuccess = toolResult.isSuccess;
-    }
+  // Update success from toolResult if available
+  if (toolResult?.success !== undefined) {
+    actualIsSuccess = toolResult.success;
   }
 
-  const contentStr = normalizeContentToString(toolContent);
-  if (contentStr && !generatedImagePath) {
-    const fullPathMatch = contentStr.match(/(\/workspace\/designs\/[^\s]+\.png)/i);
-    if (fullPathMatch) {
-      generatedImagePath = fullPathMatch[1];
-    } else {
-      const filenameMatch = contentStr.match(/design_\d+x\d+_[\w]+\.png/i);
-      if (filenameMatch) {
-        generatedImagePath = `/workspace/designs/${filenameMatch[0]}`;
-      }
-    }
-  }
-
-  const result = {
+  return {
     mode,
     prompt,
     designStyle,
@@ -169,19 +120,9 @@ export function extractDesignerData(
     designUrl,
     status,
     error,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp,
     sandbox_id,
+    actualIsSuccess: toolResult?.success ?? actualIsSuccess,
+    actualToolTimestamp: actualToolTimestamp,
+    actualAssistantTimestamp: actualAssistantTimestamp
   };
-  
-  console.log('Designer Tool Data Extraction:', {
-    toolContent,
-    extractedImagePath: generatedImagePath,
-    status,
-    success: actualIsSuccess,
-    fullExtractedData: result
-  });
-  
-  return result;
-} 
+}

@@ -24,6 +24,7 @@ export * from './credit-formatter';
 // Streaming & tool call utilities (portable from frontend)
 export * from './streaming-utils';
 export * from './tool-call-utils';
+export * from './tool-data-extractor';
 
 // Domain-specific utilities
 export * from './thread-utils';

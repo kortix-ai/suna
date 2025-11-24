@@ -209,12 +209,31 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name.replace(/_/g, '-');
     
+    // Normalize arguments - handle both string and object types
+    let normalizedArguments: Record<string, any> = {};
+    if (toolCall.arguments) {
+      if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
+        normalizedArguments = toolCall.arguments;
+      } else if (typeof toolCall.arguments === 'string') {
+        try {
+          normalizedArguments = JSON.parse(toolCall.arguments);
+        } catch {
+          normalizedArguments = {};
+        }
+      }
+    }
+    
+    const normalizedToolCall = {
+      ...toolCall,
+      arguments: normalizedArguments
+    };
+    
     if (toolName === 'ask') {
-      contentParts.push(renderAskToolCall(toolCall, index, props));
+      contentParts.push(renderAskToolCall(normalizedToolCall, index, props));
     } else if (toolName === 'complete') {
-      contentParts.push(renderCompleteToolCall(toolCall, index, props));
+      contentParts.push(renderCompleteToolCall(normalizedToolCall, index, props));
     } else {
-      contentParts.push(renderRegularToolCall(toolCall, index, toolName, props));
+      contentParts.push(renderRegularToolCall(normalizedToolCall, index, toolName, props));
     }
   });
   

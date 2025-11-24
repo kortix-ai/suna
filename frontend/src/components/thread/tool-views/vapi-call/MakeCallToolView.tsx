@@ -79,15 +79,6 @@ export function MakeCallToolView({
     gcTime: 5 * 60 * 1000,
   });
 
-  // Defensive check - handle cases where toolCall might be undefined
-  if (!toolCall) {
-    console.warn('MakeCallToolView: toolCall is undefined. Tool views should use structured props.');
-    return null;
-  }
-
-  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
-  const toolTitle = getToolTitle(name);
-
   useEffect(() => {
     if (realtimeData) {
       console.log('[MakeCallToolView] Updating from realtime data:', {
@@ -123,6 +114,15 @@ export function MakeCallToolView({
       transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [liveTranscript, previousTranscriptLength]);
+
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('MakeCallToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   if (!callData) {
     return <div className="text-sm text-muted-foreground">No call data available</div>;

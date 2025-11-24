@@ -563,7 +563,8 @@ class ThreadManager:
             try:
                 # Use |||STOP_AGENT||| as stop sequence for XML tool calling
                 # This ensures the LLM stops after completing a tool call block
-                stop_sequences = ["|||STOP_AGENT|||"] if not config.native_tool_calling else None
+                # Check xml_tool_calling directly - it's independent of native_tool_calling
+                stop_sequences = ["|||STOP_AGENT|||"] if config.xml_tool_calling else None
                 
                 llm_response = await make_llm_api_call(
                     prepared_messages, llm_model,

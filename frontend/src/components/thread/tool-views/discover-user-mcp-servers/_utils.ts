@@ -1,3 +1,5 @@
+import { ToolCallData, ToolResultData } from '../types';
+
 export interface McpTool {
   name: string;
   description: string;
@@ -21,108 +23,67 @@ export interface DiscoverUserMcpServersData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractDiscoverUserMcpServersData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): DiscoverUserMcpServersData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: DiscoverUserMcpServersData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     profile_id: null,
     message: null,
     profile_info: null,
     tools: [],
     total_tools: 0,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  try {
-    if (toolContent) {
-      let content = toolContent;
-      
-      if (typeof toolContent === 'string') {
-        try {
-          content = JSON.parse(toolContent);
-        } catch (e) {
-          // Keep original content if parsing fails
-        }
-      }
-
-      if (content && typeof content === 'object' && content.content) {
-        try {
-          const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
-          content = nestedContent;
-        } catch (e) {
-          // Keep original content if parsing fails
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool_execution) {
-        const toolExecution = content.tool_execution;
-        if (toolExecution.result && toolExecution.result.success) {
-          const args = toolExecution.arguments;
-          const output = toolExecution.result.output;
-
-          if (args && output) {
-            return {
-              ...defaultResult,
-              profile_id: args.profile_id || null,
-              message: output.message || null,
-              profile_info: output.profile_info || null,
-              tools: output.tools || [],
-              total_tools: output.total_tools || 0,
-              actualIsSuccess: true
-            };
-          }
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool === 'discover-user-mcp-servers') {
-        const parameters = content.parameters;
-        const output = content.output;
-        
-        if (parameters && output) {
-          return {
-            ...defaultResult,
-            profile_id: parameters.profile_id || null,
-            message: output.message || null,
-            profile_info: output.profile_info || null,
-            tools: output.tools || [],
-            total_tools: output.total_tools || 0,
-            actualIsSuccess: output.success !== false
-          };
-        }
-      }
-    }
-
-    if (assistantContent) {
-      // Handle assistant content if needed
-    }
-
-    return defaultResult;
-  } catch (error) {
+  if (!toolResult?.output) {
     return defaultResult;
   }
+
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
+    }
+  }
+
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  return {
+    profile_id: parsedOutput.profile_id || args.profile_id || null,
+    message: parsedOutput.message || null,
+    profile_info: parsedOutput.profile_info || null,
+    tools: Array.isArray(parsedOutput.tools) ? parsedOutput.tools : [],
+    total_tools: parsedOutput.total_tools ?? 0,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
 }

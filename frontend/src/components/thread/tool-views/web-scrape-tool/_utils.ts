@@ -1,4 +1,5 @@
 import { ToolCallData, ToolResultData } from '../types';
+import { normalizeContentToString } from '../utils';
 
 export interface WebScrapeData {
   url: string | null;
@@ -144,18 +145,7 @@ const extractFromLegacyFormat = (content: any): {
   files: string[];
   urlCount: number;
 } => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult && toolData.arguments) {
-    return {
-      url: toolData.url || null,
-      urls: toolData.url ? [toolData.url] : null,
-      success: undefined,
-      message: null,
-      files: [],
-      urlCount: 0
-    };
-  }
+  // Legacy extraction removed - use toolCall/toolResult props instead
 
   const contentStr = normalizeContentToString(content);
   if (!contentStr) {

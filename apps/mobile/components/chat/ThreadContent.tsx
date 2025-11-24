@@ -33,6 +33,7 @@ import { AgentLoader } from './AgentLoader';
 import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
+import { renderAssistantMessage } from './assistant-message-renderer';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -327,7 +328,7 @@ const ToolCard = React.memo(function ToolCard({
   const completedData = useMemo(() => {
     if (!message || isLoading) return null;
 
-    const parsed = parseToolMessage(message.content);
+    const parsed = parseToolMessage(message);
     if (!parsed) {
       return {
         toolName: 'Unknown Tool',
@@ -656,7 +657,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
           const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
           const assistantId = metadata.assistant_message_id || null;
 
-          const parsed = parseToolMessage(toolMsg.content);
+          const parsed = parseToolMessage(toolMsg);
           const toolName = parsed?.toolName || '';
 
           if (toolName === 'ask' || toolName === 'complete') {
@@ -773,10 +774,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
               <View className="gap-3">
                 {assistantMessages.map((message, msgIndex) => {
-                  const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                   const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
-
-                  if (!parsedContent.content) return null;
+                  
+                  // Parse metadata to check for tool calls and text content
+                  const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+                  const toolCalls = metadata.tool_calls || [];
+                  const textContent = metadata.text_content || '';
+                  
+                  // Skip if no content (no text and no tool calls)
+                  if (!textContent && toolCalls.length === 0) {
+                    // Fallback: try parsing content for legacy messages
+                    const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
+                    if (!parsedContent.content) return null;
+                  }
 
                   const linkedTools = toolResultsMap.get(message.message_id || null);
 
@@ -785,16 +795,25 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   const isLastAssistantMessage = msgIndex === assistantMessages.length - 1;
                   const isLatestMessage = isLastGroup && isLastAssistantMessage;
 
+                  // Use metadata-based rendering (new approach)
+                  const renderedContent = renderAssistantMessage({
+                    message,
+                    onToolClick: handleToolClick || (() => {}),
+                    onFileClick: onFilePress,
+                    sandboxId,
+                    isLatestMessage,
+                    threadId: undefined, // TODO: pass threadId if available
+                    onPromptFill: undefined, // TODO: add prompt fill handler if needed
+                    isDark, // Pass color scheme from parent
+                  });
+
                   return (
                     <View key={msgKey}>
-                      <MarkdownContent
-                        content={parsedContent.content}
-                        handleToolClick={handleToolClick}
-                        messageId={message.message_id}
-                        onFilePress={onFilePress}
-                        sandboxId={sandboxId}
-                        isLatestMessage={isLatestMessage}
-                      />
+                      {renderedContent && (
+                        <View className="gap-2">
+                          {renderedContent}
+                        </View>
+                      )}
 
                       {linkedTools && linkedTools.length > 0 && (
                         <View className="gap-2 mt-3">

@@ -288,8 +288,8 @@ export function TerminateCommandToolView({
           <Clock className="h-3.5 w-3.5" />
           {actualToolTimestamp && !isStreaming
             ? formatTimestamp(actualToolTimestamp)
-            : actualAssistantTimestamp
-              ? formatTimestamp(actualAssistantTimestamp)
+            : assistantTimestamp
+              ? formatTimestamp(assistantTimestamp)
               : ''}
         </div>
       </div>

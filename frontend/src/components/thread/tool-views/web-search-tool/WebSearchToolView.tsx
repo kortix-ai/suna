@@ -459,7 +459,7 @@ export function WebSearchToolView({
             {query && (
             <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 w-full max-w-md text-center mb-4 shadow-sm">
               <code className="text-sm font-mono text-zinc-700 dark:text-zinc-300 break-all">
-                  {typeof query === 'string' ? query : Array.isArray(query) ? query.join(', ') : 'Unknown query'}
+                  {typeof query === 'string' ? query : Array.isArray(query) ? (query as string[]).join(', ') : 'Unknown query'}
               </code>
             </div>
             )}

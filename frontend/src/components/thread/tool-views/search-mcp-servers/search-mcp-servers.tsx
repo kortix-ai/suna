@@ -26,15 +26,24 @@ import { LoadingState } from '../shared/LoadingState';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function SearchMcpServersToolView({
-  name = 'search-mcp-servers',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [expandedResults, setExpandedResults] = useState<Record<number, boolean>>({});
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('SearchMcpServersToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     query,
@@ -44,14 +53,12 @@ export function SearchMcpServersToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractSearchMcpServersData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const getAuthSchemeColor = (authSchemes: string[]) => {
     if (authSchemes?.includes('OAUTH2')) {

@@ -21,7 +21,6 @@ import {
   formatTimestamp,
   getToolTitle,
   normalizeContentToString,
-  extractToolData,
 } from '../utils';
 import {
   MarkdownRenderer,

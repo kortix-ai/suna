@@ -22,13 +22,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   LineDiff,
   DiffStats,
-  extractFromNewFormat,
-  extractFromLegacyFormat,
   generateLineDiff,
   generateCharDiff,
   calculateDiffStats
 } from './_utils';
-import { extractFilePath, extractStrReplaceContent, extractToolData, formatTimestamp, getToolTitle } from '../utils';
+import { extractFilePath, extractStrReplaceContent, formatTimestamp, getToolTitle } from '../utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
 
