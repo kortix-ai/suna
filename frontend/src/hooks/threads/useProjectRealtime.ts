@@ -30,18 +30,28 @@ export function useProjectRealtime(projectId?: string) {
           filter: `project_id=eq.${projectId}`,
         },
         (payload) => {
-          
           // Check if sandbox data was updated
           const newData = payload.new as Project;
           const oldData = payload.old as Project;
-          if (newData?.sandbox && (!oldData?.sandbox || 
-              JSON.stringify(newData.sandbox) !== JSON.stringify(oldData.sandbox))) {
-            
-            // Invalidate specific project query
-            queryClient.invalidateQueries({
+          
+          // Only consider it a real sandbox if it has an id field
+          const hasRealSandbox = (sandbox: any) => sandbox && typeof sandbox === 'object' && sandbox.id;
+          const newHasSandbox = hasRealSandbox(newData?.sandbox);
+          const oldHasSandbox = hasRealSandbox(oldData?.sandbox);
+          
+          const sandboxChanged = newHasSandbox && !oldHasSandbox;
+          
+          if (sandboxChanged) {
+            // Remove project cache to force recalculation with fresh data
+            queryClient.removeQueries({
               queryKey: threadKeys.project(projectId)
             });
             
+            // Refetch threads list (source of project data)
+            queryClient.refetchQueries({
+              queryKey: threadKeys.lists(),
+              type: 'active'
+            });
           }
         }
       )
