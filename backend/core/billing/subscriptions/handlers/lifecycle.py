@@ -299,8 +299,14 @@ class SubscriptionLifecycleHandler:
         should_grant_credits = self.lifecycle_service.should_grant_credits(current_tier_data, new_tier, subscription)
         
         if should_grant_credits:
-            current_tier_name = current_tier_data.get('name') if current_tier_data else 'none'
-            is_tier_upgrade = (current_tier_name != 'none' and current_tier_name != new_tier['name'])
+            original_tier = subscription.get('metadata', {}).get('previous_tier', current_tier_name)
+            
+            is_free_to_paid_upgrade = (original_tier in ['free', 'none'] and new_tier['name'] not in ['free', 'none'])
+            is_paid_to_paid_upgrade = (original_tier not in ['free', 'none'] and original_tier != new_tier['name'])
+            
+            is_tier_upgrade = is_free_to_paid_upgrade or is_paid_to_paid_upgrade
+            
+            logger.info(f"[TIER UPGRADE DETECTION] Original: {original_tier}, New: {new_tier['name']}, Is upgrade: {is_tier_upgrade}")
             
             if is_tier_upgrade:
                 logger.info(f"[TIER UPGRADE] Processing tier upgrade: {current_tier_name} -> {new_tier['name']}")
