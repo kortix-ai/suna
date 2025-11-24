@@ -11,8 +11,8 @@ from core.utils.logger import logger
 from core.utils.config import config
 from core.utils.distributed_lock import WebhookLock, DistributedLock
 from dateutil.relativedelta import relativedelta
-from .credits.manager import credit_manager
-from .shared.config import get_tier_by_name, CREDITS_PER_DOLLAR
+from ...credits.manager import credit_manager
+from ...shared.config import get_tier_by_name, CREDITS_PER_DOLLAR
 
 
 class RevenueCatService:
@@ -668,7 +668,7 @@ class RevenueCatService:
         
         logger.info(f"[REVENUECAT EXPIRATION] Cleared subscription data for {app_user_id}")
         
-        from .free_tier_service import free_tier_service
+        from ...subscriptions import free_tier_service
         result = await free_tier_service.auto_subscribe_to_free_tier(app_user_id)
         
         if result.get('success'):
@@ -843,7 +843,7 @@ class RevenueCatService:
         )
         
         try:
-            from .stripe_circuit_breaker import StripeAPIWrapper
+            from ..stripe import StripeAPIWrapper
             await StripeAPIWrapper.cancel_subscription(stripe_subscription_id)
             
             logger.info(

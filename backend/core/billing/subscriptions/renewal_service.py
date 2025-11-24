@@ -2,7 +2,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
 from core.services.supabase import DBConnection
-from core.billing.shared.config import get_tier_by_name
+from ..shared.config import get_tier_by_name
 import logging
 
 logger = logging.getLogger(__name__)

@@ -351,16 +351,21 @@ function PricingTier({
 
   const userPlanName = currentSubscription?.plan_name || 'none';
 
-  const isSameTier = currentSubscription?.tier_key === tier.tierKey ||
-    currentSubscription?.tier?.name === tier.tierKey;
+  const isSameTier = 
+    currentSubscription?.tier_key === tier.tierKey ||
+    currentSubscription?.tier?.name === tier.tierKey ||
+    currentSubscription?.plan_name === tier.tierKey;
   const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
 
   const isRevenueCatSubscription = currentSubscription?.provider === 'revenuecat';
   
+  // More robust current plan detection
   const isCurrentActivePlan = isAuthenticated && isSameTier && 
     (isSameBillingPeriod || isRevenueCatSubscription) &&
     (currentSubscription?.subscription?.status === 'active' || 
-     (isRevenueCatSubscription && currentSubscription?.status === 'active'));
+     currentSubscription?.status === 'active' ||
+     (isRevenueCatSubscription && currentSubscription?.status === 'active') ||
+     (currentSubscription?.subscription && !currentSubscription?.subscription?.status));
 
   const isScheduled = isAuthenticated && (currentSubscription as any)?.has_schedule;
   const isScheduledTargetPlan =
@@ -382,8 +387,16 @@ function PricingTier({
   const planChangeValidation = { allowed: true };
 
   if (isAuthenticated) {
-    // For RevenueCat subscriptions on web, show current plan and disable changes
-    if (isRevenueCatSubscription && !isCurrentActivePlan) {
+    const isCurrentPlan = isSameTier;
+    
+    if (isCurrentPlan) {
+      buttonText = t('currentPlan');
+      buttonDisabled = true;
+      buttonVariant = 'secondary';
+      statusBadge = <Badge variant="default" className="text-xs">{t('current')}</Badge>;
+      ringClass = '';
+    }
+    else if (isRevenueCatSubscription && !isCurrentPlan) {
       buttonText = 'Manage in App';
       buttonDisabled = true;
       buttonVariant = 'outline';
@@ -785,13 +798,11 @@ export function PricingSection({
     if (!isAuthenticated || !currentSubscription) {
       return null;
     }
-
-    // Use billing_period from API response (most reliable - comes from price_id)
     if (currentSubscription.billing_period) {
+      console.log(`[BILLING-PERIOD-DEBUG] Using API billing_period: ${currentSubscription.billing_period}`);
       return currentSubscription.billing_period;
     }
 
-    // Fallback: Check commitment info
     if (subCommitmentQuery.data?.has_commitment &&
       subCommitmentQuery.data?.commitment_type === 'yearly_commitment') {
       return 'yearly_commitment';

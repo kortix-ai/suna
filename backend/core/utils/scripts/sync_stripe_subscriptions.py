@@ -15,7 +15,7 @@ from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.billing.shared.config import get_tier_by_price_id, TIERS
-from core.billing.webhook_service import webhook_service
+from core.billing.external.stripe import webhook_service
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 

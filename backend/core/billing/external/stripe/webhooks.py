@@ -6,9 +6,13 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
+
+stripe.api_key = config.STRIPE_SECRET_KEY
+
 from core.utils.cache import Cache
+
 from core.utils.distributed_lock import WebhookLock, RenewalLock, DistributedLock
-from .shared.config import (
+from ...shared.config import (
     get_tier_by_price_id, 
     get_tier_by_name,
     TIERS, 
@@ -18,13 +22,14 @@ from .shared.config import (
     is_commitment_price_id,
     get_commitment_duration_months
 )
-from .credits.manager import credit_manager
-from .stripe_circuit_breaker import StripeAPIWrapper
+from ...credits.manager import credit_manager
+from .client import StripeAPIWrapper
 
 
 class WebhookService:
     def __init__(self):
         self.stripe = stripe
+        stripe.api_key = config.STRIPE_SECRET_KEY
         
     async def process_stripe_webhook(self, request: Request) -> Dict:
         event = None
@@ -999,7 +1004,7 @@ class WebhookService:
                                 logger.info(f"[WEBHOOK] Period changed but not upgrade - returning early")
                                 return
             
-            from .subscription_service import subscription_service
+            from ...subscriptions import subscription_service
             await subscription_service.handle_subscription_change(subscription, previous_attributes)
     
     async def _handle_subscription_updated(self, event, subscription, client):
@@ -1581,7 +1586,10 @@ class WebhookService:
                         'p_credits': float(monthly_credits),
                         'p_processed_by': 'webhook_invoice',
                         'p_invoice_id': invoice_id,
-                        'p_stripe_event_id': stripe_event_id
+                        'p_stripe_event_id': stripe_event_id,
+                        'p_provider': 'stripe',
+                        'p_revenuecat_transaction_id': None,
+                        'p_revenuecat_product_id': None
                     }).execute()
                 else:
                     logger.info(f"[INITIAL GRANT] Granting ${monthly_credits} credits for {account_id} (billing_reason={billing_reason}, NOT a renewal - will not block future renewals)")

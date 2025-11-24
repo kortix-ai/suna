@@ -5,19 +5,19 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
-from .shared.config import (
+from ..shared.config import (
     TRIAL_ENABLED,
     TRIAL_DURATION_DAYS,
     TRIAL_TIER,
     TRIAL_CREDITS,
 )
-from .credits.manager import credit_manager
-from .idempotency import generate_trial_idempotency_key
-from .stripe_circuit_breaker import StripeAPIWrapper
+from ..credits.manager import credit_manager
+from ..external.stripe import generate_trial_idempotency_key, StripeAPIWrapper
 
 class TrialService:
     def __init__(self):
         self.stripe = stripe
+        stripe.api_key = config.STRIPE_SECRET_KEY
 
     async def get_trial_status(self, account_id: str) -> Dict:
         db = DBConnection()
@@ -278,7 +278,7 @@ class TrialService:
                     logger.error(f"[TRIAL SECURITY] Error checking existing subscription: {e}")
         
         try:
-            from .subscription_service import subscription_service
+            from .service import subscription_service
             customer_id = await subscription_service.get_or_create_stripe_customer(account_id)
             logger.info(f"[TRIAL] Creating checkout session for account {account_id} - all security checks passed")
             

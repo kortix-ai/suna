@@ -4,11 +4,12 @@ from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
-from .shared.config import FREE_TIER_INITIAL_CREDITS
+from ..shared.config import FREE_TIER_INITIAL_CREDITS
 
 class FreeTierService:
     def __init__(self):
         self.stripe = stripe
+        stripe.api_key = config.STRIPE_SECRET_KEY
         
     async def auto_subscribe_to_free_tier(self, account_id: str, email: Optional[str] = None) -> Dict:
         lock_key = f"free_tier_setup:{account_id}"

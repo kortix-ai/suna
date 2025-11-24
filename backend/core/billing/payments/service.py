@@ -5,13 +5,35 @@ from datetime import datetime, timezone
 import stripe
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
-from .idempotency import generate_credit_purchase_idempotency_key
-from .stripe_circuit_breaker import StripeAPIWrapper
+from ..external.stripe import generate_credit_purchase_idempotency_key, StripeAPIWrapper
+from .interfaces import PaymentProcessorInterface
+from core.utils.config import config
 
-
-class PaymentService:
+class PaymentService(PaymentProcessorInterface):
     def __init__(self):
         self.stripe = stripe
+        stripe.api_key = config.STRIPE_SECRET_KEY
+
+    async def validate_payment_eligibility(self, account_id: str) -> bool:
+        from ..subscriptions import subscription_service
+        tier = await subscription_service.get_user_subscription_tier(account_id)
+        return tier.get('can_purchase_credits', False)
+
+    async def create_checkout_session(
+        self, 
+        account_id: str, 
+        amount: Decimal, 
+        success_url: str, 
+        cancel_url: str
+    ) -> Dict:
+        return await self.create_credit_purchase_checkout(
+            account_id, amount, success_url, cancel_url,
+            self._get_user_subscription_tier
+        )
+    
+    async def _get_user_subscription_tier(self, account_id: str):
+        from ..subscriptions import subscription_service
+        return await subscription_service.get_user_subscription_tier(account_id)
 
     async def create_credit_purchase_checkout(
         self, 

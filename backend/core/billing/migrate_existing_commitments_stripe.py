@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""
-Migration script to track commitment plans by querying Stripe directly.
-
-Usage:
-    # Dry run - see what would be changed without making changes
-    python -m core.billing.migrate_existing_commitments_stripe --dry-run
-    
-    # Apply the migration
-    python -m core.billing.migrate_existing_commitments_stripe
-    
-    # Only verify existing commitments
-    python -m core.billing.migrate_existing_commitments_stripe --verify-only
-"""
 import asyncio
 import sys
 import argparse

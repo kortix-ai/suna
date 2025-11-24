@@ -14,7 +14,11 @@ class BillingIntegration:
             return True, "Local mode", None
         
         balance_info = await credit_manager.get_balance(account_id)
-        balance = Decimal(str(balance_info.get('total', 0)))
+        
+        if isinstance(balance_info, dict):
+            balance = Decimal(str(balance_info.get('total', 0)))
+        else:
+            balance = Decimal(str(balance_info or 0))
         
         if balance < 0:
             return False, f"Insufficient credits. Your balance is ${balance:.2f}. Please add credits to continue.", None
@@ -37,7 +41,7 @@ class BillingIntegration:
             db = DBConnection()
             client = await db.client
         
-        from ..subscription_service import subscription_service
+        from ..subscriptions import subscription_service
         tier_info = await subscription_service.get_user_subscription_tier(account_id)
         tier_name = tier_info.get('name', 'none')
         
@@ -49,7 +53,11 @@ class BillingIntegration:
             }
         
         balance_info = await credit_manager.get_balance(account_id)
-        balance = Decimal(str(balance_info.get('total', 0)))
+        
+        if isinstance(balance_info, dict):
+            balance = Decimal(str(balance_info.get('total', 0)))
+        else:
+            balance = Decimal(str(balance_info or 0))
         
         if balance < 0:
             return False, f"Insufficient credits. Your balance is ${balance:.2f}. Please add credits to continue.", {
@@ -91,10 +99,15 @@ class BillingIntegration:
         
         if cost == 0:
             balance_info = await credit_manager.get_balance(account_id)
+            if isinstance(balance_info, dict):
+                balance_value = float(balance_info.get('total', 0))
+            else:
+                balance_value = float(balance_info or 0)
+                
             return {
                 'success': True,
                 'cost': 0,
-                'new_balance': float(balance_info.get('total', 0))
+                'new_balance': balance_value
             }
         
         result = await credit_manager.deduct_credits(

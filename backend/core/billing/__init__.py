@@ -16,11 +16,9 @@ from .shared.config import (
 )
 from .credits.integration import billing_integration
 from .credits.calculator import calculate_token_cost
-from .subscription_service import subscription_service
-from .trial_service import trial_service
-from .payment_service import payment_service
-from .reconciliation_service import reconciliation_service
-from .stripe_circuit_breaker import stripe_circuit_breaker, StripeAPIWrapper
+from .subscriptions import subscription_service, trial_service
+from .payments import payment_service, reconciliation_service
+from .external.stripe import stripe_circuit_breaker, StripeAPIWrapper
 
 __all__ = [
     'TOKEN_PRICE_MULTIPLIER',

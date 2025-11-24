@@ -174,18 +174,19 @@ class CreditManager:
                 if thread_id:
                     metadata['thread_id'] = thread_id
                 
-                result = await client.rpc('atomic_deduct_credits', {
+                result = await client.rpc('atomic_use_credits', {
                     'p_account_id': account_id,
                     'p_amount': float(amount),
                     'p_description': description,
-                    'p_type': type,
-                    'p_metadata': metadata if metadata else None
+                    'p_thread_id': thread_id,
+                    'p_message_id': message_id
                 }).execute()
                 
                 if result.data:
-                    data = result.data
-                    new_balance = Decimal(str(data.get('new_balance', 0)))
-                    amount_deducted = Decimal(str(data.get('amount_deducted', amount)))
+                    data = result.data[0] if isinstance(result.data, list) else result.data
+                    new_balance = Decimal(str(data.get('new_total', 0)))
+                    amount_deducted = amount
+                    success = data.get('success', True)
                     
                     await Cache.invalidate(f"credit_balance:{account_id}")
                     await Cache.invalidate(f"credit_summary:{account_id}")
@@ -193,10 +194,10 @@ class CreditManager:
                     logger.info(f"[ATOMIC] Deducted ${amount_deducted} from {account_id}. New balance: ${new_balance}")
                     
                     return {
-                        'success': True,
+                        'success': success,
                         'amount_deducted': amount_deducted,
                         'new_balance': new_balance,
-                        'ledger_id': data.get('ledger_id')
+                        'ledger_id': data.get('transaction_id')
                     }
                 else:
                     raise Exception("No data returned from atomic_deduct_credits")
@@ -310,6 +311,7 @@ class CreditManager:
                 'monthly_usage': 0,
                 'account_id': account_id
             }
+            
         else:
             summary_data = {
                 'total_balance': 0,

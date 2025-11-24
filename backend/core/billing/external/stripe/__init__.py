@@ -1,6 +1,7 @@
-from .client import stripe_circuit_breaker, StripeAPIWrapper
+from .client import stripe_circuit_breaker, StripeAPIWrapper, StripeCircuitBreaker
 from .webhooks import webhook_service
 from .idempotency import (
+    stripe_idempotency_manager,
     generate_idempotency_key,
     generate_checkout_idempotency_key,
     generate_trial_idempotency_key,
@@ -11,9 +12,16 @@ from .idempotency import (
 )
 
 __all__ = [
+    # Circuit Breaker
     'stripe_circuit_breaker',
     'StripeAPIWrapper',
+    'StripeCircuitBreaker',
+    
+    # Webhooks
     'webhook_service',
+    
+    # Idempotency
+    'stripe_idempotency_manager',
     'generate_idempotency_key',
     'generate_checkout_idempotency_key',
     'generate_trial_idempotency_key',

@@ -9,7 +9,7 @@ from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.distributed_lock import DistributedLock
-from .shared.config import (
+from ..shared.config import (
     get_tier_by_price_id, 
     TIERS, 
     TRIAL_DURATION_DAYS,
@@ -19,16 +19,17 @@ from .shared.config import (
     get_commitment_duration_months,
     get_price_type
 )
-from .credits.manager import credit_manager
-from .idempotency import (
+from ..credits.manager import credit_manager
+from ..external.stripe import (
     generate_checkout_idempotency_key,
-    generate_subscription_modify_idempotency_key
+    generate_subscription_modify_idempotency_key,
+    StripeAPIWrapper
 )
-from .stripe_circuit_breaker import StripeAPIWrapper
 
 class SubscriptionService:
     def __init__(self):
         self.stripe = stripe
+        stripe.api_key = config.STRIPE_SECRET_KEY
         
     async def get_or_create_stripe_customer(self, account_id: str) -> str:
         db = DBConnection()

@@ -5,14 +5,16 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
-from .credits.manager import credit_manager
-from .shared.config import get_tier_by_price_id
-from .stripe_circuit_breaker import StripeAPIWrapper
+from ..credits.manager import credit_manager
+from ..shared.config import get_tier_by_price_id
+from ..external.stripe import StripeAPIWrapper
+from .interfaces import ReconciliationManagerInterface
+from core.utils.config import config
 
-
-class ReconciliationService:
+class ReconciliationService(ReconciliationManagerInterface):
     def __init__(self):
         self.stripe = stripe
+        stripe.api_key = config.STRIPE_SECRET_KEY
         self.db = DBConnection()
     
     async def reconcile_failed_payments(self) -> Dict:
@@ -204,6 +206,48 @@ class ReconciliationService:
             logger.error(f"[CLEANUP] Error: {e}")
         
         return results
+    
+    async def retry_failed_payment(self, payment_id: str) -> Dict:
+        client = await self.db.client
+        
+        try:
+            payment_result = await client.from_('credit_purchases').select('*').eq('id', payment_id).execute()
+            
+            if not payment_result.data:
+                return {'success': False, 'error': 'Payment not found'}
+            
+            payment = payment_result.data[0]
+            
+            if payment['status'] != 'pending':
+                return {'success': False, 'error': f'Payment status is {payment["status"]}, cannot retry'}
+            
+            payment_intent = await StripeAPIWrapper.retrieve_payment_intent(payment['stripe_payment_intent_id'])
+            
+            if payment_intent.status == 'succeeded':
+                result = await credit_manager.add_credits(
+                    account_id=payment['account_id'],
+                    amount=Decimal(str(payment['amount_dollars'])),
+                    is_expiring=False,
+                    description=f"Reconciled purchase: ${payment['amount_dollars']} credits",
+                    type='purchase',
+                    stripe_event_id=f"retry_{payment_id}"
+                )
+                
+                await client.from_('credit_purchases').update({
+                    'status': 'completed',
+                    'completed_at': datetime.now(timezone.utc).isoformat()
+                }).eq('id', payment_id).execute()
+                
+                logger.info(f"[RETRY] Successfully reconciled payment {payment_id}")
+                return {'success': True, 'action': 'reconciled', 'credits_added': float(payment['amount_dollars'])}
+            
+            else:
+                logger.info(f"[RETRY] Payment {payment_id} still pending in Stripe: {payment_intent.status}")
+                return {'success': False, 'error': f'Stripe payment status: {payment_intent.status}'}
+                
+        except Exception as e:
+            logger.error(f"[RETRY] Error retrying payment {payment_id}: {e}")
+            return {'success': False, 'error': str(e)}
 
 
 reconciliation_service = ReconciliationService()
