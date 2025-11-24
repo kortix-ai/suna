@@ -12,7 +12,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { vars } from 'nativewind';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -94,17 +93,19 @@ export function ToolCallPanel({
     onClose();
   }, [onClose]);
 
+  const isDark = colorScheme === 'dark';
+
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}
-        opacity={0.5}
+        opacity={isDark ? 0.8 : 0.5}
         pressBehavior="close"
       />
     ),
-    []
+    [isDark]
   );
 
   const handleSheetChange = useCallback((index: number) => {
@@ -124,9 +125,11 @@ export function ToolCallPanel({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={vars({ '--card': 'backgroundColor' })}
+      backgroundStyle={{
+        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+      }}
       handleIndicatorStyle={{
-        ...vars({ '--border': 'backgroundColor' }),
+        backgroundColor: isDark ? '#3a3a3c' : '#d1d1d6',
         width: 36,
         height: 5,
         borderRadius: 3,
@@ -137,13 +140,17 @@ export function ToolCallPanel({
       style={{
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
       }}
     >
       <BottomSheetScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ 
+          paddingBottom: 20,
+          backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+        }}
       >
         {!currentPair || !toolCall ? (
           <View className="flex-1 justify-center items-center px-6 py-12">
@@ -170,10 +177,12 @@ export function ToolCallPanel({
 
       {toolMessages.length > 1 && (
         <View
-          className=" bg-card px-6"
+          className="px-6 border-t border-border"
           style={{
             paddingTop: 12,
             paddingBottom: Math.max(insets.bottom, 12),
+            backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+            borderTopColor: isDark ? '#2a2a2c' : '#e5e5e7',
           }}
         >
           <View className="flex-row items-center justify-between gap-3">

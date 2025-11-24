@@ -412,7 +412,7 @@ export function getUserFriendlyToolName(toolName: string): string {
       // Only format as MCP if it looks like an MCP tool (serverName is a known server or lowercase)
       const knownServers = ['exa', 'github', 'notion', 'slack', 'filesystem', 'memory', 'anthropic', 'openai', 'composio', 'langchain', 'llamaindex'];
       if (knownServers.includes(serverName.toLowerCase()) || serverName === serverName.toLowerCase()) {
-        return formatMCPToolName(serverName, toolNamePart);
+      return formatMCPToolName(serverName, toolNamePart);
       }
     }
   }

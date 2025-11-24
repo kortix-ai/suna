@@ -327,6 +327,7 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   }
   
   // Render tool calls from metadata (or parsed from XML)
+  // Only render ask/complete tools inline - regular tool calls are rendered via ToolCard components
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name?.replace(/_/g, '-') || '';
     
@@ -334,12 +335,8 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       contentParts.push(renderAskToolCall(toolCall, index, props));
     } else if (toolName === 'complete') {
       contentParts.push(renderCompleteToolCall(toolCall, index, props));
-    } else {
-      // Filter out ask/complete from regular tool rendering
-      if (!isAskOrCompleteTool(toolCall.function_name)) {
-        contentParts.push(renderRegularToolCall(toolCall, index, toolName, props));
-      }
     }
+    // Regular tool calls are rendered via ToolCard components in ThreadContent, not here
   });
   
   if (contentParts.length === 0) return null;
