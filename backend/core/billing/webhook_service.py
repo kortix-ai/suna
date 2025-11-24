@@ -1581,7 +1581,10 @@ class WebhookService:
                         'p_credits': float(monthly_credits),
                         'p_processed_by': 'webhook_invoice',
                         'p_invoice_id': invoice_id,
-                        'p_stripe_event_id': stripe_event_id
+                        'p_stripe_event_id': stripe_event_id,
+                        'p_provider': 'stripe',
+                        'p_revenuecat_transaction_id': None,
+                        'p_revenuecat_product_id': None
                     }).execute()
                 else:
                     logger.info(f"[INITIAL GRANT] Granting ${monthly_credits} credits for {account_id} (billing_reason={billing_reason}, NOT a renewal - will not block future renewals)")
