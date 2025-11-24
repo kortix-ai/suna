@@ -457,17 +457,32 @@ class CheckoutHandler:
                 else:
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                     logger.info(f"[WEBHOOK DEFAULT] Monthly plan - setting next_credit_grant to period end: {next_grant_date}")
-            
-                logger.info(f"[WEBHOOK DEFAULT] Granting ${tier_info.monthly_credits} credits for {plan_type} subscription")
+             
+                current_tier = credit_account.data[0].get('tier') if credit_account.data else 'none'
+                is_tier_upgrade = (current_tier and current_tier not in ['none', 'free'] and 
+                                  current_tier != tier_info.name)
                 
-                await credit_manager.add_credits(
-                    account_id=account_id,
-                    amount=Decimal(str(tier_info.monthly_credits)),
-                    is_expiring=True,
-                    description=f"Initial {tier_info.display_name} subscription credits (checkout.session.completed)",
-                    expires_at=next_grant_date,
-                    stripe_event_id=f"checkout_{account_id}_{subscription['id']}"
-                )
+                if is_tier_upgrade:
+                    logger.info(f"[WEBHOOK DEFAULT] Tier upgrade detected: {current_tier} -> {tier_info.name}")
+                    logger.info(f"[WEBHOOK DEFAULT] Replacing existing credits with ${tier_info.monthly_credits} for {tier_info.name} (Stripe handled payment proration)")
+                    
+                    await credit_manager.reset_expiring_credits(
+                        account_id=account_id,
+                        new_credits=Decimal(str(tier_info.monthly_credits)),
+                        description=f"Tier upgrade to {tier_info.display_name} (prorated by Stripe)",
+                        expires_at=next_grant_date
+                    )
+                else:
+                    logger.info(f"[WEBHOOK DEFAULT] Granting ${tier_info.monthly_credits} credits for new {plan_type} subscription")
+                    
+                    await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=Decimal(str(tier_info.monthly_credits)),
+                        is_expiring=True,
+                        description=f"Initial {tier_info.display_name} subscription credits (checkout.session.completed)",
+                        expires_at=next_grant_date,
+                        stripe_event_id=f"checkout_{account_id}_{subscription['id']}"
+                    )
                 
                 logger.info(f"[WEBHOOK DEFAULT] Granted {tier_info.monthly_credits} credits to {account_id}")
                 

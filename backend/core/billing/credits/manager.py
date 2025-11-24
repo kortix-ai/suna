@@ -76,6 +76,56 @@ class CreditManager:
             account_id, amount, is_expiring, description, expires_at, type, stripe_event_id
         )
     
+    async def reset_expiring_credits(
+        self,
+        account_id: str,
+        new_credits: Decimal,
+        description: str = "Credit replacement",
+        expires_at: Optional[datetime] = None,
+        stripe_event_id: Optional[str] = None
+    ) -> Dict:
+        client = await self.db.client
+        new_credits = Decimal(str(new_credits))
+        
+        logger.info(f"[RESET CREDITS] Replacing existing expiring credits with ${new_credits} for {account_id}")
+        
+        try:
+            idempotency_key = f"{account_id}_reset_{new_credits}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+            
+            result = await client.rpc('atomic_reset_expiring_credits', {
+                'p_account_id': account_id,
+                'p_new_amount': float(new_credits),
+                'p_description': description,
+                'p_expires_at': expires_at.isoformat() if expires_at else None,
+                'p_stripe_event_id': stripe_event_id,
+                'p_idempotency_key': idempotency_key
+            }).execute()
+            
+            if result.data:
+                data = result.data
+                logger.info(f"[ATOMIC RESET] Reset expiring credits to ${new_credits} for {account_id} atomically")
+                
+                await Cache.invalidate(f"credit_balance:{account_id}")
+                await Cache.invalidate(f"credit_summary:{account_id}")
+                
+                return {
+                    'success': True,
+                    'credit_id': data.get('credit_id'),
+                    'ledger_id': data.get('ledger_id'),
+                    'new_balance': Decimal(str(data.get('new_balance', 0))),
+                    'amount_reset': new_credits
+                }
+            else:
+                raise Exception("No data returned from atomic_reset_expiring_credits")
+                
+        except Exception as e:
+            logger.error(f"[ATOMIC RESET] Failed to reset credits atomically: {e}")
+            logger.warning("[ATOMIC RESET] Falling back to manual reset")
+        
+        return await self._reset_expiring_credits_manual(
+            account_id, new_credits, description, expires_at, stripe_event_id
+        )
+    
     async def _add_credits_manual(
         self,
         account_id: str,
@@ -142,6 +192,80 @@ class CreditManager:
             'ledger_id': ledger_id,
             'new_balance': new_balance,
             'amount_added': amount
+        }
+    
+    async def _reset_expiring_credits_manual(
+        self,
+        account_id: str,
+        new_credits: Decimal,
+        description: str,
+        expires_at: Optional[datetime],
+        stripe_event_id: Optional[str]
+    ) -> Dict:
+        """Manually replace all existing expiring credits with new amount"""
+        client = await self.db.client
+        new_credits = Decimal(str(new_credits))
+        
+        logger.info(f"[MANUAL RESET] Replacing expiring credits with ${new_credits} for {account_id}")
+        
+        # First, expire all existing expiring credits
+        current_time = datetime.now(timezone.utc)
+        await client.from_('credits').update({
+            'expires_at': current_time.isoformat(),
+            'is_expired': True
+        }).eq('account_id', account_id).eq('is_expiring', True).is_('is_expired', 'null').execute()
+        
+        # Add the new credits
+        credit_id = str(uuid.uuid4())
+        ledger_id = str(uuid.uuid4())
+        
+        credits_data = {
+            'id': credit_id,
+            'account_id': account_id,
+            'amount': float(new_credits),
+            'is_expiring': True,
+            'expires_at': expires_at.isoformat() if expires_at else None,
+        }
+        
+        if stripe_event_id:
+            credits_data['stripe_event_id'] = stripe_event_id
+        
+        ledger_data = {
+            'id': ledger_id,
+            'account_id': account_id,
+            'amount': float(new_credits),
+            'type': 'tier_upgrade',
+            'description': description,
+            'credit_id': credit_id,
+        }
+        
+        if stripe_event_id:
+            ledger_data['stripe_event_id'] = stripe_event_id
+        
+        # Insert new credit record
+        credits_result = await client.from_('credits').insert(credits_data).execute()
+        if not credits_result.data:
+            raise Exception("Failed to insert new credit record")
+        
+        # Insert ledger record
+        ledger_result = await client.from_('credit_ledger').insert(ledger_data).execute()
+        if not ledger_result.data:
+            raise Exception("Failed to insert new ledger record")
+        
+        await Cache.invalidate(f"credit_balance:{account_id}")
+        await Cache.invalidate(f"credit_summary:{account_id}")
+        
+        balance_info = await self.get_balance(account_id)
+        new_balance = Decimal(str(balance_info.get('total', 0)))
+        
+        logger.info(f"[MANUAL RESET] Successfully reset expiring credits to ${new_credits} for {account_id}. New balance: ${new_balance}")
+        
+        return {
+            'success': True,
+            'credit_id': credit_id,
+            'ledger_id': ledger_id,
+            'new_balance': new_balance,
+            'amount_reset': new_credits
         }
     
     async def deduct_credits(
