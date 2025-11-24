@@ -5,14 +5,14 @@ from core.utils.logger import logger
 from core.billing.shared.config import get_tier_by_name, get_price_type
 from core.billing.external.stripe import StripeAPIWrapper
 from ..repositories.credit_account import CreditAccountRepository
-import stripe
+import stripe # type: ignore
 
 class SchedulingService:
     def __init__(self):
         self.credit_repo = CreditAccountRepository()
     
     def validate_downgrade_request(self, current_tier, target_tier) -> None:
-        from fastapi import HTTPException
+        from fastapi import HTTPException # type: ignore
         
         if not target_tier:
             raise HTTPException(status_code=400, detail=f"Invalid target tier")

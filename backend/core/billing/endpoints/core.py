@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query # type: ignore
 from typing import Optional, Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta

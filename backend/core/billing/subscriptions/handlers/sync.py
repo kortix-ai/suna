@@ -1,5 +1,5 @@
 from typing import Dict
-import stripe
+import stripe # type: ignore
 
 from core.services.supabase import DBConnection
 from core.utils.logger import logger

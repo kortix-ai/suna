@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query # type: ignore
 from typing import Optional, Dict
 from datetime import datetime, timezone
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_user_id_from_jwt
@@ -10,7 +10,7 @@ from ..shared.models import (
 )
 from ..shared.config import get_tier_by_name
 from ..subscriptions import subscription_service
-import stripe
+import stripe # type: ignore
 from core.utils.config import config
 
 stripe.api_key = config.STRIPE_SECRET_KEY

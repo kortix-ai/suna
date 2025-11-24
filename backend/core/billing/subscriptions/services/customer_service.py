@@ -1,6 +1,6 @@
 from typing import Optional
-from fastapi import HTTPException
-import stripe
+from fastapi import HTTPException # type: ignore
+import stripe # type: ignore
 
 from core.utils.config import config
 from core.utils.logger import logger

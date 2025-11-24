@@ -173,7 +173,7 @@ class SubscriptionUpgradeService:
     
     async def _cleanup_duplicate_subscriptions(self, customer_id: str, keep_subscription_id: str, account_id: str):
         try:
-            import stripe
+            import stripe # type: ignore
             
             all_statuses = ['active', 'trialing', 'past_due', 'unpaid']
             all_subscriptions = []

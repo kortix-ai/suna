@@ -1,7 +1,6 @@
 from typing import Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta, timedelta
-from dateutil.relativedelta import relativedelta
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache

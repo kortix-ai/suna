@@ -1,5 +1,5 @@
 from typing import Dict
-import stripe
+import stripe # type: ignore
 
 from core.billing.external.stripe import StripeAPIWrapper
 from .customer import CustomerHandler
