@@ -1,9 +1,8 @@
 import * as React from 'react';
-import { Pressable, TextInput, View, Keyboard } from 'react-native';
-import { useColorScheme } from 'nativewind';
+import { Pressable, View, Keyboard } from 'react-native';
 import { Search, X } from 'lucide-react-native';
 import { Icon } from './icon';
-import { Text } from './text';
+import { Input } from './input';
 
 interface SearchBarProps {
   value: string;
@@ -31,8 +30,6 @@ export function SearchBar({
   onClear,
   className = ""
 }: SearchBarProps) {
-  const { colorScheme } = useColorScheme();
-
   const handleClear = () => {
     console.log('🎯 Clear search');
     onClear?.();
@@ -49,24 +46,14 @@ export function SearchBar({
         className="text-muted-foreground"
         strokeWidth={2}
       />
-      <TextInput
+      <Input
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.4)' : 'rgba(0, 0, 0, 0.4)'}
-        className="flex-1 mx-2 text-base font-roobert-medium text-foreground"
-        style={{
-          fontFamily: 'Roobert-Medium',
-          height: 48,
-          paddingVertical: 0,
-          paddingTop: 0,
-          paddingBottom: 0,
-          lineHeight: 20,
-          textAlignVertical: 'center',
-          includeFontPadding: false
-        }}
         returnKeyType="search"
-        clearButtonMode="never"
+        containerClassName="flex-1 mx-2"
+        wrapperClassName="bg-transparent border-0 rounded-none"
+        inputClassName="px-0 text-base font-roobert-medium"
         accessibilityLabel={`Search ${placeholder.toLowerCase()}`}
         accessibilityHint={`Type to search through your ${placeholder.toLowerCase()}`}
       />

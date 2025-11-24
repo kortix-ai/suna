@@ -8,9 +8,9 @@ import { extractDataProviderData } from './_utils';
 
 export function DataProviderToolView({ toolData, isStreaming = false }: ToolViewProps) {
   const { provider, endpoint, method, response, endpoints, success } = extractDataProviderData(toolData);
-  
+
   const isEndpointsList = endpoints.length > 0;
-  const responseString = response 
+  const responseString = response
     ? JSON.stringify(response, null, 2)
     : null;
 
@@ -49,17 +49,15 @@ export function DataProviderToolView({ toolData, isStreaming = false }: ToolView
               {provider || 'API'}
             </Text>
           </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
+          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${success ? 'bg-primary/10' : 'bg-destructive/10'
             }`}>
+            <Icon
+              as={success ? CheckCircle2 : AlertCircle}
+              size={12}
+              className={success ? 'text-primary' : 'text-destructive'}
+            />
+            <Text className={`text-xs font-roobert-medium ${success ? 'text-primary' : 'text-destructive'
+              }`}>
               {success ? 'Success' : 'Failed'}
             </Text>
           </View>
@@ -87,9 +85,9 @@ export function DataProviderToolView({ toolData, isStreaming = false }: ToolView
               {endpoints.map((ep, idx) => {
                 const epName = typeof ep === 'string' ? ep : ep.name || ep.endpoint;
                 const epMethod = typeof ep === 'object' && ep.method ? ep.method : null;
-                
+
                 return (
-                  <View 
+                  <View
                     key={idx}
                     className="bg-card border border-border rounded-xl p-3"
                   >
@@ -115,19 +113,14 @@ export function DataProviderToolView({ toolData, isStreaming = false }: ToolView
             <Text className="text-sm font-roobert-medium text-foreground/70">
               Response
             </Text>
-            <View className="bg-zinc-900 dark:bg-zinc-950 rounded-xl overflow-hidden border border-zinc-700 dark:border-zinc-800">
-              <View className="bg-zinc-800 dark:bg-zinc-900 px-3 py-2 border-b border-zinc-700 dark:border-zinc-800">
-                <Text className="text-xs font-roobert-medium text-zinc-300">JSON</Text>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View className="p-3">
-                  <Text 
-                    className="text-xs font-roobert-mono text-zinc-300 leading-5"
-                    selectable
-                  >
-                    {responseString}
-                  </Text>
-                </View>
+            <View className="rounded-2xl p-4 border bg-card border-border" style={{ maxHeight: 400 }}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text
+                  className="text-sm font-roobert-mono text-foreground/80 leading-5"
+                  selectable
+                >
+                  {responseString}
+                </Text>
               </ScrollView>
             </View>
           </View>

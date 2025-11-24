@@ -2,8 +2,9 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import type { UnifiedMessage } from '@/api/types';
-import { extractToolData } from '@/lib/utils/tool-data-extractor';
+import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import { getToolViewComponent } from './tool-views';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
@@ -11,6 +12,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { vars } from 'nativewind';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -22,6 +24,11 @@ interface ToolCallPanelProps {
   onClose: () => void;
   toolMessages: ToolMessagePair[];
   initialIndex?: number;
+  project?: {
+    id: string;
+    name: string;
+    sandbox_id?: string;
+  };
 }
 
 export function ToolCallPanel({
@@ -29,6 +36,7 @@ export function ToolCallPanel({
   onClose,
   toolMessages,
   initialIndex = 0,
+  project,
 }: ToolCallPanelProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
@@ -50,9 +58,9 @@ export function ToolCallPanel({
   const currentPair = toolMessages[currentIndex];
   
   // Extract tool call and tool result from messages
-  const { toolCall, toolResult } = useMemo(() => {
-    if (!currentPair?.toolMessage) return { toolCall: null, toolResult: null };
-    return extractToolData(currentPair.assistantMessage, currentPair.toolMessage);
+  const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
+    if (!currentPair?.toolMessage) return { toolCall: null, toolResult: null, isSuccess: false, assistantTimestamp: undefined, toolTimestamp: undefined };
+    return extractToolCallAndResult(currentPair.assistantMessage, currentPair.toolMessage);
   }, [currentPair]);
 
   const toolName = useMemo(() => {
@@ -116,11 +124,9 @@ export function ToolCallPanel({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ 
-        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF'
-      }}
-      handleIndicatorStyle={{ 
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+      backgroundStyle={vars({ '--card': 'backgroundColor' })}
+      handleIndicatorStyle={{
+        ...vars({ '--border': 'backgroundColor' }),
         width: 36,
         height: 5,
         borderRadius: 3,
@@ -134,7 +140,7 @@ export function ToolCallPanel({
         overflow: 'hidden'
       }}
     >
-      <BottomSheetScrollView 
+      <BottomSheetScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 20 }}
@@ -157,76 +163,59 @@ export function ToolCallPanel({
             isSuccess={toolResult?.success !== false}
             currentIndex={currentIndex}
             totalCalls={toolMessages.length}
+            project={project}
           />
         )}
       </BottomSheetScrollView>
 
       {toolMessages.length > 1 && (
-        <View 
-          className="border-t border-border bg-card px-6"
+        <View
+          className=" bg-card px-6"
           style={{
             paddingTop: 12,
             paddingBottom: Math.max(insets.bottom, 12),
           }}
         >
-          <View className="flex-row items-center justify-between">
-            <Pressable
+          <View className="flex-row items-center justify-between gap-3">
+            <Button
               onPress={handlePrev}
               disabled={isPrevDisabled}
-              className={`flex-row items-center px-4 py-2 rounded-2xl ${
-                isPrevDisabled
-                  ? 'bg-secondary/50 opacity-40'
-                  : 'bg-secondary active:bg-secondary/80'
-              }`}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              variant="default"
+              size="sm"
+              className="rounded-2xl px-4"
             >
-              <Icon 
-                as={ChevronLeft} 
-                size={16} 
-                className={isPrevDisabled ? 'text-foreground/30' : 'text-foreground/60'} 
+              <Icon
+                as={ChevronLeft}
+                size={14}
+                className="text-primary-foreground"
               />
-              <Text 
-                className={`text-sm ml-1 font-roobert-medium ${
-                  isPrevDisabled 
-                    ? 'text-foreground/30' 
-                    : 'text-foreground/60'
-                }`}
-              >
+              <Text className="text-sm font-roobert-medium text-primary-foreground">
                 Prev
               </Text>
-            </Pressable>
+            </Button>
 
-            <View className="px-4">
+            <View className="px-2">
               <Text className="text-sm font-roobert-semibold text-foreground tabular-nums">
                 {currentIndex + 1}/{toolMessages.length}
               </Text>
             </View>
 
-            <Pressable
+            <Button
               onPress={handleNext}
               disabled={isNextDisabled}
-              className={`flex-row items-center px-4 py-2 rounded-2xl ${
-                isNextDisabled
-                  ? 'bg-secondary/50 opacity-40'
-                  : 'bg-secondary active:bg-secondary/80'
-              }`}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              variant="default"
+              size="sm"
+              className="rounded-2xl px-4"
             >
-              <Text 
-                className={`text-sm mr-1 font-roobert-medium ${
-                  isNextDisabled
-                    ? 'text-foreground/30' 
-                    : 'text-foreground/60'
-                }`}
-              >
+              <Text className="text-sm font-roobert-medium text-primary-foreground">
                 Next
               </Text>
-              <Icon 
-                as={ChevronRight} 
-                size={16} 
-                className={isNextDisabled ? 'text-foreground/30' : 'text-foreground/60'} 
+              <Icon
+                as={ChevronRight}
+                size={14}
+                className="text-primary-foreground"
               />
-            </Pressable>
+            </Button>
           </View>
         </View>
       )}

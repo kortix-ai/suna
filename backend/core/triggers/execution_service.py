@@ -8,7 +8,7 @@ from core.services import redis
 from core.utils.logger import logger, structlog
 from core.utils.config import config, EnvMode
 from run_agent_background import run_agent_background
-from core.billing.billing_integration import billing_integration
+from core.billing.credits.integration import billing_integration
 from .trigger_service import TriggerEvent, TriggerResult
 
 

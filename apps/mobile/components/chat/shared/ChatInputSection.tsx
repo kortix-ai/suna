@@ -49,7 +49,6 @@ export interface ChatInputSectionProps {
   
   // Auth
   isAuthenticated: boolean;
-  onOpenAuthDrawer: () => void;
   
   // Loading states
   isSendingMessage: boolean;
@@ -57,6 +56,9 @@ export interface ChatInputSectionProps {
   
   // Container styles
   containerClassName?: string;
+
+  // Guest mode
+  isGuestMode: boolean;
 }
 
 export interface ChatInputSectionRef {
@@ -116,9 +118,9 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   onStopAgentRun,
   style,
   isAuthenticated,
-  onOpenAuthDrawer,
   isSendingMessage,
   isTranscribing,
+  isGuestMode = false,
   containerClassName = "mx-3 mb-8",
 }, ref) => {
   const { colorScheme } = useColorScheme();
@@ -195,10 +197,10 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           selectedQuickActionOption={selectedQuickActionOption}
           onClearQuickAction={onClearQuickAction}
           isAuthenticated={isAuthenticated}
-          onOpenAuthDrawer={onOpenAuthDrawer}
           isAgentRunning={isAgentRunning}
           isSendingMessage={isSendingMessage}
           isTranscribing={isTranscribing}
+          isGuestMode={isGuestMode}
         />
       </View>
     </KeyboardAvoidingView>

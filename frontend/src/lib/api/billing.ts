@@ -203,6 +203,9 @@ export interface CreateCheckoutSessionResponse {
   url?: string;
   checkout_url?: string;
   effective_date?: string;
+  scheduled_date?: string;
+  current_tier?: string;
+  target_tier?: string;
   message?: string;
   redirect_to_dashboard?: boolean;
   details?: {

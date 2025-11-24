@@ -5,13 +5,14 @@ import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleEllipsis, Menu, MessageCircleMore, MoreHorizontal, TextAlignStart } from 'lucide-react-native';
+import { MessageCircleMore, TextAlignStart } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -21,20 +22,16 @@ interface ThreadHeaderProps {
   onMenuPress?: () => void;
   onActionsPress?: () => void;
   isLoading?: boolean;
+  isGuestMode?: boolean;
 }
 
-/**
- * ThreadHeader Component
- * 
- * Clean, minimal header inspired by SettingsHeader design
- * Matches the BillingPage aesthetic with proper spacing and layout
- */
 export function ThreadHeader({
   threadTitle,
   onTitleChange,
   onMenuPress,
   onActionsPress,
   isLoading = false,
+  isGuestMode = false,
 }: ThreadHeaderProps) {
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
@@ -69,6 +66,7 @@ export function ThreadHeader({
   };
 
   const handleTitlePress = () => {
+    if (isGuestMode) return;
     console.log('🎯 Thread title tapped');
     setIsEditingTitle(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -100,6 +98,13 @@ export function ThreadHeader({
   };
 
   const handleActionsPress = () => {
+    if (isGuestMode){
+      useAuthDrawerStore.getState().openAuthDrawer({
+        title: 'Sign up to continue',
+        message: 'Create an account to access thread actions'
+      });
+      return;
+    }
     console.log('🎯 Thread actions menu pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onActionsPress?.();
@@ -131,8 +136,6 @@ export function ThreadHeader({
         >
           <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
         </AnimatedPressable>
-
-        {/* Thread Title */}
         <View className="flex-1 flex-row items-center">
           {isEditingTitle ? (
             <TextInput
@@ -174,7 +177,6 @@ export function ThreadHeader({
           )}
         </View>
 
-        {/* Actions Button */}
         <AnimatedPressable
           onPressIn={() => {
             actionScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });

@@ -145,3 +145,28 @@ export function extractToolData(
   return { toolCall, toolResult };
 }
 
+/**
+ * Extract tool call and result with additional metadata
+ * Alias for extractToolData with extended return type
+ */
+export function extractToolCallAndResult(
+  assistantMessage: UnifiedMessage | null,
+  toolMessage: UnifiedMessage | null
+): {
+  toolCall: ToolCallData | null;
+  toolResult: ToolResultData | null;
+  isSuccess: boolean;
+  assistantTimestamp?: string;
+  toolTimestamp?: string;
+} {
+  const { toolCall, toolResult } = extractToolData(assistantMessage, toolMessage);
+  
+  return {
+    toolCall,
+    toolResult,
+    isSuccess: toolResult?.success !== false,
+    assistantTimestamp: assistantMessage?.created_at,
+    toolTimestamp: toolMessage?.created_at,
+  };
+}
+

@@ -2,21 +2,21 @@ import * as React from 'react';
 import { View, ScrollView, Pressable, ActivityIndicator, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { 
-  ArrowLeft, 
-  Globe, 
+import {
+  ArrowLeft,
+  Globe,
   CheckCircle2,
   Circle,
   Save,
   Search
 } from 'lucide-react-native';
-import { SettingsHeader } from '../SettingsHeader';
+import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -39,6 +39,7 @@ export function CustomMcpToolsContent({
   noPadding = false
 }: CustomMcpToolsContentProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set(tools.map(tool => tool.name)));
   const [isSaving, setIsSaving] = React.useState(false);
 
@@ -84,37 +85,41 @@ export function CustomMcpToolsContent({
   }, [selectedTools, onComplete]);
 
   return (
-    <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-      {onBack && (
-        <Pressable
-          onPress={onBack}
-          className="items-center justify-center w-10 h-10 mb-6 active:opacity-70 rounded-full bg-primary/10"
-        >
-          <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
-        </Pressable>
-      )}
-      
-      <View className="mb-8">
-        <View className="flex-row items-center gap-4 mb-2">
-          <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
-            <Icon as={Globe} size={24} className="text-primary" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-2xl font-roobert-bold text-foreground">
-              {serverName}
-            </Text>
-          </View>
+    <View className={noPadding ? "pb-6" : "pb-6"}>
+      {/* Header with back button, title, and description */}
+      <View className="flex-row items-center mb-4">
+        {onBack && (
+          <Pressable
+            onPress={onBack}
+            className="flex-row items-center active:opacity-70"
+          >
+            <ArrowLeft
+              size={20}
+              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+            />
+          </Pressable>
+        )}
+        <View className="flex-1 ml-3">
+          <Text
+            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+            className="text-xl font-roobert-semibold"
+          >
+            {serverName}
+          </Text>
+          <Text
+            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+            className="text-sm font-roobert"
+          >
+            {displayUrl}
+          </Text>
         </View>
-        <Text className="text-base font-roobert text-muted-foreground mt-2">
-          {displayUrl}
-        </Text>
       </View>
 
       <View className="flex-row items-center justify-between mb-6">
         <Text className="text-sm font-roobert-medium text-muted-foreground uppercase tracking-wider">
           {selectedTools.size} of {tools.length} selected
         </Text>
-        
+
         <Pressable
           onPress={handleSelectAll}
           className="px-4 py-2 rounded-full bg-muted/10 active:opacity-70"
@@ -169,7 +174,7 @@ interface CustomMcpToolsSelectorProps {
   onComplete: (enabledTools: string[]) => void;
 }
 
-export function CustomMcpToolsSelector({ 
+export function CustomMcpToolsSelector({
   serverName,
   url,
   tools,
@@ -190,7 +195,7 @@ export function CustomMcpToolsSelector({
   const handleToolToggle = React.useCallback((toolName: string) => {
     console.log('🎯 Tool toggled:', toolName);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     const newSelected = new Set(selectedTools);
     if (newSelected.has(toolName)) {
       newSelected.delete(toolName);
@@ -203,7 +208,7 @@ export function CustomMcpToolsSelector({
   const handleSelectAll = React.useCallback(() => {
     console.log('🎯 Select all tools');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     if (selectedTools.size === tools.length) {
       onSelectedToolsChange(new Set());
     } else {
@@ -214,9 +219,9 @@ export function CustomMcpToolsSelector({
   const handleSave = React.useCallback(async () => {
     console.log('🎯 Saving custom MCP tools configuration');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     setIsSaving(true);
-    
+
     try {
       await new Promise(resolve => setTimeout(resolve, 500));
       onComplete(Array.from(selectedTools));
@@ -244,7 +249,7 @@ export function CustomMcpToolsSelector({
       >
         <ArrowLeft size={24} className="text-foreground" strokeWidth={2} />
       </Pressable>
-      
+
       <View className="mb-8">
         <View className="flex-row items-center gap-4 mb-2">
           <View className="w-14 h-14 rounded-2xl bg-primary/5 items-center justify-center">
@@ -323,19 +328,17 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
     if (!tool.parameters?.required) return 0;
     return tool.parameters.required.length;
   }, [tool.parameters]);
-  
+
   return (
     <Pressable
       onPress={onToggle}
-      className={`flex-row items-start gap-3 p-4 rounded-3xl mb-2 active:opacity-80 ${
-        selected
+      className={`flex-row items-start gap-3 p-4 rounded-3xl mb-2 active:opacity-80 ${selected
           ? 'bg-primary/10'
           : 'bg-muted/5'
-      }`}
+        }`}
     >
-      <View className={`w-6 h-6 rounded-full items-center justify-center mt-0.5 ${
-        selected ? 'bg-primary' : 'bg-transparent border-2 border-muted-foreground/30'
-      }`}>
+      <View className={`w-6 h-6 rounded-full items-center justify-center mt-0.5 ${selected ? 'bg-primary' : 'bg-transparent border-2 border-muted-foreground/30'
+        }`}>
         {selected && (
           <Icon
             as={CheckCircle2}
@@ -351,7 +354,7 @@ const ToolCard = React.memo(({ tool, selected, onToggle }: ToolCardProps) => {
           {tool.name}
         </Text>
         {tool.description && (
-          <Text 
+          <Text
             className="text-sm font-roobert text-muted-foreground leading-relaxed"
             numberOfLines={2}
             ellipsizeMode="tail"
@@ -384,29 +387,29 @@ interface ContinueButtonProps {
   rounded?: 'full' | '2xl';
 }
 
-const ContinueButton = React.memo(({ 
-  onPress, 
-  disabled = false, 
-  label, 
+const ContinueButton = React.memo(({
+  onPress,
+  disabled = false,
+  label,
   isLoading = false,
   rounded = 'full'
 }: ContinueButtonProps) => {
   const scale = useSharedValue(1);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  
+
   const handlePressIn = React.useCallback(() => {
     if (!disabled) {
       scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
     }
   }, [scale, disabled]);
-  
+
   const handlePressOut = React.useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   }, [scale]);
-  
+
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -414,15 +417,13 @@ const ContinueButton = React.memo(({
       onPressOut={handlePressOut}
       style={animatedStyle}
       disabled={disabled}
-      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${
-        disabled ? 'bg-muted/20' : 'bg-foreground'
-      }`}
+      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${disabled ? 'bg-muted/20' : 'bg-foreground'
+        }`}
     >
       <View className="flex-row items-center gap-2">
         {isLoading && <ActivityIndicator size="small" color="#fff" />}
-        <Text className={`text-base font-roobert-semibold ${
-          disabled ? 'text-muted-foreground' : 'text-background'
-        }`}>
+        <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
+          }`}>
           {label}
         </Text>
       </View>

@@ -10,7 +10,7 @@ sys.path.insert(0, str(backend_dir))
 
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
-from billing.credit_manager import credit_manager
+from core.billing.credits.manager import credit_manager
 
 async def fix_trial_users():
     """Fix users who incorrectly have trial credits as non-expiring"""

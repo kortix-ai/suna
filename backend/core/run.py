@@ -20,7 +20,7 @@ from core.prompts.prompt import get_system_prompt
 
 from core.utils.logger import logger
 
-from core.billing.billing_integration import billing_integration
+from core.billing.credits.integration import billing_integration
 
 from core.services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient

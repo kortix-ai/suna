@@ -89,7 +89,8 @@ class Configuration:
     AGENT_EXECUTE_ON_STREAM: bool = True     # Execute tools as they stream (vs. at end)
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
     # ============================================
-
+    
+    GUEST_MODE_ADMIN_USER_ID: Optional[str] = None
 
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrK4QLrx9i'

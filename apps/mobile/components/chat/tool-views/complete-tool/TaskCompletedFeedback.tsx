@@ -346,14 +346,14 @@ export function TaskCompletedFeedback({
                 disabled={isSubmitting}
                 className="flex-1"
               >
-                {t('common.cancel')}
+                <Text>{t('common.cancel')}</Text>
               </Button>
               <Button
                 onPress={handleSubmitRating}
                 disabled={!rating || isSubmitting}
                 className="flex-1"
               >
-                {isSubmitting ? t('chat.submitting') : t('chat.submit')}
+                <Text>{isSubmitting ? t('chat.submitting') : t('chat.submit')}</Text>
               </Button>
             </View>
           </View>

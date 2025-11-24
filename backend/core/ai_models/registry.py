@@ -14,6 +14,8 @@ else:
     PREMIUM_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
 
 is_local = config.ENV_MODE == EnvMode.LOCAL
+is_prod = config.ENV_MODE == EnvMode.PRODUCTION
+# pricing_multiplier = 0.20 if is_prod else 1.0
 
 class ModelRegistry:
     def __init__(self):

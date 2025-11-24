@@ -1,7 +1,8 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Square, Loader2 } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Loader2, Square } from 'lucide-react-native';
+import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData } from 'react-native';
@@ -16,6 +17,7 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -49,10 +51,10 @@ interface ChatInputProps extends ViewProps {
   selectedQuickActionOption?: string | null;
   onClearQuickAction?: () => void;
   isAuthenticated?: boolean;
-  onOpenAuthDrawer?: () => void;
   isAgentRunning?: boolean;
   isSendingMessage?: boolean;
   isTranscribing?: boolean;
+  isGuestMode?: boolean;
 }
 
 // Format duration as M:SS - pure function outside component
@@ -98,10 +100,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   selectedQuickActionOption,
   onClearQuickAction,
   isAuthenticated = true,
-  onOpenAuthDrawer,
   isAgentRunning = false,
   isSendingMessage = false,
   isTranscribing = false,
+  isGuestMode = false,
   style,
   ...props
 }, ref) => {
@@ -255,25 +257,27 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     if (!isAuthenticated) {
       Keyboard.dismiss();
       setTimeout(() => {
-        onOpenAuthDrawer?.();
+        useAuthDrawerStore.getState().openAuthDrawer();
       }, 200);
       return;
     }
 
+    // Don't clear input here - let useChat handle it after successful send
+    // Trim trailing spaces before sending
     onSendMessage?.(value.trim(), agent?.agent_id || '', agent?.name || '');
-  }, [value, isAuthenticated, onOpenAuthDrawer, onSendMessage, agent]);
+  }, [value, isAuthenticated, onSendMessage, agent]);
 
   // Handle sending audio
   const handleSendAudioMessage = React.useCallback(() => {
     if (!isAuthenticated) {
       onCancelRecording?.();
       setTimeout(() => {
-        onOpenAuthDrawer?.();
+        useAuthDrawerStore.getState().openAuthDrawer();
       }, 200);
       return;
     }
     onSendAudio?.();
-  }, [isAuthenticated, onCancelRecording, onOpenAuthDrawer, onSendAudio]);
+  }, [isAuthenticated, onCancelRecording, onSendAudio]);
 
   // Main button press handler
   const handleButtonPress = React.useCallback(() => {
@@ -284,9 +288,17 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     } else if (hasContent) {
       handleSendMessage();
     } else {
+      // Start audio recording
+      if (!isAuthenticated) {
+        useAuthDrawerStore.getState().openAuthDrawer({
+          title: t('auth.drawer.signInToChat'),
+          message: t('auth.drawer.signInToChatMessage')
+        });
+        return;
+      }
       onAudioRecord?.();
     }
-  }, [isAgentRunning, isRecording, hasContent, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
+  }, [isAgentRunning, isRecording, hasContent, isAuthenticated, t, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Clear quick action handler
   const handleClearQuickAction = React.useCallback(() => {
@@ -378,6 +390,9 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             ButtonIcon={ButtonIcon}
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
+            isAuthenticated={isAuthenticated}
+            isGuestMode={isGuestMode}
+            t={t}
           />
         )}
       </View>
@@ -476,6 +491,9 @@ interface NormalModeProps {
   ButtonIcon: typeof Square | typeof CornerDownLeft | typeof AudioLines;
   buttonIconSize: number;
   buttonIconClass: string;
+  isAuthenticated: boolean;
+  isGuestMode: boolean;
+  t: (key: string) => string;
 }
 
 const NormalMode = React.memo(({
@@ -506,6 +524,9 @@ const NormalMode = React.memo(({
   ButtonIcon,
   buttonIconSize,
   buttonIconClass,
+  isAuthenticated,
+  isGuestMode,
+  t,
 }: NormalModeProps) => (
   <>
     <View className="flex-1 mb-12">
@@ -517,6 +538,17 @@ const NormalMode = React.memo(({
           ref={textInputRef}
           value={value}
           onChangeText={onChangeText}
+          onFocus={() => {
+            if (!isAuthenticated) {
+              textInputRef.current?.blur();
+              setTimeout(() => {
+                useAuthDrawerStore.getState().openAuthDrawer({
+                  title: t('auth.drawer.signInToChat'),
+                  message: t('auth.drawer.signInToChatMessage')
+                });
+              }, 100);
+            }
+          }}
           placeholder={effectivePlaceholder}
           placeholderTextColor={placeholderTextColor}
           multiline
@@ -534,7 +566,16 @@ const NormalMode = React.memo(({
         <AnimatedPressable
           onPressIn={onAttachPressIn}
           onPressOut={onAttachPressOut}
-          onPress={onAttachPress}
+          onPress={() => {
+            if (!isAuthenticated) {
+              useAuthDrawerStore.getState().openAuthDrawer({
+                title: t('auth.drawer.signInToChat'),
+                message: t('auth.drawer.signInToChatMessage')
+              });
+            } else {
+              onAttachPress?.();
+            }
+          }}
           disabled={isDisabled}
           className="border border-border rounded-[18px] w-10 h-10 items-center justify-center"
           style={attachButtonStyle}
@@ -554,7 +595,14 @@ const NormalMode = React.memo(({
       </View>
 
       <View className="flex-row items-center gap-2">
-        <AgentSelector onPress={onAgentPress} compact={false} />
+        <AgentSelector 
+          isGuestMode={isGuestMode}
+          onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ 
+            title: t('auth.drawer.signUpToContinue'), 
+            message: t('auth.drawer.signUpToContinueMessage') 
+          }) : onAgentPress} 
+          compact={false} 
+        />
 
         <AnimatedPressable
           onPressIn={onSendPressIn}

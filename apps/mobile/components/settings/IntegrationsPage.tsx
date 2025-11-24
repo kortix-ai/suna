@@ -2,22 +2,23 @@ import * as React from 'react';
 import { View, ScrollView, Pressable, Alert, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { 
-  ArrowLeft, 
-  Plus, 
-  Plug2, 
-  Globe, 
+import {
+  ArrowLeft,
+  Plus,
+  Plug2,
+  Globe,
   ChevronRight,
-  Zap 
+  Zap
 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import { SettingsHeader } from './SettingsHeader';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 import { CustomMcpDialog } from './integrations/CustomMcpDialog';
 import { ToolkitIcon } from './integrations/ToolkitIcon';
@@ -48,24 +49,25 @@ export const AppBubble = React.memo(() => {
       </View>
     );
   }
-  
+
   return (
     <View className='flex-row items-center justify-center'>
-        <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full'>
-            <ToolkitIcon slug="gmail" name="Gmail" size="xs" />
-        </View>
-        <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
-            <ToolkitIcon slug="notion" name="Notion" size="xs" />
-        </View>
-        <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
-            <ToolkitIcon slug="linear" name="Linear" size="xs" />
-        </View>
+      <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full'>
+        <ToolkitIcon slug="gmail" name="Gmail" size="xs" />
+      </View>
+      <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
+        <ToolkitIcon slug="notion" name="Notion" size="xs" />
+      </View>
+      <View className='dark:bg-[#454444] bg-white shadow-xs border border-primary/10 p-1 rounded-full -ml-2'>
+        <ToolkitIcon slug="linear" name="Linear" size="xs" />
+      </View>
     </View>
   );
 });
 
 export function IntegrationsPageContent({ onBack, noPadding = false, onFullScreenChange, onNavigate }: IntegrationsPageContentProps) {
   const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
   const [isComposioPageVisible, setIsComposioPageVisible] = React.useState(false);
   const [showCustomMcpDialog, setShowCustomMcpDialog] = React.useState(false);
 
@@ -97,43 +99,58 @@ export function IntegrationsPageContent({ onBack, noPadding = false, onFullScree
 
   return (
     <>
-      <ScrollView 
-        className="flex-1" 
+      <ScrollView
+        className="flex-1"
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
       >
-        <View className={noPadding ? "pb-6" : "px-6 pb-6"}>
-          {onBack && (
-            <Pressable
-              onPress={onBack}
-              className="items-center justify-center w-10 h-10 mb-4 active:opacity-70 rounded-full bg-primary/10"
-            >
-              <ArrowLeft size={20} className="text-foreground" />
-            </Pressable>
-          )}
-          
-          <Text className="text-2xl font-roobert-bold text-foreground mb-2">
-            {t('integrations.title')}
-          </Text>
-          
-          <Text className="text-sm font-roobert text-muted-foreground mb-6">
-            {t('integrations.description')}
-          </Text>
+        <View className={noPadding ? "pb-6" : "pb-6"}>
+          {/* Header with back button, title, and description */}
+          <View className="flex-row items-center mb-4">
+            {onBack && (
+              <Pressable
+                onPress={onBack}
+                className="flex-row items-center active:opacity-70"
+              >
+                <ArrowLeft
+                  size={20}
+                  color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+                />
+              </Pressable>
+            )}
+            <View className="flex-1 ml-3">
+              <Text
+                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+                className="text-xl font-roobert-semibold"
+              >
+                {t('integrations.title')}
+              </Text>
+              <Text
+                style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+                className="text-sm font-roobert"
+              >
+                {t('integrations.description')}
+              </Text>
+            </View>
+          </View>
 
-          <View className="space-y-4">
-            <IntegrationSection
-              customIcon={<AppBubble />}
-              title={t('integrations.externalApps')}
-              description={t('integrations.externalAppsDescription')}
-              onPress={handleComposioApps}
-            />
+          <View className={noPadding ? "" : "px-0"}>
 
-            <IntegrationSection
-              icon={Globe}
-              title={t('integrations.customMcpServers')}
-              description={t('integrations.customMcpDescription')}
-              onPress={handleCustomMcp}
-            />
+            <View className="space-y-4">
+              <IntegrationSection
+                customIcon={<AppBubble />}
+                title={t('integrations.externalApps')}
+                description={t('integrations.externalAppsDescription')}
+                onPress={handleComposioApps}
+              />
+
+              <IntegrationSection
+                icon={Globe}
+                title={t('integrations.customMcpServers')}
+                description={t('integrations.customMcpDescription')}
+                onPress={handleCustomMcp}
+              />
+            </View>
           </View>
         </View>
 
@@ -190,27 +207,27 @@ interface IntegrationSectionProps {
   onPress: () => void;
 }
 
-const IntegrationSection = React.memo(({ 
+const IntegrationSection = React.memo(({
   customIcon,
-  icon, 
-  title, 
-  description, 
-  onPress 
+  icon,
+  title,
+  description,
+  onPress
 }: IntegrationSectionProps) => {
   const scale = useSharedValue(1);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
-  
+
   const handlePressIn = React.useCallback(() => {
     scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
   }, [scale]);
-  
+
   const handlePressOut = React.useCallback(() => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   }, [scale]);
-  
+
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -233,11 +250,11 @@ const IntegrationSection = React.memo(({
             </Text>
           </View>
         </View>
-        <Icon 
-          as={ChevronRight} 
-          size={16} 
-          className="text-foreground/40" 
-          strokeWidth={2} 
+        <Icon
+          as={ChevronRight}
+          size={16}
+          className="text-foreground/40"
+          strokeWidth={2}
         />
       </View>
     </AnimatedPressable>

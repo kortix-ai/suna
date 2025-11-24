@@ -1,13 +1,9 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
-  withSpring,
-  useAnimatedKeyboard,
-  FadeIn,
-  withRepeat,
   withTiming,
   useSharedValue,
   withDelay,
@@ -21,16 +17,14 @@ import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } f
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle, X, RefreshCw } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import * as Haptics from 'expo-haptics';
+import { useGuestMode } from '@/contexts';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
-  onOpenAuthDrawer: () => void;
 }
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
@@ -230,9 +224,8 @@ export function ThreadPage({
   onMenuPress,
   chat,
   isAuthenticated,
-  onOpenAuthDrawer,
 }: ThreadPageProps) {
-  // Use shared chat commons hook
+  const { isGuestMode } = useGuestMode();
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -242,14 +235,11 @@ export function ThreadPage({
   const [isFileManagerVisible, setIsFileManagerVisible] = React.useState(false);
   const [selectedFilePath, setSelectedFilePath] = React.useState<string | undefined>();
 
-  // Thread actions hooks
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
 
-  // Get full thread data with sandbox info
   const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
 
-  // Refetch thread data when file manager opens to ensure latest sandbox info
   React.useEffect(() => {
     if (isFileManagerVisible) {
       refetchThreadData();
@@ -309,14 +299,12 @@ export function ThreadPage({
     }
   }, []);
 
-  // Scroll to bottom function
   const scrollToBottom = React.useCallback(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
   }, []);
 
-  // Pull to refresh handler
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
       return;
@@ -333,24 +321,6 @@ export function ThreadPage({
     }
   }, [chat]);
 
-  // Memoized handlers for ChatInputSection
-  const handleSendMessage = React.useCallback((content: string, agentId: string, agentName: string) => {
-    chat.sendMessage(content, agentId, agentName);
-  }, [chat]);
-
-  // Memoized handlers for ThreadHeader
-  const handleTitleChange = React.useCallback(async (newTitle: string) => {
-    try {
-      await chat.updateThreadTitle(newTitle);
-    } catch (error) {
-      console.error('Failed to update thread title:', error);
-    }
-  }, [chat]);
-
-  const handleActionsPress = React.useCallback(() => {
-    setIsThreadActionsVisible(true);
-  }, []);
-
   // Memoized handlers for ThreadContent
   const handleToolClick = React.useCallback((assistantMessageId: string | null, toolName: string) => {
     // Tool click handler - can be extended for analytics
@@ -365,64 +335,6 @@ export function ThreadPage({
     setSelectedFilePath(normalizedPath);
     setIsFileManagerVisible(true);
   }, []);
-
-  // Memoized handlers for ThreadActionsDrawer
-  const handleCloseActionsDrawer = React.useCallback(() => {
-    setIsThreadActionsVisible(false);
-  }, []);
-
-  const handleShare = React.useCallback(async () => {
-    if (!chat.activeThread?.id) return;
-
-    try {
-      await shareThreadMutation.mutateAsync(chat.activeThread.id);
-      setIsThreadActionsVisible(false);
-    } catch (error) {
-      console.error('Failed to share thread:', error);
-    }
-  }, [chat.activeThread?.id, shareThreadMutation]);
-
-  const handleFiles = React.useCallback(() => {
-    setIsThreadActionsVisible(false);
-    setIsFileManagerVisible(true);
-  }, []);
-
-  const handleDelete = React.useCallback(() => {
-    if (!chat.activeThread?.id) return;
-
-    const threadTitle = chat.activeThread?.title || 'this thread';
-
-    Alert.alert(
-      'Delete Thread',
-      `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setIsThreadActionsVisible(false);
-
-            if (!chat.activeThread?.id) return;
-
-            try {
-              await deleteThreadMutation.mutateAsync(chat.activeThread.id);
-              chat.startNewChat();
-              if (router.canGoBack()) {
-                router.back();
-              }
-            } catch (error) {
-              console.error('Failed to delete thread:', error);
-              Alert.alert('Error', 'Failed to delete thread. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  }, [chat, deleteThreadMutation, router]);
 
   // Memoized handlers for ToolCallPanel
   const handleCloseToolPanel = React.useCallback(() => {
@@ -562,8 +474,6 @@ export function ThreadPage({
           </ScrollView>
         )}
       </View>
-
-      {/* Scroll to Bottom Button - Positioned above chat input */}
       {showScrollToBottom && hasMessages && (
         <Pressable
           onPress={scrollToBottom}
@@ -576,28 +486,34 @@ export function ThreadPage({
         </Pressable>
       )}
 
-
-      {/* Thread Header */}
       <ThreadHeader
-        threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
-        onTitleChange={handleTitleChange}
+        threadTitle={isGuestMode ? 'Temporary Chat' : (fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title)}
+        onTitleChange={isGuestMode ? undefined : async (newTitle) => {
+          try {
+            await chat.updateThreadTitle(newTitle);
+          } catch (error) {
+            console.error('Failed to update thread title:', error);
+          }
+        }}
         onMenuPress={onMenuPress}
-        onActionsPress={handleActionsPress}
+        onActionsPress={() => setIsThreadActionsVisible(true)}
+        isGuestMode={isGuestMode}
       />
 
-      {/* Chat Input Section with Gradient */}
       <ChatInputSection
         value={chat.inputValue}
         onChangeText={chat.setInputValue}
-        onSendMessage={handleSendMessage}
+        onSendMessage={(content, agentId, agentName) => {
+          chat.sendMessage(content, agentId, agentName);
+        }}
         onSendAudio={audioHandlers.handleSendAudio}
         onAttachPress={chat.openAttachmentDrawer}
-        onAgentPress={agentManager.openDrawer}
+        onAgentPress={isGuestMode ? () => { } : agentManager.openDrawer}
         onAudioRecord={audioHandlers.handleStartRecording}
         onCancelRecording={audioHandlers.handleCancelRecording}
         onStopAgentRun={chat.stopAgent}
         placeholder={chat.getPlaceholder()}
-        agent={agentManager.selectedAgent || undefined}
+        agent={isGuestMode ? undefined : (agentManager.selectedAgent || undefined)}
         isRecording={audioRecorder.isRecording}
         recordingDuration={audioRecorder.recordingDuration}
         audioLevel={audioRecorder.audioLevel}
@@ -608,15 +524,14 @@ export function ThreadPage({
         selectedQuickActionOption={chat.selectedQuickActionOption}
         onClearQuickAction={chat.clearQuickAction}
         isAuthenticated={isAuthenticated}
-        onOpenAuthDrawer={onOpenAuthDrawer}
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
         isTranscribing={isTranscribing}
+        isGuestMode={isGuestMode}
       />
 
-      {/* Shared Drawers */}
       <ChatDrawers
-        isAgentDrawerVisible={agentManager.isDrawerVisible}
+        isAgentDrawerVisible={!isGuestMode && agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
@@ -625,24 +540,73 @@ export function ThreadPage({
         onChooseFiles={chat.handleChooseFiles}
       />
 
-      {/* Thread Actions Drawer */}
       <ThreadActionsDrawer
         visible={isThreadActionsVisible}
-        onClose={handleCloseActionsDrawer}
-        onShare={handleShare}
-        onFiles={handleFiles}
-        onDelete={handleDelete}
+        onClose={() => setIsThreadActionsVisible(false)}
+        onShare={async () => {
+          if (!chat.activeThread?.id) return;
+
+          try {
+            await shareThreadMutation.mutateAsync(chat.activeThread.id);
+            setIsThreadActionsVisible(false);
+          } catch (error) {
+            console.error('Failed to share thread:', error);
+          }
+        }}
+        onFiles={() => {
+          setIsThreadActionsVisible(false);
+          setIsFileManagerVisible(true);
+        }}
+        onDelete={() => {
+          if (!chat.activeThread?.id) return;
+
+          const threadTitle = chat.activeThread?.title || 'this thread';
+
+          Alert.alert(
+            'Delete Thread',
+            `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  setIsThreadActionsVisible(false);
+
+                  if (!chat.activeThread?.id) return;
+
+                  try {
+                    await deleteThreadMutation.mutateAsync(chat.activeThread.id);
+                    chat.startNewChat();
+                    if (router.canGoBack()) {
+                      router.back();
+                    }
+                  } catch (error) {
+                    console.error('Failed to delete thread:', error);
+                    Alert.alert('Error', 'Failed to delete thread. Please try again.');
+                  }
+                },
+              },
+            ]
+          );
+        }}
       />
 
-      {/* Tool Call Panel - Native modal with automatic background scaling on iOS */}
       <ToolCallPanel
         visible={!!chat.selectedToolData}
         onClose={handleCloseToolPanel}
         toolMessages={chat.selectedToolData?.toolMessages || []}
         initialIndex={chat.selectedToolData?.initialIndex || 0}
+        project={fullThreadData?.project ? {
+          id: fullThreadData.project.id,
+          name: fullThreadData.project.name,
+          sandbox_id: fullThreadData.project.sandbox?.id
+        } : undefined}
       />
 
-      {/* File Manager Modal */}
       <Modal
         visible={isFileManagerVisible}
         animationType="slide"
@@ -691,8 +655,6 @@ export function ThreadPage({
           </View>
         )}
       </Modal>
-
-      {/* Dynamic Island Pull Refresh Animation - Rendered last to be on top of everything */}
       <DynamicIslandRefresh isRefreshing={isRefreshing} insets={insets} />
     </View>
   );

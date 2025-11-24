@@ -14,17 +14,109 @@
 
   ],
   "products" : [
-
+    {
+      "displayPrice" : "200.0",
+      "familyShareable" : false,
+      "internalID" : "6755544894",
+      "localizations" : [
+        {
+          "description" : "20,000 in usable credits",
+          "displayName" : "Business Topup",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "kortix_topup_business",
+      "referenceName" : "Business Topup",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "500.0",
+      "familyShareable" : false,
+      "internalID" : "6755544899",
+      "localizations" : [
+        {
+          "description" : "50,000 in usable credits",
+          "displayName" : "Enterprise Topup",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "kortix_topup_enterprise",
+      "referenceName" : "Enterprise Topup",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "25.0",
+      "familyShareable" : false,
+      "internalID" : "6755543506",
+      "localizations" : [
+        {
+          "description" : "2,500 in usable credits",
+          "displayName" : "Plus Topup",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "kortix_topup_plus",
+      "referenceName" : "Plus Topup",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "50.0",
+      "familyShareable" : false,
+      "internalID" : "6755543512",
+      "localizations" : [
+        {
+          "description" : "5,000 in usable credits",
+          "displayName" : "Popular Topup",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "kortix_topup_popular",
+      "referenceName" : "Popular Topup",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "100.0",
+      "familyShareable" : false,
+      "internalID" : "6755543327",
+      "localizations" : [
+        {
+          "description" : "10,000 in usable credits",
+          "displayName" : "Pro Topup",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "kortix_topup_pro",
+      "referenceName" : "Pro Topup",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "10.0",
+      "familyShareable" : false,
+      "internalID" : "6755543886",
+      "localizations" : [
+        {
+          "description" : "1,000 topup credits",
+          "displayName" : "Starter",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "kortix_topup_starter",
+      "referenceName" : "Starter Topup",
+      "type" : "Consumable"
+    }
   ],
   "settings" : {
     "_applicationInternalID" : "6754448524",
     "_askToBuyEnabled" : false,
     "_billingGracePeriodEnabled" : false,
     "_billingIssuesEnabled" : false,
+    "_compatibilityTimeRate" : {
+      "3" : 5
+    },
     "_developerTeamID" : "T8G9J33433",
     "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_lastSynchronizedDate" : 785190723.28863502,
+    "_lastSynchronizedDate" : 785603492.40048504,
     "_locale" : "en_US",
     "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "USA",
@@ -39,7 +131,7 @@
       "localizations" : [
 
       ],
-      "name" : "Plus",
+      "name" : "Kortix Plans",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -63,6 +155,118 @@
           "productID" : "kortix_plus_monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Kortix Plus Monthly",
+          "subscriptionGroupID" : "21835808",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "204.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6755636621",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Access to premium AI models, more limits",
+              "displayName" : "Kortix Plus Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "kortix_plus_yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Kortix Plus Yearly",
+          "subscriptionGroupID" : "21835808",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "50.0",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6755543481",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Access to premium AI models, more workers, more limits",
+              "displayName" : "Kortix Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "kortix_pro_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Kortix Pro Monthly",
+          "subscriptionGroupID" : "21835808",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "509.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6755639188",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Access to premium AI models, more limits",
+              "displayName" : "Kortix Pro Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "kortix_pro_yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Kortix Pro Yearly",
+          "subscriptionGroupID" : "21835808",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "200.0",
+          "familyShareable" : false,
+          "groupNumber" : 3,
+          "internalID" : "6755544780",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Access to premium AI models, more workers, more limits",
+              "displayName" : "Kortix Ultra Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "kortix_ultra_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Kortix Ultra Monthly",
           "subscriptionGroupID" : "21835808",
           "type" : "RecurringSubscription",
           "winbackOffers" : [

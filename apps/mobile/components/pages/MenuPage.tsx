@@ -35,19 +35,15 @@ import type { Conversation, UserProfile, ConversationSection as ConversationSect
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
+import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
+import { useGuestMode } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
 
-/**
- * EmptyState Component
- * 
- * Unified empty state component for all tabs (Chats, Workers, Triggers)
- * Handles: loading, error, no results (search), and no items states
- */
 interface EmptyStateProps {
   type: 'loading' | 'error' | 'no-results' | 'empty';
-  icon: any; // Lucide icon component
+  icon: any;
   title: string;
   description: string;
   actionLabel?: string;
@@ -82,7 +78,6 @@ function EmptyState({
     onActionPress?.();
   };
 
-  // Get colors based on type
   const getColors = () => {
     switch (type) {
       case 'loading':
@@ -115,7 +110,6 @@ function EmptyState({
 
   const { iconColor, iconBgColor } = getColors();
 
-  // Loading state with spinner
   if (type === 'loading') {
     return (
       <View className="items-center justify-center py-16 px-8">
@@ -127,7 +121,6 @@ function EmptyState({
     );
   }
 
-  // All other states
   return (
     <View className="items-center justify-center py-20 px-8">
       <View className={`w-20 h-20 rounded-full ${iconBgColor} items-center justify-center mb-6`}>
@@ -169,12 +162,6 @@ function EmptyState({
   );
 }
 
-/**
- * BackButton Component
- * 
- * Elegant close button to close the menu and return to home
- * Uses X icon from Lucide
- */
 interface BackButtonProps {
   onPress?: () => void;
 }
@@ -299,7 +286,6 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
     console.log('⏰ Timestamp:', new Date().toISOString());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Rotate animation
     rotate.value = withSpring(rotate.value + 90, { damping: 15, stiffness: 400 });
 
     if (activeTab === 'chats') onChatPress?.();
@@ -307,7 +293,6 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
     else if (activeTab === 'triggers') onTriggerPress?.();
   };
 
-  // Get accessibility label based on active tab
   const getAccessibilityLabel = () => {
     const item = activeTab === 'chats' ? 'chat' : activeTab === 'workers' ? 'worker' : 'trigger';
     return t('actions.createNew', { item });
@@ -411,6 +396,7 @@ export function MenuPage({
   const router = useRouter();
   const { agents } = useAgent();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
+  const { isGuestMode } = useGuestMode();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
@@ -624,7 +610,21 @@ export function MenuPage({
             >
               {activeTab === 'chats' && (
                 <>
-                  {isLoadingThreads ? (
+                  {isGuestMode ? (
+                    <EmptyState
+                      type="empty"
+                      icon={MessageSquare}
+                      title="Sign up to save conversations"
+                      description="Create an account to keep your chat history and access it across devices"
+                      actionLabel="Sign Up"
+                      onActionPress={() => {
+                        useAuthDrawerStore.getState().openAuthDrawer({
+                          title: 'Sign up to continue',
+                          message: 'Create an account to save your conversations and access them from anywhere'
+                        });
+                      }}
+                    />
+                  ) : isLoadingThreads ? (
                     <EmptyState
                       type="loading"
                       icon={MessageSquare}

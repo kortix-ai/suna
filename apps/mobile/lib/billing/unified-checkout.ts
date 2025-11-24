@@ -1,6 +1,6 @@
 import { shouldUseRevenueCat } from './provider';
 import { startPlanCheckout as startStripePlanCheckout, startCreditPurchase as startStripeCreditPurchase } from './checkout';
-import { getOfferings, purchasePackage, presentPaywall } from './revenuecat';
+import { getOfferings, getOfferingById, purchasePackage, presentPaywall } from './revenuecat';
 import { supabase } from '@/api/supabase';
 
 export async function startUnifiedPlanCheckout(
@@ -13,7 +13,7 @@ export async function startUnifiedPlanCheckout(
     try {
       console.log('💳 Using RevenueCat for plan checkout...');
       
-      const offerings = await getOfferings();
+      const offerings = await getOfferings(true);
       
       if (!offerings) {
         throw new Error('No offerings available');
@@ -62,33 +62,54 @@ export async function startUnifiedPlanCheckout(
 
 export async function startUnifiedCreditPurchase(
   amount: number,
-  onSuccess?: () => void,
-  onCancel?: () => void
+  packageIdOrCallback?: string | (() => void),
+  onSuccessOrCancel?: (() => void) | (() => void),
+  onCancelParam?: () => void
 ): Promise<void> {
+  let packageId: string | undefined;
+  let onSuccess: (() => void) | undefined;
+  let onCancel: (() => void) | undefined;
+
+  if (typeof packageIdOrCallback === 'string') {
+    packageId = packageIdOrCallback;
+    onSuccess = onSuccessOrCancel as (() => void) | undefined;
+    onCancel = onCancelParam;
+  } else {
+    onSuccess = packageIdOrCallback;
+    onCancel = onSuccessOrCancel as (() => void) | undefined;
+  }
   if (shouldUseRevenueCat()) {
     try {
       console.log('💰 Using RevenueCat for credit purchase...');
       
-      const offerings = await getOfferings();
+      let offerings = await getOfferingById('topups', true);
       
       if (!offerings) {
-        throw new Error('No credit offerings available');
+        console.warn('⚠️ No topups offering found, trying default offering');
+        offerings = await getOfferings(true);
+        if (!offerings) {
+          throw new Error('No credit offerings available');
+        }
       }
 
-      const creditPackageMap: Record<number, string> = {
-        10: '$rc_credits_10',
-        25: '$rc_credits_25',
-        50: '$rc_credits_50',
-        100: '$rc_credits_100',
-        250: '$rc_credits_250',
-        500: '$rc_credits_500',
-      };
+      let packageIdentifier = packageId;
+      
+      if (!packageIdentifier) {
+        const creditPackageMap: Record<number, string> = {
+          10: 'kortix_topup_starter',
+          25: 'kortix_topup_plus',
+          50: 'kortix_topup_popular',
+          100: 'kortix_topup_pro',
+          250: 'kortix_topup_business',
+          500: 'kortix_topup_enterprise',
+        };
+        packageIdentifier = creditPackageMap[amount];
+      }
 
-      const packageIdentifier = creditPackageMap[amount];
       const pkg = offerings.availablePackages.find(p => p.identifier === packageIdentifier);
 
       if (!pkg) {
-        throw new Error(`Credit package not found for amount: ${amount}`);
+        throw new Error(`Credit package not found for amount: ${amount}. Available packages: ${offerings.availablePackages.map(p => p.identifier).join(', ')}`);
       }
 
       const { data: { user } } = await supabase.auth.getUser();

@@ -3,7 +3,7 @@ import '@/global.css';
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
-import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, useAuthContext } from '@/contexts';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, GuestModeProvider, TrackingProvider, useAuthContext, useGuestMode } from '@/contexts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
@@ -20,36 +20,21 @@ import { Platform } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
 
-// Configure Reanimated logger to disable strict mode warnings
-// These warnings appear during theme changes and are overly sensitive
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
-  strict: false, // Disable strict mode warnings
+  strict: false,
 });
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export {
-  // Catch any errors thrown by the Layout component.
   ErrorBoundary,
 } from 'expo-router';
 
-/**
- * Root Layout
- * 
- * This is the main entry point that:
- * 1. Loads fonts
- * 2. Provides auth context
- * 3. Sets up providers
- * 4. Handles navigation stacks
- * 5. Protects all routes except /auth - unauthenticated users are redirected to /auth
- */
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const [i18nInitialized, setI18nInitialized] = useState(false);
   
-  // Initialize QueryClient inline
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
@@ -60,10 +45,8 @@ export default function RootLayout() {
     },
   }));
   
-  // Load Roobert fonts
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
-  // Initialize i18n
   useEffect(() => {
     initializeI18n().then(() => {
       console.log('✅ i18n initialized in RootLayout');
@@ -71,7 +54,6 @@ export default function RootLayout() {
     });
   }, []);
 
-  // Set light mode as default on first load
   useEffect(() => {
     if (!colorScheme) {
       setColorScheme('light');
@@ -184,80 +166,76 @@ export default function RootLayout() {
     return null;
   }
 
-  // Default to light if colorScheme is not set
   const activeColorScheme = colorScheme ?? 'light';
 
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <LanguageProvider>
-          <AuthProvider>
-            <BillingProvider>
-              <AgentProvider>
-                <AdvancedFeaturesProvider>
-                  <BottomSheetModalProvider>
-                    <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                      <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                      <AuthProtection>
-                        <Stack 
-                          screenOptions={{ 
-                            headerShown: false,
-                            animation: 'fade',
-                          }}
-                        >
-                          <Stack.Screen name="index" options={{ animation: 'none' }} />
-                          <Stack.Screen name="setting-up" />
-                          <Stack.Screen name="onboarding" />
-                          <Stack.Screen name="home" />
-                          <Stack.Screen name="auth" />
-                          <Stack.Screen name="trigger-detail" />
-                          <Stack.Screen 
-                            name="tool-modal" 
-                            options={{ 
-                              presentation: 'modal',
-                              animation: 'slide_from_bottom',
-                            }} 
-                          />
-                        </Stack>
-                      </AuthProtection>
-                      <PortalHost />
-                    </ThemeProvider>
-                  </BottomSheetModalProvider>
-                </AdvancedFeaturesProvider>
-              </AgentProvider>
-            </BillingProvider>
-          </AuthProvider>
-        </LanguageProvider>
+        <TrackingProvider>
+          <LanguageProvider>
+            <GuestModeProvider>
+              <AuthProvider>
+                <BillingProvider>
+                  <AgentProvider>
+                    <AdvancedFeaturesProvider>
+                      <BottomSheetModalProvider>
+                        <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                          <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+                          <AuthProtection>
+                            <Stack 
+                              screenOptions={{ 
+                                headerShown: false,
+                                animation: 'fade',
+                              }}
+                            >
+                              <Stack.Screen name="index" options={{ animation: 'none' }} />
+                              <Stack.Screen name="setting-up" />
+                              <Stack.Screen name="onboarding" />
+                              <Stack.Screen name="home" />
+                              <Stack.Screen name="auth" />
+                              <Stack.Screen name="trigger-detail" />
+                              <Stack.Screen 
+                                name="tool-modal" 
+                                options={{ 
+                                  presentation: 'modal',
+                                  animation: 'slide_from_bottom',
+                                }} 
+                              />
+                            </Stack>
+                          </AuthProtection>
+                          <PortalHost />
+                        </ThemeProvider>
+                      </BottomSheetModalProvider>
+                    </AdvancedFeaturesProvider>
+                  </AgentProvider>
+                </BillingProvider>
+              </AuthProvider>
+            </GuestModeProvider>
+          </LanguageProvider>
+        </TrackingProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
 }
 
-/**
- * Auth Protection Component
- * 
- * Protects all routes except /auth
- * Redirects unauthenticated users to /auth automatically
- */
+
 function AuthProtection({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthContext();
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { isGuestMode, isLoading: guestLoading } = useGuestMode();
   const segments = useSegments();
   const router = useRouter();
-  const hasRedirected = React.useRef(false);
 
   useEffect(() => {
-    if (isLoading) return;
+    if (authLoading || guestLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
+    const canAccessWithoutAuth = isAuthenticated || isGuestMode;
 
-    if (!isAuthenticated && !inAuthGroup && !hasRedirected.current) {
-      console.log('🚫 User not authenticated, redirecting to /auth');
-      hasRedirected.current = true;
+    if (!canAccessWithoutAuth && !inAuthGroup) {
+      console.log('🚫 User not authenticated or in guest mode, redirecting to /auth');
       router.replace('/auth');
-    } else if (isAuthenticated && hasRedirected.current) {
-      hasRedirected.current = false;
     }
-  }, [isAuthenticated, isLoading, segments, router]);
+  }, [isAuthenticated, isGuestMode, authLoading, guestLoading, segments, router]);
 
   return <>{children}</>;
 }

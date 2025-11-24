@@ -36,6 +36,21 @@ export interface RevenueCatSubscriptionInfo {
 
 let isConfigured = false;
 
+export async function logoutRevenueCat(): Promise<void> {
+  try {
+    console.log('🚪 Logging out from RevenueCat...');
+    const customerInfo = await Purchases.getCustomerInfo();
+    const wasAnonymous = customerInfo.originalAppUserId.startsWith('$RCAnonymousID:');
+    await Purchases.logOut();
+    isConfigured = false;
+    console.log('✅ RevenueCat logout successful');
+    console.log(`🔓 ${wasAnonymous ? 'Anonymous' : 'User'} subscription detached from device`);
+  } catch (error) {
+    console.error('❌ Error logging out from RevenueCat:', error);
+    isConfigured = false;
+  }
+}
+
 export async function setRevenueCatAttributes(email?: string, displayName?: string, phoneNumber?: string): Promise<void> {
   try {
     if (email) {
@@ -52,21 +67,9 @@ export async function setRevenueCatAttributes(email?: string, displayName?: stri
   }
 }
 
-export async function initializeRevenueCat(userId: string, email?: string): Promise<void> {
+export async function initializeRevenueCat(userId: string, email?: string, canTrack: boolean = false): Promise<void> {
   if (isConfigured) {
-    console.log('🔄 RevenueCat already configured, updating user...');
-    try {
-      const { customerInfo } = await Purchases.logIn(userId);
-      if (email) {
-        console.log('📧 Setting email for existing RevenueCat customer:', email);
-        await Purchases.setEmail(email);
-        console.log('✅ Email set successfully:', email);
-      }
-      return;
-    } catch (error) {
-      console.error('❌ Error logging in to RevenueCat:', error);
-      throw error;
-    }
+    return;
   }
 
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
@@ -79,6 +82,7 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
     console.log('🚀 Initializing RevenueCat...');
     console.log('👤 User ID:', userId);
     console.log('📧 Email:', email || 'No email provided');
+    console.log('📊 Tracking allowed:', canTrack);
     
     if (__DEV__) {
       Purchases.setLogLevel(LOG_LEVEL.DEBUG);
@@ -88,37 +92,68 @@ export async function initializeRevenueCat(userId: string, email?: string): Prom
     
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    if (email) {
-      console.log('📧 Setting email for RevenueCat customer:', email);
+    if (email && canTrack) {
+      console.log('📧 Setting email for RevenueCat customer (tracking enabled):', email);
       try {
         await Purchases.setEmail(email);
         console.log('✅ Email set successfully:', email);
       } catch (emailError) {
         console.error('❌ Error setting email:', emailError);
       }
+    } else if (!canTrack) {
+      console.log('⚠️ Tracking disabled - email not set for analytics');
     } else {
       console.warn('⚠️ No email provided to RevenueCat');
     }
     
-    Purchases.addCustomerInfoUpdateListener((customerInfo) => {
-      console.log('📱 Customer info updated:', customerInfo);
-      notifyBackendOfPurchase(customerInfo);
-    });
+    if (canTrack) {
+      Purchases.addCustomerInfoUpdateListener((customerInfo) => {
+        console.log('📱 Customer info updated:', customerInfo);
+        notifyBackendOfPurchase(customerInfo);
+      });
+    } else {
+      console.log('⚠️ Analytics listener not added (tracking disabled)');
+    }
 
     isConfigured = true;
     console.log('✅ RevenueCat initialized successfully');
+    console.log('🔒 SECURITY: Subscription is now locked to this account');
   } catch (error) {
     console.error('❌ Error initializing RevenueCat:', error);
     throw error;
   }
 }
 
-export async function getOfferings(): Promise<PurchasesOffering | null> {
+export async function getOfferings(forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
   try {
+    if (forceRefresh) {
+      console.log('🔄 Forcing fresh offerings fetch from RevenueCat...');
+      try {
+        const currentAppUserId = (await Purchases.getCustomerInfo()).originalAppUserId;
+        console.log('🔄 Resetting SDK to clear cache...');
+        
+        await Purchases.invalidateCustomerInfoCache();
+        await Purchases.syncPurchases();
+        
+        if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
+          await Purchases.logOut();
+          await Purchases.logIn(currentAppUserId);
+          console.log('✅ SDK reset completed with logout/login cycle');
+        } else {
+          console.log('⚠️ User is anonymous, skipping logout/login cycle');
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (resetError) {
+        console.warn('⚠️ Cache reset failed, continuing with getOfferings:', resetError);
+      }
+    }
+    
     const offerings = await Purchases.getOfferings();
     
     if (offerings.current) {
       console.log('✅ Current offering:', offerings.current.identifier);
+      console.log('📦 Available packages:', offerings.current.availablePackages.map(p => p.identifier).join(', '));
       return offerings.current;
     }
     
@@ -130,9 +165,77 @@ export async function getOfferings(): Promise<PurchasesOffering | null> {
   }
 }
 
+export async function getOfferingById(offeringId: string, forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
+  try {
+    if (forceRefresh) {
+      console.log(`🔄 Forcing fresh fetch for offering: ${offeringId}...`);
+      try {
+        const currentAppUserId = (await Purchases.getCustomerInfo()).originalAppUserId;
+        console.log('🔄 Resetting SDK to clear cache...');
+        
+        await Purchases.invalidateCustomerInfoCache();
+        await Purchases.syncPurchases();
+        
+        if (!currentAppUserId.startsWith('$RCAnonymousID:')) {
+          await Purchases.logOut();
+          await Purchases.logIn(currentAppUserId);
+          console.log('✅ SDK reset completed with logout/login cycle');
+        } else {
+          console.log('⚠️ User is anonymous, skipping logout/login cycle');
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (resetError) {
+        console.warn('⚠️ Cache reset failed, continuing with getOfferings:', resetError);
+      }
+    }
+    
+    const offerings = await Purchases.getOfferings();
+    const offering = offerings.all[offeringId];
+    
+    if (offering) {
+      console.log(`✅ Found offering: ${offeringId}`);
+      console.log('📦 Available packages:', offering.availablePackages.map(p => p.identifier).join(', '));
+      return offering;
+    }
+    
+    console.warn(`⚠️ Offering '${offeringId}' not found. Available offerings:`, Object.keys(offerings.all));
+    return null;
+  } catch (error) {
+    console.error(`❌ Error fetching offering '${offeringId}':`, error);
+    throw error;
+  }
+}
+
 export async function purchasePackage(pkg: PurchasesPackage, email?: string): Promise<CustomerInfo> {
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
+    
+    const isOneTimePurchase = pkg.identifier.toLowerCase().includes('topup') || 
+                              pkg.identifier.toLowerCase().includes('credit');
+    
+    const currentCustomerInfo = await Purchases.getCustomerInfo();
+    
+    const hasActiveSubscription = 
+      Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
+      currentCustomerInfo.activeSubscriptions.length > 0;
+
+    if (hasActiveSubscription && !isOneTimePurchase) {
+      const activeProductIds = currentCustomerInfo.activeSubscriptions;
+      console.log('🚫 BLOCKING PURCHASE - Device already has active subscription:', activeProductIds);
+      console.log('🔒 Security: Preventing subscription sharing/transfer abuse');
+      
+      const error: any = new Error(
+        'This device already has an active subscription. Please use "Restore Purchases" to access your existing subscription.'
+      );
+      error.code = 'SUBSCRIPTION_ALREADY_EXISTS';
+      error.userCancelled = false;
+      throw error;
+    }
+    
+    if (isOneTimePurchase) {
+      console.log('💰 One-time credit purchase detected - bypassing subscription guard');
+    }
     
     if (email) {
       console.log('📧 Ensuring email is set before purchase:', email);
@@ -165,11 +268,15 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
 export async function restorePurchases(email?: string): Promise<CustomerInfo> {
   try {
     console.log('🔄 Restoring purchases...');
+    console.warn('⚠️ SECURITY WARNING: Restore will link this Apple ID subscription to current account');
+    console.warn('⚠️ Backend will validate transfer - only allows if emails match');
+    console.warn('⚠️ Transfer between different user accounts will be BLOCKED');
+    
     if (email) {
       console.log('📧 Setting email before restore:', email);
       try {
         await Purchases.setEmail(email);
-        console.log('✅ Email set successfully');
+        console.log('✅ Email set successfully - needed for backend validation');
       } catch (emailError) {
         console.warn('⚠️ Could not set email before restore:', emailError);
       }
@@ -247,7 +354,11 @@ async function notifyBackendOfPurchase(customerInfo: CustomerInfo): Promise<void
       }),
     });
 
-    if (!response.ok) {
+    if (response.status === 403) {
+      console.log('ℹ️ Sync rejected - waiting for webhook validation');
+      console.log('📡 New subscriptions are processed via webhooks for security');
+      console.log('⏳ Your subscription will be activated within 30 seconds once validated');
+    } else if (!response.ok) {
       console.warn('⚠️ Backend notification failed:', response.status);
     } else {
       console.log('✅ Backend notified successfully');
@@ -292,7 +403,7 @@ export async function checkSubscriptionStatus(): Promise<{
 
 export async function presentPaywall(): Promise<void> {
   try {
-    const offerings = await getOfferings();
+    const offerings = await getOfferings(true);
     if (!offerings) {
       throw new Error('No offerings available to display');
     }
@@ -303,4 +414,3 @@ export async function presentPaywall(): Promise<void> {
     throw error;
   }
 }
-

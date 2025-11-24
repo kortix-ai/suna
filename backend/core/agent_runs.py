@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from typing import Optional, List, Tuple, Dict
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access, get_optional_user_id_from_jwt
 from core.utils.logger import logger, structlog
-from core.billing.billing_integration import billing_integration
+from core.billing.credits.integration import billing_integration
 from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
@@ -46,6 +46,15 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     thread_id = agent_run_data['thread_id']
     account_id = agent_run_data['threads']['account_id']
     
+    # Check metadata for actual_user_id (used for guests who share admin's account_id)
+    metadata = agent_run_data.get('metadata', {})
+    actual_user_id = metadata.get('actual_user_id')
+    
+    # If metadata has actual_user_id, use that for access check (handles guests)
+    if actual_user_id and actual_user_id == user_id:
+        return agent_run_data
+    
+    # Otherwise, use traditional account_id check
     if account_id == user_id:
         return agent_run_data
         
@@ -57,57 +66,76 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
 # Helper Functions for Unified Agent Start
 # ============================================================================
 
-async def _load_agent_config(client, agent_id: Optional[str], account_id: str, user_id: str, is_new_thread: bool = False):
-    """
-    Load agent configuration. Returns agent_config dict or None.
+async def _find_shared_suna_agent(client):
+    from .agent_loader import get_agent_loader
+    from core.utils.config import config
     
-    Args:
-        client: Database client
-        agent_id: Optional agent ID to load
-        account_id: Account ID for default agent lookup
-        user_id: User ID for authorization
-        is_new_thread: If True, ensures Suna is installed for new threads
-    """
+    admin_user_id = config.GUEST_MODE_ADMIN_USER_ID
+    
+    if admin_user_id:
+        admin_suna = await client.table('agents').select('agent_id').eq('account_id', admin_user_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
+        
+        if admin_suna and admin_suna.data:
+            loader = await get_agent_loader()
+            agent_data = await loader.load_agent(admin_suna.data['agent_id'], admin_user_id, load_config=True)
+            logger.info(f"✅ Using system Suna agent from admin user: {agent_data.name} ({agent_data.agent_id})")
+            return agent_data
+        else:
+            logger.warning(f"⚠️ GUEST_MODE_ADMIN_USER_ID configured but no Suna agent found for user {admin_user_id}")
+    
+    # Fallback: search for any Suna agent
+    any_suna = await client.table('agents').select('agent_id, account_id').eq('metadata->>is_suna_default', 'true').limit(1).maybe_single().execute()
+    
+    if any_suna and any_suna.data:
+        loader = await get_agent_loader()
+        agent_data = await loader.load_agent(any_suna.data['agent_id'], any_suna.data['account_id'], load_config=True)
+        logger.info(f"Using shared Suna agent: {agent_data.name} ({agent_data.agent_id})")
+        return agent_data
+    
+    logger.error("❌ No Suna agent found! Set GUEST_MODE_ADMIN_USER_ID in .env")
+    return None
+
+
+async def _load_agent_config(client, agent_id: Optional[str], account_id: str, user_id: str, is_new_thread: bool = False):
     from .agent_loader import get_agent_loader
     loader = await get_agent_loader()
     
     agent_data = None
     
     logger.debug(f"[AGENT LOAD] Loading agent: {agent_id or 'default'}")
-    
-    # Try to load specified agent
+
     if agent_id:
         agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
         logger.debug(f"Using agent {agent_data.name} ({agent_id}) version {agent_data.version_name}")
     else:
-        # Load default agent
         logger.debug(f"[AGENT LOAD] Loading default agent")
         
-        # For new threads, ensure Suna is installed
-        if is_new_thread:
+        from core.guest_session import guest_session_service
+        is_guest = await guest_session_service.is_guest_session(account_id)
+        
+        if is_new_thread and not is_guest:
             from core.utils.ensure_suna import ensure_suna_installed
             await ensure_suna_installed(account_id)
-            
-            # Try to find the default agent (Suna)
-            default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-            
-            if default_agent and default_agent.data:
-                agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
-                logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
-            else:
-                logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}")
-                raise HTTPException(status_code=404, detail="No default agent available. Please contact support.")
+        
+        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
+        
+        if default_agent and default_agent.data:
+            agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
+            logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
         else:
-            # For existing threads, try to load default agent (is_default flag)
-            default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).maybe_single().execute()
+            logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}, searching for shared Suna")
+            agent_data = await _find_shared_suna_agent(client)
             
-            if default_agent and default_agent.data:
-                agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
-                logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
-            else:
-                logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}")
+            if not agent_data:
+                any_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).limit(1).maybe_single().execute()
+                
+                if any_agent and any_agent.data:
+                    agent_data = await loader.load_agent(any_agent.data['agent_id'], user_id, load_config=True)
+                    logger.info(f"[AGENT LOAD] Using fallback agent: {agent_data.name} ({agent_data.agent_id})")
+                else:
+                    logger.error(f"[AGENT LOAD] No agents found for account {account_id}")
+                    raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
     
-    # Convert to dict for backward compatibility
     agent_config = agent_data.to_dict() if agent_data else None
     
     if agent_config:
@@ -129,6 +157,12 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
     Raises:
         HTTPException: If billing/limits checks fail
     """
+    # Skip billing checks for guest users (they have message limits instead)
+    from core.guest_session import guest_session_service
+    if await guest_session_service.is_guest_session(account_id):
+        logger.info(f"✅ Guest user - skipping billing checks, using free tier models")
+        return  # Guest users bypass billing checks
+    
     # Unified billing and model access check
     can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
         account_id, model_name, client
@@ -203,7 +237,7 @@ async def _get_effective_model(model_name: Optional[str], agent_config: Optional
         return effective_model
 
 
-async def _create_agent_run_record(client, thread_id: str, agent_config: Optional[dict], effective_model: str) -> str:
+async def _create_agent_run_record(client, thread_id: str, agent_config: Optional[dict], effective_model: str, actual_user_id: str) -> str:
     """
     Create an agent run record in the database.
     
@@ -212,6 +246,7 @@ async def _create_agent_run_record(client, thread_id: str, agent_config: Optiona
         thread_id: Thread ID to associate with
         agent_config: Agent configuration dict
         effective_model: Model name to use
+        actual_user_id: The actual user or guest session ID (not project_owner_id)
     
     Returns:
         agent_run_id: The created agent run ID
@@ -223,7 +258,8 @@ async def _create_agent_run_record(client, thread_id: str, agent_config: Optiona
         "agent_id": agent_config.get('agent_id') if agent_config else None,
         "agent_version_id": agent_config.get('current_version_id') if agent_config else None,
         "metadata": {
-            "model_name": effective_model
+            "model_name": effective_model,
+            "actual_user_id": actual_user_id
         }
     }).execute()
 
@@ -442,12 +478,13 @@ async def _ensure_sandbox_for_thread(client, project_id: str, files: List[Upload
 
 @router.post("/agent/start", response_model=UnifiedAgentStartResponse, summary="Start Agent (Unified)", operation_id="unified_agent_start")
 async def unified_agent_start(
+    request: Request,
     thread_id: Optional[str] = Form(None),
     prompt: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    user_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
 ):
     """
     Unified endpoint to start an agent run.
@@ -456,12 +493,29 @@ async def unified_agent_start(
     - If thread_id is NOT provided: Creates new project/thread and starts agent
     
     Supports file uploads for both new and existing threads.
+    Supports guest mode with limited message count.
     """
+    from core.guest_session import guest_session_service
+    
+    guest_session = None
+    if not user_id:
+        guest_session_id = request.headers.get('X-Guest-Session')
+        if guest_session_id:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    'error': 'guest_chat_disabled',
+                    'message': 'Chat is not available in guest mode. Please sign up or log in to continue.',
+                    'action': 'signup_required'
+                }
+            )
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     if not utils.instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
     
     client = await utils.db.client
-    account_id = user_id  # In Basejump, personal account_id is the same as user_id
+    account_id = user_id  # In Basejump, personal account_id is the same as user_id (or guest session_id)
     
     # Debug logging - log what we received
     logger.debug(f"Received agent start request: thread_id={thread_id!r}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
@@ -482,18 +536,10 @@ async def unified_agent_start(
         logger.debug(f"Resolved model name: {model_name}")
     
     try:
-        # ====================================================================
-        # Branch: Existing Thread vs New Thread
-        # ====================================================================
-        
         if thread_id:
-            # ================================================================
-            # EXISTING THREAD PATH
-            # ================================================================
             logger.debug(f"Starting agent on existing thread: {thread_id}")
             structlog.contextvars.bind_contextvars(thread_id=thread_id)
             
-            # Validate thread exists and get metadata
             thread_result = await client.table('threads').select('project_id', 'account_id', 'metadata').eq('thread_id', thread_id).execute()
             
             if not thread_result.data:
@@ -504,9 +550,19 @@ async def unified_agent_start(
             thread_account_id = thread_data.get('account_id')
             thread_metadata = thread_data.get('metadata', {})
             
-            # Verify access
             if thread_account_id != user_id:
-                await verify_and_authorize_thread_access(client, thread_id, user_id)
+                agent_runs_result = await client.table('agent_runs').select('metadata').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()
+                if agent_runs_result.data:
+                    metadata = agent_runs_result.data[0].get('metadata', {})
+                    actual_user_id = metadata.get('actual_user_id')
+                    if actual_user_id != user_id:
+                        logger.error(f"User {user_id} unauthorized for thread {thread_id} (belongs to {actual_user_id})")
+                        await verify_and_authorize_thread_access(client, thread_id, user_id)
+                    else:
+                        logger.debug(f"Guest {user_id} authorized for thread {thread_id} via actual_user_id")
+                else:
+                    logger.debug(f"No agent runs found, falling back to standard auth check")
+                    await verify_and_authorize_thread_access(client, thread_id, user_id)
             
             structlog.contextvars.bind_contextvars(
                 project_id=project_id,
@@ -515,10 +571,14 @@ async def unified_agent_start(
             )
             
             # Load agent configuration
-            agent_config = await _load_agent_config(client, agent_id, thread_account_id, user_id, is_new_thread=False)
+            # For agent loading, use thread_account_id as the user_id (this is the actual owner of the agents)
+            # Guest sessions use admin's agents, so we need to load with admin's permissions
+            agent_config = await _load_agent_config(client, agent_id, thread_account_id, thread_account_id, is_new_thread=False)
             
-            # Check billing and limits
-            await _check_billing_and_limits(client, thread_account_id, model_name, check_project_limit=False)
+            # Check billing and limits (skip for guest users)
+            from core.guest_session import guest_session_service
+            if not await guest_session_service.is_guest_session(thread_account_id):
+                await _check_billing_and_limits(client, thread_account_id, model_name, check_project_limit=False)
             
             # Get effective model
             effective_model = await _get_effective_model(model_name, agent_config, client, thread_account_id)
@@ -560,17 +620,26 @@ async def unified_agent_start(
                 }).execute()
                 logger.debug(f"Created user message for thread {thread_id}")
             
-            # Create agent run
-            agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model)
+            # Create agent run (use actual account_id, not thread_account_id)
+            agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
             
             # Trigger background execution
             await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_id)
             
-            return {
+            # Increment guest message count if guest user
+            response = {
                 "thread_id": thread_id,
                 "agent_run_id": agent_run_id,
                 "status": "running"
             }
+            
+            if guest_session:
+                from core.guest_session import guest_session_service
+                updated_session = await guest_session_service.increment_message_count(guest_session['session_id'])
+                await guest_session_service.add_thread_to_session(guest_session['session_id'], thread_id)
+                response['guest_session'] = await guest_session_service.get_session_info(guest_session['session_id'])
+            
+            return response
         
         else:
             # ================================================================
@@ -585,33 +654,47 @@ async def unified_agent_start(
             logger.debug(f"Creating new thread with prompt and {len(files)} files")
             
             # Load agent configuration
-            agent_config = await _load_agent_config(client, agent_id, account_id, user_id, is_new_thread=True)
+            # For agent loading, use account_id as the user_id (this is the actual owner of the agents)
+            # Guest sessions use admin's agents, so we need to load with admin's permissions
+            agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=True)
             
             # Check billing and limits (including project and thread limits)
-            await _check_billing_and_limits(client, account_id, model_name, check_project_limit=True)
+            # Skip for guest users
+            from core.guest_session import guest_session_service
+            is_guest = await guest_session_service.is_guest_session(account_id)
             
-            if config.ENV_MODE != EnvMode.LOCAL:
-                from core.utils.limits_checker import check_thread_limit
-                thread_limit_check = await check_thread_limit(client, account_id)
-                if not thread_limit_check['can_create']:
-                    error_detail = {
-                        "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
-                        "current_count": thread_limit_check['current_count'],
-                        "limit": thread_limit_check['limit'],
-                        "tier_name": thread_limit_check['tier_name'],
-                        "error_code": "THREAD_LIMIT_EXCEEDED"
-                    }
-                    logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
-                    raise HTTPException(status_code=402, detail=error_detail)
-            
-            # Get effective model
+            if not is_guest:
+                await _check_billing_and_limits(client, account_id, model_name, check_project_limit=True)
+                
+                if config.ENV_MODE != EnvMode.LOCAL:
+                    from core.utils.limits_checker import check_thread_limit
+                    thread_limit_check = await check_thread_limit(client, account_id)
+                    if not thread_limit_check['can_create']:
+                        error_detail = {
+                            "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
+                            "current_count": thread_limit_check['current_count'],
+                            "limit": thread_limit_check['limit'],
+                            "tier_name": thread_limit_check['tier_name'],
+                            "error_code": "THREAD_LIMIT_EXCEEDED"
+                        }
+                        logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                        raise HTTPException(status_code=402, detail=error_detail)
+            else:
+                logger.info(f"✅ Guest user - skipping thread limit checks")
+
             effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
+            
+            from core.utils.config import config as app_config
+            project_owner_id = account_id
+            if is_guest and app_config.GUEST_MODE_ADMIN_USER_ID:
+                project_owner_id = app_config.GUEST_MODE_ADMIN_USER_ID
+                logger.info(f"Guest user - using admin account {project_owner_id} as project owner")
             
             # Create Project
             placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
             project = await client.table('projects').insert({
                 "project_id": str(uuid.uuid4()),
-                "account_id": account_id,
+                "account_id": project_owner_id,
                 "name": placeholder_name,
                 "created_at": datetime.now(timezone.utc).isoformat()
             }).execute()
@@ -632,11 +715,11 @@ async def unified_agent_start(
                     await client.table('projects').delete().eq('project_id', project_id).execute()
                     raise HTTPException(status_code=500, detail=f"Failed to create sandbox: {str(e)}")
             
-            # Create Thread
+            # Create Thread (use project_owner_id for guests to avoid FK constraint)
             thread_data = {
                 "thread_id": str(uuid.uuid4()),
                 "project_id": project_id,
-                "account_id": account_id,
+                "account_id": project_owner_id,  # Use admin account for guests
                 "created_at": datetime.now(timezone.utc).isoformat()
             }
             
@@ -674,17 +757,26 @@ async def unified_agent_start(
                 "created_at": datetime.now(timezone.utc).isoformat()
             }).execute()
             
-            # Create agent run
-            agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model)
+            # Create agent run (use actual account_id for access tracking)
+            agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
             
             # Trigger background execution
             await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_id)
             
-            return {
+            # Increment guest message count if guest user
+            response = {
                 "thread_id": thread_id,
                 "agent_run_id": agent_run_id,
                 "status": "running"
             }
+            
+            if guest_session:
+                from core.guest_session import guest_session_service
+                updated_session = await guest_session_service.increment_message_count(guest_session['session_id'])
+                await guest_session_service.add_thread_to_session(guest_session['session_id'], thread_id)
+                response['guest_session'] = await guest_session_service.get_session_info(guest_session['session_id'])
+            
+            return response
     
     except HTTPException:
         raise
@@ -945,13 +1037,13 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
 async def stream_agent_run(
     agent_run_id: str,
     token: Optional[str] = None,
-    request: Request = None,
+    guest_session: Optional[str] = None,
+    request: Request = None
 ):
-    """Stream the responses of an agent run using Redis Lists and Pub/Sub."""
-    logger.debug(f"Starting stream for agent run: {agent_run_id}")
+    logger.debug(f"🔐 Stream auth check - agent_run: {agent_run_id}, has_token: {bool(token)}, has_guest_session: {bool(guest_session)}, guest_session_id: {guest_session[:8] + '...' if guest_session else None}")
     client = await utils.db.client
 
-    user_id = await get_user_id_from_stream_auth(request, token) # practically instant
+    user_id = await get_user_id_from_stream_auth(request, token, guest_session) # practically instant
     agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id) # 1 db query
 
     structlog.contextvars.bind_contextvars(

@@ -1,29 +1,20 @@
 import React, { useState } from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
-import { CheckCircle2, AlertCircle, Copy, Check, Code, Eye, FileText, Loader2 } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle, Copy, Check, FileText, Code, Eye } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import {
-  getLanguageFromFileName,
   getOperationType,
   getOperationConfigs,
   getOperationTitle,
-  getFileIcon,
   processFilePath,
   getFileName,
   getFileExtension,
   isFileType,
-  hasLanguageHighlighting,
-  splitContentIntoLines,
-  generateEmptyLines,
-  extractFilePath,
-  extractFileContent,
-  extractStreamingFileContent,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { CsvRenderer } from './CsvRenderer';
-import { XlsxRenderer } from './XlsxRenderer';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
@@ -39,8 +30,7 @@ export function FileOperationToolView({
   }
 
   const [copied, setCopied] = useState(false);
-  const [showFullContent, setShowFullContent] = useState(false);
-  const [activeTab, setActiveTab] = useState<'source' | 'preview'>('preview');
+  const [viewMode, setViewMode] = useState<'source' | 'preview'>('source');
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const operation = getOperationType(name);
@@ -126,70 +116,38 @@ export function FileOperationToolView({
   const processedFilePath = processFilePath(filePath);
   const fileName = getFileName(processedFilePath);
   const fileExtension = getFileExtension(fileName);
-  
+
   const isMarkdown = isFileType.markdown(fileExtension);
-  const isHtml = isFileType.html(fileExtension);
-  const isCsv = isFileType.csv(fileExtension);
-  const isXlsx = isFileType.xlsx(fileExtension);
   const isJson = isFileType.json(fileExtension);
-  const isCode = !isMarkdown && !isHtml && !isCsv && !isXlsx && !isJson;
-  
-  const language = getLanguageFromFileName(fileName);
-  const hasHighlighting = hasLanguageHighlighting(language);
-  const contentLines = splitContentIntoLines(fileContent);
-  const lineCount = contentLines.length;
-  const charCount = fileContent?.length || 0;
-  
-  const FileIcon = getFileIcon(fileName);
+  const hasPreview = isMarkdown;
   const success = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   const handleCopy = async () => {
     if (!fileContent) return;
-    
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await Clipboard.setStringAsync(fileContent);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const toggleContent = () => {
+  const switchViewMode = (mode: 'source' | 'preview') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowFullContent(!showFullContent);
+    setViewMode(mode);
   };
-
-  const switchTab = (tab: 'source' | 'preview') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveTab(tab);
-  };
-
-  const truncateContent = (content: string | null, maxLines: number = 50): string => {
-    if (!content) return '';
-    const lines = content.split('\n');
-    if (lines.length <= maxLines) return content;
-    return lines.slice(0, maxLines).join('\n') + '\n... (truncated)';
-  };
-
-  const displayContent = showFullContent 
-    ? fileContent 
-    : fileContent && lineCount > 50 
-      ? truncateContent(fileContent) 
-      : fileContent;
 
   if (isStreaming) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-        <ActivityIndicator size="large" color="#0066FF" />
-      </View>
-      <Text className="text-xl font-roobert-semibold text-foreground mb-2">
-        {getOperationTitle(operation)}
-      </Text>
-        <Text className="text-sm font-roobert text-muted-foreground text-center">
-          Processing file...
+        <View className={`${config.bgColor} rounded-2xl items-center justify-center mb-6`} style={{ width: 80, height: 80 }}>
+          <Icon as={OperationIcon} size={40} className={`${config.color} animate-pulse`} />
+        </View>
+        <Text className="text-xl font-roobert-semibold text-foreground mb-2">
+          {getOperationTitle(operation)}
         </Text>
         {filePath && (
-          <View className="bg-card border border-border rounded-2xl px-4 py-3 mt-3 w-full">
-            <Text className="text-xs font-roobert-medium text-foreground/60 text-center" numberOfLines={2}>
+          <View className="bg-card border border-border rounded-2xl px-4 py-3 mt-3">
+            <Text className="text-sm font-roobert-mono text-foreground/60 text-center" numberOfLines={2}>
               {filePath}
             </Text>
           </View>
@@ -204,7 +162,7 @@ export function FileOperationToolView({
         <View className="bg-muted/30 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
           <Icon as={AlertCircle} size={40} className="text-muted-foreground" />
         </View>
-        <Text className="text-xl font-roobert-semibold text-foreground mb-2">
+        <Text className="text-base font-roobert-medium text-foreground mb-1">
           No File Path
         </Text>
         <Text className="text-sm font-roobert text-muted-foreground text-center">
@@ -214,153 +172,40 @@ export function FileOperationToolView({
     );
   }
 
-  const processUnicodeContent = (text: string): string => {
-    if (!text) return '';
-    return text
-      .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
-      .replace(/\\r\\n/g, '\n')
-      .replace(/\\r/g, '\n')
-      .replace(/\\t/g, '  ');
-  };
+  const renderContent = () => {
+    if (!fileContent) return null;
 
-  const formatJson = (content: string): string | null => {
-    try {
-      const parsed = JSON.parse(content);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return null;
-    }
-  };
-
-  const renderSourceView = () => {
-    if (!fileContent) {
-      return (
-        <View className="items-center justify-center py-12">
-          <Icon as={FileText} size={48} className="text-muted-foreground mb-3" />
-          <Text className="text-sm font-roobert text-muted-foreground">
-            No content to display
-          </Text>
-        </View>
-      );
-    }
-
-    // Format JSON files
-    let formattedContent = displayContent;
-    if (isJson && fileContent) {
-      const formatted = formatJson(fileContent);
-      if (formatted) {
-        formattedContent = showFullContent ? formatted : truncateContent(formatted);
-      }
-    }
-
-    return (
-      <View className="bg-muted/5 border border-border rounded-2xl overflow-hidden">
-        <View className="bg-muted/30 px-4 py-2 border-b border-border flex-row items-center justify-between">
-          <View className="flex-row items-center gap-2">
-            <Icon as={Code} size={14} className="text-foreground/50" />
-            <Text className="text-xs font-roobert-medium text-foreground/60">
-              {language.toUpperCase()}
-            </Text>
-          </View>
-          <Text className="text-xs font-roobert text-foreground/40">
-            {lineCount} lines • {charCount} chars
-          </Text>
-        </View>
-        <ScrollView 
-          className="p-4" 
-          style={{ maxHeight: 400 }}
-          showsVerticalScrollIndicator={true}
-        >
-          <Text className="text-xs font-mono text-foreground/80 leading-5" selectable>
-            {processUnicodeContent(formattedContent || '')}
-          </Text>
-        </ScrollView>
-        {lineCount > 50 && (
-          <Pressable 
-            onPress={toggleContent} 
-            className="bg-muted/30 px-4 py-2 border-t border-border items-center"
-          >
-            <Text className="text-xs font-roobert-medium text-primary">
-              {showFullContent ? 'Show Less' : `Show All (${lineCount} lines)`}
-            </Text>
-          </Pressable>
-        )}
-      </View>
-    );
-  };
-
-  const renderPreviewView = () => {
-    if (!fileContent) {
-      return (
-        <View className="items-center justify-center py-12">
-          <Icon as={Eye} size={48} className="text-muted-foreground mb-3" />
-          <Text className="text-sm font-roobert text-muted-foreground">
-            No content to preview
-          </Text>
-        </View>
-      );
-    }
-
-    const processedContent = processUnicodeContent(fileContent);
-
-    // For HTML files, show raw HTML
-    if (isHtml) {
+    if (viewMode === 'preview' && isMarkdown) {
       return (
         <View className="bg-card border border-border rounded-2xl p-4">
-          <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={true}>
-            <Text className="text-xs font-mono text-foreground/90 leading-5">
-              {processedContent}
-            </Text>
-          </ScrollView>
+          <MarkdownRenderer content={fileContent} />
         </View>
       );
     }
 
-    // For CSV files, use CSV renderer
-    if (isCsv) {
-      return <CsvRenderer content={processedContent} />;
-    }
-
-    // For XLSX files, use XLSX renderer
-    if (isXlsx) {
-      return <XlsxRenderer content={processedContent} fileName={fileName} />;
-    }
-
-    // For JSON files, show formatted
+    // Source view - format JSON if applicable
+    let displayContent = fileContent;
     if (isJson) {
-      const formatted = formatJson(processedContent);
-      if (formatted) {
-        return (
-          <View className="bg-card border border-border rounded-2xl p-4">
-            <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={true}>
-              <Text className="text-xs font-mono text-foreground/90 leading-5">
-                {formatted}
-              </Text>
-            </ScrollView>
-          </View>
-        );
+      try {
+        const parsed = JSON.parse(fileContent);
+        displayContent = JSON.stringify(parsed, null, 2);
+      } catch {
+        // Use original content if JSON parsing fails
       }
     }
 
-    // For markdown files, use markdown renderer
-    if (isMarkdown) {
-      return (
-        <View className="bg-card border border-border rounded-2xl overflow-hidden">
-          <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={true}>
-            <MarkdownRenderer content={processedContent} />
-          </ScrollView>
-        </View>
-      );
-    }
-
-    // For other files, show the same as source but with better formatting
+    const lines = displayContent.split('\n');
     return (
       <View className="bg-card border border-border rounded-2xl p-4">
-        <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={true}>
-          <Text className="text-sm font-roobert text-foreground/90 leading-6">
-            {processUnicodeContent(displayContent || '')}
+        {lines.map((line, idx) => (
+          <Text
+            key={idx}
+            className="text-xs font-roobert-mono text-foreground/80 leading-5"
+            selectable
+          >
+            {line || ' '}
           </Text>
-        </ScrollView>
+        ))}
       </View>
     );
   };
@@ -369,113 +214,78 @@ export function FileOperationToolView({
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
       <View className="px-6 py-4 gap-6">
         <View className="flex-row items-center gap-3">
-          <View className={`rounded-2xl items-center justify-center ${
-            operation === 'delete' ? 'bg-destructive/10' : 'bg-primary/10'
-          }`} style={{ width: 48, height: 48 }}>
-            <Icon 
-              as={OperationIcon} 
-              size={24} 
-              className={config.color} 
-            />
+          <View className={`${config.bgColor} rounded-2xl items-center justify-center`} style={{ width: 48, height: 48 }}>
+            <Icon as={OperationIcon} size={24} className={config.color} />
           </View>
           <View className="flex-1">
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
+            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
               {getOperationTitle(operation)}
             </Text>
+            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
+              {fileName}
+            </Text>
           </View>
-          {!isStreaming && (
-            <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-              success ? 'bg-primary/10' : 'bg-destructive/10'
-            }`}>
-              <Icon 
-                as={success ? CheckCircle2 : AlertCircle} 
-                size={12} 
-                className={success ? 'text-primary' : 'text-destructive'} 
-              />
-              <Text className={`text-xs font-roobert-medium ${
-                success ? 'text-primary' : 'text-destructive'
-              }`}>
-                {success ? 'Done' : 'Failed'}
-              </Text>
-            </View>
-          )}
         </View>
-        {fileContent && operation !== 'delete' && (
-          <View className="gap-3">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2">
-                <Pressable
-                  onPress={() => switchTab('source')}
-                  className={`px-4 py-2 rounded-lg ${
-                    activeTab === 'source' 
-                      ? 'bg-primary/10' 
-                      : 'bg-muted/30'
-                  }`}
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Icon 
-                      as={Code} 
-                      size={14} 
-                      className={activeTab === 'source' ? 'text-primary' : 'text-foreground/60'} 
-                    />
-                    <Text className={`text-sm font-roobert-medium ${
-                      activeTab === 'source' ? 'text-primary' : 'text-foreground/60'
-                    }`}>
-                      Source
-                    </Text>
-                  </View>
-                </Pressable>
-                
-                <Pressable
-                  onPress={() => switchTab('preview')}
-                  className={`px-4 py-2 rounded-lg ${
-                    activeTab === 'preview' 
-                      ? 'bg-primary/10' 
-                      : 'bg-muted/30'
-                  }`}
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Icon 
-                      as={Eye} 
-                      size={14} 
-                      className={activeTab === 'preview' ? 'text-primary' : 'text-foreground/60'} 
-                    />
-                    <Text className={`text-sm font-roobert-medium ${
-                      activeTab === 'preview' ? 'text-primary' : 'text-foreground/60'
-                    }`}>
-                      Preview
-                    </Text>
-                  </View>
-                </Pressable>
-              </View>
 
-              <Pressable
+        {fileContent && operation !== 'delete' ? (
+          <View className="gap-3">
+            <View className="flex-row items-center gap-2">
+              {hasPreview && (
+                <>
+                  <Button
+                    variant={viewMode === 'source' ? 'default' : 'outline'}
+                    size="sm"
+                    onPress={() => switchViewMode('source')}
+                    className="flex-1 rounded-2xl"
+                  >
+                    <Text>Source</Text>
+                  </Button>
+
+                  <Button
+                    variant={viewMode === 'preview' ? 'default' : 'outline'}
+                    size="sm"
+                    onPress={() => switchViewMode('preview')}
+                    className="flex-1 rounded-2xl"
+                  >
+                    <Text>Preview</Text>
+                  </Button>
+                </>
+              )}
+
+              <Button
+                variant="outline"
+                size="sm"
                 onPress={handleCopy}
-                className="flex-row items-center gap-1.5 bg-muted/30 px-3 py-2 rounded-lg"
+                className={`rounded-2xl ${hasPreview ? '' : 'flex-1'}`}
               >
-                <Icon 
-                  as={copied ? Check : Copy} 
-                  size={14} 
-                  className={copied ? 'text-primary' : 'text-foreground/60'} 
-                />
-                <Text className={`text-xs font-roobert-medium ${
-                  copied ? 'text-primary' : 'text-foreground/60'
-                }`}>
-                  {copied ? 'Copied!' : 'Copy'}
-                </Text>
-              </Pressable>
+                <Text>{copied ? 'Copied!' : 'Copy'}</Text>
+              </Button>
             </View>
-            {activeTab === 'source' ? renderSourceView() : renderPreviewView()}
+
+            {renderContent()}
           </View>
-        )}
-        {operation === 'delete' && (
-          <View className="items-center justify-center py-8 bg-destructive/5 rounded-2xl border border-destructive/20">
-            <Icon as={OperationIcon} size={48} className="text-destructive mb-3" />
-            <Text className="text-lg font-roobert-semibold text-foreground mb-2">
+        ) : operation === 'delete' ? (
+          <View className="py-8 items-center">
+            <View className="bg-destructive/10 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
+              <Icon as={OperationIcon} size={32} className="text-destructive" />
+            </View>
+            <Text className="text-base font-roobert-medium text-foreground mb-1">
               File Deleted
             </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center px-4">
-              This file has been permanently removed from the system
+            <Text className="text-sm font-roobert text-muted-foreground text-center">
+              This file has been removed
+            </Text>
+          </View>
+        ) : (
+          <View className="py-8 items-center">
+            <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
+              <Icon as={FileText} size={32} className="text-muted-foreground" />
+            </View>
+            <Text className="text-base font-roobert-medium text-foreground mb-1">
+              No Content
+            </Text>
+            <Text className="text-sm font-roobert text-muted-foreground text-center">
+              No content available to display
             </Text>
           </View>
         )}
