@@ -14,8 +14,8 @@ import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
-from billing.config import get_tier_by_price_id, TIERS
-from billing.webhook_service import webhook_service
+from core.billing.shared.config import get_tier_by_price_id, TIERS
+from core.billing.external.stripe import webhook_service
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 
@@ -292,7 +292,7 @@ class FastSyncService:
                 if current_non_expiring < expected_purchases:
                     missing = expected_purchases - current_non_expiring
                     
-                    from billing.credit_manager import credit_manager
+                    from core.billing.credits.manager import credit_manager
                     await credit_manager.add_credits(
                         account_id=account_id,
                         amount=missing,

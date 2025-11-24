@@ -18,8 +18,8 @@ backend_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..')
 sys.path.append(backend_dir)
 
 from core.services.supabase import DBConnection
-from core.billing.config import get_tier_by_price_id, TIERS
-from core.billing.credit_manager import credit_manager
+from core.billing.shared.config import get_tier_by_price_id, TIERS
+from core.billing.credits.manager import credit_manager
 from core.utils.logger import logger
 import stripe
 from core.utils.config import config

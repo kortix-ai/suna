@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from .free_tier_service import free_tier_service
+from .subscriptions import free_tier_service
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.services.supabase import DBConnection
 

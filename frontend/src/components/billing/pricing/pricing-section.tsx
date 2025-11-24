@@ -134,10 +134,12 @@ function PriceDisplay({ price, isCompact }: PriceDisplayProps) {
 
 function BillingPeriodToggle({
   billingPeriod,
-  setBillingPeriod
+  setBillingPeriod,
+  setHasUserToggledBillingPeriod
 }: {
   billingPeriod: 'monthly' | 'yearly' | 'yearly_commitment';
   setBillingPeriod: (period: 'monthly' | 'yearly' | 'yearly_commitment') => void;
+  setHasUserToggledBillingPeriod: (toggled: boolean) => void;
 }) {
   const t = useTranslations('billing');
 
@@ -146,7 +148,10 @@ function BillingPeriodToggle({
       <div className="flex gap-2 items-center flex-wrap justify-center">
         <Button
           variant={billingPeriod === 'monthly' ? 'default' : 'outline'}
-          onClick={() => setBillingPeriod('monthly')}
+          onClick={() => {
+            setHasUserToggledBillingPeriod(true);
+            setBillingPeriod('monthly');
+          }}
           className={cn(
             "border-[1.5px]",
             billingPeriod === 'monthly' ? 'border-primary' : 'border-border'
@@ -156,7 +161,10 @@ function BillingPeriodToggle({
         </Button>
         <Button
           variant={billingPeriod === 'yearly' ? 'default' : 'outline'}
-          onClick={() => setBillingPeriod('yearly')}
+          onClick={() => {
+            setHasUserToggledBillingPeriod(true);
+            setBillingPeriod('yearly');
+          }}
           className={cn(
             "flex items-center gap-1.5 border-[1.5px]",
             billingPeriod === 'yearly' ? 'border-primary' : 'border-border'
@@ -228,6 +236,7 @@ function PricingTier({
   const scheduleDowngradeMutation = useScheduleDowngrade();
 
   const handleSubscribe = async (tierKey: string, isDowngrade = false) => {
+    
     if (!isAuthenticated) {
       window.location.href = '/auth?mode=signup';
       return;
@@ -242,6 +251,7 @@ function PricingTier({
       const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' :
         billingPeriod === 'yearly' ? 'yearly' :
           'monthly';
+      
 
       if (isDowngrade) {
         scheduleDowngradeMutation.mutate({
@@ -260,7 +270,7 @@ function PricingTier({
       const response: CreateCheckoutSessionResponse =
         await createCheckoutSession({
           tier_key: tierKey,
-          success_url: returnUrl,
+          success_url: `${window.location.origin}/dashboard?subscription=success`,
           cancel_url: returnUrl,
           commitment_type: commitmentType,
         } as CreateCheckoutSessionRequest);
@@ -302,9 +312,23 @@ function PricingTier({
           break;
         case 'downgrade_scheduled':
         case 'scheduled':
-          const effectiveDate = response.effective_date
-            ? new Date(response.effective_date).toLocaleDateString()
-            : null;
+          const dateValue = (response as any).effective_date || (response as any).scheduled_date;
+          let effectiveDate = null;
+          
+          if (dateValue) {
+            try {
+              const parsedDate = new Date(dateValue);
+              if (!isNaN(parsedDate.getTime())) {
+                effectiveDate = parsedDate.toLocaleDateString();
+              } else {
+                console.error(`[BILLING] Invalid date value: ${dateValue}`);
+                effectiveDate = 'end of billing period';
+              }
+            } catch (e) {
+              console.error(`[BILLING] Error parsing date: ${e}`);
+              effectiveDate = 'end of billing period';
+            }
+          }
 
           const statusChangeMessage = t('subscriptionChangeScheduled');
           const planChangeDate = effectiveDate 
@@ -351,16 +375,22 @@ function PricingTier({
 
   const userPlanName = currentSubscription?.plan_name || 'none';
 
-  const isSameTier = currentSubscription?.tier_key === tier.tierKey ||
-    currentSubscription?.tier?.name === tier.tierKey;
+  const isSameTier = 
+    currentSubscription?.tier_key === tier.tierKey ||
+    currentSubscription?.tier?.name === tier.tierKey ||
+    currentSubscription?.plan_name === tier.tierKey;
   const isSameBillingPeriod = currentBillingPeriod === billingPeriod;
+  
 
   const isRevenueCatSubscription = currentSubscription?.provider === 'revenuecat';
   
+  // More robust current plan detection
   const isCurrentActivePlan = isAuthenticated && isSameTier && 
     (isSameBillingPeriod || isRevenueCatSubscription) &&
     (currentSubscription?.subscription?.status === 'active' || 
-     (isRevenueCatSubscription && currentSubscription?.status === 'active'));
+     currentSubscription?.status === 'active' ||
+     (isRevenueCatSubscription && currentSubscription?.status === 'active') ||
+     (currentSubscription?.subscription && !currentSubscription?.subscription?.status));
 
   const isScheduled = isAuthenticated && (currentSubscription as any)?.has_schedule;
   const isScheduledTargetPlan =
@@ -382,8 +412,15 @@ function PricingTier({
   const planChangeValidation = { allowed: true };
 
   if (isAuthenticated) {
-    // For RevenueCat subscriptions on web, show current plan and disable changes
-    if (isRevenueCatSubscription && !isCurrentActivePlan) {
+    const isCurrentPlan = isSameTier && isSameBillingPeriod;
+    
+    if (isCurrentPlan) {
+      buttonText = t('currentPlan');
+      buttonDisabled = true;
+      statusBadge = <Badge variant="default" className="text-xs">{t('current')}</Badge>;
+      ringClass = '';
+    }
+    else if (isRevenueCatSubscription && !isCurrentPlan) {
       buttonText = 'Manage in App';
       buttonDisabled = true;
       buttonVariant = 'outline';
@@ -446,23 +483,17 @@ function PricingTier({
           ? 0
           : parseFloat(selectedPriceString.replace(/[^\d.]/g, '') || '0') * 100;
 
-      // Check if current subscription is monthly and target is yearly commitment for same tier
       const isSameTier = currentTier && currentTier.tierKey === tier.tierKey;
-      const isSameTierUpgradeToLongerTerm = isSameTier && (
-        (billingPeriod === 'yearly_commitment' || billingPeriod === 'yearly')
+      
+      const isBillingPeriodChange = isSameTier && currentBillingPeriod !== billingPeriod;
+      
+      const isSameTierUpgradeToLongerTerm = isBillingPeriodChange && (
+        (currentBillingPeriod === 'monthly' && (billingPeriod === 'yearly' || billingPeriod === 'yearly_commitment')) ||
+        (currentBillingPeriod === 'yearly' && billingPeriod === 'yearly_commitment')
       );
 
-      // Prevent downgrading from yearly to monthly - once yearly, stay yearly
-      // This blocks: yearly -> monthly, yearly_commitment -> monthly for same tier
-      const isYearlyDowngradeToMonthly = isSameTier &&
-        currentBillingPeriod &&
-        (currentBillingPeriod === 'yearly' || currentBillingPeriod === 'yearly_commitment') &&
-        billingPeriod === 'monthly' &&
-        currentSubscription?.subscription?.status === 'active';
-
-      const isSameTierDowngradeToShorterTerm = false; // Simplified for now
-
-      // Use the plan change validation already computed above
+      const isYearlyDowngradeToMonthly = false;
+      const isSameTierDowngradeToShorterTerm = false;
 
       if (
         currentAmount === 0 &&
@@ -474,21 +505,26 @@ function PricingTier({
         buttonVariant = 'secondary';
         buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
       } else if (isYearlyDowngradeToMonthly) {
-        // Prevent downgrading from yearly to monthly - once yearly, stay yearly
         buttonText = t('notAvailable');
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
       } else if (!planChangeValidation.allowed) {
-        // Plan change not allowed due to business rules
         buttonText = t('notAvailable');
         buttonDisabled = true;
         buttonVariant = 'secondary';
         buttonClassName = 'opacity-50 cursor-not-allowed bg-muted text-muted-foreground';
       } else {
-        if (targetAmount > currentAmount || isSameTierUpgradeToLongerTerm) {
-          // Allow upgrade to higher tier OR upgrade to longer term on same tier
-          if (isSameTierUpgradeToLongerTerm && targetAmount <= currentAmount) {
+        if (targetAmount > currentAmount || isSameTierUpgradeToLongerTerm || isBillingPeriodChange) {
+          if (isBillingPeriodChange && isSameTier) {
+            if (isSameTierUpgradeToLongerTerm) {
+              buttonText = billingPeriod === 'yearly_commitment' ? tCommon('upgrade') : 'Switch to Yearly';
+            } else {
+              buttonText = 'Switch to Monthly';
+            }
+            buttonVariant = 'default';
+            buttonClassName = 'bg-primary hover:bg-primary/90 text-primary-foreground';
+          } else if (isSameTierUpgradeToLongerTerm && targetAmount <= currentAmount) {
             buttonText = billingPeriod === 'yearly_commitment' ? tCommon('upgrade') : t('switchToLegacyYearly');
             buttonVariant = billingPeriod === 'yearly_commitment' ? tier.buttonColor as ButtonVariant : 'default';
             buttonClassName = billingPeriod === 'yearly_commitment'
@@ -780,20 +816,31 @@ export function PricingSection({
   const isAuthenticated = isUserAuthenticated && !!subscriptionData && subscriptionQueryError === null;
   const currentSubscription = subscriptionData || null;
 
-  // Determine current subscription's billing period
   const getCurrentBillingPeriod = (): 'monthly' | 'yearly' | 'yearly_commitment' | null => {
     if (!isAuthenticated || !currentSubscription) {
+      console.log(`[BILLING-PERIOD-DEBUG] No auth or subscription: auth=${isAuthenticated}, sub=${!!currentSubscription}`);
       return null;
     }
-
-    // Use billing_period from API response (most reliable - comes from price_id)
+    
+    console.log(`[BILLING-PERIOD-DEBUG] Current subscription billing_period:`, currentSubscription.billing_period);
+    console.log(`[BILLING-PERIOD-DEBUG] Current subscription plan_type:`, (currentSubscription as any).plan_type);
+    
+    // Check API billing_period field first
     if (currentSubscription.billing_period) {
+      console.log(`[BILLING-PERIOD-DEBUG] Using API billing_period: ${currentSubscription.billing_period}`);
       return currentSubscription.billing_period;
     }
+    
+    // Check plan_type field as backup
+    if ((currentSubscription as any).plan_type) {
+      const planType = (currentSubscription as any).plan_type;
+      console.log(`[BILLING-PERIOD-DEBUG] Using API plan_type: ${planType}`);
+      return planType;
+    }
 
-    // Fallback: Check commitment info
     if (subCommitmentQuery.data?.has_commitment &&
       subCommitmentQuery.data?.commitment_type === 'yearly_commitment') {
+      console.log(`[BILLING-PERIOD-DEBUG] Using commitment query: yearly_commitment`);
       return 'yearly_commitment';
     }
 
@@ -806,13 +853,17 @@ export function PricingSection({
       const now = Date.now();
       const daysInPeriod = Math.round((periodEnd - now) / (1000 * 60 * 60 * 24));
 
+      console.log(`[BILLING-PERIOD-DEBUG] Period length detection: ${daysInPeriod} days`);
+
       // If period is longer than 180 days, likely yearly; otherwise monthly
       if (daysInPeriod > 180) {
+        console.log(`[BILLING-PERIOD-DEBUG] Inferred yearly from period length`);
         return 'yearly';
       }
     }
 
     // Default to monthly if period is short or can't determine
+    console.log(`[BILLING-PERIOD-DEBUG] Defaulting to monthly`);
     return 'monthly';
   };
 
@@ -822,18 +873,30 @@ export function PricingSection({
     if (!isAuthenticated || !currentSubscription) {
       return 'yearly_commitment';
     }
-
-    // Use current subscription's billing period if available, otherwise default to yearly_commitment
-    return currentBillingPeriod || 'yearly_commitment';
+    if (currentBillingPeriod) {
+      console.log(`[BILLING-PERIOD-DEBUG] Using detected billing period: ${currentBillingPeriod}`);
+      return currentBillingPeriod;
+    }
+    console.log(`[BILLING-PERIOD-DEBUG] No billing period detected, defaulting to yearly_commitment`);
+    return 'yearly_commitment';
   }, [isAuthenticated, currentSubscription, currentBillingPeriod]);
 
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(() => {
+    const defaultPeriod = getDefaultBillingPeriod();
+    console.log(`[BILLING-PERIOD-DEBUG] Initial billing period set to: ${defaultPeriod}`);
+    return defaultPeriod;
+  });
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
-
+  const [hasUserToggledBillingPeriod, setHasUserToggledBillingPeriod] = useState(false);
+  
   useEffect(() => {
-    setBillingPeriod(getDefaultBillingPeriod());
-  }, [getDefaultBillingPeriod]);
+    // Only sync to detected billing period on initial load, not when user is actively toggling
+    if (currentSubscription && currentBillingPeriod && !hasUserToggledBillingPeriod) {
+      console.log(`[BILLING-PERIOD-DEBUG] Initial sync: detected=${currentBillingPeriod}, setting UI to match`);
+      setBillingPeriod(currentBillingPeriod);
+    }
+  }, [currentSubscription, currentBillingPeriod, hasUserToggledBillingPeriod]);
 
   const handlePlanSelect = (planId: string) => {
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
@@ -893,6 +956,7 @@ export function PricingSection({
           <BillingPeriodToggle
             billingPeriod={billingPeriod}
             setBillingPeriod={setBillingPeriod}
+            setHasUserToggledBillingPeriod={setHasUserToggledBillingPeriod}
           />
         </div>
 

@@ -17,7 +17,7 @@ from core.utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from datetime import datetime, timezone
-from core.billing.billing_integration import billing_integration
+from core.billing.credits.integration import billing_integration
 from litellm.utils import token_counter
 
 ToolChoice = Literal["auto", "required", "none"]

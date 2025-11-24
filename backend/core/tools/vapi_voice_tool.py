@@ -11,7 +11,7 @@ from core.utils.config import config
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.vapi_config import vapi_config, DEFAULT_SYSTEM_PROMPT, DEFAULT_FIRST_MESSAGE
-from core.billing.config import TOKEN_PRICE_MULTIPLIER
+from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
 
 def normalize_phone_number(raw_number: str, default_region: str = "US") -> tuple[str, str, str]:
     import re
