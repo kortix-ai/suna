@@ -206,5 +206,36 @@ class StripeAPIWrapper:
     @classmethod
     async def retrieve_payment_intent(cls, payment_intent_id: str) -> stripe.PaymentIntent:
         return await cls.safe_stripe_call(stripe.PaymentIntent.retrieve_async, payment_intent_id)
+    
+    @classmethod
+    async def cancel_subscription(cls, subscription_id: str, cancel_immediately: bool = True) -> stripe.Subscription:
+        if cancel_immediately:
+            return await cls.safe_stripe_call(
+                stripe.Subscription.cancel_async, 
+                subscription_id,
+                prorate=True
+            )
+        else:
+            return await cls.safe_stripe_call(
+                stripe.Subscription.modify_async,
+                subscription_id,
+                cancel_at_period_end=True
+            )
+    
+    @classmethod
+    async def modify_subscription(cls, subscription_id: str, **kwargs) -> stripe.Subscription:
+        return await cls.safe_stripe_call(
+            stripe.Subscription.modify_async,
+            subscription_id,
+            **kwargs
+        )
+    
+    @classmethod
+    async def create_checkout_session(cls, **kwargs) -> stripe.checkout.Session:
+        return await cls.safe_stripe_call(stripe.checkout.Session.create_async, **kwargs)
+    
+    @classmethod 
+    async def list_invoices(cls, **kwargs) -> stripe.ListObject:
+        return await cls.safe_stripe_call(stripe.Invoice.list_async, **kwargs)
 
 stripe_circuit_breaker = StripeCircuitBreaker()

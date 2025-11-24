@@ -1,11 +1,12 @@
 from typing import Dict, Optional
+from datetime import datetime
 import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
 from ..shared.config import FREE_TIER_INITIAL_CREDITS
-
+from dateutil.relativedelta import relativedelta
 class FreeTierService:
     def __init__(self):
         self.stripe = stripe
@@ -121,8 +122,27 @@ class FreeTierService:
             
             await client.from_('credit_accounts').update({
                 'tier': 'free',
-                'stripe_subscription_id': subscription.id
+                'stripe_subscription_id': subscription.id,
+                'last_grant_date': datetime.now().isoformat()
             }).eq('account_id', account_id).execute()
+            
+            current_balance = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()
+            
+            if current_balance.data and float(current_balance.data[0]['balance']) < FREE_TIER_INITIAL_CREDITS:
+                from ..credits.manager import credit_manager
+                from decimal import Decimal
+                
+                logger.info(f"[FREE TIER] Granting {FREE_TIER_INITIAL_CREDITS} initial credits to {account_id}")
+                await credit_manager.add_credits(
+                    account_id=account_id,
+                    amount=Decimal(str(FREE_TIER_INITIAL_CREDITS)),
+                    is_expiring=True,
+                    description="Free tier initial credits",
+                    expires_at=datetime.now() + relativedelta(months=1)
+                )
+                logger.info(f"[FREE TIER] ✅ Granted {FREE_TIER_INITIAL_CREDITS} credits to new free tier user {account_id}")
+            else:
+                logger.info(f"[FREE TIER] User {account_id} already has sufficient credits, skipping grant")
             
             logger.info(f"[FREE TIER] ✅ Successfully created free tier subscription {subscription.id} for {account_id}")
             

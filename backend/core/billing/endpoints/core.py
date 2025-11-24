@@ -28,7 +28,13 @@ async def check_billing_status(
         return {'can_run': True, 'message': 'Local mode', 'balance': 999999}
     
     from ..subscriptions import subscription_service
-    balance = await credit_service.get_balance(account_id)
+    
+    balance_result = await credit_service.get_balance(account_id) 
+    if isinstance(balance_result, dict):
+        balance = Decimal(str(balance_result.get('total', 0)))
+    else:
+        balance = balance_result
+        
     tier = await subscription_service.get_user_subscription_tier(account_id)
     
     return {
@@ -59,7 +65,13 @@ async def check_status(
             }
         
         from ..subscriptions import subscription_service
-        balance = await credit_service.get_balance(account_id)
+        
+        balance_result = await credit_service.get_balance(account_id)
+        if isinstance(balance_result, dict):
+            balance = Decimal(str(balance_result.get('total', 0)))
+        else:
+            balance = balance_result
+            
         summary = await credit_service.get_account_summary(account_id)
         tier = await subscription_service.get_user_subscription_tier(account_id)
         
@@ -345,16 +357,22 @@ async def get_available_models(
         allowed = is_model_allowed(tier_name, model['id'])
         result_models.append({
             'id': model['id'],
+            'display_name': model['name'],
             'name': model['name'],
             'provider': model['provider'],
             'allowed': allowed,
+            'requires_subscription': not allowed,
+            'context_window': model.get('context_window', 128000),
+            'capabilities': model.get('capabilities', []),
+            'priority': model.get('priority', 0),
+            'recommended': model.get('recommended', False),
             'reason': f'Available on {tier_name} tier' if allowed else f'Requires higher tier than {tier_name}'
         })
     
-        return {
-            'models': result_models,
-            'tier': tier_name
-        }
+    return {
+        'models': result_models,
+        'tier': tier_name
+    }
 
 @router.get("/credit-breakdown")
 async def get_credit_breakdown(
@@ -364,8 +382,11 @@ async def get_credit_breakdown(
     client = await db.client
     
     try:
-        current_balance = await credit_service.get_balance(account_id)
-        current_balance = float(current_balance)
+        balance_result = await credit_service.get_balance(account_id)
+        if isinstance(balance_result, dict):
+            current_balance = float(balance_result.get('total', 0))
+        else:
+            current_balance = float(balance_result)
         
         purchase_result = await client.from_('credit_ledger')\
             .select('amount, created_at, description')\

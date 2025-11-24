@@ -9,10 +9,10 @@ class StripeIdempotencyManager(IdempotencyManagerInterface):
         operation: str,
         account_id: str,
         *args,
-        time_bucket_hours: int = 1,
+        time_bucket_minutes: int = 5,
         **kwargs
     ) -> str:
-        timestamp_bucket = int(datetime.now(timezone.utc).timestamp() // (time_bucket_hours * 3600))
+        timestamp_bucket = int(datetime.now(timezone.utc).timestamp() // (time_bucket_minutes * 60))
         sorted_kwargs = sorted(kwargs.items())
         
         components = [
@@ -20,7 +20,8 @@ class StripeIdempotencyManager(IdempotencyManagerInterface):
             account_id,
             *[str(arg) for arg in args],
             *[f"{k}={v}" for k, v in sorted_kwargs],
-            str(timestamp_bucket)
+            str(timestamp_bucket),
+            str(int(datetime.now(timezone.utc).timestamp() * 1000) % 10000)  # Add milliseconds for uniqueness
         ]
         
         idempotency_base = "_".join(components)

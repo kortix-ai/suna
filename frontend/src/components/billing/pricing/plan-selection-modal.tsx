@@ -32,7 +32,7 @@ export function PlanSelectionModal({
     creditsExhausted = false,
     upgradeReason: controlledUpgradeReason,
 }: PlanSelectionModalProps) {
-    const defaultReturnUrl = typeof window !== 'undefined' ? window.location.href : '/';
+    const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/dashboard?subscription=success` : '/';
     const queryClient = useQueryClient();
     const router = useRouter();
     
@@ -45,19 +45,15 @@ export function PlanSelectionModal({
 
     useEffect(() => {
         if (isOpen && typeof window !== 'undefined') {
-            // Use URLSearchParams directly from window.location instead of useSearchParams()
-            // This avoids the Suspense boundary requirement
             const searchParams = new URLSearchParams(window.location.search);
             const checkoutSuccess = searchParams.get('checkout');
             const sessionId = searchParams.get('session_id');
             const clientSecret = searchParams.get('client_secret');
             
-            // If we have checkout success indicators, invalidate billing queries
             if (checkoutSuccess === 'success' || sessionId || clientSecret) {
                 console.log('🔄 Checkout success detected in modal, invalidating billing queries...');
                 queryClient.invalidateQueries({ queryKey: billingKeys.all });
                 
-                // Clean up URL params
                 const url = new URL(window.location.href);
                 url.searchParams.delete('checkout');
                 url.searchParams.delete('session_id');
@@ -68,9 +64,7 @@ export function PlanSelectionModal({
     }, [isOpen, queryClient, router]);
 
     const handleSubscriptionUpdate = () => {
-        // Invalidate all billing queries
         queryClient.invalidateQueries({ queryKey: billingKeys.all });
-        // Close modal after successful upgrade
         setTimeout(() => {
             onOpenChange(false);
         }, 500);
