@@ -56,6 +56,7 @@ const extractFromNewFormat = (content: any): GetCredentialProfilesData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -99,28 +100,6 @@ const extractFromNewFormat = (content: any): GetCredentialProfilesData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<GetCredentialProfilesData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    
-    return {
-      toolkit_slug: args.toolkit_slug || null,
-      message: null,
-      profiles: [],
-      total_count: 0
-    };
-  }
-  
-  return {
-    toolkit_slug: null,
-    message: null,
-    profiles: [],
-    total_count: 0
-  };
-};
-
 export function extractGetCredentialProfilesData(
   assistantContent: any,
   toolContent: any,
@@ -160,20 +139,11 @@ export function extractGetCredentialProfilesData(
         actualAssistantTimestamp: data.timestamp || assistantTimestamp
       };
     }
-  }
+    }
 
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
-
-  const combinedData = {
-    toolkit_slug: toolLegacy.toolkit_slug || assistantLegacy.toolkit_slug,
-    message: toolLegacy.message || assistantLegacy.message,
-    profiles: toolLegacy.profiles.length > 0 ? toolLegacy.profiles : assistantLegacy.profiles,
-    total_count: toolLegacy.total_count || assistantLegacy.total_count,
+  return {
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
-
-  return combinedData;
 } 

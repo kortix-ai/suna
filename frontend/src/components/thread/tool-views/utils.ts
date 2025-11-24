@@ -65,7 +65,6 @@ export function getToolTitle(toolName: string): string {
     'export-presentation': 'Export Presentation',
     'export_to_pptx': 'Export to PPTX',
     'export_to_pdf': 'Export to PDF',
-    'create-presentation-outline': 'Create Presentation Outline',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
     
@@ -1617,7 +1616,9 @@ export const getFileIconAndColor = (filename: string) => {
 };
 
 /**
- * Extract tool data from content using the new parser with backwards compatibility
+ * Extract tool data from content - works with metadata format
+ * For assistantContent: extracts arguments (file_path, command, etc.)
+ * For toolContent: extracts result (output, success, etc.)
  */
 export function extractToolData(content: any): {
   toolResult: ParsedToolResult | null;
@@ -1628,8 +1629,63 @@ export function extractToolData(content: any): {
   url: string | null;
   query: string | null;
 } {
+  // Handle object directly (from metadata)
+  if (typeof content === 'object' && content !== null) {
+    // Check if it's a result object (from toolContent)
+    if (content.function_name && content.tool_call_id !== undefined) {
+      // Extract file content from output if it's a file operation result
+      let fileContent: string | null = null;
+      if (content.output) {
+        if (typeof content.output === 'string') {
+          fileContent = content.output;
+        } else if (typeof content.output === 'object' && content.output.file_content) {
+          fileContent = content.output.file_content;
+        }
+      }
+      
+      return {
+        toolResult: {
+          toolName: content.function_name.replace(/_/g, '-'),
+          functionName: content.function_name,
+          toolOutput: typeof content.output === 'string' ? content.output : JSON.stringify(content.output, null, 2),
+          isSuccess: content.success !== false,
+          toolCallId: content.tool_call_id,
+        },
+        arguments: {},
+        filePath: null, // File path comes from assistantContent
+        fileContent: fileContent,
+        command: null,
+        url: null,
+        query: null,
+      };
+    }
+    // Check if it's an arguments object (from assistantContent)
+    // This could have file_path, command, url, query, etc.
+    const args: Record<string, any> = content;
+    return {
+      toolResult: null,
+      arguments: args,
+      filePath: args.file_path || args.path || args.target_file || null,
+      fileContent: args.file_contents || args.content || args.file_content || null,
+      command: args.command || null,
+      url: args.url || null,
+      query: args.query || null,
+    };
+  }
+
+  // Handle string (try to parse as JSON)
+  if (typeof content === 'string') {
+    try {
+      const parsed = JSON.parse(content);
+      // Recursively call with parsed object
+      return extractToolData(parsed);
+    } catch (e) {
+      // Not JSON, continue with legacy parsing
+    }
+  }
+
+  // Fallback to legacy parsing
   const toolResult = parseToolResult(content);
-  
   if (toolResult) {
     const args = toolResult.arguments || {};
     return {
@@ -1643,7 +1699,6 @@ export function extractToolData(content: any): {
     };
   }
 
-  // Fallback to legacy parsing if new format not detected
   return {
     toolResult: null,
     arguments: {},

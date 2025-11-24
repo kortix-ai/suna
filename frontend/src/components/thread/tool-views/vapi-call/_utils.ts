@@ -71,56 +71,30 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractMakeCallData(toolContent: string | undefined): MakeCallData | null {
-  if (!toolContent) return null;
+import { ToolCallData, ToolResultData } from '../types';
 
+export function extractMakeCallData(
+  toolCall: ToolCallData,
+  toolResult: ToolResultData | undefined
+): MakeCallData | null {
   try {
-    const parsed = parseContent(toolContent);
-    
-    if (!parsed || typeof parsed !== 'object') {
-      return null;
-    }
-
+    const args = toolCall.arguments || {};
     let output: any = {};
-    let args: any = {};
-    let success = true;
-
-    // Handle direct format: { tool, parameters, output, success }
-    if ('output' in parsed && typeof parsed.output === 'object') {
-      output = parsed.output;
-      args = parsed.parameters || {};
-      success = parsed.success !== false;
-    }
-    // Handle nested format: { tool_execution: { arguments, result } }
-    else if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
-      const toolExecution = parsed.tool_execution;
-      args = toolExecution.arguments || {};
-      
-      const result = toolExecution.result || {};
-      success = result.success !== false;
-      
-      if (typeof result.output === 'string') {
+    
+    if (toolResult?.output) {
+      if (typeof toolResult.output === 'string') {
         try {
-          output = JSON.parse(result.output);
+          output = JSON.parse(toolResult.output);
         } catch (e) {
           // If it's an error message, store it
-          if (!success) {
-            output = { error_message: result.output };
+          if (!toolResult.success) {
+            output = { error_message: toolResult.output };
           } else {
             output = {};
           }
         }
-      } else if (typeof result.output === 'object') {
-        output = result.output || {};
-      }
-    }
-    // Handle content wrapper: { content: { ... } }
-    else if ('content' in parsed && typeof parsed.content === 'string') {
-      try {
-        const innerParsed = JSON.parse(parsed.content);
-        return extractMakeCallData(JSON.stringify(innerParsed));
-      } catch (e) {
-        return null;
+      } else if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+        output = toolResult.output;
       }
     }
 
@@ -131,6 +105,8 @@ export function extractMakeCallData(toolContent: string | undefined): MakeCallDa
     if (typeof output.phone_number === 'number') {
       output.phone_number = String(output.phone_number);
     }
+
+    const success = toolResult?.success !== false;
 
     return {
       phone_number: output.phone_number || args.phone_number || '',

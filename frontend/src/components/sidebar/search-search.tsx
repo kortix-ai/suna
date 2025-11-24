@@ -15,7 +15,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useProjects, useThreads, processThreadsWithProjects } from '@/hooks/sidebar/use-sidebar';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import Link from 'next/link';
 
 // Thread with associated project info for display in sidebar & search

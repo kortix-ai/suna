@@ -33,7 +33,7 @@ import {
   listSandboxFiles,
   type FileInfo,
 } from '@/lib/api/sandbox';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/components/AuthProvider';
@@ -87,8 +87,8 @@ export function FileViewerModal({
   // Refetch when modal opens, then rely on realtime updates
   const projectQuery = useProjectQuery(projectId, {
     refetchOnWindowFocus: false, // Don't refetch on window focus
-    refetchOnMount: true, // Refetch when component mounts (modal opens)
-    staleTime: 10 * 1000, // Consider fresh for 10 seconds
+    refetchOnMount: false, // We'll manually refetch when modal opens
+    staleTime: 0, // Always consider stale - refetch every time modal opens
   });
   const project = projectQuery.data;
 
@@ -112,6 +112,19 @@ export function FileViewerModal({
     enabled: open && !!sandboxId && sandboxId.trim() !== '' && !!currentPath,
     staleTime: 0, // Always refetch when path changes
   });
+
+  // Debug: log when query data changes
+  useEffect(() => {
+    if (open && currentPath) {
+      console.log('[FileViewerModal] Directory query state:', {
+        currentPath,
+        sandboxId,
+        filesCount: files.length,
+        isLoading: isLoadingFiles,
+        files: files.map(f => ({ name: f.name, path: f.path, is_dir: f.is_dir })),
+      });
+    }
+  }, [open, currentPath, sandboxId, files.length, isLoadingFiles, files]);
 
   // File content state
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -170,12 +183,17 @@ export function FileViewerModal({
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
 
-  // Invalidate project query when modal opens to ensure fresh data
+  // Explicitly refetch project data when modal opens to ensure fresh data
   useEffect(() => {
     if (open && projectId) {
+      // Invalidate and refetch immediately when modal opens
       queryClient.invalidateQueries({
         queryKey: threadKeys.project(projectId),
         refetchType: 'active',
+      });
+      // Also explicitly refetch to ensure we get latest data
+      projectQuery.refetch().catch(err => {
+        console.error('Error refetching project:', err);
       });
     }
   }, [open, projectId, queryClient]);
@@ -448,17 +466,33 @@ export function FileViewerModal({
     (folder: FileInfo) => {
       if (!folder.is_dir) return;
 
-      // Use the folder's path directly - it should already be normalized from the API
-      const targetPath = folder.path || folder.name;
+      // For directories, use the folder's path directly
+      // The API returns the full path like "/workspace/folder_name"
+      const targetPath = folder.path;
+      
+      if (!targetPath) {
+        console.error('[FileViewerModal] Folder has no path:', folder);
+        return;
+      }
+      
       const normalizedPath = normalizePath(targetPath);
+      
+      console.log('[FileViewerModal] Navigating to folder:', {
+        folderName: folder.name,
+        folderPath: folder.path,
+        targetPath,
+        normalizedPath,
+        currentPathBefore: currentPath,
+      });
 
       // Clear selected file when navigating
       clearSelectedFile();
 
       // Update path state - React Query will automatically refetch when query key changes
+      console.log('[FileViewerModal] Setting currentPath to:', normalizedPath);
       setCurrentPath(normalizedPath);
     },
-    [normalizePath, clearSelectedFile],
+    [normalizePath, clearSelectedFile, currentPath],
   );
 
   // Navigate to a specific path in the breadcrumb
@@ -569,13 +603,21 @@ export function FileViewerModal({
     }
   }, [currentFileIndex, isFileListMode, filePathList, navigateToFileByIndex]);
 
+  // Track previous open state to detect when modal is first opened
+  const prevOpenRef = useRef(open);
+  
   // Ensure modal always opens to /workspace when opened without a specific file path
+  // Only reset on initial open, not when navigating folders
   useEffect(() => {
-    if (open && !safeInitialFilePath && currentPath !== '/workspace') {
+    const wasJustOpened = open && !prevOpenRef.current;
+    prevOpenRef.current = open;
+    
+    // Only reset path when modal is first opened, not when navigating
+    if (wasJustOpened && !safeInitialFilePath) {
       setCurrentPath('/workspace');
       clearSelectedFile();
     }
-  }, [open, safeInitialFilePath, currentPath, clearSelectedFile]);
+  }, [open, safeInitialFilePath, clearSelectedFile]); // Removed currentPath from deps to prevent reset on navigation!
 
   // Handle initial file path - Runs ONLY ONCE on open if initialFilePath is provided
   useEffect(() => {

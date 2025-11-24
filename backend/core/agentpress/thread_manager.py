@@ -236,9 +236,22 @@ class ThreadManager:
                             })
                         else:
                             logger.error(f"Failed to parse message: {content[:100]}")
-                else:
+                elif isinstance(content, dict):
+                    # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
+                    
+                    # Tool messages: content field is already a JSON string from success_response
+                    # No conversion needed - it's already in the correct format for Bedrock
+                    
                     messages.append(content)
+                else:
+                    # Fallback for other types
+                    logger.warning(f"Unexpected content type: {type(content)}, attempting to use as-is")
+                    messages.append({
+                        'role': 'user',
+                        'content': str(content),
+                        'message_id': item['message_id']
+                    })
 
             return messages
 
@@ -354,7 +367,6 @@ class ThreadManager:
                     if last_usage_result.data:
                         llm_end_content = last_usage_result.data.get('content', {})
                         if isinstance(llm_end_content, str):
-                            import json
                             llm_end_content = json.loads(llm_end_content)
                         
                         usage = llm_end_content.get('usage', {})
@@ -452,10 +464,8 @@ class ThreadManager:
             # Fast path just skips compression, not fetching!
             messages = await self.get_llm_messages(thread_id)
             
-            # Handle auto-continue context
-            if auto_continue_state['count'] > 0 and auto_continue_state['continuous_state'].get('accumulated_content'):
-                partial_content = auto_continue_state['continuous_state']['accumulated_content']
-                messages.append({"role": "assistant", "content": partial_content})
+            # Note: We no longer need to manually append partial assistant messages
+            # because we now save complete assistant messages with tool calls before auto-continuing
 
             # Apply context compression (only if needed based on fast path check)
             if ENABLE_CONTEXT_MANAGER:
@@ -528,6 +538,8 @@ class ThreadManager:
             # Update generation tracking
             if generation:
                 try:
+                    # Convert tools to JSON string for Langfuse compatibility
+                    tools_param = json.dumps(openapi_tool_schemas) if openapi_tool_schemas else None
                     generation.update(
                         input=prepared_messages,
                         start_time=datetime.now(timezone.utc),
@@ -536,11 +548,12 @@ class ThreadManager:
                             "max_tokens": llm_max_tokens,
                             "temperature": llm_temperature,
                             "tool_choice": tool_choice,
-                            "tools": openapi_tool_schemas,
+                            "tools": tools_param,
                         }
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to update Langfuse generation: {e}")
+                    # Suppress verbose Langfuse validation errors
+                    logger.debug(f"Failed to update Langfuse generation: {str(e)[:100]}")
 
             # Note: We don't log token count here because cached blocks give inaccurate counts
             # The LLM's usage.prompt_tokens (reported after the call) is the accurate source of truth

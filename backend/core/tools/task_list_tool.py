@@ -241,13 +241,19 @@ class TaskListTool(SandboxToolsBase):
         try:
             # Parse sections if it's a JSON string (can happen when LLM passes it as string)
             if sections is not None:
-                logger.debug(f"Received sections parameter: type={type(sections).__name__}, value={str(sections)[:200]}")
+                logger.debug(f"🔍 Received sections parameter: type={type(sections).__name__}")
+                logger.debug(f"🔍 Sections repr: {repr(sections)[:500]}")
+                logger.debug(f"🔍 Sections str: {str(sections)[:500]}")
+                
                 if isinstance(sections, str):
+                    logger.debug(f"🔍 Sections is a string, attempting to parse...")
+                    logger.debug(f"🔍 First 50 chars: {repr(sections[:50])}")
                     try:
                         sections = json.loads(sections)
-                        logger.debug(f"Parsed sections from JSON string: {len(sections) if isinstance(sections, list) else 'not a list'} items")
+                        logger.debug(f"✅ Parsed sections from JSON string: {len(sections) if isinstance(sections, list) else 'not a list'} items")
                     except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse sections JSON: {e}, raw value: {sections[:500]}")
+                        logger.error(f"❌ Failed to parse sections JSON: {e}")
+                        logger.error(f"❌ Raw value (first 500 chars): {repr(sections[:500])}")
                         return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}")
                 
                 # Validate that sections is a list after parsing

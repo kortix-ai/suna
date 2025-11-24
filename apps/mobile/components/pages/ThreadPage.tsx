@@ -252,7 +252,6 @@ export function ThreadPage({
   // Refetch thread data when file manager opens to ensure latest sandbox info
   React.useEffect(() => {
     if (isFileManagerVisible) {
-      console.log('[ThreadPage] File manager opened - refetching thread/sandbox data...');
       refetchThreadData();
     }
   }, [isFileManagerVisible, refetchThreadData]);
@@ -320,22 +319,121 @@ export function ThreadPage({
   // Pull to refresh handler
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
-      console.log('⚠️ Cannot refresh while streaming');
       return;
     }
 
-    console.log('🔄 Pull to refresh triggered');
     setIsRefreshing(true);
 
     try {
       await chat.refreshMessages();
-      console.log('✅ Messages refreshed');
     } catch (error) {
-      console.error('❌ Failed to refresh:', error);
+      console.error('Failed to refresh:', error);
     } finally {
       setIsRefreshing(false);
     }
   }, [chat]);
+
+  // Memoized handlers for ChatInputSection
+  const handleSendMessage = React.useCallback((content: string, agentId: string, agentName: string) => {
+    chat.sendMessage(content, agentId, agentName);
+  }, [chat]);
+
+  // Memoized handlers for ThreadHeader
+  const handleTitleChange = React.useCallback(async (newTitle: string) => {
+    try {
+      await chat.updateThreadTitle(newTitle);
+    } catch (error) {
+      console.error('Failed to update thread title:', error);
+    }
+  }, [chat]);
+
+  const handleActionsPress = React.useCallback(() => {
+    setIsThreadActionsVisible(true);
+  }, []);
+
+  // Memoized handlers for ThreadContent
+  const handleToolClick = React.useCallback((assistantMessageId: string | null, toolName: string) => {
+    // Tool click handler - can be extended for analytics
+  }, []);
+
+  const handleToolPress = React.useCallback((toolMessages: ToolMessagePair[], initialIndex: number) => {
+    chat.setSelectedToolData({ toolMessages, initialIndex });
+  }, [chat]);
+
+  const handleFilePress = React.useCallback((filePath: string) => {
+    const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
+    setSelectedFilePath(normalizedPath);
+    setIsFileManagerVisible(true);
+  }, []);
+
+  // Memoized handlers for ThreadActionsDrawer
+  const handleCloseActionsDrawer = React.useCallback(() => {
+    setIsThreadActionsVisible(false);
+  }, []);
+
+  const handleShare = React.useCallback(async () => {
+    if (!chat.activeThread?.id) return;
+
+    try {
+      await shareThreadMutation.mutateAsync(chat.activeThread.id);
+      setIsThreadActionsVisible(false);
+    } catch (error) {
+      console.error('Failed to share thread:', error);
+    }
+  }, [chat.activeThread?.id, shareThreadMutation]);
+
+  const handleFiles = React.useCallback(() => {
+    setIsThreadActionsVisible(false);
+    setIsFileManagerVisible(true);
+  }, []);
+
+  const handleDelete = React.useCallback(() => {
+    if (!chat.activeThread?.id) return;
+
+    const threadTitle = chat.activeThread?.title || 'this thread';
+
+    Alert.alert(
+      'Delete Thread',
+      `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsThreadActionsVisible(false);
+
+            if (!chat.activeThread?.id) return;
+
+            try {
+              await deleteThreadMutation.mutateAsync(chat.activeThread.id);
+              chat.startNewChat();
+              if (router.canGoBack()) {
+                router.back();
+              }
+            } catch (error) {
+              console.error('Failed to delete thread:', error);
+              Alert.alert('Error', 'Failed to delete thread. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  }, [chat, deleteThreadMutation, router]);
+
+  // Memoized handlers for ToolCallPanel
+  const handleCloseToolPanel = React.useCallback(() => {
+    chat.setSelectedToolData(null);
+  }, [chat]);
+
+  // Memoized handlers for FileManagerScreen
+  const handleCloseFileManager = React.useCallback(() => {
+    setIsFileManagerVisible(false);
+    setSelectedFilePath(undefined);
+  }, []);
 
   // Ensure thread content is loaded when ThreadPage mounts or thread changes
   const hasInitializedRef = React.useRef(false);
@@ -343,48 +441,23 @@ export function ThreadPage({
 
   React.useEffect(() => {
     const currentThreadId = chat.activeThread?.id;
-    if (!currentThreadId) {
-      console.log('📱 [ThreadPage] No active thread');
-      return;
-    }
+    if (!currentThreadId) return;
 
     const isInitialMount = !hasInitializedRef.current;
     const isThreadChanged = lastThreadIdRef.current !== currentThreadId;
 
     if (isInitialMount || isThreadChanged) {
-      console.log('🔄 [ThreadPage] Thread mount/change detected:', {
-        threadId: currentThreadId,
-        isInitialMount,
-        isThreadChanged,
-        hasMessages: messages.length > 0,
-        isLoading
-      });
-
       hasInitializedRef.current = true;
       lastThreadIdRef.current = currentThreadId;
 
       if (messages.length === 0 && !isLoading && !chat.isStreaming) {
-        console.log('📡 [ThreadPage] No messages found, fetching from backend');
         chat.refreshMessages().catch(error => {
-          console.error('❌ [ThreadPage] Failed to load thread messages:', error);
+          console.error('Failed to load thread messages:', error);
           Alert.alert('Error', 'Failed to load thread messages. Please try again.');
         });
       }
     }
   }, [chat.activeThread?.id, messages.length, isLoading, chat.isStreaming, chat.refreshMessages]);
-
-  React.useEffect(() => {
-    console.log('🔄 [ThreadPage] Loading state changed:', {
-      isLoading,
-      hasMessages,
-      messageCount: messages.length,
-      threadId: chat.activeThread?.id,
-      isUserScrolling,
-      showScrollToBottom,
-      topInset: insets.top,
-      scrollViewPaddingTop: insets.top + 60,
-    });
-  }, [isLoading, hasMessages, messages.length, chat.activeThread?.id, isUserScrolling, showScrollToBottom, insets.top]);
 
   return (
     <View className="flex-1 bg-background">
@@ -482,19 +555,9 @@ export function ThreadPage({
               agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
               streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
               sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
-              handleToolClick={(assistantMessageId: string | null, toolName: string) => {
-                console.log('[ThreadPage] Tool clicked:', toolName);
-              }}
-              onToolPress={(toolMessages, initialIndex) => {
-                console.log('[ThreadPage] Tool card pressed, opening panel');
-                chat.setSelectedToolData({ toolMessages, initialIndex });
-              }}
-              onFilePress={(filePath: string) => {
-                console.log('[ThreadPage] File clicked:', filePath);
-                const normalizedPath = filePath.startsWith('/') ? filePath : `/workspace/${filePath}`;
-                setSelectedFilePath(normalizedPath);
-                setIsFileManagerVisible(true);
-              }}
+              handleToolClick={handleToolClick}
+              onToolPress={handleToolPress}
+              onFilePress={handleFilePress}
             />
           </ScrollView>
         )}
@@ -517,27 +580,16 @@ export function ThreadPage({
       {/* Thread Header */}
       <ThreadHeader
         threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
-        onTitleChange={async (newTitle) => {
-          console.log('📝 Thread title changed to:', newTitle);
-          try {
-            await chat.updateThreadTitle(newTitle);
-          } catch (error) {
-            console.error('❌ Failed to update thread title:', error);
-          }
-        }}
+        onTitleChange={handleTitleChange}
         onMenuPress={onMenuPress}
-        onActionsPress={() => setIsThreadActionsVisible(true)}
+        onActionsPress={handleActionsPress}
       />
 
       {/* Chat Input Section with Gradient */}
       <ChatInputSection
         value={chat.inputValue}
         onChangeText={chat.setInputValue}
-        onSendMessage={(content, agentId, agentName) => {
-          // Both ChatInputSection and sendMessage expect non-null strings
-          // This should never receive empty strings from ChatInput
-          chat.sendMessage(content, agentId, agentName);
-        }}
+        onSendMessage={handleSendMessage}
         onSendAudio={audioHandlers.handleSendAudio}
         onAttachPress={chat.openAttachmentDrawer}
         onAgentPress={agentManager.openDrawer}
@@ -576,72 +628,16 @@ export function ThreadPage({
       {/* Thread Actions Drawer */}
       <ThreadActionsDrawer
         visible={isThreadActionsVisible}
-        onClose={() => setIsThreadActionsVisible(false)}
-        onShare={async () => {
-          if (!chat.activeThread?.id) return;
-
-          console.log('📤 Share thread:', chat.activeThread?.title);
-
-          try {
-            await shareThreadMutation.mutateAsync(chat.activeThread.id);
-            setIsThreadActionsVisible(false);
-          } catch (error) {
-            console.error('Failed to share thread:', error);
-            // Error is already shown by the native share dialog or caught silently if user cancels
-          }
-        }}
-        onFiles={() => {
-          console.log('📁 Manage files:', chat.activeThread?.title);
-          setIsThreadActionsVisible(false);
-          setIsFileManagerVisible(true);
-        }}
-        onDelete={() => {
-          if (!chat.activeThread?.id) return;
-
-          const threadTitle = chat.activeThread?.title || 'this thread';
-
-          Alert.alert(
-            'Delete Thread',
-            `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
-            [
-              {
-                text: 'Cancel',
-                style: 'cancel',
-              },
-              {
-                text: 'Delete',
-                style: 'destructive',
-                onPress: async () => {
-                  setIsThreadActionsVisible(false);
-
-                  if (!chat.activeThread?.id) return;
-
-                  try {
-                    console.log('🗑️ Deleting thread:', threadTitle);
-                    await deleteThreadMutation.mutateAsync(chat.activeThread.id);
-
-                    // Navigate to home after successful deletion
-                    chat.startNewChat();
-                    if (router.canGoBack()) {
-                      router.back();
-                    }
-
-                    console.log('✅ Thread deleted successfully');
-                  } catch (error) {
-                    console.error('Failed to delete thread:', error);
-                    Alert.alert('Error', 'Failed to delete thread. Please try again.');
-                  }
-                },
-              },
-            ]
-          );
-        }}
+        onClose={handleCloseActionsDrawer}
+        onShare={handleShare}
+        onFiles={handleFiles}
+        onDelete={handleDelete}
       />
 
       {/* Tool Call Panel - Native modal with automatic background scaling on iOS */}
       <ToolCallPanel
         visible={!!chat.selectedToolData}
-        onClose={() => chat.setSelectedToolData(null)}
+        onClose={handleCloseToolPanel}
         toolMessages={chat.selectedToolData?.toolMessages || []}
         initialIndex={chat.selectedToolData?.initialIndex || 0}
       />
@@ -660,10 +656,7 @@ export function ThreadPage({
             sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
             initialFilePath={selectedFilePath}
             isStreaming={chat.isStreaming}
-            onClose={() => {
-              setIsFileManagerVisible(false);
-              setSelectedFilePath(undefined);
-            }}
+            onClose={handleCloseFileManager}
           />
         ) : (
           <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f8f8f8' }}>

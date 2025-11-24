@@ -21,6 +21,10 @@ export * from './tool-parser';
 export * from './tool-display';
 export * from './credit-formatter';
 
+// Streaming & tool call utilities (portable from frontend)
+export * from './streaming-utils';
+export * from './tool-call-utils';
+
 // Domain-specific utilities
 export * from './thread-utils';
 export * from './trigger-utils';

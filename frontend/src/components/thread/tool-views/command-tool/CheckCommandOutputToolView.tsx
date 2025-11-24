@@ -26,19 +26,56 @@ interface CheckCommandOutputData {
     timestamp?: string;
 }
 
+import { ToolCallData, ToolResultData } from '../types';
+
 function extractCheckCommandOutputData(
-    assistantContent: any,
-    toolContent: any,
-    isSuccess: boolean,
+    toolCall: ToolCallData,
+    toolResult?: ToolResultData,
+    isSuccess: boolean = true,
     toolTimestamp?: string,
     assistantTimestamp?: string
 ): CheckCommandOutputData {
-    let sessionName: string | null = null;
+    // Extract session_name from toolCall.arguments (from metadata)
+    const args = toolCall.arguments || {};
+    const sessionName: string | null = args.session_name || args.sessionName || null;
+    
+    // Extract output from toolResult.output (from metadata)
     let output: string | null = null;
     let status: string | null = null;
     let actualIsSuccess = isSuccess;
     const actualTimestamp = toolTimestamp || assistantTimestamp;
 
+    if (toolResult?.output) {
+        if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+            const outputObj = toolResult.output as any;
+            output = outputObj.output || outputObj.stdout || null;
+            status = outputObj.status || null;
+        } else if (typeof toolResult.output === 'string') {
+            output = toolResult.output;
+        }
+        
+        if (toolResult.success !== undefined) {
+            actualIsSuccess = toolResult.success;
+        }
+    }
+
+    return {
+        sessionName,
+        output,
+        status,
+        success: actualIsSuccess,
+        timestamp: actualTimestamp,
+    };
+}
+
+// OLD FUNCTION REMOVED - Use structured version above
+const extractCheckCommandOutputData_OLD = (
+    assistantContent: any,
+    toolContent: any,
+    isSuccess: boolean,
+    toolTimestamp?: string,
+    assistantTimestamp?: string
+): CheckCommandOutputData => {
     // Parse content to extract data
     const parseContent = (content: any): any => {
         if (typeof content === 'string') {
@@ -168,9 +205,8 @@ function extractCheckCommandOutputData(
 }
 
 export function CheckCommandOutputToolView({
-    name = 'check-command-output',
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     assistantTimestamp,
     toolTimestamp,
     isSuccess = true,
@@ -187,13 +223,14 @@ export function CheckCommandOutputToolView({
         success: actualIsSuccess,
         timestamp: actualTimestamp
     } = extractCheckCommandOutputData(
-        assistantContent,
-        toolContent,
+        toolCall,
+        toolResult,
         isSuccess,
         toolTimestamp,
         assistantTimestamp
     );
 
+    const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
     const toolTitle = getToolTitle(name);
 
     const formattedOutput = React.useMemo(() => {

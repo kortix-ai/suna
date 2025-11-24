@@ -421,15 +421,9 @@ export const billingApi = {
   },
 
   async createCheckoutSession(request: CreateCheckoutSessionRequest) {
-    // Add tolt_referral if available
-    const requestBody: any = { ...request };
-    if (typeof window !== 'undefined' && (window as any).tolt_referral) {
-      requestBody.tolt_referral = (window as any).tolt_referral;
-    }
-    
     const response = await backendApi.post<CreateCheckoutSessionResponse>(
       '/billing/create-checkout-session',
-      requestBody
+      request
     );
     if (response.error) throw response.error;
     

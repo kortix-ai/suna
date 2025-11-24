@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface ConfigureAgentIntegrationData {
   agent_id: string | null;
   profile_name: string | null;
@@ -50,7 +48,6 @@ export function extractConfigureAgentIntegrationData(
   };
 
   if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'configure_agent_integration') {
       const args = parsedToolResult.arguments || {};
@@ -86,7 +83,6 @@ export function extractConfigureAgentIntegrationData(
   }
 
   if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'configure_agent_integration') {
       const args = parsedToolResult.arguments || {};

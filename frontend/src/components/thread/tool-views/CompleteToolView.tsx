@@ -14,11 +14,8 @@ import { ToolViewProps } from './types';
 import {
   formatTimestamp,
   getToolTitle,
-  normalizeContentToString,
-  extractToolData,
   getFileIconAndColor,
 } from './utils';
-import { extractCompleteData } from './complete-tool/_utils';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,24 +23,15 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from '@/components/ui/progress';
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../file-attachment';
-import { TaskCompletedFeedback } from './complete-tool/TaskCompletedFeedback';
-
-interface CompleteContent {
-  summary?: string;
-  result?: string | null;
-  tasksCompleted?: string[];
-  finalOutput?: string;
-  attachments?: string[];
-}
+import { TaskCompletedFeedback } from './shared/TaskCompletedFeedback';
 
 interface CompleteToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
 }
 
 export function CompleteToolView({
-  name = 'complete',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -53,90 +41,8 @@ export function CompleteToolView({
   currentIndex,
   totalCalls,
 }: CompleteToolViewProps) {
-  const [completeData, setCompleteData] = useState<CompleteContent>({});
+  // All hooks must be called unconditionally at the top
   const [progress, setProgress] = useState(0);
-
-  const {
-    text,
-    attachments,
-    status,
-    follow_up_prompts,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
-  } = extractCompleteData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
-
-  useEffect(() => {
-    if (assistantContent) {
-      try {
-        const contentStr = normalizeContentToString(assistantContent);
-        if (!contentStr) return;
-
-        let cleanContent = contentStr
-          .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
-          .replace(/<invoke name="complete"[\s\S]*?<\/invoke>/g, '')
-          .trim();
-
-        // During streaming, show the raw content as it streams
-        if (isStreaming) {
-          // Extract text that's being streamed (before complete tag closes)
-          const streamingMatch = cleanContent.match(/<complete[^>]*>([\s\S]*?)(?:<\/complete>|$)/);
-          if (streamingMatch) {
-            setCompleteData(prev => ({ ...prev, summary: streamingMatch[1].trim() }));
-          } else if (cleanContent && !cleanContent.includes('</complete>')) {
-            // If we have content but no closing tag, it's still streaming
-            setCompleteData(prev => ({ ...prev, summary: cleanContent }));
-          }
-        } else {
-          // When not streaming, parse normally
-          const completeMatch = cleanContent.match(/<complete[^>]*>([^<]*)<\/complete>/);
-          if (completeMatch) {
-            setCompleteData(prev => ({ ...prev, summary: completeMatch[1].trim() }));
-          } else if (cleanContent) {
-            setCompleteData(prev => ({ ...prev, summary: cleanContent }));
-          }
-        }
-
-        const attachmentsMatch = contentStr.match(/attachments=["']([^"']*)["']/i);
-        if (attachmentsMatch) {
-          const attachments = attachmentsMatch[1].split(',').map(a => a.trim()).filter(a => a.length > 0);
-          setCompleteData(prev => ({ ...prev, attachments }));
-        }
-
-        const taskMatches = cleanContent.match(/- ([^\n]+)/g);
-        if (taskMatches) {
-          const tasks = taskMatches.map(task => task.replace('- ', '').trim());
-          setCompleteData(prev => ({ ...prev, tasksCompleted: tasks }));
-        }
-      } catch (e) {
-        console.error('Error parsing complete content:', e);
-      }
-    }
-  }, [assistantContent, isStreaming]);
-
-  useEffect(() => {
-    if (toolContent && !isStreaming) {
-      try {
-        const contentStr = normalizeContentToString(toolContent);
-        if (!contentStr) return;
-        
-        const toolResultMatch = contentStr.match(/ToolResult\([^)]*output=['"]([^'"]+)['"]/);
-        if (toolResultMatch) {
-          setCompleteData(prev => ({ ...prev, result: toolResultMatch[1] }));
-        } else {
-          setCompleteData(prev => ({ ...prev, result: contentStr }));
-        }
-      } catch (e) {
-        console.error('Error parsing tool response:', e);
-      }
-    }
-  }, [toolContent, isStreaming]);
 
   useEffect(() => {
     if (isStreaming) {
@@ -154,6 +60,49 @@ export function CompleteToolView({
       setProgress(100);
     }
   }, [isStreaming]);
+
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('CompleteToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+
+  // Extract data directly from structured props
+  const text = toolCall.arguments?.text || null;
+  const attachments = toolCall.arguments?.attachments 
+    ? (Array.isArray(toolCall.arguments.attachments) 
+        ? toolCall.arguments.attachments 
+        : typeof toolCall.arguments.attachments === 'string'
+          ? toolCall.arguments.attachments.split(',').map(a => a.trim()).filter(a => a.length > 0)
+          : [])
+    : null;
+  const follow_up_prompts = toolCall.arguments?.follow_up_prompts
+    ? (Array.isArray(toolCall.arguments.follow_up_prompts)
+        ? toolCall.arguments.follow_up_prompts.filter((p: string) => p && p.trim().length > 0)
+        : [])
+    : null;
+
+  // Extract result from toolResult
+  let resultText: string | null = null;
+  let tasksCompleted: string[] | null = null;
+
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    if (typeof output === 'string') {
+      resultText = output;
+    } else if (typeof output === 'object' && output !== null) {
+      if (output.text) {
+        resultText = output.text;
+      }
+      if (output.tasks_completed && Array.isArray(output.tasks_completed)) {
+        tasksCompleted = output.tasks_completed;
+      }
+    }
+  }
+
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   const isImageFile = (filePath: string): boolean => {
     const filename = filePath.split('/').pop() || '';
@@ -219,7 +168,7 @@ export function CompleteToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-4 space-y-6">
             {/* Success Animation/Icon - Only show when completed successfully and no text/attachments */}
-            {!isStreaming && actualIsSuccess && !text && !attachments && !completeData.summary && !completeData.tasksCompleted && (
+            {!isStreaming && actualIsSuccess && !text && !attachments && !resultText && !tasksCompleted && (
               <div className="flex justify-center">
                 <div className="relative">
                   <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-800/40 dark:to-emerald-900/60 flex items-center justify-center">
@@ -233,11 +182,11 @@ export function CompleteToolView({
             )}
 
             {/* Text/Summary Section - Show during streaming and when completed */}
-            {(text || completeData.summary || completeData.result || (isStreaming && assistantContent)) && (
+            {(text || resultText) && (
               <div className="space-y-2">
                 <div className="bg-muted/50 rounded-2xl p-4 border border-border">
                   <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
-                    {text || completeData.summary || completeData.result || (isStreaming ? normalizeContentToString(assistantContent)?.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').replace(/<invoke name="complete"[\s\S]*?>/g, '').replace(/<\/complete>/g, '').trim() : '')}
+                    {text || resultText || ''}
                   </Markdown>
                   {isStreaming && (
                     <span className="inline-block h-4 w-0.5 bg-primary ml-1 -mb-1 animate-pulse" />
@@ -323,61 +272,17 @@ export function CompleteToolView({
                     })}
                 </div>
               </div>
-            ) : completeData.attachments && completeData.attachments.length > 0 ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Paperclip className="h-4 w-4" />
-                  Files ({completeData.attachments.length})
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {completeData.attachments.map((attachment, index) => {
-                    const { icon: FileIcon, color, bgColor } = getFileIconAndColor(attachment);
-                    const fileName = attachment.split('/').pop() || attachment;
-                    const filePath = attachment.includes('/') ? attachment.substring(0, attachment.lastIndexOf('/')) : '';
-
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => handleFileClick(attachment)}
-                        className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors group cursor-pointer text-left"
-                      >
-                        <div className="flex-shrink-0">
-                          <div className={cn(
-                            "w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center",
-                            bgColor
-                          )}>
-                            <FileIcon className={cn("h-5 w-5", color)} />
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
-                            {fileName}
-                          </p>
-                          {filePath && (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {filePath}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
             ) : null}
 
             {/* Tasks Completed Section */}
-            {completeData.tasksCompleted && completeData.tasksCompleted.length > 0 && (
+            {tasksCompleted && tasksCompleted.length > 0 && (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <ListChecks className="h-4 w-4" />
                   Tasks Completed
                 </div>
                 <div className="space-y-2">
-                  {completeData.tasksCompleted.map((task, index) => (
+                  {tasksCompleted.map((task, index) => (
                     <div
                       key={index}
                       className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50"
@@ -397,7 +302,7 @@ export function CompleteToolView({
             )}
 
             {/* Progress Section for Streaming - Only show if no text content */}
-            {isStreaming && !text && !completeData.summary && !completeData.result && (
+            {isStreaming && !text && !resultText && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
@@ -412,7 +317,7 @@ export function CompleteToolView({
             )}
 
             {/* Empty State */}
-            {!text && !attachments && !completeData.summary && !completeData.result && !completeData.attachments && !completeData.tasksCompleted && !isStreaming && (
+            {!text && !attachments && !resultText && !tasksCompleted && !isStreaming && (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
                   <CheckCircle2 className="h-8 w-8 text-muted-foreground" />
@@ -429,7 +334,7 @@ export function CompleteToolView({
             {/* Task Completed Feedback */}
             {!isStreaming && actualIsSuccess && (
               <TaskCompletedFeedback
-                taskSummary={text || completeData.summary || completeData.result}
+                taskSummary={text || resultText}
                 followUpPrompts={follow_up_prompts && follow_up_prompts.length > 0 ? follow_up_prompts : undefined}
                 onFollowUpClick={(prompt) => {
                   // TODO: Handle follow-up click - could trigger a new message

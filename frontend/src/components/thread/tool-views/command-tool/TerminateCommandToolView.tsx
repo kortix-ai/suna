@@ -12,7 +12,7 @@ import {
   StopCircle
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, getToolTitle, normalizeContentToString } from '../utils';
+import { formatTimestamp, getToolTitle } from '../utils';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,9 +22,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { extractCommandData } from './_utils';
 
 export function TerminateCommandToolView({
-  name = 'terminate-command',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -38,49 +37,20 @@ export function TerminateCommandToolView({
   const {
     sessionName,
     output,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
+    success: actualIsSuccess,
+    timestamp: actualToolTimestamp,
   } = extractCommandData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
 
-  const rawSessionName = React.useMemo(() => {
-    if (sessionName) return sessionName;
+  // Extract session_name from toolCall.arguments (from metadata)
+  const finalSessionName = sessionName || toolCall.arguments?.session_name || null;
 
-    if (!assistantContent) return null;
-
-    const contentStr = normalizeContentToString(assistantContent);
-    if (!contentStr) return null;
-
-    try {
-      const parsed = JSON.parse(contentStr);
-      if (parsed.content) {
-        const sessionMatch = parsed.content.match(
-          /<terminate-command[^>]*session_name=["']([^"']+)["'][^>]*>/,
-        );
-        if (sessionMatch) {
-          return sessionMatch[1].trim();
-        }
-      }
-    } catch (e) {
-      const sessionMatch = contentStr.match(
-        /<terminate-command[^>]*session_name=["']([^"']+)["'][^>]*>/,
-      );
-      if (sessionMatch) {
-        return sessionMatch[1].trim();
-      }
-    }
-
-    return null;
-  }, [assistantContent, sessionName]);
-
-  const finalSessionName = rawSessionName?.trim() || sessionName;
-
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name) || 'Terminate Session';
 
   const terminationSuccess = React.useMemo(() => {
@@ -90,15 +60,8 @@ export function TerminateCommandToolView({
     if (outputLower.includes('does not exist')) return false;
     if (outputLower.includes('terminated') || outputLower.includes('killed')) return true;
 
-    if (typeof toolContent === 'string') {
-      const toolResultMatch = toolContent.match(/ToolResult\(success=(true|false)/i);
-      if (toolResultMatch) {
-        return toolResultMatch[1].toLowerCase() === 'true';
-      }
-    }
-
     return actualIsSuccess;
-  }, [output, actualIsSuccess, toolContent]);
+  }, [output, actualIsSuccess]);
 
   useEffect(() => {
     if (isStreaming) {

@@ -80,6 +80,15 @@ class Configuration:
     
     # Environment mode
     ENV_MODE: Optional[EnvMode] = EnvMode.LOCAL
+    
+    # ===== AGENT TOOL CALLING CONFIGURATION =====
+    # Configure which tool calling format to use (XML or Native/OpenAI)
+    # Only ONE should be enabled at a time
+    AGENT_XML_TOOL_CALLING: bool = False      # Enable XML-based tool calls (<function_calls>)
+    AGENT_NATIVE_TOOL_CALLING: bool = True  # Enable OpenAI-style native function calling
+    AGENT_EXECUTE_ON_STREAM: bool = True     # Execute tools as they stream (vs. at end)
+    AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
+    # ============================================
 
 
     # Subscription tier IDs - Production
@@ -371,7 +380,7 @@ class Configuration:
     
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
-    DEBUG_SAVE_LLM_IO: Optional[bool] = True
+    DEBUG_SAVE_LLM_IO: Optional[bool] = False
 
     # LangFuse configuration
     LANGFUSE_PUBLIC_KEY: Optional[str] = None

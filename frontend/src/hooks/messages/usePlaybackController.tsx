@@ -157,7 +157,6 @@ export function usePlaybackController({
         let isCancelled = false;
 
         const streamNextChar = () => {
-
             if (isCancelled || !stateRef.current.isPlaying) {
                 dispatch({ type: 'SET_IS_STREAMING', value: false });
                 onComplete();
@@ -166,16 +165,14 @@ export function usePlaybackController({
 
             if (currentIndex < textStr.length) {
                 // Dynamically adjust typing speed for realistic effect
-                const baseDelay = 2; // Base typing speed: 2ms (faster!)
+                const baseDelay = 2;
                 let typingDelay = baseDelay;
 
                 // Add more delay for punctuation to make it feel natural
                 const char = textStr[currentIndex];
                 if ('.!?,;:'.includes(char)) {
-                    // Pause after punctuation (30-50ms) - much shorter
                     typingDelay = baseDelay + Math.random() * 20 + 30;
                 } else {
-                    // Random variation for normal typing (2-4ms) - faster!
                     const variableDelay = Math.random() * 2;
                     typingDelay = baseDelay + variableDelay;
                 }
@@ -263,41 +260,30 @@ export function usePlaybackController({
                 if (currentMessage.type === 'assistant') {
                     try {
                         let content = currentMessage.content;
-                        console.log('[Playback] Raw message.content:', typeof content, content);
 
                         let textToStream = '';
 
                         // Handle different content formats
                         if (typeof content === 'string') {
-                            // If it's a string, try to parse it as JSON
                             try {
                                 const parsed = JSON.parse(content);
-                                console.log('[Playback] Parsed JSON from string:', parsed);
                                 if (parsed.content) {
                                     textToStream = parsed.content;
                                 } else {
                                     textToStream = content;
                                 }
                             } catch (e) {
-                                // Not JSON, use as-is
-                                console.log('[Playback] Not JSON, using string as-is');
                                 textToStream = content;
                             }
                         } else if (typeof content === 'object' && content !== null) {
-                            // If it's already an object, extract the content field
-                            console.log('[Playback] Content is object, extracting content field');
                             textToStream = (content as any).content || '';
                         }
 
-                        console.log('[Playback] Starting to stream assistant message. Text length:', textToStream.length, 'First 50:', textToStream.substring(0, 50));
-
-                        // Stream the text (will update streamingText state character by character)
+                        // Stream the text
                         await new Promise<void>((resolve) => {
                             const cleanup = streamText(textToStream, resolve);
                             streamCleanupRef.current = cleanup;
                         });
-
-                        console.log('[Playback] Finished streaming');
 
                         if (isCancelled) break;
                     } catch (error) {
@@ -305,7 +291,6 @@ export function usePlaybackController({
                     }
                 } else {
                     // Non-assistant messages: show immediately
-                    console.log('[Playback] Adding user/other message immediately');
                     dispatch({
                         type: 'SET_VISIBLE_MESSAGES',
                         messages: [...currentState.visibleMessages, currentMessage],
@@ -393,7 +378,7 @@ export function usePlaybackController({
                 if (!isSidePanelOpen) {
                     onToggleSidePanel();
                 }
-            }, 500); // 500ms delay to let first message load
+            }, 500);
 
             return () => clearTimeout(autoStartTimer);
         }
@@ -402,8 +387,6 @@ export function usePlaybackController({
     return {
         playbackState: {
             ...state,
-            // When streaming, show only previous messages (not the currently streaming one)
-            // The streaming text will be rendered separately via streamingText prop
             displayMessages: state.isStreamingText
                 ? state.visibleMessages
                 : state.visibleMessages,
@@ -415,3 +398,4 @@ export function usePlaybackController({
         backwardOne,
     };
 }
+

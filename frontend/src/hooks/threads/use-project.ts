@@ -1,11 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { threadKeys, projectKeys } from "./keys";
-import { getProject, updateProject } from "./utils";
-import { createProject, deleteProject } from "@/lib/api/projects";
+import { getProject, updateProject, deleteProject, type Project } from "@/lib/api/threads";
 import { toast } from 'sonner';
 import { handleApiError } from '@/lib/error-handler';
 import { useMemo } from 'react';
-import { Project } from '@/lib/api/projects';
 import { ThreadsResponse } from '@/lib/api/threads';
 
 export const useProjectQuery = (projectId: string | undefined, options?) => {
@@ -48,16 +46,20 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
   return useQuery<Project>({
     queryKey: threadKeys.project(projectId || ""),
     queryFn: async () => {
-      // Fetch fresh data from API
-      const projectData = await getProject(projectId!);
-      return projectData;
+      // Use cached data if available, otherwise fetch directly
+      if (project) {
+        return project;
+      }
+      
+      // Direct API call using React Query - no wrapper functions!
+      return await getProject(projectId!);
     },
     enabled: !!projectId && (options?.enabled !== false),
     retry: 1,
     initialData: project, // Use cached data immediately if available
-    refetchOnWindowFocus: false, // Don't refetch on window focus (too aggressive)
-    refetchOnMount: true, // Refetch when component mounts
-    staleTime: 10 * 1000, // Consider fresh for 10 seconds
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    staleTime: 60 * 1000, // Consider fresh for 60 seconds
     ...options,
   });
 };
@@ -156,27 +158,6 @@ export const usePublicProjectsQuery = (options?) => {
 };
 
 // Project Mutations
-export const useCreateProject = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation<Project, Error, { name: string; description: string; accountId?: string }>({
-    mutationFn: (data: { name: string; description: string; accountId?: string }) => 
-      createProject(data, data.accountId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: threadKeys.projects() });
-      // Don't invalidate threads list - only invalidate specific project queries
-      toast.success('Project created successfully');
-    },
-    onError: (error) => {
-      handleApiError(error, {
-        operation: 'create project',
-        resource: 'project'
-      });
-    }
-  });
-};
-
 export const useUpdateProjectMutation = () => {
   const queryClient = useQueryClient();
   

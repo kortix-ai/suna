@@ -109,20 +109,6 @@ const extractFromNewFormat = (content: any): AuthorDetailsData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<AuthorDetailsData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    return {
-      author: null
-    };
-  }
-
-  return {
-    author: null
-  };
-};
-
 export function extractAuthorDetailsData(
   assistantContent: any,
   toolContent: any,
@@ -162,13 +148,13 @@ export function extractAuthorDetailsData(
       actualToolTimestamp = toolNewFormat.timestamp;
     }
   } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
+    // Fallback: try to extract from raw tool data
+    const assistantLegacy = extractToolData(assistantContent);
+    const toolLegacy = extractToolData(toolContent);
     data = {
       ...assistantLegacy,
       ...toolLegacy,
-      author: assistantLegacy.author || toolLegacy.author,
+      author: assistantLegacy.author || toolLegacy.author || null,
       success: undefined,
       timestamp: undefined
     };

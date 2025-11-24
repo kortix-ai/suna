@@ -56,6 +56,7 @@ const extractFromNewFormat = (content: any): AuthorSearchData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -119,25 +120,6 @@ const extractFromNewFormat = (content: any): AuthorSearchData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<AuthorSearchData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    return {
-      query: toolData.query || args.query || null,
-      total_results: 0,
-      results: []
-    };
-  }
-
-  return {
-    query: null,
-    total_results: 0,
-    results: []
-  };
-};
-
 export function extractAuthorSearchData(
   assistantContent: any,
   toolContent: any,
@@ -181,13 +163,15 @@ export function extractAuthorSearchData(
       actualToolTimestamp = toolNewFormat.timestamp;
     }
   } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
+    // Fallback: try to extract from raw tool data
+    const assistantLegacy = extractToolData(assistantContent);
+    const toolLegacy = extractToolData(toolContent);
     data = {
       ...assistantLegacy,
       ...toolLegacy,
-      query: assistantLegacy.query || toolLegacy.query,
+      query: assistantLegacy.query || toolLegacy.query || null,
+      total_results: assistantLegacy.total_results || toolLegacy.total_results || 0,
+      results: assistantLegacy.results || toolLegacy.results || [],
       success: undefined,
       timestamp: undefined
     };

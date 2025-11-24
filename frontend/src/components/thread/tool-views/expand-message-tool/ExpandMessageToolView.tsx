@@ -20,14 +20,21 @@ import { toast } from 'sonner';
 import Markdown from 'react-markdown';
 
 export function ExpandMessageToolView({
-  name = 'expand_message',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('ExpandMessageToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  
   const {
     messageId,
     message,
@@ -36,8 +43,8 @@ export function ExpandMessageToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractExpandMessageData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

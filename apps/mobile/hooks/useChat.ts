@@ -59,7 +59,7 @@ export interface UseChatReturn {
   
   messages: UnifiedMessage[];
   streamingContent: string;
-  streamingToolCall: any;
+  streamingToolCall: UnifiedMessage | null;
   isStreaming: boolean;
   
   sendMessage: (content: string, agentId: string, agentName: string) => Promise<void>;
@@ -278,6 +278,11 @@ export function useChat(): UseChatReturn {
 
   const handleStreamClose = useCallback(() => { }, []);
 
+  const handleToolCallChunk = useCallback((message: UnifiedMessage) => {
+    // Tool call chunk received - already handled by useAgentStream state
+    // This callback can be used for additional processing if needed
+  }, []);
+
   const {
     status: streamHookStatus,
     textContent: streamingTextContent,
@@ -292,6 +297,7 @@ export function useChat(): UseChatReturn {
       onStatusChange: handleStreamStatusChange,
       onError: handleStreamError,
       onClose: handleStreamClose,
+      onToolCallChunk: handleToolCallChunk,
     },
     activeThreadId || '',
     setMessages,

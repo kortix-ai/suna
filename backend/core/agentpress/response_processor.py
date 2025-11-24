@@ -9,10 +9,8 @@ This module handles the processing of LLM responses, including:
 """
 
 import json
-import re
 import uuid
 import asyncio
-import os
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union, Callable, Literal
@@ -21,7 +19,18 @@ from core.utils.logger import logger
 from core.utils.config import config as global_config
 from core.agentpress.tool import ToolResult
 from core.agentpress.tool_registry import ToolRegistry
-from core.agentpress.xml_tool_parser import XMLToolParser
+from core.agentpress.xml_tool_parser import (
+    extract_xml_chunks,
+    parse_xml_tool_calls_with_ids
+)
+from core.agentpress.native_tool_parser import (
+    extract_tool_call_chunk_data,
+    is_tool_call_complete,
+    convert_to_exec_tool_call,
+    convert_buffer_to_complete_tool_calls,
+    convert_to_unified_tool_call_format,
+    convert_buffer_to_metadata_tool_calls
+)
 from core.agentpress.error_processor import ErrorProcessor
 from langfuse.client import StatefulTraceClient
 from core.services.langfuse import langfuse
@@ -29,12 +38,10 @@ from core.utils.json_helpers import (
     ensure_dict, ensure_list, safe_json_parse, 
     to_json_string, format_for_yield
 )
-from litellm import token_counter
+from core.agentpress.xml_tool_parser import strip_xml_tool_calls
 
 # Note: Debug stream saving is controlled by global_config.DEBUG_SAVE_LLM_IO
 
-# Type alias for XML result adding strategy
-XmlAddingStrategy = Literal["user_message", "assistant_message", "inline_edit"]
 
 # Type alias for tool execution strategy
 ToolExecutionStrategy = Literal["sequential", "parallel"]
@@ -46,10 +53,8 @@ class ToolExecutionContext:
     tool_index: int
     result: Optional[ToolResult] = None
     function_name: Optional[str] = None
-    xml_tag_name: Optional[str] = None
     error: Optional[Exception] = None
     assistant_message_id: Optional[str] = None
-    parsing_details: Optional[Dict[str, Any]] = None
 
 @dataclass
 class ProcessorConfig:
@@ -65,24 +70,37 @@ class ProcessorConfig:
         execute_tools: Whether to automatically execute detected tool calls
         execute_on_stream: For streaming, execute tools as they appear vs. at the end
         tool_execution_strategy: How to execute multiple tools ("sequential" or "parallel")
-        xml_adding_strategy: How to add XML tool results to the conversation
+        
+    NOTE: Default values are loaded from core.utils.config (backend/core/utils/config.py)
+    Change AGENT_XML_TOOL_CALLING, AGENT_NATIVE_TOOL_CALLING, etc. in config.py
+    to modify the defaults globally.
     """
 
-    xml_tool_calling: bool = True  
-    native_tool_calling: bool = False
+    xml_tool_calling: bool = None  # Set in __post_init__ from global config
+    native_tool_calling: bool = None  # Set in __post_init__ from global config
 
     execute_tools: bool = True
-    execute_on_stream: bool = False
-    tool_execution_strategy: ToolExecutionStrategy = "sequential"
-    xml_adding_strategy: XmlAddingStrategy = "assistant_message"
+    execute_on_stream: bool = None  # Set in __post_init__ from global config
+    tool_execution_strategy: ToolExecutionStrategy = None  # Set in __post_init__ from global config
     
     def __post_init__(self):
-        """Validate configuration after initialization."""
+        """Load defaults from global config and validate configuration."""
+        # Import here to avoid circular dependency
+        from core.utils.config import config
+        
+        # Load defaults from global config if not explicitly set
+        if self.xml_tool_calling is None:
+            self.xml_tool_calling = config.AGENT_XML_TOOL_CALLING
+        if self.native_tool_calling is None:
+            self.native_tool_calling = config.AGENT_NATIVE_TOOL_CALLING
+        if self.execute_on_stream is None:
+            self.execute_on_stream = config.AGENT_EXECUTE_ON_STREAM
+        if self.tool_execution_strategy is None:
+            self.tool_execution_strategy = config.AGENT_TOOL_EXECUTION_STRATEGY
+        
+        # Validate
         if self.xml_tool_calling is False and self.native_tool_calling is False and self.execute_tools:
             raise ValueError("At least one tool calling format (XML or native) must be enabled if execute_tools is True")
-            
-        if self.xml_adding_strategy not in ["user_message", "assistant_message", "inline_edit"]:
-            raise ValueError("xml_adding_strategy must be 'user_message', 'assistant_message', or 'inline_edit'")
 
 class ResponseProcessor:
     """Processes LLM responses, extracting and executing tool calls."""
@@ -103,64 +121,8 @@ class ResponseProcessor:
         if not self.trace:
             self.trace = langfuse.trace(name="anonymous:response_processor")
             
-        # Initialize the XML parser
-        self.xml_parser = XMLToolParser()
-        self.is_agent_builder = False  # Deprecated - keeping for compatibility
-        self.target_agent_id = None  # Deprecated - keeping for compatibility
         self.agent_config = agent_config
 
-    async def _yield_message(self, message_obj: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Helper to yield a message with proper formatting.
-        
-        Ensures that content and metadata are JSON strings for client compatibility.
-        """
-        if message_obj:
-            return format_for_yield(message_obj)
-        return None
-
-    async def _estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], accumulated_content: str, llm_model: str) -> Dict[str, Any]:
-        """
-        Estimate token usage when exact usage data is unavailable.
-        This is critical for billing on timeouts, crashes, disconnects, etc.
-        
-        Uses ContextManager which has provider-specific APIs (Anthropic/Bedrock) for accuracy.
-        """
-        try:
-            from core.agentpress.context_manager import ContextManager
-            context_mgr = ContextManager()
-            return await context_mgr.estimate_token_usage(prompt_messages, accumulated_content, llm_model)
-        except Exception as e:
-            logger.error(f"Context manager estimation failed: {e}, falling back to LiteLLM")
-            # Fallback to LiteLLM
-            try:
-                prompt_tokens = token_counter(model=llm_model, messages=prompt_messages)
-                completion_tokens = token_counter(model=llm_model, text=accumulated_content) if accumulated_content else 0
-                
-                logger.warning(f"⚠️ ESTIMATED TOKEN USAGE (LiteLLM): prompt={prompt_tokens}, completion={completion_tokens}")
-                
-                return {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                    "estimated": True
-                }
-            except Exception as e2:
-                logger.error(f"LiteLLM estimation failed: {e2}, using word count fallback")
-                # Final fallback to word count
-                fallback_prompt = len(' '.join(str(m.get('content', '')) for m in prompt_messages).split()) * 1.3
-                fallback_completion = len(accumulated_content.split()) * 1.3 if accumulated_content else 0
-                
-                logger.warning(f"⚠️ FALLBACK TOKEN ESTIMATION: prompt≈{int(fallback_prompt)}, completion≈{int(fallback_completion)}")
-                
-                return {
-                    "prompt_tokens": int(fallback_prompt),
-                    "completion_tokens": int(fallback_completion),
-                    "total_tokens": int(fallback_prompt + fallback_completion),
-                    "estimated": True,
-                    "fallback": True
-                }
-    
-    
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
         """Convert a LiteLLM ModelResponse object to a JSON-serializable dictionary.
         
@@ -271,12 +233,15 @@ class ResponseProcessor:
         
         # Initialize from continuous state if provided (for auto-continue)
         continuous_state = continuous_state or {}
-        accumulated_content = continuous_state.get('accumulated_content', "")
+        # Don't carry over accumulated_content when auto-continuing after tool_calls
+        # Each assistant message should be separate
+        accumulated_content = ""
         tool_calls_buffer = {}
-        current_xml_content = accumulated_content   # equal to accumulated_content if auto-continuing, else blank
+        current_xml_content = ""
         xml_chunks_buffer = []
         pending_tool_executions = []
         yielded_tool_indices = set() # Stores indices of tools whose *status* has been yielded
+        executed_native_tool_indices = set() # Track which native tool call indices have been executed
         tool_index = 0
         xml_tool_call_count = 0
         finish_reason = None
@@ -286,6 +251,9 @@ class ResponseProcessor:
         has_printed_thinking_prefix = False # Flag for printing thinking prefix only once
         agent_should_terminate = False # Flag to track if a terminating tool has been executed
         complete_native_tool_calls = [] # Initialize early for use in assistant_response_end
+        xml_tool_calls_with_ids = [] # Track XML tool calls with their IDs for metadata storage
+        content_chunk_buffer = {} # Buffer to reorder content chunks: sequence -> chunk_data
+        next_expected_sequence = 0 # Track the next expected sequence number for ordering
 
         # Store the complete LiteLLM response object as received
         final_llm_response = None
@@ -307,7 +275,7 @@ class ResponseProcessor:
         try:
             # --- Save and Yield Start Events ---
             if auto_continue_count == 0:
-                start_content = {"status_type": "thread_run_start", "thread_run_id": thread_run_id}
+                start_content = {"status_type": "thread_run_start"}
                 start_msg_obj = await self.add_message(
                     thread_id=thread_id, type="status", content=start_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
@@ -438,6 +406,11 @@ class ResponseProcessor:
                 if hasattr(chunk, 'choices') and chunk.choices:
                     delta = chunk.choices[0].delta if hasattr(chunk.choices[0], 'delta') else None
                     
+                    # Initialize tool call update flags at the start of each chunk iteration
+                    xml_tool_calls_updated = False
+                    native_tool_calls_updated = False
+                    native_tool_calls_updated = False
+                    
                     # Check for and log Anthropic thinking content
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         if not has_printed_thinking_prefix:
@@ -478,17 +451,33 @@ class ResponseProcessor:
 
                         # --- Process XML Tool Calls (if enabled) ---
                         if config.xml_tool_calling:
-                            xml_chunks = self._extract_xml_chunks(current_xml_content)
+                            xml_chunks = extract_xml_chunks(current_xml_content)
                             for xml_chunk in xml_chunks:
                                 current_xml_content = current_xml_content.replace(xml_chunk, "", 1)
                                 xml_chunks_buffer.append(xml_chunk)
-                                result = self._parse_xml_tool_call(xml_chunk)
-                                if result:
-                                    tool_call, parsing_details = result
+                                # Parse ALL tool calls from this chunk (can be multiple <invoke> tags)
+                                current_assistant_id = last_assistant_message_object['message_id'] if last_assistant_message_object else None
+                                parsed_tool_calls = parse_xml_tool_calls_with_ids(xml_chunk, current_assistant_id, xml_tool_call_count)
+                                
+                                # Convert parsed XML tool calls to unified format
+                                for tool_call in parsed_tool_calls:
                                     xml_tool_call_count += 1
-                                    current_assistant_id = last_assistant_message_object['message_id'] if last_assistant_message_object else None
+                                    # Track XML tool call with its ID for metadata storage
+                                    # parse_xml_tool_calls_with_ids already generates IDs, so use that
+                                    xml_tool_call_data = {
+                                        "tool_call_id": tool_call.get("id"),
+                                        "function_name": tool_call.get("function_name"),
+                                        "arguments": tool_call.get("arguments"),
+                                        "source": "xml"
+                                    }
+                                    xml_tool_calls_with_ids.append(xml_tool_call_data)
+                                
+                                xml_tool_calls_updated = True
+                                
+                                # Execute XML tool calls if enabled
+                                for tool_call in parsed_tool_calls:
                                     context = self._create_tool_context(
-                                        tool_call, tool_index, current_assistant_id, parsing_details
+                                        tool_call, tool_index, current_assistant_id
                                     )
 
                                     if config.execute_tools and config.execute_on_stream:
@@ -507,51 +496,42 @@ class ResponseProcessor:
                     # --- Process Native Tool Call Chunks ---
                     if config.native_tool_calling and delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
                         for tool_call_chunk in delta.tool_calls:
-                            # Yield Native Tool Call Chunk (transient status, not saved)
-                            # ... (safe extraction logic for tool_call_data_chunk) ...
-                            tool_call_data_chunk = {} # Placeholder for extracted data
-                            if hasattr(tool_call_chunk, 'model_dump'): tool_call_data_chunk = tool_call_chunk.model_dump()
-                            else: # Manual extraction...
-                                if hasattr(tool_call_chunk, 'id'): tool_call_data_chunk['id'] = tool_call_chunk.id
-                                if hasattr(tool_call_chunk, 'index'): tool_call_data_chunk['index'] = tool_call_chunk.index
-                                if hasattr(tool_call_chunk, 'type'): tool_call_data_chunk['type'] = tool_call_chunk.type
-                                if hasattr(tool_call_chunk, 'function'):
-                                    tool_call_data_chunk['function'] = {}
-                                    if hasattr(tool_call_chunk.function, 'name'): tool_call_data_chunk['function']['name'] = tool_call_chunk.function.name
-                                    if hasattr(tool_call_chunk.function, 'arguments'): tool_call_data_chunk['function']['arguments'] = tool_call_chunk.function.arguments if isinstance(tool_call_chunk.function.arguments, str) else to_json_string(tool_call_chunk.function.arguments)
-
-
-                            now_tool_chunk = datetime.now(timezone.utc).isoformat()
-                            yield {
-                                "message_id": None, "thread_id": thread_id, "type": "status", "is_llm_message": True,
-                                "content": to_json_string({"role": "assistant", "status_type": "tool_call_chunk", "tool_call_chunk": tool_call_data_chunk}),
-                                "metadata": to_json_string({"thread_run_id": thread_run_id}),
-                                "created_at": now_tool_chunk, "updated_at": now_tool_chunk
-                            }
-
-                            # --- Buffer and Execute Complete Native Tool Calls ---
+                            # --- Buffer and Update Tool Call Chunks ---
                             if not hasattr(tool_call_chunk, 'function'): continue
                             idx = tool_call_chunk.index if hasattr(tool_call_chunk, 'index') else 0
-                            # ... (buffer update logic remains same) ...
-                            # ... (check complete logic remains same) ...
-                            has_complete_tool_call = False # Placeholder
-                            if (tool_calls_buffer.get(idx) and
-                                tool_calls_buffer[idx]['id'] and
-                                tool_calls_buffer[idx]['function']['name'] and
-                                tool_calls_buffer[idx]['function']['arguments']):
-                                try:
-                                    safe_json_parse(tool_calls_buffer[idx]['function']['arguments'])
-                                    has_complete_tool_call = True
-                                except json.JSONDecodeError: pass
-
-
-                            if has_complete_tool_call and config.execute_tools and config.execute_on_stream:
-                                current_tool = tool_calls_buffer[idx]
-                                tool_call_data = {
-                                    "function_name": current_tool['function']['name'],
-                                    "arguments": safe_json_parse(current_tool['function']['arguments']),
-                                    "id": current_tool['id']
+                            
+                            # Initialize buffer entry if needed
+                            if idx not in tool_calls_buffer:
+                                tool_calls_buffer[idx] = {
+                                    'id': None,
+                                    'type': 'function',
+                                    'function': {'name': None, 'arguments': ''}
                                 }
+                            
+                            # Update buffer with chunk data
+                            if hasattr(tool_call_chunk, 'id') and tool_call_chunk.id:
+                                tool_calls_buffer[idx]['id'] = tool_call_chunk.id
+                            if hasattr(tool_call_chunk, 'type') and tool_call_chunk.type:
+                                tool_calls_buffer[idx]['type'] = tool_call_chunk.type
+                            if hasattr(tool_call_chunk.function, 'name') and tool_call_chunk.function.name:
+                                tool_calls_buffer[idx]['function']['name'] = tool_call_chunk.function.name
+                            if hasattr(tool_call_chunk.function, 'arguments') and tool_call_chunk.function.arguments:
+                                tool_calls_buffer[idx]['function']['arguments'] += tool_call_chunk.function.arguments
+                            
+                            native_tool_calls_updated = True
+                            
+                            # Check if tool call is complete
+                            has_complete_tool_call = is_tool_call_complete(tool_calls_buffer.get(idx))
+
+                            if has_complete_tool_call and config.execute_tools and config.execute_on_stream and idx not in executed_native_tool_indices:
+                                # Mark this index as executed to prevent duplicate executions
+                                executed_native_tool_indices.add(idx)
+                                
+                                current_tool = tool_calls_buffer[idx]
+                                tool_call_data = convert_to_exec_tool_call(
+                                    current_tool,
+                                    raw_arguments_str=current_tool['function']['arguments']
+                                )
                                 current_assistant_id = last_assistant_message_object['message_id'] if last_assistant_message_object else None
                                 context = self._create_tool_context(
                                     tool_call_data, tool_index, current_assistant_id
@@ -568,6 +548,45 @@ class ResponseProcessor:
                                     "tool_index": tool_index, "context": context
                                 })
                                 tool_index += 1
+                        
+                        # --- Unified Streaming Chunk Yield (combines XML + Native tool calls) ---
+                        if xml_tool_calls_updated or native_tool_calls_updated:
+                            # Build unified tool calls list (XML + Native)
+                            unified_tool_calls = []
+                            
+                            # Add native tool calls from buffer
+                            if config.native_tool_calling:
+                                native_unified = convert_buffer_to_metadata_tool_calls(
+                                    tool_calls_buffer,
+                                    include_partial=True  # Include partial tool calls for streaming
+                                )
+                                unified_tool_calls.extend(native_unified)
+                            
+                            # Add XML tool calls
+                            if config.xml_tool_calling:
+                                unified_tool_calls.extend(xml_tool_calls_with_ids)
+                            
+                            # Yield single unified streaming chunk if we have any tool calls
+                            if unified_tool_calls:
+                                now_tool_chunk = datetime.now(timezone.utc).isoformat()
+                                assistant_metadata = {
+                                    "thread_run_id": thread_run_id,
+                                    "stream_status": "tool_call_chunk",
+                                    "tool_calls": unified_tool_calls
+                                }
+                                
+                                yield {
+                                    "sequence": __sequence,
+                                    "message_id": None, 
+                                    "thread_id": thread_id, 
+                                    "type": "assistant", 
+                                    "is_llm_message": True,
+                                    "content": to_json_string({"role": "assistant", "content": ""}),
+                                    "metadata": to_json_string(assistant_metadata),
+                                    "created_at": now_tool_chunk, 
+                                    "updated_at": now_tool_chunk
+                                }
+                                __sequence += 1
 
             # Log when stream naturally ends
             if finish_reason == "stop":
@@ -588,6 +607,7 @@ class ResponseProcessor:
                         "finish_reason": finish_reason,
                         "accumulated_content_length": len(accumulated_content),
                         "xml_tool_call_count": xml_tool_call_count,
+                        "native_tool_call_count": len(tool_calls_buffer),
                         "first_chunk_time": first_chunk_time,
                         "last_chunk_time": last_chunk_time,
                         "final_usage": None,
@@ -707,19 +727,25 @@ class ResponseProcessor:
             # Don't auto-continue if agent should terminate (ask/complete tool executed)
             should_auto_continue = (can_auto_continue and finish_reason in ['length', 'tool_calls'] and not agent_should_terminate)
 
-            # Don't save partial response if user stopped (cancelled)
-            if accumulated_content and not should_auto_continue and finish_reason != "cancelled":
+            # Save assistant message if:
+            # 1. Not cancelled by user
+            # 2. We have content OR tool calls
+            # 3. Either NOT auto-continuing OR we have tool calls (always save tool calls)
+            has_native_tool_calls = config.native_tool_calling and len(tool_calls_buffer) > 0
+            has_xml_tool_calls = config.xml_tool_calling and xml_tool_call_count > 0
+            has_any_tool_calls = has_native_tool_calls or has_xml_tool_calls
+            
+            # Save if: (not auto-continuing) OR (has tool calls - always save these)
+            should_save_message = (
+                finish_reason != "cancelled" and 
+                (accumulated_content or has_any_tool_calls) and
+                (not should_auto_continue or has_any_tool_calls)
+            )
+            
+            if should_save_message:
                 # Update complete_native_tool_calls from buffer (initialized earlier)
                 if config.native_tool_calling:
-                    for idx, tc_buf in tool_calls_buffer.items():
-                        if tc_buf['id'] and tc_buf['function']['name'] and tc_buf['function']['arguments']:
-                            try:
-                                args = safe_json_parse(tc_buf['function']['arguments'])
-                                complete_native_tool_calls.append({
-                                    "id": tc_buf['id'], "type": "function",
-                                    "function": {"name": tc_buf['function']['name'],"arguments": args}
-                                })
-                            except json.JSONDecodeError: continue
+                    complete_native_tool_calls.extend(convert_buffer_to_complete_tool_calls(tool_calls_buffer))
 
                 # Remove stop token from content if present (Bedrock may include it due to batch generation)
                 final_content = accumulated_content
@@ -728,13 +754,46 @@ class ResponseProcessor:
                     logger.debug("Removed |||STOP_AGENT||| stop token from assistant message")
 
                 message_data = { # Dict to be saved in 'content'
-                    "role": "assistant", "content": final_content,
-                    "tool_calls": complete_native_tool_calls or None
+                    "role": "assistant", "content": final_content
                 }
+                
+                # Only add tool_calls field for NATIVE tool calling
+                if config.native_tool_calling and complete_native_tool_calls:
+                    message_data["tool_calls"] = complete_native_tool_calls
+
+                # Build unified metadata with all tool calls (native + XML) and clean text
+                assistant_metadata = {"thread_run_id": thread_run_id}
+                
+                # Extract clean text content (without tool calls)
+                text_content = strip_xml_tool_calls(final_content) if config.xml_tool_calling else final_content
+                if text_content.strip():
+                    assistant_metadata["text_content"] = text_content
+                
+                # Unify all tool calls into single tool_calls array
+                unified_tool_calls = []
+                
+                # Add native tool calls
+                if config.native_tool_calling and complete_native_tool_calls:
+                    for tc in complete_native_tool_calls:
+                        unified_tool_calls.append(convert_to_unified_tool_call_format(tc))
+                
+                # Add XML tool calls
+                if config.xml_tool_calling and xml_tool_calls_with_ids:
+                    for xml_tc in xml_tool_calls_with_ids:
+                        unified_tool_calls.append({
+                            "tool_call_id": xml_tc.get("tool_call_id"),
+                            "function_name": xml_tc.get("function_name"),
+                            "arguments": xml_tc.get("arguments"),
+                            "source": "xml"
+                        })
+                
+                if unified_tool_calls:
+                    assistant_metadata["tool_calls"] = unified_tool_calls
+                    logger.debug(f"Storing {len(unified_tool_calls)} unified tool calls in assistant message metadata ({len(complete_native_tool_calls) if complete_native_tool_calls else 0} native, {len(xml_tool_calls_with_ids)} XML)")
 
                 last_assistant_message_object = await self._add_message_with_agent_info(
                     thread_id=thread_id, type="assistant", content=message_data,
-                    is_llm_message=True, metadata={"thread_run_id": thread_run_id}
+                    is_llm_message=True, metadata=assistant_metadata
                 )
 
                 if last_assistant_message_object:
@@ -749,7 +808,7 @@ class ResponseProcessor:
                     logger.error(f"Failed to save final assistant message for thread {thread_id}")
                     self.trace.event(name="failed_to_save_final_assistant_message_for_thread", level="ERROR", status_message=(f"Failed to save final assistant message for thread {thread_id}"))
                     # Save and yield an error status
-                    err_content = {"role": "system", "status_type": "error", "message": "Failed to save final assistant message"}
+                    err_content = {"status_type": "error", "error": "Failed to save final assistant message"}
                     err_msg_obj = await self.add_message(
                         thread_id=thread_id, type="status", content=err_content, 
                         is_llm_message=False, metadata={"thread_run_id": thread_run_id}
@@ -758,46 +817,46 @@ class ResponseProcessor:
 
             # --- Process All Tool Results Now ---
             if config.execute_tools:
+                # Only create final_tool_calls_to_process if we need it (not executing on stream or no buffered results)
                 final_tool_calls_to_process = []
                 # ... (Gather final_tool_calls_to_process from native and XML buffers) ...
                  # Gather native tool calls from buffer
                 if config.native_tool_calling and complete_native_tool_calls:
                     for tc in complete_native_tool_calls:
-                        final_tool_calls_to_process.append({
-                            "function_name": tc["function"]["name"],
-                            "arguments": tc["function"]["arguments"], # Already parsed object
-                            "id": tc["id"]
-                        })
+                        final_tool_calls_to_process.append(convert_to_exec_tool_call(tc))
                  # Gather XML tool calls from buffer
                 parsed_xml_data = []
                 if config.xml_tool_calling:
                     # Reparse remaining content just in case (should be empty if processed correctly)
-                    xml_chunks = self._extract_xml_chunks(current_xml_content)
+                    xml_chunks = extract_xml_chunks(current_xml_content)
                     xml_chunks_buffer.extend(xml_chunks)
 
                     for chunk in xml_chunks_buffer:
-                         parsed_result = self._parse_xml_tool_call(chunk)
-                         if parsed_result:
-                             tool_call, parsing_details = parsed_result
+                         # Parse ALL tool calls from this chunk (can be multiple <invoke> tags)
+                         current_assistant_id_for_parsing = last_assistant_message_object['message_id'] if last_assistant_message_object else None
+                         parsed_tool_calls = parse_xml_tool_calls_with_ids(chunk, current_assistant_id_for_parsing, xml_tool_call_count)
+                         for tool_call in parsed_tool_calls:
+                             # Track XML tool call with its ID for metadata storage (if not already tracked)
+                             tool_call_id = tool_call.get("id")
+                             if tool_call_id and not any(tc.get("tool_call_id") == tool_call_id for tc in xml_tool_calls_with_ids):
+                                 xml_tool_calls_with_ids.append({
+                                     "tool_call_id": tool_call_id,
+                                     "function_name": tool_call.get("function_name"),
+                                     "arguments": tool_call.get("arguments")
+                                 })
                              # Avoid adding if already processed during streaming
                              if not any(exec['tool_call'] == tool_call for exec in pending_tool_executions):
                                  final_tool_calls_to_process.append(tool_call)
-                                 parsed_xml_data.append({'tool_call': tool_call, 'parsing_details': parsing_details})
+                                 parsed_xml_data.append({'tool_call': tool_call})
 
 
-                all_tool_data_map = {} # tool_index -> {'tool_call': ..., 'parsing_details': ...}
+                all_tool_data_map = {} # tool_index -> {'tool_call': ...}
                  # Add native tool data
                 native_tool_index = 0
                 if config.native_tool_calling and complete_native_tool_calls:
                      for tc in complete_native_tool_calls:
-                         # Find the corresponding entry in final_tool_calls_to_process if needed
-                         # For now, assume order matches if only native used
-                         exec_tool_call = {
-                             "function_name": tc["function"]["name"],
-                             "arguments": tc["function"]["arguments"],
-                             "id": tc["id"]
-                         }
-                         all_tool_data_map[native_tool_index] = {"tool_call": exec_tool_call, "parsing_details": None}
+                         exec_tool_call = convert_to_exec_tool_call(tc)
+                         all_tool_data_map[native_tool_index] = {"tool_call": exec_tool_call}
                          native_tool_index += 1
 
                  # Add XML tool data
@@ -815,9 +874,8 @@ class ResponseProcessor:
                     for tool_call, result, tool_idx, context in tool_results_buffer:
                         if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
                         tool_results_map[tool_idx] = (tool_call, result, context)
-
-                # Or execute now if not streamed
-                elif final_tool_calls_to_process and not config.execute_on_stream:
+                # Or execute now if not streamed (or if streamed but no buffered results)
+                elif final_tool_calls_to_process:
                     logger.info(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     logger.debug(f"📋 Final tool calls to process: {final_tool_calls_to_process}")
                     logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}")
@@ -838,8 +896,7 @@ class ResponseProcessor:
                            tool_data = all_tool_data_map[current_tool_idx]
                            context = self._create_tool_context(
                                tc, current_tool_idx,
-                               last_assistant_message_object['message_id'] if last_assistant_message_object else None,
-                               tool_data.get('parsing_details')
+                               last_assistant_message_object['message_id'] if last_assistant_message_object else None
                            )
                            context.result = res
                            tool_results_map[current_tool_idx] = (tc, res, context)
@@ -866,8 +923,8 @@ class ResponseProcessor:
 
                         # Save the tool result message to DB
                         saved_tool_result_object = await self._add_tool_result( # Returns full object or None
-                            thread_id, tool_call, result, config.xml_adding_strategy,
-                            context.assistant_message_id, context.parsing_details
+                            thread_id, tool_call, result,
+                            context.assistant_message_id
                         )
 
                         # Yield completed/failed status (linked to saved result ID if available)
@@ -1044,7 +1101,7 @@ class ResponseProcessor:
             ErrorProcessor.log_error(processed_error)
             
             # Save and yield error status message
-            err_content = {"role": "system", "status_type": "error", "message": processed_error.message}
+            err_content = {"status_type": "error", "error": processed_error.message}
             err_msg_obj = await self.add_message(
                 thread_id=thread_id, type="status", content=err_content, 
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
@@ -1095,7 +1152,9 @@ class ResponseProcessor:
                         llm_end_content = self._serialize_model_response(final_llm_response)
                     else:
                         logger.warning("💰 No LLM response with usage - ESTIMATING token usage for billing")
-                        estimated_usage = await self._estimate_token_usage(prompt_messages, accumulated_content, llm_model)
+                        from core.agentpress.context_manager import ContextManager
+                        context_mgr = ContextManager()
+                        estimated_usage = await context_mgr.estimate_token_usage(prompt_messages, accumulated_content, llm_model)
                         llm_end_content = {
                             "model": llm_model,
                             "usage": estimated_usage
@@ -1184,7 +1243,6 @@ class ResponseProcessor:
                         logger.info(f"⚡ Using fast check estimate: {estimated_total_tokens} tokens (stream stopped, no recalculation)")
                     
                     end_content = {"status_type": "thread_run_end"}
-                    
                     end_msg_obj = await self.add_message(
                         thread_id=thread_id, type="status", content=end_content, 
                         is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
@@ -1219,8 +1277,9 @@ class ResponseProcessor:
         """
         content = ""
         thread_run_id = str(uuid.uuid4())
-        all_tool_data = [] # Stores {'tool_call': ..., 'parsing_details': ...}
+        all_tool_data = [] # Stores {'tool_call': ...}
         tool_index = 0
+        xml_tool_call_count = 0
         assistant_message_object = None
         tool_result_message_objects = {}
         finish_reason = None
@@ -1228,7 +1287,7 @@ class ResponseProcessor:
 
         try:
             # Save and Yield thread_run_start status message
-            start_content = {"status_type": "thread_run_start", "thread_run_id": thread_run_id}
+            start_content = {"status_type": "thread_run_start"}
             start_msg_obj = await self.add_message(
                 thread_id=thread_id, type="status", content=start_content,
                 is_llm_message=False, metadata={"thread_run_id": thread_run_id}
@@ -1246,39 +1305,84 @@ class ResponseProcessor:
                      if hasattr(response_message, 'content') and response_message.content:
                          content = response_message.content
                          if config.xml_tool_calling:
-                             parsed_xml_data = self._parse_xml_tool_calls(content)
+                             # Parse XML tool calls (assistant message not created yet, so no message_id)
+                             xml_chunks = extract_xml_chunks(content)
+                             parsed_xml_data = []
+                             current_index = xml_tool_call_count
+                             for xml_chunk in xml_chunks:
+                                 parsed_tool_calls = parse_xml_tool_calls_with_ids(xml_chunk, None, current_index)
+                                 current_index += len(parsed_tool_calls)
+                                 for tool_call in parsed_tool_calls:
+                                     parsed_xml_data.append({"tool_call": tool_call})
                              all_tool_data.extend(parsed_xml_data)
+                             xml_tool_call_count += len(parsed_xml_data)
 
                      if config.native_tool_calling and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
                           for tool_call in response_message.tool_calls:
                              if hasattr(tool_call, 'function'):
-                                 exec_tool_call = {
-                                     "function_name": tool_call.function.name,
-                                     "arguments": safe_json_parse(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments,
-                                     "id": tool_call.id if hasattr(tool_call, 'id') else str(uuid.uuid4())
-                                 }
-                                 all_tool_data.append({"tool_call": exec_tool_call, "parsing_details": None})
+                                 raw_arguments_str = tool_call.function.arguments if isinstance(tool_call.function.arguments, str) else to_json_string(tool_call.function.arguments)
+                                 exec_tool_call = convert_to_exec_tool_call(tool_call, raw_arguments_str=raw_arguments_str)
+                                 all_tool_data.append({"tool_call": exec_tool_call})
                                  native_tool_calls_for_message.append({
                                      "id": exec_tool_call["id"], "type": "function",
                                      "function": {
                                          "name": tool_call.function.name,
-                                         "arguments": tool_call.function.arguments if isinstance(tool_call.function.arguments, str) else to_json_string(tool_call.function.arguments)
+                                         "arguments": raw_arguments_str  # Keep as string for LiteLLM compatibility
                                      }
                                  })
 
 
             # --- SAVE and YIELD Final Assistant Message ---
-            message_data = {"role": "assistant", "content": content, "tool_calls": native_tool_calls_for_message or None}
+            message_data = {"role": "assistant", "content": content}
+            
+            # Only add tool_calls field for NATIVE tool calling
+            if config.native_tool_calling and native_tool_calls_for_message:
+                message_data["tool_calls"] = native_tool_calls_for_message
+            
+            # Build unified metadata with all tool calls (native + XML) and clean text
+            assistant_metadata = {"thread_run_id": thread_run_id}
+            
+            # Extract clean text content (without tool calls)
+            text_content = strip_xml_tool_calls(content) if config.xml_tool_calling else content
+            if text_content.strip():
+                assistant_metadata["text_content"] = text_content
+            
+            # Unify all tool calls into single tool_calls array
+            unified_tool_calls = []
+            
+            # Add native tool calls
+            if config.native_tool_calling and native_tool_calls_for_message:
+                for tc in native_tool_calls_for_message:
+                    unified_tool_calls.append(convert_to_unified_tool_call_format(tc))
+            
+            # Add XML tool calls
+            if config.xml_tool_calling and all_tool_data:
+                for item in all_tool_data:
+                    tool_call = item.get('tool_call', {})
+                    # XML tool calls are identified by having function_name but no native tool_call format
+                    # We check if it's XML by looking at the format or absence of native structure
+                    if tool_call.get("function_name") and not tool_call.get("id") and not isinstance(tool_call.get("function"), dict):
+                        unified_tool_calls.append({
+                            "tool_call_id": tool_call.get("id") or str(uuid.uuid4()),
+                            "function_name": tool_call.get("function_name"),
+                            "arguments": tool_call.get("arguments"),
+                            "source": "xml"
+                        })
+            
+            if unified_tool_calls:
+                assistant_metadata["tool_calls"] = unified_tool_calls
+                logger.debug(f"Storing {len(unified_tool_calls)} unified tool calls in assistant message metadata (non-streaming)")
+            
             assistant_message_object = await self._add_message_with_agent_info(
                 thread_id=thread_id, type="assistant", content=message_data,
-                is_llm_message=True, metadata={"thread_run_id": thread_run_id}
+                is_llm_message=True, metadata=assistant_metadata
             )
             if assistant_message_object:
                  yield assistant_message_object
             else:
                  logger.error(f"Failed to save non-streaming assistant message for thread {thread_id}")
                  self.trace.event(name="failed_to_save_non_streaming_assistant_message_for_thread", level="ERROR", status_message=(f"Failed to save non-streaming assistant message for thread {thread_id}"))
-                 err_content = {"role": "system", "status_type": "error", "message": "Failed to save assistant message"}
+                 err_content = {"status_type": "error", "error": "Failed to save assistant message"}
                  err_msg_obj = await self.add_message(
                      thread_id=thread_id, type="status", content=err_content, 
                      is_llm_message=False, metadata={"thread_run_id": thread_run_id}
@@ -1307,11 +1411,10 @@ class ResponseProcessor:
                 for i, (returned_tool_call, result) in enumerate(tool_results):
                     original_data = all_tool_data[i]
                     tool_call_from_data = original_data['tool_call']
-                    parsing_details = original_data['parsing_details']
                     current_assistant_id = assistant_message_object['message_id'] if assistant_message_object else None
 
                     context = self._create_tool_context(
-                        tool_call_from_data, tool_index, current_assistant_id, parsing_details
+                        tool_call_from_data, tool_index, current_assistant_id
                     )
                     context.result = result
 
@@ -1321,8 +1424,8 @@ class ResponseProcessor:
 
                     # Save tool result
                     saved_tool_result_object = await self._add_tool_result(
-                        thread_id, tool_call_from_data, result, config.xml_adding_strategy,
-                        current_assistant_id, parsing_details
+                        thread_id, tool_call_from_data, result,
+                        current_assistant_id
                     )
 
                     # Save and Yield completed/failed status
@@ -1377,7 +1480,7 @@ class ResponseProcessor:
              ErrorProcessor.log_error(processed_error)
              
              # Save and yield error status
-             err_content = {"role": "system", "status_type": "error", "message": processed_error.message}
+             err_content = {"status_type": "error", "error": processed_error.message}
              err_msg_obj = await self.add_message(
                  thread_id=thread_id, type="status", content=err_content, 
                  is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
@@ -1413,174 +1516,6 @@ class ResponseProcessor:
             )
             if end_msg_obj: yield format_for_yield(end_msg_obj)
 
-
-    def _extract_xml_chunks(self, content: str) -> List[str]:
-        """Extract complete XML chunks using start and end pattern matching."""
-        chunks = []
-        pos = 0
-        
-        try:
-            # First, look for new format <function_calls> blocks
-            start_pattern = '<function_calls>'
-            end_pattern = '</function_calls>'
-            
-            while pos < len(content):
-                # Find the next function_calls block
-                start_pos = content.find(start_pattern, pos)
-                if start_pos == -1:
-                    break
-                
-                # Find the matching end tag
-                end_pos = content.find(end_pattern, start_pos)
-                if end_pos == -1:
-                    break
-                
-                # Extract the complete block including tags
-                chunk_end = end_pos + len(end_pattern)
-                chunk = content[start_pos:chunk_end]
-                chunks.append(chunk)
-                
-                # Move position past this chunk
-                pos = chunk_end
-            
-            # If no new format found, fall back to old format for backwards compatibility
-            if not chunks:
-                pos = 0
-                while pos < len(content):
-                    # Find the next tool tag
-                    next_tag_start = -1
-                    current_tag = None
-                    
-                    # Find the earliest occurrence of any registered tool function name
-                    # Check for available function names
-                    available_functions = self.tool_registry.get_available_functions()
-                    for func_name in available_functions.keys():
-                        # Convert function name to potential tag name (underscore to dash)
-                        tag_name = func_name.replace('_', '-')
-                        start_pattern = f'<{tag_name}'
-                        tag_pos = content.find(start_pattern, pos)
-                        
-                        if tag_pos != -1 and (next_tag_start == -1 or tag_pos < next_tag_start):
-                            next_tag_start = tag_pos
-                            current_tag = tag_name
-                    
-                    if next_tag_start == -1 or not current_tag:
-                        break
-                    
-                    # Find the matching end tag
-                    end_pattern = f'</{current_tag}>'
-                    tag_stack = []
-                    chunk_start = next_tag_start
-                    current_pos = next_tag_start
-                    
-                    while current_pos < len(content):
-                        # Look for next start or end tag of the same type
-                        next_start = content.find(f'<{current_tag}', current_pos + 1)
-                        next_end = content.find(end_pattern, current_pos)
-                        
-                        if next_end == -1:  # No closing tag found
-                            break
-                        
-                        if next_start != -1 and next_start < next_end:
-                            # Found nested start tag
-                            tag_stack.append(next_start)
-                            current_pos = next_start + 1
-                        else:
-                            # Found end tag
-                            if not tag_stack:  # This is our matching end tag
-                                chunk_end = next_end + len(end_pattern)
-                                chunk = content[chunk_start:chunk_end]
-                                chunks.append(chunk)
-                                pos = chunk_end
-                                break
-                            else:
-                                # Pop nested tag
-                                tag_stack.pop()
-                                current_pos = next_end + 1
-                    
-                    if current_pos >= len(content):  # Reached end without finding closing tag
-                        break
-                    
-                    pos = max(pos + 1, current_pos)
-        
-        except Exception as e:
-            logger.error(f"Error extracting XML chunks: {e}")
-            logger.error(f"Content was: {content}")
-            self.trace.event(name="error_extracting_xml_chunks", level="ERROR", status_message=(f"Error extracting XML chunks: {e}"), metadata={"content": content})
-        
-        return chunks
-
-    def _parse_xml_tool_call(self, xml_chunk: str) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
-        """Parse XML chunk into tool call format and return parsing details.
-        
-        Returns:
-            Tuple of (tool_call, parsing_details) or None if parsing fails.
-            - tool_call: Dict with 'function_name', 'xml_tag_name', 'arguments'
-            - parsing_details: Dict with 'attributes', 'elements', 'text_content', 'root_content'
-        """
-        try:
-            # Check if this is the new format (contains <function_calls>)
-            if '<function_calls>' in xml_chunk and '<invoke' in xml_chunk:
-                # Use the new XML parser
-                parsed_calls = self.xml_parser.parse_content(xml_chunk)
-                
-                if not parsed_calls:
-                    logger.error(f"No tool calls found in XML chunk: {xml_chunk}")
-                    return None
-                
-                # Take the first tool call (should only be one per chunk)
-                xml_tool_call = parsed_calls[0]
-                
-                # Convert to the expected format
-                tool_call = {
-                    "function_name": xml_tool_call.function_name,
-                    "xml_tag_name": xml_tool_call.function_name.replace('_', '-'),  # For backwards compatibility
-                    "arguments": xml_tool_call.parameters
-                }
-                
-                # Include the parsing details
-                parsing_details = xml_tool_call.parsing_details
-                parsing_details["raw_xml"] = xml_tool_call.raw_xml
-                
-                logger.debug(f"Parsed new format tool call: {tool_call}")
-                return tool_call, parsing_details
-            
-            # If not the expected <function_calls><invoke> format, return None
-            logger.error(f"XML chunk does not contain expected <function_calls><invoke> format: {xml_chunk}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error parsing XML chunk: {e}")
-            logger.error(f"XML chunk was: {xml_chunk}")
-            self.trace.event(name="error_parsing_xml_chunk", level="ERROR", status_message=(f"Error parsing XML chunk: {e}"), metadata={"xml_chunk": xml_chunk})
-            return None
-
-    def _parse_xml_tool_calls(self, content: str) -> List[Dict[str, Any]]:
-        """Parse XML tool calls from content string.
-        
-        Returns:
-            List of dictionaries, each containing {'tool_call': ..., 'parsing_details': ...}
-        """
-        parsed_data = []
-        
-        try:
-            xml_chunks = self._extract_xml_chunks(content)
-            
-            for xml_chunk in xml_chunks:
-                result = self._parse_xml_tool_call(xml_chunk)
-                if result:
-                    tool_call, parsing_details = result
-                    parsed_data.append({
-                        "tool_call": tool_call,
-                        "parsing_details": parsing_details
-                    })
-                    
-        except Exception as e:
-            logger.error(f"Error parsing XML tool calls: {e}", exc_info=True)
-            self.trace.event(name="error_parsing_xml_tool_calls", level="ERROR", status_message=(f"Error parsing XML tool calls: {e}"), metadata={"content": content})
-        
-        return parsed_data
-
     # Tool execution methods
     async def _execute_tool(self, tool_call: Dict[str, Any]) -> ToolResult:
         """Execute a single tool call and return the result."""
@@ -1611,36 +1546,56 @@ class ResponseProcessor:
             logger.debug(f"✅ Found tool function for '{function_name}'")
             # logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
 
-            # Handle arguments - if it's a string, try to parse it, otherwise pass as-is
+            # Handle arguments - ensure proper parsing
+            # If tool_call has raw_arguments, use that for better error messages
+            raw_args_for_logging = tool_call.get("raw_arguments", arguments) if isinstance(tool_call.get("raw_arguments"), str) else arguments
+            
             if isinstance(arguments, str):
                 logger.debug(f"🔄 Parsing string arguments for {function_name}")
+                logger.debug(f"📝 Raw arguments string: {raw_args_for_logging[:200]}...")
+                
+                # Try parsing with safe_json_parse first
+                parsed_args = None
                 try:
                     parsed_args = safe_json_parse(arguments)
                     if isinstance(parsed_args, dict):
-                        # logger.debug(f"✅ Parsed arguments as dict: {parsed_args}")
+                        # Log argument types to verify they're preserved correctly
+                        arg_types = {k: type(v).__name__ for k, v in parsed_args.items()}
+                        logger.debug(f"✅ Parsed arguments as dict successfully. Types: {arg_types}")
+                        logger.debug(f"📋 Parsed arguments: {parsed_args}")
                         result = await tool_fn(**parsed_args)
                     else:
-                        logger.debug(f"🔄 Arguments parsed as non-dict, passing as single argument")
-                        result = await tool_fn(arguments)
-                except json.JSONDecodeError:
-                    logger.debug(f"🔄 JSON parse failed, passing raw string")
-                    result = await tool_fn(arguments)
-                except Exception as parse_error:
+                        logger.warning(f"⚠️ Parsed arguments is not a dict (type: {type(parsed_args)}), trying direct JSON parse")
+                        # Try direct JSON parse
+                        try:
+                            parsed_args = json.loads(arguments)
+                            if isinstance(parsed_args, dict):
+                                # Log argument types to verify they're preserved correctly
+                                arg_types = {k: type(v).__name__ for k, v in parsed_args.items()}
+                                logger.debug(f"✅ Direct JSON parse succeeded. Types: {arg_types}")
+                                logger.debug(f"📋 Parsed arguments: {parsed_args}")
+                                result = await tool_fn(**parsed_args)
+                            else:
+                                raise ValueError(f"JSON parse result is not a dict: {type(parsed_args)}")
+                        except json.JSONDecodeError as je:
+                            logger.error(f"❌ Direct JSON parse also failed: {str(je)}")
+                            raise
+                except (json.JSONDecodeError, ValueError, TypeError) as parse_error:
                     logger.error(f"❌ Error parsing arguments: {str(parse_error)}")
-                    # logger.debug(f"🔄 Falling back to raw arguments")
-                    if isinstance(arguments, dict):
-                        # logger.debug(f"🔄 Fallback: unpacking dict arguments")
-                        result = await tool_fn(**arguments)
-                    else:
-                        # logger.debug(f"🔄 Fallback: passing as single argument")
-                        result = await tool_fn(arguments)
+                    logger.error(f"❌ Raw arguments that failed: {raw_args_for_logging[:500]}")
+                    # Last resort: try to pass as single argument (some tools might accept this)
+                    logger.debug(f"🔄 Falling back to passing raw string as single argument")
+                    result = await tool_fn(arguments)
             else:
-                # logger.debug(f"✅ Arguments are not string, unpacking dict: {type(arguments)}")
+                # Arguments are already parsed (dict or other type)
                 if isinstance(arguments, dict):
-                    # logger.debug(f"🔄 Unpacking dict arguments for tool call")
+                    # Log argument types to verify they're preserved correctly
+                    arg_types = {k: type(v).__name__ for k, v in arguments.items()}
+                    logger.debug(f"✅ Arguments are already a dict, unpacking. Types: {arg_types}")
+                    logger.debug(f"📋 Arguments: {arguments}")
                     result = await tool_fn(**arguments)
                 else:
-                    # logger.debug(f"🔄 Passing non-dict arguments as single parameter")
+                    logger.debug(f"🔄 Arguments are non-dict type ({type(arguments)}), passing as single argument")
                     result = await tool_fn(arguments)
 
             logger.debug(f"✅ Tool execution completed successfully")
@@ -1915,25 +1870,25 @@ class ResponseProcessor:
         thread_id: str, 
         tool_call: Dict[str, Any], 
         result: ToolResult,
-        strategy: Union[XmlAddingStrategy, str] = "assistant_message",
-        assistant_message_id: Optional[str] = None,
-        parsing_details: Optional[Dict[str, Any]] = None
+        assistant_message_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]: # Return the full message object
-        """Add a tool result to the conversation thread based on the specified format.
+        """Add a tool result to the conversation thread based on the tool type.
         
         This method formats tool results and adds them to the conversation history,
-        making them visible to the LLM in subsequent interactions. Results can be 
-        added either as native tool messages (OpenAI format) or as XML-wrapped content
-        with a specified role (user or assistant).
+        making them visible to the LLM in subsequent interactions.
+        
+        Tool result formats:
+        - Native tool calls: role="tool" with tool_call_id, name, and content
+        - XML tool calls: role="user" with only content (no tool_call_id or name)
         
         Args:
             thread_id: ID of the conversation thread
-            tool_call: The original tool call that produced this result
+            tool_call: The original tool call that produced this result (must have "source" field)
             result: The result from the tool execution
-            strategy: How to add XML tool results to the conversation
-                     ("user_message", "assistant_message", or "inline_edit")
             assistant_message_id: ID of the assistant message that generated this tool call
-            parsing_details: Detailed parsing info for XML calls (attributes, elements, etc.)
+        
+        Returns:
+            The full saved message object or None if save failed
         """
         try:
             message_obj = None # Initialize message_obj
@@ -1945,31 +1900,41 @@ class ResponseProcessor:
                 logger.debug(f"Linking tool result to assistant message: {assistant_message_id}")
                 self.trace.event(name="linking_tool_result_to_assistant_message", level="DEFAULT", status_message=(f"Linking tool result to assistant message: {assistant_message_id}"))
             
-            # --- Add parsing details to metadata if available ---
-            if parsing_details:
-                metadata["parsing_details"] = parsing_details
-                logger.debug("Adding parsing_details to tool result metadata")
-                self.trace.event(name="adding_parsing_details_to_tool_result_metadata", level="DEFAULT", status_message=(f"Adding parsing_details to tool result metadata"), metadata={"parsing_details": parsing_details})
+            # --- Add tool_call_id to metadata for matching XML tool calls to results ---
+            tool_call_id = tool_call.get("id")
+            if tool_call_id:
+                metadata["tool_call_id"] = tool_call_id
+                logger.debug(f"Storing tool_call_id {tool_call_id} in tool result metadata for matching")
             # ---
             
-            # Check if this is a native function call (has id field)
-            if "id" in tool_call:
+            # Check if this is a native function call vs XML tool call
+            # Use the "source" field which is set during tool call creation
+            # Native tool calls: source == "native" 
+            # XML tool calls: source == "xml"
+            # If source is missing, it's likely a legacy call - treat as native for safety
+            source = tool_call.get("source")
+            if source is None:
+                logger.warning(f"Tool call missing 'source' field - tool_call_id: {tool_call.get('id')}, function: {tool_call.get('function_name')}")
+                # Try to infer from structure - if it has the native OpenAI format, it's native
+                source = "native" if isinstance(tool_call.get("function"), dict) else "xml"
+                logger.warning(f"Inferred source as: {source}")
+            
+            is_native = (source == "native")
+            if is_native:
                 # Format as a proper tool message according to OpenAI spec
-                function_name = tool_call.get("function_name", "")
+                # Extract function_name from either format
+                function_name = tool_call.get("function_name") or tool_call.get("function", {}).get("name", "")
                 
-                # Format the tool result content - tool role needs string content
+                # Format the tool result content
+                # Keep content as raw data (dict/list/string) from the tool
+                # No parsing or conversion needed - store as-is
                 if isinstance(result, str):
                     content = result
                 elif hasattr(result, 'output'):
-                    # If it's a ToolResult object
-                    if isinstance(result.output, dict) or isinstance(result.output, list):
-                        # If output is already a dict or list, convert to JSON string
-                        content = json.dumps(result.output)
-                    else:
-                        # Otherwise just use the string representation
-                        content = str(result.output)
+                    # If it's a ToolResult object, use the output directly (already raw data)
+                    content = result.output
                 else:
-                    # Fallback to string representation of the whole result
+                    # Fallback to string representation
                     content = str(result)
                 
                 logger.debug(f"Formatted tool result content: {content[:100]}...")
@@ -1983,63 +1948,78 @@ class ResponseProcessor:
                     "content": content
                 }
                 
-                logger.debug(f"Adding native tool result for tool_call_id={tool_call['id']} with role=tool")
-                self.trace.event(name="adding_native_tool_result_for_tool_call_id", level="DEFAULT", status_message=(f"Adding native tool result for tool_call_id={tool_call['id']} with role=tool"))
+                logger.debug(f"Adding tool result for tool_call_id={tool_call['id']} with role=tool")
+                self.trace.event(name="adding_tool_result_for_tool_call_id", level="DEFAULT", status_message=(f"Adding tool result for tool_call_id={tool_call['id']} with role=tool"))
+                
+                # Create structured result for frontend (pure result only - output, success, error)
+                structured_result = self._format_tool_result(tool_call, result, for_llm=False)
+                
+                # Add function_name directly to metadata (not in result)
+                metadata["function_name"] = function_name
+                
+                # Add structured result to metadata for frontend (only output, success, error)
+                metadata["result"] = structured_result
+                metadata["return_format"] = "native"
                 
                 # Add as a tool message to the conversation history
                 # This makes the result visible to the LLM in the next turn
                 message_obj = await self.add_message(
                     thread_id=thread_id,
                     type="tool",  # Special type for tool responses
-                    content=tool_message,
+                    content=tool_message,  # Entire tool_message dict goes in content
                     is_llm_message=True,
                     metadata=metadata
                 )
                 return message_obj # Return the full message object
             
-            # For XML and other non-native tools, use the new structured format
-            # Determine message role based on strategy
-            result_role = "user" if strategy == "user_message" else "assistant"
+            # For XML tool calls, use role="user" with only content (no name, no tool_call_id)
+            # Format the tool result content
+            if isinstance(result, str):
+                content = result
+            elif hasattr(result, 'output'):
+                # If it's a ToolResult object, use the output directly (already raw data)
+                content = result.output
+            else:
+                # Fallback to string representation
+                content = str(result)
             
-            # Create two versions of the structured result
-            # 1. Rich version for the frontend
-            structured_result_for_frontend = self._create_structured_tool_result(tool_call, result, parsing_details, for_llm=False)
-            # 2. Concise version for the LLM
-            structured_result_for_llm = self._create_structured_tool_result(tool_call, result, parsing_details, for_llm=True)
-
-            # Add the message with the appropriate role to the conversation history
-            # This allows the LLM to see the tool result in subsequent interactions
-            result_message_for_llm = {
-                "role": result_role,
-                "content":  json.dumps(structured_result_for_llm)
+            # Create the tool response message for XML tool calls
+            # XML format: role="user" with only content (no name, no tool_call_id)
+            tool_message = {
+                "role": "user",
+                "content": content
             }
             
-            # Add rich content to metadata for frontend use
+            logger.debug(f"Adding XML tool result with role=user (no name/tool_call_id)")
+            self.trace.event(name="adding_xml_tool_result", level="DEFAULT", status_message=(f"Adding XML tool result with role=user"))
+            
+            # Create structured result for frontend (pure result only - output, success, error)
+            structured_result_for_frontend = self._format_tool_result(tool_call, result, for_llm=False)
+            
+            # Add function_name directly to metadata (not in result)
             if metadata is None:
                 metadata = {}
-            metadata['frontend_content'] = structured_result_for_frontend
+            
+            function_name = tool_call.get("function_name", "unknown")
+            metadata["function_name"] = function_name
+            
+            # Add structured result (only output, success, error) and return format to metadata
+            metadata['result'] = structured_result_for_frontend
+            metadata['return_format'] = 'xml'
 
-            message_obj = await self._add_message_with_agent_info(
-                thread_id=thread_id, 
-                type="tool",
-                content=result_message_for_llm, # Save the LLM-friendly version
+            # Add as a tool message to the conversation history
+            # XML tool calls use role="user" with only content field
+            message_obj = await self.add_message(
+                thread_id=thread_id,
+                type="tool",  # Special type for tool responses
+                content=tool_message,  # role="user" with only content
                 is_llm_message=True,
                 metadata=metadata
             )
-
-            # If the message was saved, modify it in-memory for the frontend before returning
-            if message_obj:
-                # The frontend expects the rich content in the 'content' field.
-                # The DB has the rich content in metadata.frontend_content.
-                # Let's reconstruct the message for yielding.
-                message_for_yield = message_obj.copy()
-                message_for_yield['content'] = structured_result_for_frontend
-                return message_for_yield
-
-            return message_obj # Return the modified message object
+            return message_obj # Return the full message object
         except Exception as e:
             logger.error(f"Error adding tool result: {str(e)}", exc_info=True)
-            self.trace.event(name="error_adding_tool_result", level="ERROR", status_message=(f"Error adding tool result: {str(e)}"), metadata={"tool_call": tool_call, "result": result, "strategy": strategy, "assistant_message_id": assistant_message_id, "parsing_details": parsing_details})
+            self.trace.event(name="error_adding_tool_result", level="ERROR", status_message=(f"Error adding tool result: {str(e)}"), metadata={"tool_call": tool_call, "result": result, "assistant_message_id": assistant_message_id})
             # Fallback to a simple message
             try:
                 fallback_message = {
@@ -2056,16 +2036,15 @@ class ResponseProcessor:
                 return message_obj # Return the full message object
             except Exception as e2:
                 logger.error(f"Failed even with fallback message: {str(e2)}", exc_info=True)
-                self.trace.event(name="failed_even_with_fallback_message", level="ERROR", status_message=(f"Failed even with fallback message: {str(e2)}"), metadata={"tool_call": tool_call, "result": result, "strategy": strategy, "assistant_message_id": assistant_message_id, "parsing_details": parsing_details})
+                self.trace.event(name="failed_even_with_fallback_message", level="ERROR", status_message=(f"Failed even with fallback message: {str(e2)}"), metadata={"tool_call": tool_call, "result": result, "assistant_message_id": assistant_message_id})
                 return None # Return None on error
 
-    def _create_structured_tool_result(self, tool_call: Dict[str, Any], result: ToolResult, parsing_details: Optional[Dict[str, Any]] = None, for_llm: bool = False):
-        """Create a structured tool result format that's tool-agnostic and provides rich information.
+    def _format_tool_result(self, tool_call: Dict[str, Any], result: ToolResult, for_llm: bool = False):
+        """Format a tool result into a structured format that's tool-agnostic and provides rich information.
         
         Args:
             tool_call: The original tool call that was executed
             result: The result from the tool execution
-            parsing_details: Optional parsing details for XML calls
             for_llm: If True, creates a concise version for the LLM context.
             
         Returns:
@@ -2073,7 +2052,6 @@ class ResponseProcessor:
         """
         # Extract tool information
         function_name = tool_call.get("function_name", "unknown")
-        xml_tag_name = tool_call.get("xml_tag_name")
         arguments = tool_call.get("arguments", {})
         tool_call_id = tool_call.get("id")
         
@@ -2099,56 +2077,40 @@ class ResponseProcessor:
                 "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
             }
         
-        # For Frontend: Keep the full tool_execution wrapper with arguments 
-        # (needed for fallback extraction of session_name, command, etc.)
+        # For Frontend: Return only pure result (output, success, error)
+        # function_name and tool_call_id are stored directly in metadata, not in result
         return {
-            "tool_execution": {
-                "function_name": function_name,
-                "xml_tag_name": xml_tag_name,
-                "tool_call_id": tool_call_id,
-                "arguments": arguments,  # Frontend uses this for fallback extraction
-                "result": {
-                    "success": result.success if hasattr(result, 'success') else True,
-                    "output": output, 
-                    "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
-                }
-            }
+            "success": result.success if hasattr(result, 'success') else True,
+            "output": output, 
+            "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
         }
 
-    def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None, parsing_details: Optional[Dict[str, Any]] = None) -> ToolExecutionContext:
-        """Create a tool execution context with display name and parsing details populated."""
+    def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None) -> ToolExecutionContext:
+        """Create a tool execution context with display name populated."""
         context = ToolExecutionContext(
             tool_call=tool_call,
             tool_index=tool_index,
-            assistant_message_id=assistant_message_id,
-            parsing_details=parsing_details
+            assistant_message_id=assistant_message_id
         )
         
-        # Set function_name and xml_tag_name fields
-        if "xml_tag_name" in tool_call:
-            context.xml_tag_name = tool_call["xml_tag_name"]
-            context.function_name = tool_call.get("function_name", tool_call["xml_tag_name"])
-        else:
-            # For non-XML tools, use function name directly
-            context.function_name = tool_call.get("function_name", "unknown")
-            context.xml_tag_name = None
+        # Set function_name field
+        context.function_name = tool_call.get("function_name", "unknown")
         
         return context
         
     async def _yield_and_save_tool_started(self, context: ToolExecutionContext, thread_id: str, thread_run_id: str) -> Optional[Dict[str, Any]]:
         """Formats, saves, and returns a tool started status message."""
-        tool_name = context.xml_tag_name or context.function_name
         content = {
-            "role": "assistant", "status_type": "tool_started",
-            "function_name": context.function_name, "xml_tag_name": context.xml_tag_name,
-            "message": f"Starting execution of {tool_name}", "tool_index": context.tool_index,
-            "tool_call_id": context.tool_call.get("id") # Include tool_call ID if native
+            "status_type": "tool_started",
+            "tool_call_id": context.tool_call.get("id"),
+            "function_name": context.function_name,
+            "tool_index": context.tool_index
         }
         metadata = {"thread_run_id": thread_run_id}
         saved_message_obj = await self.add_message(
             thread_id=thread_id, type="status", content=content, is_llm_message=False, metadata=metadata
         )
-        return saved_message_obj # Return the full object (or None if saving failed)
+        return saved_message_obj
 
     async def _yield_and_save_tool_completed(self, context: ToolExecutionContext, tool_message_id: Optional[str], thread_id: str, thread_run_id: str) -> Optional[Dict[str, Any]]:
         """Formats, saves, and returns a tool completed/failed status message."""
@@ -2156,27 +2118,22 @@ class ResponseProcessor:
             # Delegate to error saving if result is missing (e.g., execution failed)
             return await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
 
-        tool_name = context.xml_tag_name or context.function_name
         status_type = "tool_completed" if context.result.success else "tool_failed"
-        message_text = f"Tool {tool_name} {'completed successfully' if context.result.success else 'failed'}"
-
         content = {
-            "role": "assistant", "status_type": status_type,
-            "function_name": context.function_name, "xml_tag_name": context.xml_tag_name,
-            "message": message_text, "tool_index": context.tool_index,
-            "tool_call_id": context.tool_call.get("id")
+            "status_type": status_type,
+            "tool_call_id": context.tool_call.get("id"),
+            "function_name": context.function_name,
+            "tool_index": context.tool_index
         }
         metadata = {"thread_run_id": thread_run_id}
         # Add the *actual* tool result message ID to the metadata if available and successful
         if context.result.success and tool_message_id:
             metadata["linked_tool_result_message_id"] = tool_message_id
             
-        # <<< ADDED: Signal if this is a terminating tool >>>
+        # Signal if this is a terminating tool
         if context.function_name in ['ask', 'complete']:
-            metadata["agent_should_terminate"] = "true"
+            metadata["agent_should_terminate"] = True
             logger.debug(f"Marking tool status for '{context.function_name}' with termination signal.")
-            self.trace.event(name="marking_tool_status_for_termination", level="DEFAULT", status_message=(f"Marking tool status for '{context.function_name}' with termination signal."))
-        # <<< END ADDED >>>
 
         saved_message_obj = await self.add_message(
             thread_id=thread_id, type="status", content=content, is_llm_message=False, metadata=metadata
@@ -2186,16 +2143,14 @@ class ResponseProcessor:
     async def _yield_and_save_tool_error(self, context: ToolExecutionContext, thread_id: str, thread_run_id: str) -> Optional[Dict[str, Any]]:
         """Formats, saves, and returns a tool error status message."""
         error_msg = str(context.error) if context.error else "Unknown error during tool execution"
-        tool_name = context.xml_tag_name or context.function_name
         content = {
-            "role": "assistant", "status_type": "tool_error",
-            "function_name": context.function_name, "xml_tag_name": context.xml_tag_name,
-            "message": f"Error executing tool {tool_name}: {error_msg}",
+            "status_type": "tool_error",
+            "tool_call_id": context.tool_call.get("id"),
+            "function_name": context.function_name,
             "tool_index": context.tool_index,
-            "tool_call_id": context.tool_call.get("id")
+            "error": error_msg
         }
         metadata = {"thread_run_id": thread_run_id}
-        # Save the status message with is_llm_message=False
         saved_message_obj = await self.add_message(
             thread_id=thread_id, type="status", content=content, is_llm_message=False, metadata=metadata
         )

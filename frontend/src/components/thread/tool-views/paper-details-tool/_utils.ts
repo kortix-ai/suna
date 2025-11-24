@@ -1,4 +1,4 @@
-import { extractToolData } from '../utils';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface Author {
   author_id: string;
@@ -58,103 +58,9 @@ export interface PaperDetailsData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
-const extractFromNewFormat = (content: any): PaperDetailsData => {
-  const parsedContent = parseContent(content);
-  
-  if (!parsedContent || typeof parsedContent !== 'object') {
-    return {
-      paper: null,
-      success: undefined,
-      timestamp: undefined
-    };
-  }
-
-  if ('tool_execution' in parsedContent && typeof parsedContent.tool_execution === 'object') {
-    const toolExecution = parsedContent.tool_execution;
-    
-    let parsedOutput = toolExecution.result?.output;
-    if (typeof parsedOutput === 'string') {
-      try {
-        parsedOutput = JSON.parse(parsedOutput);
-      } catch (e) {
-      }
-    }
-    parsedOutput = parsedOutput || {};
-
-    return {
-      paper: parsedOutput.paper || null,
-      success: toolExecution.result?.success,
-      timestamp: toolExecution.execution_details?.timestamp
-    };
-  }
-
-  if ('output' in parsedContent && typeof parsedContent.output === 'object') {
-    const output = parsedContent.output;
-    if (typeof output === 'string') {
-      try {
-        const parsedOutput = JSON.parse(output);
-        return {
-          paper: parsedOutput.paper || null,
-          success: parsedContent.success,
-          timestamp: undefined
-        };
-      } catch (e) {
-      }
-    }
-    return {
-      paper: output.paper || null,
-      success: parsedContent.success,
-      timestamp: undefined
-    };
-  }
-
-  if ('paper' in parsedContent) {
-    return {
-      paper: parsedContent.paper || null,
-      success: parsedContent.success !== undefined ? parsedContent.success : true,
-      timestamp: undefined
-    };
-  }
-
-  if ('role' in parsedContent && 'content' in parsedContent) {
-    return extractFromNewFormat(parsedContent.content);
-  }
-
-  return {
-    paper: null,
-    success: undefined,
-    timestamp: undefined
-  };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<PaperDetailsData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    return {
-      paper: null
-    };
-  }
-
-  return {
-    paper: null
-  };
-};
-
 export function extractPaperDetailsData(
-  assistantContent: any,
-  toolContent: any,
+  toolCall: ToolCallData,
+  toolResult: ToolResultData | undefined,
   isSuccess: boolean,
   toolTimestamp?: string,
   assistantTimestamp?: string
@@ -164,50 +70,32 @@ export function extractPaperDetailsData(
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
 } {
-  let data: PaperDetailsData = {
-    paper: null
-  };
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
+  let paper: PaperDetails | null = null;
 
-  const assistantNewFormat = extractFromNewFormat(assistantContent);
-  const toolNewFormat = extractFromNewFormat(toolContent);
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    let parsedOutput: any = {};
+    
+    if (typeof output === 'string') {
+      try {
+        parsedOutput = JSON.parse(output);
+      } catch (e) {
+        // Not JSON, keep empty
+      }
+    } else if (typeof output === 'object' && output !== null) {
+      parsedOutput = output;
+    }
 
-  if (assistantNewFormat.paper) {
-    data = assistantNewFormat;
-    if (assistantNewFormat.success !== undefined) {
-      actualIsSuccess = assistantNewFormat.success;
-    }
-    if (assistantNewFormat.timestamp) {
-      actualAssistantTimestamp = assistantNewFormat.timestamp;
-    }
-  } else if (toolNewFormat.paper) {
-    data = toolNewFormat;
-    if (toolNewFormat.success !== undefined) {
-      actualIsSuccess = toolNewFormat.success;
-    }
-    if (toolNewFormat.timestamp) {
-      actualToolTimestamp = toolNewFormat.timestamp;
-    }
-  } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
-    data = {
-      ...assistantLegacy,
-      ...toolLegacy,
-      paper: assistantLegacy.paper || toolLegacy.paper,
-      success: undefined,
-      timestamp: undefined
-    };
+    paper = parsedOutput.paper || null;
   }
 
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
+
   return {
-    paper: data.paper,
+    paper,
     actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
   };
 }
 

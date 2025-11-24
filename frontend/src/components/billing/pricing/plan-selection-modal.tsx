@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
 import { X } from 'lucide-react';
@@ -89,6 +90,9 @@ export function PlanSelectionModal({
                 <DialogTitle className="sr-only">
                     {displayReason || (creditsExhausted ? 'You\'re out of credits' : 'Select a Plan')}
                 </DialogTitle>
+                <DialogDescription className="sr-only">
+                    {displayReason || (creditsExhausted ? 'Choose a plan to continue using Kortix' : 'Choose the plan that best fits your needs')}
+                </DialogDescription>
                 <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 pointer-events-none bg-transparent">
                     <div className="flex-1" />
                     

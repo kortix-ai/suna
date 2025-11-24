@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface DiscoverMcpToolsData {
   profile_name: string | null;
   toolkit_name: string | null;
@@ -53,7 +51,6 @@ export function extractDiscoverMcpToolsData(
 
   // Try parsing toolContent first
   if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'discover_mcp_tools_for_agent') {
       const args = parsedToolResult.arguments || {};
@@ -92,7 +89,6 @@ export function extractDiscoverMcpToolsData(
   }
 
   if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'discover_mcp_tools_for_agent') {
       const args = parsedToolResult.arguments || {};

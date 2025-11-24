@@ -12,11 +12,9 @@ import {
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import {
-  extractBrowserUrl,
   extractBrowserOperation,
   formatTimestamp,
   getToolTitle,
-  extractToolData,
 } from './utils';
 import { safeJsonParse } from '@/components/thread/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,9 +68,8 @@ export const BrowserHeader: React.FC<BrowserHeaderProps> = ({ isConnected, onRef
 };
 
 export function BrowserToolView({
-  name = 'browser-operation',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -84,104 +81,48 @@ export function BrowserToolView({
   totalCalls = 1,
   viewToggle,
 }: ToolViewProps) {
-  // Try to extract data using the new parser first
-  const assistantToolData = extractToolData(assistantContent);
-  const toolToolData = extractToolData(toolContent);
-
-  let url: string | null = null;
-
-  // Use data from the new format if available
-  if (assistantToolData.toolResult) {
-    url = assistantToolData.url;
-  } else if (toolToolData.toolResult) {
-    url = toolToolData.url;
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('BrowserToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
   }
 
-  // If not found in new format, fall back to legacy extraction
-  if (!url) {
-    url = extractBrowserUrl(assistantContent);
-  }
-
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const operation = extractBrowserOperation(name);
   const toolTitle = getToolTitle(name);
 
+  // Extract data directly from structured props
+  const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
+  const parameters = toolCall.arguments || null;
+
+  // Extract result data from toolResult
   let browserStateMessageId: string | undefined;
   let screenshotUrl: string | null = null;
   let screenshotBase64: string | null = null;
-  let result: Record<string, string> | null = null;
-  let parameters: Record<string, string> | null = null;
-  const [showContext, setShowContext] = React.useState(false);
-  // Add loading states for images
-  const [imageLoading, setImageLoading] = React.useState(true);
-  const [imageError, setImageError] = React.useState(false);
+  let result: Record<string, any> | null = null;
 
-  try {
-    const topLevelParsed = safeJsonParse<{ content?: any }>(toolContent, {});
-    const innerContentString = topLevelParsed?.content || toolContent;
-    if (innerContentString && typeof innerContentString === 'string') {
-      const toolResultMatch = innerContentString.match(/ToolResult\([^)]*output='([\s\S]*?)'(?:\s*,|\s*\))/);
-      if (toolResultMatch) {
-        const outputString = toolResultMatch[1];
-        try {
-          const cleanedOutput = outputString.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\u([0-9a-fA-F]{4})/g, (_match, grp) => String.fromCharCode(parseInt(grp, 16)));
-          const outputJson = JSON.parse(cleanedOutput);
-
-          if (outputJson.image_url) {
-            screenshotUrl = outputJson.image_url;
-          }
-          if (outputJson.message_id) {
-            browserStateMessageId = outputJson.message_id;
-          }
-        } catch (parseError) {
-        }
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    
+    if (typeof output === 'object' && output !== null) {
+      // Extract screenshot URL and message ID from output
+      if (output.image_url) {
+        screenshotUrl = output.image_url;
       }
-
-      if (!screenshotUrl) {
-        const imageUrlMatch = innerContentString.match(/"image_url":\s*"([^"]+)"/);
-        if (imageUrlMatch) {
-          screenshotUrl = imageUrlMatch[1];
-        }
+      if (output.message_id) {
+        browserStateMessageId = output.message_id;
       }
-
-      if (!browserStateMessageId) {
-        const messageIdMatch = innerContentString.match(/"message_id":\s*"([^"]+)"/);
-        if (messageIdMatch) {
-          browserStateMessageId = messageIdMatch[1];
-        }
-      }
-
-      if (!browserStateMessageId && !screenshotUrl) {
-        const outputMatch = innerContentString.match(/\boutput='(.*?)'(?=\s*\))/);
-        const outputString = outputMatch ? outputMatch[1] : null;
-
-        if (outputString) {
-          const unescapedOutput = outputString
-            .replace(/\\n/g, '\n')
-            .replace(/\\"/g, '"');
-
-          const finalParsedOutput = safeJsonParse<{ message_id?: string; image_url?: string }>(
-            unescapedOutput,
-            {},
-          );
-          browserStateMessageId = finalParsedOutput?.message_id;
-          screenshotUrl = finalParsedOutput?.image_url || null;
-        }
-      }
-    } else if (innerContentString && typeof innerContentString === "object") {
-      screenshotUrl = (() => {
-        if (!innerContentString) return null;
-        if (!("tool_execution" in innerContentString)) return null;
-        if (!("result" in innerContentString.tool_execution)) return null;
-        if (!("output" in innerContentString.tool_execution.result)) return null;
-        if (!("image_url" in innerContentString.tool_execution.result.output)) return null;
-        if (typeof innerContentString.tool_execution.result.output.image_url !== "string") return null;
-        return innerContentString.tool_execution.result.output.image_url;
-      })()
+      
+      // Set result, excluding message_id
+      result = Object.fromEntries(
+        Object.entries(output).filter(([k]) => k !== 'message_id')
+      ) as Record<string, any>;
+    } else if (typeof output === 'string') {
+      result = { message: output };
     }
-
-  } catch (error) {
   }
 
+  // Try to find browser state message if we have a message_id
   if (!screenshotUrl && !screenshotBase64 && browserStateMessageId && messages.length > 0) {
     const browserStateMessage = messages.find(
       (msg) =>
@@ -202,60 +143,10 @@ export function BrowserToolView({
     }
   }
 
-  if ((!result || !parameters) && messages.length > 0 && browserStateMessageId) {
-
-    // Process browser state messages
-    const latestBrowserStateMessage = messages.filter(
-      (msg) => msg.type === 'browser_state' && msg.message_id === browserStateMessageId
-    );
-
-    for (const msg of latestBrowserStateMessage) {
-      const content = safeJsonParse<ParsedContent>(msg.content, {});
-      if (content) {
-        result = Object.fromEntries(Object.entries(content).filter(([k, v]) => k !== 'input'));
-      }
-      if (content.input) {
-        parameters = content.input;
-      }
-    }
-  }
-  if (!result || !parameters) {
-    const browserToolMessages = messages.filter(
-      m => m.type === 'tool' &&
-      safeJsonParse<ParsedContent>(m.content, {})?.tool_execution?.function_name?.startsWith('browser')
-    );
-
-    let matchingToolMessage = null;
-    const currentToolTimestamp = toolTimestamp;
-    
-    // First try to find exact match by timestamp correlation
-    if (currentToolTimestamp) {
-      matchingToolMessage = browserToolMessages.find((msg) => {
-        const msgTime = new Date(msg.created_at).getTime();
-        const toolTime = new Date(currentToolTimestamp).getTime();
-        return msgTime === toolTime;
-      });
-    }
-    
-    if (matchingToolMessage) {
-      const toolContent = safeJsonParse<ParsedContent>(matchingToolMessage.content, {});
-        if (toolContent?.tool_execution?.result?.output) {
-          // result = toolContent.tool_execution.result.output;
-          // Handle if output is a string or object
-          const output = toolContent.tool_execution.result.output;
-          if (typeof output === 'string') {
-            result = { message: output };
-          } else if (output && typeof output === 'object') {
-            result = Object.fromEntries(Object.entries(output).filter(([k, v]) => k !== 'message_id')) as Record<string, string>;
-          } else {
-            result = {};
-          }
-        }
-        if (toolContent?.tool_execution?.arguments) {
-          parameters = toolContent.tool_execution.arguments;
-        }
-    }
-  }
+  const [showContext, setShowContext] = React.useState(false);
+  // Add loading states for images
+  const [imageLoading, setImageLoading] = React.useState(true);
+  const [imageError, setImageError] = React.useState(false);
   const isRunning = isStreaming || agentStatus === 'running';
 
   const [progress, setProgress] = React.useState(100);

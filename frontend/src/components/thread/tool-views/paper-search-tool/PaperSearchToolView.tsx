@@ -28,14 +28,21 @@ import { extractPaperSearchData } from './_utils';
 import { cn } from '@/lib/utils';
 
 export function PaperSearchToolView({
-  name = 'paper-search',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('PaperSearchToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  
   const {
     query,
     total_results,
@@ -44,8 +51,8 @@ export function PaperSearchToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractPaperSearchData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

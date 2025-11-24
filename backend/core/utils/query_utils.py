@@ -36,20 +36,38 @@ async def batch_query_in(
     
     all_results = []
     
+    def apply_filters_optimally(query, filters):
+        """Apply filters in optimal order for index usage."""
+        if not filters:
+            return query
+        
+        # Separate filters by type
+        eq_filters = {}
+        gte_filters = {}
+        other_filters = {}
+        
+        for field, value in filters.items():
+            if field.endswith('_gte'):
+                gte_filters[field[:-4]] = value
+            elif field.endswith('_eq'):
+                eq_filters[field[:-3]] = value
+            else:
+                other_filters[field] = value
+        
+        for field, value in eq_filters.items():
+            query = query.eq(field, value)
+        for field, value in other_filters.items():
+            query = query.eq(field, value)
+        for field, value in gte_filters.items():
+            query = query.gte(field, value)
+        
+        return query
+    
     # If values list is small, do a single query
     if len(in_values) <= batch_size:
         query = client.schema(schema).from_(table_name) if schema else client.table(table_name)
         query = query.select(select_fields).in_(in_field, in_values)
-        
-        # Apply additional filters
-        if additional_filters:
-            for field, value in additional_filters.items():
-                if field.endswith('_gte'):
-                    query = query.gte(field[:-4], value)
-                elif field.endswith('_eq'):
-                    query = query.eq(field[:-3], value)
-                else:
-                    query = query.eq(field, value)
+        query = apply_filters_optimally(query, additional_filters)
         
         result = await query.execute()
         return result.data or []
@@ -62,16 +80,7 @@ async def batch_query_in(
         
         query = client.schema(schema).from_(table_name) if schema else client.table(table_name)
         query = query.select(select_fields).in_(in_field, batch_values)
-        
-        # Apply additional filters
-        if additional_filters:
-            for field, value in additional_filters.items():
-                if field.endswith('_gte'):
-                    query = query.gte(field[:-4], value)
-                elif field.endswith('_eq'):
-                    query = query.eq(field[:-3], value)
-                else:
-                    query = query.eq(field, value)
+        query = apply_filters_optimally(query, additional_filters)
         
         batch_result = await query.execute()
         if batch_result.data:

@@ -19,7 +19,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, extractToolData } from '../utils';
+import { formatTimestamp } from '../utils';
 import { LoadingState } from '../shared/LoadingState';
 
 interface PresentationInfo {
@@ -38,23 +38,21 @@ interface ListPresentationsData {
 }
 
 export function ListPresentationsToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
 }: ToolViewProps) {
-  const { toolResult } = extractToolData(toolContent);
-  
+  // Extract from toolResult.output (from metadata)
   let presentationsData: ListPresentationsData | null = null;
   let error: string | null = null;
 
   try {
-    if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== 'STREAMING') {
-      const output = toolResult.toolOutput;
+    if (toolResult?.output) {
+      let output = toolResult.output;
       if (typeof output === 'string') {
         try {
           presentationsData = JSON.parse(output);

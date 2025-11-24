@@ -258,7 +258,7 @@ async def make_llm_api_call(
                 debug_dir.mkdir(exist_ok=True)
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
                 debug_file = debug_dir / f"input_{timestamp}.json"
-                
+        
                 # Save the exact params going to LiteLLM
                 debug_data = {
                     "timestamp": timestamp,

@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface McpTool {
   name: string;
   description: string;
@@ -68,7 +66,7 @@ export function extractDiscoverUserMcpServersData(
         try {
           content = JSON.parse(toolContent);
         } catch (e) {
-          content = toolContent;
+          // Keep original content if parsing fails
         }
       }
 
@@ -77,6 +75,7 @@ export function extractDiscoverUserMcpServersData(
           const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
           content = nestedContent;
         } catch (e) {
+          // Keep original content if parsing fails
         }
       }
 
@@ -119,28 +118,11 @@ export function extractDiscoverUserMcpServersData(
     }
 
     if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput) {
-          return {
-            ...defaultResult,
-            profile_id: args.profile_id || null,
-            message: toolOutput.message || null,
-            profile_info: toolOutput.profile_info || null,
-            tools: toolOutput.tools || [],
-            total_tools: toolOutput.total_tools || 0,
-            actualIsSuccess: true
-          };
-        }
-      }
+      // Handle assistant content if needed
     }
 
     return defaultResult;
   } catch (error) {
-    console.error('Error extracting discover user mcp servers data:', error);
     return defaultResult;
   }
 }

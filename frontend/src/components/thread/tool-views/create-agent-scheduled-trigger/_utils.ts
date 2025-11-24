@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface CreateAgentScheduledTriggerData {
   agent_id: string | null;
   name: string | null;
@@ -65,7 +63,7 @@ export function extractCreateAgentScheduledTriggerData(
         try {
           content = JSON.parse(toolContent);
         } catch (e) {
-          content = toolContent;
+          // Keep original content if parsing fails
         }
       }
 
@@ -74,6 +72,7 @@ export function extractCreateAgentScheduledTriggerData(
           const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
           content = nestedContent;
         } catch (e) {
+          // Keep original content if parsing fails
         }
       }
 
@@ -100,29 +99,11 @@ export function extractCreateAgentScheduledTriggerData(
     }
 
     if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput?.trigger) {
-          return {
-            ...defaultResult,
-            agent_id: args.agent_id || null,
-            name: args.name || null,
-            description: args.description || null,
-            cron_expression: args.cron_expression || null,
-            agent_prompt: args.agent_prompt || null,
-            trigger: toolOutput.trigger,
-            actualIsSuccess: true
-          };
-        }
-      }
+      // Handle assistant content if needed
     }
 
     return defaultResult;
   } catch (error) {
-    console.error('Error extracting create agent scheduled trigger data:', error);
     return defaultResult;
   }
 } 

@@ -21,9 +21,8 @@ import { LoadingState } from '../shared/LoadingState';
 import { extractCommandData } from './_utils';
 
 export function CommandToolView({
-  name = 'execute-command',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -40,16 +39,18 @@ export function CommandToolView({
     sessionName,
     cwd,
     completed,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
+    success: actualIsSuccess,
+    timestamp: actualToolTimestamp,
   } = extractCommandData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
+  
+  const actualAssistantTimestamp = assistantTimestamp;
+  const name = toolCall.function_name.replace(/_/g, '-');
 
   const displayText = name === 'check-command-output' ? sessionName : command;
   const displayLabel = name === 'check-command-output' ? 'Session' : 'Command';
@@ -196,6 +197,29 @@ export function CommandToolView({
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         {isStreaming ? (
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 p-4 pb-2">
+              {/* Show partial command data if available during streaming */}
+              {command && (
+                <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                      <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
+                      Command
+                    </Badge>
+                    <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      Streaming
+                    </Badge>
+                  </div>
+                  <div className="font-mono text-xs text-foreground">
+                    <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
+                    <span className="text-foreground">{command}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            {!command && (
           <LoadingState
             icon={Terminal}
             iconColor="text-blue-500 dark:text-blue-400"
@@ -204,6 +228,8 @@ export function CommandToolView({
             filePath={displayText || 'Processing command...'}
             showProgress={true}
           />
+            )}
+          </div>
         ) : displayText ? (
           <div className="h-full flex flex-col overflow-hidden">
             <div className="flex-shrink-0 p-4 pb-2">

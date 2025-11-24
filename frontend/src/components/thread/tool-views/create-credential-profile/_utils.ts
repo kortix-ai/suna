@@ -49,6 +49,7 @@ const extractFromNewFormat = (content: any): CreateCredentialProfileData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -85,30 +86,6 @@ const extractFromNewFormat = (content: any): CreateCredentialProfileData => {
   }
 
   return { toolkit_slug: null, profile_name: null, display_name: null, message: null, profile: null, success: undefined, timestamp: undefined };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<CreateCredentialProfileData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-
-    return {
-      toolkit_slug: args.toolkit_slug || null,
-      profile_name: args.profile_name || null,
-      display_name: args.display_name || null,
-      message: null,
-      profile: null
-    };
-  }
-
-  return {
-    toolkit_slug: null,
-    profile_name: null,
-    display_name: null,
-    message: null,
-    profile: null
-  };
 };
 
 export function extractCreateCredentialProfileData(
@@ -153,19 +130,29 @@ export function extractCreateCredentialProfileData(
     }
   }
 
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
+  // Fallback: try to extract from raw tool data
+  const assistantLegacy = extractToolData(assistantContent);
+  const toolLegacy = extractToolData(toolContent);
+  data = {
+    ...assistantLegacy,
+    ...toolLegacy,
+    toolkit_slug: assistantLegacy.toolkit_slug || toolLegacy.toolkit_slug || null,
+    profile_name: assistantLegacy.profile_name || toolLegacy.profile_name || null,
+    display_name: assistantLegacy.display_name || toolLegacy.display_name || null,
+    message: assistantLegacy.message || toolLegacy.message || null,
+    profile: assistantLegacy.profile || toolLegacy.profile || null,
+    success: undefined,
+    timestamp: undefined
+  };
 
-  const combinedData = {
-    toolkit_slug: toolLegacy.toolkit_slug || assistantLegacy.toolkit_slug,
-    profile_name: toolLegacy.profile_name || assistantLegacy.profile_name,
-    display_name: toolLegacy.display_name || assistantLegacy.display_name,
-    message: toolLegacy.message || assistantLegacy.message,
-    profile: toolLegacy.profile || assistantLegacy.profile,
+  return {
+    toolkit_slug: data.toolkit_slug,
+    profile_name: data.profile_name,
+    display_name: data.display_name,
+    message: data.message,
+    profile: data.profile,
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
-
-  return combinedData;
 } 

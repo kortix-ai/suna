@@ -702,7 +702,12 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                         {planIcon && (
                             <>
                                 <div className="rounded-full py-0.5 flex items-center justify-center">
-                                    <img src={planIcon} alt={planName} className="h-6 w-auto" />
+                                    <img 
+                                        src={planIcon} 
+                                        alt={planName} 
+                                        className="h-6 w-auto" 
+                                        style={{ height: '24px', width: 'auto' }}
+                                    />
                                 </div>
                             </>
                         )}

@@ -44,7 +44,11 @@ class ModelRegistry:
             priority=102,
             recommended=True,
             enabled=True,
-            config=ModelConfig()
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14" 
+                },
+            )
         ))
         
         self.register(Model(
@@ -72,7 +76,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14" 
                 },
             )
         ))
@@ -102,7 +106,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14" 
                 },
             )
         ))

@@ -13,7 +13,8 @@ import { useStopAgentMutation } from '@/hooks/threads/use-agent-run';
 import { AgentRun, getAgentRuns } from '@/lib/api/agents';
 import { toast } from 'sonner';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { getThread, getProject } from '@/hooks/threads/utils';
+import { getThread } from '@/hooks/threads/utils';
+import { getProject } from '@/lib/api/threads';
 import { threadKeys } from '@/hooks/threads/keys';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
@@ -181,7 +182,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
       
       return {
         queryKey: threadKeys.project(projectId || ""),
-        queryFn: () => projectId ? getProject(projectId, { suppressWarning: true }) : null,
+        queryFn: () => projectId ? getProject(projectId) : null,
         enabled: open && !!projectId,
         retry: 1,
       };

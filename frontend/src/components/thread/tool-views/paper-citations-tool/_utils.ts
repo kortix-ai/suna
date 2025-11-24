@@ -63,6 +63,7 @@ const extractFromNewFormat = (content: any): PaperCitationsData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -73,7 +74,26 @@ const extractFromNewFormat = (content: any): PaperCitationsData => {
       offset: parsedOutput?.offset,
       next_offset: parsedOutput?.next_offset,
       has_more: parsedOutput?.has_more,
-      citations: parsedOutput?.citations || [],
+      citations: (parsedOutput?.citations || []).map((citation: any) => ({
+        rank: citation.rank || 0,
+        is_influential: citation.is_influential || false,
+        contexts: Array.isArray(citation.contexts) ? citation.contexts : [],
+        intents: Array.isArray(citation.intents) ? citation.intents : [],
+        citing_paper: {
+          paper_id: citation.citing_paper?.paper_id || citation.paper_id || '',
+          title: citation.citing_paper?.title || citation.title || '',
+          year: citation.citing_paper?.year || citation.year,
+          authors: Array.isArray(citation.citing_paper?.authors) 
+            ? citation.citing_paper.authors 
+            : Array.isArray(citation.authors) 
+              ? citation.authors 
+              : [],
+          citation_count: citation.citing_paper?.citation_count || citation.citation_count || 0,
+          url: citation.citing_paper?.url || citation.url || '',
+          venue: citation.citing_paper?.venue || citation.venue,
+          abstract: citation.citing_paper?.abstract || citation.abstract
+        }
+      })),
       success: toolExecution.result?.success,
       timestamp: toolExecution.execution_details?.timestamp
     };
@@ -86,7 +106,26 @@ const extractFromNewFormat = (content: any): PaperCitationsData => {
       offset: parsedContent.offset,
       next_offset: parsedContent.next_offset,
       has_more: parsedContent.has_more,
-      citations: parsedContent.citations || [],
+      citations: (parsedContent.citations || []).map((citation: any) => ({
+        rank: citation.rank || 0,
+        is_influential: citation.is_influential || false,
+        contexts: Array.isArray(citation.contexts) ? citation.contexts : [],
+        intents: Array.isArray(citation.intents) ? citation.intents : [],
+        citing_paper: {
+          paper_id: citation.citing_paper?.paper_id || citation.paper_id || '',
+          title: citation.citing_paper?.title || citation.title || '',
+          year: citation.citing_paper?.year || citation.year,
+          authors: Array.isArray(citation.citing_paper?.authors) 
+            ? citation.citing_paper.authors 
+            : Array.isArray(citation.authors) 
+              ? citation.authors 
+              : [],
+          citation_count: citation.citing_paper?.citation_count || citation.citation_count || 0,
+          url: citation.citing_paper?.url || citation.url || '',
+          venue: citation.citing_paper?.venue || citation.venue,
+          abstract: citation.citing_paper?.abstract || citation.abstract
+        }
+      })),
       success: true,
       timestamp: undefined
     };
@@ -102,24 +141,6 @@ const extractFromNewFormat = (content: any): PaperCitationsData => {
     citations: [],
     success: undefined,
     timestamp: undefined
-  };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<PaperCitationsData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    return {
-      paper_id: null,
-      citations_returned: 0,
-      citations: []
-    };
-  }
-
-  return {
-    paper_id: null,
-    citations_returned: 0,
-    citations: []
   };
 };
 
@@ -167,13 +188,13 @@ export function extractPaperCitationsData(
       actualToolTimestamp = toolNewFormat.timestamp;
     }
   } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
+    // Fallback: try to extract from raw tool data
+    // extractToolData doesn't return citations directly, so we'll just use empty defaults
+    // The new format extraction should handle most cases
     data = {
-      ...assistantLegacy,
-      ...toolLegacy,
-      paper_id: assistantLegacy.paper_id || toolLegacy.paper_id,
+      paper_id: null,
+      citations_returned: 0,
+      citations: [],
       success: undefined,
       timestamp: undefined
     };

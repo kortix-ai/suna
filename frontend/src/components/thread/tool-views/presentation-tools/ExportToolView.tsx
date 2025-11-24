@@ -11,7 +11,6 @@ import {
 import { ToolViewProps } from '../types';
 import {
   getToolTitle,
-  extractToolData,
 } from '../utils';
 import { downloadPresentation, DownloadFormat } from '../utils/presentation-utils';
 import { toast } from 'sonner';
@@ -25,9 +24,6 @@ import { useAuth } from '@/components/AuthProvider';
 
 interface ExportToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
-  assistantContent?: string;
-  assistantTimestamp?: string;
-  toolTimestamp?: string;
 }
 
 type ExportFormat = 'pptx' | 'pdf';
@@ -79,28 +75,29 @@ const formatConfigs: Record<ExportFormat, FormatConfig> = {
 };
 
 export function ExportToolView({
-  name = 'export_to_pptx',
-  toolContent,
+  toolCall,
+  toolResult,
+  assistantTimestamp,
+  toolTimestamp,
   isSuccess = true,
   isStreaming = false,
   onFileClick,
   project,
-  assistantContent,
-  assistantTimestamp,
-  toolTimestamp,
 }: ExportToolViewProps) {
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('ExportToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
   // Auth for file downloads
   const { session } = useAuth();
   
-  // Determine format from tool name
+  // Determine format from function name
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
   const config = formatConfigs[format];
   const IconComponent = config.icon;
-
-  // Extract data using the standard utility function
-  const { toolResult, arguments: args } = useMemo(() => 
-    extractToolData(toolContent), [toolContent]
-  );
 
   // Extract the export data from tool result
   const {
@@ -112,13 +109,14 @@ export function ExportToolView({
     message,
     note
   } = useMemo(() => {
-    if (toolResult?.toolOutput) {
+    if (toolResult?.output) {
       try {
-        const parsed = typeof toolResult.toolOutput === 'string' 
-          ? JSON.parse(toolResult.toolOutput) 
-          : toolResult.toolOutput;
+        const output = toolResult.output;
+        const parsed = typeof output === 'string' 
+          ? JSON.parse(output) 
+          : output;
         return {
-          presentationName: parsed.presentation_name,
+          presentationName: parsed.presentation_name || toolCall.arguments?.presentation_name,
           filePath: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
           downloadUrl: parsed.download_url,
           totalSlides: parsed.total_slides,
@@ -128,11 +126,17 @@ export function ExportToolView({
         };
       } catch (e) {
         console.error('Error parsing tool result:', e);
-        return {};
+        // Fallback: try to extract from arguments
+        return {
+          presentationName: toolCall.arguments?.presentation_name,
+        };
       }
     }
-    return {};
-  }, [toolResult, config.fileProperty]);
+    // Fallback: extract from arguments
+    return {
+      presentationName: toolCall.arguments?.presentation_name,
+    };
+  }, [toolResult, config.fileProperty, toolCall.arguments]);
 
   // Download state
   const [isDownloading, setIsDownloading] = useState(false);

@@ -205,7 +205,6 @@ def load_existing_env_vars():
             "NEXT_PUBLIC_ENV_MODE": frontend_env.get("NEXT_PUBLIC_ENV_MODE", ""),
             "NEXT_PUBLIC_POSTHOG_KEY": frontend_env.get("NEXT_PUBLIC_POSTHOG_KEY", ""),
             "NEXT_PUBLIC_SENTRY_DSN": frontend_env.get("NEXT_PUBLIC_SENTRY_DSN", ""),
-            "NEXT_PUBLIC_TOLT_REFERRAL_ID": frontend_env.get("NEXT_PUBLIC_TOLT_REFERRAL_ID", ""),
             "NEXT_PUBLIC_PHONE_NUMBER_MANDATORY": frontend_env.get("NEXT_PUBLIC_PHONE_NUMBER_MANDATORY", ""),
             "NEXT_PUBLIC_APP_URL": frontend_env.get("NEXT_PUBLIC_APP_URL", ""),
         },

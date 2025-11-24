@@ -47,6 +47,7 @@ const extractFromNewFormat = (content: any): GetAppDetailsData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -83,30 +84,6 @@ const extractFromNewFormat = (content: any): GetAppDetailsData => {
   }
 
   return { toolkit_slug: null, message: null, toolkit: null, supports_oauth: false, auth_schemes: [], success: undefined, timestamp: undefined };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<GetAppDetailsData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    
-    return {
-      toolkit_slug: args.toolkit_slug || null,
-      message: null,
-      toolkit: null,
-      supports_oauth: false,
-      auth_schemes: []
-    };
-  }
-
-  return {
-    toolkit_slug: null,
-    message: null,
-    toolkit: null,
-    supports_oauth: false,
-    auth_schemes: []
-  };
 };
 
 export function extractGetAppDetailsData(
@@ -151,19 +128,29 @@ export function extractGetAppDetailsData(
     }
   }
 
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
+  // Fallback: try to extract from raw tool data
+  const assistantLegacy = extractToolData(assistantContent);
+  const toolLegacy = extractToolData(toolContent);
+  data = {
+    ...assistantLegacy,
+    ...toolLegacy,
+    toolkit_slug: assistantLegacy.toolkit_slug || toolLegacy.toolkit_slug || null,
+    message: assistantLegacy.message || toolLegacy.message || null,
+    toolkit: assistantLegacy.toolkit || toolLegacy.toolkit || null,
+    supports_oauth: assistantLegacy.supports_oauth || toolLegacy.supports_oauth || false,
+    auth_schemes: assistantLegacy.auth_schemes || toolLegacy.auth_schemes || [],
+    success: undefined,
+    timestamp: undefined
+  };
 
-  const combinedData = {
-    toolkit_slug: toolLegacy.toolkit_slug || assistantLegacy.toolkit_slug,
-    message: toolLegacy.message || assistantLegacy.message,
-    toolkit: toolLegacy.toolkit || assistantLegacy.toolkit,
-    supports_oauth: toolLegacy.supports_oauth || assistantLegacy.supports_oauth,
-    auth_schemes: toolLegacy.auth_schemes.length > 0 ? toolLegacy.auth_schemes : assistantLegacy.auth_schemes,
+  return {
+    toolkit_slug: data.toolkit_slug,
+    message: data.message,
+    toolkit: data.toolkit,
+    supports_oauth: data.supports_oauth,
+    auth_schemes: data.auth_schemes,
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
-
-  return combinedData;
 } 

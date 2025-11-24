@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
-import { getProject as getProjectFromApi, type Project } from "@/lib/api/projects";
 import { backendApi } from "@/lib/api-client";
+import { getProject, updateProject, type Project } from "@/lib/api/threads";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 
@@ -180,90 +180,6 @@ export const getPublicProjects = async (): Promise<Project[]> => {
 
 
 
-  // Wrapper around api.ts getProject to maintain consistent imports
-  // Delegates to api.ts which includes retry logic + better error handling
-  export const getProject = async (projectId: string): Promise<Project> => {
-    return await getProjectFromApi(projectId);
-  };
-
-
-  export const updateProject = async (
-    projectId: string,
-    data: Partial<Project>,
-  ): Promise<Project> => {
-    // Sanity check to avoid update errors
-    if (!projectId || projectId === '') {
-      console.error('Attempted to update project with invalid ID:', projectId);
-      throw new Error('Cannot update project: Invalid project ID');
-    }
-
-    try {
-      // NOTE: This function is called from mutations, not hooks
-      // We still need to fetch threads to find the thread_id for the update
-      // But we should try to use cached data first via queryClient if available
-      // For now, we'll make a direct call but this could be optimized further
-      const { getThreadsPaginated } = await import('@/lib/api/threads');
-      const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
-
-      if (!threadsResponse?.threads) {
-        throw new Error('Failed to find thread for project');
-      }
-
-      const threadWithProject = threadsResponse.threads.find(
-        (thread: any) => thread.project_id === projectId
-      );
-
-      if (!threadWithProject) {
-        throw new Error(`No thread found for project ${projectId}`);
-      }
-
-      // Update project via thread PATCH endpoint
-      // The backend accepts 'title' for project name and 'is_public' for project visibility
-      const updatePayload: any = {};
-      if (data.name !== undefined) {
-        updatePayload.title = data.name;
-      }
-      if (data.is_public !== undefined) {
-        updatePayload.is_public = data.is_public;
-      }
-
-      const updateResponse = await backendApi.patch(
-        `/threads/${threadWithProject.thread_id}`,
-        updatePayload,
-        { showErrors: true }
-      );
-
-      if (updateResponse.error) {
-        throw new Error(updateResponse.error.message || 'Failed to update project');
-      }
-
-      // Don't fetch project data here - let React Query handle it via invalidation
-      // The mutation will invalidate the project query, causing it to refetch automatically
-
-      // Build updated project data from the update payload
-      const updatedProjectData = {
-        id: projectId,
-        name: data.name !== undefined ? data.name : threadWithProject.project?.name || '',
-        description: threadWithProject.project?.description || '',
-        is_public: data.is_public !== undefined ? data.is_public : threadWithProject.project?.is_public || false,
-      };
-
-      // Dispatch a custom event to notify components about the project change
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('project-updated', {
-            detail: {
-              projectId,
-              updatedData: updatedProjectData,
-            },
-          }),
-        );
-      }
-
-      // Return the updated project data (partial, full data will be refetched by React Query)
-      return updatedProjectData as Project;
-    } catch (error) {
-      console.error('Error updating project:', error);
-      throw error;
-    }
-  };
+  // Re-export getProject and updateProject from threads.ts for backward compatibility
+  // These are now properly implemented in threads.ts with React Query support
+  export { getProject, updateProject };

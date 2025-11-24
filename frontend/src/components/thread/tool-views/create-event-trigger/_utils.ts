@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface TriggerData {
   provider: string;
   slug: string;
@@ -67,7 +65,7 @@ export function extractCreateEventTriggerData(
         try {
           content = JSON.parse(toolContent);
         } catch (e) {
-          content = toolContent;
+          // Keep original content if parsing fails
         }
       }
 
@@ -76,6 +74,7 @@ export function extractCreateEventTriggerData(
           const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
           content = nestedContent;
         } catch (e) {
+          // Keep original content if parsing fails
         }
       }
 
@@ -124,31 +123,11 @@ export function extractCreateEventTriggerData(
     }
 
     if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput) {
-          return {
-            ...defaultResult,
-            slug: args.slug || null,
-            profile_id: args.profile_id || null,
-            connected_account_id: args.connected_account_id || null,
-            trigger_config: args.trigger_config || null,
-            name: args.name || null,
-            agent_prompt: args.agent_prompt || null,
-            message: toolOutput.message || null,
-            trigger: toolOutput.trigger || null,
-            actualIsSuccess: true
-          };
-        }
-      }
+      // Handle assistant content if needed
     }
 
     return defaultResult;
   } catch (error) {
-    console.error('Error extracting create event trigger data:', error);
     return defaultResult;
   }
 }

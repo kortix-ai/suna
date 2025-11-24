@@ -214,7 +214,10 @@ class ContextManager:
     async def estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], completion_content: str, model: str) -> Dict[str, Any]:
         """
         Estimate token usage for billing when exact usage is unavailable.
-        Uses provider-specific APIs (Anthropic/Bedrock) when available for accuracy.
+        This is critical for billing on timeouts, crashes, disconnects, etc.
+        
+        Uses provider-specific APIs (Anthropic/Bedrock) when available for accuracy,
+        with fallbacks to LiteLLM token_counter and word count estimation.
         
         Args:
             prompt_messages: The prompt messages sent to the LLM
@@ -244,20 +247,35 @@ class ContextManager:
                 "estimated": True
             }
         except Exception as e:
-            logger.error(f"Failed to estimate token usage: {e}")
-            # Fallback to word count
-            fallback_prompt = len(' '.join(str(m.get('content', '')) for m in prompt_messages).split()) * 1.3
-            fallback_completion = len(completion_content.split()) * 1.3 if completion_content else 0
-            
-            logger.warning(f"⚠️ FALLBACK TOKEN ESTIMATION: prompt≈{int(fallback_prompt)}, completion≈{int(fallback_completion)}")
-            
-            return {
-                "prompt_tokens": int(fallback_prompt),
-                "completion_tokens": int(fallback_completion),
-                "total_tokens": int(fallback_prompt + fallback_completion),
-                "estimated": True,
-                "fallback": True
-            }
+            logger.error(f"Context manager estimation failed: {e}, falling back to LiteLLM")
+            # Fallback to LiteLLM
+            try:
+                prompt_tokens = token_counter(model=model, messages=prompt_messages)
+                completion_tokens = token_counter(model=model, text=completion_content) if completion_content else 0
+                
+                logger.warning(f"⚠️ ESTIMATED TOKEN USAGE (LiteLLM): prompt={prompt_tokens}, completion={completion_tokens}")
+                
+                return {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
+                    "estimated": True
+                }
+            except Exception as e2:
+                logger.error(f"LiteLLM estimation failed: {e2}, using word count fallback")
+                # Final fallback to word count
+                fallback_prompt = len(' '.join(str(m.get('content', '')) for m in prompt_messages).split()) * 1.3
+                fallback_completion = len(completion_content.split()) * 1.3 if completion_content else 0
+                
+                logger.warning(f"⚠️ FALLBACK TOKEN ESTIMATION: prompt≈{int(fallback_prompt)}, completion≈{int(fallback_completion)}")
+                
+                return {
+                    "prompt_tokens": int(fallback_prompt),
+                    "completion_tokens": int(fallback_completion),
+                    "total_tokens": int(fallback_prompt + fallback_completion),
+                    "estimated": True,
+                    "fallback": True
+                }
     
     def is_tool_result_message(self, msg: Dict[str, Any]) -> bool:
         """Check if a message is a tool result message."""

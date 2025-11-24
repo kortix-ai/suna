@@ -923,10 +923,12 @@ async def get_my_transactions(
         db = DBConnection()
         client = await db.client
         
-        query = client.from_('credit_ledger').select('*').eq('account_id', account_id).order('created_at', desc=True)
+        query = client.from_('credit_ledger').select('*').eq('account_id', account_id)
         
         if type_filter:
             query = query.eq('type', type_filter)
+        
+        query = query.order('created_at', desc=True)
 
         count_query = client.from_('credit_ledger').select('*', count='exact').eq('account_id', account_id)
         if type_filter:

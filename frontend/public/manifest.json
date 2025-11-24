@@ -1,7 +1,7 @@
 {
-  "name": "Kortix - Open Source Generalist AI Worker",
+  "name": "Kortix the Super Mega Giga Worker",
   "short_name": "Kortix",
-  "description": "Open Source Generalist AI Worker. Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.",
+  "description": "Kortix the Super Mega Giga Worker – A generalist AI Worker that is able to autonomously tackle complex tasks, browse the web, write and execute code, manage files, conduct research, automate workflows, and accomplish real-world objectives through natural conversation.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",
@@ -10,20 +10,25 @@
   "icons": [
     {
       "src": "/favicon.png",
-      "sizes": "192x192",
+      "sizes": "32x32",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/favicon.png",
+      "src": "/favicon-light.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo_black.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
   ],
-  "categories": ["productivity", "utilities"],
+  "categories": ["productivity", "utilities", "business"],
   "scope": "/",
   "lang": "en-US",
   "dir": "ltr"
 }
-

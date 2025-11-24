@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
-import { useMessagesQuery } from '@/hooks/threads/use-messages';
+import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
@@ -84,8 +84,8 @@ export function useThreadData(threadId: string, projectId: string, isShared: boo
         if (messagesQuery.data && !messagesLoadedRef.current) {
           // (debug logs removed)
 
+          // Backend now filters out status messages, so no need to filter here
           const unifiedMessages = (messagesQuery.data || [])
-            .filter((msg) => msg.type !== 'status')
             .map((msg: ApiMessageType) => ({
               message_id: msg.message_id || null,
               thread_id: msg.thread_id || threadId,
@@ -193,8 +193,8 @@ export function useThreadData(threadId: string, projectId: string, isShared: boo
       if (shouldReload) {
         // (debug logs removed)
         
+        // Backend now filters out status messages, so no need to filter here
         const unifiedMessages = (messagesQuery.data || [])
-          .filter((msg) => msg.type !== 'status')
           .map((msg: ApiMessageType) => ({
             message_id: msg.message_id || null,
             thread_id: msg.thread_id || threadId,

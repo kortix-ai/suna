@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface TriggerConfig {
   properties: Record<string, any>;
   title?: string;
@@ -84,7 +82,7 @@ export function extractListAppEventTriggersData(
         try {
           content = JSON.parse(toolContent);
         } catch (e) {
-          content = toolContent;
+          // Keep original content if parsing fails
         }
       }
 
@@ -93,6 +91,7 @@ export function extractListAppEventTriggersData(
           const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
           content = nestedContent;
         } catch (e) {
+          // Keep original content if parsing fails
         }
       }
 
@@ -134,29 +133,9 @@ export function extractListAppEventTriggersData(
       }
     }
 
-    if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput) {
-          return {
-            ...defaultResult,
-            toolkit_slug: args.toolkit_slug || null,
-            message: toolOutput.message || null,
-            items: toolOutput.items || [],
-            toolkit: toolOutput.toolkit || null,
-            total: toolOutput.total || 0,
-            actualIsSuccess: true
-          };
-        }
-      }
-    }
-
     return defaultResult;
   } catch (error) {
-    console.error('Error extracting list app event triggers data:', error);
+    console.error('Error:', error);
     return defaultResult;
   }
 }

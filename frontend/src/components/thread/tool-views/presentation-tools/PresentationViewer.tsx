@@ -29,7 +29,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, extractToolData, getToolTitle } from '../utils';
+import { formatTimestamp, getToolTitle } from '../utils';
 import { downloadPresentation, handleGoogleSlidesUpload } from '../utils/presentation-utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { CodeBlockCode } from '@/components/ui/code-block';
@@ -63,13 +63,12 @@ interface PresentationViewerProps extends ToolViewProps {
 }
 
 export function PresentationViewer({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
   showHeader = true,
 }: PresentationViewerProps) {
@@ -91,41 +90,37 @@ export function PresentationViewer({
   const { isOpen, presentationName, sandboxUrl, initialSlide, openPresentation, closePresentation } = usePresentationViewerStore();
   const viewerState = { isOpen, presentationName, sandboxUrl, initialSlide };
 
-  // Extract presentation info from tool data
-  const { toolResult } = extractToolData(toolContent);
+  // Extract presentation info from toolResult.output (from metadata)
   let extractedPresentationName: string | undefined;
   let extractedPresentationPath: string | undefined;
   let currentSlideNumber: number | undefined;
   let presentationTitle: string | undefined;
   let toolExecutionError: string | undefined;
 
-  if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== 'STREAMING') {
+  if (toolResult?.output) {
     try {
-      let output;
+      let output = toolResult.output;
       
-      if (typeof toolResult.toolOutput === 'string') {
+      // Handle string output
+      if (typeof output === 'string') {
         // Check if the string looks like an error message
-        if (toolResult.toolOutput.startsWith('Error') || toolResult.toolOutput.includes('exec')) {
-          console.error('Tool execution error:', toolResult.toolOutput);
-          toolExecutionError = toolResult.toolOutput;
-          // Don't return early - let the component render the error state
+        if (output.startsWith('Error') || output.includes('exec')) {
+          console.error('Tool execution error:', output);
+          toolExecutionError = output;
         } else {
           // Try to parse as JSON
           try {
-            output = JSON.parse(toolResult.toolOutput);
+            output = JSON.parse(output);
           } catch (parseError) {
             console.error('Failed to parse tool output as JSON:', parseError);
-            console.error('Raw tool output:', toolResult.toolOutput);
-            toolExecutionError = `Failed to parse tool output: ${toolResult.toolOutput}`;
-            // Don't return early - let the component render the error state
+            console.error('Raw tool output:', output);
+            toolExecutionError = `Failed to parse tool output: ${output}`;
           }
         }
-      } else {
-        output = toolResult.toolOutput;
       }
       
       // Only extract data if we have a valid parsed object
-      if (output && typeof output === 'object') {
+      if (output && typeof output === 'object' && !toolExecutionError) {
         extractedPresentationName = output.presentation_name;
         extractedPresentationPath = output.presentation_path;
         currentSlideNumber = output.slide_number;
@@ -133,8 +128,8 @@ export function PresentationViewer({
       }
     } catch (e) {
       console.error('Failed to process tool output:', e);
-      console.error('Tool output type:', typeof toolResult.toolOutput);
-      console.error('Tool output value:', toolResult.toolOutput);
+      console.error('Tool output type:', typeof toolResult.output);
+      console.error('Tool output value:', toolResult.output);
       toolExecutionError = `Unexpected error processing tool output: ${String(e)}`;
     }
   }
@@ -316,7 +311,7 @@ export function PresentationViewer({
       setIsLoadingMetadata(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extractedPresentationName, project?.sandbox?.sandbox_url, toolContent]);
+  }, [extractedPresentationName, project?.sandbox?.sandbox_url, toolResult?.output]);
 
   // Cleanup retry timeout and sandbox check interval on unmount
   useEffect(() => {
@@ -333,7 +328,7 @@ export function PresentationViewer({
   // Reset scroll state when tool content changes (new tool call)
   useEffect(() => {
     setHasScrolledToCurrentSlide(false);
-  }, [toolContent, currentSlideNumber]);
+  }, [toolResult?.output, currentSlideNumber]);
 
   // Scroll to current slide when metadata loads or when tool content changes
   useEffect(() => {

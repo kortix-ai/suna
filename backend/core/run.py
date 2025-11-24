@@ -347,7 +347,7 @@ class PromptManager:
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
                                   client=None,
                                   tool_registry=None,
-                                  xml_tool_calling: bool = True,
+                                  xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None) -> dict:
         
         default_system_content = get_system_prompt()
@@ -498,19 +498,33 @@ This token tells the system you are done and ready for tool execution. The syste
 
 RULES FOR TOOL CALLING:
 1. Generate ONLY ONE <function_calls> block per response
-2. Close with </function_calls>
-3. IMMEDIATELY after </function_calls>, output: |||STOP_AGENT|||
-4. NEVER write anything after |||STOP_AGENT|||
-5. Do NOT continue the conversation after this token
-6. Do NOT simulate tool results or user responses
+2. Each <function_calls> block can contain multiple <invoke> tags for parallel tool execution
+3. IMPORTANT: Tool execution ONLY happens when you output the |||STOP_AGENT||| stop sequence
+4. IMMEDIATELY after </function_calls>, output: |||STOP_AGENT|||
+5. NEVER write anything after |||STOP_AGENT|||
+6. Do NOT continue the conversation after this token
+7. Do NOT simulate tool results or user responses
 
-Example of correct tool call format:
+Example of correct tool call format (single block):
 <function_calls>
 <invoke name="example_tool">
 <parameter name="param1">value1</parameter>
 </invoke>
 </function_calls>
 |||STOP_AGENT|||
+
+[Generation stops here automatically - do not continue]
+
+Example of correct tool call format (multiple invokes in one block):
+<function_calls>
+<invoke name="tool1">
+<parameter name="param1">value1</parameter>
+</invoke>
+<invoke name="tool2">
+<parameter name="param2">value2</parameter>
+</invoke>
+</function_calls>
+||||STOP_AGENT|||
 
 [Generation stops here automatically - do not continue]
 """
@@ -705,7 +719,7 @@ class AgentRunner:
             self.config.thread_id, 
             mcp_wrapper_instance, self.client,
             tool_registry=self.thread_manager.tool_registry,
-            xml_tool_calling=False,  # Use native tool calling by default
+            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
             user_id=self.account_id
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
@@ -778,12 +792,11 @@ class AgentRunner:
                     temporary_message=temporary_message,
                     latest_user_message_content=latest_user_message_content,
                     processor_config=ProcessorConfig(
-                        xml_tool_calling=False,  # Use native tool calling by default
-                        native_tool_calling=True,  # Enable native tool calling
+                        xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
+                        native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING, 
                         execute_tools=True,
-                        execute_on_stream=True,
-                        tool_execution_strategy="parallel",
-                        xml_adding_strategy="user_message"
+                        execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
+                        tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
                     generation=generation,
@@ -832,8 +845,6 @@ class AgentRunner:
                                         
                                         if content.get('function_name'):
                                             last_tool_call = content['function_name']
-                                        elif content.get('xml_tag_name'):
-                                            last_tool_call = content['xml_tag_name']
                                             
                                 except Exception:
                                     pass

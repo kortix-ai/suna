@@ -31,7 +31,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   title: {
-    default: siteConfig.name,
+    default: 'Kortix the Super Mega Giga Worker',
     template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
@@ -48,6 +48,10 @@ export const metadata: Metadata = {
     'task automation',
     'Kortix',
     'generalist AI',
+    'code generation',
+    'AI coding assistant',
+    'workflow automation',
+    'AI productivity',
   ],
   authors: [
     { 
@@ -78,7 +82,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    title: 'Kortix - Open Source Generalist AI Worker',
+    title: 'Kortix – the Super Mega Giga AI Worker',
     description: siteConfig.description,
     url: siteConfig.url,
     siteName: 'Kortix',
@@ -88,26 +92,33 @@ export const metadata: Metadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Kortix - Open Source Generalist AI Worker',
+        alt: 'Kortix the Super Mega Giga Worker – A generalist AI Worker that autonomously tackles complex tasks',
         type: 'image/png',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Kortix - Open Source Generalist AI Worker',
+    title: 'Kortix the Super Mega Giga Worker',
     description: siteConfig.description,
     creator: '@kortix',
     site: '@kortix',
-    images: ['/banner.png'],
+    images: [
+      {
+        url: '/banner.png',
+        alt: 'Kortix the Super Mega Giga Worker',
+      }
+    ],
   },
   icons: {
     icon: [
-      { url: '/favicon.png', sizes: 'any' },
-      { url: '/favicon-light.png', sizes: 'any', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-light.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
     ],
     shortcut: '/favicon.png',
-    apple: '/favicon.png',
+    apple: [
+      { url: '/logo_black.png', sizes: '180x180', type: 'image/png' },
+    ],
   },
   manifest: '/manifest.json',
   alternates: {
@@ -115,6 +126,11 @@ export const metadata: Metadata = {
   },
   verification: {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+  },
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'apple-mobile-web-app-title': 'Kortix',
   },
 };
 
@@ -132,7 +148,7 @@ export default function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: 'Kortix',
-              alternateName: ['Suna', 'Kortix AI'],
+              alternateName: ['Suna', 'Kortix AI', 'Kortix the Super Mega Giga Worker'],
               url: 'https://kortix.com',
               logo: 'https://kortix.com/favicon.png',
               description: siteConfig.description,
@@ -158,10 +174,11 @@ export default function RootLayout({
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
-              name: 'Kortix',
-              alternateName: 'Suna',
+              name: 'Kortix the Super Mega Giga Worker',
+              alternateName: ['Kortix', 'Suna'],
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web, macOS, Windows, Linux',
+              description: siteConfig.description,
               offers: {
                 '@type': 'Offer',
                 price: '0',
@@ -183,7 +200,6 @@ export default function RootLayout({
           'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
           })(window,document,'script','dataLayer','GTM-PCHSN4M2');`}
         </Script>
-        <Script async src="https://cdn.tolt.io/tolt.js" data-tolt={process.env.NEXT_PUBLIC_TOLT_REFERRAL_ID}></Script>
       </head>
 
       <body className="antialiased font-sans bg-background">

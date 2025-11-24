@@ -60,8 +60,10 @@ def initialize():
     redis_password = config["password"]
     redis_username = config["username"]
     
-    # Connection pool configuration - optimized for production
-    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "128"))
+    # Connection pool configuration - optimized for API (light usage)
+    # API typically has < 20 concurrent Redis operations
+    # Default is generous - Redis will handle rejection if we exceed server limits
+    max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "100"))
     socket_timeout = 15.0            # 15 seconds socket timeout
     connect_timeout = 10.0           # 10 seconds connection timeout
     retry_on_timeout = not (os.getenv("REDIS_RETRY_ON_TIMEOUT", "True").lower() != "true")

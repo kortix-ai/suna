@@ -25,14 +25,21 @@ import { extractPeopleSearchData } from './_utils';
 import { cn } from '@/lib/utils';
 
 export function PeopleSearchToolView({
-  name = 'people-search',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('PeopleSearchToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  
   const {
     query,
     total_results,
@@ -42,8 +49,8 @@ export function PeopleSearchToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractPeopleSearchData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

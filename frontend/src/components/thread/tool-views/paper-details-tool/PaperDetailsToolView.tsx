@@ -30,14 +30,20 @@ import { LoadingState } from '../shared/LoadingState';
 import { extractPaperDetailsData, Author, CitationReference, PaperDetails } from './_utils';
 
 export function PaperDetailsToolView({
-  name = 'get-paper-details',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('PaperDetailsToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const [showAllCitations, setShowAllCitations] = useState(false);
   const [showAllReferences, setShowAllReferences] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -48,8 +54,8 @@ export function PaperDetailsToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractPaperDetailsData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

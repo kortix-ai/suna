@@ -64,7 +64,7 @@ import { Thread, getThreadsPaginated, type ThreadsResponse } from '@/lib/api/thr
 import { useThreads } from '@/hooks/threads/use-threads';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {

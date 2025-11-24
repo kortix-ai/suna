@@ -53,6 +53,7 @@ const extractFromNewFormat = (content: any): ConnectCredentialProfileData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -111,38 +112,6 @@ const extractFromNewFormat = (content: any): ConnectCredentialProfileData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<ConnectCredentialProfileData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    
-    return {
-      profile_id: args.profile_id || null,
-      message: null,
-      profile_name: null,
-      app_name: null,
-      app_slug: null,
-      connection_link: null,
-      external_user_id: null,
-      expires_at: null,
-      instructions: null
-    };
-  }
-
-  return {
-    profile_id: null,
-    message: null,
-    profile_name: null,
-    app_name: null,
-    app_slug: null,
-    connection_link: null,
-    external_user_id: null,
-    expires_at: null,
-    instructions: null
-  };
-};
-
 export function extractConnectCredentialProfileData(
   assistantContent: any,
   toolContent: any,
@@ -189,23 +158,37 @@ export function extractConnectCredentialProfileData(
     }
   }
 
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
+  // Fallback: try to extract from raw tool data
+  const assistantLegacy = extractToolData(assistantContent);
+  const toolLegacy = extractToolData(toolContent);
+  data = {
+    ...assistantLegacy,
+    ...toolLegacy,
+    profile_id: assistantLegacy.profile_id || toolLegacy.profile_id || null,
+    message: assistantLegacy.message || toolLegacy.message || null,
+    profile_name: assistantLegacy.profile_name || toolLegacy.profile_name || null,
+    app_name: assistantLegacy.app_name || toolLegacy.app_name || null,
+    app_slug: assistantLegacy.app_slug || toolLegacy.app_slug || null,
+    connection_link: assistantLegacy.connection_link || toolLegacy.connection_link || null,
+    external_user_id: assistantLegacy.external_user_id || toolLegacy.external_user_id || null,
+    expires_at: assistantLegacy.expires_at || toolLegacy.expires_at || null,
+    instructions: assistantLegacy.instructions || toolLegacy.instructions || null,
+    success: undefined,
+    timestamp: undefined
+  };
 
-  const combinedData = {
-    profile_id: toolLegacy.profile_id || assistantLegacy.profile_id,
-    message: toolLegacy.message || assistantLegacy.message,
-    profile_name: toolLegacy.profile_name || assistantLegacy.profile_name,
-    app_name: toolLegacy.app_name || assistantLegacy.app_name,
-    app_slug: toolLegacy.app_slug || assistantLegacy.app_slug,
-    connection_link: toolLegacy.connection_link || assistantLegacy.connection_link,
-    external_user_id: toolLegacy.external_user_id || assistantLegacy.external_user_id,
-    expires_at: toolLegacy.expires_at || assistantLegacy.expires_at,
-    instructions: toolLegacy.instructions || assistantLegacy.instructions,
+  return {
+    profile_id: data.profile_id,
+    message: data.message,
+    profile_name: data.profile_name,
+    app_name: data.app_name,
+    app_slug: data.app_slug,
+    connection_link: data.connection_link,
+    external_user_id: data.external_user_id,
+    expires_at: data.expires_at,
+    instructions: data.instructions,
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
-
-  return combinedData;
 } 

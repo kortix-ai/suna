@@ -143,24 +143,6 @@ const extractFromNewFormat = (content: any): AuthorPapersData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<AuthorPapersData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    return {
-      author_id: null,
-      papers_returned: 0,
-      papers: []
-    };
-  }
-
-  return {
-    author_id: null,
-    papers_returned: 0,
-    papers: []
-  };
-};
-
 export function extractAuthorPapersData(
   assistantContent: any,
   toolContent: any,
@@ -205,13 +187,15 @@ export function extractAuthorPapersData(
       actualToolTimestamp = toolNewFormat.timestamp;
     }
   } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
+    // Fallback: try to extract from raw tool data
+    const assistantLegacy = extractToolData(assistantContent);
+    const toolLegacy = extractToolData(toolContent);
     data = {
       ...assistantLegacy,
       ...toolLegacy,
-      author_id: assistantLegacy.author_id || toolLegacy.author_id,
+      author_id: assistantLegacy.author_id || toolLegacy.author_id || null,
+      papers_returned: assistantLegacy.papers_returned || toolLegacy.papers_returned || 0,
+      papers: assistantLegacy.papers || toolLegacy.papers || [],
       success: undefined,
       timestamp: undefined
     };

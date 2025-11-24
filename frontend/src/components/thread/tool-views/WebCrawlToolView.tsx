@@ -12,11 +12,8 @@ import {
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import {
-  extractCrawlUrl,
-  extractWebpageContent,
   formatTimestamp,
   getToolTitle,
-  extractToolData,
 } from './utils';
 import { cn, truncateString } from '@/lib/utils';
 import { useTheme } from 'next-themes';
@@ -28,37 +25,57 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function WebCrawlToolView({
-  name = 'crawl-webpage',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const { resolvedTheme } = useTheme();
   const [progress, setProgress] = useState(0);
   const [copiedContent, setCopiedContent] = useState(false);
 
-  // Try to extract data using the new parser first
-  const assistantToolData = extractToolData(assistantContent);
-  const toolToolData = extractToolData(toolContent);
+  useEffect(() => {
+    if (isStreaming) {
+      const timer = setInterval(() => {
+        setProgress((prevProgress) => {
+          if (prevProgress >= 95) {
+            clearInterval(timer);
+            return prevProgress;
+          }
+          return prevProgress + 5;
+        });
+      }, 300);
+      return () => clearInterval(timer);
+    } else {
+      setProgress(100);
+    }
+  }, [isStreaming]);
 
-  let url: string | null = null;
-
-  // Use data from the new format if available
-  if (assistantToolData.toolResult) {
-    url = assistantToolData.url;
-  } else if (toolToolData.toolResult) {
-    url = toolToolData.url;
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('WebCrawlToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
   }
 
-  // If not found in new format, fall back to legacy extraction
-  if (!url) {
-    url = extractCrawlUrl(assistantContent);
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+
+  // Extract data directly from structured props
+  const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
+  
+  // Extract webpage content from toolResult
+  let webpageContent: { text?: string } | null = null;
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    if (typeof output === 'string') {
+      webpageContent = { text: output };
+    } else if (typeof output === 'object' && output !== null) {
+      webpageContent = output as { text?: string };
+    }
   }
 
-  const webpageContent = extractWebpageContent(toolContent);
   const toolTitle = getToolTitle(name);
 
   // Format domain for display
@@ -84,24 +101,6 @@ export function WebCrawlToolView({
   };
 
   const favicon = url ? getFavicon(url) : null;
-
-  // Simulate progress when streaming
-  useEffect(() => {
-    if (isStreaming) {
-      const timer = setInterval(() => {
-        setProgress((prevProgress) => {
-          if (prevProgress >= 95) {
-            clearInterval(timer);
-            return prevProgress;
-          }
-          return prevProgress + 5;
-        });
-      }, 300);
-      return () => clearInterval(timer);
-    } else {
-      setProgress(100);
-    }
-  }, [isStreaming]);
 
   const copyContent = async () => {
     if (!webpageContent?.text) return;

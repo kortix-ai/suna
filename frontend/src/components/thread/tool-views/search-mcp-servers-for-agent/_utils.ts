@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface SearchMcpServersData {
   search_query: string | null;
   toolkits: Array<{
@@ -49,7 +47,6 @@ export function extractSearchMcpServersData(
   };
 
   if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'search_mcp_servers_for_agent') {
       const args = parsedToolResult.arguments || {};
@@ -82,7 +79,6 @@ export function extractSearchMcpServersData(
   }
 
   if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'search_mcp_servers_for_agent') {
       const args = parsedToolResult.arguments || {};

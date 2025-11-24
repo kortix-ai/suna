@@ -101,23 +101,7 @@ const extractFromNewFormat = (content: any): GetCurrentAgentConfigData => {
     success: undefined,
     timestamp: undefined 
   };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<GetCurrentAgentConfigData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    return {
-      summary: null,
-      configuration: null
-    };
-  }
-  
-  return {
-    summary: null,
-    configuration: null
-  };
-};
+};;
 
 export function extractGetCurrentAgentConfigData(
   assistantContent: any,
@@ -156,14 +140,7 @@ export function extractGetCurrentAgentConfigData(
         actualAssistantTimestamp: data.timestamp || assistantTimestamp
       };
     }
-  }
-
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
-
-  const combinedData = {
-    summary: toolLegacy.summary || assistantLegacy.summary,
-    configuration: toolLegacy.configuration || assistantLegacy.configuration,
+  }const combinedData = {
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp

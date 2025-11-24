@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface CreateCredentialProfileData {
   toolkit_slug: string | null;
   profile_name: string | null;
@@ -48,7 +46,6 @@ export function extractCreateCredentialProfileData(
   };
 
   if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'create_credential_profile_for_agent') {
       const args = parsedToolResult.arguments || {};
@@ -83,7 +80,6 @@ export function extractCreateCredentialProfileData(
   }
 
   if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'create_credential_profile_for_agent') {
       const args = parsedToolResult.arguments || {};

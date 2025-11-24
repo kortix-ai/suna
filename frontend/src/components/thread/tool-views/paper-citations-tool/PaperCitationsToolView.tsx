@@ -26,6 +26,12 @@ import { LoadingState } from '../shared/LoadingState';
 import { extractPaperCitationsData } from './_utils';
 import { cn } from '@/lib/utils';
 
+interface PaperCitationsToolViewProps extends ToolViewProps {
+  name?: string;
+  assistantContent?: any;
+  toolContent?: any;
+}
+
 export function PaperCitationsToolView({
   name = 'get-paper-citations',
   assistantContent,
@@ -34,7 +40,12 @@ export function PaperCitationsToolView({
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-}: ToolViewProps) {
+  toolCall,
+  toolResult,
+}: PaperCitationsToolViewProps) {
+  // Extract content from toolCall/toolResult if assistantContent/toolContent not provided
+  const finalAssistantContent = assistantContent ?? (toolCall ? JSON.stringify(toolCall.arguments || {}) : undefined);
+  const finalToolContent = toolContent ?? (toolResult ? JSON.stringify(toolResult.output || {}) : undefined);
   const [expandedCitations, setExpandedCitations] = useState<Set<number>>(new Set());
 
   const {
@@ -46,8 +57,8 @@ export function PaperCitationsToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractPaperCitationsData(
-    assistantContent,
-    toolContent,
+    finalAssistantContent,
+    finalToolContent,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

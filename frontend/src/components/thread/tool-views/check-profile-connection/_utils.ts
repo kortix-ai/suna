@@ -66,6 +66,7 @@ const extractFromNewFormat = (content: any): CheckProfileConnectionData => {
       try {
         parsedOutput = JSON.parse(parsedOutput);
       } catch (e) {
+        // Error handling
       }
     }
     parsedOutput = parsedOutput || {};
@@ -130,42 +131,6 @@ const extractFromNewFormat = (content: any): CheckProfileConnectionData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<CheckProfileConnectionData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    
-    return {
-      profile_id: args.profile_id || null,
-      profile_name: null,
-      app_name: null,
-      app_slug: null,
-      external_user_id: null,
-      is_connected: false,
-      connections: [],
-      connection_count: 0,
-      available_tools: [],
-      tool_count: 0,
-      message: null
-    };
-  }
-
-  return {
-    profile_id: null,
-    profile_name: null,
-    app_name: null,
-    app_slug: null,
-    external_user_id: null,
-    is_connected: false,
-    connections: [],
-    connection_count: 0,
-    available_tools: [],
-    tool_count: 0,
-    message: null
-  };
-};
-
 export function extractCheckProfileConnectionData(
   assistantContent: any,
   toolContent: any,
@@ -214,25 +179,41 @@ export function extractCheckProfileConnectionData(
     }
   }
 
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
+  // Fallback: try to extract from raw tool data
+  const assistantLegacy = extractToolData(assistantContent);
+  const toolLegacy = extractToolData(toolContent);
+  data = {
+    ...assistantLegacy,
+    ...toolLegacy,
+    profile_id: assistantLegacy.profile_id || toolLegacy.profile_id || null,
+    profile_name: assistantLegacy.profile_name || toolLegacy.profile_name || null,
+    app_name: assistantLegacy.app_name || toolLegacy.app_name || null,
+    app_slug: assistantLegacy.app_slug || toolLegacy.app_slug || null,
+    external_user_id: assistantLegacy.external_user_id || toolLegacy.external_user_id || null,
+    is_connected: assistantLegacy.is_connected || toolLegacy.is_connected || false,
+    connections: assistantLegacy.connections || toolLegacy.connections || [],
+    connection_count: assistantLegacy.connection_count || toolLegacy.connection_count || 0,
+    available_tools: assistantLegacy.available_tools || toolLegacy.available_tools || [],
+    tool_count: assistantLegacy.tool_count || toolLegacy.tool_count || 0,
+    message: assistantLegacy.message || toolLegacy.message || null,
+    success: undefined,
+    timestamp: undefined
+  };
 
-  const combinedData = {
-    profile_id: toolLegacy.profile_id || assistantLegacy.profile_id,
-    profile_name: toolLegacy.profile_name || assistantLegacy.profile_name,
-    app_name: toolLegacy.app_name || assistantLegacy.app_name,
-    app_slug: toolLegacy.app_slug || assistantLegacy.app_slug,
-    external_user_id: toolLegacy.external_user_id || assistantLegacy.external_user_id,
-    is_connected: toolLegacy.is_connected || assistantLegacy.is_connected,
-    connections: toolLegacy.connections.length > 0 ? toolLegacy.connections : assistantLegacy.connections,
-    connection_count: toolLegacy.connection_count || assistantLegacy.connection_count,
-    available_tools: toolLegacy.available_tools.length > 0 ? toolLegacy.available_tools : assistantLegacy.available_tools,
-    tool_count: toolLegacy.tool_count || assistantLegacy.tool_count,
-    message: toolLegacy.message || assistantLegacy.message,
+  return {
+    profile_id: data.profile_id,
+    profile_name: data.profile_name,
+    app_name: data.app_name,
+    app_slug: data.app_slug,
+    external_user_id: data.external_user_id,
+    is_connected: data.is_connected,
+    connections: data.connections,
+    connection_count: data.connection_count,
+    available_tools: data.available_tools,
+    tool_count: data.tool_count,
+    message: data.message,
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
-
-  return combinedData;
 } 

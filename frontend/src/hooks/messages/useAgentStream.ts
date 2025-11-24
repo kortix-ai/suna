@@ -4,9 +4,7 @@ import {
   streamAgent,
   getAgentStatus,
   stopAgent,
-  AgentRun,
 } from '@/lib/api/agents';
-import { getMessages } from '@/lib/api/threads';
 import { toast } from 'sonner';
 import {
   UnifiedMessage,
@@ -18,56 +16,68 @@ import { agentKeys } from '@/hooks/agents/keys';
 import { composioKeys } from '@/hooks/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
-import { useContextUsageStore } from '@/stores/context-usage-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
   status: string;
   textContent: string;
-  toolCall: ParsedContent | null;
+  toolCall: UnifiedMessage | null; // UnifiedMessage with metadata.tool_calls
   error: string | null;
-  agentRunId: string | null; // Expose the currently managed agentRunId
+  agentRunId: string | null;
   startStreaming: (runId: string) => void;
   stopStreaming: () => Promise<void>;
 }
 
 // Define the callbacks the hook consumer can provide
 export interface AgentStreamCallbacks {
-  onMessage: (message: UnifiedMessage) => void; // Callback for complete messages
-  onStatusChange?: (status: string) => void; // Optional: Notify on internal status changes
-  onError?: (error: string) => void; // Optional: Notify on errors
-  onClose?: (finalStatus: string) => void; // Optional: Notify when streaming definitively ends
-  onAssistantStart?: () => void; // Optional: Notify when assistant starts streaming
-  onAssistantChunk?: (chunk: { content: string }) => void; // Optional: Notify on each assistant message chunk
+  onMessage: (message: UnifiedMessage) => void;
+  onStatusChange?: (status: string) => void;
+  onError?: (error: string) => void;
+  onClose?: (finalStatus: string) => void;
+  onAssistantStart?: () => void;
+  onAssistantChunk?: (chunk: { content: string }) => void;
+  onToolCallChunk?: (message: UnifiedMessage) => void;
 }
 
 export function useAgentStream(
   callbacks: AgentStreamCallbacks,
   threadId: string,
   setMessages: (messages: UnifiedMessage[]) => void,
-  agentId?: string, // Optional agent ID for invalidation
+  agentId?: string,
 ): UseAgentStreamResult {
   const queryClient = useQueryClient();
-  const setContextUsage = useContextUsageStore((state) => state.setUsage);
 
   const [status, setStatus] = useState<string>('idle');
   const [textContent, setTextContent] = useState<
     { content: string; sequence?: number }[]
   >([]);
   
-  // Add throttled state updates for smoother streaming
+  // Throttled state updates for smoother streaming
   const throttleRef = useRef<NodeJS.Timeout | null>(null);
   const pendingContentRef = useRef<{ content: string; sequence?: number }[]>([]);
   
   // Throttled content update function for smoother streaming
   const flushPendingContent = useCallback(() => {
     if (pendingContentRef.current.length > 0) {
-      const newContent = [...pendingContentRef.current];
+      // Sort chunks by sequence before adding to state
+      const sortedContent = pendingContentRef.current.slice().sort((a, b) => {
+        const aSeq = a.sequence ?? 0;
+        const bSeq = b.sequence ?? 0;
+        return aSeq - bSeq;
+      });
       pendingContentRef.current = [];
       
       React.startTransition(() => {
-        setTextContent((prev) => [...prev, ...newContent]);
+        setTextContent((prev) => {
+          // Combine with existing content and sort all together
+          const combined = [...prev, ...sortedContent];
+          return combined.sort((a, b) => {
+            const aSeq = a.sequence ?? 0;
+            const bSeq = b.sequence ?? 0;
+            return aSeq - bSeq;
+          });
+        });
       });
     }
   }, []);
@@ -80,24 +90,44 @@ export function useAgentStream(
       clearTimeout(throttleRef.current);
     }
     
-          // Set new throttle for smooth updates (16ms ≈ 60fps)
+    // Set new throttle for smooth updates (16ms ≈ 60fps)
     throttleRef.current = setTimeout(flushPendingContent, 16);
   }, [flushPendingContent]);
-  const [toolCall, setToolCall] = useState<ParsedContent | null>(null);
+  
+  const [toolCall, setToolCall] = useState<UnifiedMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
 
   const streamCleanupRef = useRef<(() => void) | null>(null);
   const isMountedRef = useRef<boolean>(true);
-  const currentRunIdRef = useRef<string | null>(null); // Ref to track the run ID being processed
-  const threadIdRef = useRef(threadId); // Ref to hold the current threadId
-  const setMessagesRef = useRef(setMessages); // Ref to hold the setMessages function
+  const currentRunIdRef = useRef<string | null>(null);
+  const threadIdRef = useRef(threadId);
+  const setMessagesRef = useRef(setMessages);
 
   const orderedTextContent = useMemo(() => {
-    // Use a more efficient approach for streaming performance
     if (textContent.length === 0) return '';
     
-    // Sort once and concatenate efficiently
+    // Only sort if sequences are out of order (optimization)
+    let needsSorting = false;
+    for (let i = 1; i < textContent.length; i++) {
+      const prevSeq = textContent[i - 1].sequence ?? 0;
+      const currSeq = textContent[i].sequence ?? 0;
+      if (currSeq < prevSeq) {
+        needsSorting = true;
+        break;
+      }
+    }
+    
+    // If already sorted, just concatenate
+    if (!needsSorting) {
+      let result = '';
+      for (let i = 0; i < textContent.length; i++) {
+        result += textContent[i].content;
+      }
+      return result;
+    }
+    
+    // Only sort if necessary
     const sorted = textContent.slice().sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
     let result = '';
     for (let i = 0; i < sorted.length; i++) {
@@ -124,7 +154,7 @@ export function useAgentStream(
     textContentRef.current = textContent;
   }, [textContent]);
 
-  // On thread change, ensure any existing stream is cleaned up to avoid stale subscriptions
+  // On thread change, ensure any existing stream is cleaned up
   useEffect(() => {
     const previousThreadId = threadIdRef.current;
     if (
@@ -132,7 +162,6 @@ export function useAgentStream(
       previousThreadId !== threadId &&
       streamCleanupRef.current
     ) {
-      // Close the existing stream for the previous thread
       streamCleanupRef.current();
       streamCleanupRef.current = null;
       setStatus('idle');
@@ -185,15 +214,15 @@ export function useAgentStream(
       }
     },
     [callbacks, error],
-  ); // Include error dependency
+  );
 
-  // Function to handle finalization of a stream (completion, stop, error)
+  // Function to handle finalization of a stream
   const finalizeStream = useCallback(
     (finalStatus: string, runId: string | null = agentRunId) => {
       if (!isMountedRef.current) return;
 
-      const currentThreadId = threadIdRef.current; // Get current threadId from ref
-      const currentSetMessages = setMessagesRef.current; // Get current setMessages from ref
+      const currentThreadId = threadIdRef.current;
+      const currentSetMessages = setMessagesRef.current;
 
       // Only finalize if this is for the current run ID or if no specific run ID is provided
       if (
@@ -287,12 +316,10 @@ export function useAgentStream(
     [agentRunId, updateStatus, agentId, queryClient],
   );
 
-  // --- Stream Callback Handlers ---
-
+  // Stream message handler
   const handleStreamMessage = useCallback(
     (rawData: string) => {
       if (!isMountedRef.current) return;
-      (window as any).lastStreamMessage = Date.now(); // Keep track of last message time
 
       let processedData = rawData;
       if (processedData.startsWith('data: ')) {
@@ -300,7 +327,7 @@ export function useAgentStream(
       }
       if (!processedData) return;
 
-      // --- Early exit for non-JSON completion messages ---
+      // Early exit for non-JSON completion messages
       if (
         processedData ===
         '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
@@ -316,7 +343,7 @@ export function useAgentStream(
         return;
       }
 
-      // --- Check for error messages first ---
+      // Check for error messages first
       try {
         const jsonData = JSON.parse(processedData);
         if (jsonData.status === 'error') {
@@ -337,10 +364,11 @@ export function useAgentStream(
             messageLower.includes('billing check failed');
           
           if (isBillingError) {
-            setError(errorMessage);
+            React.startTransition(() => {
+              setError(errorMessage);
+            });
             callbacks.onError?.(errorMessage);
             
-            // Open pricing modal automatically
             const isCreditsExhausted = 
               messageLower.includes('insufficient credits') ||
               messageLower.includes('out of credits') ||
@@ -358,7 +386,9 @@ export function useAgentStream(
             return;
           }
           
-          setError(errorMessage);
+          React.startTransition(() => {
+            setError(errorMessage);
+          });
           toast.error(errorMessage, { duration: 15000 });
           callbacks.onError?.(errorMessage);
           return;
@@ -379,10 +409,11 @@ export function useAgentStream(
               '[useAgentStream] Agent stopped due to billing error:',
               jsonData.message,
             );
-            setError(jsonData.message);
+            React.startTransition(() => {
+              setError(jsonData.message);
+            });
             callbacks.onError?.(jsonData.message);
             
-            // Open pricing modal automatically
             const isCreditsExhausted = 
               message.includes('insufficient credits') ||
               message.includes('out of credits') ||
@@ -406,7 +437,7 @@ export function useAgentStream(
         // Not JSON or could not parse as JSON, continue processing
       }
 
-      // --- Process JSON messages ---
+      // Process JSON messages
       const message = safeJsonParse(
         processedData,
         null,
@@ -426,11 +457,24 @@ export function useAgentStream(
       );
 
       // Update status to streaming if we receive a valid message
-      if (status !== 'streaming') updateStatus('streaming');
+      if (statusRef.current !== 'streaming') {
+        React.startTransition(() => {
+          updateStatus('streaming');
+        });
+      }
 
       switch (message.type) {
         case 'assistant':
-          if (
+          if (parsedMetadata.stream_status === 'tool_call_chunk') {
+            // Handle tool call chunks - extract from metadata.tool_calls
+            const toolCalls = parsedMetadata.tool_calls || [];
+            if (toolCalls.length > 0) {
+              // Set toolCall state with the UnifiedMessage
+              setToolCall(message);
+              // Call the callback with the full message (includes all tool calls in metadata)
+              callbacks.onToolCallChunk?.(message);
+            }
+          } else if (
             parsedMetadata.stream_status === 'chunk' &&
             parsedContent.content
           ) {
@@ -444,8 +488,10 @@ export function useAgentStream(
             // Flush any pending content before completing
             flushPendingContent();
             
-            setTextContent([]);
-            setToolCall(null);
+            React.startTransition(() => {
+              setTextContent([]);
+              setToolCall(null);
+            });
             if (message.message_id) callbacks.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
             // Handle non-chunked assistant messages if needed
@@ -454,53 +500,42 @@ export function useAgentStream(
           }
           break;
         case 'tool':
-          setToolCall(null); // Clear any streaming tool call
+          React.startTransition(() => {
+            setToolCall(null); // Clear any streaming tool call
+          });
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':
           switch (parsedContent.status_type) {
-            case 'tool_started':
-              setToolCall({
-                role: 'assistant',
-                status_type: 'tool_started',
-                name: parsedContent.function_name,
-                arguments: parsedContent.arguments,
-                xml_tag_name: parsedContent.xml_tag_name,
-                tool_index: parsedContent.tool_index,
-              });
-              break;
             case 'tool_completed':
             case 'tool_failed':
             case 'tool_error':
-              if (toolCall?.tool_index === parsedContent.tool_index) {
+              // Clear streaming tool call when tool completes/fails
+              React.startTransition(() => {
                 setToolCall(null);
-              }
+              });
               break;
             case 'finish':
               // Optional: Handle finish reasons like 'xml_tool_limit_reached'
               // Don't finalize here, wait for thread_run_end or completion message
               break;
             case 'error':
-              setError(parsedContent.message || 'Agent run failed');
+              React.startTransition(() => {
+                setError(parsedContent.message || 'Agent run failed');
+              });
               finalizeStream('error', currentRunIdRef.current);
               break;
-            // Ignore thread_run_start, thread_run_end, assistant_response_start etc. for now
             default:
-              // console.debug('[useAgentStream] Received unhandled status type:', parsedContent.status_type);
               break;
           }
           break;
         case 'llm_response_end':
-          // Extract context usage from llm_response_end
-          if (parsedContent.usage?.total_tokens && threadIdRef.current) {
-            setContextUsage(threadIdRef.current, {
-              current_tokens: parsedContent.usage.total_tokens
-            });
-          }
+        case 'llm_response_start':
+          // llm_response_end and llm_response_start messages are ignored (metadata only)
           break;
         case 'user':
         case 'system':
-          // Handle other message types if necessary, e.g., if backend sends historical context
+          // Handle other message types if necessary
           if (message.message_id) callbacks.onMessage(message);
           break;
         default:
@@ -518,7 +553,6 @@ export function useAgentStream(
       updateStatus,
       addContentThrottled,
       flushPendingContent,
-      setContextUsage,
     ],
   );
 
@@ -533,7 +567,6 @@ export function useAgentStream(
       } else if (err instanceof Error) {
         errorMessage = err.message;
       } else if (err instanceof Event && err.type === 'error') {
-        // Standard EventSource errors don't have much detail, might need status check
         errorMessage = 'Stream connection error';
       }
 
@@ -544,13 +577,12 @@ export function useAgentStream(
       if (!isExpected) {
         console.error('[useAgentStream] Streaming error:', errorMessage, err);
         setError(errorMessage);
-        // Show error toast with longer duration
         toast.error(errorMessage, { duration: 15000 });
       }
 
       const runId = currentRunIdRef.current;
       if (!runId) {
-        finalizeStream('error'); // Finalize with generic error if no runId
+        finalizeStream('error');
         return;
       }
     },
@@ -572,18 +604,15 @@ export function useAgentStream(
         status !== 'stopped' &&
         status !== 'agent_not_running'
       ) {
-        // If in some other state, just go back to idle if no runId
         finalizeStream('idle');
       }
       return;
     }
 
     // Immediately check the agent status when the stream closes unexpectedly
-    // This covers cases where the agent finished but the final message wasn't received,
-    // or if the agent errored out on the backend.
     getAgentStatus(runId)
       .then((agentStatus) => {
-        if (!isMountedRef.current) return; // Check mount status again
+        if (!isMountedRef.current) return;
 
         // Check if this is still the current run ID
         if (currentRunIdRef.current !== runId) {
@@ -592,7 +621,7 @@ export function useAgentStream(
 
         if (agentStatus.status === 'running') {
           setError('Stream closed unexpectedly while agent was running.');
-          finalizeStream('error', runId); // Finalize as error for now
+          finalizeStream('error', runId);
           toast.warning('Stream disconnected. Agent might still be running.');
         } else if (agentStatus.status === 'stopped') {
           // Check if agent stopped due to billing error
@@ -613,7 +642,6 @@ export function useAgentStream(
             setError(errorMessage);
             callbacks.onError?.(errorMessage);
             
-            // Open pricing modal automatically
             const isCreditsExhausted = 
               lower.includes('insufficient credits') ||
               lower.includes('out of credits') ||
@@ -630,11 +658,9 @@ export function useAgentStream(
             });
           }
           
-          // Map backend terminal status to hook terminal status
           const finalStatus = mapAgentStatus(agentStatus.status);
           finalizeStream(finalStatus, runId);
         } else {
-          // Map backend terminal status to hook terminal status
           const finalStatus = mapAgentStatus(agentStatus.status);
           finalizeStream(finalStatus, runId);
         }
@@ -644,9 +670,6 @@ export function useAgentStream(
 
         // Check if this is still the current run ID
         if (currentRunIdRef.current !== runId) {
-          console.log(
-            `[useAgentStream] Run ID changed during error handling in handleStreamClose, ignoring`,
-          );
           return;
         }
 
@@ -661,20 +684,17 @@ export function useAgentStream(
           errorMessage.includes('does not exist');
 
         if (isNotFoundError) {
-          // Revert to agent_not_running for this specific case
           finalizeStream('agent_not_running', runId);
         } else {
-          // For other errors checking status, finalize with generic error
           finalizeStream('error', runId);
         }
       });
-  }, [status, finalizeStream]); // Include status
+  }, [status, finalizeStream, callbacks]);
 
-  // --- Effect to manage the stream lifecycle ---
+  // Effect to manage the stream lifecycle
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Cleanup function - be more conservative about stream cleanup
     return () => {
       isMountedRef.current = false;
 
@@ -686,57 +706,38 @@ export function useAgentStream(
       
       // Flush any remaining pending content
       flushPendingContent();
-
-      // Don't automatically cleanup streams on navigation
-      // Only set mounted flag to false to prevent new operations
-      // Streams will be cleaned up when they naturally complete or on explicit stop
     };
-  }, [flushPendingContent]); // Include flushPendingContent for cleanup
+  }, [flushPendingContent]);
 
-  // --- Public Functions ---
-
+  // Public Functions
   const startStreaming = useCallback(
     async (runId: string) => {
       if (!isMountedRef.current) return;
-
-      console.log(`[useAgentStream] Starting stream for run ID: ${runId}`);
 
       // Store previous stream cleanup for potential restoration
       const previousCleanup = streamCleanupRef.current;
       const previousRunId = currentRunIdRef.current;
 
       try {
-        // *** Crucial check: Verify agent is running BEFORE cleaning up previous stream ***
-        console.log(`[useAgentStream] Checking status for run ID: ${runId}`);
+        // Verify agent is running BEFORE cleaning up previous stream
         const agentStatus = await getAgentStatus(runId);
-        if (!isMountedRef.current) return; // Check mount status after async call
+        if (!isMountedRef.current) return;
 
         if (agentStatus.status !== 'running') {
-          // Expected when opening an old conversation; don't surface as error/toast
-          console.info(
-            `[useAgentStream] Stream not started for ${runId}: Agent run ${runId} is not running (status: ${agentStatus.status})`,
-          );
-          
-          // DON'T clean up the previous stream if this new one can't start
-          // Just finalize with the appropriate status but keep previous stream if it was working
           const final =
             agentStatus.status === 'completed' ||
             agentStatus.status === 'stopped'
               ? mapAgentStatus(agentStatus.status)
               : 'agent_not_running';
           
-          // Only finalize if we don't have a working previous stream
           if (!previousRunId || previousRunId === runId) {
             finalizeStream(final, runId);
-          } else {
-            console.log(`[useAgentStream] Keeping previous stream ${previousRunId} active since new stream ${runId} can't start`);
           }
           return;
         }
 
         // New agent is running, now it's safe to clean up previous stream
         if (previousCleanup && previousRunId !== runId) {
-          console.log(`[useAgentStream] Cleaning up previous stream ${previousRunId} to start new stream ${runId}`);
           previousCleanup();
           streamCleanupRef.current = null;
         }
@@ -747,18 +748,12 @@ export function useAgentStream(
         setError(null);
         updateStatus('connecting');
         setAgentRunId(runId);
-        currentRunIdRef.current = runId; // Set the ref immediately
-
-        console.log(
-          `[useAgentStream] Agent run ${runId} is running, creating stream`,
-        );
+        currentRunIdRef.current = runId;
 
         // Agent is running, proceed to create the stream
         const cleanup = streamAgent(runId, {
           onMessage: (data) => {
-            // Ignore messages if threadId changed while the EventSource stayed open
             if (threadIdRef.current !== threadId) return;
-            // Ignore messages if this is not the current run ID
             if (currentRunIdRef.current !== runId) return;
             handleStreamMessage(data);
           },
@@ -775,12 +770,12 @@ export function useAgentStream(
         });
         streamCleanupRef.current = cleanup;
 
-        // Status will be updated to 'streaming' by the first message received in handleStreamMessage
-        // If for some reason no message arrives shortly, verify liveness again to avoid zombie state
+        // Status will be updated to 'streaming' by the first message received
+        // If no message arrives shortly, verify liveness again
         setTimeout(async () => {
           if (!isMountedRef.current) return;
-          if (currentRunIdRef.current !== runId) return; // Another run started
-          if (statusRef.current === 'streaming') return; // Already streaming
+          if (currentRunIdRef.current !== runId) return;
+          if (statusRef.current === 'streaming') return;
           try {
             const latest = await getAgentStatus(runId);
             if (!isMountedRef.current) return;
@@ -796,7 +791,7 @@ export function useAgentStream(
           }
         }, 1500);
       } catch (err) {
-        if (!isMountedRef.current) return; // Check mount status after async call
+        if (!isMountedRef.current) return;
 
         // Only handle error if this is still the current run ID
         if (currentRunIdRef.current !== runId) {
@@ -812,7 +807,6 @@ export function useAgentStream(
           lower.includes('not running');
 
         if (isExpected) {
-          // Similar logic - don't finalize if we have a working previous stream
           if (!previousRunId || previousRunId === runId) {
             finalizeStream('agent_not_running', runId);
           }
@@ -822,11 +816,9 @@ export function useAgentStream(
           );
           setError(errorMessage);
           
-          // For unexpected errors, still preserve previous stream if possible
           if (!previousRunId || previousRunId === runId) {
             finalizeStream('error', runId);
           } else {
-            // Reset current run ID back to previous to maintain stream continuity
             currentRunIdRef.current = previousRunId;
             setAgentRunId(previousRunId);
           }
@@ -841,7 +833,7 @@ export function useAgentStream(
       handleStreamError,
       handleStreamClose,
     ],
-  ); // Add dependencies
+  );
 
   const stopStreaming = useCallback(async () => {
     if (!isMountedRef.current || !agentRunId) return;
@@ -854,16 +846,14 @@ export function useAgentStream(
     try {
       await stopAgent(runIdToStop);
       toast.success('Agent stopped.');
-      // finalizeStream already called getAgentStatus implicitly if needed
     } catch (err) {
-      // Don't revert status here, as the user intended to stop. Just log error.
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error(
         `[useAgentStream] Error sending stop request for ${runIdToStop}: ${errorMessage}`,
       );
       toast.error(`Failed to stop agent: ${errorMessage}`);
     }
-  }, [agentRunId, finalizeStream]); // Add dependencies
+  }, [agentRunId, finalizeStream]);
 
   return {
     status,
@@ -875,3 +865,4 @@ export function useAgentStream(
     stopStreaming,
   };
 }
+

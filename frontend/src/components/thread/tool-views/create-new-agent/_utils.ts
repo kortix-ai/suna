@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface AgentCreationData {
   name: string | null;
   description: string | null;
@@ -60,7 +58,6 @@ export function extractCreateNewAgentData(
   };
 
   if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'create_new_agent') {
       const args = parsedToolResult.arguments || {};
@@ -101,7 +98,6 @@ export function extractCreateNewAgentData(
   }
 
   if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
     
     if (parsedToolResult && parsedToolResult.functionName === 'create_new_agent') {
       const args = parsedToolResult.arguments || {};

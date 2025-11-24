@@ -7,7 +7,7 @@ import json
 import traceback
 from datetime import datetime, timezone
 from typing import Optional
-from core.services import redis
+from core.services import redis_worker as redis
 from core.run import run_agent
 from core.utils.logger import logger, structlog
 import dramatiq
@@ -23,7 +23,9 @@ import sentry_sdk
 from typing import Dict, Any
 
 # Get Redis configuration from centralized service
-redis_config = redis.get_redis_config()
+# Note: Using redis_worker for operations, but get_redis_config is shared
+from core.services.redis import get_redis_config as _get_redis_config
+redis_config = _get_redis_config()
 redis_host = redis_config["host"]
 redis_port = redis_config["port"]
 redis_password = redis_config["password"]
@@ -79,7 +81,7 @@ async def run_agent_background(
     instance_id: str,
     project_id: str,
     model_name: str = "openai/gpt-5-mini",
-    agent_config: Optional[dict] = None,
+    agent_id: Optional[str] = None,  # Changed from agent_config to agent_id
     request_id: Optional[str] = None
 ):
     """Run the agent in the background using Redis for state."""
@@ -213,6 +215,22 @@ async def run_agent_background(
         # Ensure active run key exists and has TTL
         await redis.set(instance_active_key, "running", ex=redis.REDIS_KEY_TTL)
 
+        # Fetch agent_config from agent_id if provided
+        agent_config = None
+        if agent_id:
+            try:
+                # Get account_id from agent to load config
+                agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).single().execute()
+                if agent_result.data:
+                    account_id = agent_result.data['account_id']
+                    from core.agent_runs import _load_agent_config
+                    agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
+                    logger.debug(f"Fetched agent config for agent_id: {agent_id}")
+                else:
+                    logger.warning(f"Agent not found for agent_id: {agent_id}")
+            except Exception as e:
+                logger.warning(f"Failed to fetch agent config for agent_id {agent_id}: {e}. Using default config.")
+
         # Initialize agent generator with cancellation event
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id,
@@ -225,6 +243,8 @@ async def run_agent_background(
         final_status = "running"
         error_message = None
 
+        # Push each response immediately for lowest latency streaming
+        # Semaphore in redis_worker limits concurrent operations to prevent connection exhaustion
         pending_redis_operations = []
 
         async for response in agent_gen:
@@ -234,10 +254,16 @@ async def run_agent_background(
                 trace.span(name="agent_run_stopped").end(status_message="agent_run_stopped", level="WARNING")
                 break
 
-            # Store response in Redis list and publish notification
+            # Push response immediately to Redis for real-time streaming
+            # Semaphore in redis_worker ensures we don't exhaust connections
             response_json = json.dumps(response)
-            pending_redis_operations.append(asyncio.create_task(redis.rpush(response_list_key, response_json)))
-            pending_redis_operations.append(asyncio.create_task(redis.publish(response_channel, "new")))
+            pending_redis_operations.append(
+                asyncio.create_task(redis.rpush(response_list_key, response_json))
+            )
+            # Publish notification immediately so stream endpoint picks it up right away
+            pending_redis_operations.append(
+                asyncio.create_task(redis.publish(response_channel, "new"))
+            )
             total_responses += 1
 
             # Check for agent-signaled completion or error
@@ -252,6 +278,8 @@ async def run_agent_background(
                          error_message = response.get('message', f"Run ended with status: {status_val}")
                          logger.error(f"Agent run failed: {error_message}")
                      break
+
+        # All responses already pushed immediately above - no batch to flush
 
         # If loop finished without explicit completion/error/stop signal, mark as completed
         if final_status == "running":

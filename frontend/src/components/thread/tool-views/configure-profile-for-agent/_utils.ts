@@ -179,12 +179,7 @@ export function extractConfigureProfileForAgentData(
         actualAssistantTimestamp: data.timestamp || assistantTimestamp
       };
     }
-  }
-
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
-
-  const combinedData = {
+  }const combinedData = {
     profile_id: toolLegacy.profile_id || assistantLegacy.profile_id,
     enabled_tools: toolLegacy.enabled_tools.length > 0 ? toolLegacy.enabled_tools : assistantLegacy.enabled_tools,
     display_name: toolLegacy.display_name || assistantLegacy.display_name,
