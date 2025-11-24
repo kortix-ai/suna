@@ -214,33 +214,16 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
 }
 
 export function SeeImageToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [progress, setProgress] = useState(0);
-  const isClearTool = name === 'clear-images-from-context';
-
-  // Extract data - use existing function for both tools
-  const {
-    filePath,
-    description,
-    output,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
-  } = extractSeeImageData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
 
   useEffect(() => {
     if (isStreaming) {
@@ -259,13 +242,37 @@ export function SeeImageToolView({
     }
   }, [isStreaming]);
 
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('SeeImageToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const isClearTool = name === 'clear-images-from-context';
+
+  // Extract data - use existing function for both tools
+  const {
+    filePath,
+    description,
+    output,
+    actualIsSuccess,
+    actualToolTimestamp,
+    actualAssistantTimestamp
+  } = extractSeeImageData(
+    toolCall,
+    toolResult,
+    isSuccess,
+    toolTimestamp,
+    assistantTimestamp
+  );
+
   // For clear tool, we don't need filePath, but for image tool we do
   if (!isClearTool && !filePath) {
     return (
       <GenericToolView
-        name={name}
-        assistantContent={assistantContent}
-        toolContent={toolContent}
+        toolCall={toolCall}
+        toolResult={toolResult}
         assistantTimestamp={assistantTimestamp}
         toolTimestamp={toolTimestamp}
         isSuccess={isSuccess}

@@ -224,9 +224,9 @@ const parseOutput = (output: any) => {
   };
 
 export const extractFileEditData = (
-  assistantContent: any,
-  toolContent: any,
-  isSuccess: boolean,
+  toolCall: { arguments?: Record<string, any> },
+  toolResult?: { output?: any; success?: boolean },
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): {
@@ -238,86 +238,43 @@ export const extractFileEditData = (
   actualAssistantTimestamp?: string;
   errorMessage?: string;
 } => {
-  const parseOutput = (output: any) => {
-    if (typeof output === 'string') {
-      try {
-        return JSON.parse(output);
-      } catch {
-        return output; // Return as string if not JSON
-      }
-    }
-    return output;
-  };
+  // Extract from structured metadata
+  const args = toolCall?.arguments || {};
+  const output = toolResult?.output;
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
-  const extractData = (content: any) => {
-    let parsed = typeof content === 'string' ? parseContent(content) : content;
-    
-    // Handle nested content structures like { role: '...', content: '...' }
-    if (parsed?.role && parsed?.content) {
-        parsed = typeof parsed.content === 'string' ? parseContent(parsed.content) : parsed.content;
-    }
+  let filePath: string | null = args.target_file || args.file_path || null;
+  let originalContent: string | null = null;
+  let updatedContent: string | null = null;
+  let errorMessage: string | undefined;
 
-    if (parsed?.tool_execution) {
-      const args = parsed.tool_execution.arguments || {};
-      const output = parseOutput(parsed.tool_execution.result?.output);
-      const success = parsed.tool_execution.result?.success;
+  if (output) {
+    if (typeof output === 'object' && output !== null) {
+      // Structured output from metadata
+      filePath = filePath || output.file_path || output.target_file || null;
+      originalContent = output.original_content ?? null;
+      updatedContent = output.updated_content ?? output.file_content ?? output.content ?? null;
       
-      let errorMessage: string | undefined;
-      if (success === false) {
-        if (typeof output === 'object' && output !== null && output.message) {
-          errorMessage = output.message;
-        } else if (typeof output === 'string') {
-          errorMessage = output;
-        } else {
-          errorMessage = JSON.stringify(output);
-        }
+      if (actualIsSuccess === false) {
+        errorMessage = output.message || output.error || null;
       }
-
-      return {
-        filePath: args.target_file || (typeof output === 'object' && output?.file_path) || null,
-        originalContent: (typeof output === 'object' && output?.original_content) ?? null,
-        updatedContent: (typeof output === 'object' && output?.updated_content) ?? null,
-        success: success,
-        timestamp: parsed.tool_execution.execution_details?.timestamp,
-        errorMessage: errorMessage,
-      };
+        } else if (typeof output === 'string') {
+      // String output - might be error message
+      if (actualIsSuccess === false) {
+          errorMessage = output;
+      }
     }
-    
-    // Fallback for when toolContent is just the output object from the tool result
-    if (typeof parsed === 'object' && parsed !== null && (parsed.original_content !== undefined || parsed.updated_content !== undefined)) {
-        return {
-            filePath: parsed.file_path || null,
-            originalContent: parsed.original_content ?? null,
-            updatedContent: parsed.updated_content ?? null,
-            success: parsed.updated_content !== null, // Success is false if updated_content is null
-            timestamp: null,
-            errorMessage: parsed.message,
-        };
-    }
-    return {};
-  };
-
-  const toolData = extractData(toolContent);
-  const assistantData = extractData(assistantContent);
-
-  const filePath = toolData.filePath || assistantData.filePath;
-  const originalContent = toolData.originalContent || assistantData.originalContent;
-  const updatedContent = toolData.updatedContent || assistantData.updatedContent;
-  const errorMessage = toolData.errorMessage || assistantData.errorMessage;
-
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
-
-  if (toolData.success !== undefined) {
-    actualIsSuccess = toolData.success;
-    actualToolTimestamp = toolData.timestamp || toolTimestamp;
-  } else if (assistantData.success !== undefined) {
-    actualIsSuccess = assistantData.success;
-    actualAssistantTimestamp = assistantData.timestamp || assistantTimestamp;
   }
 
-  return { filePath, originalContent, updatedContent, actualIsSuccess, actualToolTimestamp, actualAssistantTimestamp, errorMessage };
+        return {
+    filePath,
+    originalContent,
+    updatedContent,
+    actualIsSuccess,
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp,
+    errorMessage,
+  };
 };
 
 export const getOperationType = (name?: string, assistantContent?: any): FileOperation => {

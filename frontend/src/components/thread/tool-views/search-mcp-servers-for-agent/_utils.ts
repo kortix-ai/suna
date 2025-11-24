@@ -1,4 +1,4 @@
-import { parseToolResult } from '../tool-result-parser';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface SearchMcpServersData {
   search_query: string | null;
@@ -13,106 +13,63 @@ export interface SearchMcpServersData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractSearchMcpServersData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): SearchMcpServersData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: SearchMcpServersData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     search_query: null,
     toolkits: null,
     total_found: 0,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'search_mcp_servers_for_agent') {
-      const args = parsedToolResult.arguments || {};
-      
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(toolContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
+  if (!toolResult?.output) {
+    return defaultResult;
+  }
 
-      return {
-        search_query: args.search_query || null,
-        toolkits: output.toolkits || null,
-        total_found: output.total_found || 0,
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: parsedToolResult.timestamp || toolTimestamp,
-        actualAssistantTimestamp: assistantTimestamp
-      };
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
     }
   }
 
-  if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'search_mcp_servers_for_agent') {
-      const args = parsedToolResult.arguments || {};
-      
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(assistantContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
 
-      return {
-        search_query: args.search_query || null,
-        toolkits: output.toolkits || null,
-        total_found: output.total_found || 0,
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: toolTimestamp,
-        actualAssistantTimestamp: parsedToolResult.timestamp || assistantTimestamp
-      };
-    }
-  }
-
-  return defaultResult;
-} 
+  return {
+    search_query: parsedOutput.search_query || args.search_query || null,
+    toolkits: Array.isArray(parsedOutput.toolkits) ? parsedOutput.toolkits : null,
+    total_found: parsedOutput.total_found ?? 0,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
+}

@@ -41,15 +41,15 @@ import {
 } from './_utils';
 
 export function DocsToolView({
-  name = 'docs',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -61,7 +61,29 @@ export function DocsToolView({
   useEffect(() => {
     checkPendingGoogleDocsUpload();
   }, []);
+
+  // Extract name safely - use fallback if toolCall is undefined
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'docs';
   
+  // Extract data safely
+  const toolName = toolCall ? (extractToolName(toolCall) || name || 'docs') : 'docs';
+  let data = extractDocsData(toolResult);
+  
+  if (!data?.sandbox_id && project?.id) {
+    data = { ...data, sandbox_id: project.id };
+  }
+  
+  // Extract assistant content from toolCall arguments if needed for streaming
+  const assistantContentStr = toolCall && typeof toolCall.arguments === 'string' 
+    ? toolCall.arguments 
+    : toolCall?.arguments?.content || '';
+  
+  let streamingContent: { content?: string; title?: string; metadata?: any } | null = null;
+  if (isStreaming && !data && assistantContentStr) {
+    streamingContent = extractStreamingDocumentContent(assistantContentStr, toolName);
+  }
+
+  // All useCallback hooks must be called unconditionally
   const handleOpenInEditor = useCallback(async (doc: DocumentInfo, content?: string, data?: any) => {
     let actualContent = content || doc.content || '';
     if (data?.sandbox_id && doc.path) {
@@ -114,18 +136,6 @@ export function DocsToolView({
     setEditorFilePath(doc.path);
     setEditorOpen(true);
   }, []);
-  
-  const toolName = extractToolName(toolContent) || name || 'docs';
-  let data = extractDocsData(toolContent);
-  
-  if (!data?.sandbox_id && project?.id) {
-    data = { ...data, sandbox_id: project.id };
-  }
-  
-  let streamingContent: { content?: string; title?: string; metadata?: any } | null = null;
-  if (isStreaming && !data) {
-    streamingContent = extractStreamingDocumentContent(assistantContent, toolName);
-  }
 
   const handleExport = useCallback(async (format: ExportFormat | 'google-docs') => {
     if (format === 'google-docs') {
@@ -155,8 +165,17 @@ export function DocsToolView({
       await exportDocument({ content, fileName, format });
     }
   }, [data, streamingContent, project]);
+
+  // Defensive check - ensure toolCall is defined (after all hooks)
+  if (!toolCall) {
+    console.warn('DocsToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
   
-  const assistantParams = extractParametersFromAssistant(assistantContent);
+  // Extract parameters from toolCall arguments
+  const assistantParams = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : null;
   
   if (data && assistantParams && (toolName.includes('create') || toolName.includes('update'))) {
     if (!data.content && assistantParams.content) {
@@ -301,11 +320,11 @@ export function DocsToolView({
                 {data.error}
               </span>
             </div>
-            {process.env.NODE_ENV === 'development' && toolContent && (
+            {process.env.NODE_ENV === 'development' && toolResult && (
               <details className="text-xs">
                 <summary className="cursor-pointer text-muted-foreground">Debug: Raw Response</summary>
                 <pre className="mt-2 p-2 bg-muted rounded text-xs overflow-auto">
-                  {JSON.stringify(toolContent, null, 2)}
+                  {JSON.stringify(toolResult, null, 2)}
                 </pre>
               </details>
             )}
@@ -365,7 +384,7 @@ export function DocsToolView({
         onOpenChange={setFileViewerOpen}
         sandboxId={data?.sandbox_id || project?.id || ''}
         initialFilePath={selectedDocPath}
-        project={project}
+        projectId={project?.id}
       />
     )}
     {editorFilePath && editorDocumentData && (

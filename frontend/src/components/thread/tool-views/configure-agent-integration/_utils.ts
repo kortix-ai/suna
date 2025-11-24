@@ -1,5 +1,3 @@
-import { parseToolResult } from '../tool-result-parser';
-
 export interface ConfigureAgentIntegrationData {
   agent_id: string | null;
   profile_name: string | null;
@@ -50,25 +48,11 @@ export function extractConfigureAgentIntegrationData(
   };
 
   if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'configure_agent_integration') {
-      const args = parsedToolResult.arguments || {};
+    const content = parseContent(toolContent);
+    if (content?.tool_execution?.result?.output) {
+      const output = content.tool_execution.result.output;
+      const args = content.tool_execution?.arguments || {};
       
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(toolContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
-
       return {
         agent_id: args.agent_id || output.agent_id || null,
         profile_name: args.profile_name || output.profile_name || null,
@@ -76,35 +60,21 @@ export function extractConfigureAgentIntegrationData(
         display_name: args.display_name || output.display_name || null,
         integration_name: output.integration_name || null,
         enabled_tools_count: output.enabled_tools_count || (args.enabled_tools?.length || 0),
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: parsedToolResult.timestamp || toolTimestamp,
+        success: content.tool_execution?.result?.success,
+        timestamp: content.tool_execution?.execution_details?.timestamp,
+        actualIsSuccess: content.tool_execution?.result?.success !== undefined ? content.tool_execution.result.success : (isSuccess || false),
+        actualToolTimestamp: content.tool_execution?.execution_details?.timestamp || toolTimestamp,
         actualAssistantTimestamp: assistantTimestamp
       };
     }
   }
 
   if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'configure_agent_integration') {
-      const args = parsedToolResult.arguments || {};
+    const content = parseContent(assistantContent);
+    if (content?.tool_execution?.result?.output) {
+      const output = content.tool_execution.result.output;
+      const args = content.tool_execution?.arguments || {};
       
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(assistantContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
-
       return {
         agent_id: args.agent_id || output.agent_id || null,
         profile_name: args.profile_name || output.profile_name || null,
@@ -112,11 +82,11 @@ export function extractConfigureAgentIntegrationData(
         display_name: args.display_name || output.display_name || null,
         integration_name: output.integration_name || null,
         enabled_tools_count: output.enabled_tools_count || (args.enabled_tools?.length || 0),
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
+        success: content.tool_execution?.result?.success,
+        timestamp: content.tool_execution?.execution_details?.timestamp,
+        actualIsSuccess: content.tool_execution?.result?.success !== undefined ? content.tool_execution.result.success : (isSuccess || false),
         actualToolTimestamp: toolTimestamp,
-        actualAssistantTimestamp: parsedToolResult.timestamp || assistantTimestamp
+        actualAssistantTimestamp: content.tool_execution?.execution_details?.timestamp || assistantTimestamp
       };
     }
   }

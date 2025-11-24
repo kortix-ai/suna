@@ -24,42 +24,62 @@ import { extractConfigureAgentIntegrationData } from './_utils';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 export function ConfigureAgentIntegrationToolView({
-  name = 'configure-agent-integration',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
+  // Extract data safely - handle undefined toolCall
+  const extractedData = toolCall ? extractConfigureAgentIntegrationData(
+    null, // assistantContent - legacy format
+    toolResult?.output || null, // toolContent - extract from toolResult
+    isSuccess,
+    toolTimestamp,
+    assistantTimestamp
+  ) : null;
+
+  const integration_name = extractedData?.integration_name || null;
+
+  const getToolkitSlug = (integrationName: string | null): string => {
+    return integrationName?.toLowerCase().replace(/\s+/g, '') || '';
+  };
+
+  // Hook must be called unconditionally
+  const { data: iconData } = useComposioToolkitIcon(getToolkitSlug(integration_name), {
+    enabled: !!integration_name
+  });
+
+  // Defensive check - after all hooks
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     agent_id,
     profile_name,
     enabled_tools,
     display_name,
-    integration_name,
     enabled_tools_count,
     actualIsSuccess,
     actualToolTimestamp,
     actualAssistantTimestamp
-  } = extractConfigureAgentIntegrationData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
-
-  const toolTitle = getToolTitle(name);
-
-  const getToolkitSlug = (integrationName: string): string => {
-    return integrationName?.toLowerCase().replace(/\s+/g, '') || '';
+  } = extractedData || {
+    agent_id: null,
+    profile_name: null,
+    enabled_tools: null,
+    display_name: null,
+    integration_name: null,
+    enabled_tools_count: 0,
+    actualIsSuccess: false,
+    actualToolTimestamp: undefined,
+    actualAssistantTimestamp: undefined
   };
-
-  const { data: iconData } = useComposioToolkitIcon(getToolkitSlug(integration_name || ''), {
-    enabled: !!integration_name
-  });
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

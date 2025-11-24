@@ -136,6 +136,14 @@ class ThreadManager:
                 cache_read_tokens = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0)
             
             cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+            if cache_creation_tokens == 0:
+                # Check nested in prompt_tokens_details as fallback (though it's usually at top level)
+                cache_creation_tokens = int((usage.get("prompt_tokens_details") or {}).get("cache_creation_tokens", 0) or 0)
+            
+            # Debug logging to verify cache_creation_tokens extraction
+            if cache_creation_tokens > 0:
+                logger.info(f"💾 CACHE CREATION TOKENS DETECTED: {cache_creation_tokens} tokens will be charged at cache write rates")
+            
             model = content.get("model")
             
             usage_type = "FALLBACK ESTIMATE" if is_fallback else ("ESTIMATED" if is_estimated else "EXACT")
@@ -228,9 +236,22 @@ class ThreadManager:
                             })
                         else:
                             logger.error(f"Failed to parse message: {content[:100]}")
-                else:
+                elif isinstance(content, dict):
+                    # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
+                    
+                    # Tool messages: content field is already a JSON string from success_response
+                    # No conversion needed - it's already in the correct format for Bedrock
+                    
                     messages.append(content)
+                else:
+                    # Fallback for other types
+                    logger.warning(f"Unexpected content type: {type(content)}, attempting to use as-is")
+                    messages.append({
+                        'role': 'user',
+                        'content': str(content),
+                        'message_id': item['message_id']
+                    })
 
             return messages
 
@@ -250,7 +271,6 @@ class ThreadManager:
         processor_config: Optional[ProcessorConfig] = None,
         tool_choice: ToolChoice = "auto",
         native_max_auto_continues: int = 25,
-        max_xml_tool_calls: int = 0,
         generation: Optional[StatefulGenerationClient] = None,
         latest_user_message_content: Optional[str] = None,
         cancellation_event: Optional[asyncio.Event] = None,
@@ -266,9 +286,6 @@ class ThreadManager:
         else:
             logger.error(f"Invalid processor_config type: {type(processor_config)}, creating default")
             config = ProcessorConfig()
-            
-        if max_xml_tool_calls > 0 and not config.max_xml_tool_calls:
-            config.max_xml_tool_calls = max_xml_tool_calls
 
         auto_continue_state = {
             'count': 0,
@@ -307,6 +324,10 @@ class ThreadManager:
         latest_user_message_content: Optional[str] = None, cancellation_event: Optional[asyncio.Event] = None
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
+        # Simple run counter - increments with each call
+        run_number = auto_continue_state['count'] + 1
+        
+        logger.info(f"🔥 LLM API call iteration #{run_number} of run")
         
         # CRITICAL: Ensure config is always a ProcessorConfig object
         if not isinstance(config, ProcessorConfig):
@@ -346,7 +367,6 @@ class ThreadManager:
                     if last_usage_result.data:
                         llm_end_content = last_usage_result.data.get('content', {})
                         if isinstance(llm_end_content, str):
-                            import json
                             llm_end_content = json.loads(llm_end_content)
                         
                         usage = llm_end_content.get('usage', {})
@@ -444,10 +464,8 @@ class ThreadManager:
             # Fast path just skips compression, not fetching!
             messages = await self.get_llm_messages(thread_id)
             
-            # Handle auto-continue context
-            if auto_continue_state['count'] > 0 and auto_continue_state['continuous_state'].get('accumulated_content'):
-                partial_content = auto_continue_state['continuous_state']['accumulated_content']
-                messages.append({"role": "assistant", "content": partial_content})
+            # Note: We no longer need to manually append partial assistant messages
+            # because we now save complete assistant messages with tool calls before auto-continuing
 
             # Apply context compression (only if needed based on fast path check)
             if ENABLE_CONTEXT_MANAGER:
@@ -520,6 +538,8 @@ class ThreadManager:
             # Update generation tracking
             if generation:
                 try:
+                    # Convert tools to JSON string for Langfuse compatibility
+                    tools_param = json.dumps(openapi_tool_schemas) if openapi_tool_schemas else None
                     generation.update(
                         input=prepared_messages,
                         start_time=datetime.now(timezone.utc),
@@ -528,11 +548,12 @@ class ThreadManager:
                             "max_tokens": llm_max_tokens,
                             "temperature": llm_temperature,
                             "tool_choice": tool_choice,
-                            "tools": openapi_tool_schemas,
+                            "tools": tools_param,
                         }
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to update Langfuse generation: {e}")
+                    # Suppress verbose Langfuse validation errors
+                    logger.debug(f"Failed to update Langfuse generation: {str(e)[:100]}")
 
             # Note: We don't log token count here because cached blocks give inaccurate counts
             # The LLM's usage.prompt_tokens (reported after the call) is the accurate source of truth
@@ -540,26 +561,28 @@ class ThreadManager:
 
             # Make LLM call
             try:
+                # Use |||STOP_AGENT||| as stop sequence for XML tool calling
+                # This ensures the LLM stops after completing a tool call block
+                # Check xml_tool_calling directly - it's independent of native_tool_calling
+                stop_sequences = ["|||STOP_AGENT|||"] if config.xml_tool_calling else None
+                
                 llm_response = await make_llm_api_call(
                     prepared_messages, llm_model,
                     temperature=llm_temperature,
                     max_tokens=llm_max_tokens,
                     tools=openapi_tool_schemas,
                     tool_choice=tool_choice if config.native_tool_calling else "none",
-                    stream=stream
+                    stream=stream,
+                    stop=stop_sequences if stop_sequences else None
                 )
+                
             except LLMError as e:
+                logger.error(f"❌ LLMError: {e}")
                 return {"type": "status", "status": "error", "message": str(e)}
 
             # Check for error response
             if isinstance(llm_response, dict) and llm_response.get("status") == "error":
                 return llm_response
-
-            # Process response - ensure config is ProcessorConfig object
-            # logger.debug(f"Config type before response processing: {type(config)}")
-            # if not isinstance(config, ProcessorConfig):
-            #     logger.error(f"Config is not ProcessorConfig! Type: {type(config)}, Value: {config}")
-            #     config = ProcessorConfig()  # Fallback
                 
             if stream and hasattr(llm_response, '__aiter__'):
                 return self.response_processor.process_streaming_response(
@@ -680,8 +703,15 @@ class ThreadManager:
                 finish_reason = content.get('finish_reason')
                 tools_executed = content.get('tools_executed', False)
                 
-                # Trigger auto-continue for: native tool calls, length limit, or XML tools executed
-                if finish_reason == 'tool_calls' or tools_executed:
+                # Don't auto-continue if agent terminated (ask/complete tool executed)
+                if finish_reason == 'agent_terminated':
+                    logger.debug("Stopping auto-continue due to agent termination (ask/complete tool)")
+                    auto_continue_state['active'] = False
+                    return False
+                
+                # Only auto-continue for 'tool_calls' or 'length' finish reasons (not 'stop' or others)
+                # tools_executed flag is only set when finish_reason == 'tool_calls', so checking finish_reason is sufficient
+                if finish_reason == 'tool_calls':
                     if native_max_auto_continues > 0:
                         logger.debug(f"Auto-continuing for tool execution ({auto_continue_state['count'] + 1}/{native_max_auto_continues})")
                         auto_continue_state['active'] = True

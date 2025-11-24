@@ -37,10 +37,10 @@ class ToolResult:
     
     Attributes:
         success (bool): Whether the tool execution succeeded
-        output (str): Output message or error description
+        output (Any): Output data (can be dict, list, or string)
     """
     success: bool
-    output: str
+    output: Any
 
 @dataclass
 class ToolMetadata:
@@ -148,21 +148,21 @@ class Tool(ABC):
         """
         return self._method_metadata
 
-    def success_response(self, data: Union[Dict[str, Any], str]) -> ToolResult:
+    def success_response(self, data: Union[Dict[str, Any], str, list]) -> ToolResult:
         """Create a successful tool result.
         
         Args:
-            data: Result data (dictionary or string)
+            data: Result data (dictionary, list, or string)
             
         Returns:
-            ToolResult with success=True and formatted output
+            ToolResult with success=True and data as JSON string (if dict/list) or plain string
         """
-        if isinstance(data, str):
-            text = data
+        if isinstance(data, (dict, list)):
+            output = json.dumps(data)
         else:
-            text = json.dumps(data, indent=2)
-        # logger.debug(f"Created success response for {self.__class__.__name__}")
-        return ToolResult(success=True, output=text)
+            output = str(data)
+        
+        return ToolResult(success=True, output=output)
 
     def fail_response(self, msg: str) -> ToolResult:
         """Create a failed tool result.

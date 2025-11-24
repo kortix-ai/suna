@@ -75,14 +75,18 @@ const PROVIDER_CONFIG = {
 };
 
 export function ExecuteDataProviderCallToolView({
-  name = 'execute-data-provider-call',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
   const {
     serviceName,
@@ -93,8 +97,8 @@ export function ExecuteDataProviderCallToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractDataProviderCallData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

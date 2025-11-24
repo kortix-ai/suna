@@ -28,10 +28,10 @@ SANDBOX_TOOLS = [
     ('sb_vision_tool', 'core.tools.sb_vision_tool', 'SandboxVisionTool'),
     ('sb_image_edit_tool', 'core.tools.sb_image_edit_tool', 'SandboxImageEditTool'),
     ('sb_kb_tool', 'core.tools.sb_kb_tool', 'SandboxKbTool'),
-    ('sb_design_tool', 'core.tools.sb_designer_tool', 'SandboxDesignerTool'),  # Note: file is sb_designer_tool.py
+    # ('sb_design_tool', 'core.tools.sb_designer_tool', 'SandboxDesignerTool'),
     ('sb_presentation_tool', 'core.tools.sb_presentation_tool', 'SandboxPresentationTool'),
     ('sb_upload_file_tool', 'core.tools.sb_upload_file_tool', 'SandboxUploadFileTool'),
-    ('sb_docs_tool', 'core.tools.sb_docs_tool', 'SandboxDocsTool'),
+    # ('sb_docs_tool', 'core.tools.sb_docs_tool', 'SandboxDocsTool'),
 ]
 
 # Search and research tools

@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '../types';
 
 export interface AskToolData {
   text: string | null;
@@ -7,19 +7,24 @@ export interface AskToolData {
   success: boolean;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
+export function extractAskData(
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true
+): AskToolData {
+  // Parse arguments
+  let args: Record<string, any> = {};
+  if (toolCall.arguments) {
+    if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
+      args = toolCall.arguments;
+    } else if (typeof toolCall.arguments === 'string') {
+      try {
+        args = JSON.parse(toolCall.arguments);
+      } catch {
+        args = {};
+      }
     }
   }
-  return content;
-};
-
-export function extractAskData(toolData: ParsedToolData): AskToolData {
-  const { arguments: args, result } = toolData;
   
   let text = args?.text || null;
   let attachments: string[] = [];
@@ -41,7 +46,7 @@ export function extractAskData(toolData: ParsedToolData): AskToolData {
     text,
     attachments,
     follow_up_answers,
-    success: result.success ?? true
+    success: toolResult?.success ?? isSuccess
   };
 }
 

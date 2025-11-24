@@ -1,6 +1,6 @@
 'use client';
 
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { getUserFriendlyToolName } from '@/components/thread/utils';
 import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { Slider } from '@/components/ui/slider';
@@ -28,17 +28,17 @@ import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 // Types & Interfaces
 // ============================================================================
 
+import { ToolCallData, ToolResultData } from './tool-views/types';
+
+/**
+ * Structured tool call input - data comes directly from metadata
+ */
 export interface ToolCallInput {
-  assistantCall: {
-    content?: string;
-    name?: string;
-    timestamp?: string;
-  };
-  toolResult?: {
-    content?: string;
-    isSuccess?: boolean;
-    timestamp?: string;
-  };
+  toolCall: ToolCallData;
+  toolResult?: ToolResultData;
+  assistantTimestamp?: string;
+  toolTimestamp?: string;
+  isSuccess?: boolean;
   messages?: ApiMessageType[];
 }
 
@@ -578,11 +578,39 @@ export function ToolCallSidePanel({
     ].includes(lowerName);
   }, []);
 
+  // Initialize view to browser if browser action is in progress when panel opens
+  useEffect(() => {
+    if (!isInitialized && toolCallSnapshots.length > 0) {
+      const streamingSnapshot = toolCallSnapshots.find(snapshot => 
+        snapshot.toolCall.toolResult === undefined // No result = streaming
+      );
+      
+      if (streamingSnapshot) {
+        const toolName = streamingSnapshot.toolCall.toolCall?.function_name?.replace(/_/g, '-');
+        const isStreamingBrowserTool = isBrowserTool(toolName);
+        
+        if (isStreamingBrowserTool) {
+          setCurrentView('browser');
+        }
+      } else if (agentStatus === 'running') {
+        // Check if any browser tool exists in snapshots
+        const hasBrowserTool = toolCallSnapshots.some(snapshot => {
+          const toolName = snapshot.toolCall.toolCall?.function_name?.replace(/_/g, '-');
+          return isBrowserTool(toolName);
+        });
+        
+        if (hasBrowserTool) {
+          setCurrentView('browser');
+        }
+      }
+    }
+  }, [toolCallSnapshots, isInitialized, isBrowserTool, agentStatus]);
+
   // Handle view toggle visibility and auto-switching logic
   useEffect(() => {
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
     const currentSnapshot = toolCallSnapshots[safeIndex];
-    const isCurrentSnapshotBrowserTool = isBrowserTool(currentSnapshot?.toolCall.assistantCall?.name);
+    const isCurrentSnapshotBrowserTool = isBrowserTool(currentSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-'));
     
     if (agentStatus === 'idle') {
       if (!isCurrentSnapshotBrowserTool && currentViewRef.current === 'browser') {
@@ -593,15 +621,15 @@ export function ToolCallSidePanel({
       }
     } else if (agentStatus === 'running') {
       const streamingSnapshot = toolCallSnapshots.find(snapshot => 
-        snapshot.toolCall.toolResult?.content === 'STREAMING'
+        snapshot.toolCall.toolResult === undefined // No result = streaming
       );
       
       if (streamingSnapshot) {
-        const streamingToolCall = streamingSnapshot.toolCall;
-        const toolName = streamingToolCall.assistantCall?.name;
+        const toolName = streamingSnapshot.toolCall.toolCall?.function_name?.replace(/_/g, '-');
         const isStreamingBrowserTool = isBrowserTool(toolName);
         
-        if (isStreamingBrowserTool && currentViewRef.current === 'tools') {
+        // Always switch to browser view when browser action is in progress
+        if (isStreamingBrowserTool) {
           setCurrentView('browser');
         }
         
@@ -618,7 +646,7 @@ export function ToolCallSidePanel({
 
   const newSnapshots = useMemo(() => {
     return toolCalls.map((toolCall, index) => ({
-      id: `${index}-${toolCall.assistantCall.timestamp || Date.now()}`,
+      id: `${index}-${toolCall.assistantTimestamp || Date.now()}`,
       toolCall,
       index,
       timestamp: Date.now(),
@@ -630,18 +658,28 @@ export function ToolCallSidePanel({
     const hasNewSnapshots = newSnapshots.length > toolCallSnapshots.length;
     setToolCallSnapshots(newSnapshots);
 
+    // Check if a new browser tool call started and switch to browser view
+    if (hasNewSnapshots && agentStatus === 'running') {
+      const newSnapshot = newSnapshots[newSnapshots.length - 1];
+      const toolName = newSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-');
+      const isNewBrowserTool = isBrowserTool(toolName);
+      
+      // If it's a browser tool and doesn't have a result yet (streaming), switch to browser view
+      if (isNewBrowserTool && newSnapshot.toolCall.toolResult === undefined) {
+        setCurrentView('browser');
+      }
+    }
+
     if (!isInitialized && newSnapshots.length > 0) {
       const completedCount = newSnapshots.filter(s =>
-        s.toolCall.toolResult?.content &&
-        s.toolCall.toolResult.content !== 'STREAMING'
+        s.toolCall.toolResult !== undefined // Has result = completed
       ).length;
 
       if (completedCount > 0) {
         let lastCompletedIndex = -1;
         for (let i = newSnapshots.length - 1; i >= 0; i--) {
           const snapshot = newSnapshots[i];
-          if (snapshot.toolCall.toolResult?.content &&
-            snapshot.toolCall.toolResult.content !== 'STREAMING') {
+          if (snapshot.toolCall.toolResult !== undefined) {
             lastCompletedIndex = i;
             break;
           }
@@ -660,7 +698,7 @@ export function ToolCallSidePanel({
         setInternalIndex(newSnapshots.length - 1);
       }
     }
-  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus, newSnapshots]);
+  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus, newSnapshots, isBrowserTool]);
 
   useEffect(() => {
     if ((!isInitialized || navigationMode === 'manual') && toolCallSnapshots.length > 0) {
@@ -676,8 +714,7 @@ export function ToolCallSidePanel({
     const latest = Math.max(0, total - 1);
 
     const completed = toolCallSnapshots.filter(snapshot =>
-      snapshot.toolCall.toolResult?.content &&
-      snapshot.toolCall.toolResult.content !== 'STREAMING'
+      snapshot.toolCall.toolResult !== undefined // Has result = completed
     );
     const completedCount = completed.length;
 
@@ -696,38 +733,25 @@ export function ToolCallSidePanel({
   let displayIndex = safeInternalIndex;
   const displayTotalCalls = totalCalls;
 
-  const isCurrentToolStreaming = currentToolCall?.toolResult?.content === 'STREAMING';
+  const isCurrentToolStreaming = currentToolCall?.toolResult === undefined;
   if (isCurrentToolStreaming && totalCompletedCalls > 0) {
     const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
-    displayToolCall = lastCompletedSnapshot.toolCall;
-    displayIndex = completedToolCalls.length - 1;
+    // Ensure the snapshot has a valid toolCall before using it
+    if (lastCompletedSnapshot?.toolCall?.toolCall) {
+      displayToolCall = lastCompletedSnapshot.toolCall;
+      displayIndex = completedToolCalls.length - 1;
+    }
   }
 
-  const isStreaming = displayToolCall?.toolResult?.content === 'STREAMING';
+  const isStreaming = displayToolCall?.toolResult === undefined;
 
-  const getActualSuccess = (toolCall: any): boolean => {
-    const content = toolCall?.toolResult?.content;
-    if (!content) return toolCall?.toolResult?.isSuccess ?? true;
-
-    const safeParse = (data: any) => {
-      try { return typeof data === 'string' ? JSON.parse(data) : data; }
-      catch { return null; }
-    };
-
-    const parsed = safeParse(content);
-    if (!parsed) return toolCall?.toolResult?.isSuccess ?? true;
-
-    if (parsed.content) {
-      const inner = safeParse(parsed.content);
-      if (inner?.tool_execution?.result?.success !== undefined) {
-        return inner.tool_execution.result.success;
-      }
+  const getActualSuccess = (toolCall: ToolCallInput): boolean => {
+    // Check if we have a result object with success field
+    if (toolCall?.toolResult?.success !== undefined) {
+      return toolCall.toolResult.success;
     }
-    const success = parsed.tool_execution?.result?.success ??
-      parsed.result?.success ??
-      parsed.success;
-
-    return success !== undefined ? success : (toolCall?.toolResult?.isSuccess ?? true);
+    // Fallback to isSuccess
+    return toolCall?.isSuccess ?? true;
   };
 
   const isSuccess = isStreaming ? true : getActualSuccess(displayToolCall);
@@ -743,26 +767,18 @@ export function ToolCallSidePanel({
   }, []);
 
   const handleCopyContent = useCallback(async () => {
-    const toolContent = displayToolCall?.toolResult?.content;
-    if (!toolContent || toolContent === 'STREAMING') return;
+    const toolResult = displayToolCall?.toolResult;
+    if (!toolResult) return;
 
     let fileContent = '';
-
-    try {
-      const parsed = JSON.parse(toolContent);
-      if (parsed.content && typeof parsed.content === 'string') {
-        fileContent = parsed.content;
-      } else if (parsed.file_content && typeof parsed.file_content === 'string') {
-        fileContent = parsed.file_content;
-      } else if (parsed.result && typeof parsed.result === 'string') {
-        fileContent = parsed.result;
-      } else if (parsed.toolOutput && typeof parsed.toolOutput === 'string') {
-        fileContent = parsed.toolOutput;
-      } else {
-        fileContent = JSON.stringify(parsed, null, 2);
-      }
-    } catch (e) {
-      fileContent = typeof toolContent === 'string' ? toolContent : JSON.stringify(toolContent, null, 2);
+    
+    // Extract from structured result
+    if (typeof toolResult.output === 'string') {
+      fileContent = toolResult.output;
+    } else if (toolResult.output) {
+      fileContent = JSON.stringify(toolResult.output, null, 2);
+    } else {
+      fileContent = JSON.stringify(toolResult, null, 2);
     }
 
     const success = await copyToClipboard(fileContent);
@@ -771,7 +787,7 @@ export function ToolCallSidePanel({
     } else {
       toast.error('Failed to copy file content');
     }
-  }, [displayToolCall?.toolResult?.content, copyToClipboard]);
+  }, [displayToolCall?.toolResult, copyToClipboard]);
 
   const internalNavigate = useCallback((newIndex: number, source: string = 'internal') => {
     if (newIndex < 0 || newIndex >= totalCalls) return;
@@ -903,8 +919,9 @@ export function ToolCallSidePanel({
     }
 
     if (!displayToolCall && toolCallSnapshots.length > 0) {
-      const firstStreamingTool = toolCallSnapshots.find(s => s.toolCall.toolResult?.content === 'STREAMING');
+      const firstStreamingTool = toolCallSnapshots.find(s => s.toolCall.toolResult === undefined);
       if (firstStreamingTool && totalCompletedCalls === 0) {
+        const toolName = firstStreamingTool.toolCall.toolCall?.function_name?.replace(/_/g, '-') || 'Tool';
         return (
           <div className="flex flex-col h-full">
             {!isMobile && (
@@ -936,7 +953,7 @@ export function ToolCallSidePanel({
                     Tool is running
                   </h3>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                    {getUserFriendlyToolName(firstStreamingTool.toolCall.assistantCall.name || 'Tool')} is currently executing. Results will appear here when complete.
+                    {getUserFriendlyToolName(toolName)} is currently executing. Results will appear here when complete.
                   </p>
                 </div>
               </div>
@@ -963,13 +980,33 @@ export function ToolCallSidePanel({
       );
     }
 
+    // Ensure displayToolCall and toolCall exist before rendering
+    if (!displayToolCall || !displayToolCall.toolCall) {
+      return (
+        <div className="flex flex-col h-full">
+          {!isMobile && (
+            <PanelHeader 
+              agentName={agentName}
+              onClose={handleClose}
+            />
+          )}
+          <div className="flex-1 p-4 overflow-auto">
+            <div className="space-y-4">
+              <Skeleton className="h-8 w-32" />
+              <Skeleton className="h-20 w-full rounded-md" />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Pass structured data directly from metadata - NO CONTENT PARSING
     const toolView = (
       <ToolView
-        name={displayToolCall.assistantCall.name}
-        assistantContent={displayToolCall.assistantCall.content}
-        toolContent={displayToolCall.toolResult?.content}
-        assistantTimestamp={displayToolCall.assistantCall.timestamp}
-        toolTimestamp={displayToolCall.toolResult?.timestamp}
+        toolCall={displayToolCall.toolCall}
+        toolResult={displayToolCall.toolResult}
+        assistantTimestamp={displayToolCall.assistantTimestamp}
+        toolTimestamp={displayToolCall.toolTimestamp}
         isSuccess={isSuccess}
         isStreaming={isStreaming}
         project={project}

@@ -11,7 +11,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
-import { formatTimestamp, getToolTitle, extractToolData } from './utils';
+import { formatTimestamp, getToolTitle } from './utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,108 +20,35 @@ import { LoadingState } from './shared/LoadingState';
 import { toast } from 'sonner';
 
 export function GenericToolView({
-  name = 'generic-tool',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const toolTitle = getToolTitle(name);
-
+  // All hooks must be called unconditionally at the top
   const formatContent = (content: any) => {
     if (!content) return null;
 
-    // Use the new parser for backwards compatibility
-    const { toolResult } = extractToolData(content);
-
-    if (toolResult) {
-      // Format the structured content nicely
-      const formatted: any = {
-        tool: toolResult.xmlTagName || toolResult.functionName,
-      };
-
-      if (toolResult.arguments && Object.keys(toolResult.arguments).length > 0) {
-        formatted.parameters = toolResult.arguments;
-      }
-
-      if (toolResult.toolOutput) {
-        formatted.output = toolResult.toolOutput;
-      }
-
-      if (toolResult.isSuccess !== undefined) {
-        formatted.success = toolResult.isSuccess;
-      }
-
-      return JSON.stringify(formatted, null, 2);
-    }
-
-    // Fallback to legacy format handling
-    if (typeof content === 'object') {
-      // Check for direct structured format (legacy)
-      if ('tool_name' in content || 'xml_tag_name' in content) {
-        const formatted: any = {
-          tool: content.tool_name || content.xml_tag_name || 'unknown',
-        };
-
-        if (content.parameters && Object.keys(content.parameters).length > 0) {
-          formatted.parameters = content.parameters;
-        }
-
-        if (content.result) {
-          formatted.result = content.result;
-        }
-
-        return JSON.stringify(formatted, null, 2);
-      }
-
-      // Check if it has a content field that might contain the structured data (legacy)
-      if ('content' in content && typeof content.content === 'object') {
-        const innerContent = content.content;
-        if ('tool_name' in innerContent || 'xml_tag_name' in innerContent) {
-          const formatted: any = {
-            tool: innerContent.tool_name || innerContent.xml_tag_name || 'unknown',
-          };
-
-          if (innerContent.parameters && Object.keys(innerContent.parameters).length > 0) {
-            formatted.parameters = innerContent.parameters;
-          }
-
-          if (innerContent.result) {
-            formatted.result = innerContent.result;
-          }
-
-          return JSON.stringify(formatted, null, 2);
-        }
-      }
-
-      // Fall back to old format handling
-      if (content.content && typeof content.content === 'string') {
-        return content.content;
-      }
+    // Handle object content - format it nicely
+    if (typeof content === 'object' && content !== null) {
       return JSON.stringify(content, null, 2);
-    }
-
-    if (typeof content === 'string') {
-      try {
-        const parsedJson = JSON.parse(content);
-        return JSON.stringify(parsedJson, null, 2);
-      } catch (e) {
-        return content;
-      }
     }
 
     return String(content);
   };
 
+  // Format arguments from toolCall (use optional chaining for safety)
   const formattedAssistantContent = React.useMemo(
-    () => formatContent(assistantContent),
-    [assistantContent],
+    () => formatContent(toolCall?.arguments),
+    [toolCall?.arguments],
   );
+  
+  // Format output from toolResult
   const formattedToolContent = React.useMemo(
-    () => formatContent(toolContent),
-    [toolContent],
+    () => toolResult ? formatContent(toolResult.output) : null,
+    [toolResult],
   );
 
   // Add copy functionality state
@@ -164,6 +91,28 @@ export function GenericToolView({
     }
     setTimeout(() => setIsCopyingOutput(false), 500);
   }, [formattedToolContent, copyToClipboard]);
+
+  // Defensive check - handle cases where toolCall might be undefined or missing function_name
+  if (!toolCall || !toolCall.function_name) {
+    console.warn('GenericToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
+    return (
+      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
+          <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+            Tool View Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            This tool view requires structured metadata. Please update the component to use toolCall and toolResult props.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

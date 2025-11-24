@@ -23,42 +23,29 @@ import { Separator } from "@/components/ui/separator";
 import { extractConnectCredentialProfileData } from './_utils';
 
 export function ConnectCredentialProfileToolView({
-  name = 'connect-credential-profile',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-
+  // All hooks must be called unconditionally at the top
   const [copiedLink, setCopiedLink] = useState(false);
   const [timeUntilExpiry, setTimeUntilExpiry] = useState<string>('');
 
-  const {
-    profile_name,
-    app_name,
-    app_slug,
-    connection_link,
-    expires_at,
-    instructions,
-    message,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
-  } = extractConnectCredentialProfileData(
-    assistantContent,
-    toolContent,
+  // Extract data first (before conditional return) so we can use expires_at in useEffect
+  const extractedData = toolCall ? extractConnectCredentialProfileData(
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
-  );
+  ) : null;
 
-  const toolTitle = getToolTitle(name);
+  const expires_at = extractedData?.expires_at;
 
-  const logoUrl = undefined;
-
-  // Update countdown timer
+  // Update countdown timer - must be called unconditionally
   useEffect(() => {
     if (!expires_at) return;
 
@@ -94,6 +81,29 @@ export function ConnectCredentialProfileToolView({
 
     return () => clearInterval(interval);
   }, [expires_at]);
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall || !extractedData) {
+    console.warn('ConnectCredentialProfileToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
+
+  const {
+    profile_name,
+    app_name,
+    app_slug,
+    connection_link,
+    instructions,
+    message,
+    actualIsSuccess,
+    actualToolTimestamp,
+    actualAssistantTimestamp
+  } = extractedData;
+
+  const logoUrl = undefined;
 
   const formatExpiryTime = (dateString: string) => {
     try {

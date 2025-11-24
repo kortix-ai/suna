@@ -424,7 +424,6 @@ class ComposioEventProvider(TriggerProvider):
             return 0
         client = await self._db.client
         
-        # Use PostgreSQL JSON operator for exact match
         query = client.table('agent_triggers').select('trigger_id', count='exact').eq('trigger_type', 'webhook').eq('config->>composio_trigger_id', composio_trigger_id)
         
         if exclude_trigger_id:
@@ -441,7 +440,6 @@ class ComposioEventProvider(TriggerProvider):
             return 0
         client = await self._db.client
         
-        # Use PostgreSQL JSON operator for exact match
         query = client.table('agent_triggers').select('trigger_id', count='exact').eq('trigger_type', 'webhook').eq('is_active', True).eq('config->>composio_trigger_id', composio_trigger_id)
         
         if exclude_trigger_id:

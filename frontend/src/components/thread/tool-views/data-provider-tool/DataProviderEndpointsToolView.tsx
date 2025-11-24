@@ -67,13 +67,16 @@ const PROVIDER_CONFIG = {
 };
 
 export function DataProviderEndpointsToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
 
   const {
     serviceName,
@@ -82,8 +85,8 @@ export function DataProviderEndpointsToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractDataProviderEndpointsData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

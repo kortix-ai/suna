@@ -65,7 +65,6 @@ export function getToolTitle(toolName: string): string {
     'export-presentation': 'Export Presentation',
     'export_to_pptx': 'Export to PPTX',
     'export_to_pdf': 'Export to PDF',
-    'create-presentation-outline': 'Create Presentation Outline',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
     
@@ -1616,41 +1615,3 @@ export const getFileIconAndColor = (filename: string) => {
   }
 };
 
-/**
- * Extract tool data from content using the new parser with backwards compatibility
- */
-export function extractToolData(content: any): {
-  toolResult: ParsedToolResult | null;
-  arguments: Record<string, any>;
-  filePath: string | null;
-  fileContent: string | null;
-  command: string | null;
-  url: string | null;
-  query: string | null;
-} {
-  const toolResult = parseToolResult(content);
-  
-  if (toolResult) {
-    const args = toolResult.arguments || {};
-    return {
-      toolResult,
-      arguments: args,
-      filePath: args.file_path || args.path || null,
-      fileContent: args.file_contents || args.content || null,
-      command: args.command || null,
-      url: args.url || null,
-      query: args.query || null,
-    };
-  }
-
-  // Fallback to legacy parsing if new format not detected
-  return {
-    toolResult: null,
-    arguments: {},
-    filePath: null,
-    fileContent: null,
-    command: null,
-    url: null,
-    query: null,
-  };
-}

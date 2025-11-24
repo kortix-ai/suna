@@ -3,7 +3,7 @@
 import type { PricingTier } from '@/lib/home';
 import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';
 import NextImage from 'next/image';
 import {

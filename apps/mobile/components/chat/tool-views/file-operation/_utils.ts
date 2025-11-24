@@ -201,155 +201,17 @@ export interface ExtractedEditData {
   errorMessage?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
 
-const parseOutput = (output: any) => {
-    if (typeof output === 'string') {
-      try {
-        return JSON.parse(output);
-      } catch {
-        return output; // Return as string if not JSON
-      }
-    }
-    return output;
-  };
-
-export const extractFileEditData = (
-  assistantContent: any,
-  toolContent: any,
-  isSuccess: boolean,
-  toolTimestamp?: string,
-  assistantTimestamp?: string
-): {
-  filePath: string | null;
-  originalContent: string | null;
-  updatedContent: string | null;
-  actualIsSuccess: boolean;
-  actualToolTimestamp?: string;
-  actualAssistantTimestamp?: string;
-  errorMessage?: string;
-} => {
-  const parseOutput = (output: any) => {
-    if (typeof output === 'string') {
-      try {
-        return JSON.parse(output);
-      } catch {
-        return output; // Return as string if not JSON
-      }
-    }
-    return output;
-  };
-
-  const extractData = (content: any) => {
-    let parsed = typeof content === 'string' ? parseContent(content) : content;
-    
-    // Handle nested content structures like { role: '...', content: '...' }
-    if (parsed?.role && parsed?.content) {
-        parsed = typeof parsed.content === 'string' ? parseContent(parsed.content) : parsed.content;
-    }
-
-    if (parsed?.tool_execution) {
-      const args = parsed.tool_execution.arguments || {};
-      const output = parseOutput(parsed.tool_execution.result?.output);
-      const success = parsed.tool_execution.result?.success;
-      
-      let errorMessage: string | undefined;
-      if (success === false) {
-        if (typeof output === 'object' && output !== null && output.message) {
-          errorMessage = output.message;
-        } else if (typeof output === 'string') {
-          errorMessage = output;
-        } else {
-          errorMessage = JSON.stringify(output);
-        }
-      }
-
-      return {
-        filePath: args.target_file || (typeof output === 'object' && output?.file_path) || null,
-        originalContent: (typeof output === 'object' && output?.original_content) ?? null,
-        updatedContent: (typeof output === 'object' && output?.updated_content) ?? null,
-        success: success,
-        timestamp: parsed.tool_execution.execution_details?.timestamp,
-        errorMessage: errorMessage,
-      };
-    }
-    
-    // Fallback for when toolContent is just the output object from the tool result
-    if (typeof parsed === 'object' && parsed !== null && (parsed.original_content !== undefined || parsed.updated_content !== undefined)) {
-        return {
-            filePath: parsed.file_path || null,
-            originalContent: parsed.original_content ?? null,
-            updatedContent: parsed.updated_content ?? null,
-            success: parsed.updated_content !== null, // Success is false if updated_content is null
-            timestamp: null,
-            errorMessage: parsed.message,
-        };
-    }
-    return {};
-  };
-
-  const toolData = extractData(toolContent);
-  const assistantData = extractData(assistantContent);
-
-  const filePath = toolData.filePath || assistantData.filePath;
-  const originalContent = toolData.originalContent || assistantData.originalContent;
-  const updatedContent = toolData.updatedContent || assistantData.updatedContent;
-  const errorMessage = toolData.errorMessage || assistantData.errorMessage;
-
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
-
-  if (toolData.success !== undefined) {
-    actualIsSuccess = toolData.success;
-    actualToolTimestamp = toolData.timestamp || toolTimestamp;
-  } else if (assistantData.success !== undefined) {
-    actualIsSuccess = assistantData.success;
-    actualAssistantTimestamp = assistantData.timestamp || assistantTimestamp;
-  }
-
-  return { filePath, originalContent, updatedContent, actualIsSuccess, actualToolTimestamp, actualAssistantTimestamp, errorMessage };
-};
-
-export const getOperationType = (name?: string, assistantContent?: any): FileOperation => {
-  if (name) {
-    if (name.includes('create')) return 'create';
-    if (name.includes('rewrite')) return 'rewrite';
-    if (name.includes('delete')) return 'delete';
-    if (name.includes('edit-file')) return 'edit'; // Specific for edit_file
-    if (name.includes('str-replace')) return 'str-replace';
-  }
-
-  if (!assistantContent) return 'create';
-
-  // Assuming normalizeContentToString is imported from existing utils
-  const contentStr = typeof assistantContent === 'string' ? assistantContent : JSON.stringify(assistantContent);
-  if (!contentStr) return 'create';
-
-  if (contentStr.includes('<create-file>')) return 'create';
-  if (contentStr.includes('<full-file-rewrite>')) return 'rewrite';
-  if (contentStr.includes('<edit-file>')) return 'edit';
-  if (
-    contentStr.includes('delete-file') ||
-    contentStr.includes('<delete>')
-  )
-    return 'delete';
-
-  if (contentStr.toLowerCase().includes('create file')) return 'create';
-  if (contentStr.toLowerCase().includes('rewrite file'))
-    return 'rewrite';
-  if (contentStr.toLowerCase().includes('edit file')) return 'edit';
-  if (contentStr.toLowerCase().includes('delete file')) return 'delete';
-
+export const getOperationType = (name?: string): FileOperation => {
+  if (!name) return 'create';
+  
+  if (name.includes('create')) return 'create';
+  if (name.includes('rewrite')) return 'rewrite';
+  if (name.includes('delete')) return 'delete';
+  if (name.includes('edit-file')) return 'edit';
+  if (name.includes('str-replace')) return 'str-replace';
+  if (name.includes('read')) return 'read';
+  
   return 'create';
 };
 
@@ -503,53 +365,8 @@ export function generateEmptyLines(count: number): string[] {
   return Array.from({ length: count }, () => '');
 }
 
-// Additional extraction utilities for mobile
-export function extractToolData(content: any): {
-  toolResult: string | null;
-  filePath: string | null;
-  fileContent: string | null;
-} {
-  if (!content || typeof content !== 'string') {
-    return { toolResult: null, filePath: null, fileContent: null };
-  }
-
-  try {
-    // Check for tool_result tags in the content
-    const toolMatch = content.match(/<tool_result>([\s\S]*?)<\/tool_result>/);
-    if (toolMatch) {
-      const toolContent = toolMatch[1];
-      let filePath: string | null = null;
-      let fileContent: string | null = null;
-
-      // Extract path
-      const pathMatch = toolContent.match(/(?:path|file_path|filename)["']?\s*:\s*["']([^"']+)["']/);
-      if (pathMatch) {
-        filePath = pathMatch[1];
-      }
-
-      // Extract content
-      const contentMatch = toolContent.match(/(?:content|contents|output|new_str)["']?\s*:\s*["']?([\s\S]*?)(?=\n\s*["}]|\s*$)/);
-      if (contentMatch) {
-        fileContent = contentMatch[1]
-          .replace(/\\n/g, '\n')
-          .replace(/\\t/g, '\t')
-          .replace(/\\"/g, '"')
-          .replace(/\\\\/g, '\\')
-          .trim();
-        
-        if (fileContent.startsWith('"') && fileContent.endsWith('"')) {
-          fileContent = fileContent.slice(1, -1);
-        }
-      }
-
-      return { toolResult: toolContent, filePath, fileContent };
-    }
-  } catch (error) {
-    console.error('Error extracting tool data:', error);
-  }
-
-  return { toolResult: null, filePath: null, fileContent: null };
-}
+// REMOVED: extractToolData - Legacy extraction function removed.
+// Use toolCall.arguments and toolResult.output directly instead.
 
 export function extractFilePath(content: any): string | null {
   if (!content || typeof content !== 'string') return null;

@@ -391,6 +391,9 @@ function formatMCPToolName(serverName: string, toolName: string): string {
 }
 
 export function getUserFriendlyToolName(toolName: string): string {
+  if (!toolName) return 'Unknown Tool';
+  
+  // Handle MCP tools: mcp_serverName_toolName
   if (toolName.startsWith('mcp_')) {
     const parts = toolName.split('_');
     if (parts.length >= 3) {
@@ -399,14 +402,22 @@ export function getUserFriendlyToolName(toolName: string): string {
       return formatMCPToolName(serverName, toolNamePart);
     }
   }
+  
+  // Handle MCP tools in kebab-case: serverName-toolName (if not in display names map)
   if (toolName.includes('-') && !TOOL_DISPLAY_NAMES.has(toolName)) {
     const parts = toolName.split('-');
     if (parts.length >= 2) {
       const serverName = parts[0];
       const toolNamePart = parts.slice(1).join('-');
+      // Only format as MCP if it looks like an MCP tool (serverName is a known server or lowercase)
+      const knownServers = ['exa', 'github', 'notion', 'slack', 'filesystem', 'memory', 'anthropic', 'openai', 'composio', 'langchain', 'llamaindex'];
+      if (knownServers.includes(serverName.toLowerCase()) || serverName === serverName.toLowerCase()) {
       return formatMCPToolName(serverName, toolNamePart);
+      }
     }
   }
+  
+  // Return mapped display name or the tool name itself
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
 }
 

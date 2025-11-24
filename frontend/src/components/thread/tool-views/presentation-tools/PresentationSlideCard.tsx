@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Maximize2, Presentation } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 
 interface SlideMetadata {
   title: string;

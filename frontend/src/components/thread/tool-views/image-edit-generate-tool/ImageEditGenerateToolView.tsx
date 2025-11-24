@@ -26,9 +26,8 @@ interface ImageEditGenerateToolViewProps extends ToolViewProps {
 }
 
 export function ImageEditGenerateToolView({
-  name = 'image_edit_or_generate',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -36,6 +35,24 @@ export function ImageEditGenerateToolView({
   onFileClick,
   project,
 }: ImageEditGenerateToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('ImageEditGenerateToolView: toolCall is undefined. Tool views should use structured props.');
+    return (
+      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
+          <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+            Image Tool Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            This tool view requires structured metadata. Please update the component to use toolCall and toolResult props.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const {
     mode,
@@ -48,14 +65,14 @@ export function ImageEditGenerateToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractImageEditGenerateData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
 
-  const toolTitle = getToolTitle(name) || 'Image Generation';
+  const toolTitle = getToolTitle(toolCall.function_name.replace(/_/g, '-')) || 'Image Generation';
 
   const handleFileClick = (filePath: string) => {
     if (onFileClick) {
@@ -86,7 +103,26 @@ export function ImageEditGenerateToolView({
   // Collect all images to display
   const imagesToDisplay: string[] = [];
   if (imagePath) imagesToDisplay.push(imagePath);
-  if (generatedImagePath) imagesToDisplay.push(generatedImagePath);
+  if (generatedImagePath && generatedImagePath !== imagePath) {
+    imagesToDisplay.push(generatedImagePath);
+  }
+  
+  // Debug logging (can be removed in production)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('ImageEditGenerateToolView data:', {
+      mode,
+      prompt,
+      imagePath,
+      generatedImagePath,
+      imagesToDisplay,
+      status,
+      error,
+      actualIsSuccess,
+      isStreaming,
+      toolCall: toolCall?.function_name,
+      toolResult: toolResult ? { success: toolResult.success, hasOutput: !!toolResult.output } : null
+    });
+  }
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -158,26 +194,26 @@ export function ImageEditGenerateToolView({
                 </div>
 
                 <div className={cn(
-                  "grid gap-3",
+                  "grid gap-4",
                   imagesToDisplay.length === 1 ? "grid-cols-1" :
                     imagesToDisplay.length > 4 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
                       "grid-cols-1 sm:grid-cols-2"
                 )}>
-                  {imagesToDisplay.map((imagePath, index) => {
-                    const isInputImage = imagePath === imagePath && mode === 'edit' && index === 0;
-                    const isGeneratedImage = imagePath === generatedImagePath;
+                  {imagesToDisplay.map((imgPath, index) => {
+                    const isInputImage = imgPath === imagePath && mode === 'edit' && index === 0;
+                    const isGeneratedImage = imgPath === generatedImagePath;
                     
                     return (
                       <div
-                        key={index}
-                        className="relative group"
+                        key={`${imgPath}-${index}`}
+                        className="relative group rounded-lg overflow-hidden border border-border bg-muted/20"
                       >
                         {/* Image Label */}
                         {imagesToDisplay.length > 1 && (
                           <div className="absolute top-2 left-2 z-10">
                             <Badge 
                               variant="secondary" 
-                              className="text-xs bg-black/70 text-white border-0"
+                              className="text-xs bg-black/70 text-white border-0 backdrop-blur-sm"
                             >
                               {isInputImage ? 'Input' : isGeneratedImage ? 'Generated' : `Image ${index + 1}`}
                             </Badge>
@@ -185,18 +221,21 @@ export function ImageEditGenerateToolView({
                         )}
                         
                         <FileAttachment
-                          filepath={imagePath}
+                          filepath={imgPath}
                           onClick={handleFileClick}
                           sandboxId={project?.sandbox?.id}
                           showPreview={true}
-                          className="aspect-square w-full"
+                          className="w-full"
                           customStyle={{
                             width: '100%',
-                            height: '100%',
-                            '--attachment-height': '100%'
+                            height: 'auto',
+                            maxHeight: '600px',
+                            '--attachment-height': '600px',
+                            gridColumn: '1 / -1'
                           } as React.CSSProperties}
                           collapsed={false}
                           project={project}
+                          standalone={true}
                         />
                       </div>
                     );
@@ -204,20 +243,34 @@ export function ImageEditGenerateToolView({
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                  {mode === 'generate' ? (
-                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+              <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 flex items-center justify-center mb-6">
+                  {isStreaming ? (
+                    <Loader2 className="h-10 w-10 text-purple-500 dark:text-purple-400 animate-spin" />
+                  ) : mode === 'generate' ? (
+                    <Sparkles className="h-10 w-10 text-purple-500 dark:text-purple-400" />
                   ) : (
-                    <Edit3 className="h-8 w-8 text-muted-foreground" />
+                    <Edit3 className="h-10 w-10 text-purple-500 dark:text-purple-400" />
                   )}
                 </div>
-                <h3 className="text-lg font-medium text-foreground mb-2">
-                  {mode === 'generate' ? 'Image Generation' : 'Image Editing'}
+                <h3 className="text-xl font-semibold text-foreground mb-2">
+                  {isStreaming 
+                    ? (mode === 'generate' ? 'Generating Image...' : 'Editing Image...')
+                    : (mode === 'generate' ? 'Image Generation' : 'Image Editing')}
                 </h3>
-                <p className="text-sm text-muted-foreground">
-                  {actualIsSuccess ? 'Processing completed' : 'No image generated'}
+                <p className="text-sm text-muted-foreground max-w-md">
+                  {isStreaming 
+                    ? 'Please wait while the image is being processed.'
+                    : actualIsSuccess 
+                      ? (status || 'Processing completed')
+                      : (error || 'No image generated')}
                 </p>
+                {prompt && (
+                  <div className="mt-4 p-3 rounded-lg bg-muted/50 border max-w-md w-full">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Prompt:</p>
+                    <p className="text-sm text-foreground break-words">{prompt}</p>
+                  </div>
+                )}
               </div>
             )}
 

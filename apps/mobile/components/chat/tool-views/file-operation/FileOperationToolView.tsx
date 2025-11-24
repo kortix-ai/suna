@@ -19,43 +19,59 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 
-export function FileOperationToolView({
-  toolData,
-  isStreaming = false
+export function FileOperationToolView({ 
+  toolCall,
+  toolResult,
+  isStreaming = false,
+  isSuccess = true,
 }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
+
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('source');
 
-  const parseContent = (content: any): any => {
-    if (typeof content === 'string') {
-      try {
-        return JSON.parse(content);
-      } catch (e) {
-        return content;
-      }
-    }
-    return content;
-  };
-
-  const operation = getOperationType(toolData.toolName);
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const operation = getOperationType(name);
   const configs = getOperationConfigs();
   const config = configs[operation];
   const OperationIcon = config.icon;
 
-  let filePath: string | null = null;
+  // Extract from toolCall.arguments
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  let filePath: string | null = args.file_path || 
+                                args.path || 
+                                args.target_path ||
+                                args.target_file ||
+                                args.filename ||
+                                null;
+
   let fileContent: string | null = null;
 
-  filePath = toolData.arguments?.file_path ||
-    toolData.arguments?.path ||
-    toolData.arguments?.target_path ||
-    toolData.arguments?.target_file ||
-    toolData.arguments?.filename ||
-    null;
+  // Extract from toolResult.output
+  if (toolResult?.output) {
+    let output: any = toolResult.output;
+    if (typeof output === 'string') {
+      try {
+        output = JSON.parse(output);
+      } catch {
+        // Keep as string if not JSON
+      }
+    }
 
-  if (operation === 'read') {
-    if (toolData.result?.output) {
-      const output = parseContent(toolData.result.output);
-
+    if (operation === 'read') {
       if (typeof output === 'string') {
         const lowerOutput = output.toLowerCase();
         if (!lowerOutput.includes('successfully') || output.length > 200) {
@@ -64,41 +80,39 @@ export function FileOperationToolView({
       } else if (output && typeof output === 'object') {
         fileContent = output.content || output.data || JSON.stringify(output, null, 2);
       }
-    }
-  } else if (operation === 'create' || operation === 'rewrite') {
-    fileContent = toolData.arguments?.file_contents ||
-      toolData.arguments?.content ||
-      toolData.arguments?.contents ||
-      toolData.arguments?.file_content ||
-      toolData.arguments?.text ||
-      toolData.arguments?.data ||
-      null;
-
-    if (fileContent && typeof fileContent !== 'string') {
-      fileContent = JSON.stringify(fileContent, null, 2);
-    }
-  } else if (operation === 'edit' || operation === 'str-replace') {
-    if (toolData.result?.output) {
-      const output = parseContent(toolData.result.output);
-
-      if (output && typeof output === 'object' && output.updated_content) {
-        fileContent = output.updated_content;
-      } else if (output && typeof output === 'object' && output.new_content) {
-        fileContent = output.new_content;
+    } else if (operation === 'edit' || operation === 'str-replace') {
+      if (output && typeof output === 'object') {
+        fileContent = output.updated_content || output.new_content || null;
       } else if (typeof output === 'string' && !output.toLowerCase().includes('successfully')) {
         fileContent = output;
       }
     }
+  }
 
-    if (!fileContent) {
-      fileContent = toolData.arguments?.new_str ||
-        toolData.arguments?.new_string ||
-        toolData.arguments?.new_content ||
-        toolData.arguments?.code_edit ||
-        null;
+  // Extract from arguments for create/rewrite/edit operations
+  if (!fileContent) {
+    if (operation === 'create' || operation === 'rewrite') {
+      fileContent = args.file_contents ||  
+                    args.content || 
+                    args.contents || 
+                    args.file_content ||
+                    args.text ||
+                    args.data ||
+                    null;
+      
+      if (fileContent && typeof fileContent !== 'string') {
+        fileContent = JSON.stringify(fileContent, null, 2);
+      }
+    } else if (operation === 'edit' || operation === 'str-replace') {
+      fileContent = args.new_str || 
+                    args.new_string || 
+                    args.new_content ||
+                    args.code_edit ||
+                    null;
     }
   }
 
+  // Process file info
   const processedFilePath = processFilePath(filePath);
   const fileName = getFileName(processedFilePath);
   const fileExtension = getFileExtension(fileName);
@@ -106,6 +120,7 @@ export function FileOperationToolView({
   const isMarkdown = isFileType.markdown(fileExtension);
   const isJson = isFileType.json(fileExtension);
   const hasPreview = isMarkdown;
+  const success = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   const handleCopy = async () => {
     if (!fileContent) return;

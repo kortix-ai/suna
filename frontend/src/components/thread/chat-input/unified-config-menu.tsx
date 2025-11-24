@@ -106,7 +106,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [agentsResponse, currentPage, debouncedSearchQuery]);
 
     const agents: any[] = allAgents;
-    
+
     // Find Suna agent for default display
     const sunaAgent = useMemo(() => {
         return agents.find(a => a.metadata?.is_suna_default === true);

@@ -21,7 +21,6 @@ import {
   formatTimestamp,
   getToolTitle,
   normalizeContentToString,
-  extractToolData,
 } from '../utils';
 import {
   MarkdownRenderer,
@@ -137,9 +136,8 @@ const ErrorState: React.FC<{ message?: string }> = ({ message }) => (
 );
 
 export function FileEditToolView({
-  name = 'edit-file',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -149,6 +147,9 @@ export function FileEditToolView({
 }: ToolViewProps): JSX.Element {
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
+  
+  // Extract from structured metadata
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   
   // Add copy functionality state
   const [isCopyingContent, setIsCopyingContent] = useState(false);
@@ -177,7 +178,7 @@ export function FileEditToolView({
     setTimeout(() => setIsCopyingContent(false), 500);
   };
 
-  const operation = getOperationType(name, assistantContent);
+  const operation = getOperationType(name, toolCall.arguments);
   const configs = getOperationConfigs();
   const config = configs[operation] || configs['edit']; // fallback to edit config
   const Icon = FileDiff; // Always use FileDiff for edit operations
@@ -190,8 +191,8 @@ export function FileEditToolView({
     actualToolTimestamp,
     errorMessage,
   } = extractFileEditData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
@@ -226,9 +227,8 @@ export function FileEditToolView({
   if (!isStreaming && !processedFilePath && !updatedContent) {
     return (
       <GenericToolView
-        name={name || 'edit-file'}
-        assistantContent={assistantContent}
-        toolContent={toolContent}
+        toolCall={toolCall}
+        toolResult={toolResult}
         assistantTimestamp={assistantTimestamp}
         toolTimestamp={toolTimestamp}
         isSuccess={isSuccess}

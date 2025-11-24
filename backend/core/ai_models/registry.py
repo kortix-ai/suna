@@ -15,7 +15,7 @@ else:
 
 is_local = config.ENV_MODE == EnvMode.LOCAL
 is_prod = config.ENV_MODE == EnvMode.PRODUCTION
-pricing_multiplier = 0.20 if is_prod else 1.0
+# pricing_multiplier = 0.20 if is_prod else 1.0
 
 class ModelRegistry:
     def __init__(self):
@@ -36,14 +36,21 @@ class ModelRegistry:
                 ModelCapability.VISION,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00 * pricing_multiplier,
-                output_cost_per_million_tokens=5.00 * pricing_multiplier
+                input_cost_per_million_tokens=1.00,
+                output_cost_per_million_tokens=5.00,
+                cached_read_cost_per_million_tokens=0.10,  # Cache hits & refreshes
+                cache_write_5m_cost_per_million_tokens=1.25,  # 5-minute cache writes
+                cache_write_1h_cost_per_million_tokens=2.00  # 1-hour cache writes
             ),
             tier_availability=["paid"],
             priority=102,
             recommended=True,
             enabled=True,
-            config=ModelConfig()
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14" 
+                },
+            )
         ))
         
         self.register(Model(
@@ -59,8 +66,11 @@ class ModelRegistry:
                 ModelCapability.THINKING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=3.00 * pricing_multiplier,
-                output_cost_per_million_tokens=15.00 * pricing_multiplier
+                input_cost_per_million_tokens=3.00,
+                output_cost_per_million_tokens=15.00,
+                cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
+                cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
+                cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
             ),
             tier_availability=["paid"],
             priority=101,
@@ -68,7 +78,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14" 
                 },
             )
         ))
@@ -86,8 +96,11 @@ class ModelRegistry:
                 ModelCapability.THINKING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=3.00 * pricing_multiplier,
-                output_cost_per_million_tokens=15.00 * pricing_multiplier
+                input_cost_per_million_tokens=3.00,
+                output_cost_per_million_tokens=15.00,
+                cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
+                cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
+                cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
             ),
             tier_availability=["paid"],
             priority=100,
@@ -95,7 +108,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14" 
                 },
             )
         ))

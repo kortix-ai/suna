@@ -1,9 +1,7 @@
 'use client';
 
-import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
-import { isLocalMode, isStagingMode } from '@/lib/config';
 import { cn } from '@/lib/utils';
 
 interface KortixLogoProps {
@@ -11,6 +9,7 @@ interface KortixLogoProps {
   variant?: 'symbol' | 'logomark';
   className?: string;
 }
+
 export function KortixLogo({ size = 24, variant = 'symbol', className }: KortixLogoProps) {
   const { theme, systemTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -28,26 +27,22 @@ export function KortixLogo({ size = 24, variant = 'symbol', className }: KortixL
   // and invert it for light mode instead
   if (variant === 'logomark') {
     return (
-      <Image
+      <img
         src="/logomark-white.svg"
         alt="Kortix"
-        width={size}
-        height={size}
         className={cn(`${shouldInvert ? '' : 'invert'} flex-shrink-0`, className)}
-        style={{ height: size, width: 'auto' }}
+        style={{ height: `${size}px`, width: 'auto' }}
       />
     );
   }
 
-  // Default symbol variant behavior (unchanged)
+  // Default symbol variant behavior
   return (
-    <Image
+    <img
       src="/kortix-symbol.svg"
       alt="Kortix"
-      width={size}
-      height={size}
       className={cn(`${shouldInvert ? 'invert' : ''} flex-shrink-0`, className)}
-      style={{ width: size, height: size, minWidth: size, minHeight: size }}
+      style={{ width: `${size}px`, height: `${size}px` }}
     />
   );
 }

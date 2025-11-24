@@ -12,13 +12,8 @@ import {
   Maximize2,
 } from 'lucide-react';
 import {
-  extractFilePath,
-  extractFileContent,
-  extractStreamingFileContent,
   formatTimestamp,
   getToolTitle,
-  normalizeContentToString,
-  extractToolData,
 } from '../utils';
 import {
   MarkdownRenderer,
@@ -53,7 +48,6 @@ import {
   hasLanguageHighlighting,
   splitContentIntoLines,
   generateEmptyLines,
-  extractFileEditData,
   type FileOperation,
   type OperationConfig,
 } from './_utils';
@@ -63,18 +57,22 @@ import { LoadingState } from '../shared/LoadingState';
 import { toast } from 'sonner';
 
 export function FileOperationToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
   onFileClick,
 }: ToolViewProps) {
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
+
+  // Extract from structured metadata
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const args = toolCall.arguments || {};
+  const output = toolResult?.output;
 
   // Add copy functionality state
   const [isCopyingContent, setIsCopyingContent] = useState(false);
@@ -103,7 +101,7 @@ export function FileOperationToolView({
     setTimeout(() => setIsCopyingContent(false), 500);
   };
 
-  const operation = getOperationType(name, assistantContent);
+  const operation = getOperationType(name, args);
   const configs = getOperationConfigs();
   const config = configs[operation];
   const Icon = config.icon;
@@ -111,45 +109,35 @@ export function FileOperationToolView({
   let filePath: string | null = null;
   let fileContent: string | null = null;
 
-  // For edit operations, use extractFileEditData to get updated content
-  if (operation === 'edit') {
-    const editData = extractFileEditData(
-      assistantContent,
-      toolContent,
-      isSuccess,
-      toolTimestamp,
-      assistantTimestamp
-    );
-    filePath = editData.filePath;
-    fileContent = editData.updatedContent; // Use updated content for display
-  } else {
-    // For other operations, use standard extraction
-    const assistantToolData = extractToolData(assistantContent);
-    const toolToolData = extractToolData(toolContent);
+  // Extract file path from arguments (from metadata)
+  filePath = args.file_path || args.target_file || args.path || null;
 
-    if (assistantToolData.toolResult) {
-      filePath = assistantToolData.filePath;
-      fileContent = assistantToolData.fileContent;
-    } else if (toolToolData.toolResult) {
-      filePath = toolToolData.filePath;
-      fileContent = toolToolData.fileContent;
-    }
+  // For create operations, prioritize content from arguments
+  if (operation === 'create' && args.file_contents) {
+    fileContent = args.file_contents;
+  }
 
-    if (!filePath) {
-      filePath = extractFilePath(assistantContent);
+  // Extract file content from output (from metadata)
+  if (output && !fileContent) {
+    if (typeof output === 'object' && output !== null) {
+      // Handle structured output
+      fileContent = output.file_content || output.content || output.updated_content || null;
+      // If file_path is in output, use it
+      if (!filePath && output.file_path) {
+        filePath = output.file_path;
     }
+    } else if (typeof output === 'string') {
+      // For delete operations, output might be a message
+      // For create operations, output is usually just a success message, not content
+      if (operation !== 'delete' && operation !== 'create') {
+        fileContent = output;
+      }
+    }
+  }
 
-    if (!fileContent && operation !== 'delete') {
-      fileContent = isStreaming
-        ? extractStreamingFileContent(
-          assistantContent,
-          operation === 'create' ? 'create-file' : 'full-file-rewrite',
-        ) || ''
-        : extractFileContent(
-          assistantContent,
-          operation === 'create' ? 'create-file' : 'full-file-rewrite',
-        );
-    }
+  // For edit operations, prefer updated_content
+  if (operation === 'edit' && output && typeof output === 'object') {
+    fileContent = output.updated_content || output.file_content || output.content || null;
   }
 
   const toolTitle = getToolTitle(name || `file-${operation}`);
@@ -176,9 +164,8 @@ export function FileOperationToolView({
   if (!isStreaming && !processedFilePath && !fileContent) {
     return (
       <GenericToolView
-        name={name || `file-${operation}`}
-        assistantContent={assistantContent}
-        toolContent={toolContent}
+        toolCall={toolCall}
+        toolResult={toolResult}
         assistantTimestamp={assistantTimestamp}
         toolTimestamp={toolTimestamp}
         isSuccess={isSuccess}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Card,
   CardContent,
@@ -29,7 +29,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, extractToolData, getToolTitle } from '../utils';
+import { formatTimestamp, getToolTitle } from '../utils';
 import { downloadPresentation, handleGoogleSlidesUpload } from '../utils/presentation-utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { CodeBlockCode } from '@/components/ui/code-block';
@@ -38,6 +38,7 @@ import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
 import { DownloadFormat } from '../utils/presentation-utils';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
+import { backendApi } from '@/lib/api-client';
 
 interface SlideMetadata {
   title: string;
@@ -62,13 +63,12 @@ interface PresentationViewerProps extends ToolViewProps {
 }
 
 export function PresentationViewer({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
   showHeader = true,
 }: PresentationViewerProps) {
@@ -78,7 +78,10 @@ export function PresentationViewer({
   const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const [hasScrolledToCurrentSlide, setHasScrolledToCurrentSlide] = useState(false);
-  const [backgroundRetryInterval, setBackgroundRetryInterval] = useState<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasLoadedRef = useRef(false);
+  const sandboxCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isEnsuringSandboxRef = useRef(false);
 
   const [visibleSlide, setVisibleSlide] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -87,41 +90,37 @@ export function PresentationViewer({
   const { isOpen, presentationName, sandboxUrl, initialSlide, openPresentation, closePresentation } = usePresentationViewerStore();
   const viewerState = { isOpen, presentationName, sandboxUrl, initialSlide };
 
-  // Extract presentation info from tool data
-  const { toolResult } = extractToolData(toolContent);
+  // Extract presentation info from toolResult.output (from metadata)
   let extractedPresentationName: string | undefined;
   let extractedPresentationPath: string | undefined;
   let currentSlideNumber: number | undefined;
   let presentationTitle: string | undefined;
   let toolExecutionError: string | undefined;
 
-  if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== 'STREAMING') {
+  if (toolResult?.output) {
     try {
-      let output;
+      let output = toolResult.output;
       
-      if (typeof toolResult.toolOutput === 'string') {
+      // Handle string output
+      if (typeof output === 'string') {
         // Check if the string looks like an error message
-        if (toolResult.toolOutput.startsWith('Error') || toolResult.toolOutput.includes('exec')) {
-          console.error('Tool execution error:', toolResult.toolOutput);
-          toolExecutionError = toolResult.toolOutput;
-          // Don't return early - let the component render the error state
+        if (output.startsWith('Error') || output.includes('exec')) {
+          console.error('Tool execution error:', output);
+          toolExecutionError = output;
         } else {
           // Try to parse as JSON
           try {
-            output = JSON.parse(toolResult.toolOutput);
+            output = JSON.parse(output);
           } catch (parseError) {
             console.error('Failed to parse tool output as JSON:', parseError);
-            console.error('Raw tool output:', toolResult.toolOutput);
-            toolExecutionError = `Failed to parse tool output: ${toolResult.toolOutput}`;
-            // Don't return early - let the component render the error state
+            console.error('Raw tool output:', output);
+            toolExecutionError = `Failed to parse tool output: ${output}`;
           }
         }
-      } else {
-        output = toolResult.toolOutput;
       }
       
       // Only extract data if we have a valid parsed object
-      if (output && typeof output === 'object') {
+      if (output && typeof output === 'object' && !toolExecutionError) {
         extractedPresentationName = output.presentation_name;
         extractedPresentationPath = output.presentation_path;
         currentSlideNumber = output.slide_number;
@@ -129,14 +128,15 @@ export function PresentationViewer({
       }
     } catch (e) {
       console.error('Failed to process tool output:', e);
-      console.error('Tool output type:', typeof toolResult.toolOutput);
-      console.error('Tool output value:', toolResult.toolOutput);
+      console.error('Tool output type:', typeof toolResult.output);
+      console.error('Tool output value:', toolResult.output);
       toolExecutionError = `Unexpected error processing tool output: ${String(e)}`;
     }
   }
 
   // Get tool title for display
-  const toolTitle = getToolTitle(name || 'presentation-viewer');
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'presentation-viewer';
+  const toolTitle = getToolTitle(name);
 
   // Helper function to sanitize filename (matching backend logic)
   const sanitizeFilename = (name: string): string => {
@@ -144,8 +144,17 @@ export function PresentationViewer({
   };
 
   // Load metadata.json for the presentation with retry logic
-  const loadMetadata = async (retryCount = 0, maxRetries = 5) => {
-    if (!extractedPresentationName || !project?.sandbox?.sandbox_url) return;
+  const loadMetadata = useCallback(async (retryCount = 0, maxRetries = Infinity) => {
+    // Don't load if we already successfully loaded metadata
+    if (hasLoadedRef.current) {
+      return;
+    }
+    
+    // If sandbox URL isn't available yet, wait and don't set loading state
+    if (!extractedPresentationName || !project?.sandbox?.sandbox_url) {
+      setIsLoadingMetadata(false);
+      return;
+    }
     
     setIsLoadingMetadata(true);
     setError(null);
@@ -163,7 +172,7 @@ export function PresentationViewer({
       // Add cache-busting parameter to ensure fresh data
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
       
-      console.log(`Loading presentation metadata (attempt ${retryCount + 1}/${maxRetries + 1}):`, urlWithCacheBust);
+      console.log(`Loading presentation metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
       
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
@@ -175,13 +184,14 @@ export function PresentationViewer({
       if (response.ok) {
         const data = await response.json();
         setMetadata(data);
+        hasLoadedRef.current = true; // Mark as successfully loaded
         console.log('Successfully loaded presentation metadata:', data);
         setIsLoadingMetadata(false);
         
-        // Clear background retry interval on success
-        if (backgroundRetryInterval) {
-          clearInterval(backgroundRetryInterval);
-          setBackgroundRetryInterval(null);
+        // Clear any pending retry timeout on success
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current);
+          retryTimeoutRef.current = null;
         }
         
         return; // Success, exit early
@@ -191,55 +201,135 @@ export function PresentationViewer({
     } catch (err) {
       console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
       
-      // If we haven't reached max retries, try again with exponential backoff
-      if (retryCount < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Cap at 10 seconds
-        console.log(`Retrying in ${delay}ms...`);
-        
-        setTimeout(() => {
-          loadMetadata(retryCount + 1, maxRetries);
-        }, delay);
-        
-        return; // Don't set error state yet, we're retrying
-      }
+      // Calculate delay with exponential backoff, capped at 10 seconds
+      // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
+      const delay = retryCount < 5 
+        ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
+        : 5000; // Consistent 5 second intervals after that
       
-      // All retries exhausted, set error and start background retry
-      setError('Failed to load presentation metadata after multiple attempts');
-      setIsLoadingMetadata(false);
+      console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
       
-      // Start background retry every 10 seconds
-      if (!backgroundRetryInterval) {
-        const interval = setInterval(() => {
-          console.log('Background retry attempt...');
-          loadMetadata(0, 2); // Fewer retries for background attempts
-        }, 10000);
-        setBackgroundRetryInterval(interval);
+      // Keep retrying indefinitely - don't set error state
+      retryTimeoutRef.current = setTimeout(() => {
+        loadMetadata(retryCount + 1, maxRetries);
+      }, delay);
+      
+      return; // Keep loading state, don't set error
+    }
+  }, [extractedPresentationName, project?.sandbox?.sandbox_url]);
+
+  // Ensure sandbox is active and wait for sandbox URL
+  const ensureSandboxActive = useCallback(async () => {
+    if (!project?.id || !project?.sandbox?.id || isEnsuringSandboxRef.current) {
+      return;
+    }
+
+    isEnsuringSandboxRef.current = true;
+    
+    try {
+      console.log('Ensuring sandbox is active for project:', project.id);
+      const response = await backendApi.post(
+        `/project/${project.id}/sandbox/ensure-active`,
+        {},
+        { showErrors: false }
+      );
+
+      if (response.error) {
+        console.warn('Failed to ensure sandbox is active:', response.error);
+        isEnsuringSandboxRef.current = false;
+        return;
       }
-    }
-  };
 
-  useEffect(() => {
-    // Clear any existing background retry when dependencies change
-    if (backgroundRetryInterval) {
-      clearInterval(backgroundRetryInterval);
-      setBackgroundRetryInterval(null);
+      console.log('Sandbox ensure-active response:', response.data);
+      
+      // Dispatch event for other components
+      window.dispatchEvent(new CustomEvent('sandbox-active', {
+        detail: { sandboxId: project.sandbox.id, projectId: project.id }
+      }));
+      
+      isEnsuringSandboxRef.current = false;
+    } catch (err) {
+      console.error('Error ensuring sandbox is active:', err);
+      isEnsuringSandboxRef.current = false;
     }
-    loadMetadata();
-  }, [extractedPresentationName, project?.sandbox?.sandbox_url, toolContent]);
+  }, [project?.id, project?.sandbox?.id]);
 
-  // Cleanup background retry interval on unmount
+  // Poll for sandbox URL availability and listen for sandbox-active events
   useEffect(() => {
-    return () => {
-      if (backgroundRetryInterval) {
-        clearInterval(backgroundRetryInterval);
+    // If we have sandbox URL, no need to poll
+    if (project?.sandbox?.sandbox_url) {
+      if (sandboxCheckIntervalRef.current) {
+        clearInterval(sandboxCheckIntervalRef.current);
+        sandboxCheckIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // If we have sandbox ID but no URL, ensure sandbox is active
+    if (project?.sandbox?.id && !project?.sandbox?.sandbox_url && extractedPresentationName) {
+      // Ensure sandbox is active first
+      ensureSandboxActive();
+    }
+
+    // Listen for sandbox-active event
+    const handleSandboxActive = (event: CustomEvent) => {
+      if (event.detail?.projectId === project?.id) {
+        console.log('Sandbox active event received, checking for sandbox URL...');
+        // The project prop should update, but we can also trigger a check
+        // by clearing the ensuring flag so we can try again
+        isEnsuringSandboxRef.current = false;
       }
     };
-  }, [backgroundRetryInterval]);
+
+    window.addEventListener('sandbox-active', handleSandboxActive as EventListener);
+
+    return () => {
+      window.removeEventListener('sandbox-active', handleSandboxActive as EventListener);
+      if (sandboxCheckIntervalRef.current) {
+        clearInterval(sandboxCheckIntervalRef.current);
+        sandboxCheckIntervalRef.current = null;
+      }
+    };
+  }, [project?.id, project?.sandbox?.id, project?.sandbox?.sandbox_url, extractedPresentationName, ensureSandboxActive]);
+
+  useEffect(() => {
+    // Reset loaded flag when presentation name or sandbox URL changes
+    hasLoadedRef.current = false;
+    
+    // Clear any existing retry timeout when dependencies change
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+    
+    // Only start loading if we have the required data
+    if (extractedPresentationName && project?.sandbox?.sandbox_url) {
+      loadMetadata();
+    } else if (extractedPresentationName && project?.sandbox?.id && !project?.sandbox?.sandbox_url) {
+      // Sandbox exists but URL not available yet - show loading state
+      setIsLoadingMetadata(true);
+    } else {
+      setIsLoadingMetadata(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extractedPresentationName, project?.sandbox?.sandbox_url, toolResult?.output]);
+
+  // Cleanup retry timeout and sandbox check interval on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+      if (sandboxCheckIntervalRef.current) {
+        clearInterval(sandboxCheckIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Reset scroll state when tool content changes (new tool call)
   useEffect(() => {
     setHasScrolledToCurrentSlide(false);
-  }, [toolContent, currentSlideNumber]);
+  }, [toolResult?.output, currentSlideNumber]);
 
   // Scroll to current slide when metadata loads or when tool content changes
   useEffect(() => {
@@ -501,7 +591,7 @@ export function PresentationViewer({
 
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        {(isStreaming || (isLoadingMetadata && !metadata)) ? (
+        {(isStreaming || isLoadingMetadata || (!metadata && !toolExecutionError)) ? (
           <LoadingState
             icon={Presentation}
             iconColor="text-blue-500 dark:text-blue-400"
@@ -510,56 +600,24 @@ export function PresentationViewer({
             filePath={retryAttempt > 0 ? `Retrying... (attempt ${retryAttempt + 1})` : "Loading slides..."}
             showProgress={true}
           />
-        ) : error || toolExecutionError || !metadata ? (
+        ) : toolExecutionError ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-rose-100 to-rose-50 shadow-inner dark:from-rose-800/40 dark:to-rose-900/60">
               <AlertTriangle className="h-10 w-10 text-rose-400 dark:text-rose-600" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              {toolExecutionError ? 'Tool Execution Error' : (error || 'Failed to load presentation')}
+              Tool Execution Error
             </h3>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center max-w-md mb-4">
-              {toolExecutionError ? 'The presentation tool encountered an error during execution:' : 
-               (error || 'There was an error loading the presentation. Please try again.')}
+              The presentation tool encountered an error during execution:
             </p>
-            {retryAttempt > 0 && !toolExecutionError && (
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-4">
-                Attempted {retryAttempt + 1} times
-              </p>
-            )}
-            {backgroundRetryInterval && !toolExecutionError && (
-              <p className="text-xs text-blue-500 dark:text-blue-400 mb-4 flex items-center gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Retrying in background...
-              </p>
-            )}
-            {!toolExecutionError && error && (
-              <Button 
-                onClick={() => loadMetadata()} 
-                variant="outline" 
-                size="sm"
-                disabled={isLoadingMetadata}
-                className="mb-4"
-              >
-                {isLoadingMetadata ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Retrying...
-                  </>
-                ) : (
-                  'Try Again'
-                )}
-              </Button>
-            )}
-            {toolExecutionError && (
-              <div className="w-full max-w-2xl">
-                <CodeBlockCode 
-                  code={toolExecutionError} 
-                  language="text"
-                  className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-md border"
-                />
-              </div>
-            )}
+            <div className="w-full max-w-2xl">
+              <CodeBlockCode 
+                code={toolExecutionError} 
+                language="text"
+                className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-md border"
+              />
+            </div>
           </div>
         ) : slides.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">

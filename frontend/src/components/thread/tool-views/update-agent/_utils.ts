@@ -1,4 +1,4 @@
-import { parseToolResult } from '../tool-result-parser';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface UpdateAgentData {
   name: string | null;
@@ -34,32 +34,21 @@ export interface UpdateAgentData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractUpdateAgentData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): UpdateAgentData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: UpdateAgentData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     name: null,
     description: null,
@@ -74,116 +63,54 @@ export function extractUpdateAgentData(
     updated_fields: [],
     version_created: false,
     message: null,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  try {
-    if (toolContent) {
-      let content = toolContent;
-      
-      if (typeof toolContent === 'string') {
-        try {
-          content = JSON.parse(toolContent);
-        } catch (e) {
-          content = toolContent;
-        }
-      }
-
-      if (content && typeof content === 'object' && content.content) {
-        try {
-          const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
-          content = nestedContent;
-        } catch (e) {
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool_execution) {
-        const toolExecution = content.tool_execution;
-        if (toolExecution.result && toolExecution.result.success) {
-          const args = toolExecution.arguments;
-          const output = toolExecution.result.output;
-
-          if (args && output) {
-            return {
-              ...defaultResult,
-              name: args.name || null,
-              description: args.description || null,
-              system_prompt: args.system_prompt || null,
-              agentpress_tools: args.agentpress_tools || null,
-              configured_mcps: args.configured_mcps || null,
-              is_default: args.is_default || false,
-              icon_name: args.icon_name || null,
-              icon_color: args.icon_color || null,
-              icon_background: args.icon_background || null,
-              agent: output.agent || null,
-              updated_fields: output.updated_fields || [],
-              version_created: output.version_created || false,
-              message: output.message || null,
-              actualIsSuccess: true
-            };
-          }
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool === 'update-agent') {
-        const parameters = content.parameters;
-        const output = content.output;
-        
-        if (parameters && output) {
-          return {
-            ...defaultResult,
-            name: parameters.name || null,
-            description: parameters.description || null,
-            system_prompt: parameters.system_prompt || null,
-            agentpress_tools: parameters.agentpress_tools || null,
-            configured_mcps: parameters.configured_mcps || null,
-            is_default: parameters.is_default || false,
-            icon_name: parameters.icon_name || null,
-            icon_color: parameters.icon_color || null,
-            icon_background: parameters.icon_background || null,
-            agent: output.agent || null,
-            updated_fields: output.updated_fields || [],
-            version_created: output.version_created || false,
-            message: output.message || null,
-            actualIsSuccess: output.success !== false
-          };
-        }
-      }
-    }
-
-    if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput) {
-          return {
-            ...defaultResult,
-            name: args.name || null,
-            description: args.description || null,
-            system_prompt: args.system_prompt || null,
-            agentpress_tools: args.agentpress_tools || null,
-            configured_mcps: args.configured_mcps || null,
-            is_default: args.is_default || false,
-            icon_name: args.icon_name || null,
-            icon_color: args.icon_color || null,
-            icon_background: args.icon_background || null,
-            agent: toolOutput.agent || null,
-            updated_fields: toolOutput.updated_fields || [],
-            version_created: toolOutput.version_created || false,
-            message: toolOutput.message || null,
-            actualIsSuccess: true
-          };
-        }
-      }
-    }
-
-    return defaultResult;
-  } catch (error) {
-    console.error('Error extracting update agent data:', error);
+  if (!toolResult?.output) {
     return defaultResult;
   }
+
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
+    }
+  }
+
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  return {
+    name: parsedOutput.name || args.name || null,
+    description: parsedOutput.description || args.description || null,
+    system_prompt: parsedOutput.system_prompt || args.system_prompt || null,
+    agentpress_tools: parsedOutput.agentpress_tools || args.agentpress_tools || null,
+    configured_mcps: parsedOutput.configured_mcps || args.configured_mcps || null,
+    is_default: parsedOutput.is_default ?? args.is_default ?? false,
+    icon_name: parsedOutput.icon_name || args.icon_name || null,
+    icon_color: parsedOutput.icon_color || args.icon_color || null,
+    icon_background: parsedOutput.icon_background || args.icon_background || null,
+    agent: parsedOutput.agent || null,
+    updated_fields: parsedOutput.updated_fields || [],
+    version_created: parsedOutput.version_created ?? false,
+    message: parsedOutput.message || null,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
 }

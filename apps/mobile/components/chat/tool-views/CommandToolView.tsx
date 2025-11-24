@@ -19,20 +19,29 @@ import {
   ChevronUp
 } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
+import { extractCommandData } from './command-tool/_utils';
 
-export function CommandToolView({ toolData }: ToolViewProps) {
-  const { toolName, arguments: toolArgs, result } = toolData;
+export function CommandToolView({ 
+  toolCall, 
+  toolResult, 
+  isSuccess = true,
+  toolTimestamp 
+}: ToolViewProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
 
-  const command = toolArgs.command || toolArgs.session_name || '';
-  const cwd = toolArgs.cwd || '';
-  const isError = !result.success;
+  const {
+    command,
+    output,
+    exitCode,
+    sessionName,
+    cwd,
+    completed,
+    success: actualIsSuccess,
+  } = extractCommandData(toolCall, toolResult, isSuccess, toolTimestamp);
 
-  // Extract output from result
-  const output = result.output?.output || result.output || '';
-  const exitCode = result.output?.exit_code ?? result.output?.exitCode;
-  const completed = result.output?.completed ?? true;
+  const toolName = toolCall.function_name.replace(/_/g, '-');
+  const isError = !actualIsSuccess;
 
   const handleCopy = async () => {
     if (output) {
@@ -85,7 +94,7 @@ export function CommandToolView({ toolData }: ToolViewProps) {
         </Text>
         <View className="bg-card border border-border rounded-2xl p-4">
           <Text className="text-sm font-roobert text-foreground" selectable>
-            {toolName === 'check-command-output' ? `tmux:${command}` : `$ ${command}`}
+            {toolName === 'check-command-output' ? `tmux:${sessionName || command || ''}` : `$ ${command || ''}`}
           </Text>
         </View>
       </View>

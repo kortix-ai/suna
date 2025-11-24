@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Palette, Sparkles, CheckCircle, Loader2, AlertTriangle, ArrowLeft, X } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { ToolViewProps } from "../types"
-import { extractToolData, getToolTitle, formatTimestamp } from "../utils"
+import { getToolTitle, formatTimestamp } from "../utils"
 import { LoadingState } from "../shared/LoadingState"
 import { getPdfUrl, getImageUrl } from "../utils/presentation-utils"
 
@@ -24,13 +24,13 @@ interface TemplatesData {
 
 
 export function ListPresentationTemplatesToolView({
-  name = "list_templates",
-  toolContent,
+  toolCall,
+  toolResult,
   toolTimestamp,
   isStreaming = false,
 }: ToolViewProps) {
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name)
-  const { toolResult } = extractToolData(toolContent)
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set())
 
@@ -46,13 +46,14 @@ export function ListPresentationTemplatesToolView({
     setLoadedImages(prev => new Set(prev).add(templateId))
   }
 
+  // Extract from toolResult.output (from metadata)
   let templatesData: TemplatesData | null = null
   let error: string | null = null
   let autoOpenTemplate: string | null = null
 
   try {
-    if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== "STREAMING") {
-      const output = toolResult.toolOutput
+    if (toolResult?.output) {
+      let output = toolResult.output
       if (typeof output === "string") {
         try {
           templatesData = JSON.parse(output)

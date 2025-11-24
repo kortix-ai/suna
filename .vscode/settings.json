@@ -1,4 +1,5 @@
 {
   "python.analysis.typeCheckingMode": "off",
-  "cursorpyright.analysis.typeCheckingMode": "off"
+  "cursorpyright.analysis.typeCheckingMode": "off",
+  "python.defaultInterpreterPath": "./backend/.venv/bin/python"
 }

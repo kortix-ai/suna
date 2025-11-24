@@ -351,7 +351,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['scrape-webpage', 'Scraping Website'],
   ['web-search', 'Searching Web'],
   ['load-image', 'Loading Image'],
-  ['create-presentation-outline', 'Creating Presentation Outline'],
   ['create-presentation', 'Creating Presentation'],
   ['clear-images-from-context', 'Clearing Images from context'],
   ['load-image', 'Loading Image'],

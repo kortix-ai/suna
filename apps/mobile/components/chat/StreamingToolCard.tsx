@@ -154,7 +154,7 @@ interface StreamingToolCardProps {
   content: string;
 }
 
-export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content }) => {
+export const StreamingToolCard = React.memo(function StreamingToolCard({ content }: StreamingToolCardProps) {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const toolInfo = useMemo(() => {
@@ -254,4 +254,4 @@ export const StreamingToolCard: React.FC<StreamingToolCardProps> = ({ content })
       </ScrollView>
     </View>
   );
-};
+});

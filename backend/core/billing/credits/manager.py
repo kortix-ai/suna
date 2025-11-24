@@ -370,7 +370,10 @@ class CreditManager:
                         'success': success,
                         'amount_deducted': amount_deducted,
                         'new_balance': new_balance,
-                        'ledger_id': data.get('transaction_id')
+                        'new_total': float(new_balance),
+                        'from_expiring': float(data.get('from_expiring', 0)),
+                        'from_non_expiring': float(data.get('from_non_expiring', 0)),
+                        'transaction_id': data.get('transaction_id')
                     }
                 else:
                     raise Exception("No data returned from atomic_deduct_credits")
