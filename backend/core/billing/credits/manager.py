@@ -80,51 +80,100 @@ class CreditManager:
         self,
         account_id: str,
         new_credits: Decimal,
-        description: str = "Credit replacement",
-        expires_at: Optional[datetime] = None,
+        description: str = "Monthly credit renewal",
         stripe_event_id: Optional[str] = None
     ) -> Dict:
         client = await self.db.client
-        new_credits = Decimal(str(new_credits))
-        
-        logger.info(f"[RESET CREDITS] Replacing existing expiring credits with ${new_credits} for {account_id}")
-        
-        try:
-            idempotency_key = f"{account_id}_reset_{new_credits}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
-            
-            result = await client.rpc('atomic_reset_expiring_credits', {
-                'p_account_id': account_id,
-                'p_new_amount': float(new_credits),
-                'p_description': description,
-                'p_expires_at': expires_at.isoformat() if expires_at else None,
-                'p_stripe_event_id': stripe_event_id,
-                'p_idempotency_key': idempotency_key
-            }).execute()
-            
-            if result.data:
-                data = result.data
-                logger.info(f"[ATOMIC RESET] Reset expiring credits to ${new_credits} for {account_id} atomically")
+        if self.use_atomic_functions:
+            try:
+                result = await client.rpc('atomic_reset_expiring_credits', {
+                    'p_account_id': account_id,
+                    'p_new_credits': float(new_credits),
+                    'p_description': description,
+                    'p_stripe_event_id': stripe_event_id
+                }).execute()
                 
-                await Cache.invalidate(f"credit_balance:{account_id}")
-                await Cache.invalidate(f"credit_summary:{account_id}")
-                
-                return {
-                    'success': True,
-                    'credit_id': data.get('credit_id'),
-                    'ledger_id': data.get('ledger_id'),
-                    'new_balance': Decimal(str(data.get('new_balance', 0))),
-                    'amount_reset': new_credits
-                }
+                if result.data:
+                    data = result.data
+                    
+                    if data.get('success'):
+                        logger.info(f"[ATOMIC] Reset expiring credits to ${new_credits} for {account_id} atomically")
+                        
+                        await Cache.invalidate(f"credit_balance:{account_id}")
+                        await Cache.invalidate(f"credit_summary:{account_id}")
+                        
+                        return {
+                            'success': True,
+                            'new_expiring': data.get('new_expiring', 0),
+                            'non_expiring': data.get('non_expiring', 0),
+                            'total_balance': data.get('total_balance', 0)
+                        }
+                    else:
+                        logger.error(f"[ATOMIC] Failed to reset credits: {data.get('error')}")
+                        
+            except Exception as e:
+                logger.error(f"[ATOMIC] Failed to use atomic function for reset: {e}")
+                self.use_atomic_functions = False
+
+        result = await client.from_('credit_accounts').select(
+            'balance, expiring_credits, non_expiring_credits'
+        ).eq('account_id', account_id).execute()
+        
+        if result.data:
+            current = result.data[0]
+            current_balance = Decimal(str(current.get('balance', 0)))
+            current_expiring = Decimal(str(current.get('expiring_credits', 0)))
+            current_non_expiring = Decimal(str(current.get('non_expiring_credits', 0)))
+            
+            if current_balance <= current_non_expiring:
+                actual_non_expiring = current_balance
             else:
-                raise Exception("No data returned from atomic_reset_expiring_credits")
-                
-        except Exception as e:
-            logger.error(f"[ATOMIC RESET] Failed to reset credits atomically: {e}")
-            logger.warning("[ATOMIC RESET] Falling back to manual reset")
+                actual_non_expiring = current_non_expiring
+        else:
+            actual_non_expiring = Decimal('0')
+            current_balance = Decimal('0')
         
-        return await self._reset_expiring_credits_manual(
-            account_id, new_credits, description, expires_at, stripe_event_id
-        )
+        new_total = new_credits + actual_non_expiring
+        
+        await client.from_('credit_accounts').update({
+            'expiring_credits': float(new_credits),
+            'non_expiring_credits': float(actual_non_expiring),
+            'balance': float(new_total),
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }).eq('account_id', account_id).execute()
+        
+        expires_at = datetime.now(timezone.utc).replace(day=1) + timedelta(days=32)
+        expires_at = expires_at.replace(day=1)
+        
+        ledger_entry = {
+            'account_id': account_id,
+            'amount': float(new_credits),
+            'balance_after': float(new_total),
+            'type': 'tier_grant',
+            'description': description,
+            'is_expiring': True,
+            'expires_at': expires_at.isoformat(),
+            'metadata': {
+                'renewal': True,
+                'non_expiring_preserved': float(actual_non_expiring),
+                'previous_balance': float(current_balance)
+            }
+        }
+        
+        if stripe_event_id:
+            ledger_entry['stripe_event_id'] = stripe_event_id
+        
+        await client.from_('credit_ledger').insert(ledger_entry).execute()
+        
+        await Cache.invalidate(f"credit_balance:{account_id}")
+        await Cache.invalidate(f"credit_summary:{account_id}")
+        
+        return {
+            'success': True,
+            'new_expiring': float(new_credits),
+            'non_expiring': float(actual_non_expiring),
+            'total_balance': float(new_total)
+        }
     
     async def _add_credits_manual(
         self,

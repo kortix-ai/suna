@@ -154,6 +154,9 @@ class SubscriptionLifecycleHandler:
         handler = cls()
         return await handler._handle_subscription_change(subscription, previous_attributes)
     
+
+
+
     async def _handle_subscription_change(self, subscription: Dict, previous_attributes: Dict = None):
         logger.info(f"[SUBSCRIPTION] Processing change for subscription {subscription.get('id')}, status: {subscription.get('status')}")
         
@@ -168,7 +171,6 @@ class SubscriptionLifecycleHandler:
         
         logger.debug(f"[SUBSCRIPTION] Account: {account_id}, Price: {price_id}, Billing anchor: {billing_anchor}")
         
-        # Check if already processed
         if await self._is_already_processed(account_id, period_start):
             return
         
@@ -179,7 +181,6 @@ class SubscriptionLifecycleHandler:
 
         await self._handle_trial_status_transition(subscription, previous_attributes, current_account, account_id)
 
-        # Check if this is a renewal
         is_renewal = self.lifecycle_service.is_renewal(subscription, current_account, billing_anchor)
         
         if is_renewal:
@@ -191,6 +192,9 @@ class SubscriptionLifecycleHandler:
         
         await self._process_subscription_change(subscription, account_id, price_id, billing_anchor, current_account)
 
+
+
+
     async def _is_already_processed(self, account_id: str, period_start: int) -> bool:
         guard_check = await self.credit_repo.check_renewal_already_processed(account_id, period_start)
         
@@ -201,6 +205,9 @@ class SubscriptionLifecycleHandler:
             )
             return True
         return False
+
+
+
 
     async def _handle_trial_status_transition(self, subscription: Dict, previous_attributes: Dict, current_account: Optional[Dict], account_id: str):
         if not current_account:
@@ -217,6 +224,9 @@ class SubscriptionLifecycleHandler:
             logger.info(f"[TRIAL END] Subscription transitioned from trialing to active - marking trial as converted")
             await self.trial_service.convert_trial(account_id, 'converted')
 
+
+
+
     async def _process_subscription_change(self, subscription: Dict, account_id: str, price_id: str, billing_anchor: datetime, current_account: Optional[Dict]):
         await self._track_commitment_if_needed(account_id, price_id, subscription)
         
@@ -231,13 +241,11 @@ class SubscriptionLifecycleHandler:
             'credits': float(tier_info.monthly_credits)
         }
         
-        # Handle trial subscriptions
         if subscription.status == 'trialing' and subscription.get('trial_end'):
             await self._handle_trial_subscription(subscription, account_id, new_tier, current_account)
             await self.lifecycle_service.invalidate_caches(account_id)
             return
         
-        # Handle regular subscriptions
         if current_account:
             await self._handle_existing_account_subscription(
                 current_account, account_id, new_tier, billing_anchor, subscription
@@ -247,6 +255,10 @@ class SubscriptionLifecycleHandler:
         
         await self.lifecycle_service.invalidate_caches(account_id)
 
+
+
+
+
     async def _handle_trial_subscription(self, subscription: Dict, account_id: str, new_tier: Dict, current_account: Optional[Dict]):
         existing_trial = current_account.get('trial_status') if current_account else None
         
@@ -255,6 +267,10 @@ class SubscriptionLifecycleHandler:
             return
         
         await self.trial_service.activate_trial(account_id, subscription, new_tier)
+
+
+
+
 
     async def _handle_existing_account_subscription(self, existing_data: Dict, account_id: str, new_tier: Dict, billing_anchor: datetime, subscription: Dict):
         current_tier_name = existing_data.get('tier')
@@ -283,15 +299,14 @@ class SubscriptionLifecycleHandler:
         should_grant_credits = self.lifecycle_service.should_grant_credits(current_tier_data, new_tier, subscription)
         
         if should_grant_credits:
-            is_tier_upgrade = (current_tier_data and 
-                              current_tier_data.get('name') not in ['none', 'free'] and 
-                              new_tier['name'] != current_tier_data.get('name'))
+            current_tier_name = current_tier_data.get('name') if current_tier_data else 'none'
+            is_tier_upgrade = (current_tier_name != 'none' and current_tier_name != new_tier['name'])
             
             if is_tier_upgrade:
-                logger.info(f"[TIER UPGRADE] Processing tier upgrade: {current_tier_data.get('name')} -> {new_tier['name']}")
+                logger.info(f"[TIER UPGRADE] Processing tier upgrade: {current_tier_name} -> {new_tier['name']}")
                 await self.lifecycle_service.grant_subscription_credits(account_id, new_tier, billing_anchor, True)
             else:
-                logger.info(f"[NEW SUBSCRIPTION] Processing new subscription for {new_tier['name']}")
+                logger.info(f"[NEW SUBSCRIPTION] Processing brand new subscription for {new_tier['name']}")
                 await self.lifecycle_service.grant_subscription_credits(account_id, new_tier, billing_anchor, False)
             
             await self.credit_repo.update_credit_account(account_id, {
@@ -299,6 +314,10 @@ class SubscriptionLifecycleHandler:
             })
         
         await self._update_subscription_metadata_only(account_id, subscription, subscription['items']['data'][0]['price']['id'])
+
+
+
+
 
     async def _handle_new_account_subscription(self, account_id: str, new_tier: Dict, billing_anchor: datetime, subscription: Dict):
         logger.info(f"[SUBSCRIPTION] Creating initial subscription for {account_id}")
@@ -321,6 +340,9 @@ class SubscriptionLifecycleHandler:
         })
         
         logger.info(f"[SUBSCRIPTION] ✅ Initial subscription setup completed for {account_id}")
+
+
+
 
     async def _update_subscription_metadata_only(self, account_id: str, subscription: Dict, price_id: str):
         logger.info(f"[SUBSCRIPTION] Updating metadata only (no credit grants) for {account_id}")
@@ -348,6 +370,10 @@ class SubscriptionLifecycleHandler:
         
         logger.info(f"[SUBSCRIPTION] ✅ Metadata updated for {account_id}, tier={tier_info.name}")
     
+
+
+
+
     async def _track_commitment_if_needed(self, account_id: str, price_id: str, subscription: Dict):
         if not is_commitment_price_id(price_id):
             return
@@ -385,3 +411,4 @@ class SubscriptionLifecycleHandler:
         })
         
         logger.info(f"[COMMITMENT] Tracked yearly commitment for account {account_id}, subscription {subscription['id']}, ends {end_date.date()}")
+        

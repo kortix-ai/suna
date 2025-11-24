@@ -177,21 +177,26 @@ class LifecycleService:
             expires_at = billing_anchor + relativedelta(months=1)
             
             if is_tier_upgrade:
-                logger.info(f"[TIER UPGRADE] Replacing existing expiring credits with ${full_amount} for {tier['name']} (Stripe handles payment proration)")
+                logger.info(f"[TIER UPGRADE] Replacing existing credits with ${full_amount} for {tier['name']} (Stripe handled payment proration)")
+                
+                import time
+                unique_id = f"lifecycle_upgrade_{account_id}_{tier['name']}_{int(time.time())}"
+                
                 await credit_manager.reset_expiring_credits(
                     account_id=account_id,
-                    new_credits=Decimal('0.00'),
+                    new_credits=full_amount,
                     description=f"Tier upgrade to {tier['name']} (prorated by Stripe)",
+                    stripe_event_id=unique_id
                 )
             else:
                 logger.info(f"[NEW SUBSCRIPTION] Adding ${full_amount} credits for new {tier['name']} subscription")
+                
                 await credit_manager.add_credits(
                     account_id=account_id,
                     amount=full_amount,
                     is_expiring=True,
                     description=f"New subscription: {tier['name']}",
-                    expires_at=expires_at,
-                    metadata={'source': 'subscription_lifecycle', 'tier': tier['name']}
+                    expires_at=expires_at
                 )
             
             logger.info(f"[CREDIT GRANT] ✅ Successfully processed ${full_amount} credits for {tier['name']}")

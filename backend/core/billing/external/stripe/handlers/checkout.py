@@ -459,18 +459,21 @@ class CheckoutHandler:
                     logger.info(f"[WEBHOOK DEFAULT] Monthly plan - setting next_credit_grant to period end: {next_grant_date}")
              
                 current_tier = credit_account.data[0].get('tier') if credit_account.data else 'none'
-                is_tier_upgrade = (current_tier and current_tier not in ['none', 'free'] and 
+                is_tier_upgrade = (current_tier and current_tier != 'none' and 
                                   current_tier != tier_info.name)
                 
                 if is_tier_upgrade:
                     logger.info(f"[WEBHOOK DEFAULT] Tier upgrade detected: {current_tier} -> {tier_info.name}")
                     logger.info(f"[WEBHOOK DEFAULT] Replacing existing credits with ${tier_info.monthly_credits} for {tier_info.name} (Stripe handled payment proration)")
                     
+                    import time
+                    unique_id = f"checkout_upgrade_{account_id}_{tier_info.name}_{int(time.time())}"
+                    
                     await credit_manager.reset_expiring_credits(
                         account_id=account_id,
                         new_credits=Decimal(str(tier_info.monthly_credits)),
                         description=f"Tier upgrade to {tier_info.display_name} (prorated by Stripe)",
-                        expires_at=next_grant_date
+                        stripe_event_id=unique_id
                     )
                 else:
                     logger.info(f"[WEBHOOK DEFAULT] Granting ${tier_info.monthly_credits} credits for new {plan_type} subscription")
