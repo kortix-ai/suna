@@ -1,31 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Linking, Pressable, ScrollView } from 'react-native';
+import { View, Linking, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ShoppingCart, Lightbulb, Check, X } from 'lucide-react-native';
-import { BillingPeriodToggle } from './BillingPeriodToggle';
+import { ShoppingCart, Lightbulb, X, Clock, Infinity } from 'lucide-react-native';
 import { PricingTierCard } from './PricingTierCard';
 import { CreditPurchaseModal } from './CreditPurchaseModal';
-import { PRICING_TIERS, getDisplayPrice, type PricingTier, type BillingPeriod } from '@/lib/billing';
+import { PRICING_TIERS, getDisplayPrice, type BillingPeriod, type PricingTier } from '@/lib/billing';
 import { useSubscription, useSubscriptionCommitment, billingKeys } from '@/lib/billing';
 import { startUnifiedPlanCheckout } from '@/lib/billing/unified-checkout';
+import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
+import { getOfferings } from '@/lib/billing/revenuecat';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
   withSpring,
   FadeIn,
 } from 'react-native-reanimated';
 import { KortixLogo } from '../ui/KortixLogo';
-import BasicSvg from '@/assets/brand/tiers/basic.svg';
-import PlusSvg from '@/assets/brand/tiers/plus.svg';
-import ProSvg from '@/assets/brand/tiers/pro.svg';
-import UltraSvg from '@/assets/brand/tiers/ultra.svg';
-import { colorScheme, useColorScheme } from 'nativewind';
+import { useColorScheme } from 'nativewind';
+import type { PurchasesOffering } from 'react-native-purchases';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -119,17 +117,81 @@ export function PricingSection({
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
   const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
-  const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
+  const [revenueCatOfferings, setRevenueCatOfferings] = useState<PurchasesOffering | null>(null);
+  const [isLoadingOfferings, setIsLoadingOfferings] = useState(false);
+  const [mergedTiers, setMergedTiers] = useState<PricingTier[]>(PRICING_TIERS);
+
+  const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
 
   useEffect(() => {
     setBillingPeriod(getDefaultBillingPeriod());
   }, [getDefaultBillingPeriod]);
 
+  // Load RevenueCat offerings and merge with hardcoded tier data
   useEffect(() => {
-    if (!selectedTierId && currentSubscription) {
-      setSelectedTierId(currentSubscription.tier_key || null);
+    if (!useRevenueCat) {
+      setMergedTiers(PRICING_TIERS);
+      return;
     }
-  }, [currentSubscription, selectedTierId]);
+
+    const loadOfferings = async () => {
+      try {
+        setIsLoadingOfferings(true);
+        const offerings = await getOfferings(true);
+        setRevenueCatOfferings(offerings);
+
+        if (offerings?.availablePackages) {
+          // Group packages by tier to handle monthly/yearly variants
+          const tierMap = new Map<string, { monthly?: typeof offerings.availablePackages[0], yearly?: typeof offerings.availablePackages[0] }>();
+
+          offerings.availablePackages.forEach((pkg) => {
+            const matchingTier = PRICING_TIERS.find((tier) =>
+              tier.revenueCatId && pkg.product.identifier.includes(tier.revenueCatId)
+            );
+
+            if (matchingTier) {
+              const existing = tierMap.get(matchingTier.id) || {};
+
+              // Determine if this is monthly or yearly based on product identifier
+              if (pkg.product.identifier.includes('yearly')) {
+                existing.yearly = pkg;
+              } else if (pkg.product.identifier.includes('monthly')) {
+                existing.monthly = pkg;
+              }
+
+              tierMap.set(matchingTier.id, existing);
+            }
+          });
+
+          // Merge RevenueCat packages with hardcoded tier data
+          const merged = PRICING_TIERS.map((tier) => {
+            const packages = tierMap.get(tier.id);
+            if (!packages) return tier; // No RC data, use hardcoded
+
+            const monthlyPkg = packages.monthly;
+            const yearlyPkg = packages.yearly;
+
+            // Use RevenueCat pricing, keep hardcoded features/metadata
+            return {
+              ...tier,
+              price: monthlyPkg?.product.priceString || tier.price,
+              priceMonthly: monthlyPkg?.product.price || tier.priceMonthly,
+              priceYearly: yearlyPkg?.product.price || tier.priceYearly,
+            } as PricingTier;
+          });
+
+          setMergedTiers(merged);
+        }
+      } catch (error) {
+        console.error('Failed to load RevenueCat offerings:', error);
+        setMergedTiers(PRICING_TIERS);
+      } finally {
+        setIsLoadingOfferings(false);
+      }
+    };
+
+    loadOfferings();
+  }, [useRevenueCat]);
 
   const handlePlanSelect = (planId: string) => {
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
@@ -181,13 +243,12 @@ export function PricingSection({
     }
   };
 
-  const tiersToShow = PRICING_TIERS.filter(
+  const tiersToShow = mergedTiers.filter(
     (tier) => tier.hidden !== true && (!hideFree || tier.price !== '$0')
   );
 
   const creditsButtonScale = useSharedValue(1);
   const creditsLinkScale = useSharedValue(1);
-  const upgradeButtonScale = useSharedValue(1);
   const closeButtonScale = useSharedValue(1);
 
   const creditsButtonStyle = useAnimatedStyle(() => ({
@@ -198,108 +259,17 @@ export function PricingSection({
     transform: [{ scale: creditsLinkScale.value }],
   }));
 
-  const upgradeButtonStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: upgradeButtonScale.value }],
-  }));
-
   const closeButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeButtonScale.value }],
   }));
 
-  const getCurrentPlanValue = (): number => {
-    if (!currentSubscription?.tier_key) return 0;
-    const tierValues: Record<string, number> = {
-      'free': 0,
-      'tier_2_20': 20,
-      'tier_6_50': 50, 
-      'tier_12_100': 100,
-      'tier_25_200': 200,
-    };
-    return tierValues[currentSubscription.tier_key] || 0;
-  };
-
-  const getSelectedPlanValue = (): number => {
-    if (!selectedTierId) return 0;
-    const tierValues: Record<string, number> = {
-      'free': 0,
-      'tier_2_20': 20,
-      'tier_6_50': 50,
-      'tier_12_100': 100, 
-      'tier_25_200': 200,
-    };
-    return tierValues[selectedTierId] || 0;
-  };
-
-  const currentPlanValue = getCurrentPlanValue();
-  const selectedPlanValue = getSelectedPlanValue();
-  const isUpgrade = selectedPlanValue > currentPlanValue;
-  const isDowngrade = selectedPlanValue < currentPlanValue;
-  const isCurrentPlan = selectedTierId === currentSubscription?.tier_key && 
-    currentSubscription?.subscription?.status === 'active';
-
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-
-  const isSameTierDifferentPeriod = currentSubscription?.tier_key === selectedTierId && 
-    currentBillingPeriod !== billingPeriod && 
-    currentBillingPeriod !== null;
-
-  const getMainButtonText = (): string => {
-    if (!isAuthenticated) {
-      return t('billing.getStarted');
-    }
-    
-    if (isCurrentPlan && !isSameTierDifferentPeriod) {
-      return t('billing.currentPlan');
-    }
-    
-    if (isSameTierDifferentPeriod) {
-      return billingPeriod === 'yearly_commitment' ? t('billing.upgrade') : t('billing.switchPlan');
-    }
-    
-    if (isUpgrade) {
-      return t('billing.upgradeNow');
-    }
-    
-    if (isDowngrade) {
-      return t('billing.downgrade');
-    }
-    
-    return t('billing.selectPlan');
-  };
-
-  const handleMainButtonPress = async () => {
-    if (!selectedTierId) return;
-    if (isCurrentPlan && !isSameTierDifferentPeriod) return;
-    
-    await handleSubscribe(selectedTierId, isDowngrade);
-  };
-
-  const isMainButtonDisabled = !selectedTierId || (isCurrentPlan && !isSameTierDifferentPeriod);
-  const isLoadingMainButton = selectedTierId ? planLoadingStates[selectedTierId] : false;
-
-  const selectedTier = tiersToShow.find(t => t.id === selectedTierId);
-
-  const getTierIcon = (tierName: string) => {
-    switch (tierName.toLowerCase()) {
-      case 'basic':
-        return BasicSvg;
-      case 'plus':
-        return PlusSvg;
-      case 'pro':
-      case 'business':
-        return ProSvg;
-      case 'ultra':
-        return UltraSvg;
-      default:
-        return BasicSvg;
-    }
-  };
 
   return (
     <View className={`flex-1 ${noPadding ? 'pb-0' : ''}`}>
       {onClose && (
-        <AnimatedView 
+        <AnimatedView
           entering={FadeIn.duration(400)}
           className="px-6 -mt-6 flex-row justify-between items-center bg-background border-b border-border/30"
           style={{ paddingTop: insets.top + 16 }}
@@ -326,16 +296,17 @@ export function PricingSection({
         </AnimatedView>
       )}
 
-      <AnimatedScrollView 
+      <AnimatedScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ 
+        contentContainerStyle={{
           paddingTop: 16,
-          paddingBottom: 16
+          paddingBottom: 100
         }}
+        bounces={true}
       >
-        <AnimatedView 
-          entering={FadeIn.duration(600).delay(50)} 
+        <AnimatedView
+          entering={FadeIn.duration(600).delay(50)}
           className="px-6 mb-4 flex flex-col items-center"
         >
           <Text className="text-2xl font-roobert-semibold text-foreground mb-4">
@@ -347,45 +318,47 @@ export function PricingSection({
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setBillingPeriod('monthly');
               }}
-              className={`px-4 py-2 rounded-full ${
-                billingPeriod === 'monthly'
-                  ? 'bg-foreground'
-                  : 'bg-muted/30'
-              }`}
+              className={`px-4 py-2 rounded-full ${billingPeriod === 'monthly'
+                ? 'bg-foreground'
+                : 'border border-border bg-transparent'
+                }`}
             >
               <Text
-                className={`text-sm font-roobert-medium ${
-                  billingPeriod === 'monthly'
-                    ? 'text-background'
-                    : 'text-muted-foreground'
-                }`}
+                className={`text-sm font-roobert-medium ${billingPeriod === 'monthly'
+                  ? 'text-background'
+                  : 'text-foreground'
+                  }`}
               >
                 {t('billing.monthly')}
               </Text>
             </AnimatedPressable>
-            
+
             <AnimatedPressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setBillingPeriod('yearly_commitment');
               }}
-              className={`px-4 py-2 rounded-full flex-row items-center gap-1.5 ${
-                billingPeriod === 'yearly_commitment'
-                  ? 'bg-foreground'
-                  : 'bg-muted/30'
-              }`}
+              className={`px-4 py-2 rounded-full flex-row items-center gap-1.5 ${billingPeriod === 'yearly_commitment'
+                ? 'bg-foreground'
+                : 'border border-border bg-transparent'
+                }`}
             >
               <Text
-                className={`text-sm font-roobert-medium ${
-                  billingPeriod === 'yearly_commitment'
-                    ? 'text-background'
-                    : 'text-muted-foreground'
-                }`}
+                className={`text-sm font-roobert-medium ${billingPeriod === 'yearly_commitment'
+                  ? 'text-background'
+                  : 'text-foreground'
+                  }`}
               >
                 {t('billing.yearlyCommitment')}
               </Text>
-              <View className="bg-primary/20 px-1.5 py-0.5 rounded-full">
-                <Text className="text-[10px] font-roobert-semibold text-primary">
+              <View className={`px-1.5 py-0.5 rounded-full ${billingPeriod === 'yearly_commitment'
+                ? 'bg-primary-foreground/20'
+                : 'bg-primary/20'
+                }`}>
+                <Text className={`text-[10px] font-roobert-semibold ${billingPeriod === 'yearly_commitment'
+                  ? 'text-background'
+                  : 'text-primary'
+                  }`}>
                   {t('billing.save15Percent')}
                 </Text>
               </View>
@@ -393,102 +366,58 @@ export function PricingSection({
           </View>
         </AnimatedView>
 
-        <AnimatedView 
-          entering={FadeIn.duration(600).delay(100)} 
-          className="px-6 mb-6 bg-primary/5 rounded-3xl p-6 mx-6"
+        {/* Horizontal scrolling pricing cards */}
+        <AnimatedView
+          entering={FadeIn.duration(600).delay(200)}
+          className="mb-6"
         >
-          {selectedTier && selectedTier.features && selectedTier.features.length > 0 ? (
-            selectedTier.features.map((feature, idx) => (
-              <View key={idx} className="flex-row items-start gap-3 mb-4 last:mb-0">
-                <View className="mt-0.5">
-                  <Icon as={Check} size={18} className="text-foreground" strokeWidth={2.5} />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-[15px] text-foreground font-roobert leading-snug">
-                    {feature}
-                  </Text>
-                </View>
-              </View>
-            ))
-          ) : (
-            <View className="flex-row items-start gap-3 mb-4">
-              <View className="mt-0.5">
-                <Icon as={Check} size={18} className="text-foreground" strokeWidth={2.5} />
-              </View>
-              <View className="flex-1">
-                <Text className="text-[15px] text-muted-foreground font-roobert leading-snug">
-                  {t('billing.selectPlan')}
-                </Text>
-              </View>
+          {isLoadingOfferings ? (
+            <View className="h-[400px] items-center justify-center">
+              <ActivityIndicator size="large" />
+              <Text className="text-sm text-muted-foreground mt-4">Loading plans...</Text>
             </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 4 }}
+              decelerationRate="fast"
+              snapToInterval={296}
+              snapToAlignment="start"
+            >
+              {tiersToShow.map((tier, index) => {
+                const displayPrice = getDisplayPrice(tier, billingPeriod);
+
+                return (
+                  <PricingTierCard
+                    key={tier.id}
+                    tier={tier}
+                    displayPrice={displayPrice}
+                    billingPeriod={billingPeriod}
+                    currentSubscription={currentSubscription}
+                    isLoading={planLoadingStates[tier.id] || false}
+                    isFetchingPlan={isFetchingPlan}
+                    onPlanSelect={handlePlanSelect}
+                    onSubscribe={handleSubscribe}
+                    onSubscriptionUpdate={handleSubscriptionUpdate}
+                    isAuthenticated={isAuthenticated}
+                    currentBillingPeriod={currentBillingPeriod}
+                    t={t}
+                    index={index}
+                  />
+                );
+              })}
+            </ScrollView>
           )}
         </AnimatedView>
-
-        <AnimatedView 
-          entering={FadeIn.duration(600).delay(200)} 
-          className="px-6 mb-6"
-        >
-          {tiersToShow.map((tier, index) => {
-            const displayPrice = getDisplayPrice(tier, billingPeriod);
-            const isSelected = selectedTierId === tier.id;
-            const tierIsCurrentPlan = isAuthenticated && 
-              currentSubscription?.tier_key === tier.id &&
-              currentSubscription?.subscription?.status === 'active';
-
-            return (
-              <AnimatedPressable
-                key={tier.id}
-                entering={FadeIn.duration(600).delay(300 + index * 100)}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setSelectedTierId(tier.id);
-                }}
-                className={`mb-3 border-[1px] rounded-3xl p-4 flex-row items-center ${
-                  isSelected 
-                    ? 'border-foreground bg-muted/20' 
-                    : 'border-border/60 bg-transparent'
-                }`}
-              >
-                <View 
-                  className={`w-6 h-6 rounded-full border-2 items-center justify-center mr-4 ${
-                    isSelected 
-                      ? 'border-foreground bg-foreground' 
-                      : 'border-border/60 bg-transparent'
-                  }`}
-                >
-                  {isSelected && (
-                    <View className="w-3 h-3 rounded-full bg-background" />
-                  )}
-                </View>
-                
-                <View className="flex-1">
-                  <View className="flex-row items-center gap-2 mb-1">
-                    <Text className="text-base font-roobert-semibold text-foreground">
-                      {tier?.displayName || tier?.name || 'Plan'}
-                    </Text>
-                    {tier.isPopular && (
-                      <View className="bg-primary rounded-full px-2 py-0.5">
-                        <Text className="text-[10px] font-roobert-semibold text-primary-foreground uppercase tracking-wide">
-                          {t('billing.mostPopular')}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                <Text className="text-lg font-roobert-semibold text-foreground">
-                  {displayPrice}{t('billing.perMonth')}
-                </Text>
-              </AnimatedPressable>
-            );
-          })}
-        </AnimatedView>
-        {isAuthenticated &&
-          currentSubscription?.credits?.can_purchase_credits && (
-            <AnimatedView 
-              entering={FadeIn.duration(600).delay(600)} 
-              className="w-full mt-4 flex items-center"
-            >
+        {/* Billing Status Card */}
+        {isAuthenticated && currentSubscription && (
+          <AnimatedView
+            entering={FadeIn.duration(600).delay(400)}
+            className="px-6 mb-6"
+          >
+            <View className="bg-card border border-border rounded-[18px] p-6">
+              {/* Get Additional Credits Button */}
               <AnimatedPressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -501,75 +430,80 @@ export function PricingSection({
                   creditsButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                 }}
                 style={creditsButtonStyle}
-                className="h-12 border border-border rounded-2xl items-center justify-center flex-row gap-2 px-6 bg-card/50"
+                className="w-full h-12 border border-border rounded-xl items-center justify-center flex-row gap-2 mb-6 bg-transparent"
               >
-                <Icon as={ShoppingCart} size={20} className="text-foreground" strokeWidth={2.5} />
-                <Text className="text-base font-roobert-medium text-foreground">
-                  {t('billing.addCredits')}
+                <Icon as={ShoppingCart} size={18} className="text-foreground" strokeWidth={2} />
+                <Text className="text-sm font-roobert-semibold text-foreground">
+                  Get Additional Credits
                 </Text>
               </AnimatedPressable>
-            </AnimatedView>
-          )}
-      </AnimatedScrollView>
 
-      <AnimatedView 
-        entering={FadeIn.duration(600).delay(500)} 
-        className="px-6 py-4 bg-background border-t border-border/30"
-      >
-          <AnimatedPressable
-            onPress={handleMainButtonPress}
-            disabled={isMainButtonDisabled || isLoadingMainButton}
-            onPressIn={() => {
-              if (!isMainButtonDisabled && !isLoadingMainButton) {
-                upgradeButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-              }
-            }}
-            onPressOut={() => {
-              upgradeButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
-            style={[
-              upgradeButtonStyle,
-              {
-                opacity: isMainButtonDisabled ? 0.5 : 1,
-              }
-            ]}
-            className={`w-full h-14 rounded-full items-center justify-center ${
-              isMainButtonDisabled 
-                ? 'bg-muted' 
-                : 'bg-foreground'
-            }`}
-          >
-            {isLoadingMainButton ? (
-              <View className="w-6 h-6 border-2 border-background border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Text className={`text-base font-roobert-semibold ${
-                isMainButtonDisabled ? 'text-muted-foreground' : 'text-background'
-              }`}>
-                {getMainButtonText()}
-              </Text>
-            )}
-          </AnimatedPressable>
-          
-          <AnimatedPressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL('https://kortix.com/help/credits-explained');
-            }}
-            onPressIn={() => {
-              creditsLinkScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              creditsLinkScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
-            style={creditsLinkStyle}
-            className="flex-row items-center justify-center gap-2 px-3 py-2 mt-2"
-          >
-            <Icon as={Lightbulb} size={14} className="text-muted-foreground" strokeWidth={2} />
-            <Text className="text-sm font-roobert text-muted-foreground">
-              Credits explained
-            </Text>
-          </AnimatedPressable>
-      </AnimatedView>
+              {/* Billing Status */}
+              <View className="mb-6">
+                <Text className="text-xl font-roobert-semibold text-foreground mb-4">
+                  Billing Status
+                </Text>
+                <View>
+                  <Text className="text-[32px] font-roobert-semibold text-foreground leading-tight">
+                    ${((currentSubscription?.credits?.balance || 0) / 100).toFixed(2)}
+                  </Text>
+                  <Text className="text-sm text-muted-foreground font-roobert mt-1">
+                    Total Available Usage
+                  </Text>
+                </View>
+              </View>
+
+              {/* Credit Details */}
+              <View className="gap-3 mb-4">
+                <View className="flex-row items-center justify-between py-3 px-4 border border-border/50 rounded-xl">
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={Clock} size={16} className="text-orange-500" strokeWidth={2} />
+                    <Text className="text-sm font-roobert-medium text-foreground">
+                      Monthly Credits
+                    </Text>
+                  </View>
+                  <Text className="text-lg font-roobert-semibold text-foreground">
+                    ${((currentSubscription?.credits?.balance || 0) / 100).toFixed(2)}
+                  </Text>
+                </View>
+
+                <View className="flex-row items-center justify-between py-3 px-4 border border-border/50 rounded-xl">
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={Infinity} size={16} className="text-foreground" strokeWidth={2} />
+                    <Text className="text-sm font-roobert-medium text-foreground">
+                      Credits
+                    </Text>
+                  </View>
+                  <Text className="text-lg font-roobert-semibold text-foreground">
+                    ${((currentSubscription?.credits?.balance || 0) / 100).toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* See How Model Pricing Works */}
+              <AnimatedPressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  Linking.openURL('https://kortix.com/help/credits-explained');
+                }}
+                onPressIn={() => {
+                  creditsLinkScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+                }}
+                onPressOut={() => {
+                  creditsLinkScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                }}
+                style={creditsLinkStyle}
+                className="flex-row items-center justify-center gap-2 py-2"
+              >
+                <Icon as={Lightbulb} size={14} className="text-muted-foreground" strokeWidth={2} />
+                <Text className="text-xs font-roobert text-muted-foreground">
+                  See how Model Pricing works
+                </Text>
+              </AnimatedPressable>
+            </View>
+          </AnimatedView>
+        )}
+      </AnimatedScrollView>
 
       <CreditPurchaseModal
         open={showCreditPurchaseModal}
