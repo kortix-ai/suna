@@ -207,7 +207,7 @@ class ModelManager:
             if config.ENV_MODE == EnvMode.LOCAL:
                 return PREMIUM_MODEL_ID
                 
-            from core.billing.subscription_service import subscription_service
+            from core.billing.subscriptions import subscription_service
             
             subscription_info = await subscription_service.get_subscription(user_id)
             subscription = subscription_info.get('subscription')

@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
 from core.auth import require_admin, require_super_admin
-from core.billing.credit_manager import credit_manager
+from core.billing.credits.manager import credit_manager
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 import stripe

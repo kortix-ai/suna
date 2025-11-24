@@ -37,7 +37,7 @@ from typing import List, Optional, Dict, Set
 from core.utils.config import config
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
-from core.billing.subscription_service import subscription_service
+from core.billing.subscriptions import subscription_service
 
 try:
     from daytona import Daytona

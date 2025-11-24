@@ -209,11 +209,22 @@ class WebhookLock:
         db = DBConnection()
         client = await db.client
         
-        await client.from_('webhook_events').update({
-            'status': 'failed',
-            'error_message': error_message,
-            'processed_at': datetime.now(timezone.utc).isoformat()
-        }).eq('event_id', event_id).execute()
+        try:
+            safe_error_message = str(error_message)[:2000]
+            import re
+            safe_error_message = re.sub(r'[^\x00-\x7F]+', ' ', safe_error_message)
+            safe_error_message = safe_error_message.replace('\x00', '')
+        except Exception:
+            safe_error_message = "Error message could not be serialized"
         
-        logger.error(f"[WEBHOOK] Marked event {event_id} as failed: {error_message}")
-
+        try:
+            await client.from_('webhook_events').update({
+                'status': 'failed',
+                'error_message': safe_error_message,
+                'processed_at': datetime.now(timezone.utc).isoformat()
+            }).eq('event_id', event_id).execute()
+            
+            logger.error(f"[WEBHOOK] Marked event {event_id} as failed: {safe_error_message}")
+        except Exception as db_error:
+            logger.error(f"[WEBHOOK] Failed to mark event {event_id} as failed in database: {db_error}")
+            logger.error(f"[WEBHOOK] Original error was: {safe_error_message}")

@@ -5,7 +5,7 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.config import config, EnvMode
-from core.billing.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
+from core.billing.shared.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
 import asyncio
 
 class CreditService:
@@ -176,7 +176,7 @@ class CreditService:
     
     async def grant_tier_credits(self, user_id: str, price_id: str, tier_name: str) -> bool:
         try:
-            from billing.config import get_tier_by_price_id
+            from core.billing.shared.config import get_tier_by_price_id
             tier = get_tier_by_price_id(price_id)
             
             if not tier:

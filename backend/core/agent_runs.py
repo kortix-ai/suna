@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, Uplo
 from fastapi.responses import StreamingResponse
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access, get_optional_user_id_from_jwt
 from core.utils.logger import logger, structlog
-from core.billing.billing_integration import billing_integration
+from core.billing.credits.integration import billing_integration
 from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox

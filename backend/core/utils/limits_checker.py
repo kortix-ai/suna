@@ -165,7 +165,7 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
                 logger.debug(f"No credit account for {account_id}, defaulting to free tier")
                 tier_name = 'free'
         
-        from core.billing.config import get_project_limit
+        from core.billing.shared.config import get_project_limit
         project_limit = get_project_limit(tier_name)
         can_create = current_count < project_limit
         
@@ -187,7 +187,7 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         
     except Exception as e:
         logger.error(f"Error checking project count limit for account {account_id}: {str(e)}", exc_info=True)
-        from core.billing.config import get_project_limit
+        from core.billing.shared.config import get_project_limit
         return {
             'can_create': True,
             'current_count': 0,
