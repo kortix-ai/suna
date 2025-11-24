@@ -38,6 +38,12 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
     if (!threadWithProject?.project) return undefined;
     
     const projectData = threadWithProject.project;
+    
+    // Check if we have valid sandbox data (not just an empty object)
+    const hasSandboxData = projectData.sandbox && 
+                          typeof projectData.sandbox === 'object' && 
+                          projectData.sandbox.id;
+    
     return {
       id: projectData.project_id,
       name: projectData.name || '',
@@ -45,7 +51,7 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
       is_public: projectData.is_public || false,
       created_at: projectData.created_at,
       updated_at: projectData.updated_at,
-      sandbox: projectData.sandbox || {
+      sandbox: hasSandboxData ? projectData.sandbox : {
         id: '',
         pass: '',
         vnc_preview: '',
@@ -90,13 +96,18 @@ export const useProjects = (options?) => {
       if (thread.project && thread.project_id) {
         const project = thread.project;
         if (!projectsMap.has(project.project_id)) {
+          // Check if we have valid sandbox data (not just an empty object)
+          const hasSandboxData = project.sandbox && 
+                                typeof project.sandbox === 'object' && 
+                                project.sandbox.id;
+          
           projectsMap.set(project.project_id, {
             id: project.project_id,
             name: project.name || '',
             description: project.description || '',
             created_at: project.created_at,
             updated_at: project.updated_at,
-            sandbox: project.sandbox || {
+            sandbox: hasSandboxData ? project.sandbox : {
               id: '',
               pass: '',
               vnc_preview: '',
