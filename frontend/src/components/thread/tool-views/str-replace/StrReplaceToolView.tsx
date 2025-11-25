@@ -22,13 +22,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   LineDiff,
   DiffStats,
-  extractFromNewFormat,
-  extractFromLegacyFormat,
   generateLineDiff,
   generateCharDiff,
   calculateDiffStats
 } from './_utils';
-import { extractFilePath, extractStrReplaceContent, extractToolData, formatTimestamp, getToolTitle } from '../utils';
+import { extractFilePath, extractStrReplaceContent, formatTimestamp, getToolTitle } from '../utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
 
@@ -142,69 +140,44 @@ const ErrorState: React.FC = () => (
 );
 
 export function StrReplaceToolView({
-  name = 'str-replace',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps): JSX.Element {
+  // All hooks must be called unconditionally at the top
   const [expanded, setExpanded] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
 
-  let filePath: string | null = null;
-  let oldStr: string | null = null;
-  let newStr: string | null = null;
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
-
-  const assistantNewFormat = extractFromNewFormat(assistantContent);
-  const toolNewFormat = extractFromNewFormat(toolContent);
-
-  if (assistantNewFormat.filePath || assistantNewFormat.oldStr || assistantNewFormat.newStr) {
-    filePath = assistantNewFormat.filePath;
-    oldStr = assistantNewFormat.oldStr;
-    newStr = assistantNewFormat.newStr;
-    if (assistantNewFormat.success !== undefined) {
-      actualIsSuccess = assistantNewFormat.success;
-    }
-    if (assistantNewFormat.timestamp) {
-      actualAssistantTimestamp = assistantNewFormat.timestamp;
-    }
-  } else if (toolNewFormat.filePath || toolNewFormat.oldStr || toolNewFormat.newStr) {
-    filePath = toolNewFormat.filePath;
-    oldStr = toolNewFormat.oldStr;
-    newStr = toolNewFormat.newStr;
-    if (toolNewFormat.success !== undefined) {
-      actualIsSuccess = toolNewFormat.success;
-    }
-    if (toolNewFormat.timestamp) {
-      actualToolTimestamp = toolNewFormat.timestamp;
-    }
-  } else {
-    // Fall back to legacy format extraction
-    const assistantLegacy = extractFromLegacyFormat(assistantContent, extractToolData, extractFilePath, extractStrReplaceContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent, extractToolData, extractFilePath, extractStrReplaceContent);
-
-    // Use assistant content first, then tool content as fallback
-    filePath = assistantLegacy.filePath || toolLegacy.filePath;
-    oldStr = assistantLegacy.oldStr || toolLegacy.oldStr;
-    newStr = assistantLegacy.newStr || toolLegacy.newStr;
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('StrReplaceToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
   }
 
-  // Additional legacy extraction for edge cases
-  if (!filePath) {
-    filePath = extractFilePath(assistantContent) || extractFilePath(toolContent);
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+
+  // Extract data directly from structured props
+  const args = toolCall.arguments || {};
+  let filePath: string | null = args.file_path || args.target_file || null;
+  let oldStr: string | null = args.old_str || args.old_string || null;
+  let newStr: string | null = args.new_str || args.new_string || null;
+
+  // Extract from toolResult if available
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    if (typeof output === 'object' && output !== null) {
+      filePath = filePath || (output as any).file_path || (output as any).target_file || null;
+      oldStr = oldStr || (output as any).old_str || (output as any).old_string || null;
+      newStr = newStr || (output as any).new_str || (output as any).new_string || null;
+    }
   }
 
-  if (!oldStr || !newStr) {
-    const assistantStrReplace = extractStrReplaceContent(assistantContent);
-    const toolStrReplace = extractStrReplaceContent(toolContent);
-    oldStr = oldStr || assistantStrReplace.oldStr || toolStrReplace.oldStr;
-    newStr = newStr || assistantStrReplace.newStr || toolStrReplace.newStr;
-  }
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
+  const actualToolTimestamp = toolTimestamp;
+  const actualAssistantTimestamp = assistantTimestamp;
 
   const toolTitle = getToolTitle(name);
 
@@ -216,7 +189,7 @@ export function StrReplaceToolView({
   const stats: DiffStats = calculateDiffStats(lineDiff);
 
   // Check if we should show error state (only when not streaming and we have content but can't extract strings)
-  const shouldShowError = !isStreaming && (!oldStr || !newStr) && (assistantContent || toolContent);
+  const shouldShowError = !isStreaming && (!oldStr || !newStr);
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

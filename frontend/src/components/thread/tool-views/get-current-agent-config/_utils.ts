@@ -1,4 +1,4 @@
-import { extractToolData } from '../utils';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface AgentpressTool {
   enabled: boolean;
@@ -35,94 +35,10 @@ export interface GetCurrentAgentConfigData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
-const extractFromNewFormat = (content: any): GetCurrentAgentConfigData => {
-  const parsedContent = parseContent(content);
-  
-  if (!parsedContent || typeof parsedContent !== 'object') {
-    return { 
-      summary: null,
-      configuration: null,
-      success: undefined,
-      timestamp: undefined 
-    };
-  }
-
-  if ('tool_execution' in parsedContent && typeof parsedContent.tool_execution === 'object') {
-    const toolExecution = parsedContent.tool_execution;
-    
-    let parsedOutput = toolExecution.result?.output;
-    if (typeof parsedOutput === 'string') {
-      try {
-        parsedOutput = JSON.parse(parsedOutput);
-      } catch (e) {
-      }
-    }
-    parsedOutput = parsedOutput || {};
-
-    const extractedData = {
-      summary: parsedOutput.summary || null,
-      configuration: parsedOutput.configuration || null,
-      success: toolExecution.result?.success,
-      timestamp: toolExecution.execution_details?.timestamp
-    };
-    
-    return extractedData;
-  }
-
-  if ('parameters' in parsedContent && 'output' in parsedContent) {
-    const extractedData = {
-      summary: parsedContent.output?.summary || null,
-      configuration: parsedContent.output?.configuration || null,
-      success: parsedContent.success,
-      timestamp: undefined
-    };
-
-    return extractedData;
-  }
-
-  if ('role' in parsedContent && 'content' in parsedContent) {
-    return extractFromNewFormat(parsedContent.content);
-  }
-
-  return { 
-    summary: null,
-    configuration: null,
-    success: undefined,
-    timestamp: undefined 
-  };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<GetCurrentAgentConfigData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    return {
-      summary: null,
-      configuration: null
-    };
-  }
-  
-  return {
-    summary: null,
-    configuration: null
-  };
-};
-
 export function extractGetCurrentAgentConfigData(
-  assistantContent: any,
-  toolContent: any,
-  isSuccess: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): {
@@ -132,42 +48,24 @@ export function extractGetCurrentAgentConfigData(
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
 } {
-  let data: GetCurrentAgentConfigData;
-  
-  if (toolContent) {
-    data = extractFromNewFormat(toolContent);
-    if (data.success !== undefined || data.configuration || data.summary) {
-      return {
-        ...data,
-        actualIsSuccess: data.success !== undefined ? data.success : isSuccess,
-        actualToolTimestamp: data.timestamp || toolTimestamp,
-        actualAssistantTimestamp: assistantTimestamp
-      };
+  let output: any = {};
+  if (toolResult?.output) {
+    if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
+    } else if (typeof toolResult.output === 'string') {
+      try {
+        output = JSON.parse(toolResult.output);
+      } catch (e) {
+        // Not JSON, ignore
+      }
     }
   }
 
-  if (assistantContent) {
-    data = extractFromNewFormat(assistantContent);
-    if (data.success !== undefined || data.configuration || data.summary) {
-      return {
-        ...data,
-        actualIsSuccess: data.success !== undefined ? data.success : isSuccess,
-        actualToolTimestamp: toolTimestamp,
-        actualAssistantTimestamp: data.timestamp || assistantTimestamp
-      };
-    }
-  }
-
-  const toolLegacy = extractFromLegacyFormat(toolContent);
-  const assistantLegacy = extractFromLegacyFormat(assistantContent);
-
-  const combinedData = {
-    summary: toolLegacy.summary || assistantLegacy.summary,
-    configuration: toolLegacy.configuration || assistantLegacy.configuration,
-    actualIsSuccess: isSuccess,
+  return {
+    summary: output.summary || null,
+    configuration: output.configuration || null,
+    actualIsSuccess: toolResult?.success !== undefined ? toolResult.success : isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
-
-  return combinedData;
-} 
+}

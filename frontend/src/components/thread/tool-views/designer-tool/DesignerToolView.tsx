@@ -108,9 +108,8 @@ function DesignElementImage({
 }
 
 export function DesignerToolView({
-  name = 'designer_create_or_edit',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -118,6 +117,7 @@ export function DesignerToolView({
   onFileClick,
   project,
 }: DesignerToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const canvasRef = useRef<HTMLDivElement>(null);
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
   const [elements, setElements] = useState<DesignElement[]>([]);
@@ -132,8 +132,22 @@ export function DesignerToolView({
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
   const [canvasOffsetStart, setCanvasOffsetStart] = useState({ x: 0, y: 0 });
+  
+  // Track processed paths to avoid duplicates - hooks must be unconditional
+  const processedPathsRef = useRef<Set<string>>(new Set());
+  const lastProcessedPath = useRef<string>('');
+  
   const gridSize = 20;
   const artboardPadding = 50;
+
+  // Extract data safely - handle undefined toolCall
+  const designerData = toolCall ? extractDesignerData(
+    toolCall,
+    toolResult,
+    isSuccess,
+    toolTimestamp,
+    assistantTimestamp
+  ) : null;
 
   const {
     mode,
@@ -152,18 +166,26 @@ export function DesignerToolView({
     actualToolTimestamp,
     actualAssistantTimestamp,
     sandbox_id,
-  } = extractDesignerData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
+  } = designerData || {
+    mode: null,
+    prompt: null,
+    designStyle: null,
+    platformPreset: null,
+    width: null,
+    height: null,
+    quality: null,
+    imagePath: null,
+    generatedImagePath: undefined,
+    designUrl: undefined,
+    status: undefined,
+    error: undefined,
+    actualIsSuccess: false,
+    actualToolTimestamp: undefined,
+    actualAssistantTimestamp: undefined,
+    sandbox_id: undefined,
+  };
 
-  // Track processed paths to avoid duplicates
-  const processedPathsRef = useRef<Set<string>>(new Set());
-  const lastProcessedPath = useRef<string>('');
-
+  // useEffect hook must be called unconditionally
   useEffect(() => {
     if (generatedImagePath && !isStreaming) {
       const sandboxId = sandbox_id || project?.sandbox?.id || project?.id;
@@ -181,7 +203,7 @@ export function DesignerToolView({
       }
       
       // Create a unique key based on the actual content
-      const contentKey = `${relativePath}-${designUrl || ''}-${JSON.stringify(toolContent)}`;
+      const contentKey = `${relativePath}-${designUrl || ''}-${JSON.stringify(toolResult?.output || '')}`;
       
       // Skip if this is the exact same content we just processed
       if (lastProcessedPath.current === contentKey) {
@@ -237,7 +259,13 @@ export function DesignerToolView({
       
       setSelectedElement(elementId);
     }
-  }, [generatedImagePath, designUrl, sandbox_id, project, width, height, isStreaming, toolContent]);
+  }, [generatedImagePath, designUrl, sandbox_id, project, width, height, isStreaming, toolResult, elements.length]);
+
+  // Defensive check - ensure toolCall is defined (after all hooks)
+  if (!toolCall) {
+    console.warn('DesignerToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
 
   const snapToGridValue = (value: number) => {
     if (!snapToGrid) return value;

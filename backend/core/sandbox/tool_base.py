@@ -52,9 +52,8 @@ class SandboxToolsBase(Tool):
                     sandbox_obj = await create_sandbox(sandbox_pass, self.project_id)
                     sandbox_id = sandbox_obj.id
                     
-                    # Wait 5 seconds for services to start up
-                    logger.info(f"Waiting 5 seconds for sandbox {sandbox_id} services to initialize...")
-                    await asyncio.sleep(5)
+                    logger.info(f"Waiting 2 seconds for sandbox {sandbox_id} services to initialize...")
+                    await asyncio.sleep(2)
                     
                     # Gather preview links and token (best-effort parsing)
                     try:

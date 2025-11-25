@@ -25,14 +25,20 @@ import { extractDocumentParserData } from './_utils';
 import { cn } from '@/lib/utils';
 
 export function DocumentParserToolView({
-  name = 'parse-document',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('DocumentParserToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
   const {
     url,
@@ -42,8 +48,8 @@ export function DocumentParserToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractDocumentParserData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

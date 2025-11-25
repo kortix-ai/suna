@@ -4,20 +4,10 @@ import { CircleDashed, Maximize2 } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
 
-export interface ToolCallInput {
-  assistantCall: {
-    content?: string;
-    name?: string;
-    timestamp?: string;
-  };
-  toolResult?: {
-    content?: string;
-    isSuccess?: boolean;
-    timestamp?: string;
-  };
-  messages?: any[];
-}
+// Re-export for use in chat-snack.tsx
+export type { ToolCallInput };
 
 interface FloatingToolPreviewProps {
   toolCalls: ToolCallInput[];
@@ -35,29 +25,19 @@ interface FloatingToolPreviewProps {
 const FLOATING_LAYOUT_ID = 'tool-panel-float';
 const CONTENT_LAYOUT_ID = 'tool-panel-content';
 
-const getToolResultStatus = (toolCall: any): boolean => {
-  const content = toolCall?.toolResult?.content;
-  if (!content) return toolCall?.toolResult?.isSuccess ?? true;
-
-  const safeParse = (data: any) => {
-    try { return typeof data === 'string' ? JSON.parse(data) : data; }
-    catch { return null; }
-  };
-
-  const parsed = safeParse(content);
-  if (!parsed) return toolCall?.toolResult?.isSuccess ?? true;
-
-  if (parsed.content) {
-    const inner = safeParse(parsed.content);
-    if (inner?.tool_execution?.result?.success !== undefined) {
-      return inner.tool_execution.result.success;
-    }
+const getToolResultStatus = (toolCall: ToolCallInput): boolean => {
+  // Use the structured toolResult from metadata
+  if (toolCall.toolResult?.success !== undefined) {
+    return toolCall.toolResult.success;
   }
-  const success = parsed.tool_execution?.result?.success ??
-    parsed.result?.success ??
-    parsed.success;
-
-  return success !== undefined ? success : (toolCall?.toolResult?.isSuccess ?? true);
+  
+  // Fallback to isSuccess if available
+  if (toolCall.isSuccess !== undefined) {
+    return toolCall.isSuccess;
+  }
+  
+  // Default to true if no result yet (streaming)
+  return true;
 };
 
 export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
@@ -83,9 +63,11 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
 
   if (!currentToolCall || totalCalls === 0) return null;
 
-  const toolName = currentToolCall.assistantCall?.name || 'Tool Call';
+  // Get tool name from the structured toolCall data
+  const toolName = currentToolCall.toolCall?.function_name || 'Tool Call';
   const CurrentToolIcon = getToolIcon(toolName);
-  const isStreaming = currentToolCall.toolResult?.content === 'STREAMING';
+  // Check if streaming: no toolResult means it's still streaming
+  const isStreaming = !currentToolCall.toolResult;
   const isSuccess = isStreaming ? true : getToolResultStatus(currentToolCall);
 
   const handleClick = () => {

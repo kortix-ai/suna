@@ -4,7 +4,7 @@ import React from 'react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { MarkdownRenderer as FileMarkdownRenderer } from '@/components/file-renderers/authenticated-markdown-renderer';
-import type { Project } from '@/lib/api/projects';
+import type { Project } from '@/lib/api/threads';
 
 interface MarkdownRendererProps {
     content: string;

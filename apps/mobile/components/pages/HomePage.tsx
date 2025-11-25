@@ -38,48 +38,53 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
 
   React.useImperativeHandle(ref, () => ({
     focusChatInput: () => {
-      console.log('🎯 Focusing chat input from HomePage');
       chatInputRef.current?.focusInput();
     },
   }), []);
 
   const handleUpgradePress = React.useCallback(() => {
-    console.log('🎯 Upgrade button pressed - opening pricing modal');
     usePricingModalStore.getState().openPricingModal();
   }, []);
 
   const handleClosePricingModal = React.useCallback(() => {
-    console.log('🎯 Pricing modal closed');
     closePricingModal();
   }, [closePricingModal]);
 
   const handleCreditsPress = React.useCallback(() => {
-    console.log('🎯 Credits pressed - opening usage drawer');
     setIsUsageDrawerOpen(true);
   }, []);
 
   const handleCloseUsageDrawer = React.useCallback(() => {
-    console.log('🎯 Usage drawer closed');
     setIsUsageDrawerOpen(false);
   }, []);
 
   const handleTopUpPress = React.useCallback(() => {
-    console.log('🎯 Top up pressed - opening credits purchase');
     setIsUsageDrawerOpen(false);
     setIsCreditsPurchaseOpen(true);
   }, []);
 
   const handleCloseCreditsPurchase = React.useCallback(() => {
-    console.log('🎯 Credits purchase closed');
     setIsCreditsPurchaseOpen(false);
   }, []);
 
   const handleUpgradeFromUsage = React.useCallback(() => {
-    console.log('🎯 Upgrade from usage - opening pricing modal');
     setIsUsageDrawerOpen(false);
     usePricingModalStore.getState().openPricingModal();
   }, []);
 
+  // Memoized handlers for ChatInputSection to prevent re-renders
+  const handleSendMessage = React.useCallback((content: string, agentId: string, agentName: string) => {
+    chat.sendMessage(content, agentId, agentName);
+  }, [chat]);
+
+  const handleQuickActionSelectOption = React.useCallback((optionId: string) => {
+    chat.setSelectedQuickActionOption(optionId);
+  }, [chat]);
+
+  const handleQuickActionSelectPrompt = React.useCallback((prompt: string) => {
+    chat.setInputValue(prompt);
+    chatInputRef.current?.focusInput();
+  }, [chat]);
 
   return (
     <View className="flex-1 bg-background">
@@ -108,9 +113,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               ref={chatInputRef}
               value={chat.inputValue}
               onChangeText={chat.setInputValue}
-              onSendMessage={(content, agentId, agentName) => {
-                chat.sendMessage(content, agentId, agentName);
-              }}
+              onSendMessage={handleSendMessage}
               onSendAudio={audioHandlers.handleSendAudio}
               onAttachPress={chat.openAttachmentDrawer}
               onAgentPress={isGuestMode ? () => {} : agentManager.openDrawer}
@@ -129,15 +132,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               selectedQuickActionOption={chat.selectedQuickActionOption}
               onClearQuickAction={chat.clearQuickAction}
               onQuickActionPress={chat.handleQuickAction}
-              onQuickActionSelectOption={(optionId) => {
-                console.log('🎯 Option selected:', optionId);
-                chat.setSelectedQuickActionOption(optionId);
-              }}
-              onQuickActionSelectPrompt={(prompt) => {
-                console.log('📝 Loading prompt into input:', prompt);
-                chat.setInputValue(prompt);
-                chatInputRef.current?.focusInput();
-              }}
+              onQuickActionSelectOption={handleQuickActionSelectOption}
+              onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
               isAuthenticated={isAuthenticated}
               isAgentRunning={chat.isAgentRunning}
               isSendingMessage={chat.isSendingMessage}

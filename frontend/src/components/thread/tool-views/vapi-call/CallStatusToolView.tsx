@@ -8,16 +8,22 @@ import { extractCallStatusData, formatPhoneNumber, formatDuration, statusConfig 
 import { getToolTitle } from '../utils';
 
 export function CallStatusToolView({
-  name = 'get-call-details',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const callData = extractCallStatusData(toolContent);
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('CallStatusToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
+  const callData = extractCallStatusData(toolResult);
 
   if (!callData) {
     return <div className="text-sm text-muted-foreground">No call status data available</div>;
@@ -56,9 +62,6 @@ export function CallStatusToolView({
       </CardHeader>
 
       <CardContent className="p-4 space-y-4">
-        {assistantContent && (
-          <div className="text-sm text-foreground">{assistantContent}</div>
-        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">

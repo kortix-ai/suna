@@ -11,9 +11,25 @@ import { Icon } from '@/components/ui/icon';
 import { CheckCircle2, AlertCircle, Wrench } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
 
-export function GenericToolView({ toolData }: ToolViewProps) {
-  const { toolName, arguments: toolArgs, result } = toolData;
-  const isError = !result.success;
+export function GenericToolView({ toolCall, toolResult, isSuccess = true }: ToolViewProps) {
+  const toolName = toolCall.function_name.replace(/_/g, '-');
+  
+  // Parse arguments
+  let toolArgs: Record<string, any> = {};
+  if (toolCall.arguments) {
+    if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
+      toolArgs = toolCall.arguments;
+    } else if (typeof toolCall.arguments === 'string') {
+      try {
+        toolArgs = JSON.parse(toolCall.arguments);
+      } catch {
+        toolArgs = {};
+      }
+    }
+  }
+  
+  const isError = toolResult ? !toolResult.success : !isSuccess;
+  const result = toolResult || { success: isSuccess, output: null };
 
   return (
     <View className="px-6 py-4 gap-6">

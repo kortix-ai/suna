@@ -23,14 +23,19 @@ import { Separator } from "@/components/ui/separator";
 import { extractCreateCredentialProfileData, CredentialProfile } from './_utils';
 
 export function CreateCredentialProfileToolView({
-  name = 'create-credential-profile',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     toolkit_slug,
@@ -42,14 +47,12 @@ export function CreateCredentialProfileToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractCreateCredentialProfileData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const logoUrl = undefined;
 

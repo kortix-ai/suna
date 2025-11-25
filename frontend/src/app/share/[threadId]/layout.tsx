@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { getThread } from '@/lib/api/threads';
-import { getProject } from '@/lib/api/projects';
+import { getProject } from '@/lib/api/threads';
 
 export async function generateMetadata({ params }): Promise<Metadata> {
   const { threadId } = await params;

@@ -25,9 +25,8 @@ import { LoadingState } from '../shared/LoadingState';
 import { extractWebSearchData } from './_utils';
 
 export function WebSearchToolView({
-  name = 'web-search',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -47,8 +46,8 @@ export function WebSearchToolView({
     isBatch,
     batchResults
   } = extractWebSearchData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
@@ -61,9 +60,13 @@ export function WebSearchToolView({
     }
   }, [isBatch, batchResults?.length]);
 
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
 
-  const getFavicon = (url: string) => {
+  const getFavicon = (url: string | undefined) => {
+    if (!url) {
+      return null;
+    }
     try {
       const domain = new URL(url).hostname;
       return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
@@ -74,12 +77,20 @@ export function WebSearchToolView({
 
   const getResultType = (result: any) => {
     const { url, title } = result;
+    
+    // Guard against undefined/null values
+    if (!url || !title) {
+      return { icon: Globe, label: 'Website' };
+    }
 
-    if (url.includes('news') || url.includes('article') || title.includes('News')) {
+    const urlLower = url.toLowerCase();
+    const titleLower = title.toLowerCase();
+
+    if (urlLower.includes('news') || urlLower.includes('article') || titleLower.includes('news')) {
       return { icon: FileText, label: 'Article' };
-    } else if (url.includes('wiki')) {
+    } else if (urlLower.includes('wiki')) {
       return { icon: BookOpen, label: 'Wiki' };
-    } else if (url.includes('blog')) {
+    } else if (urlLower.includes('blog')) {
       return { icon: CalendarDays, label: 'Blog' };
     } else {
       return { icon: Globe, label: 'Website' };
@@ -129,16 +140,16 @@ export function WebSearchToolView({
       </CardHeader>
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        {isStreaming && searchResults.length === 0 && !answer ? (
+        {isStreaming && searchResults.length === 0 && !answer && images.length === 0 ? (
           <LoadingState
             icon={Search}
             iconColor="text-blue-500 dark:text-blue-400"
             bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-            title="Searching the web"
+            title={name === 'image-search' ? "Searching for images" : "Searching the web"}
             filePath={query}
             showProgress={true}
           />
-        ) : searchResults.length > 0 || answer ? (
+        ) : searchResults.length > 0 || answer || images.length > 0 ? (
           <ScrollArea className="h-full w-full">
             <div className="p-4 py-0 my-4">
               {/* Navigation Header - At the absolute top */}
@@ -154,7 +165,12 @@ export function WebSearchToolView({
                       ) : (
                         <AlertTriangle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
                       )}
-                      {batchResults[currentQueryIndex].results.length > 0 && (
+                      {name === 'image-search' && batchResults[currentQueryIndex].images.length > 0 && (
+                        <Badge variant="outline" className="text-xs font-normal h-4 px-1.5">
+                          {batchResults[currentQueryIndex].images.length} images
+                        </Badge>
+                      )}
+                      {name !== 'image-search' && batchResults[currentQueryIndex].results.length > 0 && (
                         <Badge variant="outline" className="text-xs font-normal h-4 px-1.5">
                           {batchResults[currentQueryIndex].results.length}
                         </Badge>
@@ -192,10 +208,14 @@ export function WebSearchToolView({
                 <div className="mb-6">
                   <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3 flex items-center">
                     <ImageIcon className="h-4 w-4 mr-2 opacity-70" />
-                    Images {name === 'image-search' && `(${images.length})`}
+                    Images {name === 'image-search' && isBatch && batchResults
+                      ? `(${batchResults[currentQueryIndex]?.images?.length || 0})`
+                      : name === 'image-search'
+                        ? `(${images.length})`
+                        : ''}
                     {isBatch && batchResults && (
                       <span className="ml-2 text-xs text-muted-foreground">
-                        (Query {currentQueryIndex + 1})
+                        (Query {currentQueryIndex + 1} of {batchResults.length})
                       </span>
                     )}
                   </h3>
@@ -203,7 +223,7 @@ export function WebSearchToolView({
                     {(() => {
                       // Show images for current query if batch mode, otherwise all images
                       const imagesToShow = isBatch && batchResults && batchResults[currentQueryIndex]?.images
-                        ? batchResults[currentQueryIndex].images.slice(0, 6)
+                        ? batchResults[currentQueryIndex].images
                         : (name === 'image-search' ? images : images.slice(0, 6));
                       return imagesToShow.map((image, idx) => {
                       const imageUrl = typeof image === 'string' ? image : (image as any).imageUrl;
@@ -270,6 +290,11 @@ export function WebSearchToolView({
                             {batchItem.results.length > 0 ? (
                               <div className="space-y-2.5">
                                 {batchItem.results.map((result, idx) => {
+                                  // Guard against missing url/title
+                                  if (!result?.url || !result?.title) {
+                                    return null;
+                                  }
+                                  
                                   const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
                                   const resultKey = `batch-${currentQueryIndex}-result-${idx}`;
                                   const isExpanded = expandedResults[resultKey] || false;
@@ -342,6 +367,11 @@ export function WebSearchToolView({
 
                 <div className="space-y-4">
                   {searchResults.map((result, idx) => {
+                  // Guard against missing url/title
+                  if (!result?.url || !result?.title) {
+                    return null;
+                  }
+                  
                   const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
                   const isExpanded = expandedResults[idx] || false;
                   const favicon = getFavicon(result.url);
@@ -417,18 +447,26 @@ export function WebSearchToolView({
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
+              {name === 'image-search' ? (
+                <ImageIcon className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
+              ) : (
               <Search className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
+              )}
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              No Results Found
+              {name === 'image-search' ? 'No Images Found' : 'No Results Found'}
             </h3>
+            {query && (
             <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 w-full max-w-md text-center mb-4 shadow-sm">
               <code className="text-sm font-mono text-zinc-700 dark:text-zinc-300 break-all">
-                {query || 'Unknown query'}
+                  {typeof query === 'string' ? query : Array.isArray(query) ? (query as string[]).join(', ') : 'Unknown query'}
               </code>
             </div>
+            )}
             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Try refining your search query for better results
+              {name === 'image-search' 
+                ? 'Try refining your image search query for better results'
+                : 'Try refining your search query for better results'}
             </p>
           </div>
         )}
@@ -438,11 +476,20 @@ export function WebSearchToolView({
         <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           {!isStreaming && (
             <>
-              {name === 'image-search' && images.length > 0 && (
+              {name === 'image-search' && (
+                <>
+                  {isBatch && batchResults ? (
+                    <Badge variant="outline" className="h-6 py-0.5">
+                      <ImageIcon className="h-3 w-3" />
+                      {batchResults.length} queries • {images.length} images
+                    </Badge>
+                  ) : images.length > 0 && (
                 <Badge variant="outline" className="h-6 py-0.5">
                   <ImageIcon className="h-3 w-3" />
                   {images.length} images
                 </Badge>
+                  )}
+                </>
               )}
               {name !== 'image-search' && (
                 <>

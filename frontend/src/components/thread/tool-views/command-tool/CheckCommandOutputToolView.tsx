@@ -26,19 +26,56 @@ interface CheckCommandOutputData {
     timestamp?: string;
 }
 
+import { ToolCallData, ToolResultData } from '../types';
+
 function extractCheckCommandOutputData(
-    assistantContent: any,
-    toolContent: any,
-    isSuccess: boolean,
+    toolCall: ToolCallData,
+    toolResult?: ToolResultData,
+    isSuccess: boolean = true,
     toolTimestamp?: string,
     assistantTimestamp?: string
 ): CheckCommandOutputData {
-    let sessionName: string | null = null;
+    // Extract session_name from toolCall.arguments (from metadata)
+    const args = toolCall.arguments || {};
+    const sessionName: string | null = args.session_name || args.sessionName || null;
+    
+    // Extract output from toolResult.output (from metadata)
     let output: string | null = null;
     let status: string | null = null;
     let actualIsSuccess = isSuccess;
     const actualTimestamp = toolTimestamp || assistantTimestamp;
 
+    if (toolResult?.output) {
+        if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+            const outputObj = toolResult.output as any;
+            output = outputObj.output || outputObj.stdout || null;
+            status = outputObj.status || null;
+        } else if (typeof toolResult.output === 'string') {
+            output = toolResult.output;
+        }
+        
+        if (toolResult.success !== undefined) {
+            actualIsSuccess = toolResult.success;
+        }
+    }
+
+    return {
+        sessionName,
+        output,
+        status,
+        success: actualIsSuccess,
+        timestamp: actualTimestamp,
+    };
+}
+
+// OLD FUNCTION REMOVED - Use structured version above
+const extractCheckCommandOutputData_OLD = (
+    assistantContent: any,
+    toolContent: any,
+    isSuccess: boolean,
+    toolTimestamp?: string,
+    assistantTimestamp?: string
+): CheckCommandOutputData => {
     // Parse content to extract data
     const parseContent = (content: any): any => {
         if (typeof content === 'string') {
@@ -53,6 +90,11 @@ function extractCheckCommandOutputData(
 
     // Try to extract from tool content first (most likely to have the result)
     const toolParsed = parseContent(toolContent);
+    let sessionName: string | null = null;
+    let output: string | null = null;
+    let status: string | null = null;
+    let actualIsSuccess = isSuccess;
+    const actualTimestamp = toolTimestamp || assistantTimestamp;
 
     if (toolParsed && typeof toolParsed === 'object') {
         // First, try to extract directly from tool_execution (the actual format being used)
@@ -168,9 +210,8 @@ function extractCheckCommandOutputData(
 }
 
 export function CheckCommandOutputToolView({
-    name = 'check-command-output',
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     assistantTimestamp,
     toolTimestamp,
     isSuccess = true,
@@ -187,13 +228,14 @@ export function CheckCommandOutputToolView({
         success: actualIsSuccess,
         timestamp: actualTimestamp
     } = extractCheckCommandOutputData(
-        assistantContent,
-        toolContent,
+        toolCall,
+        toolResult,
         isSuccess,
         toolTimestamp,
         assistantTimestamp
     );
 
+    const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
     const toolTitle = getToolTitle(name);
 
     const formattedOutput = React.useMemo(() => {
@@ -300,47 +342,66 @@ export function CheckCommandOutputToolView({
                         showProgress={true}
                     />
                 ) : sessionName ? (
-                    <ScrollArea className="h-full w-full">
-                        <div className="bg-zinc-100 dark:bg-neutral-900 overflow-hidden">
-                            <div className="bg-zinc-300 dark:bg-neutral-800 flex items-center justify-between dark:border-zinc-700/50">
-                                <div className="bg-zinc-200 w-full dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
-                                            <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
-                                            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Terminal Session</span>
-                                            <span className="text-xs text-zinc-500 dark:text-zinc-400">({sessionName})</span>
+                    <div className="h-full flex flex-col overflow-hidden">
+                        <div className="flex-shrink-0 p-4 pb-2">
+                            {/* Session info */}
+                            <div className="bg-card border border-border rounded-lg p-3.5">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                                        <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
+                                        Session
+                                    </Badge>
                                 </div>
-                            </div>
-                            <div className="px-4 py-3 overflow-auto">
-                                <pre className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-all overflow-visible">
-                                    {linesToShow.map((line, index) => (
-                                        <span key={index}>
-                                            {line}
-                                            {'\n'}
-                                        </span>
-                                    ))}
-                                    {/* Add empty lines for natural scrolling */}
-                                    {showFullOutput && emptyLines.map((_, idx) => (
-                                        <span key={`empty-${idx}`}>{'\n'}</span>
-                                    ))}
-                                </pre>
-                                {!showFullOutput && hasMoreLines && (
-                                    <div className="text-zinc-500 mt-2 border-t border-zinc-700/30 pt-2">
-                                        + {formattedOutput.length - 10} more lines
-                                    </div>
-                                )}
+                                <div className="text-xs text-foreground font-mono">
+                                    {sessionName}
+                                </div>
                             </div>
                         </div>
 
-
-
-                        {!output && !isStreaming && (
-                            <div className="bg-black overflow-hidden p-12 flex items-center justify-center">
-                                <div className="text-center">
-                                    <CircleDashed className="h-8 w-8 text-zinc-500 mx-auto mb-2" />
-                                    <p className="text-zinc-400 text-sm">No output received</p>
+                        {/* Output section - fills remaining height and scrolls */}
+                        {formattedOutput.length > 0 ? (
+                            <div className="flex-1 min-h-0 px-4 pb-4">
+                                <div className="h-full bg-card border border-border rounded-lg flex flex-col overflow-hidden">
+                                    <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                                                <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
+                                                Output
+                                            </Badge>
+                                        </div>
+                                    </div>
+                                    <ScrollArea className="flex-1 min-h-0">
+                                        <div className="p-3.5 pt-2">
+                                            <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-all overflow-visible">
+                                                {linesToShow.map((line, index) => (
+                                                    <span key={index}>
+                                                        {line}
+                                                        {'\n'}
+                                                    </span>
+                                                ))}
+                                                {/* Add empty lines for natural scrolling */}
+                                                {showFullOutput && emptyLines.map((_, idx) => (
+                                                    <span key={`empty-${idx}`}>{'\n'}</span>
+                                                ))}
+                                            </pre>
+                                            {!showFullOutput && hasMoreLines && (
+                                                <div className="text-muted-foreground mt-2 border-t border-border pt-2 text-xs font-mono">
+                                                    + {formattedOutput.length - 10} more lines
+                                                </div>
+                                            )}
+                                        </div>
+                                    </ScrollArea>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex-1 flex items-center justify-center px-4 pb-4">
+                                <div className="bg-card border border-border rounded-lg p-4 text-center">
+                                    <CircleDashed className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                                    <p className="text-sm text-muted-foreground">No output received</p>
                                 </div>
                             </div>
                         )}
-                    </ScrollArea>
+                    </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
                         <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">

@@ -65,6 +65,21 @@ export interface ChatInputSectionRef {
   focusInput: () => void;
 }
 
+// Gradient colors defined outside component for stable reference
+const DARK_GRADIENT_COLORS = ['rgba(18, 18, 21, 0)', 'rgba(18, 18, 21, 0.85)', 'rgba(18, 18, 21, 1)'] as const;
+const LIGHT_GRADIENT_COLORS = ['rgba(248, 248, 248, 0)', 'rgba(248, 248, 248, 0.85)', 'rgba(248, 248, 248, 1)'] as const;
+const GRADIENT_LOCATIONS = [0, 0.4, 1] as const;
+const GRADIENT_STYLE = {
+  position: 'absolute' as const,
+  bottom: 0,
+  left: 0,
+  right: 0,
+  height: 250,
+};
+
+// Empty function for onSendAudio - stable reference
+const NOOP_SEND_AUDIO = async () => {};
+
 /**
  * ChatInputSection Component
  * 
@@ -74,9 +89,9 @@ export interface ChatInputSectionRef {
  * - Chat input
  * - Keyboard animation handling
  * 
- * This component extracts common UI/behavior from both page components.
+ * Optimized with memoization to prevent unnecessary re-renders.
  */
-export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputSectionProps>(({
+export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef, ChatInputSectionProps>(({
   value,
   onChangeText,
   onSendMessage,
@@ -111,6 +126,12 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
   const { colorScheme } = useColorScheme();
   const chatInputRef = React.useRef<ChatInputRef>(null);
   
+  // Memoize gradient colors based on color scheme
+  const gradientColors = React.useMemo(
+    () => colorScheme === 'dark' ? DARK_GRADIENT_COLORS : LIGHT_GRADIENT_COLORS,
+    [colorScheme]
+  );
+
   // Expose focus method via ref
   React.useImperativeHandle(ref, () => ({
     focusInput: () => {
@@ -126,19 +147,9 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
     >
       {/* Gradient fade from transparent to background */}
       <LinearGradient
-        colors={
-          colorScheme === 'dark'
-            ? ['rgba(18, 18, 21, 0)', 'rgba(18, 18, 21, 0.85)', 'rgba(18, 18, 21, 1)']
-            : ['rgba(248, 248, 248, 0)', 'rgba(248, 248, 248, 0.85)', 'rgba(248, 248, 248, 1)']
-        }
-        locations={[0, 0.4, 1]}
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 250,
-        }}
+        colors={gradientColors as unknown as string[]}
+        locations={GRADIENT_LOCATIONS as unknown as number[]}
+        style={GRADIENT_STYLE}
         pointerEvents="none"
       />
       
@@ -168,13 +179,7 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
           value={value}
           onChangeText={onChangeText}
           onSendMessage={onSendMessage}
-          onSendAudio={async () => {
-            // ChatInput's onSendAudio doesn't take parameters, but our prop does
-            // This is a mismatch we need to handle
-            // For now, since the audio file URI is managed internally in the recorder,
-            // we don't need to pass it here
-            // The actual implementation would need refactoring
-          }}
+          onSendAudio={NOOP_SEND_AUDIO}
           onAttachPress={onAttachPress}
           onAgentPress={onAgentPress}
           onAudioRecord={onAudioRecord}
@@ -200,7 +205,6 @@ export const ChatInputSection = React.forwardRef<ChatInputSectionRef, ChatInputS
       </View>
     </KeyboardAvoidingView>
   );
-});
+}));
 
 ChatInputSection.displayName = 'ChatInputSection';
-

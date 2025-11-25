@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { FooterSection } from '@/components/home/footer-section';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { 
   ArrowRight, 
   Check, 

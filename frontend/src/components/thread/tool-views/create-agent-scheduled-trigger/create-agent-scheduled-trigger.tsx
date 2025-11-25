@@ -20,14 +20,22 @@ import { Separator } from "@/components/ui/separator";
 import { extractCreateAgentScheduledTriggerData } from './_utils';
 
 export default function CreateAgentScheduledTriggerToolView({
-  name = 'create-agent-scheduled-trigger',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('CreateAgentScheduledTriggerToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
+
   const {
     agent_id,
     name: triggerName,
@@ -39,14 +47,12 @@ export default function CreateAgentScheduledTriggerToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractCreateAgentScheduledTriggerData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const formatCronExpression = (cron: string): string => {
     const cronMap: Record<string, string> = {

@@ -17,9 +17,9 @@ export const useMaintenanceNoticeQuery = (options?) => {
       const data = await response.json();
       return data;
     },
-    staleTime: 30 * 1000,
-    refetchInterval: 60 * 1000,
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000, 
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false, 
     retry: 3,
     placeholderData: { enabled: false },
     ...options,

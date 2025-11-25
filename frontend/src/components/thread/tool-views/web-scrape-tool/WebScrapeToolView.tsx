@@ -27,17 +27,42 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function WebScrapeToolView({
-  name = 'scrape-webpage',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const { resolvedTheme } = useTheme();
   const [progress, setProgress] = useState(0);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isStreaming) {
+      const timer = setInterval(() => {
+        setProgress((prevProgress) => {
+          if (prevProgress >= 95) {
+            clearInterval(timer);
+            return prevProgress;
+          }
+          return prevProgress + 5;
+        });
+      }, 300);
+      return () => clearInterval(timer);
+    } else {
+      setProgress(100);
+    }
+  }, [isStreaming]);
+
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('WebScrapeToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
   const {
     url,
@@ -46,8 +71,8 @@ export function WebScrapeToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractWebScrapeData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
@@ -75,23 +100,6 @@ export function WebScrapeToolView({
   };
 
   const favicon = url ? getFavicon(url) : null;
-
-  useEffect(() => {
-    if (isStreaming) {
-      const timer = setInterval(() => {
-        setProgress((prevProgress) => {
-          if (prevProgress >= 95) {
-            clearInterval(timer);
-            return prevProgress;
-          }
-          return prevProgress + 5;
-        });
-      }, 300);
-      return () => clearInterval(timer);
-    } else {
-      setProgress(100);
-    }
-  }, [isStreaming]);
 
   const copyFilePath = async (filePath: string) => {
     try {

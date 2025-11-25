@@ -26,6 +26,10 @@ export const createSandboxFile = async (
   filePath: string,
   content: string,
 ): Promise<void> => {
+  if (!sandboxId || sandboxId.trim() === '') {
+    throw new Error('Sandbox ID is required');
+  }
+  
   try {
     const formData = new FormData();
     formData.append('path', filePath);
@@ -56,6 +60,10 @@ export const createSandboxFileJson = async (
   filePath: string,
   content: string,
 ): Promise<void> => {
+  if (!sandboxId || sandboxId.trim() === '') {
+    throw new Error('Sandbox ID is required');
+  }
+  
   try {
     const response = await backendApi.post(
       `/sandboxes/${sandboxId}/files/json`,
@@ -82,6 +90,10 @@ export const listSandboxFiles = async (
   sandboxId: string,
   path: string,
 ): Promise<FileInfo[]> => {
+  if (!sandboxId || sandboxId.trim() === '') {
+    return [];
+  }
+  
   try {
     const normalizedPath = normalizePathWithUnicode(path);
     const response = await backendApi.get<{ files: FileInfo[] }>(
@@ -106,6 +118,10 @@ export const getSandboxFileContent = async (
   sandboxId: string,
   path: string,
 ): Promise<string | Blob> => {
+  if (!sandboxId || sandboxId.trim() === '') {
+    throw new Error('Sandbox ID is required');
+  }
+  
   try {
     const normalizedPath = normalizePathWithUnicode(path);
     const response = await backendApi.get<string | Blob>(

@@ -1,4 +1,4 @@
-import { parseToolResult } from '../tool-result-parser';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface AgentCreationData {
   name: string | null;
@@ -16,32 +16,21 @@ export interface AgentCreationData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractCreateNewAgentData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): AgentCreationData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: AgentCreationData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     name: null,
     description: null,
@@ -54,92 +43,52 @@ export function extractCreateNewAgentData(
     is_default: false,
     agent_id: null,
     agent_name: null,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'create_new_agent') {
-      const args = parsedToolResult.arguments || {};
-      
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(toolContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
+  if (!toolResult?.output) {
+    return defaultResult;
+  }
 
-      return {
-        name: args.name || null,
-        description: args.description || null,
-        system_prompt: args.system_prompt || null,
-        icon_name: args.icon_name || null,
-        icon_color: args.icon_color || null,
-        icon_background: args.icon_background || null,
-        agentpress_tools: args.agentpress_tools || null,
-        configured_mcps: args.configured_mcps || null,
-        is_default: args.is_default || false,
-        agent_id: output.agent_id || null,
-        agent_name: output.agent_name || args.name || null,
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: parsedToolResult.timestamp || toolTimestamp,
-        actualAssistantTimestamp: assistantTimestamp
-      };
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
     }
   }
 
-  if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'create_new_agent') {
-      const args = parsedToolResult.arguments || {};
-      
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(assistantContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
 
-      return {
-        name: args.name || null,
-        description: args.description || null,
-        system_prompt: args.system_prompt || null,
-        icon_name: args.icon_name || null,
-        icon_color: args.icon_color || null,
-        icon_background: args.icon_background || null,
-        agentpress_tools: args.agentpress_tools || null,
-        configured_mcps: args.configured_mcps || null,
-        is_default: args.is_default || false,
-        agent_id: output.agent_id || null,
-        agent_name: output.agent_name || args.name || null,
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: toolTimestamp,
-        actualAssistantTimestamp: parsedToolResult.timestamp || assistantTimestamp
-      };
-    }
-  }
-
-  return defaultResult;
-} 
+  return {
+    name: parsedOutput.name || args.name || null,
+    description: parsedOutput.description || args.description || null,
+    system_prompt: parsedOutput.system_prompt || args.system_prompt || null,
+    icon_name: parsedOutput.icon_name || args.icon_name || null,
+    icon_color: parsedOutput.icon_color || args.icon_color || null,
+    icon_background: parsedOutput.icon_background || args.icon_background || null,
+    agentpress_tools: parsedOutput.agentpress_tools || args.agentpress_tools || null,
+    configured_mcps: parsedOutput.configured_mcps || args.configured_mcps || null,
+    is_default: parsedOutput.is_default ?? args.is_default ?? false,
+    agent_id: parsedOutput.agent_id || null,
+    agent_name: parsedOutput.agent_name || args.name || null,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
+}

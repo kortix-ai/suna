@@ -22,7 +22,7 @@ import {
   Table,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
-import { formatTimestamp, getToolTitle, normalizeContentToString, extractToolData } from './utils';
+import { formatTimestamp, getToolTitle } from './utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,12 +30,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from './shared/LoadingState';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-
-interface UploadData {
-  file_path: string | null;
-  bucket_name: string | null;
-  custom_filename: string | null;
-}
 
 interface UploadResult {
   message?: string;
@@ -46,103 +40,69 @@ interface UploadResult {
   success?: boolean;
 }
 
-function extractUploadData(assistantContent: any, toolContent: any): {
-  uploadData: UploadData;
-  uploadResult: UploadResult | null;
-  rawContent: string | null;
-} {
-  const uploadData: UploadData = {
-    file_path: null,
-    bucket_name: null,
-    custom_filename: null,
-  };
-  let uploadResult: UploadResult | null = null;
-  let rawContent: string | null = null;
-
-  // Extract parameters from assistant content
-  const assistantStr = normalizeContentToString(assistantContent);
-  if (assistantStr) {
-    try {
-      const parsed = JSON.parse(assistantStr);
-      if (parsed.parameters) {
-        uploadData.file_path = parsed.parameters.file_path || null;
-        uploadData.bucket_name = parsed.parameters.bucket_name || 'file-uploads';
-        uploadData.custom_filename = parsed.parameters.custom_filename || null;
-      }
-    } catch (e) {
-      // Try regex extraction as fallback
-      const filePathMatch = assistantStr.match(/file_path["']\s*:\s*["']([^"']+)["']/);
-      const bucketMatch = assistantStr.match(/bucket_name["']\s*:\s*["']([^"']+)["']/);
-      const filenameMatch = assistantStr.match(/custom_filename["']\s*:\s*["']([^"']+)["']/);
-      
-      if (filePathMatch) uploadData.file_path = filePathMatch[1];
-      if (bucketMatch) uploadData.bucket_name = bucketMatch[1];
-      if (filenameMatch) uploadData.custom_filename = filenameMatch[1];
-    }
-  }
-
-  // Extract result from tool content
-  const toolStr = normalizeContentToString(toolContent);
-  if (toolStr) {
-    rawContent = toolStr;
-    try {
-      const parsed = JSON.parse(toolStr);
-      
-      // Handle nested tool_execution structure
-      let resultData = null;
-      if (parsed.tool_execution && parsed.tool_execution.result) {
-        resultData = parsed.tool_execution.result;
-      } else if (parsed.output) {
-        resultData = parsed;
-      }
-
-      if (resultData) {
-        // Parse the output message to extract structured data
-        const output = resultData.output || '';
-        
-        uploadResult = {
-          message: output,
-          success: resultData.success !== undefined ? resultData.success : true,
-        };
-
-        // Extract structured data from the output message
-        if (typeof output === 'string') {
-          const storageMatch = output.match(/📁 Storage: ([^\n]+)/);
-          const sizeMatch = output.match(/📏 Size: ([^\n]+)/);
-          const urlMatch = output.match(/🔗 Secure Access URL: ([^\n]+)/);
-          const expiresMatch = output.match(/⏰ URL expires: ([^\n]+)/);
-
-          if (storageMatch) uploadResult.storage_path = storageMatch[1];
-          if (sizeMatch) uploadResult.file_size = sizeMatch[1];
-          if (urlMatch) uploadResult.secure_url = urlMatch[1];
-          if (expiresMatch) uploadResult.expires_at = expiresMatch[1];
-        }
-      }
-    } catch (e) {
-      // If parsing fails, treat as plain text result
-      uploadResult = {
-        message: toolStr,
-        success: !toolStr.toLowerCase().includes('error') && !toolStr.toLowerCase().includes('failed'),
-      };
-    }
-  }
-
-  return { uploadData, uploadResult, rawContent };
-}
-
 export function UploadFileToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name = 'upload-file',
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [isCopyingUrl, setIsCopyingUrl] = useState(false);
   const [isCopyingPath, setIsCopyingPath] = useState(false);
 
-  const { uploadData, uploadResult, rawContent } = extractUploadData(assistantContent, toolContent);
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('UploadFileToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+
+  // Extract data directly from structured props
+  const uploadData = {
+    file_path: toolCall.arguments?.file_path || null,
+    bucket_name: toolCall.arguments?.bucket_name || 'file-uploads',
+    custom_filename: toolCall.arguments?.custom_filename || null,
+  };
+
+  // Extract result from toolResult
+  let uploadResult: UploadResult | null = null;
+  let rawContent: string | null = null;
+
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    
+    if (typeof output === 'string') {
+      rawContent = output;
+      uploadResult = {
+        message: output,
+        success: toolResult.success !== undefined ? toolResult.success : true,
+      };
+
+      // Extract structured data from the output message
+      const storageMatch = output.match(/📁 Storage: ([^\n]+)/);
+      const sizeMatch = output.match(/📏 Size: ([^\n]+)/);
+      const urlMatch = output.match(/🔗 Secure Access URL: ([^\n]+)/);
+      const expiresMatch = output.match(/⏰ URL expires: ([^\n]+)/);
+
+      if (storageMatch) uploadResult.storage_path = storageMatch[1];
+      if (sizeMatch) uploadResult.file_size = sizeMatch[1];
+      if (urlMatch) uploadResult.secure_url = urlMatch[1];
+      if (expiresMatch) uploadResult.expires_at = expiresMatch[1];
+    } else if (typeof output === 'object' && output !== null) {
+      uploadResult = {
+        message: (output as any).message || JSON.stringify(output),
+        storage_path: (output as any).storage_path,
+        file_size: (output as any).file_size,
+        secure_url: (output as any).secure_url || (output as any).secure_url,
+        expires_at: (output as any).expires_at,
+        success: toolResult.success !== undefined ? toolResult.success : true,
+      };
+    }
+  }
+
   const toolTitle = getToolTitle(name);
   const actualIsSuccess = uploadResult?.success !== undefined ? uploadResult.success : isSuccess;
 

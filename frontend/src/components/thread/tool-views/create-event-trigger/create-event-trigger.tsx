@@ -23,14 +23,21 @@ import { Separator } from "@/components/ui/separator";
 import { extractCreateEventTriggerData } from './_utils';
 
 export function CreateEventTriggerToolView({
-  name = 'create-event-trigger',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('CreateEventTriggerToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     slug,
@@ -45,14 +52,12 @@ export function CreateEventTriggerToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractCreateEventTriggerData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const formatSlugName = (slug: string): string => {
     return slug

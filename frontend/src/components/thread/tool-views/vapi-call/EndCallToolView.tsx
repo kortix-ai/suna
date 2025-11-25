@@ -7,16 +7,22 @@ import { extractEndCallData } from './_utils';
 import { getToolTitle } from '../utils';
 
 export function EndCallToolView({
-  name = 'end-call',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const callData = extractEndCallData(toolContent);
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('EndCallToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
+  const callData = extractEndCallData(toolResult);
 
   if (!callData) {
     return <div className="text-sm text-muted-foreground">No end call data available</div>;
@@ -57,9 +63,6 @@ export function EndCallToolView({
       </CardHeader>
 
       <CardContent className="p-4 space-y-3">
-        {assistantContent && (
-          <div className="text-sm text-foreground">{assistantContent}</div>
-        )}
 
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">Call ID</div>

@@ -1,4 +1,4 @@
-import { parseToolResult } from '../tool-result-parser';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface TriggerConfig {
   properties: Record<string, any>;
@@ -39,124 +39,67 @@ export interface ListAppEventTriggersData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractListAppEventTriggersData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): ListAppEventTriggersData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: ListAppEventTriggersData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     toolkit_slug: null,
     message: null,
     items: [],
     toolkit: null,
     total: 0,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  try {
-    if (toolContent) {
-      let content = toolContent;
-      
-      if (typeof toolContent === 'string') {
-        try {
-          content = JSON.parse(toolContent);
-        } catch (e) {
-          content = toolContent;
-        }
-      }
-
-      if (content && typeof content === 'object' && content.content) {
-        try {
-          const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
-          content = nestedContent;
-        } catch (e) {
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool_execution) {
-        const toolExecution = content.tool_execution;
-        if (toolExecution.result && toolExecution.result.success) {
-          const args = toolExecution.arguments;
-          const output = toolExecution.result.output;
-
-          if (args && output) {
-            return {
-              ...defaultResult,
-              toolkit_slug: args.toolkit_slug || null,
-              message: output.message || null,
-              items: output.items || [],
-              toolkit: output.toolkit || null,
-              total: output.total || 0,
-              actualIsSuccess: true
-            };
-          }
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool === 'list-app-event-triggers') {
-        const parameters = content.parameters;
-        const output = content.output;
-        
-        if (parameters && output) {
-          return {
-            ...defaultResult,
-            toolkit_slug: parameters.toolkit_slug || null,
-            message: output.message || null,
-            items: output.items || [],
-            toolkit: output.toolkit || null,
-            total: output.total || 0,
-            actualIsSuccess: output.success !== false
-          };
-        }
-      }
-    }
-
-    if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput) {
-          return {
-            ...defaultResult,
-            toolkit_slug: args.toolkit_slug || null,
-            message: toolOutput.message || null,
-            items: toolOutput.items || [],
-            toolkit: toolOutput.toolkit || null,
-            total: toolOutput.total || 0,
-            actualIsSuccess: true
-          };
-        }
-      }
-    }
-
-    return defaultResult;
-  } catch (error) {
-    console.error('Error extracting list app event triggers data:', error);
+  if (!toolResult?.output) {
     return defaultResult;
   }
+
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
+    }
+  }
+
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  return {
+    toolkit_slug: parsedOutput.toolkit_slug || args.toolkit_slug || null,
+    message: parsedOutput.message || null,
+    items: Array.isArray(parsedOutput.items) ? parsedOutput.items : [],
+    toolkit: parsedOutput.toolkit || null,
+    total: parsedOutput.total ?? 0,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
 }

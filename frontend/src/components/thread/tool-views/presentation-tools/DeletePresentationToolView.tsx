@@ -15,7 +15,7 @@ import {
   FolderX,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, extractToolData } from '../utils';
+import { formatTimestamp } from '../utils';
 import { LoadingState } from '../shared/LoadingState';
 
 interface DeletePresentationData {
@@ -24,40 +24,100 @@ interface DeletePresentationData {
 }
 
 export function DeletePresentationToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
 }: ToolViewProps) {
-  const { toolResult } = extractToolData(toolContent);
-  
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('DeletePresentationToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  // Extract from toolResult.output (from metadata)
   let deleteData: DeletePresentationData | null = null;
   let error: string | null = null;
 
   try {
-    if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== 'STREAMING') {
-      const output = toolResult.toolOutput;
+    if (toolResult?.output) {
+      let output = toolResult.output;
       if (typeof output === 'string') {
+        // Try to parse as JSON first, but handle plain string messages
         try {
-          deleteData = JSON.parse(output);
+          // Check if it looks like JSON (starts with { or [)
+          if (output.trim().startsWith('{') || output.trim().startsWith('[')) {
+            deleteData = JSON.parse(output);
+          } else {
+            // It's a plain string message, create a deleteData object from it
+            // Try to extract path from toolCall arguments or the message
+            const deletedPath = toolCall.arguments?.presentation_name || 
+                              toolCall.arguments?.path || 
+                              output.match(/['"]([^'"]+)['"]/)?.[1] || 
+                              'Unknown';
+            deleteData = {
+              message: output,
+              deleted_path: deletedPath,
+            };
+          }
         } catch (e) {
-          console.error('Failed to parse tool output:', e);
-          error = 'Failed to parse delete data';
+          // If JSON parsing fails, treat as plain string message
+          const deletedPath = toolCall.arguments?.presentation_name || 
+                            toolCall.arguments?.path || 
+                            output.match(/['"]([^'"]+)['"]/)?.[1] || 
+                            'Unknown';
+          deleteData = {
+            message: output,
+            deleted_path: deletedPath,
+          };
         }
-      } else {
+      } else if (typeof output === 'object' && output !== null) {
+        // Already an object, use it directly
         deleteData = output as unknown as DeletePresentationData;
+        // Ensure required fields exist
+        if (!deleteData.deleted_path && toolCall.arguments) {
+          deleteData.deleted_path = toolCall.arguments.presentation_name || 
+                                   toolCall.arguments.path || 
+                                   'Unknown';
+        }
+        if (!deleteData.message && typeof output === 'object') {
+          deleteData.message = (output as any).message || 'Presentation deleted successfully';
+        }
+      }
+    } else {
+      // No output, try to construct from arguments
+      if (toolCall.arguments) {
+        const deletedPath = toolCall.arguments.presentation_name || 
+                           toolCall.arguments.path || 
+                           'Unknown';
+        deleteData = {
+          message: 'Presentation deleted successfully',
+          deleted_path: deletedPath,
+        };
       }
     }
   } catch (e) {
     console.error('Error parsing delete data:', e);
-    error = 'Failed to parse delete data';
+    // Try to construct from arguments as fallback
+    if (toolCall.arguments) {
+      const deletedPath = toolCall.arguments.presentation_name || 
+                         toolCall.arguments.path || 
+                         'Unknown';
+      deleteData = {
+        message: 'Presentation deleted',
+        deleted_path: deletedPath,
+      };
+    } else {
+      error = 'Failed to parse delete data';
+    }
   }
 
-  const presentationName = deleteData?.deleted_path?.split('/').pop() || 'Unknown';
+  const presentationName = deleteData?.deleted_path?.split('/').pop() || 
+                          toolCall.arguments?.presentation_name?.split('/').pop() || 
+                          'Unknown';
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

@@ -26,19 +26,42 @@ import { extractCreateCredentialProfileData } from './_utils';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 export function CreateCredentialProfileForAgentToolView({
-  name = 'create-credential-profile-for-agent',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-
+  // All hooks must be called unconditionally at the top
   const [authCompleted, setAuthCompleted] = useState(false);
 
+  // Extract data first (before conditional return) so we can use toolkit_slug in hook
+  const extractedData = toolCall ? extractCreateCredentialProfileData(
+    toolCall,
+    toolResult,
+    isSuccess,
+    toolTimestamp,
+    assistantTimestamp
+  ) : null;
+
+  const toolkit_slug = extractedData?.toolkit_slug || null;
+
+  // Hook must be called unconditionally - use safe default
+  const { data: iconData } = useComposioToolkitIcon(toolkit_slug || '', {
+    enabled: !!toolkit_slug
+  });
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall || !extractedData) {
+    console.warn('CreateCredentialProfileForAgentToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
+
   const {
-    toolkit_slug,
     profile_name,
     authentication_url,
     toolkit_name,
@@ -46,18 +69,7 @@ export function CreateCredentialProfileForAgentToolView({
     actualIsSuccess,
     actualToolTimestamp,
     actualAssistantTimestamp
-  } = extractCreateCredentialProfileData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
-
-  const toolTitle = getToolTitle(name);
-  const { data: iconData } = useComposioToolkitIcon(toolkit_slug || '', {
-    enabled: !!toolkit_slug
-  });
+  } = extractedData;
 
   const handleAuthClick = () => {
     if (authentication_url) {

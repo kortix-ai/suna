@@ -359,13 +359,16 @@ class AgentExecutor:
         
         await self._register_agent_run(agent_run_id)
         
+        # Extract agent_id from agent_config to pass to worker (reduces log spam)
+        agent_id = agent_config.get('agent_id')
+        
         run_agent_background.send(
             agent_run_id=agent_run_id,
             thread_id=thread_id,
             instance_id="trigger_executor",
             project_id=project_id,
             model_name=model_name,
-            agent_config=agent_config,
+            agent_id=agent_id,  # Pass agent_id instead of full config
             request_id=structlog.contextvars.get_contextvars().get('request_id'),
         )
         

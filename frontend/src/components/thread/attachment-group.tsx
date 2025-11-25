@@ -3,7 +3,7 @@ import { X, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { FileAttachment } from './file-attachment';
 import { cn } from '@/lib/utils';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {

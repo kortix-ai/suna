@@ -19,17 +19,26 @@ import {
 } from './_utils';
 
 export function DeleteDocumentToolView({
-  name = 'delete_document',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
   project,
 }: ToolViewProps) {
-  const data = extractDocsData(toolContent);
-  const assistantParams = extractParametersFromAssistant(assistantContent);
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('DeleteDocumentToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const data = extractDocsData(toolResult);
+  
+  // Extract parameters from toolCall arguments
+  const assistantParams = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : null;
 
   if (isStreaming || !data) {
     return <LoadingState title="Deleting Document..." />;
@@ -42,8 +51,8 @@ export function DeleteDocumentToolView({
     return <CheckCircle className="w-2 h-2 text-emerald-500" />;
   };
 
-  // Extract document info from assistant params if available
-  const docId = assistantParams?.doc_id;
+  // Extract document info from toolCall arguments if available
+  const docId = assistantParams?.doc_id || assistantParams?.document_id;
   
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

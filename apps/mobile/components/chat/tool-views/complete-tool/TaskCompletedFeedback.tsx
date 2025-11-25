@@ -222,7 +222,7 @@ export function TaskCompletedFeedback({
                     }}
                     className="w-full flex-row items-center gap-3 p-2.5 rounded-xl border border-border bg-card active:bg-muted/50"
                   >
-                    <Icon as={IconComponent} size={16} className="text-muted-foreground flex-shrink-0" />
+                    <Icon as={IconComponent as any} size={16} className="text-muted-foreground flex-shrink-0" />
                     <Text className="text-sm font-roobert text-foreground flex-1">
                       {prompt.text}
                     </Text>
@@ -346,14 +346,14 @@ export function TaskCompletedFeedback({
                 disabled={isSubmitting}
                 className="flex-1"
               >
-                {t('common.cancel')}
+                <Text>{t('common.cancel')}</Text>
               </Button>
               <Button
                 onPress={handleSubmitRating}
                 disabled={!rating || isSubmitting}
                 className="flex-1"
               >
-                {isSubmitting ? t('chat.submitting') : t('chat.submit')}
+                <Text>{isSubmitting ? t('chat.submitting') : t('chat.submit')}</Text>
               </Button>
             </View>
           </View>

@@ -1,4 +1,4 @@
-import { extractToolData } from '../utils';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface DocumentTextContent {
   text: string;
@@ -52,160 +52,10 @@ export interface DocumentParserData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content; 
-    }
-  }
-  return content;
-};
-
-const extractFromNewFormat = (content: any): DocumentParserData => {
-  const parsedContent = parseContent(content);
-  
-  if (!parsedContent || typeof parsedContent !== 'object') {
-    return { 
-      url: null, 
-      message: 'No data available',
-      result: {
-        url: null,
-        message: 'No data available',
-        document_info: { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-        text_content: [],
-        structure: [],
-        tables: [],
-        metadata: {},
-        summary: { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] }
-      },
-      success: undefined, 
-      timestamp: undefined 
-    };
-  }
-
-  if ('tool_execution' in parsedContent && typeof parsedContent.tool_execution === 'object') {
-    const toolExecution = parsedContent.tool_execution;
-    const args = toolExecution.arguments || {};
-    
-    let parsedOutput = toolExecution.result?.output;
-    if (typeof parsedOutput === 'string') {
-      try {
-        parsedOutput = JSON.parse(parsedOutput);
-      } catch (e) {
-      }
-    }
-    parsedOutput = parsedOutput || {};
-
-    const content = parsedOutput?.content || {};
-
-    const extractedData: DocumentParserData = {
-      url: args.url || null,
-      message: parsedOutput?.message || 'Document parsed',
-      result: {
-        url: args.url || null,
-        message: parsedOutput?.message || 'Document parsed',
-        document_info: content.document_info || { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-        text_content: content.text_content || [],
-        structure: content.structure || [],
-        tables: content.tables || [],
-        metadata: content.metadata || {},
-        summary: content.summary || { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] },
-        extract_tables: args.extract_tables,
-        extract_structured_data: args.extract_structured_data
-      },
-      success: toolExecution.result?.success,
-      timestamp: toolExecution.execution_details?.timestamp
-    };
-    return extractedData;
-  }
-
-  if ('message' in parsedContent && 'content' in parsedContent) {
-    const content = parsedContent.content || {};
-    return {
-      url: null,
-      message: parsedContent.message || 'Document parsed',
-      result: {
-        url: null,
-        message: parsedContent.message || 'Document parsed',
-        document_info: content.document_info || { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-        text_content: content.text_content || [],
-        structure: content.structure || [],
-        tables: content.tables || [],
-        metadata: content.metadata || {},
-        summary: content.summary || { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] }
-      },
-      success: true,
-      timestamp: undefined
-    };
-  }
-
-  if ('role' in parsedContent && 'content' in parsedContent) {
-    return extractFromNewFormat(parsedContent.content);
-  }
-
-  return { 
-    url: null, 
-    message: 'No data available',
-    result: {
-      url: null,
-      message: 'No data available',
-      document_info: { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-      text_content: [],
-      structure: [],
-      tables: [],
-      metadata: {},
-      summary: { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] }
-    },
-    success: undefined, 
-    timestamp: undefined 
-  };
-};
-
-const extractFromLegacyFormat = (content: any): Omit<DocumentParserData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    const resultMessage = typeof toolData.toolResult === 'string' ? toolData.toolResult : 'Document parsing attempted';
-    return {
-      url: args.url || null,
-      message: resultMessage,
-      result: {
-        url: args.url || null,
-        message: resultMessage,
-        document_info: { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-        text_content: [],
-        structure: [],
-        tables: [],
-        metadata: {},
-        summary: { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] },
-        extract_tables: args.extract_tables,
-        extract_structured_data: args.extract_structured_data
-      }
-    };
-  }
-
-  return {
-    url: null,
-    message: 'No data available',
-    result: {
-      url: null,
-      message: 'No data available',
-      document_info: { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-      text_content: [],
-      structure: [],
-      tables: [],
-      metadata: {},
-      summary: { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] }
-    }
-  };
-};
 
 export function extractDocumentParserData(
-  assistantContent: any,
-  toolContent: any,
+  toolCall: ToolCallData,
+  toolResult: ToolResultData | undefined,
   isSuccess: boolean,
   toolTimestamp?: string,
   assistantTimestamp?: string
@@ -217,62 +67,91 @@ export function extractDocumentParserData(
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
 } {
-  let data: DocumentParserData = {
-    url: null,
-    message: 'No data available',
-    result: {
-      url: null,
-      message: 'No data available',
-      document_info: { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
-      text_content: [],
-      structure: [],
-      tables: [],
-      metadata: {},
-      summary: { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] }
-    }
+  const args = toolCall.arguments || {};
+  const url = args.url || null;
+  
+  let message = 'Document parsed';
+  let result: DocumentParserResult = {
+    url,
+    message: 'Document parsed',
+    document_info: { total_chunks: 0, status: 'unknown', processing_time: 'N/A' },
+    text_content: [],
+    structure: [],
+    tables: [],
+    metadata: {},
+    summary: { total_pages: 0, headings_count: 0, text_sections: 0, tables_count: 0, main_headings: [] },
+    extract_tables: args.extract_tables,
+    extract_structured_data: args.extract_structured_data
   };
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
 
-  const assistantNewFormat = extractFromNewFormat(assistantContent);
-  const toolNewFormat = extractFromNewFormat(toolContent);
-
-  if (assistantNewFormat.url || assistantNewFormat.result.text_content.length > 0) {
-    data = assistantNewFormat;
-    if (assistantNewFormat.success !== undefined) {
-      actualIsSuccess = assistantNewFormat.success;
+  // Extract from toolResult output
+  if (toolResult?.output) {
+    const output = toolResult.output;
+    
+    if (typeof output === 'string') {
+      try {
+        const parsed = JSON.parse(output);
+        if (parsed.content) {
+          result = {
+            url: parsed.url || url,
+            message: parsed.message || message,
+            document_info: parsed.content.document_info || result.document_info,
+            text_content: parsed.content.text_content || [],
+            structure: parsed.content.structure || [],
+            tables: parsed.content.tables || [],
+            metadata: parsed.content.metadata || {},
+            summary: parsed.content.summary || result.summary,
+            extract_tables: args.extract_tables,
+            extract_structured_data: args.extract_structured_data
+          };
+          message = parsed.message || message;
+        } else {
+          // Direct result object
+          result = {
+            url: parsed.url || url,
+            message: parsed.message || message,
+            document_info: parsed.document_info || result.document_info,
+            text_content: parsed.text_content || [],
+            structure: parsed.structure || [],
+            tables: parsed.tables || [],
+            metadata: parsed.metadata || {},
+            summary: parsed.summary || result.summary,
+            extract_tables: args.extract_tables,
+            extract_structured_data: args.extract_structured_data
+          };
+          message = parsed.message || message;
+        }
+      } catch (e) {
+        message = output;
+      }
+    } else if (typeof output === 'object' && output !== null) {
+      const obj = output as any;
+      const content = obj.content || obj;
+      
+      result = {
+        url: obj.url || url,
+        message: obj.message || message,
+        document_info: content.document_info || result.document_info,
+        text_content: content.text_content || [],
+        structure: content.structure || [],
+        tables: content.tables || [],
+        metadata: content.metadata || {},
+        summary: content.summary || result.summary,
+        extract_tables: args.extract_tables,
+        extract_structured_data: args.extract_structured_data
+      };
+      message = obj.message || message;
     }
-    if (assistantNewFormat.timestamp) {
-      actualAssistantTimestamp = assistantNewFormat.timestamp;
-    }
-  } else if (toolNewFormat.url || toolNewFormat.result.text_content.length > 0) {
-    data = toolNewFormat;
-    if (toolNewFormat.success !== undefined) {
-      actualIsSuccess = toolNewFormat.success;
-    }
-    if (toolNewFormat.timestamp) {
-      actualToolTimestamp = toolNewFormat.timestamp;
-    }
-  } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
-    data = {
-      ...assistantLegacy,
-      ...toolLegacy,
-      url: assistantLegacy.url || toolLegacy.url,
-      success: undefined,
-      timestamp: undefined
-    };
   }
 
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
+
   return {
-    url: data.url,
-    message: data.message,
-    result: data.result,
+    url: result.url,
+    message,
+    result,
     actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
   };
 }

@@ -1,2 +1,0 @@
-export { PaperDetailsToolView } from './PaperDetailsToolView';
-

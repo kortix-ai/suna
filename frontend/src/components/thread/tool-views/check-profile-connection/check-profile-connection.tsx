@@ -24,14 +24,19 @@ import { Separator } from "@/components/ui/separator";
 import { extractCheckProfileConnectionData, Connection } from './_utils';
 
 export function CheckProfileConnectionToolView({
-  name = 'check-profile-connection',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
   const {
     profile_name,
@@ -47,8 +52,8 @@ export function CheckProfileConnectionToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractCheckProfileConnectionData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

@@ -4,10 +4,12 @@ export * from './sidebar/use-sidebar';
 // Threads
 export * from './threads/use-threads';
 export * from './threads/use-project';
-export * from './threads/use-messages';
 export * from './threads/use-agent-run';
 export * from './threads/use-thread-mutations';
 export * from './threads';
+
+// Messages and streaming - centralized location
+export * from './messages';
 
 // Files - export specific hooks first, then index to avoid conflicts
 export * from './files/use-file-queries';

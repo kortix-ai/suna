@@ -22,14 +22,20 @@ import { Separator } from "@/components/ui/separator";
 import { extractConfigureProfileForAgentData } from './_utils';
 
 export function ConfigureProfileForAgentToolView({
-  name = 'configure-profile-for-agent',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     enabled_tools,
@@ -42,14 +48,12 @@ export function ConfigureProfileForAgentToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractConfigureProfileForAgentData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const formatToolName = (toolName: string) => {
     return toolName

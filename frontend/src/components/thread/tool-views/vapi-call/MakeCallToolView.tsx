@@ -12,23 +12,20 @@ import { createClient } from '@/lib/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function MakeCallToolView({
-  name = 'make-phone-call',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const callData = extractMakeCallData(toolContent);
+  // All hooks must be called unconditionally at the top
+  // We need to extract callData first to use it in hooks, but we'll handle undefined case
+  const callData = toolCall ? extractMakeCallData(toolCall, toolResult) : null;
   const [liveTranscript, setLiveTranscript] = useState<any[]>([]);
   const [liveStatus, setLiveStatus] = useState(callData?.status || 'queued');
   const [previousTranscriptLength, setPreviousTranscriptLength] = useState(0);
-  const toolTitle = getToolTitle(name);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-
-
-
 
   // Subscribe to real-time updates
   useVapiCallRealtime(callData?.call_id);
@@ -117,6 +114,15 @@ export function MakeCallToolView({
       transcriptEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [liveTranscript, previousTranscriptLength]);
+
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('MakeCallToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   if (!callData) {
     return <div className="text-sm text-muted-foreground">No call data available</div>;
@@ -214,10 +220,6 @@ export function MakeCallToolView({
       </CardHeader>
 
       <CardContent className="p-4 space-y-4">
-        {assistantContent && (
-          <div className="text-sm text-foreground">{assistantContent}</div>
-        )}
-
         <AnimatePresence mode="wait">
           {isActive && liveTranscript.length > 0 ? (
             <motion.div

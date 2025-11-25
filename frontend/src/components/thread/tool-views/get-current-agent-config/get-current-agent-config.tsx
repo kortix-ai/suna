@@ -23,14 +23,21 @@ import { Separator } from "@/components/ui/separator";
 import { extractGetCurrentAgentConfigData, AgentConfiguration, CustomMcp, AgentpressTool } from './_utils';
 
 export function GetCurrentAgentConfigToolView({
-  name = 'get-current-agent-config',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('GetCurrentAgentConfigToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     summary,
@@ -39,14 +46,12 @@ export function GetCurrentAgentConfigToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractGetCurrentAgentConfigData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const formatConfigTime = (dateString: string) => {
     try {

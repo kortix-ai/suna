@@ -234,31 +234,39 @@ def calculate_optimal_cache_threshold(
     return final_threshold
 
 def add_cache_control(message: Dict[str, Any]) -> Dict[str, Any]:
-    """Add cache_control to a message."""
-    content = message.get('content', '')
-    role = message.get('role', '')
-
-    # If already in list format with cache_control, return as-is
+    """
+    Add cache_control to a message while preserving all message fields.
+    
+    CRITICAL: This must preserve tool_calls, message_id, name, tool_call_id, etc.
+    Cache control is applied to the content blocks, not by replacing the message structure.
+    """
+    from copy import deepcopy
+    cached_msg = deepcopy(message)
+    content = cached_msg.get('content', '')
+    
+    # If content is already a list with cache_control, return as-is
     if isinstance(content, list):
-        if content and isinstance(content[0], dict) and 'cache_control' in content[0]:
-            return message
-        # Convert existing list format to cached format
-        text_content = ""
-        for item in content:
-            if isinstance(item, dict) and item.get('type') == 'text':
-                text_content += item.get('text', '')
-        content = text_content
-
-    return {
-        "role": role,
-        "content": [
-            {
-                "type": "text",
-                "text": str(content),
-                "cache_control": {"type": "ephemeral"}
-            }
-        ]
-    }
+        if content and isinstance(content[0], dict) and content[0].get('cache_control'):
+            return cached_msg
+        # Add cache_control to the last content block
+        if content:
+            # Find the last text block
+            for i in range(len(content) - 1, -1, -1):
+                if isinstance(content[i], dict) and content[i].get('type') == 'text':
+                    content[i]['cache_control'] = {"type": "ephemeral"}
+                    break
+        return cached_msg
+    
+    # If content is a string, convert to structured format with cache_control
+    cached_msg['content'] = [
+        {
+            "type": "text",
+            "text": str(content),
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
+    
+    return cached_msg
 
 async def apply_anthropic_caching_strategy(
     working_system_prompt: Dict[str, Any], 
@@ -475,6 +483,10 @@ def create_conversation_chunks(
     Create conversation cache chunks based on token thresholds.
     Final messages are NEVER cached to prevent cache invalidation.
     Returns (chunks_created, last_message_id_in_cached_chunks).
+    
+    CRITICAL: We preserve the actual message structure (role, content, tool_calls)
+    instead of converting to text, so the LLM can properly process the conversation.
+    We apply cache_control to the LAST message in each chunk to mark a cache breakpoint.
     """
     logger.debug(f"Creating conversation chunks - chunk threshold: {chunk_threshold_tokens}, max blocks: {max_blocks}")
     if not messages or max_blocks <= 0:
@@ -491,26 +503,26 @@ def create_conversation_chunks(
         # Check if adding this message would exceed threshold
         if current_chunk_tokens + message_tokens > chunk_threshold_tokens and current_chunk:
             # Create cache block for current chunk
-            if chunks_created < max_blocks:  # No need to reserve blocks since final messages are never cached
+            if chunks_created < max_blocks:
                 # Track last message ID before creating cache block
                 if current_chunk:
                     last_msg = current_chunk[-1]
                     last_cached_message_id = last_msg.get('message_id')
+                    
+                    # Apply cache_control to the LAST message in the chunk
+                    # CRITICAL: Never cache tool messages (role='tool') as they're transient
+                    # This preserves the message structure while marking a cache breakpoint
+                    for j, chunk_msg in enumerate(current_chunk):
+                        if j == len(current_chunk) - 1 and chunk_msg.get('role') != 'tool':  # Last message, but not tool
+                            # Add cache_control to this message
+                            cached_msg = add_cache_control(chunk_msg)
+                            prepared_messages.append(cached_msg)
+                        else:
+                            # Add message as-is
+                            prepared_messages.append(chunk_msg)
                 
-                chunk_text = format_conversation_for_cache(current_chunk)
-                cache_block = {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": chunk_text,
-                            "cache_control": {"type": "ephemeral"}
-                        }
-                    ]
-                }
-                prepared_messages.append(cache_block)
                 chunks_created += 1
-                logger.info(f"🔥 Block {chunks_created + 1}: Cached chunk ({current_chunk_tokens} tokens, {len(current_chunk)} messages)")
+                logger.info(f"🔥 Block {chunks_created + 1}: Cached chunk ({current_chunk_tokens} tokens, {len(current_chunk)} messages, breakpoint at message #{len(prepared_messages)})")
                 
                 # Reset for next chunk
                 current_chunk = []
@@ -550,34 +562,6 @@ def get_recent_messages_within_token_limit(messages: List[Dict[str, Any]], token
             break
     
     return recent_messages
-
-def format_conversation_for_cache(messages: List[Dict[str, Any]]) -> str:
-    """Format conversation messages into a single text block for caching."""
-    formatted_parts = []
-    
-    for msg in messages:
-        role = msg.get('role', 'unknown')
-        content = msg.get('content', '')
-        
-        # Handle different content formats
-        if isinstance(content, list):
-            # Extract text from list format
-            text_content = ""
-            for item in content:
-                if isinstance(item, dict) and item.get('type') == 'text':
-                    text_content += item.get('text', '')
-                elif not isinstance(item, dict) or 'cache_control' not in item:
-                    text_content += str(item)
-        else:
-            text_content = str(content)
-        
-        # Clean up and format
-        text_content = text_content.strip()
-        if text_content:
-            role_indicator = "User" if role == "user" else "Assistant" if role == "assistant" else role.title()
-            formatted_parts.append(f"{role_indicator}: {text_content}")
-    
-    return "\n\n".join(formatted_parts)
 
 def validate_cache_blocks(messages: List[Dict[str, Any]], model_name: str, max_blocks: int = 4) -> List[Dict[str, Any]]:
     """

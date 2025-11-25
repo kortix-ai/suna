@@ -1,4 +1,4 @@
-import { parseToolResult } from '../tool-result-parser';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface CreateCredentialProfileData {
   toolkit_slug: string | null;
@@ -10,111 +10,67 @@ export interface CreateCredentialProfileData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractCreateCredentialProfileData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): CreateCredentialProfileData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: CreateCredentialProfileData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     toolkit_slug: null,
     profile_name: null,
     authentication_url: null,
     toolkit_name: null,
     requires_authentication: false,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  if (toolContent) {
-    const parsedToolResult = parseToolResult(toolContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'create_credential_profile_for_agent') {
-      const args = parsedToolResult.arguments || {};
-      
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(toolContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
+  if (!toolResult?.output) {
+    return defaultResult;
+  }
 
-      return {
-        toolkit_slug: args.toolkit_slug || output.toolkit_slug || null,
-        profile_name: args.profile_name || output.profile_name || null,
-        authentication_url: output.authentication_url || null,
-        toolkit_name: output.toolkit_name || null,
-        requires_authentication: output.requires_authentication || false,
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: parsedToolResult.timestamp || toolTimestamp,
-        actualAssistantTimestamp: assistantTimestamp
-      };
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
     }
   }
 
-  if (assistantContent) {
-    const parsedToolResult = parseToolResult(assistantContent);
-    
-    if (parsedToolResult && parsedToolResult.functionName === 'create_credential_profile_for_agent') {
-      const args = parsedToolResult.arguments || {};
-      let output: any = {};
-      try {
-        if (typeof parsedToolResult.toolOutput === 'string') {
-          output = JSON.parse(parsedToolResult.toolOutput);
-        } else if (typeof parsedToolResult.toolOutput === 'object') {
-          output = parsedToolResult.toolOutput;
-        }
-      } catch (e) {
-        const content = parseContent(assistantContent);
-        if (content?.tool_execution?.result?.output) {
-          output = content.tool_execution.result.output;
-        }
-      }
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
 
-      return {
-        toolkit_slug: args.toolkit_slug || output.toolkit_slug || null,
-        profile_name: args.profile_name || output.profile_name || null,
-        authentication_url: output.authentication_url || null,
-        toolkit_name: output.toolkit_name || null,
-        requires_authentication: output.requires_authentication || false,
-        success: parsedToolResult.isSuccess,
-        timestamp: parsedToolResult.timestamp,
-        actualIsSuccess: parsedToolResult.isSuccess,
-        actualToolTimestamp: toolTimestamp,
-        actualAssistantTimestamp: parsedToolResult.timestamp || assistantTimestamp
-      };
-    }
-  }
-
-  return defaultResult;
-} 
+  return {
+    toolkit_slug: parsedOutput.toolkit_slug || args.toolkit_slug || null,
+    profile_name: parsedOutput.profile_name || args.profile_name || null,
+    authentication_url: parsedOutput.authentication_url || null,
+    toolkit_name: parsedOutput.toolkit_name || null,
+    requires_authentication: parsedOutput.requires_authentication ?? false,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
+}

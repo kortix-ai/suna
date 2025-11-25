@@ -1,4 +1,5 @@
-import { extractToolData, normalizeContentToString } from '../utils';
+import { ToolCallData, ToolResultData } from '../types';
+import { normalizeContentToString } from '../utils';
 
 export interface SeeImageData {
   filePath: string | null;
@@ -8,84 +9,6 @@ export interface SeeImageData {
   output?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
-const extractFromNewFormat = (content: any): { 
-  filePath: string | null; 
-  description: string | null;
-  success?: boolean; 
-  timestamp?: string;
-  output?: string;
-} => {
-  const parsedContent = parseContent(content);
-  
-  if (!parsedContent || typeof parsedContent !== 'object') {
-    return { filePath: null, description: null, success: undefined, timestamp: undefined, output: undefined };
-  }
-
-  if ('tool_execution' in parsedContent && typeof parsedContent.tool_execution === 'object') {
-    const toolExecution = parsedContent.tool_execution;
-    const args = toolExecution.arguments || {};
-    
-    let parsedOutput = toolExecution.result?.output;
-    if (typeof parsedOutput === 'string') {
-      try {
-        parsedOutput = JSON.parse(parsedOutput);
-      } catch (e) {
-        // Keep as string if parsing fails
-      }
-    }
-
-    // Extract display file path from structured output, fall back to args
-    let filePath = args.file_path || null;
-    const rawOutput = toolExecution.result?.output;
-    
-    // Check if output has display_file_path (handles both object and string formats)
-    if (rawOutput) {
-      let outputData = rawOutput;
-      console.log('outputData', outputData);
-      
-      // Parse string output if needed
-      if (typeof rawOutput === 'string') {
-        try {
-          outputData = JSON.parse(rawOutput);
-        } catch (e) {
-          // Not JSON, keep original
-        }
-      }
-      
-      // Use display_file_path if available
-      if (outputData && typeof outputData === 'object' && outputData.file_path) {
-        filePath = outputData.file_path;
-      }
-    }
-
-    const extractedData = {
-      filePath,
-      description: parsedContent.summary || null,
-      success: toolExecution.result?.success,
-      timestamp: toolExecution.execution_details?.timestamp,
-      output: typeof toolExecution.result?.output === 'string' ? toolExecution.result.output : null
-    };
-    
-    return extractedData;
-  }
-
-  if ('role' in parsedContent && 'content' in parsedContent) {
-    return extractFromNewFormat(parsedContent.content);
-  }
-
-  return { filePath: null, description: null, success: undefined, timestamp: undefined, output: undefined };
-};
 
 function cleanImagePath(path: string): string {
   if (!path) return path;
@@ -235,33 +158,9 @@ function parseToolResult(content: string | object | undefined | null): { success
   return { success: true, message: 'Image loaded' };
 }
 
-const extractFromLegacyFormat = (content: any): { 
-  filePath: string | null; 
-  description: string | null;
-} => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult && toolData.arguments) {
-    return {
-      filePath: toolData.arguments.file_path || null,
-      description: null
-    };
-  }
-
-  const contentStr = normalizeContentToString(content);
-  if (!contentStr) {
-    return { filePath: null, description: null };
-  }
-
-  const filePath = extractImageFilePath(contentStr);
-  const description = extractImageDescription(contentStr);
-  
-  return { filePath, description };
-};
-
 export function extractSeeImageData(
-  assistantContent: any,
-  toolContent: any,
+  toolCall: ToolCallData,
+  toolResult: ToolResultData | undefined,
   isSuccess: boolean,
   toolTimestamp?: string,
   assistantTimestamp?: string
@@ -273,62 +172,38 @@ export function extractSeeImageData(
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
 } {
-  let filePath: string | null = null;
-  let description: string | null = null;
+  // Extract from toolCall arguments
+  const args = toolCall.arguments || {};
+  let filePath: string | null = args.file_path || null;
+  let description: string | null = args.description || null;
   let output: string | null = null;
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
 
-  const assistantNewFormat = extractFromNewFormat(assistantContent);
-  const toolNewFormat = extractFromNewFormat(toolContent);
-
-
-  if (assistantNewFormat.filePath || assistantNewFormat.description) {
-    filePath = assistantNewFormat.filePath;
-    description = assistantNewFormat.description;
-    output = assistantNewFormat.output ?? null;
-    if (assistantNewFormat.success !== undefined) {
-      actualIsSuccess = assistantNewFormat.success;
-    }
-    if (assistantNewFormat.timestamp) {
-      actualAssistantTimestamp = assistantNewFormat.timestamp;
-    }
-  } else if (toolNewFormat.filePath || toolNewFormat.description) {
-    filePath = toolNewFormat.filePath;
-    description = toolNewFormat.description;
-    output = toolNewFormat.output ?? null;
-    if (toolNewFormat.success !== undefined) {
-      actualIsSuccess = toolNewFormat.success;
-    }
-    if (toolNewFormat.timestamp) {
-      actualToolTimestamp = toolNewFormat.timestamp;
-    }
-  } else {
-    // Fall back to legacy format parsing
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
-
-    filePath = assistantLegacy.filePath || toolLegacy.filePath;
-    description = assistantLegacy.description || toolLegacy.description;
-    
-    // Also try the existing parseToolResult function for legacy compatibility
-    const toolResult = parseToolResult(toolContent);
-    if (toolResult.filePath && !filePath) {
-      filePath = toolResult.filePath;
-    }
-    if (toolResult.message && !output) {
-      output = toolResult.message;
+  // Extract from toolResult
+  if (toolResult?.output) {
+    const outputData = toolResult.output;
+    if (typeof outputData === 'string') {
+      output = outputData;
+      // Try to extract file path from output message
+      const filePathMatch = outputData.match(/Successfully loaded the image ['"]([^'"]+)['"]/i);
+      if (filePathMatch && !filePath) {
+        filePath = filePathMatch[1];
+      }
+    } else if (typeof outputData === 'object' && outputData !== null) {
+      filePath = filePath || (outputData as any).file_path || (outputData as any).display_file_path || null;
+      description = description || (outputData as any).description || null;
+      output = (outputData as any).message || JSON.stringify(outputData);
     }
   }
+
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   return {
     filePath,
     description,
     output,
     actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
   };
 } 
 
