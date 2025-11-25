@@ -14,15 +14,20 @@ LOGGING_LEVEL = logging.getLevelNamesMapping().get(
     logging.DEBUG  
 )
 
-renderer = [structlog.processors.JSONRenderer()]
+# Use different exception formatting based on output mode
+# dict_tracebacks works with JSONRenderer, format_exc_info works with ConsoleRenderer
 if ENV_MODE.lower() == "local".lower() or ENV_MODE.lower() == "staging".lower():
+    exception_processor = structlog.processors.format_exc_info
     renderer = [structlog.dev.ConsoleRenderer(colors=True)]
+else:
+    exception_processor = structlog.processors.dict_tracebacks
+    renderer = [structlog.processors.JSONRenderer()]
 
 structlog.configure(
     processors=[
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.dict_tracebacks,
+        exception_processor,
         structlog.processors.CallsiteParameterAdder(
             {
                 structlog.processors.CallsiteParameter.FILENAME,

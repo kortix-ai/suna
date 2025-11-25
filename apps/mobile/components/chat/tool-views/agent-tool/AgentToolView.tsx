@@ -6,10 +6,14 @@ import { Bot, CheckCircle2, AlertCircle, Settings, Calendar, Clock } from 'lucid
 import type { ToolViewProps } from '../types';
 import { extractAgentData } from './_utils';
 
-export function AgentToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const data = extractAgentData(toolData);
+export function AgentToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
+
+  const data = extractAgentData(toolCall, toolResult);
   
-  const toolName = toolData?.toolName || '';
+  const toolName = toolCall.function_name.replace(/_/g, '-');
   const isCreate = toolName.includes('create');
   const isUpdate = toolName.includes('update');
   const isTrigger = toolName.includes('trigger');

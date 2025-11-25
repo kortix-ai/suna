@@ -5,6 +5,12 @@
       location = "group:Kortix.xcodeproj">
    </FileRef>
    <FileRef
+      location = "group:Pods/Pods">
+   </FileRef>
+   <FileRef
+      location = "group:kortix.xcodeproj">
+   </FileRef>
+   <FileRef
       location = "group:Pods/Pods.xcodeproj">
    </FileRef>
 </Workspace>

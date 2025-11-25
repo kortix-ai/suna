@@ -1,6 +1,13 @@
+import { Platform } from 'react-native';
+
 export type BillingProvider = 'stripe' | 'revenuecat' | 'none';
 
 export function getBillingProvider(): BillingProvider {
+  // RevenueCat doesn't support web platform
+  if (Platform.OS === 'web') {
+    return 'stripe';
+  }
+
   const useRevenueCat = process.env.EXPO_PUBLIC_USE_REVENUECAT === 'true';
   if (useRevenueCat) {
     return 'revenuecat';
@@ -9,6 +16,10 @@ export function getBillingProvider(): BillingProvider {
 }
 
 export function shouldUseRevenueCat(): boolean {
+  // RevenueCat doesn't support web platform
+  if (Platform.OS === 'web') {
+    return false;
+  }
   return getBillingProvider() === 'revenuecat';
 }
 

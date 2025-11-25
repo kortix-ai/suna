@@ -63,7 +63,7 @@ export function ToolCallPanel({
   }, [currentPair]);
 
   const toolName = useMemo(() => {
-    if (!toolCall) return 'Error';
+    if (!toolCall || !toolCall.function_name) return 'Error';
     return toolCall.function_name.replace(/_/g, '-');
   }, [toolCall]);
 
@@ -152,7 +152,7 @@ export function ToolCallPanel({
           backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
         }}
       >
-        {!currentPair || !toolCall ? (
+        {!currentPair || !toolCall || !toolCall.function_name ? (
           <View className="flex-1 justify-center items-center px-6 py-12">
             <Text className="text-foreground font-roobert-semibold text-lg mb-4">
               Error Loading Tool Data
@@ -165,6 +165,8 @@ export function ToolCallPanel({
           <ToolViewComponent
             toolCall={toolCall}
             toolResult={toolResult || undefined}
+            assistantMessage={currentPair.assistantMessage}
+            toolMessage={currentPair.toolMessage}
             assistantTimestamp={currentPair.assistantMessage?.created_at}
             toolTimestamp={currentPair.toolMessage?.created_at}
             isSuccess={toolResult?.success !== false}

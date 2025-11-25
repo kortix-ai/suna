@@ -94,7 +94,7 @@ export function TaskListToolView({
   isSuccess = true,
   isStreaming = false 
 }: ToolViewProps) {
-  if (!toolCall) {
+  if (!toolCall || !toolCall.function_name) {
     return null;
   }
 

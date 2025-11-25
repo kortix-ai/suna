@@ -4,6 +4,8 @@
  * Displays agent avatar + name in a horizontal layout
  * Used in chat messages, tool cards, etc.
  * Uses AgentContext to get agent data
+ * 
+ * Memoized to prevent excessive re-renders
  */
 
 import React, { useMemo } from 'react';
@@ -24,7 +26,7 @@ interface AgentIdentifierProps extends ViewProps {
   textSize?: 'xs' | 'sm' | 'base';
 }
 
-export function AgentIdentifier({
+function AgentIdentifierComponent({
   agentId,
   agent: providedAgent,
   size = 16,
@@ -38,17 +40,17 @@ export function AgentIdentifier({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  console.log('[AgentIdentifier] isGuestMode:', isGuestMode, 'agentId:', agentId);
-  
-  const textSizeClass = {
-    xs: 'text-xs',
-    sm: 'text-sm',
-    base: 'text-base',
-  }[textSize];
+  const textSizeClass = useMemo(() => {
+    return {
+      xs: 'text-xs',
+      sm: 'text-sm',
+      base: 'text-base',
+    }[textSize];
+  }, [textSize]);
 
+  // Memoize agent lookup to avoid recalculation
   const agent = useMemo(() => {
     if (isGuestMode) {
-      console.log('[AgentIdentifier] In guest mode, returning null agent');
       return null;
     }
     if (providedAgent) return providedAgent;
@@ -61,7 +63,6 @@ export function AgentIdentifier({
   }, [agentId, providedAgent, agents, selectedAgentId, isGuestMode]);
 
   if (isGuestMode) {
-    console.log('[AgentIdentifier] Rendering guest mode view with Suna');
     return (
       <View 
         className="flex-row items-center gap-1.5"
@@ -116,4 +117,27 @@ export function AgentIdentifier({
     </View>
   );
 }
+
+// Memoize component to prevent re-renders when props haven't changed
+// Custom comparison function for better performance
+export const AgentIdentifier = React.memo(AgentIdentifierComponent, (prevProps, nextProps) => {
+  // Re-render if these props change
+  if (
+    prevProps.agentId !== nextProps.agentId ||
+    prevProps.agent !== nextProps.agent ||
+    prevProps.size !== nextProps.size ||
+    prevProps.showName !== nextProps.showName ||
+    prevProps.textSize !== nextProps.textSize
+  ) {
+    return false; // Props changed, allow re-render
+  }
+  
+  // Check if style object changed (shallow comparison)
+  if (prevProps.style !== nextProps.style) {
+    return false;
+  }
+  
+  // Props are the same, skip re-render
+  return true;
+});
 

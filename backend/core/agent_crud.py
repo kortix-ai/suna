@@ -521,8 +521,11 @@ async def get_agents(
             )
         )
         
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 401, 429) as-is without wrapping
+        raise
     except Exception as e:
-        logger.error(f"Error fetching agents for user {user_id}: {str(e)}", exc_info=True)
+        logger.error("Error fetching agents for user", user_id=user_id, error=str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch agents: {str(e)}")
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse, summary="Get Agent", operation_id="get_agent")
