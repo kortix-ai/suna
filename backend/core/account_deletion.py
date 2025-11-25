@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from core.services.supabase import DBConnection
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_admin_api_key
 from core.utils.logger import logger
+from core.sandbox.sandbox import delete_sandbox
 
 router = APIRouter(tags=["account-deletion"])
 
@@ -63,12 +64,9 @@ async def request_account_deletion(
         
         deletion_id = deletion_request.data[0]['id']
         
-        schedule_result = await client.rpc('schedule_account_deletion', {
-            'p_deletion_request_id': deletion_id,
-            'p_scheduled_time': deletion_date.isoformat()
-        }).execute()
-        
-        logger.info(f"Account deletion requested for user {user_id}, scheduled for {deletion_date}, cron job: {schedule_result.data}")
+        # Note: Individual cron jobs are no longer scheduled
+        # Deletions are processed by the daily check job (runs at 1 AM UTC)
+        logger.info(f"Account deletion requested for user {user_id}, scheduled for {deletion_date} (will be processed by daily check)")
         
         return AccountDeletionResponse(
             success=True,
@@ -105,16 +103,13 @@ async def cancel_account_deletion(
         
         request_id = existing_request.data[0]['id']
         
-        cancel_job_result = await client.rpc('cancel_account_deletion_job', {
-            'p_deletion_request_id': request_id
-        }).execute()
-        
+        # Cancel by updating the flag (no individual jobs to cancel anymore)
         await client.table('account_deletion_requests').update({
             'is_cancelled': True,
             'cancelled_at': datetime.now(timezone.utc).isoformat()
         }).eq('id', request_id).execute()
         
-        logger.info(f"Account deletion cancelled for user {user_id}, cron job cancelled: {cancel_job_result.data}")
+        logger.info(f"Account deletion cancelled for user {user_id}")
         
         return {
             "success": True,
@@ -170,6 +165,65 @@ async def get_account_deletion_status(
         logger.error(f"Error getting account deletion status: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to get account deletion status")
 
+class DeleteSandboxesRequest(BaseModel):
+    account_id: str
+
+@router.post("/internal/delete-account-sandboxes")
+async def delete_account_sandboxes_endpoint(
+    request: DeleteSandboxesRequest,
+    _: bool = Depends(verify_admin_api_key)
+):
+    """Internal endpoint to delete all sandboxes for an account. Called by cron jobs. Protected by admin API key."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        deleted_count = await delete_account_sandboxes(request.account_id, client)
+        
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "account_id": request.account_id
+        }
+    except Exception as e:
+        logger.error(f"Error in delete_account_sandboxes_endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete sandboxes: {str(e)}")
+
+async def delete_account_sandboxes(account_id: str, client) -> int:
+    """Delete all Daytona sandboxes associated with an account's projects."""
+    deleted_count = 0
+    try:
+        # Get all projects for this account that have sandboxes
+        projects_result = await client.table('projects').select('project_id, sandbox').eq('account_id', account_id).execute()
+        
+        if not projects_result.data:
+            logger.info(f"No projects found for account {account_id}")
+            return 0
+        
+        for project in projects_result.data:
+            sandbox_data = project.get('sandbox')
+            if not sandbox_data or not isinstance(sandbox_data, dict):
+                continue
+            
+            sandbox_id = sandbox_data.get('id')
+            if not sandbox_id:
+                continue
+            
+            try:
+                await delete_sandbox(sandbox_id)
+                deleted_count += 1
+                logger.info(f"Deleted sandbox {sandbox_id} for project {project['project_id']}")
+            except Exception as e:
+                # Log but don't fail - sandbox might already be deleted or not exist
+                logger.warning(f"Failed to delete sandbox {sandbox_id} for project {project['project_id']}: {str(e)}")
+        
+        logger.info(f"Deleted {deleted_count} sandboxes for account {account_id}")
+        return deleted_count
+    except Exception as e:
+        logger.error(f"Error deleting sandboxes for account {account_id}: {str(e)}")
+        # Don't raise - continue with account deletion even if sandbox deletion fails
+        return deleted_count
+
 @router.delete("/account/delete-immediately")
 async def delete_account_immediately(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -184,6 +238,10 @@ async def delete_account_immediately(
             raise HTTPException(status_code=404, detail="Personal account not found")
         
         account_id = personal_account_response.data[0]['id']
+        
+        # Delete all Daytona sandboxes before deleting account data
+        sandbox_count = await delete_account_sandboxes(account_id, client)
+        logger.info(f"Deleted {sandbox_count} sandboxes before account deletion")
         
         result = await client.rpc('delete_user_immediately', {
             'p_account_id': account_id,
