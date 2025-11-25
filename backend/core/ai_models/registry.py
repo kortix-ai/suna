@@ -42,7 +42,7 @@ class ModelRegistry:
                 cache_write_5m_cost_per_million_tokens=1.25,  # 5-minute cache writes
                 cache_write_1h_cost_per_million_tokens=2.00  # 1-hour cache writes
             ),
-            tier_availability=["paid"],
+            tier_availability=["free", "paid"],  # Available to all users as default model
             priority=102,
             recommended=True,
             enabled=True,
