@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import type { UnifiedMessage } from '@/api/types';
-import { parseToolMessage } from '@/lib/utils/tool-parser';
+import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import { getToolViewComponent } from './tool-views';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
@@ -12,7 +12,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { vars } from 'nativewind';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -56,13 +55,17 @@ export function ToolCallPanel({
   }, [visible, initialIndex]);
 
   const currentPair = toolMessages[currentIndex];
-
-  const toolData = useMemo(() => {
-    if (!currentPair?.toolMessage) return null;
-    return parseToolMessage(currentPair.toolMessage.content);
+  
+  // Extract tool call and tool result from messages
+  const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
+    if (!currentPair?.toolMessage) return { toolCall: null, toolResult: null, isSuccess: false, assistantTimestamp: undefined, toolTimestamp: undefined };
+    return extractToolCallAndResult(currentPair.assistantMessage, currentPair.toolMessage);
   }, [currentPair]);
 
-  const { toolName } = toolData || { toolName: 'Error' };
+  const toolName = useMemo(() => {
+    if (!toolCall || !toolCall.function_name) return 'Error';
+    return toolCall.function_name.replace(/_/g, '-');
+  }, [toolCall]);
 
   const ToolViewComponent = useMemo(() => {
     return getToolViewComponent(toolName);
@@ -90,17 +93,19 @@ export function ToolCallPanel({
     onClose();
   }, [onClose]);
 
+  const isDark = colorScheme === 'dark';
+
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}
-        opacity={0.5}
+        opacity={isDark ? 0.8 : 0.5}
         pressBehavior="close"
       />
     ),
-    []
+    [isDark]
   );
 
   const handleSheetChange = useCallback((index: number) => {
@@ -120,9 +125,11 @@ export function ToolCallPanel({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={vars({ '--card': 'backgroundColor' })}
+      backgroundStyle={{
+        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+      }}
       handleIndicatorStyle={{
-        ...vars({ '--border': 'backgroundColor' }),
+        backgroundColor: isDark ? '#3a3a3c' : '#d1d1d6',
         width: 36,
         height: 5,
         borderRadius: 3,
@@ -133,15 +140,19 @@ export function ToolCallPanel({
       style={{
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        overflow: 'hidden'
+        overflow: 'hidden',
+        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
       }}
     >
       <BottomSheetScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={{ 
+          paddingBottom: 20,
+          backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+        }}
       >
-        {!currentPair || !toolData ? (
+        {!currentPair || !toolCall || !toolCall.function_name ? (
           <View className="flex-1 justify-center items-center px-6 py-12">
             <Text className="text-foreground font-roobert-semibold text-lg mb-4">
               Error Loading Tool Data
@@ -152,9 +163,13 @@ export function ToolCallPanel({
           </View>
         ) : (
           <ToolViewComponent
-            toolData={toolData}
+            toolCall={toolCall}
+            toolResult={toolResult || undefined}
             assistantMessage={currentPair.assistantMessage}
             toolMessage={currentPair.toolMessage}
+            assistantTimestamp={currentPair.assistantMessage?.created_at}
+            toolTimestamp={currentPair.toolMessage?.created_at}
+            isSuccess={toolResult?.success !== false}
             currentIndex={currentIndex}
             totalCalls={toolMessages.length}
             project={project}
@@ -164,10 +179,12 @@ export function ToolCallPanel({
 
       {toolMessages.length > 1 && (
         <View
-          className=" bg-card px-6"
+          className="px-6 border-t border-border"
           style={{
             paddingTop: 12,
             paddingBottom: Math.max(insets.bottom, 12),
+            backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+            borderTopColor: isDark ? '#2a2a2c' : '#e5e5e7',
           }}
         >
           <View className="flex-row items-center justify-between gap-3">

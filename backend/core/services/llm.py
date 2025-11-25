@@ -7,6 +7,7 @@ using LiteLLM with simplified error handling and clean parameter management.
 
 from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
+import json
 import asyncio
 import litellm
 from litellm.router import Router
@@ -14,6 +15,8 @@ from litellm.files.main import ModelResponse
 from core.utils.logger import logger
 from core.utils.config import config
 from core.agentpress.error_processor import ErrorProcessor
+from pathlib import Path
+from datetime import datetime, timezone
 
 # Configure LiteLLM
 # os.environ['LITELLM_LOG'] = 'DEBUG'
@@ -164,7 +167,6 @@ def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any
     })
     # logger.debug(f"Added {len(tools)} tools to API parameters")
 
-
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
     model_name: str,
@@ -180,14 +182,32 @@ async def make_llm_api_call(
     model_id: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
+    stop: Optional[List[str]] = None,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
-    """Make an API call to a language model using LiteLLM."""
+    """Make an API call to a language model using LiteLLM.
+    
+    Args:
+        messages: List of message dictionaries
+        model_name: Name of the model to use
+        response_format: Optional response format specification
+        temperature: Temperature for sampling (0-1)
+        max_tokens: Maximum tokens to generate
+        tools: Optional list of tool definitions
+        tool_choice: Tool choice strategy ("auto", "required", "none")
+        api_key: Optional API key override
+        api_base: Optional API base URL override
+        stream: Whether to stream the response
+        top_p: Optional top_p for sampling
+        model_id: Optional model ID for tracking
+        headers: Optional headers to send with request
+        extra_headers: Optional extra headers to send with request
+        stop: Optional list of stop sequences
+    """
     logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
     # Prepare parameters using centralized model configuration
     from core.ai_models import model_manager
     resolved_model_name = model_manager.resolve_model_id(model_name)
-    # logger.debug(f"Model resolution: '{model_name}' -> '{resolved_model_name}'")
     
     # Only pass headers/extra_headers if they are not None to avoid overriding model config
     override_params = {
@@ -197,7 +217,8 @@ async def make_llm_api_call(
         "top_p": top_p,
         "stream": stream,
         "api_key": api_key,
-        "api_base": api_base
+        "api_base": api_base,
+        "stop": stop
     }
     
     # Only add headers if they are provided (not None)
@@ -208,7 +229,12 @@ async def make_llm_api_call(
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
-    # logger.debug(f"Parameters from model_manager.get_litellm_params: {params}")
+    # Ensure stop sequences are in final params
+    if stop is not None:
+        params["stop"] = stop
+        logger.info(f"🛑 Stop sequences configured: {stop}")
+    else:
+        params.pop("stop", None)
     
     if model_id:
         params["model_id"] = model_id
@@ -216,33 +242,42 @@ async def make_llm_api_call(
     if stream:
         params["stream_options"] = {"include_usage": True}
     
-    # Apply additional configurations that aren't in the model config yet
+    # Apply additional configurations
     _configure_openai_compatible(params, model_name, api_key, api_base)
     _add_tools_config(params, tools, tool_choice)
     
+    # Final safeguard: Re-apply stop sequences
+    if stop is not None:
+        params["stop"] = stop
+    
     try:
-        # Log the complete parameters being sent to LiteLLM
-        # logger.debug(f"Calling LiteLLM acompletion for {resolved_model_name}")
-        # logger.debug(f"Complete LiteLLM parameters: {params}")
+        # Save debug input if enabled via config
+        if config and config.DEBUG_SAVE_LLM_IO:
+            try:
+                debug_dir = Path("debug_streams")
+                debug_dir.mkdir(exist_ok=True)
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+                debug_file = debug_dir / f"input_{timestamp}.json"
         
-        # # Save parameters to txt file for debugging
-        # import json
-        # import os
-        # from datetime import datetime
-        
-        # debug_dir = "debug_logs"
-        # os.makedirs(debug_dir, exist_ok=True)
-        
-        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        # filename = f"{debug_dir}/llm_params_{timestamp}.txt"
-        
-        # with open(filename, 'w') as f:
-        #     f.write(f"Timestamp: {datetime.now().isoformat()}\n")
-        #     f.write(f"Model Name: {model_name}\n")
-        #     f.write(f"Resolved Model Name: {resolved_model_name}\n")
-        #     f.write(f"Parameters:\n{json.dumps(params, indent=2, default=str)}\n")
-        
-        # logger.debug(f"LiteLLM parameters saved to: {filename}")
+                # Save the exact params going to LiteLLM
+                debug_data = {
+                    "timestamp": timestamp,
+                    "model": params.get("model"),
+                    "messages": params.get("messages"),
+                    "temperature": params.get("temperature"),
+                    "max_tokens": params.get("max_tokens"),
+                    "stop": params.get("stop"),
+                    "stream": params.get("stream"),
+                    "tools": params.get("tools"),
+                    "tool_choice": params.get("tool_choice"),
+                }
+                
+                with open(debug_file, 'w', encoding='utf-8') as f:
+                    json.dump(debug_data, f, indent=2, ensure_ascii=False)
+                    
+                logger.info(f"📁 Saved LLM input to: {debug_file}")
+            except Exception as e:
+                logger.warning(f"⚠️ Error saving debug input: {e}")
         
         response = await provider_router.acompletion(**params)
         

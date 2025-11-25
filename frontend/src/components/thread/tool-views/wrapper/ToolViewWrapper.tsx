@@ -22,7 +22,7 @@ export interface ToolViewWrapperProps extends ToolViewProps {
 }
 
 export function ToolViewWrapper({
-  name = 'unknown',
+  toolCall,
   isSuccess = true,
   isStreaming = false,
   assistantTimestamp,
@@ -37,6 +37,8 @@ export function ToolViewWrapper({
   showStatus = true,
   customStatus,
 }: ToolViewWrapperProps) {
+  // Derive name from toolCall.function_name
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'unknown';
   const toolTitle = getToolTitle(name);
   const Icon = getToolIcon(name);
 

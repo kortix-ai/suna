@@ -67,9 +67,10 @@ services:
         max-file: "3"
     healthcheck:
       test: ["CMD", "uv", "run", "worker_health.py"]
-      timeout: 20s
+      timeout: 30s
       interval: 30s
-      start_period: 40s
+      retries: 3
+      start_period: 60s
 
   redis:
     image: redis:8-alpine

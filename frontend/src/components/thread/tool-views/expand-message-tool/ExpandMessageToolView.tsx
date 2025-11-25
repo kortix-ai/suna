@@ -20,31 +20,15 @@ import { toast } from 'sonner';
 import Markdown from 'react-markdown';
 
 export function ExpandMessageToolView({
-  name = 'expand_message',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const {
-    messageId,
-    message,
-    status,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
-  } = extractExpandMessageData(
-    assistantContent,
-    toolContent,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
-  );
-
+  // All hooks must be called unconditionally at the top
   const [isCopying, setIsCopying] = React.useState(false);
-  const toolTitle = getToolTitle(name) || 'Message Expansion';
 
   const copyToClipboard = React.useCallback(async (text: string) => {
     try {
@@ -56,6 +40,16 @@ export function ExpandMessageToolView({
     }
   }, []);
 
+  // Extract data (handle undefined case)
+  const extractedData = toolCall ? extractExpandMessageData(
+    toolCall,
+    toolResult,
+    isSuccess,
+    toolTimestamp,
+    assistantTimestamp
+  ) : null;
+
+  const message = extractedData?.message;
   const handleCopyMessage = React.useCallback(async () => {
     if (!message) return;
 
@@ -68,6 +62,30 @@ export function ExpandMessageToolView({
     }
     setTimeout(() => setIsCopying(false), 500);
   }, [message, copyToClipboard]);
+
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('ExpandMessageToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name) || 'Message Expansion';
+  
+  const {
+    messageId,
+    status,
+    actualIsSuccess,
+    actualToolTimestamp,
+    actualAssistantTimestamp
+  } = extractedData || {
+    messageId: null,
+    message: null,
+    status: null,
+    actualIsSuccess: false,
+    actualToolTimestamp: null,
+    actualAssistantTimestamp: null
+  };
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

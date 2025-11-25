@@ -4,8 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Request
-
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess, get_optional_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess, get_optional_user_id_from_jwt, get_optional_user_id
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from core.utils.config import config, EnvMode
@@ -131,6 +130,78 @@ async def get_user_threads(
     except Exception as e:
         logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")
+
+@router.get("/projects/{project_id}", summary="Get Project", operation_id="get_project")
+async def get_project(
+    project_id: str,
+    request: Request
+):
+    """Get a specific project by ID with complete data.
+    Supports both authenticated and anonymous access (for public projects)."""
+    logger.debug(f"Fetching project: {project_id}")
+    client = await utils.db.client
+    
+    # Try to get user_id from JWT (optional for public projects)
+    user_id = await get_optional_user_id(request)
+    
+    try:
+        # Get the project data
+        project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
+        
+        if not project_result.data or len(project_result.data) == 0:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project = project_result.data[0]
+        
+        # Check if project is public - allow anonymous access
+        is_public = project.get('is_public', False)
+        
+        if not is_public:
+            # For private projects, user must be authenticated
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Authentication required for private projects")
+            
+            # Check if user is an admin (admins have access to all projects)
+            admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
+            is_admin = False
+            if admin_result.data and len(admin_result.data) > 0:
+                role = admin_result.data[0].get('role')
+                if role in ('admin', 'super_admin'):
+                    is_admin = True
+                    logger.debug(f"Admin access granted for project {project_id}", user_role=role)
+            
+            if not is_admin:
+                # Verify account membership for private projects
+                account_id = project.get('account_id')
+                if not account_id:
+                    logger.error(f"Project {project_id} has no associated account")
+                    raise HTTPException(status_code=500, detail="Project has no associated account")
+                
+                account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+                if not (account_user_result.data and len(account_user_result.data) > 0):
+                    logger.error(f"User {user_id} not authorized to access project {project_id}")
+                    raise HTTPException(status_code=403, detail="Not authorized to access this project")
+        
+        # Map project data for frontend
+        project_data = {
+            "project_id": project['project_id'],
+            "name": project.get('name', ''),
+            "description": project.get('description', ''),
+            "sandbox": project.get('sandbox', {}),
+            "is_public": project.get('is_public', False),
+            "icon_name": project.get('icon_name'),
+            "created_at": project['created_at'],
+            "updated_at": project.get('updated_at')
+        }
+        
+        logger.debug(f"Successfully fetched project {project_id}")
+        return project_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch project: {str(e)}")
 
 @router.get("/threads/{thread_id}", summary="Get Thread", operation_id="get_thread")
 async def get_thread(
@@ -330,7 +401,8 @@ async def create_thread(
 async def get_thread_messages(
     thread_id: str,
     request: Request,
-    order: str = Query("desc", description="Order by created_at: 'asc' or 'desc'")
+    order: str = Query("desc", description="Order by created_at: 'asc' or 'desc'"),
+    optimized: bool = Query(True, description="Return optimized messages (filtered types, minimal fields) or full messages (all types, all fields)"),
 ):
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await utils.db.client
@@ -340,20 +412,77 @@ async def get_thread_messages(
     
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
-        batch_size = 1000
-        offset = 0
-        all_messages = []
-        while True:
-            query = client.table('messages').select('*').eq('thread_id', thread_id)
-            query = query.order('created_at', desc=(order == "desc"))
-            query = query.range(offset, offset + batch_size - 1)
-            messages_result = await query.execute()
-            batch = messages_result.data or []
-            all_messages.extend(batch)
-            logger.debug(f"Fetched batch of {len(batch)} messages (offset {offset})")
-            if len(batch) < batch_size:
-                break
-            offset += batch_size
+        from core.utils.message_migration import migrate_thread_messages, needs_migration
+        
+        # Helper to fetch all messages (with content for migration check)
+        async def fetch_all_messages_raw():
+            batch_size = 1000
+            offset = 0
+            messages = []
+            allowed_types = ['user', 'tool', 'assistant']
+            while True:
+                if optimized:
+                    # Need content for migration check, will strip later
+                    query = client.table('messages').select(
+                        'message_id,thread_id,type,is_llm_message,content,metadata,created_at,updated_at,agent_id'
+                    ).eq('thread_id', thread_id).in_('type', allowed_types)
+                else:
+                    query = client.table('messages').select('*').eq('thread_id', thread_id)
+                
+                query = query.order('created_at', desc=(order == "desc"))
+                query = query.range(offset, offset + batch_size - 1)
+                result = await query.execute()
+                batch = result.data or []
+                messages.extend(batch)
+                if len(batch) < batch_size:
+                    break
+                offset += batch_size
+            return messages
+        
+        # Helper to optimize messages (strip content for non-user messages)
+        def optimize_messages(raw_messages):
+            if not optimized:
+                return raw_messages
+            optimized_list = []
+            for msg in raw_messages:
+                msg_type = msg.get('type')
+                optimized_msg = {
+                    'message_id': msg.get('message_id'),
+                    'thread_id': msg.get('thread_id'),
+                    'type': msg_type,
+                    'is_llm_message': msg.get('is_llm_message'),
+                    'metadata': msg.get('metadata', {}),
+                    'created_at': msg.get('created_at'),
+                    'updated_at': msg.get('updated_at'),
+                    'agent_id': msg.get('agent_id'),
+                }
+                # Only include content for user messages
+                if msg_type == 'user':
+                    optimized_msg['content'] = msg.get('content')
+                optimized_list.append(optimized_msg)
+            return optimized_list
+        
+        # STEP 1: Fetch messages ONCE
+        raw_messages = await fetch_all_messages_raw()
+        
+        # STEP 2: Check in-memory if any messages need migration
+        migration_needed = any(
+            needs_migration(msg) 
+            for msg in raw_messages 
+            if msg.get('type') in ['assistant', 'tool']
+        )
+        
+        # STEP 3: If migration needed, migrate and re-fetch fresh data
+        if migration_needed:
+            stats = await migrate_thread_messages(client, thread_id, save=True)
+            if stats['migrated'] > 0:
+                logger.info(f"Migrated {stats['migrated']} messages for thread {thread_id}")
+                # Re-fetch to get fresh migrated data
+                raw_messages = await fetch_all_messages_raw()
+        
+        # STEP 4: Apply optimization and return
+        all_messages = optimize_messages(raw_messages)
+        
         return {"messages": all_messages}
     except Exception as e:
         logger.error(f"Error fetching messages for thread {thread_id}: {str(e)}")

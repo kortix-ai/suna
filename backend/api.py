@@ -3,7 +3,7 @@ load_dotenv()
 
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from core.services import redis
 import sentry
 from contextlib import asynccontextmanager
@@ -48,6 +48,9 @@ instance_id = str(uuid.uuid4())[:8]
 ip_tracker = OrderedDict()
 MAX_CONCURRENT_IPS = 25
 
+# Background task handle for CloudWatch metrics
+_queue_metrics_task = None
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {config.ENV_MODE.value} mode")
@@ -86,6 +89,12 @@ async def lifespan(app: FastAPI):
         guest_session_service.start_cleanup_task()
         logger.debug("Guest session cleanup task started")
         
+        # Start CloudWatch queue metrics publisher (production only)
+        global _queue_metrics_task
+        if config.ENV_MODE == EnvMode.PRODUCTION:
+            from core.services import queue_metrics
+            _queue_metrics_task = asyncio.create_task(queue_metrics.start_cloudwatch_publisher())
+        
         yield
         
         logger.debug("Cleaning up agent resources")
@@ -93,6 +102,14 @@ async def lifespan(app: FastAPI):
         
         logger.debug("Stopping guest session cleanup task")
         await guest_session_service.stop_cleanup_task()
+        
+        # Stop CloudWatch queue metrics task
+        if _queue_metrics_task is not None:
+            _queue_metrics_task.cancel()
+            try:
+                await _queue_metrics_task
+            except asyncio.CancelledError:
+                pass
         
         try:
             logger.debug("Closing Redis connection")
@@ -191,10 +208,12 @@ api_router.include_router(master_password_router)
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
 from core.templates import api as template_api
+from core.templates import presentations_api
 
 api_router.include_router(mcp_api.router)
 api_router.include_router(credentials_api.router, prefix="/secure-mcp")
 api_router.include_router(template_api.router, prefix="/templates")
+api_router.include_router(presentations_api.router, prefix="/presentation-templates")
 
 api_router.include_router(transcription_api.router)
 api_router.include_router(email_api.router)
@@ -213,85 +232,6 @@ api_router.include_router(google_slides_router)
 from core.google.google_docs_api import router as google_docs_router
 api_router.include_router(google_docs_router)
 
-@api_router.get("/presentation-templates/{template_name}/image.png", summary="Get Presentation Template Image", tags=["presentations"])
-async def get_presentation_template_image(template_name: str):
-    """Serve presentation template preview images"""
-    try:
-        # Construct path to template image
-        image_path = os.path.join(
-            os.path.dirname(__file__),
-            "core",
-            "templates",
-            "presentations",
-            template_name,
-            "image.png"
-        )
-        
-        # Verify file exists and is within templates directory (security check)
-        image_path = os.path.abspath(image_path)
-        templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "core", "templates", "presentations"))
-        
-        if not image_path.startswith(templates_dir):
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        if not os.path.exists(image_path):
-            raise HTTPException(status_code=404, detail="Template image not found")
-        
-        return FileResponse(image_path, media_type="image/png")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error serving template image: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@api_router.get("/presentation-templates/{template_name}/pdf", summary="Get Presentation Template PDF", tags=["presentations"])
-async def get_presentation_template_pdf(template_name: str):
-    """Serve presentation template PDF files"""
-    try:
-        # Construct path to template pdf folder
-        pdf_folder = os.path.join(
-            os.path.dirname(__file__),
-            "core",
-            "templates",
-            "presentations",
-            template_name,
-            "pdf"
-        )
-        
-        # Verify folder exists and is within templates directory (security check)
-        pdf_folder = os.path.abspath(pdf_folder)
-        templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "core", "templates", "presentations"))
-        
-        if not pdf_folder.startswith(templates_dir):
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        if not os.path.exists(pdf_folder):
-            raise HTTPException(status_code=404, detail="Template PDF folder not found")
-        
-        # Find the first PDF file in the folder
-        pdf_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
-        
-        if not pdf_files:
-            raise HTTPException(status_code=404, detail="No PDF file found in template")
-        
-        # Use the first PDF file found
-        pdf_path = os.path.join(pdf_folder, pdf_files[0])
-        
-        return FileResponse(
-            pdf_path, 
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"inline; filename={template_name}.pdf"
-            }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error serving template PDF: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
@@ -300,6 +240,16 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "instance_id": instance_id
     }
+
+@api_router.get("/metrics/queue", summary="Queue Metrics", operation_id="queue_metrics", tags=["system"])
+async def queue_metrics_endpoint():
+    """Get Dramatiq queue depth for monitoring and auto-scaling."""
+    from core.services import queue_metrics
+    try:
+        return await queue_metrics.get_queue_metrics()
+    except Exception as e:
+        logger.error(f"Failed to get queue metrics: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get queue metrics")
 
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():

@@ -18,54 +18,51 @@ export interface TaskListData {
   message?: string
 }
 
+/**
+ * Extract task list data from structured metadata props
+ * NO CONTENT PARSING - uses toolCall.arguments and toolResult.output directly
+ */
 export function extractTaskListData(
-    assistantContent?: string, 
-    toolContent?: string
+    argumentsData?: Record<string, any>, 
+    outputData?: any
   ): TaskListData | null {
-    const parseContent = (content: any): any => {
-      if (typeof content === 'string') {
-        try {
-          return JSON.parse(content);
-        } catch (e) {
-          return content;
+    // Try output first (from toolResult.output)
+    if (outputData) {
+      // Handle structured output object
+      if (typeof outputData === 'object' && outputData !== null) {
+        // Check for direct sections array
+        if (outputData.sections && Array.isArray(outputData.sections)) {
+          return { 
+            sections: outputData.sections, 
+            total_tasks: outputData.total_tasks, 
+            total_sections: outputData.total_sections 
+          };
         }
-      }
-      return content;
-    };
-  
-    const extractFromNewFormat = (content: any): TaskListData | null => {
-      const parsedContent = parseContent(content);
-      
-      if (!parsedContent || typeof parsedContent !== 'object') {
-        return null;
-      }
-  
-      // Check for tool_execution format
-      if (parsedContent.tool_execution?.result?.output) {
-        const output = parsedContent.tool_execution.result.output;
-        const outputData = parseContent(output);
         
-        // Nested sections format
-        if (outputData?.sections && Array.isArray(outputData.sections)) {
-          return { sections: outputData.sections, total_tasks: outputData.total_tasks, total_sections: outputData.total_sections };
+        // Check for nested structure
+        if (outputData.output && typeof outputData.output === 'object') {
+          const nested = outputData.output;
+          if (nested.sections && Array.isArray(nested.sections)) {
+            return { 
+              sections: nested.sections, 
+              total_tasks: nested.total_tasks, 
+              total_sections: nested.total_sections 
+            };
+          }
+        }
         }
       }
   
-      // Check for direct sections array
-      if (parsedContent.sections && Array.isArray(parsedContent.sections)) {
-        return { sections: parsedContent.sections };
+    // Try arguments as fallback (from toolCall.arguments)
+    if (argumentsData && typeof argumentsData === 'object') {
+      if (argumentsData.sections && Array.isArray(argumentsData.sections)) {
+        return { 
+          sections: argumentsData.sections, 
+          total_tasks: argumentsData.total_tasks, 
+          total_sections: argumentsData.total_sections 
+        };
       }
-  
-      // Check for nested content
-      if (parsedContent.content) {
-        return extractFromNewFormat(parsedContent.content);
       }
   
       return null;
-    };
-
-
-  
-    // Try tool content first, then assistant content
-    return extractFromNewFormat(toolContent) || extractFromNewFormat(assistantContent);
   }

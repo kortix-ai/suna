@@ -2,11 +2,19 @@
  * Tool Parser Utility
  * 
  * Parses tool execution messages from the backend into a structured format.
- * The backend double-encodes tool data: { role: "user", content: "JSON_STRING" }
- * where JSON_STRING contains { tool_execution: {...} }
+ * 
+ * NEW FORMAT (preferred): Parse from message.metadata
+ * - metadata.function_name
+ * - metadata.tool_call_id
+ * - metadata.result.output
+ * - metadata.result.success
+ * 
+ * LEGACY FORMAT (fallback): Parse from message.content
+ * - content contains { tool_execution: {...} } or { tool_name, parameters, result }
  */
 
 import { safeJsonParse } from './message-grouping';
+import type { UnifiedMessage } from '@/api/types';
 
 export interface ParsedToolData {
   toolName: string;
@@ -35,7 +43,7 @@ interface ToolExecutionData {
 }
 
 /**
- * Extract tool execution data from parsed content
+ * Extract tool execution data from parsed content (legacy format)
  */
 function extractToolExecution(toolExecution: ToolExecutionData): ParsedToolData {
   return {
@@ -49,13 +57,42 @@ function extractToolExecution(toolExecution: ToolExecutionData): ParsedToolData 
 }
 
 /**
- * Parse a tool message content into structured data
+ * Parse a tool message into structured data
  * 
- * Handles backend double-encoding where content is a JSON string
+ * NEW FORMAT: Parses from message.metadata (preferred)
+ * LEGACY FORMAT: Falls back to parsing from message.content
+ * 
+ * @param message - The UnifiedMessage to parse (preferred)
+ * @param content - Legacy: The content string/object to parse (fallback)
  */
-export function parseToolMessage(content: any): ParsedToolData | null {
-  // Parse initial JSON if string
-  const parsed = typeof content === 'string' ? safeJsonParse(content, content) : content;
+export function parseToolMessage(messageOrContent: UnifiedMessage | any, content?: any): ParsedToolData | null {
+  // NEW FORMAT: Parse from metadata (if UnifiedMessage provided)
+  if (messageOrContent && typeof messageOrContent === 'object' && 'metadata' in messageOrContent) {
+    const message = messageOrContent as UnifiedMessage;
+    const metadata = safeJsonParse<Record<string, any>>(message.metadata, {});
+    
+    // Check for new format: metadata has function_name, tool_call_id, and result
+    if (metadata.function_name && metadata.tool_call_id !== undefined) {
+      const result = metadata.result || {};
+      return {
+        toolName: (metadata.function_name || 'unknown').replace(/_/g, '-'),
+        functionName: metadata.function_name || 'unknown',
+        arguments: metadata.arguments || {},
+        result: {
+          output: result.output !== undefined ? result.output : null,
+          success: result.success !== undefined ? result.success : true,
+        },
+        timestamp: metadata.timestamp || message.created_at,
+        toolCallId: metadata.tool_call_id,
+      };
+    }
+    
+    // If metadata doesn't have the new format, fall through to content parsing
+  }
+  
+  // LEGACY FORMAT: Parse from content
+  const contentToParse = content !== undefined ? content : messageOrContent;
+  const parsed = typeof contentToParse === 'string' ? safeJsonParse(contentToParse, contentToParse) : contentToParse;
   
   if (!parsed || typeof parsed !== 'object') {
     return null;

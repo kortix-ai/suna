@@ -1,0 +1,109 @@
+# .easignore - Reduce EAS Build archive size
+# These files are not needed for the build process
+#
+# IMPORTANT: EAS Build runs `npm install` during build, so node_modules is regenerated
+# Make sure package.json and package-lock.json are NOT ignored (they're needed!)
+
+# Dependencies (reinstalled during build)
+node_modules/
+
+# Expo cache
+.expo/
+
+# Build outputs
+dist/
+web-build/
+
+# iOS build artifacts (regenerated during build)
+ios/Pods/
+ios/build/
+ios/.xcode.env.local
+ios/DerivedData/
+*.xcuserstate
+
+# Android build artifacts (regenerated during build)
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+*.iml
+
+# Package manager caches
+.npm/
+.yarn/
+.pnpm-store/
+
+# OS files
+.DS_Store
+*.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Debug files
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Test files (not needed for production builds)
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage/
+jest.config.*
+
+# Documentation (not needed for build)
+*.md
+docs/
+
+# Git
+.git/
+.gitignore
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Large asset source files (keep only optimized versions)
+*.psd
+*.ai
+*.sketch
+
+# Font formats not needed (keep only ttf for mobile)
+assets/font/**/*.woff
+assets/font/**/*.woff2
+assets/font/**/*.eot
+assets/font/**/*.svg
+
+# Metro bundler cache
+.metro-health-check*
+
+# CRITICAL: These files MUST be included (don't ignore):
+# - package.json (defines dependencies)
+# - package-lock.json (locks dependency versions)
+# - patches/ (if using patch-package - patches are applied during postinstall)
+# - ios/Podfile and ios/Podfile.lock (for iOS dependencies)
+# - All source code files (.ts, .tsx, .js, .jsx)
+# - Assets (images, fonts, etc.)
+# - Configuration files (app.json, tsconfig.json, etc.)
+

@@ -1,159 +1,13 @@
-import { extractToolData, extractSearchQuery, extractSearchResults } from '../utils';
+import { ToolCallData, ToolResultData } from '../types';
 
-export interface WebSearchData {
-  query: string | null;
-  results: Array<{ title: string; url: string; snippet?: string }>;
-  answer: string | null;
-  images: string[];
-  success?: boolean;
-  timestamp?: string;
-  isBatch?: boolean;
-  batchResults?: Array<{
-    query: string;
-    success: boolean;
-    results: Array<{ title: string; url: string; snippet?: string }>;
-    answer: string;
-    images: string[];
-  }>;
-}
-
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content; 
-    }
-  }
-  return content;
-};
-
-const extractFromNewFormat = (content: any): WebSearchData => {
-  const parsedContent = parseContent(content);
-  
-  if (!parsedContent || typeof parsedContent !== 'object') {
-    return { query: null, results: [], answer: null, images: [], success: undefined, timestamp: undefined };
-  }
-
-  if ('tool_execution' in parsedContent && typeof parsedContent.tool_execution === 'object') {
-    const toolExecution = parsedContent.tool_execution;
-    const args = toolExecution.arguments || {};
-    
-    let parsedOutput = toolExecution.result?.output;
-    if (typeof parsedOutput === 'string') {
-      try {
-        parsedOutput = JSON.parse(parsedOutput);
-      } catch (e) {
-      }
-    }
-    parsedOutput = parsedOutput || {};
-
-    // Check if this is a batch search response
-    if (parsedOutput?.batch_mode === true && Array.isArray(parsedOutput.results)) {
-      // Batch search response
-      const batchResults = parsedOutput.results.map((batchItem: any) => ({
-        query: batchItem.query || '',
-        success: batchItem.success !== false,
-        results: (batchItem.results || []).map((result: any) => ({
-          title: result.title || '',
-          url: result.url || '',
-          snippet: result.content || result.snippet || ''
-        })),
-        answer: batchItem.answer || '',
-        images: batchItem.images || []
-      }));
-
-      // Flatten all results and images for combined display
-      const allResults = batchResults.flatMap(br => br.results);
-      const allImages = batchResults.flatMap(br => br.images);
-      const allQueries = batchResults.map(br => br.query).filter(Boolean);
-      const combinedQuery = allQueries.length > 1 
-        ? `${allQueries.length} queries: ${allQueries.join(', ')}` 
-        : allQueries[0] || null;
-      const allSuccessful = batchResults.every(br => br.success);
-
-      return {
-        query: combinedQuery,
-        results: allResults,
-        answer: batchResults.find(br => br.answer)?.answer || null,
-        images: allImages,
-        success: allSuccessful,
-        timestamp: toolExecution.execution_details?.timestamp,
-        isBatch: true,
-        batchResults
-      };
-    }
-
-    // Handle legacy batch_results format (for image search)
-    let images: string[] = [];
-    let query = args.query || parsedOutput?.query || null;
-    
-    if (parsedOutput?.batch_results && Array.isArray(parsedOutput.batch_results)) {
-      // Batch response: flatten all images from all queries
-      images = parsedOutput.batch_results.reduce((acc: string[], result: any) => {
-        return acc.concat(result.images || []);
-      }, []);
-      
-      // Create combined query string for display
-      const queries = parsedOutput.batch_results.map((r: any) => r.query).filter(Boolean);
-      if (queries.length > 0) {
-        query = queries.length > 1 ? `${queries.length} queries: ${queries.join(', ')}` : queries[0];
-      }
-    } else {
-      // Single response
-      images = parsedOutput?.images || [];
-    }
-
-    const extractedData = {
-      query,
-      results: parsedOutput?.results?.map((result: any) => ({
-        title: result.title || '',
-        url: result.url || '',
-        snippet: result.content || result.snippet || ''
-      })) || [],
-      answer: parsedOutput?.answer || null,
-      images,
-      success: toolExecution.result?.success,
-      timestamp: toolExecution.execution_details?.timestamp
-    };
-    return extractedData;
-  }
-
-  if ('role' in parsedContent && 'content' in parsedContent) {
-    return extractFromNewFormat(parsedContent.content);
-  }
-
-  return { query: null, results: [], answer: null, images: [], success: undefined, timestamp: undefined };
-};
-
-
-const extractFromLegacyFormat = (content: any): Omit<WebSearchData, 'success' | 'timestamp'> => {
-  const toolData = extractToolData(content);
-  
-  if (toolData.toolResult) {
-    const args = toolData.arguments || {};
-    return {
-      query: toolData.query || args.query || null,
-      results: [], 
-      answer: null,
-      images: []
-    };
-  }
-
-  const legacyQuery = extractSearchQuery(content);
-  
-  return {
-    query: legacyQuery,
-    results: [],
-    answer: null,
-    images: []
-  };
-};
-
+/**
+ * Extract web search data from structured metadata props
+ * NO CONTENT PARSING - uses toolCall.arguments and toolResult.output directly
+ */
 export function extractWebSearchData(
-  assistantContent: any,
-  toolContent: any,
-  isSuccess: boolean,
+  toolCall: ToolCallData | undefined,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): {
@@ -173,146 +27,192 @@ export function extractWebSearchData(
     images: string[];
   }>;
 } {
-  let query: string | null = null;
-  let searchResults: Array<{ title: string; url: string; snippet?: string }> = [];
-  let answer: string | null = null;
-  let images: string[] = [];
-  let actualIsSuccess = isSuccess;
-  let actualToolTimestamp = toolTimestamp;
-  let actualAssistantTimestamp = assistantTimestamp;
+  // Default return value - ensures function ALWAYS returns
+  const defaultReturn = {
+    query: null,
+    searchResults: [],
+    answer: null,
+    images: [],
+    actualIsSuccess: isSuccess,
+    actualToolTimestamp: toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp,
+    isBatch: false,
+    batchResults: undefined
+  };
 
-  const assistantNewFormat = extractFromNewFormat(assistantContent);
-  const toolNewFormat = extractFromNewFormat(toolContent);
-
-  // Prefer assistant content if it has batch results
-  const sourceFormat = (assistantNewFormat.query || assistantNewFormat.results.length > 0 || assistantNewFormat.isBatch) 
-    ? assistantNewFormat 
-    : (toolNewFormat.query || toolNewFormat.results.length > 0 || toolNewFormat.isBatch)
-      ? toolNewFormat
-      : null;
-
-  if (sourceFormat) {
-    query = sourceFormat.query;
-    searchResults = sourceFormat.results;
-    answer = sourceFormat.answer;
-    images = sourceFormat.images;
-    if (sourceFormat.success !== undefined) {
-      actualIsSuccess = sourceFormat.success;
+  try {
+    // Defensive check - ensure toolCall is defined
+    if (!toolCall) {
+      return defaultReturn;
     }
-    if (sourceFormat.timestamp) {
-      if (sourceFormat === assistantNewFormat) {
-        actualAssistantTimestamp = sourceFormat.timestamp;
-      } else {
-        actualToolTimestamp = sourceFormat.timestamp;
+
+    // Extract query from toolCall.arguments (from metadata)
+    const args = toolCall.arguments || {};
+    const query: string | null = args.query || null;
+
+    // Extract output from toolResult.output (from metadata)
+    let output: any = null;
+    let actualIsSuccess = isSuccess;
+    let actualToolTimestamp = toolTimestamp;
+    
+    if (toolResult?.output) {
+      output = toolResult.output;
+      if (toolResult.success !== undefined) {
+        actualIsSuccess = toolResult.success;
       }
     }
-    
-    // Return batch data if available
-    if (sourceFormat.isBatch && sourceFormat.batchResults) {
-      return {
-        query,
-        searchResults,
-        answer,
-        images,
-        actualIsSuccess,
-        actualToolTimestamp,
-        actualAssistantTimestamp,
-        isBatch: true,
-        batchResults: sourceFormat.batchResults
-      };
-    }
-  } else {
-    const assistantLegacy = extractFromLegacyFormat(assistantContent);
-    const toolLegacy = extractFromLegacyFormat(toolContent);
 
-    query = assistantLegacy.query || toolLegacy.query;
-    
-    const legacyResults = extractSearchResults(toolContent);
-    searchResults = legacyResults;
-    
-    if (toolContent) {
+    // Parse output to extract results, answer, images
+    let searchResults: Array<{ title: string; url: string; snippet?: string }> = [];
+    let answer: string | null = null;
+    let images: string[] = [];
+    let isBatch = false;
+    let batchResults: Array<{
+      query: string;
+      success: boolean;
+      results: Array<{ title: string; url: string; snippet?: string }>;
+      answer: string;
+      images: string[];
+    }> | undefined = undefined;
+
+    if (output && typeof output === 'object' && output !== null) {
+      // Handle image_search batch_results format (batch_results array without batch_mode flag)
+      if (output.batch_results && Array.isArray(output.batch_results) && !output.batch_mode) {
+        isBatch = true;
+        batchResults = output.batch_results.map((batchItem: any) => ({
+          query: batchItem.query || '',
+          success: batchItem.success !== false,
+          results: [], // image_search doesn't have text results
+          answer: '',
+          images: Array.isArray(batchItem.images) ? batchItem.images.map((img: any) => 
+            typeof img === 'string' ? img : img.url || ''
+          ).filter(Boolean) : []
+        }));
+
+        // Flatten all images for combined display
+        const allImages = batchResults.flatMap(br => br.images);
+        const allQueries = batchResults.map(br => br.query).filter(Boolean);
+        const combinedQuery = allQueries.length > 1 
+          ? `${allQueries.length} queries: ${allQueries.join(', ')}` 
+          : allQueries[0] || query;
+        const allSuccessful = batchResults.every(br => br.success);
+
+        return {
+          query: combinedQuery || query,
+          searchResults: [],
+          answer: null,
+          images: allImages,
+          actualIsSuccess: allSuccessful,
+          actualToolTimestamp,
+          actualAssistantTimestamp: assistantTimestamp,
+          isBatch: true,
+          batchResults
+        };
+      }
+
+      // Handle web_search batch mode (batch_mode flag with results array)
+      if (output.batch_mode === true && Array.isArray(output.results)) {
+        isBatch = true;
+        batchResults = output.results.map((batchItem: any) => ({
+          query: batchItem.query || '',
+          success: batchItem.success !== false,
+          results: (batchItem.results || []).map((result: any) => ({
+            title: result.title || '',
+            url: result.url || '',
+            snippet: result.content || result.snippet || ''
+          })),
+          answer: batchItem.answer || '',
+          images: Array.isArray(batchItem.images) ? batchItem.images.map((img: any) => 
+            typeof img === 'string' ? img : img.url || ''
+          ).filter(Boolean) : []
+        }));
+
+        // Flatten for combined display
+        const allResults = batchResults.flatMap(br => br.results);
+        const allImages = batchResults.flatMap(br => br.images);
+        const allQueries = batchResults.map(br => br.query).filter(Boolean);
+        const combinedQuery = allQueries.length > 1 
+          ? `${allQueries.length} queries: ${allQueries.join(', ')}` 
+          : allQueries[0] || query;
+        const allSuccessful = batchResults.every(br => br.success);
+
+        return {
+          query: combinedQuery || query,
+          searchResults: allResults,
+          answer: batchResults.map(br => br.answer).filter(Boolean).join('\n\n') || null,
+          images: allImages,
+          actualIsSuccess: allSuccessful,
+          actualToolTimestamp,
+          actualAssistantTimestamp: assistantTimestamp,
+          isBatch: true,
+          batchResults
+        };
+      }
+
+      // Handle single search result
+      // Extract results array
+      if (Array.isArray(output.results)) {
+        searchResults = output.results.map((result: any) => ({
+          title: result.title || '',
+          url: result.url || '',
+          snippet: result.content || result.snippet || ''
+        }));
+      } else if (Array.isArray(output)) {
+        searchResults = output.map((result: any) => ({
+          title: result.title || '',
+          url: result.url || '',
+          snippet: result.content || result.snippet || ''
+        }));
+      }
+        
+      // Extract answer
+      answer = output.answer || output.summary || null;
+
+      // Extract images (for single result mode)
+      if (Array.isArray(output.images)) {
+        images = output.images.map((img: any) => 
+          typeof img === 'string' ? img : img.url || ''
+        ).filter(Boolean);
+      }
+    } else if (typeof output === 'string') {
+      // Handle string output - try to parse as JSON
       try {
-        let parsedContent;
-        if (typeof toolContent === 'string') {
-          parsedContent = JSON.parse(toolContent);
-        } else if (typeof toolContent === 'object' && toolContent !== null) {
-          parsedContent = toolContent;
-        } else {
-          parsedContent = {};
-        }
-
-        // Check if this is a batch search response in legacy format
-        if (parsedContent.batch_mode === true && Array.isArray(parsedContent.results)) {
-          // Batch search response
-          const batchResults = parsedContent.results.map((batchItem: any) => ({
-            query: batchItem.query || '',
-            success: batchItem.success !== false,
-            results: (batchItem.results || []).map((result: any) => ({
+        const parsed = JSON.parse(output);
+        if (parsed && typeof parsed === 'object' && parsed !== null) {
+          if (Array.isArray(parsed.results)) {
+            searchResults = parsed.results.map((result: any) => ({
               title: result.title || '',
               url: result.url || '',
               snippet: result.content || result.snippet || ''
-            })),
-            answer: batchItem.answer || '',
-            images: batchItem.images || []
-          }));
-
-          // Flatten all results and images for combined display
-          const allResults = batchResults.flatMap(br => br.results);
-          const allImages = batchResults.flatMap(br => br.images);
-          const allQueries = batchResults.map(br => br.query).filter(Boolean);
-          const combinedQuery = allQueries.length > 1 
-            ? `${allQueries.length} queries: ${allQueries.join(', ')}` 
-            : allQueries[0] || null;
-          const allSuccessful = batchResults.every(br => br.success);
-
-          return {
-            query: combinedQuery || query,
-            searchResults: allResults.length > 0 ? allResults : searchResults,
-            answer: batchResults.find(br => br.answer)?.answer || answer,
-            images: allImages.length > 0 ? allImages : images,
-            actualIsSuccess: allSuccessful,
-            actualToolTimestamp,
-            actualAssistantTimestamp,
-            isBatch: true,
-            batchResults
-          };
-        }
-
-        if (parsedContent.answer && typeof parsedContent.answer === 'string') {
-          answer = parsedContent.answer;
-        }
-        
-        // Handle both single and batch image responses in legacy format
-        if (parsedContent.batch_results && Array.isArray(parsedContent.batch_results)) {
-          // Batch response: flatten all images from all queries
-          images = parsedContent.batch_results.reduce((acc: string[], result: any) => {
-            return acc.concat(result.images || []);
-          }, []);
-        } else if (parsedContent.images && Array.isArray(parsedContent.images)) {
-          images = parsedContent.images;
+            }));
+          }
+          answer = parsed.answer || parsed.summary || null;
+          if (Array.isArray(parsed.images)) {
+            images = parsed.images.map((img: any) => 
+              typeof img === 'string' ? img : img.url || ''
+            ).filter(Boolean);
+          }
         }
       } catch (e) {
+        // Not JSON, treat as answer text
+        answer = output;
       }
     }
-  }
 
-  if (!query) {
-    query = extractSearchQuery(assistantContent) || extractSearchQuery(toolContent);
+    return {
+      query,
+      searchResults,
+      answer,
+      images,
+      actualIsSuccess,
+      actualToolTimestamp,
+      actualAssistantTimestamp: assistantTimestamp,
+      isBatch,
+      batchResults
+    };
+  } catch (error) {
+    // Catch any errors and return default values
+    console.error('extractWebSearchData error:', error);
+    return defaultReturn;
   }
-  
-  if (searchResults.length === 0) {
-    const fallbackResults = extractSearchResults(toolContent);
-    searchResults = fallbackResults;
-  }
-
-  return {
-    query,
-    searchResults,
-    answer,
-    images,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp,
-    isBatch: false
-  };
 } 

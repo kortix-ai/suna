@@ -12,6 +12,7 @@ import type { Agent } from '@/api/types';
 import type { Conversation } from '@/components/menu/types';
 import { AuthDrawer } from '@/components/auth';
 import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
+import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
 
 export default function AppScreen() {
   const { colorScheme } = useColorScheme();
@@ -137,6 +138,7 @@ export default function AppScreen() {
           )}
       </Drawer>
       <AuthDrawer />
+      <FeedbackDrawer />
     </>
   );
 }

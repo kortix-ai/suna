@@ -31,6 +31,154 @@ export interface ThreadsResponse {
   };
 }
 
+// Project type and API functions (moved from projects.ts)
+export type Project = {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at?: string;
+  sandbox: {
+    vnc_preview?: string;
+    sandbox_url?: string;
+    id?: string;
+    pass?: string;
+  };
+  is_public?: boolean;
+  icon_name?: string | null;
+  [key: string]: any;
+};
+
+// Direct API call for getting a project - used by React Query hooks
+export const getProject = async (projectId: string): Promise<Project> => {
+  const response = await backendApi.get<{
+    project_id: string;
+    name: string;
+    description: string;
+    created_at: string;
+    updated_at?: string;
+    sandbox: any;
+    is_public?: boolean;
+    icon_name?: string | null;
+  }>(`/projects/${projectId}`, {
+    showErrors: true
+  });
+
+  if (response.error) {
+    handleApiError(response.error, { operation: 'load project', resource: `project ${projectId}` });
+    throw new Error(response.error.message || `Project not found: ${projectId}`);
+  }
+
+  if (!response.data) {
+    throw new Error(`Project not found: ${projectId}`);
+  }
+
+  const projectData = response.data;
+
+  // Map backend response to frontend Project type
+  return {
+    id: projectData.project_id,
+    name: projectData.name || '',
+    description: projectData.description || '',
+    is_public: projectData.is_public || false,
+    created_at: projectData.created_at,
+    updated_at: projectData.updated_at || projectData.created_at,
+    sandbox: projectData.sandbox || {
+      id: '',
+      pass: '',
+      vnc_preview: '',
+      sandbox_url: '',
+    },
+    icon_name: projectData.icon_name,
+  };
+};
+
+// Delete project (via thread deletion)
+export const deleteProject = async (projectId: string): Promise<void> => {
+  // Projects are deleted via thread deletion
+  // First, find a thread with this project_id
+  const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
+
+  if (!threadsResponse?.threads) {
+    handleApiError(new Error('Failed to fetch threads'), { operation: 'delete project', resource: `project ${projectId}` });
+    throw new Error('Failed to find thread for project');
+  }
+
+  const threadWithProject = threadsResponse.threads.find(
+    (thread: any) => thread.project_id === projectId
+  );
+
+  if (!threadWithProject) {
+    throw new Error(`No thread found for project ${projectId}`);
+  }
+
+  // Delete the thread (which also deletes the project)
+  const deleteResponse = await backendApi.delete(`/threads/${threadWithProject.thread_id}`, {
+    showErrors: true,
+  });
+
+  if (deleteResponse.error) {
+    handleApiError(deleteResponse.error, { operation: 'delete project', resource: `project ${projectId}` });
+    throw new Error(deleteResponse.error.message || 'Failed to delete project');
+  }
+};
+
+// Update project (via thread PATCH endpoint)
+export const updateProject = async (
+  projectId: string,
+  data: Partial<Project>,
+): Promise<Project> => {
+  if (!projectId || projectId === '') {
+    throw new Error('Cannot update project: Invalid project ID');
+  }
+
+  // Find thread with this project_id
+  const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
+
+  if (!threadsResponse?.threads) {
+    throw new Error('Failed to find thread for project');
+  }
+
+  const threadWithProject = threadsResponse.threads.find(
+    (thread: any) => thread.project_id === projectId
+  );
+
+  if (!threadWithProject) {
+    throw new Error(`No thread found for project ${projectId}`);
+  }
+
+  // Update project via thread PATCH endpoint
+  const updatePayload: any = {};
+  if (data.name !== undefined) {
+    updatePayload.title = data.name;
+  }
+  if (data.is_public !== undefined) {
+    updatePayload.is_public = data.is_public;
+  }
+
+  const updateResponse = await backendApi.patch(
+    `/threads/${threadWithProject.thread_id}`,
+    updatePayload,
+    { showErrors: true }
+  );
+
+  if (updateResponse.error) {
+    throw new Error(updateResponse.error.message || 'Failed to update project');
+  }
+
+  // Return updated project data (will be refetched by React Query via invalidation)
+  return {
+    id: projectId,
+    name: data.name !== undefined ? data.name : threadWithProject.project?.name || '',
+    description: threadWithProject.project?.description || '',
+    is_public: data.is_public !== undefined ? data.is_public : threadWithProject.project?.is_public || false,
+    created_at: threadWithProject.project?.created_at || '',
+    updated_at: threadWithProject.project?.updated_at,
+    sandbox: threadWithProject.project?.sandbox || { id: '', pass: '', vnc_preview: '', sandbox_url: '' },
+    icon_name: threadWithProject.project?.icon_name,
+  } as Project;
+};
+
 export const getThreads = async (projectId?: string): Promise<Thread[]> => {
   try {
     const response = await backendApi.get<{ threads: any[] }>('/threads', {
@@ -113,18 +261,6 @@ export const getThreadsPaginated = async (projectId?: string, page: number = 1, 
       };
     }
 
-    // Log raw response to see what backend returns
-    if (response.data.threads && response.data.threads.length > 0) {
-      const firstThread = response.data.threads[0];
-      console.log('🧵 getThreadsPaginated: Raw thread from backend', {
-        thread_id: firstThread.thread_id,
-        project_id: firstThread.project_id,
-        hasProject: !!firstThread.project,
-        allKeys: Object.keys(firstThread),
-        projectKeys: firstThread.project ? Object.keys(firstThread.project) : []
-      });
-    }
-    
     let threads = response.data.threads.map((thread: any) => ({
       thread_id: thread.thread_id,
       project_id: thread.project_id,
@@ -265,6 +401,9 @@ export const addUserMessage = async (
   }
 };
 
+// Flag to toggle optimized messages endpoint (set to false for debugging, true for production)
+const USE_OPTIMIZED_MESSAGES = true;
+
 export const getMessages = async (threadId: string): Promise<Message[]> => {
   try {
     const supabase = createClient();
@@ -283,10 +422,15 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
 
     // Use backend API endpoint with auth handling
     // Backend handles batching internally and returns all messages
-    const response = await fetch(`${API_URL}/threads/${threadId}/messages?order=asc`, {
+    // optimized=false returns full messages (all types, all fields) for debugging
+    // optimized=true returns optimized messages (filtered types, minimal fields) for production
+    const response = await fetch(
+      `${API_URL}/threads/${threadId}/messages?order=asc&optimized=${USE_OPTIMIZED_MESSAGES}`,
+      {
       headers,
       cache: 'no-store',
-    });
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Unknown error');
@@ -298,36 +442,11 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
     const data = await response.json();
     const allMessages = data.messages || [];
 
-    // Filter out cost and summary messages (backend doesn't filter these)
-    const filteredMessages = allMessages.filter(
-      (msg: Message) => msg.type !== 'cost' && msg.type !== 'summary'
-    );
+    // Backend now filters message types, so no need to filter here
+    // Backend returns: user, tool, assistant
+    // Backend excludes: status, cost, summary, browser_state, image_context, system, llm_response_end
 
-    // Extract context_usage from the latest llm_response_end message
-    try {
-      const llmResponseEndMessages = filteredMessages.filter((msg: Message) => msg.type === 'llm_response_end');
-      
-      // Find the most recent llm_response_end message
-      if (llmResponseEndMessages.length > 0) {
-        const latestMsg = llmResponseEndMessages[llmResponseEndMessages.length - 1];
-        try {
-          const content = typeof latestMsg.content === 'string' ? JSON.parse(latestMsg.content) : latestMsg.content;
-          if (content?.usage?.total_tokens) {
-            // Store context usage
-            const { useContextUsageStore } = await import('@/stores/context-usage-store');
-            useContextUsageStore.getState().setUsage(threadId, {
-              current_tokens: content.usage.total_tokens
-            });
-          }
-        } catch (e) {
-          console.warn('Failed to parse llm_response_end message:', e);
-        }
-      }
-    } catch (e) {
-      console.warn('Failed to extract context_usage from llm_response_end:', e);
-    }
-
-    return filteredMessages;
+    return allMessages;
   } catch (error) {
     console.error('Failed to get messages:', error);
     handleApiError(error, { operation: 'load messages', resource: `messages for thread ${threadId}` });

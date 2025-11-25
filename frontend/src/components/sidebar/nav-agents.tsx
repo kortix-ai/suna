@@ -64,7 +64,7 @@ import { Thread, getThreadsPaginated, type ThreadsResponse } from '@/lib/api/thr
 import { useThreads } from '@/hooks/threads/use-threads';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -270,17 +270,11 @@ export function NavAgents() {
   const {
     data: threadsResponse,
     isLoading: isThreadsLoading,
+    isFetching: isThreadsFetching,
     error: threadsError
   } = useThreads({
     page: currentPage,
     limit: pageLimit,
-  });
-  
-  console.log('📋 NavAgents: useThreads response', { 
-    threadsCount: threadsResponse?.threads?.length || 0,
-    pagination: threadsResponse?.pagination,
-    isThreadsLoading,
-    currentPage 
   });
 
   const { mutate: deleteThreadMutation, isPending: isDeletingSingle } = useDeleteThread();
@@ -291,12 +285,6 @@ export function NavAgents() {
 
   // Use threads directly from response
   const currentThreads = threadsResponse?.threads || [];
-  
-  console.log('📋 NavAgents: Current threads', {
-    currentThreadsLength: currentThreads.length,
-    currentPage,
-    hasProjectData: !!currentThreads[0]?.project
-  });
 
   // Reset pagination when total thread count changes (e.g., after deletion)
   const previousTotalRef = useRef<number | undefined>(undefined);
@@ -319,7 +307,6 @@ export function NavAgents() {
   // No need to map threads to projects, just transform the data structure
   const combinedThreads: ThreadWithProject[] = useMemo(() => {
     if (currentThreads.length === 0) {
-      console.log('📦 NavAgents: No threads to process');
       return [];
     }
     
@@ -329,33 +316,27 @@ export function NavAgents() {
       const projectId = thread.project_id;
       const project = thread.project; // Backend already provides this!
       
-      if (!projectId || !project) {
-        console.log('📦 NavAgents: Thread missing project data', {
-          thread_id: thread.thread_id,
-          project_id: projectId,
-          hasProject: !!project
-        });
+      // Handle threads without project data gracefully
+      // This can happen if the project was deleted or thread created without project
+      if (!projectId) {
+        // Thread has no project_id - skip these orphan threads
+        console.debug('Thread without project_id:', thread.thread_id);
         continue;
       }
       
-      const displayName = project.name || 'Unnamed Project';
-      const iconName = project.icon_name;
+      // Use fallback values if project data is missing (e.g., deleted project)
+      const displayName = project?.name || 'Unnamed Project';
+      const iconName = project?.icon_name;
       
       processed.push({
         threadId: thread.thread_id,
         projectId: projectId,
         projectName: displayName,
         url: `/projects/${projectId}/thread/${thread.thread_id}`,
-        updatedAt: thread.updated_at || project.updated_at || new Date().toISOString(),
+        updatedAt: thread.updated_at || project?.updated_at || new Date().toISOString(),
         iconName: iconName,
       });
     }
-    
-    console.log('📦 NavAgents: Processed threads', {
-      inputCount: currentThreads.length,
-      outputCount: processed.length,
-      sample: processed[0]
-    });
     
     // Sort by updated_at
     return processed.sort((a, b) => 
@@ -363,37 +344,14 @@ export function NavAgents() {
     );
   }, [currentThreads]);
 
-  // Separate trigger threads from regular threads
-  const regularThreads = combinedThreads.filter(thread => !thread.projectName?.startsWith('Trigger: '));
-  const triggerThreads = combinedThreads.filter(thread => thread.projectName?.startsWith('Trigger: '));
-
-  const groupedThreads: GroupedThreads = groupThreadsByDate(regularThreads);
-  const groupedTriggerThreads: GroupedThreads = groupThreadsByDate(triggerThreads);
-  
-  // Debug logging for grouped threads
-  console.log('📋 NavAgents: Grouped threads', {
-    combinedCount: combinedThreads.length,
-    regularCount: regularThreads.length,
-    triggerCount: triggerThreads.length,
-    groupedKeys: Object.keys(groupedThreads),
-    groupedCounts: Object.entries(groupedThreads).map(([key, threads]) => ({ [key]: threads.length }))
-  });
+  // Group all threads by date (no longer filtering out triggers - they're shown together)
+  const groupedThreads: GroupedThreads = groupThreadsByDate(combinedThreads);
 
   // Pagination helpers
   const pagination = threadsResponse?.pagination;
   const totalPages = pagination?.pages || 1;
   const canGoPrevious = currentPage > 1;
   const canGoNext = currentPage < totalPages;
-  
-  console.log('📋 NavAgents: Pagination state', {
-    threadsResponseExists: !!threadsResponse,
-    paginationExists: !!pagination,
-    pagination,
-    totalPages,
-    currentPage,
-    canGoPrevious,
-    canGoNext
-  });
 
   const handlePreviousPage = () => {
     if (canGoPrevious) {
@@ -800,10 +758,10 @@ export function NavAgents() {
                     <div className="flex items-center justify-center gap-3">
                       <button
                         onClick={handlePreviousPage}
-                        disabled={!canGoPrevious || isThreadsLoading}
+                        disabled={!canGoPrevious || isThreadsFetching}
                         className={cn(
                           "p-1.5 text-xs transition-opacity",
-                          canGoPrevious && !isThreadsLoading
+                          canGoPrevious && !isThreadsFetching
                             ? "text-muted-foreground hover:text-foreground opacity-70 hover:opacity-100"
                             : "text-muted-foreground/30 cursor-not-allowed"
                         )}
@@ -811,16 +769,19 @@ export function NavAgents() {
                         <ChevronLeft className="h-3.5 w-3.5" />
                       </button>
                       
-                      <span className="text-xs text-muted-foreground/70">
+                      <span className="text-xs text-muted-foreground/70 flex items-center gap-1">
+                        {isThreadsFetching && (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        )}
                         {currentPage}/{totalPages}
                       </span>
                       
                       <button
                         onClick={handleNextPage}
-                        disabled={!canGoNext || isThreadsLoading}
+                        disabled={!canGoNext || isThreadsFetching}
                         className={cn(
                           "p-1.5 text-xs transition-opacity",
-                          canGoNext && !isThreadsLoading
+                          canGoNext && !isThreadsFetching
                             ? "text-muted-foreground hover:text-foreground opacity-70 hover:opacity-100"
                             : "text-muted-foreground/30 cursor-not-allowed"
                         )}

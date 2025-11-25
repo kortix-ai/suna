@@ -87,17 +87,48 @@ const SectionView: React.FC<{ section: Section }> = ({ section }) => {
 };
 
 export function TaskListToolView({ 
-  toolData, 
-  assistantMessage, 
-  toolMessage, 
+  toolCall,
+  toolResult,
+  assistantMessage,
+  toolMessage,
+  isSuccess = true,
   isStreaming = false 
 }: ToolViewProps) {
+  if (!toolCall || !toolCall.function_name) {
+    return null;
+  }
+
+  // Extract content from messages for legacy parsing
   const assistantContent = assistantMessage?.content;
   const toolContent = toolMessage?.content;
   
-  const taskData = extractTaskListData(assistantContent, toolContent);
-  const toolName = toolData.toolName || 'task-list';
-  const isSuccess = toolData.result?.success !== false;
+  // Try to extract from toolResult.output first (new format)
+  let taskData = null;
+  if (toolResult?.output) {
+    let output = toolResult.output;
+    if (typeof output === 'string') {
+      try {
+        output = JSON.parse(output);
+      } catch {
+        // Keep as string if not JSON
+      }
+    }
+    
+    if (output?.sections && Array.isArray(output.sections)) {
+      taskData = {
+        sections: output.sections,
+        total_tasks: output.total_tasks,
+        total_sections: output.total_sections,
+      };
+    }
+  }
+  
+  // Fallback to legacy extraction from content
+  if (!taskData) {
+    taskData = extractTaskListData(assistantContent, toolContent);
+  }
+  
+  const actualIsSuccess = toolResult?.success !== false && isSuccess;
 
   const sections = taskData?.sections || [];
   const allTasks = sections.flatMap((section) => section.tasks);
@@ -130,22 +161,22 @@ export function TaskListToolView({
               </View>
               <View className={cn(
                 "px-2 py-1 rounded flex-row items-center gap-1",
-                isSuccess 
+                actualIsSuccess 
                   ? "bg-emerald-100 dark:bg-emerald-900/30" 
                   : "bg-rose-100 dark:bg-rose-900/30"
               )}>
                 <Icon 
-                  as={isSuccess ? CheckCircle : AlertTriangle} 
+                  as={actualIsSuccess ? CheckCircle : AlertTriangle} 
                   size={14} 
-                  className={isSuccess ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}
+                  className={actualIsSuccess ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"}
                 />
                 <Text className={cn(
                   "text-xs font-roobert-medium",
-                  isSuccess 
+                  actualIsSuccess 
                     ? "text-emerald-700 dark:text-emerald-300" 
                     : "text-rose-700 dark:text-rose-300"
                 )}>
-                  {isSuccess ? 'Tasks loaded' : 'Failed to load'}
+                  {actualIsSuccess ? 'Tasks loaded' : 'Failed to load'}
                 </Text>
               </View>
             </View>

@@ -78,9 +78,25 @@ export interface ParsedContent {
 
 // Parsed metadata structure (from message.metadata JSON string)
 export interface ParsedMetadata {
-  stream_status?: 'chunk' | 'complete'; // Streaming status for assistant messages
+  stream_status?: 'chunk' | 'complete' | 'tool_call_chunk'; // Streaming status for assistant messages
   thread_run_id?: string;
   llm_response_id?: string;
+  tool_calls?: Array<{
+    tool_call_id: string;
+    function_name: string;
+    arguments: Record<string, any> | string; // String when partial JSON, object when complete
+    source: 'native' | 'xml';
+  }>;
+  // Tool message metadata fields
+  function_name?: string; // Tool function name
+  tool_call_id?: string; // Tool call ID
+  result?: {
+    output: any;
+    success: boolean;
+    error?: string | null;
+  };
+  return_format?: 'native' | 'xml';
+  assistant_message_id?: string; // Link tool result back to assistant message
   [key: string]: any;
 }
 

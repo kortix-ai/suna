@@ -81,15 +81,15 @@ const SectionView: React.FC<{ section: Section }> = ({ section }) => {
 
 
 export const TaskListToolView: React.FC<ToolViewProps> = ({
-  name = 'task-list',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false
 }) => {
-  const taskData = extractTaskListData(assistantContent, toolContent)
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const taskData = extractTaskListData(toolCall.arguments, toolResult?.output)
   const toolTitle = getToolTitle(name)
 
   // Process task data

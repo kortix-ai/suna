@@ -30,12 +30,17 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   const systemColorScheme = useSystemColorScheme();
   const { t } = useLanguage();
   
-  const [themePreference, setThemePreference] = React.useState<ThemePreference>('system');
+  // Start with null - we'll determine the actual preference after checking storage and current theme
+  const [themePreference, setThemePreference] = React.useState<ThemePreference | null>(null);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
 
+  // Load preference from storage when component becomes visible
   React.useEffect(() => {
-    loadThemePreference();
-  }, []);
+    if (visible) {
+      loadThemePreference();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   React.useEffect(() => {
     if (themePreference === 'system' && systemColorScheme) {
@@ -47,23 +52,48 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   const loadThemePreference = async () => {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
+      const currentTheme = colorScheme || systemColorScheme || 'light';
+      
+      console.log('🌓 Loading theme preference:', {
+        saved,
+        currentColorScheme: colorScheme,
+        systemColorScheme,
+        resolvedTheme: currentTheme
+      });
+      
       if (saved) {
-        setThemePreference(saved as ThemePreference);
-        if (saved === 'system' && systemColorScheme) {
+        const preference = saved as ThemePreference;
+        console.log('🌓 Loaded saved theme preference:', preference);
+        setThemePreference(preference);
+        
+        // Apply the saved preference to colorScheme if needed
+        if (preference === 'system' && systemColorScheme) {
           setColorScheme(systemColorScheme);
-        } else if (saved !== 'system') {
-          setColorScheme(saved as 'light' | 'dark');
+        } else if (preference !== 'system') {
+          setColorScheme(preference as 'light' | 'dark');
         }
+      } else {
+        // No saved preference - derive from current colorScheme
+        const derivedPreference = currentTheme === 'dark' ? 'dark' : 'light';
+        console.log('🌓 No saved preference, deriving from current theme:', derivedPreference, 'from:', currentTheme);
+        setThemePreference(derivedPreference);
       }
     } catch (error) {
-      console.error('Failed to load theme preference:', error);
+      console.error('🌓 Failed to load theme preference:', error);
+      // Fallback: derive from current colorScheme
+      const currentTheme = colorScheme || systemColorScheme || 'light';
+      const derivedPreference = currentTheme === 'dark' ? 'dark' : 'light';
+      console.log('🌓 Error fallback, deriving:', derivedPreference);
+      setThemePreference(derivedPreference);
     }
   };
 
   const saveThemePreference = async (preference: ThemePreference) => {
     try {
+      console.log('🌓 Saving theme preference:', preference);
       await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
       setThemePreference(preference);
+      console.log('🌓 Theme preference saved successfully. State updated to:', preference);
     } catch (error) {
       console.error('Failed to save theme preference:', error);
     }
@@ -76,7 +106,21 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   }, [onClose]);
   
   const handleThemeSelect = React.useCallback(async (preference: ThemePreference) => {
-    if (themePreference === preference || isTransitioning) {
+    console.log('🌓 handleThemeSelect called:', {
+      preference,
+      currentThemePreference: themePreference,
+      currentColorScheme: colorScheme,
+      isTransitioning
+    });
+    
+    if (isTransitioning) {
+      console.log('🌓 Skipping - transitioning');
+      return;
+    }
+    
+    // Check if already selected (handle null case)
+    if (themePreference !== null && themePreference === preference) {
+      console.log('🌓 Skipping - already selected');
       return;
     }
     
@@ -89,17 +133,57 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
       ? (systemColorScheme || 'light')
       : preference;
     
+    console.log('🌓 Setting colorScheme to:', newTheme);
     setColorScheme(newTheme);
-    saveThemePreference(preference);
+    
+    // Await the save operation to ensure state is updated
+    await saveThemePreference(preference);
+    
+    console.log('🌓 Theme preference saved. New themePreference:', preference, 'New colorScheme:', newTheme);
     
     setTimeout(() => {
       setIsTransitioning(false);
     }, 100);
-  }, [themePreference, isTransitioning, systemColorScheme, setColorScheme]);
+  }, [themePreference, isTransitioning, systemColorScheme, setColorScheme, colorScheme]);
   
   if (!visible) return null;
 
+  // Don't render until we've determined the theme preference
+  // This prevents showing the wrong selection initially
+  if (themePreference === null) {
+    return (
+      <View className="absolute inset-0 z-50">
+        <Pressable
+          onPress={handleClose}
+          className="absolute inset-0 bg-black/50"
+        />
+        <View className="absolute top-0 left-0 right-0 bottom-0 bg-background items-center justify-center">
+          <Text className="text-muted-foreground">Loading...</Text>
+        </View>
+      </View>
+    );
+  }
+
   const currentTheme = colorScheme || 'light';
+  
+  // Determine selected state based on themePreference
+  // If themePreference is 'system', check the actual colorScheme
+  const getSelectedPreference = (): 'light' | 'dark' => {
+    if (themePreference === 'system') {
+      return (colorScheme || systemColorScheme || 'light') === 'dark' ? 'dark' : 'light';
+    }
+    return themePreference;
+  };
+
+  const selectedPreference = getSelectedPreference();
+  
+  console.log('🌓 Rendering theme options:', {
+    themePreference,
+    colorScheme,
+    selectedPreference,
+    isLightSelected: selectedPreference === 'light',
+    isDarkSelected: selectedPreference === 'dark'
+  });
   
   return (
     <View className="absolute inset-0 z-50">
@@ -141,7 +225,7 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
                 icon={Sun}
                 label={t('theme.light')}
                 description={t('theme.lightDescription')}
-                isSelected={themePreference === 'light'}
+                isSelected={selectedPreference === 'light'}
                 onPress={() => handleThemeSelect('light')}
                 disabled={isTransitioning}
               />
@@ -150,7 +234,7 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
                 icon={Moon}
                 label={t('theme.dark')}
                 description={t('theme.darkDescription')}
-                isSelected={themePreference === 'dark'}
+                isSelected={selectedPreference === 'dark'}
                 onPress={() => handleThemeSelect('dark')}
                 disabled={isTransitioning}
               />

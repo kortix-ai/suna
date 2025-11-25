@@ -111,6 +111,10 @@ if enabled:
                 def __init__(self): 
                     self.id = "mock-trace-id"
                 
+                # Ensure chained calls like trace.span(...).end(...) are safe no-ops
+                def span(self, **kwargs):
+                    return MockSpan()
+                
                 def __getattr__(self, name):
                     # Return a no-op function for any method call
                     def no_op(*args, **kwargs):
@@ -154,6 +158,10 @@ else:
     class MockTrace:
         def __init__(self): 
             self.id = "mock-trace-id"
+        
+        # Ensure chained calls like trace.span(...).end(...) are safe no-ops
+        def span(self, **kwargs):
+            return MockSpan()
         
         def __getattr__(self, name):
             # Return a no-op function for any method call

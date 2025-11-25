@@ -20,7 +20,7 @@ import {
 
 import { useFileContent, useImageContent } from '@/hooks/files';
 import { useAuth } from '@/components/AuthProvider';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { PresentationSlidePreview } from '@/components/thread/tool-views/presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 

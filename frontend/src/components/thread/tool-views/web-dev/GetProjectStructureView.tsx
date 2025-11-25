@@ -20,7 +20,7 @@ import {
   Play
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { getToolTitle, normalizeContentToString, extractToolData } from '../utils';
+import { getToolTitle, normalizeContentToString } from '../utils';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -393,20 +393,35 @@ const FileExplorer: React.FC<{
   );
 };
 
-function extractProjectData(assistantContent: any, toolContent: any): ProjectData | null {
-  const toolData = extractToolData(toolContent);
-  
+import { ToolCallData, ToolResultData } from '../types';
+
+function extractProjectData(toolCall: ToolCallData, toolResult?: ToolResultData): ProjectData | null {
   let outputStr: string | null = null;
   let projectName: string | null = null;
   
-  if (toolData.toolResult) {
-    outputStr = toolData.toolResult.toolOutput;
-    projectName = toolData.arguments?.project_name || null;
+  // Extract from toolResult output
+  if (toolResult?.output) {
+    if (typeof toolResult.output === 'string') {
+      outputStr = toolResult.output;
+    } else if (typeof toolResult.output === 'object') {
+      outputStr = JSON.stringify(toolResult.output);
+    }
   }
   
-  if (!outputStr) {
-    outputStr = normalizeContentToString(toolContent) || normalizeContentToString(assistantContent);
-  }
+  // Extract project name from toolCall arguments
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+  
+  projectName = args.project_name || null;
   
   if (!outputStr) return null;
 
@@ -488,27 +503,30 @@ function getProjectPreviewUrl(project: any, projectName: string): string | null 
 }
 
 export function GetProjectStructureView({
-  name = 'get_project_structure',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
   project,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [selectedFile, setSelectedFile] = useState<string | undefined>();
   const [fileContent, setFileContent] = useState<string>('');
   const [loadingFile, setLoadingFile] = useState(false);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['.', 'src']));
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
-  const projectData = useMemo(() => 
-    extractProjectData(assistantContent, toolContent), 
-    [assistantContent, toolContent]
-  );
-
+  // Extract name safely - use fallback if toolCall is undefined
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'get-project-structure';
   const toolTitle = getToolTitle(name);
+  
+  // All hooks must be called before any conditional returns
+  const projectData = useMemo(() => {
+    if (!toolCall) return null;
+    return extractProjectData(toolCall, toolResult);
+  }, [toolCall, toolResult]);
 
   const updateNodeExpanded = useCallback((node: FileNode): FileNode => {
     return {

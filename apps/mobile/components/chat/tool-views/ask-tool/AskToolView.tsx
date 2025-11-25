@@ -7,9 +7,9 @@ import type { ToolViewProps } from '../types';
 import { extractAskData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 
-export function AskToolView({ toolData, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
-  const { text, attachments, follow_up_answers, success } = extractAskData(toolData);
-  const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
+export function AskToolView({ toolCall, toolResult, isSuccess = true, isStreaming = false, project }: ToolViewProps) {
+  const { text, attachments, follow_up_answers, success } = extractAskData(toolCall, toolResult, isSuccess);
+  const sandboxId = project?.sandbox_id;
 
   if (isStreaming) {
     return (

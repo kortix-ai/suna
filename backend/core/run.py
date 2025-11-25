@@ -347,7 +347,7 @@ class PromptManager:
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
                                   client=None,
                                   tool_registry=None,
-                                  xml_tool_calling: bool = True,
+                                  xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None) -> dict:
         
         default_system_content = get_system_prompt()
@@ -490,6 +490,43 @@ When using the tools:
 - Include all required parameters as specified in the schema
 - Format complex data (objects, arrays) as JSON strings within the parameter tags
 - Boolean values should be "true" or "false" (lowercase)
+
+CRITICAL: STOP SEQUENCE
+After completing your tool calls, you MUST output the special stop token: |||STOP_AGENT|||
+
+This token tells the system you are done and ready for tool execution. The system will AUTOMATICALLY STOP generation when it sees this token.
+
+RULES FOR TOOL CALLING:
+1. Generate ONLY ONE <function_calls> block per response
+2. Each <function_calls> block can contain multiple <invoke> tags for parallel tool execution
+3. IMPORTANT: Tool execution ONLY happens when you output the |||STOP_AGENT||| stop sequence
+4. IMMEDIATELY after </function_calls>, output: |||STOP_AGENT|||
+5. NEVER write anything after |||STOP_AGENT|||
+6. Do NOT continue the conversation after this token
+7. Do NOT simulate tool results or user responses
+
+Example of correct tool call format (single block):
+<function_calls>
+<invoke name="example_tool">
+<parameter name="param1">value1</parameter>
+</invoke>
+</function_calls>
+|||STOP_AGENT|||
+
+[Generation stops here automatically - do not continue]
+
+Example of correct tool call format (multiple invokes in one block):
+<function_calls>
+<invoke name="tool1">
+<parameter name="param1">value1</parameter>
+</invoke>
+<invoke name="tool2">
+<parameter name="param2">value2</parameter>
+</invoke>
+</function_calls>
+||||STOP_AGENT|||
+
+[Generation stops here automatically - do not continue]
 """
                 
                 system_content += examples_content
@@ -682,7 +719,7 @@ class AgentRunner:
             self.config.thread_id, 
             mcp_wrapper_instance, self.client,
             tool_registry=self.thread_manager.tool_registry,
-            xml_tool_calling=True,
+            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
             user_id=self.account_id
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
@@ -703,6 +740,16 @@ class AgentRunner:
 
         while continue_execution and iteration_count < self.config.max_iterations:
             iteration_count += 1
+
+            # Check for cancellation signal first
+            if cancellation_event and cancellation_event.is_set():
+                logger.info(f"Cancellation signal received - stopping agent execution for thread {self.config.thread_id}")
+                yield {
+                    "type": "status",
+                    "status": "stopped",
+                    "message": "Agent execution cancelled"
+                }
+                break
 
             # Check credits before EVERY iteration
             # - If balance is positive: Allow this iteration (even if it goes negative during it)
@@ -742,16 +789,14 @@ class AgentRunner:
                     llm_temperature=0,
                     llm_max_tokens=max_tokens,
                     tool_choice="auto",
-                    max_xml_tool_calls=1,
                     temporary_message=temporary_message,
                     latest_user_message_content=latest_user_message_content,
                     processor_config=ProcessorConfig(
-                        xml_tool_calling=True,
-                        native_tool_calling=False,
+                        xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
+                        native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING, 
                         execute_tools=True,
-                        execute_on_stream=True,
-                        tool_execution_strategy="parallel",
-                        xml_adding_strategy="user_message"
+                        execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
+                        tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
                     generation=generation,
@@ -765,6 +810,11 @@ class AgentRunner:
                 try:
                     if hasattr(response, '__aiter__') and not isinstance(response, dict):
                         async for chunk in response:
+                            # Check for cancellation during stream processing
+                            if cancellation_event and cancellation_event.is_set():
+                                logger.info(f"Cancellation signal received during stream processing - stopping for thread {self.config.thread_id}")
+                                break
+                            
                             # Check for error status from thread_manager
                             if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
                                 logger.error(f"Error in thread execution: {chunk.get('message', 'Unknown error')}")
@@ -795,8 +845,6 @@ class AgentRunner:
                                         
                                         if content.get('function_name'):
                                             last_tool_call = content['function_name']
-                                        elif content.get('xml_tag_name'):
-                                            last_tool_call = content['xml_tag_name']
                                             
                                 except Exception:
                                     pass

@@ -11,7 +11,6 @@ import {
 import { UnifiedMessage } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
 import Link from 'next/link';
-import { parseXmlToolCalls } from '../tool-views/xml-parser';
 import { HIDE_STREAMING_XML_TAGS } from '@/components/thread/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 

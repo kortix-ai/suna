@@ -14,10 +14,10 @@ export { useCreateThread, useAddUserMessage, useDeleteThread, useDeleteMultipleT
 // Project queries
 export { useProjectQuery, useProjects, usePublicProjectsQuery } from './use-project';
 // Project mutations
-export { useCreateProject, useUpdateProjectMutation, useUpdateProject, useDeleteProject } from './use-project';
+export { useUpdateProjectMutation, useUpdateProject, useDeleteProject } from './use-project';
 
-// Messages
-export { useMessagesQuery, useAddUserMessageMutation } from './use-messages';
+// Messages - re-export from messages folder
+export { useMessagesQuery, useAddUserMessageMutation } from '../messages';
 
 // Agent runs
 export { useAgentRunsQuery, useStartAgentMutation, useStopAgentMutation } from './use-agent-run';

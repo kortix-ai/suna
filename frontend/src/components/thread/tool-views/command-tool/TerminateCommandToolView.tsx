@@ -12,7 +12,7 @@ import {
   StopCircle
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, getToolTitle, normalizeContentToString } from '../utils';
+import { formatTimestamp, getToolTitle } from '../utils';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,9 +22,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { extractCommandData } from './_utils';
 
 export function TerminateCommandToolView({
-  name = 'terminate-command',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
@@ -38,49 +37,20 @@ export function TerminateCommandToolView({
   const {
     sessionName,
     output,
-    actualIsSuccess,
-    actualToolTimestamp,
-    actualAssistantTimestamp
+    success: actualIsSuccess,
+    timestamp: actualToolTimestamp,
   } = extractCommandData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
 
-  const rawSessionName = React.useMemo(() => {
-    if (sessionName) return sessionName;
+  // Extract session_name from toolCall.arguments (from metadata)
+  const finalSessionName = sessionName || toolCall.arguments?.session_name || null;
 
-    if (!assistantContent) return null;
-
-    const contentStr = normalizeContentToString(assistantContent);
-    if (!contentStr) return null;
-
-    try {
-      const parsed = JSON.parse(contentStr);
-      if (parsed.content) {
-        const sessionMatch = parsed.content.match(
-          /<terminate-command[^>]*session_name=["']([^"']+)["'][^>]*>/,
-        );
-        if (sessionMatch) {
-          return sessionMatch[1].trim();
-        }
-      }
-    } catch (e) {
-      const sessionMatch = contentStr.match(
-        /<terminate-command[^>]*session_name=["']([^"']+)["'][^>]*>/,
-      );
-      if (sessionMatch) {
-        return sessionMatch[1].trim();
-      }
-    }
-
-    return null;
-  }, [assistantContent, sessionName]);
-
-  const finalSessionName = rawSessionName?.trim() || sessionName;
-
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name) || 'Terminate Session';
 
   const terminationSuccess = React.useMemo(() => {
@@ -90,15 +60,8 @@ export function TerminateCommandToolView({
     if (outputLower.includes('does not exist')) return false;
     if (outputLower.includes('terminated') || outputLower.includes('killed')) return true;
 
-    if (typeof toolContent === 'string') {
-      const toolResultMatch = toolContent.match(/ToolResult\(success=(true|false)/i);
-      if (toolResultMatch) {
-        return toolResultMatch[1].toLowerCase() === 'true';
-      }
-    }
-
     return actualIsSuccess;
-  }, [output, actualIsSuccess, toolContent]);
+  }, [output, actualIsSuccess]);
 
   useEffect(() => {
     if (isStreaming) {
@@ -205,29 +168,35 @@ export function TerminateCommandToolView({
             </div>
           </div>
         ) : finalSessionName ? (
-          <ScrollArea className="h-full w-full">
-            <div>
-              <div className="p-4 bg-zinc-100 dark:bg-neutral-900 overflow-hidden border-b border-zinc-200 dark:border-zinc-800">
-                <div className="bg-zinc-200 dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
-                  <Power className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
-                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Session</span>
+          <div className="h-full flex flex-col overflow-hidden">
+            <div className="flex-shrink-0 p-4 pb-2">
+              {/* Session info */}
+              <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                    <Power className="h-2.5 w-2.5 mr-1 opacity-70" />
+                    Session
+                  </Badge>
                 </div>
-                <div className="p-4 font-mono text-sm text-zinc-700 dark:text-zinc-300 flex gap-2">
+                <div className="font-mono text-xs text-foreground flex gap-2">
                   <span className="text-red-500 dark:text-red-400 select-none">●</span>
                   <code className="flex-1 break-all">{finalSessionName}</code>
                 </div>
               </div>
 
+              {/* Result badge */}
               {output && (
-                <div>
-                  <div className="flex items-center justify-between px-4 pt-4 pb-2">
-                    <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center">
-                      <ArrowRight className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
-                      Result
-                    </h3>
+                <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                        <ArrowRight className="h-2.5 w-2.5 mr-1 opacity-70" />
+                        Result
+                      </Badge>
+                    </div>
                     <Badge
                       className={cn(
-                        "ml-2",
+                        "text-xs h-4 px-1.5",
                         terminationSuccess
                           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                           : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
@@ -236,22 +205,31 @@ export function TerminateCommandToolView({
                       {terminationSuccess ? 'Success' : 'Failed'}
                     </Badge>
                   </div>
+                </div>
+              )}
+            </div>
 
-                  <div className="bg-zinc-100 dark:bg-neutral-900 overflow-hidden">
-                    <div className="bg-zinc-300 dark:bg-neutral-800 flex items-center justify-between dark:border-zinc-700/50">
-                      <div className="bg-zinc-200 w-full dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
-                        <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
-                        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Termination output</span>
-                      </div>
+            {/* Output section - fills remaining height and scrolls */}
+            {output ? (
+              <div className="flex-1 min-h-0 px-4 pb-4">
+                <div className="h-full bg-card border border-border rounded-lg flex flex-col overflow-hidden">
+                  <div className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                        <TerminalIcon className="h-2.5 w-2.5 mr-1 opacity-70" />
+                        Output
+                      </Badge>
                       {!terminationSuccess && (
-                        <Badge variant="outline" className="text-xs h-5 border-red-700/30 text-red-400">
-                          <AlertTriangle className="h-3 w-3 mr-1" />
+                        <Badge variant="outline" className="text-xs h-4 px-1.5 border-red-700/30 text-red-400">
+                          <AlertTriangle className="h-2.5 w-2.5 mr-1" />
                           Error
                         </Badge>
                       )}
                     </div>
-                    <div className="px-4 py-3 overflow-auto">
-                      <pre className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-all overflow-visible">
+                  </div>
+                  <ScrollArea className="flex-1 min-h-0">
+                    <div className="p-3.5 pt-2">
+                      <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-all overflow-visible">
                         {linesToShow.map((line, index) => (
                           <span key={index}>
                             {line || ' '}
@@ -264,25 +242,23 @@ export function TerminateCommandToolView({
                         ))}
                       </pre>
                       {!showFullOutput && hasMoreLines && (
-                        <div className="text-zinc-500 mt-2 border-t border-zinc-700/30 pt-2">
+                        <div className="text-muted-foreground mt-2 border-t border-border pt-2 text-xs font-mono">
                           + {formattedOutput.length - 10} more lines
                         </div>
                       )}
                     </div>
-                  </div>
+                  </ScrollArea>
                 </div>
-              )}
-
-              {!output && !isStreaming && (
-                <div className="bg-black overflow-hidden p-12 flex items-center justify-center">
-                  <div className="text-center">
-                    <CircleDashed className="h-8 w-8 text-zinc-500 mx-auto mb-2" />
-                    <p className="text-zinc-400 text-sm">No output received</p>
-                  </div>
+              </div>
+            ) : !isStreaming ? (
+              <div className="flex-1 flex items-center justify-center px-4 pb-4">
+                <div className="bg-card border border-border rounded-lg p-4 text-center">
+                  <CircleDashed className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No output received</p>
                 </div>
-              )}
-            </div>
-          </ScrollArea>
+              </div>
+            ) : null}
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
@@ -312,8 +288,8 @@ export function TerminateCommandToolView({
           <Clock className="h-3.5 w-3.5" />
           {actualToolTimestamp && !isStreaming
             ? formatTimestamp(actualToolTimestamp)
-            : actualAssistantTimestamp
-              ? formatTimestamp(actualAssistantTimestamp)
+            : assistantTimestamp
+              ? formatTimestamp(assistantTimestamp)
               : ''}
         </div>
       </div>

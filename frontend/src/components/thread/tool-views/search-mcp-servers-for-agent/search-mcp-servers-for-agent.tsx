@@ -27,16 +27,24 @@ import { extractSearchMcpServersData } from './_utils';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
 export function SearchMcpServersForAgentToolView({
-  name = 'search-mcp-servers-for-agent',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-
+  // All hooks must be called unconditionally at the top
   const [isResultsExpanded, setIsResultsExpanded] = useState(true);
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('SearchMcpServersForAgentToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     search_query,
@@ -46,14 +54,12 @@ export function SearchMcpServersForAgentToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractSearchMcpServersData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

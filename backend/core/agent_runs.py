@@ -5,7 +5,7 @@ import uuid
 import os
 from datetime import datetime, timezone
 from typing import Optional, List, Tuple, Dict
-from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, UploadFile, Form
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access, get_optional_user_id_from_jwt
 from core.utils.logger import logger, structlog
@@ -15,6 +15,7 @@ from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from run_agent_background import run_agent_background
+import dramatiq
 
 from core.ai_models import model_manager
 
@@ -276,7 +277,7 @@ async def _create_agent_run_record(client, thread_id: str, agent_config: Optiona
     return agent_run_id
 
 
-async def _trigger_agent_background(agent_run_id: str, thread_id: str, project_id: str, effective_model: str, agent_config: Optional[dict]):
+async def _trigger_agent_background(agent_run_id: str, thread_id: str, project_id: str, effective_model: str, agent_id: Optional[str]):
     """
     Trigger the background agent execution.
     
@@ -285,19 +286,27 @@ async def _trigger_agent_background(agent_run_id: str, thread_id: str, project_i
         thread_id: Thread ID
         project_id: Project ID
         effective_model: Model name to use
-        agent_config: Agent configuration dict
+        agent_id: Agent ID (instead of full config to reduce log spam)
     """
     request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-    run_agent_background.send(
-        agent_run_id=agent_run_id,
-        thread_id=thread_id,
-        instance_id=utils.instance_id,
-        project_id=project_id,
-        model_name=effective_model,
-        agent_config=agent_config,
-        request_id=request_id,
-    )
+    logger.info(f"🚀 Sending agent run {agent_run_id} to Dramatiq queue (thread: {thread_id}, model: {effective_model})")
+    
+    try:
+        message = run_agent_background.send(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            instance_id=utils.instance_id,
+            project_id=project_id,
+            model_name=effective_model,
+            agent_id=agent_id,  # Pass agent_id instead of full agent_config
+            request_id=request_id,
+        )
+        message_id = message.message_id if hasattr(message, 'message_id') else 'N/A'
+        logger.info(f"✅ Successfully enqueued agent run {agent_run_id} to Dramatiq (message_id: {message_id})")
+    except Exception as e:
+        logger.error(f"❌ Failed to enqueue agent run {agent_run_id} to Dramatiq: {e}", exc_info=True)
+        raise
 
 
 async def _handle_file_uploads(files: List[UploadFile], sandbox, project_id: str, prompt: str = "") -> str:
@@ -615,7 +624,7 @@ async def unified_agent_start(
             agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
             
             # Trigger background execution
-            await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_config)
+            await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_id)
             
             # Increment guest message count if guest user
             response = {
@@ -752,7 +761,7 @@ async def unified_agent_start(
             agent_run_id = await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id)
             
             # Trigger background execution
-            await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_config)
+            await _trigger_agent_background(agent_run_id, thread_id, project_id, effective_model, agent_id)
             
             # Increment guest message count if guest user
             response = {
@@ -796,41 +805,73 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
 
 @router.get("/agent-runs/active", summary="List All Active Agent Runs", operation_id="list_active_agent_runs")
 async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    """Get all active (running) agent runs for the current user across all threads."""
+    """Get all active (running) agent runs for the current user across all threads.
+    
+    Efficiently queries DB by first filtering to user's threads, then querying agent_runs.
+    This avoids querying all running runs and filtering in memory.
+    """
     try:
         logger.debug(f"Fetching all active agent runs for user: {user_id}")
         client = await utils.db.client
         
-        # Query all running agent runs where the thread belongs to the user
-        # Join with threads table to filter by account_id
-        agent_runs = await client.table('agent_runs').select('id, thread_id, status, started_at').eq('status', 'running').execute()
-        
-        if not agent_runs.data:
+        try:
+            user_threads = await client.table('threads').select('thread_id').eq('account_id', user_id).execute()
+        except Exception as db_error:
+            logger.error(f"Database error fetching threads for user {user_id}: {str(db_error)}")
+            # Return empty list instead of failing - this is a non-critical endpoint
             return {"active_runs": []}
         
-        # Filter agent runs to only include those from threads the user has access to
-        # Get thread_ids and check access
-        thread_ids = [run['thread_id'] for run in agent_runs.data]
+        if not user_threads.data:
+            return {"active_runs": []}
         
-        # Get threads that belong to the user
-        threads = await client.table('threads').select('thread_id, account_id').in_('thread_id', thread_ids).eq('account_id', user_id).execute()
+        # Filter out None/empty thread_ids and ensure they're strings
+        thread_ids = [
+            str(thread['thread_id']) 
+            for thread in user_threads.data 
+            if thread.get('thread_id') and str(thread['thread_id']).strip()
+        ]
         
-        # Create a set of accessible thread IDs
-        accessible_thread_ids = {thread['thread_id'] for thread in threads.data}
+        logger.debug(f"Found {len(thread_ids)} valid thread_ids for user {user_id} (from {len(user_threads.data)} total threads)")
         
-        # Filter agent runs to only include accessible ones
+        # PostgREST's .in_() filter doesn't handle empty arrays gracefully
+        if not thread_ids:
+            logger.debug(f"No valid thread_ids found for user: {user_id}")
+            return {"active_runs": []}
+        
+        # Use batch_query_in utility which handles empty lists and batching
+        from core.utils.query_utils import batch_query_in
+        
+        try:
+            agent_runs_data = await batch_query_in(
+                client=client,
+                table_name='agent_runs',
+                select_fields='id, thread_id, status, started_at',
+                in_field='thread_id',
+                in_values=thread_ids,
+                additional_filters={'status': 'running'}
+            )
+        except Exception as query_error:
+            logger.error(f"Query error fetching agent runs for user {user_id}: {str(query_error)}")
+            # Return empty list instead of failing - this is a non-critical endpoint
+            return {"active_runs": []}
+        
+        # Format response - handle None or empty results
+        if not agent_runs_data:
+            return {"active_runs": []}
+        
         accessible_runs = [
             {
-                'id': run['id'],
-                'thread_id': run['thread_id'],
-                'status': run['status'],
-                'started_at': run['started_at']
+                'id': run.get('id'),
+                'thread_id': run.get('thread_id'),
+                'status': run.get('status'),
+                'started_at': run.get('started_at')
             }
-            for run in agent_runs.data
-            if run['thread_id'] in accessible_thread_ids
+            for run in agent_runs_data
+            if run and run.get('id')  # Ensure run exists and has required fields
         ]
         
         logger.debug(f"Found {len(accessible_runs)} active agent runs for user: {user_id}")
+        
         return {"active_runs": accessible_runs}
     except HTTPException:
         raise
@@ -894,7 +935,6 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
         effective_agent_id = None
         agent_source = "none"
         
-        # Get the most recently used agent from agent_runs
         recent_agent_result = await client.table('agent_runs').select('agent_id', 'agent_version_id').eq('thread_id', thread_id).not_.is_('agent_id', 'null').order('created_at', desc=True).limit(1).execute()
         if recent_agent_result.data:
             effective_agent_id = recent_agent_result.data[0]['agent_id']
@@ -1147,12 +1187,25 @@ async def stream_agent_run(
         finally:
             terminate_stream = True
             # Graceful shutdown order: unsubscribe → close → cancel
+            # Ensure cleanup happens even on cancellation
+            pubsub_cleaned = False
             try:
                 if 'pubsub' in locals() and pubsub:
                     await pubsub.unsubscribe(response_channel, control_channel)
                     await pubsub.close()
+                    pubsub_cleaned = True
+                    logger.debug(f"PubSub cleaned up for {agent_run_id}")
+            except asyncio.CancelledError:
+                # Still try to cleanup on cancellation
+                if 'pubsub' in locals() and pubsub and not pubsub_cleaned:
+                    try:
+                        await pubsub.unsubscribe(response_channel, control_channel)
+                        await pubsub.close()
+                        logger.debug(f"PubSub cleaned up after cancellation for {agent_run_id}")
+                    except Exception:
+                        pass  # Ignore errors during cancellation cleanup
             except Exception as e:
-                logger.debug(f"Error during pubsub cleanup for {agent_run_id}: {e}")
+                logger.warning(f"Error during pubsub cleanup for {agent_run_id}: {e}")
 
             if listener_task:
                 listener_task.cancel()

@@ -15,7 +15,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { useProjects, useThreads, processThreadsWithProjects } from '@/hooks/sidebar/use-sidebar';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import Link from 'next/link';
 
 // Thread with associated project info for display in sidebar & search
@@ -45,24 +45,6 @@ export function SidebarSearch() {
   const allThreads = threadsResponse?.threads || [];
   const isLoading = projectsLoading || threadsLoading;
   
-  // Debug logging
-  useEffect(() => {
-    console.log('🔍 Search: Hook data', {
-      projectsLoading,
-      threadsLoading,
-      projectsCount: projects.length,
-      threadsCount: allThreads.length,
-      projectsError: projectsError?.message,
-      threadsError: threadsError?.message,
-      firstProject: projects[0] ? { id: projects[0].id, name: projects[0].name } : null,
-      firstThread: allThreads[0] ? { 
-        thread_id: allThreads[0].thread_id, 
-        project_id: allThreads[0].project_id,
-        hasProject: !!(allThreads[0] as any).project
-      } : null
-    });
-  }, [projectsLoading, threadsLoading, projects.length, allThreads.length, projectsError, threadsError, projects, allThreads]);
-
   // Helper to sort threads by updated_at (most recent first)
   const sortThreads = (
     threadsList: ThreadWithProject[],
@@ -113,19 +95,10 @@ export function SidebarSearch() {
         }
       });
       effectiveProjects = Array.from(projectsMap.values());
-      console.log('🔍 Search: Extracted projects from threads', { count: effectiveProjects.length });
     }
     
     // Use the utility function that handles project extraction from threads
     const threadsWithProjects = processThreadsWithProjects(allThreads, effectiveProjects);
-    
-    console.log('🔍 Search: Processed threads', { 
-      inputThreads: allThreads.length, 
-      inputProjects: projects.length,
-      effectiveProjects: effectiveProjects.length,
-      outputThreads: threadsWithProjects.length,
-      sampleThread: threadsWithProjects[0]
-    });
 
     // Set threads, ensuring consistent sort order
     const sortedThreads = sortThreads(threadsWithProjects);

@@ -3,7 +3,7 @@
 import React from 'react';
 import { Clock, CheckCircle, AlertTriangle, Loader2, Timer } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, extractToolData, getToolTitle } from '../utils';
+import { formatTimestamp, getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,39 +13,72 @@ interface WaitToolViewProps extends ToolViewProps {
   // No additional props needed
 }
 
-const extractWaitData = (toolContent?: any, isSuccess: boolean = true) => {
+const extractWaitData = (
+  toolCall: { function_name: string; arguments?: Record<string, any> },
+  toolResult?: { success?: boolean; output?: any },
+  isSuccess: boolean = true
+) => {
+  const args = toolCall.arguments || {};
   let seconds = 0;
-  let actualIsSuccess = isSuccess;
-
-  if (toolContent) {
-    try {
-      const toolData = extractToolData(toolContent);
-      const toolResult = toolData.toolResult;
-      const arguments_ = toolResult?.arguments || {};
-      
-      seconds = arguments_.seconds || 0;
-      actualIsSuccess = toolResult ? toolResult.isSuccess : isSuccess;
-    } catch (error) {
-      console.error('Error parsing wait tool content:', error);
-    }
+  
+  // Extract seconds from arguments
+  if (args.seconds !== undefined && args.seconds !== null) {
+    seconds = typeof args.seconds === 'string' ? parseInt(args.seconds, 10) : Number(args.seconds);
+  } else if (args.duration !== undefined && args.duration !== null) {
+    seconds = typeof args.duration === 'string' ? parseInt(args.duration, 10) : Number(args.duration);
   }
+  
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   return {
-    seconds,
+    seconds: Math.max(0, seconds), // Ensure non-negative
     isSuccess: actualIsSuccess
   };
 };
 
 export function WaitToolView({
-  name = 'wait',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: WaitToolViewProps) {
-  const { seconds, isSuccess: actualIsSuccess } = extractWaitData(toolContent, isSuccess);
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('WaitToolView: toolCall is undefined. Tool views should use structured props.');
+    return (
+      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
+          <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+            Wait Tool Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            This tool view requires structured metadata. Please update the component to use toolCall and toolResult props.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { seconds, isSuccess: actualIsSuccess } = extractWaitData(
+    toolCall,
+    toolResult,
+    isSuccess
+  );
+
+  // Debug logging (can be removed in production)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('WaitToolView data:', {
+      seconds,
+      toolCall: toolCall?.function_name,
+      arguments: toolCall?.arguments,
+      toolResult: toolResult ? { success: toolResult.success, hasOutput: !!toolResult.output } : null,
+      actualIsSuccess
+    });
+  }
 
   const formatDuration = (seconds: number) => {
     if (seconds < 60) {
@@ -57,7 +90,7 @@ export function WaitToolView({
     }
   };
 
-  const toolTitle = getToolTitle(name) || 'Wait';
+  const toolTitle = getToolTitle(toolCall.function_name.replace(/_/g, '-')) || 'Wait';
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

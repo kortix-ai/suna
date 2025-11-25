@@ -29,14 +29,24 @@ import {
 } from "@/components/ui/collapsible";
 
 export function ListAppEventTriggersToolView({
-  name = 'list-app-event-triggers',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
+  const [expandedTriggers, setExpandedTriggers] = React.useState<Set<string>>(new Set());
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('ListAppEventTriggersToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     toolkit_slug,
@@ -48,16 +58,12 @@ export function ListAppEventTriggersToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractListAppEventTriggersData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const [expandedTriggers, setExpandedTriggers] = React.useState<Set<string>>(new Set());
-
-  const toolTitle = getToolTitle(name);
 
   const toggleTrigger = (slug: string) => {
     setExpandedTriggers(prev => {

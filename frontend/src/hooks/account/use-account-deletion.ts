@@ -21,6 +21,11 @@ export interface CancelDeletionResponse {
     message: string;
 }
 
+export interface DeleteImmediatelyResponse {
+    success: boolean;
+    message: string;
+}
+
 export const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
 
 export function useAccountDeletionStatus() {
@@ -103,6 +108,41 @@ export function useCancelAccountDeletion() {
         },
         onError: (error: Error) => {
             toast.error(error.message || 'Failed to cancel account deletion');
+        }
+    });
+}
+
+export function useDeleteAccountImmediately() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async () => {
+            const response = await backendApi.delete<DeleteImmediatelyResponse>('/account/delete-immediately');
+
+            if (!response.success || !response.data) {
+                throw new Error(response.error?.message || 'Failed to delete account immediately');
+            }
+
+            return response.data;
+        },
+        onSuccess: (data) => {
+            toast.success(data.message);
+            
+            // Clear deletion status since account is gone
+            queryClient.setQueryData<AccountDeletionStatus>(ACCOUNT_DELETION_QUERY_KEY, {
+                has_pending_deletion: false,
+                deletion_scheduled_for: null,
+                requested_at: null,
+                can_cancel: false
+            });
+            
+            // Redirect to home or logout after a short delay
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || 'Failed to delete account immediately');
         }
     });
 }

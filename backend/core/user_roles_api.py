@@ -21,7 +21,7 @@ async def get_user_admin_role(
         
         result = await client.from_('user_roles').select('role').eq('user_id', user_id).in_('role', ['admin', 'super_admin']).maybe_single().execute()
         
-        if result.data:
+        if result and result.data:
             return {
                 "isAdmin": True,
                 "role": result.data['role']

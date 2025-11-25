@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { Loader2 } from 'lucide-react';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 

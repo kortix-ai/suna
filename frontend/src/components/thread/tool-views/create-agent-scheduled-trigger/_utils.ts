@@ -1,4 +1,4 @@
-import { parseToolResult } from '../tool-result-parser';
+import { ToolCallData, ToolResultData } from '../types';
 
 export interface CreateAgentScheduledTriggerData {
   agent_id: string | null;
@@ -19,32 +19,21 @@ export interface CreateAgentScheduledTriggerData {
   timestamp?: string;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractCreateAgentScheduledTriggerData(
-  assistantContent?: string,
-  toolContent?: any,
-  isSuccess?: boolean,
+  toolCall: ToolCallData,
+  toolResult?: ToolResultData,
+  isSuccess: boolean = true,
   toolTimestamp?: string,
   assistantTimestamp?: string
 ): CreateAgentScheduledTriggerData & {
   actualIsSuccess: boolean;
-  actualToolTimestamp: string | undefined;
-  actualAssistantTimestamp: string | undefined;
+  actualToolTimestamp?: string;
+  actualAssistantTimestamp?: string;
 } {
   const defaultResult: CreateAgentScheduledTriggerData & {
     actualIsSuccess: boolean;
-    actualToolTimestamp: string | undefined;
-    actualAssistantTimestamp: string | undefined;
+    actualToolTimestamp?: string;
+    actualAssistantTimestamp?: string;
   } = {
     agent_id: null,
     name: null,
@@ -52,77 +41,47 @@ export function extractCreateAgentScheduledTriggerData(
     cron_expression: null,
     agent_prompt: null,
     trigger: null,
-    actualIsSuccess: isSuccess || false,
+    actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
   };
 
-  try {
-    if (toolContent) {
-      let content = toolContent;
-      
-      if (typeof toolContent === 'string') {
-        try {
-          content = JSON.parse(toolContent);
-        } catch (e) {
-          content = toolContent;
-        }
-      }
-
-      if (content && typeof content === 'object' && content.content) {
-        try {
-          const nestedContent = typeof content.content === 'string' ? JSON.parse(content.content) : content.content;
-          content = nestedContent;
-        } catch (e) {
-        }
-      }
-
-      if (content && typeof content === 'object' && content.tool_execution) {
-        const toolExecution = content.tool_execution;
-        if (toolExecution.result && toolExecution.result.success) {
-          const args = toolExecution.arguments;
-          const output = toolExecution.result.output;
-
-          if (args && output?.trigger) {
-            return {
-              ...defaultResult,
-              agent_id: args.agent_id || null,
-              name: args.name || null,
-              description: args.description || null,
-              cron_expression: args.cron_expression || null,
-              agent_prompt: args.agent_prompt || null,
-              trigger: output.trigger,
-              actualIsSuccess: true
-            };
-          }
-        }
-      }
-    }
-
-    if (assistantContent) {
-      const parsed = parseToolResult(assistantContent);
-      if (parsed && parsed.isSuccess) {
-        const toolOutput = parseContent(parsed.toolOutput);
-        const args = parsed.arguments;
-
-        if (args && toolOutput?.trigger) {
-          return {
-            ...defaultResult,
-            agent_id: args.agent_id || null,
-            name: args.name || null,
-            description: args.description || null,
-            cron_expression: args.cron_expression || null,
-            agent_prompt: args.agent_prompt || null,
-            trigger: toolOutput.trigger,
-            actualIsSuccess: true
-          };
-        }
-      }
-    }
-
-    return defaultResult;
-  } catch (error) {
-    console.error('Error extracting create agent scheduled trigger data:', error);
+  if (!toolResult?.output) {
     return defaultResult;
   }
-} 
+
+  let parsedOutput: any = toolResult.output;
+  if (typeof parsedOutput === 'string') {
+    try {
+      parsedOutput = JSON.parse(parsedOutput);
+    } catch (e) {
+      return { ...defaultResult, actualIsSuccess: false };
+    }
+  }
+
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+
+  return {
+    agent_id: parsedOutput.agent_id || args.agent_id || null,
+    name: parsedOutput.name || args.name || null,
+    description: parsedOutput.description || args.description || null,
+    cron_expression: parsedOutput.cron_expression || args.cron_expression || null,
+    agent_prompt: parsedOutput.agent_prompt || args.agent_prompt || null,
+    trigger: parsedOutput.trigger || null,
+    success: parsedOutput.success,
+    timestamp: parsedOutput.timestamp,
+    actualIsSuccess: parsedOutput.success ?? isSuccess,
+    actualToolTimestamp: parsedOutput.timestamp || toolTimestamp,
+    actualAssistantTimestamp: assistantTimestamp
+  };
+}

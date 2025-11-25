@@ -859,7 +859,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       </div>
     ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, planModalOpen, setPlanSelectionModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon, buttonLoaderVariant]);
 
-    const isSnackVisible = showToolPreview || !!showSnackbar;
+    // Check if user is on free tier - only when we have subscriptionData and can confirm it's free
+    const isFreeTier = subscriptionData && (
+      subscriptionData.tier_key === 'free' ||
+      subscriptionData.tier?.name === 'free' ||
+      subscriptionData.plan_name === 'free'
+    );
+
+    const isSnackVisible = showToolPreview || !!showSnackbar || (isFreeTier && subscriptionData && !isLocalMode());
 
     return (
       <div className="mx-auto w-full max-w-4xl relative">

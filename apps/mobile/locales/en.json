@@ -18,7 +18,8 @@
     "send": "Send",
     "back": "Back",
     "new": "New",
-    "create": "Create"
+    "create": "Create",
+    "continue": "Continue"
   },
   "auth": {
     "signIn": "Sign in",
@@ -63,6 +64,8 @@
     "creatingAccount": "Creating account...",
     "enterEmailPassword": "Enter email and password",
     "enterEmailAddress": "Enter your email address",
+    "enterEmail": "Enter your email",
+    "chooseAction": "Log in or Sign up?",
     "signInFailed": "Sign in failed. Check your credentials.",
     "signUpFailed": "Sign up failed. Please try again.",
     "resetFailed": "Couldn't send email. Try again.",
@@ -100,14 +103,14 @@
       "passwordTooShort": "Password must be at least 8 characters"
     },
     "drawer": {
-      "defaultTitle": "Create an Account",
-      "defaultMessage": "Sign up or log in to continue",
-      "signInToChat": "Sign in to Chat",
-      "signInToChatMessage": "Create an account or log in to start chatting with AI workers.",
-      "signUpUnlock": "Create an Account",
-      "signUpUnlockMessage": "Sign up to unlock full access to AI workers and features.",
-      "welcomeBack": "Welcome Back",
-      "welcomeBackMessage": "Log in to continue using AI workers and features.",
+      "defaultTitle": "Welcome to Kortix",
+      "defaultMessage": "The AI Super Mega Giga app.",
+      "signInToChat": "Welcome to Kortix",
+      "signInToChatMessage": "The AI Super Mega Giga app.",
+      "signUpUnlock": "Welcome to Kortix",
+      "signUpUnlockMessage": "The AI Super Mega Giga app.",
+      "welcomeBack": "Welcome to Kortix",
+      "welcomeBackMessage": "The AI Super Mega Giga app.",
       "signUpToContinue": "Sign up to continue",
       "signUpToContinueMessage": "Please sign up or sign in to create and select workers, connect apps and much more"
     },

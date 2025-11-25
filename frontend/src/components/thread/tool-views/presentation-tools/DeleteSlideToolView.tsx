@@ -15,7 +15,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp, extractToolData } from '../utils';
+import { formatTimestamp } from '../utils';
 import { LoadingState } from '../shared/LoadingState';
 
 interface DeleteSlideData {
@@ -27,23 +27,21 @@ interface DeleteSlideData {
 }
 
 export function DeleteSlideToolView({
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
-  name,
   project,
 }: ToolViewProps) {
-  const { toolResult } = extractToolData(toolContent);
-  
+  // Extract from toolResult.output (from metadata)
   let deleteData: DeleteSlideData | null = null;
   let error: string | null = null;
 
   try {
-    if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== 'STREAMING') {
-      const output = toolResult.toolOutput;
+    if (toolResult?.output) {
+      let output = toolResult.output;
       if (typeof output === 'string') {
         try {
           deleteData = JSON.parse(output);

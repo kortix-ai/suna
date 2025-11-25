@@ -12,13 +12,6 @@ import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
 import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView';
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
-import { PaperSearchToolView } from '../paper-search-tool/PaperSearchToolView';
-import { PaperDetailsToolView } from '../paper-details-tool/PaperDetailsToolView';
-import { AuthorSearchToolView } from '../author-search-tool/AuthorSearchToolView';
-import { AuthorDetailsToolView } from '../author-details-tool/AuthorDetailsToolView';
-import { AuthorPapersToolView } from '../author-papers-tool/AuthorPapersToolView';
-import { PaperCitationsToolView } from '../paper-citations-tool/PaperCitationsToolView';
-import { PaperReferencesToolView } from '../paper-references-tool/PaperReferencesToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
@@ -34,7 +27,6 @@ import { ConfigureProfileForAgentToolView } from '../configure-profile-for-agent
 import { GetCredentialProfilesToolView } from '../get-credential-profiles/get-credential-profiles';
 import { GetCurrentAgentConfigToolView } from '../get-current-agent-config/get-current-agent-config';
 import { TaskListToolView } from '../task-list/TaskListToolView';
-import { PresentationOutlineToolView } from '../presentation-tools/PresentationOutlineToolView';
 import { ListPresentationTemplatesToolView } from '../presentation-tools/ListPresentationTemplatesToolView';
 import { PresentationViewer } from '../presentation-tools/PresentationViewer';
 import { ListPresentationsToolView } from '../presentation-tools/ListPresentationsToolView';
@@ -65,7 +57,6 @@ import { ListCallsToolView } from '../vapi-call/ListCallsToolView';
 import { MonitorCallToolView } from '../vapi-call/MonitorCallToolView';
 import { WaitForCallCompletionToolView } from '../vapi-call/WaitForCallCompletionToolView';
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
-import { extractToolData } from '../utils';
 import { KbToolView } from '../KbToolView';
 import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolView';
 
@@ -98,13 +89,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'web-search': WebSearchToolView,
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
-  'paper-search': PaperSearchToolView,
-  'get-paper-details': PaperDetailsToolView,
-  'search-authors': AuthorSearchToolView,
-  'get-author-details': AuthorDetailsToolView,
-  'get-author-papers': AuthorPapersToolView,
-  'get-paper-citations': PaperCitationsToolView,
-  'get-paper-references': PaperReferencesToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
@@ -140,7 +124,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'expand-message': ExpandMessageToolView,
 
 
-  'create-presentation-outline': PresentationOutlineToolView,
   'list-templates': ListPresentationTemplatesToolView,
   'load-template-design': ListPresentationTemplatesToolView,
 
@@ -275,16 +258,15 @@ export function useToolView(toolName: string): ToolViewComponent {
 
 
 
-export function ToolView({ name = 'default', assistantContent, toolContent, ...props }: ToolViewProps) {
-  const toolToolData = extractToolData(toolContent);
-
-  // find the file path from the tool arguments
-  const toolArguments = toolToolData.arguments || {};
-  const filePath = toolArguments.file_path || toolArguments.target_file;
+export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
+  // Extract tool name from function_name (handle undefined case)
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'default';
+  
+  // Get file path directly from tool call arguments (from metadata)
+  const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file;
 
   // check if the file path is a presentation slide
   const { isValid: isPresentationSlide, presentationName, slideNumber } = parsePresentationSlidePath(filePath);
-  let modifiedToolContent = toolContent;
 
   // define presentation-related tools that shouldn't be transformed
   const presentationTools = [
@@ -298,15 +280,28 @@ export function ToolView({ name = 'default', assistantContent, toolContent, ...p
 
   const isAlreadyPresentationTool = presentationTools.includes(name);
 
-  // if the file path is a presentation slide, we need to modify the tool content to match the expected structure for PresentationViewer
-  if (isPresentationSlide && filePath && presentationName && slideNumber && !isAlreadyPresentationTool) {
-    modifiedToolContent = createPresentationViewerToolContent(presentationName, filePath, slideNumber);
-  }
-
-  // determine the effective tool name
+  // determine the effective tool name (must be computed before hook call)
   const effectiveToolName = (isPresentationSlide && !isAlreadyPresentationTool) ? 'create-slide' : name;
 
-  // use the tool view component
+  // use the tool view component - hook must be called unconditionally
   const ToolViewComponent = useToolView(effectiveToolName);
-  return <ToolViewComponent name={effectiveToolName} toolContent={modifiedToolContent} {...props} />;
+
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall || !toolCall.function_name) {
+    console.warn('ToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
+    // Fallback to GenericToolView with error handling
+    return <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />;
+  }
+
+  // if the file path is a presentation slide, we need to modify the tool result to match the expected structure for PresentationViewer
+  let modifiedToolResult = toolResult;
+  if (isPresentationSlide && filePath && presentationName && slideNumber && !isAlreadyPresentationTool && toolResult) {
+    const viewerContent = createPresentationViewerToolContent(presentationName, filePath, slideNumber);
+    modifiedToolResult = {
+      ...toolResult,
+      output: viewerContent,
+    };
+  }
+
+  return <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />;
 }

@@ -22,14 +22,21 @@ import { Separator } from "@/components/ui/separator";
 import { extractDiscoverUserMcpServersData, McpTool } from './_utils';
 
 export function DiscoverUserMcpServersToolView({
-  name = 'discover-user-mcp-servers',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('DiscoverUserMcpServersToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
   const {
     profile_id,
@@ -41,14 +48,12 @@ export function DiscoverUserMcpServersToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractDiscoverUserMcpServersData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
-
-  const toolTitle = getToolTitle(name);
 
   const formatToolName = (toolName: string): string => {
     return toolName

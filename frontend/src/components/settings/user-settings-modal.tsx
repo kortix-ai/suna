@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
     Settings,
     CreditCard,
@@ -34,7 +35,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { 
     useAccountDeletionStatus, 
     useRequestAccountDeletion, 
-    useCancelAccountDeletion 
+    useCancelAccountDeletion,
+    useDeleteAccountImmediately
 } from '@/hooks/account/use-account-deletion';
 import { SubscriptionInfo } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
@@ -230,11 +232,13 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
     const supabase = createClient();
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
     const cancelDeletion = useCancelAccountDeletion();
+    const deleteImmediately = useDeleteAccountImmediately();
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -273,9 +277,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     };
 
     const handleRequestDeletion = async () => {
-        await requestDeletion.mutateAsync('User requested deletion');
+        if (deletionType === 'immediate') {
+            await deleteImmediately.mutateAsync();
+        } else {
+            await requestDeletion.mutateAsync('User requested deletion');
+        }
         setShowDeleteDialog(false);
         setDeleteConfirmText('');
+        setDeletionType('grace-period'); // Reset to default
     };
 
     const handleCancelDeletion = async () => {
@@ -362,9 +371,9 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                 <>
                     <div className="pt-8 space-y-4">
                         <div>
-                            <h3 className="text-base font-medium mb-1">Delete Account</h3>
+                            <h3 className="text-base font-medium mb-1">{t('deleteAccount.title')}</h3>
                             <p className="text-sm text-muted-foreground">
-                                Permanently remove your account and all associated data
+                                {t('deleteAccount.description')}
                             </p>
                         </div>
 
@@ -373,13 +382,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 <Clock className="h-4 w-4 text-amber-600" />
                                 <AlertDescription>
                                     <div className="text-sm">
-                                        <strong className="text-foreground">Deletion Scheduled</strong>
+                                        <strong className="text-foreground">{t('deleteAccount.scheduled')}</strong>
                                         <p className="mt-1 text-muted-foreground">
-                                            Your account will be permanently deleted on{' '}
-                                            <strong className="text-foreground">{formatDate(deletionStatus.deletion_scheduled_for)}</strong>.
+                                            {t('deleteAccount.scheduledDescription', {
+                                                date: formatDate(deletionStatus.deletion_scheduled_for)
+                                            })}
                                         </p>
                                         <p className="mt-2 text-muted-foreground">
-                                            You can cancel this request anytime before the deletion date.
+                                            {t('deleteAccount.canCancel')}
                                         </p>
                                     </div>
                                 </AlertDescription>
@@ -390,7 +400,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         onClick={() => setShowCancelDialog(true)}
                                         disabled={cancelDeletion.isPending}
                                     >
-                                        Cancel Deletion Request
+                                        {t('deleteAccount.cancelButton')}
                                     </Button>
                                 </div>
                             </Alert>
@@ -400,53 +410,95 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 onClick={() => setShowDeleteDialog(true)}
                                 className="text-muted-foreground hover:text-foreground"
                             >
-                                Delete Account
+                                {t('deleteAccount.button')}
                             </Button>
                         )}
                     </div>
 
                     <Dialog open={showDeleteDialog} onOpenChange={(open) => {
                         setShowDeleteDialog(open);
-                        if (!open) setDeleteConfirmText('');
+                        if (!open) {
+                            setDeleteConfirmText('');
+                            setDeletionType('grace-period');
+                        }
                     }}>
                         <DialogContent className="max-w-md">
                             <DialogHeader>
-                                <DialogTitle>Delete Account</DialogTitle>
+                                <DialogTitle>{t('deleteAccount.dialogTitle')}</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
-                                <Alert className="shadow-none border-amber-500/30 bg-amber-500/5">
-                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                                <Alert className={cn(
+                                    "shadow-none",
+                                    deletionType === 'immediate' 
+                                        ? "border-red-500/30 bg-red-500/5" 
+                                        : "border-amber-500/30 bg-amber-500/5"
+                                )}>
+                                    <AlertTriangle className={cn(
+                                        "h-4 w-4",
+                                        deletionType === 'immediate' ? "text-red-600" : "text-amber-600"
+                                    )} />
                                     <AlertDescription>
-                                        <strong className="text-foreground">This action cannot be undone after 30 days</strong>
+                                        <strong className="text-foreground">
+                                            {deletionType === 'immediate' 
+                                                ? t('deleteAccount.warningImmediate')
+                                                : t('deleteAccount.warningGracePeriod')}
+                                        </strong>
                                     </AlertDescription>
                                 </Alert>
+                                
                                 <div>
                                     <p className="text-sm font-medium mb-2">
-                                        When you delete your account:
+                                        {t('deleteAccount.whenDelete')}
                                     </p>
                                     <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
-                                        <li>All your agents and agent versions will be deleted</li>
-                                        <li>All your threads and conversations will be deleted</li>
-                                        <li>All your credentials and integrations will be removed</li>
-                                        <li>Your subscription will be cancelled</li>
-                                        <li>All billing data will be removed</li>
-                                        <li>Your account will be scheduled for deletion in 30 days</li>
+                                        <li>{t('deleteAccount.agentsDeleted')}</li>
+                                        <li>{t('deleteAccount.threadsDeleted')}</li>
+                                        <li>{t('deleteAccount.credentialsRemoved')}</li>
+                                        <li>{t('deleteAccount.subscriptionCancelled')}</li>
+                                        <li>{t('deleteAccount.billingRemoved')}</li>
+                                        {deletionType === 'grace-period' && (
+                                            <li>{t('deleteAccount.scheduled30Days')}</li>
+                                        )}
                                     </ul>
                                 </div>
-                                <p className="text-sm text-muted-foreground">
-                                    You can cancel this request anytime within the 30-day grace period.
-                                    After 30 days, all your data will be permanently deleted and cannot be recovered.
-                                </p>
+
+                                <div className="space-y-3">
+                                    <Label>{t('deleteAccount.chooseDeletionType')}</Label>
+                                    <RadioGroup value={deletionType} onValueChange={(value) => setDeletionType(value as 'grace-period' | 'immediate')}>
+                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border p-4">
+                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5" />
+                                            <div className="space-y-1 flex-1">
+                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer">
+                                                    {t('deleteAccount.gracePeriodOption')}
+                                                </Label>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {t('deleteAccount.gracePeriodDescription')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border border-red-500/30 p-4">
+                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5" />
+                                            <div className="space-y-1 flex-1">
+                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-red-600">
+                                                    {t('deleteAccount.immediateOption')}
+                                                </Label>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {t('deleteAccount.immediateDescription')}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </RadioGroup>
+                                </div>
                                 
                                 <div className="space-y-2">
                                     <Label htmlFor="delete-confirm">
-                                        Type <strong>delete</strong> to confirm
+                                        {t('deleteAccount.confirmText')}
                                     </Label>
                                     <Input
                                         id="delete-confirm"
                                         value={deleteConfirmText}
                                         onChange={(e) => setDeleteConfirmText(e.target.value)}
-                                        placeholder="delete"
+                                        placeholder={t('deleteAccount.confirmPlaceholder')}
                                         className="shadow-none"
                                         autoComplete="off"
                                     />
@@ -456,15 +508,21 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <Button variant="outline" onClick={() => {
                                         setShowDeleteDialog(false);
                                         setDeleteConfirmText('');
+                                        setDeletionType('grace-period');
                                     }}>
-                                        Keep Account
+                                        {t('deleteAccount.keepAccount')}
                                     </Button>
                                     <Button 
                                         variant="destructive" 
                                         onClick={handleRequestDeletion} 
-                                        disabled={requestDeletion.isPending || deleteConfirmText !== 'delete'}
+                                        disabled={
+                                            (requestDeletion.isPending || deleteImmediately.isPending) || 
+                                            deleteConfirmText !== 'delete'
+                                        }
                                     >
-                                        {requestDeletion.isPending ? 'Processing...' : 'Delete Account'}
+                                        {(requestDeletion.isPending || deleteImmediately.isPending) 
+                                            ? tCommon('processing') 
+                                            : t('deleteAccount.button')}
                                     </Button>
                                 </div>
                             </div>
@@ -474,22 +532,21 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
                         <AlertDialogContent className="max-w-md">
                             <AlertDialogHeader>
-                                <AlertDialogTitle>Cancel Account Deletion</AlertDialogTitle>
+                                <AlertDialogTitle>{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
                             </AlertDialogHeader>
                             <div className="space-y-4">
                                 <p className="text-sm text-muted-foreground">
-                                    Are you sure you want to cancel the deletion of your account?
-                                    Your account and all data will be preserved.
+                                    {t('deleteAccount.cancelDeletionDescription')}
                                 </p>
                                 <div className="flex gap-2 justify-end">
                                     <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
-                                        Back
+                                        {tCommon('back')}
                                     </Button>
                                     <Button 
                                         onClick={handleCancelDeletion} 
                                         disabled={cancelDeletion.isPending}
                                     >
-                                        {cancelDeletion.isPending ? 'Processing...' : 'Cancel Deletion'}
+                                        {cancelDeletion.isPending ? tCommon('processing') : t('deleteAccount.cancelDeletion')}
                                     </Button>
                                 </div>
                             </div>
@@ -702,7 +759,12 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                         {planIcon && (
                             <>
                                 <div className="rounded-full py-0.5 flex items-center justify-center">
-                                    <img src={planIcon} alt={planName} className="h-6 w-auto" />
+                                    <img 
+                                        src={planIcon} 
+                                        alt={planName} 
+                                        className="h-6 w-auto" 
+                                        style={{ height: '24px', width: 'auto' }}
+                                    />
                                 </div>
                             </>
                         )}

@@ -47,6 +47,17 @@ DECLARE
 BEGIN
     RAISE NOTICE 'Starting deletion for account_id: %, user_id: %', p_account_id, p_user_id;
 
+    -- Delete storage files from file-uploads bucket
+    BEGIN
+        DELETE FROM storage.objects
+        WHERE bucket_id = 'file-uploads'
+          AND name LIKE p_account_id::text || '/%';
+        GET DIAGNOSTICS v_row_count = ROW_COUNT;
+        RAISE NOTICE 'Deleted % storage files from file-uploads bucket', v_row_count;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Error deleting storage files: %', SQLERRM;
+    END;
+
     BEGIN
         DELETE FROM agent_runs WHERE thread_id IN (
             SELECT thread_id FROM threads WHERE account_id = p_account_id
@@ -164,6 +175,14 @@ BEGIN
     END;
 
     BEGIN
+        DELETE FROM file_uploads WHERE account_id = p_account_id;
+        GET DIAGNOSTICS v_row_count = ROW_COUNT;
+        RAISE NOTICE 'Deleted % file_uploads records', v_row_count;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Error deleting file_uploads: %', SQLERRM;
+    END;
+
+    BEGIN
         DELETE FROM account_deletion_requests WHERE account_id = p_account_id;
         GET DIAGNOSTICS v_row_count = ROW_COUNT;
         RAISE NOTICE 'Deleted % account_deletion_requests', v_row_count;
@@ -214,6 +233,23 @@ BEGIN
     END IF;
     
     RAISE NOTICE 'Executing deletion for request: %, account: %, user: %', p_deletion_request_id, v_account_id, v_user_id;
+    
+    -- Delete Daytona sandboxes via HTTP endpoint before deleting account data
+    BEGIN
+        PERFORM net.http_post(
+            url := 'https://staging-api.suna.so/api/internal/delete-account-sandboxes',
+            headers := json_build_object(
+                'Content-Type', 'application/json',
+                'X-Admin-Api-Key', 'j6ocvq8qeM3g9IOelVmUFpqtVpIVAtjsHr6PuN9RhI4g1cudFV1qErVIZE4e35us'
+            )::jsonb,
+            body := json_build_object('account_id', v_account_id)::text::jsonb,
+            timeout_milliseconds := 30000
+        );
+        RAISE NOTICE 'Requested sandbox deletion for account: %', v_account_id;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Failed to delete sandboxes via HTTP for account %: %', v_account_id, SQLERRM;
+        -- Continue with deletion even if sandbox deletion fails
+    END;
     
     IF delete_user_data(v_account_id, v_user_id) THEN
         UPDATE account_deletion_requests

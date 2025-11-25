@@ -3,7 +3,7 @@ import * as ResizablePrimitive from 'react-resizable-panels';
 import { SiteHeader } from '@/components/thread/thread-site-header';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { ToolCallSidePanel } from '@/components/thread/tool-call-side-panel';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { ApiMessageType } from '@/components/thread/types';
 import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
 import { useIsMobile } from '@/hooks/utils';
@@ -151,7 +151,7 @@ export function ThreadLayout({
               onOpenChange={setFileViewerOpen}
               sandboxId={sandboxId}
               initialFilePath={fileToView}
-              project={project || undefined}
+              projectId={projectId}
               filePathList={filePathList}
             />
           )}
@@ -213,7 +213,7 @@ export function ThreadLayout({
             onOpenChange={setFileViewerOpen}
             sandboxId={sandboxId}
             initialFilePath={fileToView}
-            project={project || undefined}
+            projectId={projectId}
             filePathList={filePathList}
           />
         )}
@@ -300,16 +300,14 @@ export function ThreadLayout({
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {sandboxId && (
-        <FileViewerModal
-          open={fileViewerOpen}
-          onOpenChange={setFileViewerOpen}
-          sandboxId={sandboxId}
-          initialFilePath={fileToView}
-          project={project || undefined}
-          filePathList={filePathList}
-        />
-      )}
+      <FileViewerModal
+        open={fileViewerOpen}
+        onOpenChange={setFileViewerOpen}
+        sandboxId={sandboxId || ''}
+        initialFilePath={fileToView}
+        projectId={projectId}
+        filePathList={filePathList}
+      />
     </div>
   );
 }

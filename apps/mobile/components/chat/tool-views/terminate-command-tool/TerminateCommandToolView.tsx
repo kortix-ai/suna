@@ -6,9 +6,8 @@ import { StopCircle, CheckCircle2, AlertCircle, Terminal, Power } from 'lucide-r
 import type { ToolViewProps } from '../types';
 import { extractTerminateCommandData } from './_utils';
 
-export function TerminateCommandToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { sessionName, output, success } = extractTerminateCommandData(toolData);
-
+export function TerminateCommandToolView({ toolCall, toolResult, isSuccess = true, isStreaming = false }: ToolViewProps) {
+  const { sessionName, output, success } = extractTerminateCommandData(toolCall, toolResult, isSuccess);
   const lines = output ? output.split('\n') : [];
 
   if (isStreaming) {
@@ -47,14 +46,14 @@ export function TerminateCommandToolView({ toolData, isStreaming = false }: Tool
             </Text>
           </View>
           <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${success ? 'bg-primary/10' : 'bg-destructive/10'
-            }`}>
-            <Icon
-              as={success ? CheckCircle2 : AlertCircle}
-              size={12}
-              className={success ? 'text-primary' : 'text-destructive'}
+          }`}>
+            <Icon 
+              as={success ? CheckCircle2 : AlertCircle} 
+              size={12} 
+              className={success ? 'text-primary' : 'text-destructive'} 
             />
             <Text className={`text-xs font-roobert-medium ${success ? 'text-primary' : 'text-destructive'
-              }`}>
+            }`}>
               {success ? 'Terminated' : 'Failed'}
             </Text>
           </View>
@@ -81,7 +80,7 @@ export function TerminateCommandToolView({ toolData, isStreaming = false }: Tool
             <View className="rounded-2xl p-4 border bg-card border-border" style={{ maxHeight: 400 }}>
               <ScrollView showsVerticalScrollIndicator={false}>
                 {lines.map((line, idx) => (
-                  <Text
+                  <Text 
                     key={idx}
                     className="text-sm font-roobert-mono text-foreground/80 leading-5"
                     selectable

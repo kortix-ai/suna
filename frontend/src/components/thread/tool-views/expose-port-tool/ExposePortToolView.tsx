@@ -18,14 +18,31 @@ import { Button } from '@/components/ui/button';
 import { LoadingState } from '../shared/LoadingState';
 
 export function ExposePortToolView({
-  name = 'expose-port',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   isSuccess = true,
   isStreaming = false,
   assistantTimestamp,
   toolTimestamp,
 }: ToolViewProps) {
+  // Defensive check - ensure toolCall is defined
+  if (!toolCall) {
+    console.warn('ExposePortToolView: toolCall is undefined. Tool views should use structured props.');
+    return (
+      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
+          <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+            Port Exposure Tool Error
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            This tool view requires structured metadata. Please update the component to use toolCall and toolResult props.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const {
     port,
@@ -34,14 +51,30 @@ export function ExposePortToolView({
     actualIsSuccess,
     actualToolTimestamp
   } = extractExposePortData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp
   );
 
-  const toolTitle = getToolTitle(name);
+  // Debug logging (can be removed in production)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('ExposePortToolView data:', {
+      port,
+      url,
+      message,
+      toolCall: toolCall?.function_name,
+      arguments: toolCall?.arguments,
+      toolResult: toolResult ? { 
+        success: toolResult.success, 
+        output: typeof toolResult.output === 'string' ? toolResult.output.substring(0, 100) : toolResult.output 
+      } : null,
+      actualIsSuccess
+    });
+  }
+
+  const toolTitle = getToolTitle(toolCall.function_name.replace(/_/g, '-'));
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">

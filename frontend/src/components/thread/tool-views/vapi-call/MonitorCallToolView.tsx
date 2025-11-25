@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ToolResultData } from '../types';
 import { Phone, Loader2, User, PhoneCall, PhoneMissed, CheckCircle2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,36 +23,20 @@ interface MonitorCallData {
   message?: string;
 }
 
-function extractMonitorData(toolContent: string | undefined): MonitorCallData | null {
-  if (!toolContent) return null;
+function extractMonitorData(toolResult?: ToolResultData): MonitorCallData | null {
+  if (!toolResult?.output) return null;
 
   try {
-    const parsed = typeof toolContent === 'string' ? JSON.parse(toolContent) : toolContent;
-
-    if (!parsed || typeof parsed !== 'object') return null;
-
     let output: any = {};
-
-    if ('output' in parsed && typeof parsed.output === 'object') {
-      output = parsed.output;
-    } else if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
-      const result = parsed.tool_execution.result || {};
-      if (typeof result.output === 'string') {
-        try {
-          output = JSON.parse(result.output);
-        } catch {
-          output = {};
-        }
-      } else if (typeof result.output === 'object') {
-        output = result.output || {};
-      }
-    } else if ('content' in parsed && typeof parsed.content === 'string') {
+    
+    if (typeof toolResult.output === 'string') {
       try {
-        const innerParsed = JSON.parse(parsed.content);
-        return extractMonitorData(JSON.stringify(innerParsed));
-      } catch {
+        output = JSON.parse(toolResult.output);
+      } catch (e) {
         return null;
       }
+    } else if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
     }
 
     return {
@@ -82,31 +67,39 @@ const statusConfig = {
 };
 
 export function MonitorCallToolView({
-  name = 'monitor_call',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const initialData = extractMonitorData(toolContent);
+  // All hooks must be called unconditionally at the top
+  const [liveTranscript, setLiveTranscript] = useState<any[]>([]);
+  const [liveStatus, setLiveStatus] = useState('unknown');
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  // Extract data safely - handle undefined toolCall
+  const initialData = extractMonitorData(toolResult);
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'monitor-call';
+  const toolTitle = getToolTitle(name);
+  
   console.log('[MonitorCallToolView] Component rendered with:', {
-    toolContent,
+    toolResult,
     extractedData: initialData,
     callId: initialData?.call_id,
     initialTranscript: initialData?.transcript
   });
 
-  const [liveTranscript, setLiveTranscript] = useState<any[]>(initialData?.transcript || []);
-  const [liveStatus, setLiveStatus] = useState(initialData?.status || 'unknown');
-  const toolTitle = getToolTitle(name);
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  // Initialize state from initialData - hook must be unconditional
+  React.useEffect(() => {
+    if (initialData) {
+      setLiveTranscript(initialData.transcript || []);
+      setLiveStatus(initialData.status || 'unknown');
+    }
+  }, [initialData]);
 
-  // Don't use the hook, we'll implement our own subscription
-  // useVapiCallRealtime(initialData?.call_id);
-
-  // Set up direct Supabase real-time subscription
+  // Set up direct Supabase real-time subscription - hook must be unconditional
   useEffect(() => {
     if (!initialData?.call_id) return;
 
@@ -197,6 +190,7 @@ export function MonitorCallToolView({
     };
   }, [initialData?.call_id]);
 
+  // useQuery hook must be called unconditionally
   const { data: realtimeData, refetch } = useQuery({
     queryKey: ['vapi-call', initialData?.call_id],
     queryFn: async () => {
@@ -265,16 +259,14 @@ export function MonitorCallToolView({
     gcTime: 5 * 60 * 1000,  // Keep in cache for 5 minutes
   });
 
-  // Remove this useEffect as we're now handling updates via direct subscription
-  // The query is now just for backup/fallback
-
+  // Scroll effect - hook must be unconditional
   useEffect(() => {
     if (transcriptEndRef.current && liveTranscript.length > 0) {
       transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [liveTranscript]);
 
-  // Backup polling in case real-time subscription fails
+  // Backup polling in case real-time subscription fails - hook must be unconditional
   useEffect(() => {
     if (liveStatus === 'in-progress' || liveStatus === 'ringing' || liveStatus === 'queued') {
       console.log('[MonitorCallToolView] Setting up backup polling for active call');
@@ -346,9 +338,6 @@ export function MonitorCallToolView({
       </CardHeader>
 
       <CardContent className="p-4 space-y-4">
-        {assistantContent && (
-          <div className="text-sm text-foreground">{assistantContent}</div>
-        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">

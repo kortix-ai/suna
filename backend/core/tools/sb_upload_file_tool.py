@@ -38,11 +38,6 @@ class SandboxUploadFileTool(SandboxToolsBase):
                         "type": "string",
                         "description": "Path to the file in the sandbox, relative to /workspace (e.g., 'output.pdf', 'data/results.csv')"
                     },
-                    "bucket_name": {
-                        "type": "string",
-                        "description": "Target storage bucket. Options: 'file-uploads' (default - secure private storage), 'browser-screenshots' (browser automation only). Default: 'file-uploads'",
-                        "default": "file-uploads"
-                    },
                     "custom_filename": {
                         "type": "string",
                         "description": "Optional custom filename for the uploaded file. If not provided, uses original filename with timestamp"
@@ -55,7 +50,6 @@ class SandboxUploadFileTool(SandboxToolsBase):
     async def upload_file(
         self,
         file_path: str,
-        bucket_name: str = "file-uploads",
         custom_filename: Optional[str] = None
     ) -> ToolResult:
         try:
@@ -93,6 +87,7 @@ class SandboxUploadFileTool(SandboxToolsBase):
                 storage_filename = f"{name_base}_{timestamp}_{unique_id}{file_extension}"
             
             storage_path = f"{account_id}/{storage_filename}"
+            bucket_name = "file-uploads"  # Always use file-uploads bucket
 
             try:
                 client = await self.db.client

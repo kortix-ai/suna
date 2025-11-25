@@ -15,7 +15,7 @@ import {
   Check
 } from 'lucide-react';
 import { ToolViewProps } from './types';
-import { formatTimestamp, getToolTitle, extractToolData } from './utils';
+import { formatTimestamp, getToolTitle } from './utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -44,11 +44,8 @@ const getKbIcon = (operation: KbOperation) => {
   }
 };
 
-const parseKbTool = (name: string, content: string): KbOperation | null => {
-  if (!content) return null;
-
-  const parsed = extractToolData(content);
-  const functionName = parsed.toolResult?.functionName || name;
+const parseKbTool = (functionName: string, arguments_: Record<string, any>): KbOperation | null => {
+  if (!functionName) return null;
 
   // Determine operation type and scope
   if (functionName.includes('global_kb') || functionName.includes('global-kb')) {
@@ -62,7 +59,7 @@ const parseKbTool = (name: string, content: string): KbOperation | null => {
     return {
       type,
       scope: 'global',
-      data: parsed.toolResult?.arguments || {}
+      data: arguments_ || {}
     };
   }
 
@@ -70,7 +67,7 @@ const parseKbTool = (name: string, content: string): KbOperation | null => {
     return {
       type: 'search',
       scope: 'local',
-      data: parsed.toolResult?.arguments || {}
+      data: arguments_ || {}
     };
   }
 
@@ -78,7 +75,7 @@ const parseKbTool = (name: string, content: string): KbOperation | null => {
     return {
       type: 'init',
       scope: 'local',
-      data: parsed.toolResult?.arguments || {}
+      data: arguments_ || {}
     };
   }
 
@@ -86,7 +83,7 @@ const parseKbTool = (name: string, content: string): KbOperation | null => {
     return {
       type: 'cleanup',
       scope: 'local',
-      data: parsed.toolResult?.arguments || {}
+      data: arguments_ || {}
     };
   }
 
@@ -94,7 +91,7 @@ const parseKbTool = (name: string, content: string): KbOperation | null => {
     return {
       type: 'list',
       scope: 'local',
-      data: parsed.toolResult?.arguments || {}
+      data: arguments_ || {}
     };
   }
 
@@ -556,18 +553,25 @@ const KbParametersDisplay: React.FC<{ operation: KbOperation }> = ({ operation }
 };
 
 export function KbToolView({
-  name = 'kb-tool',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  // All hooks must be called unconditionally at the top
   const [copied, setCopied] = React.useState(false);
 
-  const operation = parseKbTool(name, assistantContent || toolContent || '');
-  const { toolResult } = extractToolData(assistantContent || toolContent || '');
+  // Defensive check - handle cases where toolCall might be undefined
+  if (!toolCall) {
+    console.warn('KbToolView: toolCall is undefined. Tool views should use structured props.');
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+
+  const operation = parseKbTool(toolCall.function_name, toolCall.arguments || {});
 
   if (!operation) {
     return null; // Fallback to generic tool view
@@ -578,7 +582,9 @@ export function KbToolView({
   const scopeLabel = isGlobal ? 'Global KB' : 'Local KB';
 
   const copyContent = () => {
-    const content = toolResult?.toolOutput || 'No output';
+    const content = toolResult?.output 
+      ? (typeof toolResult.output === 'string' ? toolResult.output : JSON.stringify(toolResult.output))
+      : 'No output';
     navigator.clipboard.writeText(content);
     setCopied(true);
     toast.success('Output copied to clipboard');
@@ -628,7 +634,7 @@ export function KbToolView({
               >
                 {isSuccess ? 'Success' : 'Failed'}
               </Badge>
-              {toolResult?.toolOutput && (
+              {toolResult?.output && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -666,7 +672,7 @@ export function KbToolView({
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-6">
               <KbParametersDisplay operation={operation} />
-              <KbResultDisplay operation={operation} toolOutput={toolResult?.toolOutput} />
+              <KbResultDisplay operation={operation} toolOutput={toolResult?.output} />
             </div>
           </ScrollArea>
         )}

@@ -10,7 +10,7 @@ import { chatKeys } from '@/lib/chat';
 interface UseAgentStreamResult {
   status: string;
   textContent: string;
-  toolCall: ParsedContent | null;
+  toolCall: UnifiedMessage | null; // Changed from ParsedContent to UnifiedMessage
   error: string | null;
   agentRunId: string | null;
   startStreaming: (runId: string) => void;
@@ -24,27 +24,8 @@ interface AgentStreamCallbacks {
   onClose?: (finalStatus: string) => void;
   onAssistantStart?: () => void;
   onAssistantChunk?: (chunk: { content: string }) => void;
+  onToolCallChunk?: (message: UnifiedMessage) => void; // New callback for tool call chunks
 }
-
-const mapApiMessagesToUnified = (
-  messagesData: any[] | null | undefined,
-  currentThreadId: string,
-): UnifiedMessage[] => {
-  return (messagesData || [])
-    .filter((msg) => msg.type !== 'status')
-    .map((msg: any) => ({
-      message_id: msg.message_id || null,
-      thread_id: msg.thread_id || currentThreadId,
-      type: (msg.type || 'system') as UnifiedMessage['type'],
-      is_llm_message: Boolean(msg.is_llm_message),
-      content: msg.content || '',
-      metadata: msg.metadata || '{}',
-      created_at: msg.created_at || new Date().toISOString(),
-      updated_at: msg.updated_at || new Date().toISOString(),
-      agent_id: msg.agent_id,
-      agents: msg.agents,
-    }));
-};
 
 export function useAgentStream(
   callbacks: AgentStreamCallbacks,
@@ -59,29 +40,47 @@ export function useAgentStream(
     { content: string; sequence?: number }[]
   >([]);
   
+  // Throttled state updates for smoother streaming
   const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingContentRef = useRef<{ content: string; sequence?: number }[]>([]);
   
+  // Throttled content update function for smoother streaming
   const flushPendingContent = useCallback(() => {
     if (pendingContentRef.current.length > 0) {
-      const newContent = [...pendingContentRef.current];
+      // Sort chunks by sequence before adding to state
+      const sortedContent = pendingContentRef.current.slice().sort((a, b) => {
+        const aSeq = a.sequence ?? 0;
+        const bSeq = b.sequence ?? 0;
+        return aSeq - bSeq;
+      });
       pendingContentRef.current = [];
       
-      setTextContent((prev) => [...prev, ...newContent]);
+      // Use React.startTransition for smoother updates (works in React Native)
+      setTextContent((prev) => {
+        // Combine with existing content and sort all together
+        const combined = [...prev, ...sortedContent];
+        return combined.sort((a, b) => {
+          const aSeq = a.sequence ?? 0;
+          const bSeq = b.sequence ?? 0;
+          return aSeq - bSeq;
+        });
+      });
     }
   }, []);
   
   const addContentThrottled = useCallback((content: { content: string; sequence?: number }) => {
     pendingContentRef.current.push(content);
     
+    // Clear existing throttle
     if (throttleRef.current) {
       clearTimeout(throttleRef.current);
     }
     
+    // Set new throttle for smooth updates (16ms ≈ 60fps)
     throttleRef.current = setTimeout(flushPendingContent, 16);
   }, [flushPendingContent]);
-
-  const [toolCall, setToolCall] = useState<ParsedContent | null>(null);
+  
+  const [toolCall, setToolCall] = useState<UnifiedMessage | null>(null); // Changed from ParsedContent
   const [error, setError] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
 
@@ -97,6 +96,27 @@ export function useAgentStream(
   const orderedTextContent = useMemo(() => {
     if (textContent.length === 0) return '';
     
+    // Only sort if sequences are out of order (optimization)
+    let needsSorting = false;
+    for (let i = 1; i < textContent.length; i++) {
+      const prevSeq = textContent[i - 1].sequence ?? 0;
+      const currSeq = textContent[i].sequence ?? 0;
+      if (currSeq < prevSeq) {
+        needsSorting = true;
+        break;
+      }
+    }
+    
+    // If already sorted, just concatenate
+    if (!needsSorting) {
+      let result = '';
+      for (let i = 0; i < textContent.length; i++) {
+        result += textContent[i].content;
+      }
+      return result;
+    }
+    
+    // Only sort if necessary
     const sorted = textContent.slice().sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
     let result = '';
     for (let i = 0; i < sorted.length; i++) {
@@ -105,10 +125,12 @@ export function useAgentStream(
     return result;
   }, [textContent]);
 
+  // Refs to capture current state for persistence
   const statusRef = useRef(status);
   const agentRunIdRef = useRef(agentRunId);
   const textContentRef = useRef(textContent);
 
+  // Update refs whenever state changes
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
@@ -121,6 +143,7 @@ export function useAgentStream(
     textContentRef.current = textContent;
   }, [textContent]);
 
+  // On thread change, ensure any existing stream is cleaned up
   useEffect(() => {
     const previousThreadId = threadIdRef.current;
     const cleanup = streamCleanupRef.current;
@@ -153,6 +176,7 @@ export function useAgentStream(
     setMessagesRef.current = setMessages;
   }, [setMessages]);
 
+  // Helper function to map backend status to frontend status string
   const mapAgentStatus = (backendStatus: string): string => {
     switch (backendStatus) {
       case 'completed':
@@ -166,6 +190,7 @@ export function useAgentStream(
     }
   };
 
+  // Internal function to update status and notify consumer
   const updateStatus = useCallback(
     (newStatus: string) => {
       if (isMountedRef.current) {
@@ -190,6 +215,7 @@ export function useAgentStream(
     [callbacks, error],
   );
 
+  // Function to handle finalization of a stream
   const finalizeStream = useCallback(
     (finalStatus: string, runId: string | null = agentRunId) => {
       if (!isMountedRef.current) return;
@@ -201,6 +227,7 @@ export function useAgentStream(
       const currentThreadId = threadIdRef.current;
       const currentSetMessages = setMessagesRef.current;
 
+      // Only finalize if this is for the current run ID or if no specific run ID is provided
       if (
         runId &&
         currentRunIdRef.current &&
@@ -217,9 +244,11 @@ export function useAgentStream(
         streamCleanupRef.current = null;
       }
 
+      // Reset streaming-specific state
       setTextContent([]);
       setToolCall(null);
 
+      // Update status and clear run ID
       updateStatus(finalStatus);
       setAgentRunId(null);
       currentRunIdRef.current = null;
@@ -245,6 +274,7 @@ export function useAgentStream(
     [agentRunId, updateStatus, agentId, queryClient],
   );
 
+  // Stream message handler
   const handleStreamMessage = useCallback(
     (rawData: string) => {
       if (!isMountedRef.current) return;
@@ -255,6 +285,7 @@ export function useAgentStream(
       }
       if (!processedData) return;
 
+      // Early exit for non-JSON completion messages
       if (
         processedData ===
         '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}'
@@ -270,6 +301,7 @@ export function useAgentStream(
         return;
       }
 
+      // Check for error messages first
       try {
         const jsonData = JSON.parse(processedData);
         if (jsonData.status === 'error') {
@@ -283,8 +315,10 @@ export function useAgentStream(
           return;
         }
       } catch (jsonError) {
+        // Not JSON or could not parse as JSON, continue processing
       }
 
+      // Process JSON messages
       const message = safeJsonParse(
         processedData,
         null,
@@ -303,11 +337,23 @@ export function useAgentStream(
         {},
       );
 
-      if (status !== 'streaming') updateStatus('streaming');
+      // Update status to streaming if we receive a valid message
+      if (statusRef.current !== 'streaming') {
+        updateStatus('streaming');
+      }
 
       switch (message.type) {
         case 'assistant':
-          if (
+          if (parsedMetadata.stream_status === 'tool_call_chunk') {
+            // Handle tool call chunks - extract from metadata.tool_calls
+            const toolCalls = parsedMetadata.tool_calls || [];
+            if (toolCalls.length > 0) {
+              // Set toolCall state with the UnifiedMessage
+              setToolCall(message);
+              // Call the callback with the full message (includes all tool calls in metadata)
+              callbacks.onToolCallChunk?.(message);
+            }
+          } else if (
             parsedMetadata.stream_status === 'chunk' &&
             parsedContent.content
           ) {
@@ -315,46 +361,40 @@ export function useAgentStream(
               console.log('[useAgentStream] Successfully connected, resetting retry counter');
               retryCountRef.current = 0;
             }
+            // Use throttled approach for smoother streaming
             addContentThrottled({
               sequence: message.sequence,
               content: parsedContent.content,
             });
             callbacks.onAssistantChunk?.({ content: parsedContent.content });
           } else if (parsedMetadata.stream_status === 'complete') {
+            // Flush any pending content before completing
             flushPendingContent();
             
             setTextContent([]);
             setToolCall(null);
             if (message.message_id) callbacks.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
+            // Handle non-chunked assistant messages if needed
             callbacks.onAssistantStart?.();
             if (message.message_id) callbacks.onMessage(message);
           }
           break;
         case 'tool':
-          setToolCall(null);
+          setToolCall(null); // Clear any streaming tool call
           if (message.message_id) callbacks.onMessage(message);
           break;
         case 'status':
           switch (parsedContent.status_type) {
-            case 'tool_started':
-              setToolCall({
-                role: 'assistant',
-                status_type: 'tool_started',
-                name: parsedContent.function_name,
-                arguments: parsedContent.arguments,
-                xml_tag_name: parsedContent.xml_tag_name,
-                tool_index: parsedContent.tool_index,
-              });
-              break;
             case 'tool_completed':
             case 'tool_failed':
             case 'tool_error':
-              if (toolCall?.tool_index === parsedContent.tool_index) {
-                setToolCall(null);
-              }
+              // Clear streaming tool call when tool completes/fails
+              setToolCall(null);
               break;
             case 'finish':
+              // Optional: Handle finish reasons like 'xml_tool_limit_reached'
+              // Don't finalize here, wait for thread_run_end or completion message
               break;
             case 'error':
               setError(parsedContent.message || 'Agent run failed');
@@ -366,9 +406,11 @@ export function useAgentStream(
           break;
         case 'llm_response_end':
         case 'llm_response_start':
+          // llm_response_end and llm_response_start messages are ignored (metadata only)
           break;
         case 'user':
         case 'system':
+          // Handle other message types if necessary
           if (message.message_id) callbacks.onMessage(message);
           break;
         default:
@@ -769,4 +811,3 @@ async function getAgentStatus(runId: string): Promise<{ status: string }> {
   
   return response.json();
 }
-

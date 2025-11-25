@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Project } from '@/lib/api/projects';
+import { Project } from '@/lib/api/threads';
 import { useThreadQuery } from '@/hooks/threads/use-threads';
-import { useMessagesQuery } from '@/hooks/threads/use-messages';
+import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
@@ -28,9 +28,6 @@ interface UseThreadDataReturn {
 
 export function useThreadData(threadId: string, projectId: string, isShared: boolean = false): UseThreadDataReturn {
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
-  const [project, setProject] = useState<Project | null>(null);
-  const [sandboxId, setSandboxId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState<string>('');
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
   const [isLoading, setIsLoading] = useState(true);
@@ -47,10 +44,18 @@ export function useThreadData(threadId: string, projectId: string, isShared: boo
   
   // For shared pages, projectId might be empty - get it from thread data
   const effectiveProjectId = projectId || threadQuery.data?.project_id || '';
-  const projectQuery = useProjectQuery(effectiveProjectId);
+  const projectQuery = useProjectQuery(effectiveProjectId, {
+    refetchOnWindowFocus: true,
+    refetchInterval: 10000, // Refetch every 10 seconds
+  });
   
   // Only fetch agent runs if not in shared mode (requires authentication)
   const agentRunsQuery = useAgentRunsQuery(threadId, { enabled: !isShared });
+
+  // Derive values from projectQuery directly - no duplicate state
+  const project = projectQuery.data || null;
+  const sandboxId = project?.sandbox?.id || (typeof project?.sandbox === 'string' ? project.sandbox : null);
+  const projectName = project?.name || '';
   
   // (debug logs removed)
 
@@ -76,22 +81,11 @@ export function useThreadData(threadId: string, projectId: string, isShared: boo
         }
         if (!isMounted) return;
 
-        if (projectQuery.data) {
-          setProject(projectQuery.data);
-          if (typeof projectQuery.data.sandbox === 'string') {
-            setSandboxId(projectQuery.data.sandbox);
-          } else if (projectQuery.data.sandbox?.id) {
-            setSandboxId(projectQuery.data.sandbox.id);
-          }
-
-          setProjectName(projectQuery.data.name || '');
-        }
-
         if (messagesQuery.data && !messagesLoadedRef.current) {
           // (debug logs removed)
 
+          // Backend now filters out status messages, so no need to filter here
           const unifiedMessages = (messagesQuery.data || [])
-            .filter((msg) => msg.type !== 'status')
             .map((msg: ApiMessageType) => ({
               message_id: msg.message_id || null,
               thread_id: msg.thread_id || threadId,
@@ -199,8 +193,8 @@ export function useThreadData(threadId: string, projectId: string, isShared: boo
       if (shouldReload) {
         // (debug logs removed)
         
+        // Backend now filters out status messages, so no need to filter here
         const unifiedMessages = (messagesQuery.data || [])
-          .filter((msg) => msg.type !== 'status')
           .map((msg: ApiMessageType) => ({
             message_id: msg.message_id || null,
             thread_id: msg.thread_id || threadId,

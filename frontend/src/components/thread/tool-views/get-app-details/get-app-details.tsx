@@ -29,14 +29,18 @@ import { Separator } from "@/components/ui/separator";
 import { extractGetAppDetailsData, ToolkitDetails } from './_utils';
 
 export function GetAppDetailsToolView({
-  name = 'get-app-details',
-  assistantContent,
-  toolContent,
+  toolCall,
+  toolResult,
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
   const {
     toolkit_slug,
@@ -48,8 +52,8 @@ export function GetAppDetailsToolView({
     actualToolTimestamp,
     actualAssistantTimestamp
   } = extractGetAppDetailsData(
-    assistantContent,
-    toolContent,
+    toolCall,
+    toolResult,
     isSuccess,
     toolTimestamp,
     assistantTimestamp

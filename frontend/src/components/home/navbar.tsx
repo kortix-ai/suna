@@ -5,7 +5,7 @@ import { ThemeToggle } from '@/components/home/theme-toggle';
 import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { Menu, X, Github } from 'lucide-react';
-import { AnimatePresence, motion, useScroll } from 'motion/react';
+import { AnimatePresence, motion, useScroll } from 'framer-motion';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';

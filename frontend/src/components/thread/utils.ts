@@ -204,7 +204,7 @@ export const getToolIcon = (toolName: string): ElementType => {
   }
 };
 
-// Helper function to extract a primary parameter from XML/arguments
+// Helper function to extract a primary parameter from JSON/arguments
 export const extractPrimaryParam = (
   toolName: string,
   content: string | undefined,
@@ -212,14 +212,55 @@ export const extractPrimaryParam = (
   if (!content) return null;
 
   try {
+    // Try to parse as JSON first
+    const parsed = JSON.parse(content);
+    
+    // Handle browser tools
+    if (toolName?.toLowerCase().startsWith('browser_')) {
+      if (parsed.url) return parsed.url;
+      if (parsed.arguments?.url) return parsed.arguments.url;
+      if (parsed.goal) {
+        const goal = parsed.goal;
+        return goal.length > 30 ? goal.substring(0, 27) + '...' : goal;
+      }
+      return null;
+    }
+
+    // Handle file operations
+    if (parsed.file_path) {
+      const path = parsed.file_path;
+      return typeof path === 'string' ? path.split('/').pop() || path : null;
+    }
+    if (parsed.arguments?.file_path) {
+      const path = parsed.arguments.file_path;
+      return typeof path === 'string' ? path.split('/').pop() || path : null;
+    }
+
+    // Handle execute-command
+    if (toolName?.toLowerCase() === 'execute-command') {
+      if (parsed.command) {
+        const cmd = parsed.command;
+        return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
+      }
+      if (parsed.arguments?.command) {
+        const cmd = parsed.arguments.command;
+        return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
+      }
+    }
+  } catch (e) {
+    // Not JSON, continue with regex fallback
+  }
+
+  // Fallback: regex extraction for plain text content
+  try {
     // Handle browser tools with a prefix check
     if (toolName?.toLowerCase().startsWith('browser_')) {
       // Try to extract URL for navigation
-      const urlMatch = content.match(/url=(?:"|')([^"|']+)(?:"|')/);
+      const urlMatch = content.match(/url["']?\s*[:=]\s*["']?([^"'\s]+)/i);
       if (urlMatch) return urlMatch[1];
 
       // For other browser operations, extract the goal or action
-      const goalMatch = content.match(/goal=(?:"|')([^"|']+)(?:"|')/);
+      const goalMatch = content.match(/goal["']?\s*[:=]\s*["']?([^"'\s]+)/i);
       if (goalMatch) {
         const goal = goalMatch[1];
         return goal.length > 30 ? goal.substring(0, 27) + '...' : goal;
@@ -228,84 +269,77 @@ export const extractPrimaryParam = (
       return null;
     }
 
-    // Special handling for XML content - extract file_path from the actual attributes
-    if (content.startsWith('<') && content.includes('>')) {
-      const xmlAttrs = content.match(/<[^>]+\s+([^>]+)>/);
-      if (xmlAttrs && xmlAttrs[1]) {
-        const attrs = xmlAttrs[1].trim();
-        const filePathMatch = attrs.match(/file_path=["']([^"']+)["']/);
-        if (filePathMatch) {
-          return filePathMatch[1].split('/').pop() || filePathMatch[1];
-        }
+    // Handle file_path extraction
+    const filePathMatch = content.match(/file_path["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+    if (filePathMatch) {
+      const path = filePathMatch[1];
+      return path.split('/').pop() || path;
+    }
 
-        // Try to get command for execute-command
-        if (toolName?.toLowerCase() === 'execute-command') {
-          const commandMatch = attrs.match(/(?:command|cmd)=["']([^"']+)["']/);
-          if (commandMatch) {
-            const cmd = commandMatch[1];
-            return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
-          }
-        }
+    // Try to get command for execute-command
+    if (toolName?.toLowerCase() === 'execute-command') {
+      const commandMatch = content.match(/(?:command|cmd)["']?\s*[:=]\s*["']?([^"'\n]+)/i);
+      if (commandMatch) {
+        const cmd = commandMatch[1];
+        return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
       }
     }
-
-    // Simple regex for common parameters - adjust as needed
-    let match: RegExpMatchArray | null = null;
-
-    switch (toolName?.toLowerCase()) {
-      // File operations
-      case 'create-file':
-      case 'full-file-rewrite':
-      case 'read-file':
-      case 'delete-file':
-      case 'str-replace':
-        // Try to match file_path attribute
-        match = content.match(/file_path=(?:"|')([^"|']+)(?:"|')/);
-        // Return just the filename part
-        return match ? match[1].split('/').pop() || match[1] : null;
-      case 'edit-file':
-        // Try to match target_file attribute for edit-file
-        match = content.match(/target_file=(?:"|')([^"|']+)(?:"|')/) || content.match(/<parameter\s+name=["']target_file["']>([^<]+)/i);
-        // Return just the filename part
-        return match ? (match[1].split('/').pop() || match[1]).trim() : null;
-
-      // Shell commands
-      case 'execute-command':
-        // Extract command content
-        match = content.match(/command=(?:"|')([^"|']+)(?:"|')/);
-        if (match) {
-          const cmd = match[1];
-          return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
-        }
-        return null;
-
-      // Web search
-      case 'web-search':
-      case 'image-search':
-        match = content.match(/query=(?:"|')([^"|']+)(?:"|')/);
-        return match
-          ? match[1].length > 30
-            ? match[1].substring(0, 27) + '...'
-            : match[1]
-          : null;
-
-      // Data provider operations
-      case 'call-data-provider':
-        match = content.match(/service_name=(?:"|')([^"|']+)(?:"|')/);
-        const route = content.match(/route=(?:"|')([^"|']+)(?:"|')/);
-        return match && route
-          ? `${match[1]}/${route[1]}`
-          : match
-            ? match[1]
-            : null;
-
-    }
-
-    return null;
   } catch (e) {
-    console.warn('Error parsing tool parameters:', e);
-    return null;
+    // Continue
   }
+
+  // Simple regex for common parameters - adjust as needed
+  let match: RegExpMatchArray | null = null;
+
+  switch (toolName?.toLowerCase()) {
+    // File operations
+    case 'create-file':
+    case 'full-file-rewrite':
+    case 'read-file':
+    case 'delete-file':
+    case 'str-replace':
+      // Try to match file_path attribute
+      match = content.match(/file_path["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+      // Return just the filename part
+      return match ? match[1].split('/').pop() || match[1] : null;
+    case 'edit-file':
+      // Try to match target_file attribute for edit-file
+      match = content.match(/target_file["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+      // Return just the filename part
+      return match ? (match[1].split('/').pop() || match[1]).trim() : null;
+
+    // Shell commands
+    case 'execute-command':
+      // Extract command content
+      match = content.match(/(?:command|cmd)["']?\s*[:=]\s*["']?([^"'\n]+)/i);
+      if (match) {
+        const cmd = match[1];
+        return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
+      }
+      return null;
+
+    // Web search
+    case 'web-search':
+    case 'image-search':
+      match = content.match(/query["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+      return match
+        ? match[1].length > 30
+          ? match[1].substring(0, 27) + '...'
+          : match[1]
+        : null;
+
+    // Data provider operations
+    case 'call-data-provider':
+      match = content.match(/service_name["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+      const route = content.match(/route["']?\s*[:=]\s*["']?([^"'\s]+)/i);
+      return match && route
+        ? `${match[1]}/${route[1]}`
+        : match
+          ? match[1]
+          : null;
+  }
+
+  return null;
 };
 
 const TOOL_DISPLAY_NAMES = new Map([
@@ -351,7 +385,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['scrape-webpage', 'Scraping Website'],
   ['web-search', 'Searching Web'],
   ['load-image', 'Loading Image'],
-  ['create-presentation-outline', 'Creating Presentation Outline'],
   ['create-presentation', 'Creating Presentation'],
   ['clear-images-from-context', 'Clearing Images from context'],
   ['load-image', 'Loading Image'],

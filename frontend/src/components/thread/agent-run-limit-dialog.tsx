@@ -13,7 +13,8 @@ import { useStopAgentMutation } from '@/hooks/threads/use-agent-run';
 import { AgentRun, getAgentRuns } from '@/lib/api/agents';
 import { toast } from 'sonner';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { getThread, getProject } from '@/hooks/threads/utils';
+import { getThread } from '@/hooks/threads/utils';
+import { getProject } from '@/lib/api/threads';
 import { threadKeys } from '@/hooks/threads/keys';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 

@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractWebSearchData, cleanUrl, getFavicon } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
-  const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolData);
+export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isStreaming }: ToolViewProps) {
+  const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolCall, toolResult, isSuccess);
   const isLoading = isStreaming && results.length === 0 && images.length === 0;
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
 
@@ -281,63 +281,55 @@ export function WebSearchToolView({ toolData, isStreaming }: ToolViewProps) {
             })()}
           </View>
         ) : results.length > 0 && (
-          // Single query mode: original display
-          <View className="gap-3">
-            <View className="flex-row items-center justify-between">
-              <Text className="text-sm font-roobert-medium text-foreground/70">
-                Search Results ({results.length})
-              </Text>
-            </View>
-            
-            <View className="gap-3">
-              {results.map((result, idx) => {
-                const favicon = getFavicon(result.url);
-                
-                return (
-                  <Pressable
-                    key={idx}
-                    onPress={() => handleOpenUrl(result.url)}
-                    className="bg-card border border-border rounded-2xl p-4 gap-2"
-                  >
-                    <View className="flex-row items-start gap-3">
-                      {favicon && (
-                        <RNImage
-                          source={{ uri: favicon }}
-                          style={{ width: 20, height: 20, borderRadius: 4 }}
-                        />
-                      )}
-                      <View className="flex-1 gap-1">
-                        <Text 
-                          className="text-base font-roobert-medium text-primary"
-                          numberOfLines={2}
-                        >
-                          {result.title}
-                        </Text>
-                        <View className="flex-row items-center gap-1.5">
-                          <Icon as={Globe} size={12} className="text-muted-foreground" />
-                          <Text 
-                            className="text-xs font-roobert text-muted-foreground flex-1"
-                            numberOfLines={1}
-                          >
-                            {cleanUrl(result.url)}
-                          </Text>
-                        </View>
-                      </View>
-                      <Icon as={ExternalLink} size={16} className="text-muted-foreground" />
-                    </View>
-                    
-                    {result.snippet && (
-                      <Text 
-                        className="text-sm font-roobert text-foreground/60 mt-1"
-                        numberOfLines={3}
-                      >
-                        {result.snippet}
-                      </Text>
+          // Single query mode: match batch style
+          <View className="gap-4">
+            {results.map((result, idx) => {
+              const favicon = getFavicon(result.url);
+              
+              return (
+                <Pressable
+                  key={idx}
+                  onPress={() => handleOpenUrl(result.url)}
+                  className="bg-card border border-border rounded-xl p-3.5 gap-2"
+                >
+                  <View className="flex-row items-start gap-2.5">
+                    {favicon && (
+                      <RNImage
+                        source={{ uri: favicon }}
+                        style={{ width: 18, height: 18, borderRadius: 3 }}
+                      />
                     )}
-                  </Pressable>
-                );
-              })}
-            </View>
+                    <View className="flex-1 gap-1">
+                      <Text 
+                        className="text-sm font-roobert-medium text-primary"
+                        numberOfLines={2}
+                      >
+                        {result.title}
+                      </Text>
+                      <View className="flex-row items-center gap-1.5">
+                        <Icon as={Globe} size={11} className="text-muted-foreground" />
+                        <Text 
+                          className="text-xs font-roobert text-muted-foreground flex-1"
+                          numberOfLines={1}
+                        >
+                          {cleanUrl(result.url)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Icon as={ExternalLink} size={14} className="text-muted-foreground" />
+                  </View>
+                  
+                  {result.snippet && (
+                    <Text 
+                      className="text-xs font-roobert text-foreground/60 mt-1"
+                      numberOfLines={2}
+                    >
+                      {result.snippet}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
         )}
       </View>

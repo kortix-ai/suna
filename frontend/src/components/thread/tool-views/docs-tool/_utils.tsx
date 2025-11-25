@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { extractToolData } from '../utils';
+import { ToolResultData } from '../types';
 import { useFileContentQuery, useDirectoryQuery } from '@/hooks/files/use-file-queries';
 import { Editor } from '@/components/agents/docs-agent/editor';
 import { createClient } from '@/lib/supabase/client';
@@ -37,31 +37,20 @@ export interface DocsToolData {
   sandbox_id?: string;
 }
 
-export function extractDocsData(toolContent?: any): DocsToolData | null {
-  if (!toolContent) return null;
+export function extractDocsData(toolResult?: ToolResultData): DocsToolData | null {
+  if (!toolResult?.output) return null;
   
   try {
     let data: any = null;
-    const parsedToolData = extractToolData(toolContent);
     
-    if (parsedToolData?.toolResult?.toolOutput) {
-      const output = parsedToolData.toolResult.toolOutput;
-      if (typeof output === 'string') {
-        try {
-          data = JSON.parse(output);
-        } catch {
-          data = { content: output, success: parsedToolData.toolResult.isSuccess };
-        }
-      } else {
-        data = output;
-      }
+    if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      data = toolResult.output;
       if (data) {
-        data.success = parsedToolData.toolResult.isSuccess;
+        data.success = toolResult.success;
       }
-    }
-    else if (typeof toolContent === 'string') {
+    } else if (typeof toolResult.output === 'string') {
       try {
-        const parsed = JSON.parse(toolContent);
+        const parsed = JSON.parse(toolResult.output);
         if (parsed.tool_execution?.result?.output) {
           data = parsed.tool_execution.result.output;
           if (parsed.tool_execution.result.success !== undefined) {
@@ -78,78 +67,7 @@ export function extractDocsData(toolContent?: any): DocsToolData | null {
           data = parsed;
         }
       } catch {
-        data = { content: toolContent, success: true };
-      }
-    }
-    else if (toolContent.content && typeof toolContent.content === 'string') {
-      try {
-        const parsed = JSON.parse(toolContent.content);
-        if (parsed.tool_execution?.result?.output) {
-          data = parsed.tool_execution.result.output;
-          if (parsed.tool_execution.result.success !== undefined) {
-            data.success = parsed.tool_execution.result.success;
-          }
-          // Check for sandbox_id at different levels
-          if (!data.sandbox_id && parsed.tool_execution?.result?.sandbox_id) {
-            data.sandbox_id = parsed.tool_execution.result.sandbox_id;
-          }
-          if (!data.sandbox_id && parsed.sandbox_id) {
-            data.sandbox_id = parsed.sandbox_id;
-          }
-        } else {
-          data = parsed;
-        }
-      } catch {
-        data = { content: toolContent.content, success: true };
-      }
-    }
-    else if (toolContent.output !== undefined) {
-      if (typeof toolContent.output === 'string') {
-        try {
-          data = JSON.parse(toolContent.output);
-        } catch {
-          data = { content: toolContent.output, success: true };
-        }
-      } else {
-        data = toolContent.output;
-      }
-      if (toolContent.success !== undefined) {
-        data.success = toolContent.success;
-      }
-      // Extract sandbox_id from toolContent if available
-      if (!data.sandbox_id && toolContent.sandbox_id) {
-        data.sandbox_id = toolContent.sandbox_id;
-      }
-    }
-    else if (toolContent.result) {
-      if (toolContent.result.output) {
-        data = toolContent.result.output;
-        if (toolContent.result.success !== undefined) {
-          data.success = toolContent.result.success;
-        }
-        // Extract sandbox_id from result if available
-        if (!data.sandbox_id && toolContent.result.sandbox_id) {
-          data.sandbox_id = toolContent.result.sandbox_id;
-        }
-      } else if (typeof toolContent.result === 'string') {
-        try {
-          data = JSON.parse(toolContent.result);
-        } catch {
-          data = { content: toolContent.result, success: true };
-        }
-      } else {
-        data = toolContent.result;
-      }
-      // Extract sandbox_id from toolContent if available
-      if (!data.sandbox_id && toolContent.sandbox_id) {
-        data.sandbox_id = toolContent.sandbox_id;
-      }
-    }
-    else if (typeof toolContent === 'object') {
-      data = toolContent;
-      // Check for sandbox_id at the top level
-      if (!data.sandbox_id && toolContent.sandbox_id) {
-        data.sandbox_id = toolContent.sandbox_id;
+        data = { content: toolResult.output, success: toolResult.success ?? true };
       }
     }
     
@@ -162,18 +80,15 @@ export function extractDocsData(toolContent?: any): DocsToolData | null {
     }
     return data;
   } catch (e) {
-    console.error('Error parsing docs tool data:', e, toolContent);
+    console.error('Error parsing docs tool data:', e, toolResult);
     return { success: false, error: 'Failed to parse tool response' };
   }
 }
 
-export function extractToolName(toolContent?: any): string {
+export function extractToolName(toolCall?: { function_name?: string }): string {
   try {
-    if (toolContent?.metadata?.tool_name) {
-      return toolContent.metadata.tool_name;
-    }
-    if (toolContent?.tool_name) {
-      return toolContent.tool_name;
+    if (toolCall?.function_name) {
+      return toolCall.function_name.replace(/_/g, '-').toLowerCase();
     }
   } catch (e) {
   }
