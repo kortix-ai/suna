@@ -38,9 +38,7 @@ export function useAgents(
   return useQuery({
     queryKey: agentKeys.list(params),
     queryFn: async () => {
-      console.log('🔄 Fetching agents...');
       const headers = await getAuthHeaders();
-      console.log('📋 Auth headers obtained:', headers);
       
       // Build query parameters
       const queryParams = new URLSearchParams();
@@ -56,29 +54,36 @@ export function useAgents(
       if (params.content_type) queryParams.append('content_type', params.content_type);
 
       const url = `${API_URL}/agents${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-      console.log('🌐 API URL:', url);
       
       const res = await fetch(url, { headers });
-      console.log('📡 Response status:', res.status);
-      console.log('📡 Response headers:', Object.fromEntries(res.headers.entries()));
       
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('❌ Failed to fetch agents:', res.status, errorText);
+        console.error('❌ Failed to fetch agents:', res.status);
         throw new Error(`Failed to fetch agents: ${res.status} - ${errorText}`);
       }
       
       const data = await res.json();
-      console.log('✅ Agents fetched successfully:', data);
-      console.log('📊 Agents count:', data.agents?.length || 0);
+      console.log('✅ Agents loaded:', data.agents?.length || 0);
       
       return data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer
     retry: (failureCount, error) => {
+      // Don't retry on client errors (4xx) - these won't resolve on retry
+      const is4xxError = error.message.includes('401') || 
+                         error.message.includes('403') || 
+                         error.message.includes('429');
+      if (is4xxError) {
+        console.log('🚫 Not retrying due to client error:', error.message);
+        return false;
+      }
+      // Only retry server errors (5xx) up to 2 times
       console.log(`🔄 Retry attempt ${failureCount} for agents fetch:`, error.message);
-      return failureCount < 3;
+      return failureCount < 2;
     },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000), // Exponential backoff: 1s, 2s, 4s...
     ...options,
   });
 }

@@ -19,24 +19,27 @@ export async function startUnifiedPlanCheckout(
         throw new Error('No offerings available');
       }
 
-      const getPackageId = (tierKey: string, commitment: string) => {
-        const baseMap: Record<string, string> = {
-          'tier_2_20': 'plus',
-          'tier_6_50': 'pro',
-          'tier_25_200': 'ultra',
-        };
-        
-        const baseName = baseMap[tierKey];
-        if (!baseName) return null;
-        
-        if (commitment === 'yearly_commitment') {
-          return `$rc_${baseName}_commitment`;
-        }
-        return `$rc_${baseName}_monthly`;
+      // Map tier backend keys to RevenueCat product identifiers
+      const tierToRevenueCatId: Record<string, string> = {
+        'tier_2_20': 'kortix_plus',
+        'tier_6_50': 'kortix_pro',
+        'tier_12_100': 'kortix_business',
+        'tier_25_200': 'kortix_ultra',
       };
+      
+      const revenueCatId = tierToRevenueCatId[tierKey];
+      if (!revenueCatId) {
+        throw new Error(`No RevenueCat mapping for tier: ${tierKey}`);
+      }
 
-      const packageIdentifier = getPackageId(tierKey, commitmentType);
-      const pkg = packageIdentifier ? offerings.availablePackages.find(p => p.identifier === packageIdentifier) : null;
+      // Build product identifier: kortix_plus_monthly or kortix_plus_yearly
+      const suffix = commitmentType === 'yearly_commitment' ? 'yearly' : 'monthly';
+      const productIdentifier = `${revenueCatId}_${suffix}`;
+
+      // Find package by product identifier
+      const pkg = offerings.availablePackages.find(p => 
+        p.product.identifier === productIdentifier
+      );
 
       if (!pkg) {
         console.warn('⚠️ Package not found, showing paywall instead');

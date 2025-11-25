@@ -655,7 +655,6 @@ class AgentCreationTool(Tool):
                 
                 mcp_wrapper_instance = MCPToolWrapper(mcp_configs=[mcp_config_for_wrapper])
                 await mcp_wrapper_instance.initialize_and_register_tools()
-                logger.debug(f"Successfully registered MCP tools dynamically for {profile.toolkit_name}")
                 
             except Exception as e:
                 logger.warning(f"Could not dynamically register MCP tools in current runtime: {str(e)}. Tools will be available on next agent run.")

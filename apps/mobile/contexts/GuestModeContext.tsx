@@ -24,15 +24,23 @@ export function GuestModeProvider({ children }: { children: React.ReactNode }) {
   const loadGuestModeState = async () => {
     try {
       const value = await AsyncStorage.getItem(GUEST_MODE_KEY);
+      const sessionId = await AsyncStorage.getItem(GUEST_SESSION_ID_KEY);
+      
+      console.log('🔍 Loading guest mode state:', {
+        guestModeValue: value,
+        sessionId: sessionId ? `${sessionId.substring(0, 8)}...` : null,
+        isGuestMode: value === 'true'
+      });
+      
       setIsGuestMode(value === 'true');
     } catch (error) {
-      console.error('Error loading guest mode state:', error);
+      console.error('❌ Error loading guest mode state:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const enableGuestMode = async () => {
+  const enableGuestMode = React.useCallback(async () => {
     try {
       const generateUUID = () => {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -44,6 +52,9 @@ export function GuestModeProvider({ children }: { children: React.ReactNode }) {
       
       const sessionId = generateUUID();
       
+      console.log('🔵 Enabling guest mode with session:', sessionId);
+      console.trace('Guest mode enable call stack');
+      
       await AsyncStorage.multiSet([
         [GUEST_MODE_KEY, 'true'],
         [GUEST_SESSION_ID_KEY, sessionId],
@@ -52,22 +63,30 @@ export function GuestModeProvider({ children }: { children: React.ReactNode }) {
       setIsGuestMode(true);
       console.log('✅ Guest mode enabled with session:', sessionId);
     } catch (error) {
-      console.error('Error enabling guest mode:', error);
+      console.error('❌ Error enabling guest mode:', error);
     }
-  };
+  }, []);
 
-  const exitGuestMode = async () => {
+  const exitGuestMode = React.useCallback(async () => {
     try {
+      console.log('🔴 Exiting guest mode...');
       await AsyncStorage.multiRemove([GUEST_MODE_KEY, GUEST_SESSION_ID_KEY]);
       setIsGuestMode(false);
       console.log('👋 Guest mode disabled');
     } catch (error) {
-      console.error('Error exiting guest mode:', error);
+      console.error('❌ Error exiting guest mode:', error);
     }
-  };
+  }, []);
+
+  const value = React.useMemo(() => ({
+    isGuestMode,
+    enableGuestMode,
+    exitGuestMode,
+    isLoading,
+  }), [isGuestMode, enableGuestMode, exitGuestMode, isLoading]);
 
   return (
-    <GuestModeContext.Provider value={{ isGuestMode, enableGuestMode, exitGuestMode, isLoading }}>
+    <GuestModeContext.Provider value={value}>
       {children}
     </GuestModeContext.Provider>
   );

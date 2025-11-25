@@ -409,6 +409,55 @@ const ToolCard = React.memo(function ToolCard({
   );
 });
 
+const StreamingToolCallIndicator = React.memo(function StreamingToolCallIndicator({
+  toolCall,
+  toolName,
+}: {
+  toolCall: { function_name?: string; arguments?: Record<string, any> | string } | null;
+  toolName: string;
+}) {
+  // Extract display parameter using the exact same logic as getToolCallDisplayParam
+  const paramDisplay = useMemo(() => {
+    if (!toolCall?.arguments) return '';
+    let args: Record<string, any> = {};
+    if (typeof toolCall.arguments === 'string') {
+      try {
+        args = JSON.parse(toolCall.arguments);
+      } catch {
+        args = {};
+      }
+    } else {
+      args = toolCall.arguments;
+    }
+    return args.file_path || args.path || args.command || args.query || args.url || '';
+  }, [toolCall]);
+
+  const displayName = toolName ? getUserFriendlyToolName(toolName) : 'Using Tool';
+  const IconComponent = toolName ? getToolIcon(toolName) : CircleDashed;
+
+  // Use the exact same style as ToolCard when isLoading=true
+  return (
+    <Pressable
+      disabled
+      className="flex-row items-center gap-3 p-3 rounded-3xl border border-border bg-card"
+    >
+      <View className="h-8 w-8 rounded-xl border border-border items-center justify-center bg-background">
+        <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+      </View>
+      <View className="flex-1">
+        <Text className="text-sm font-roobert-medium text-foreground mb-0.5">
+          {displayName}
+        </Text>
+        {paramDisplay && (
+          <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+            {paramDisplay}
+          </Text>
+        )}
+      </View>
+    </Pressable>
+  );
+});
+
 interface ThreadContentProps {
   messages: UnifiedMessage[];
   streamingTextContent?: string;
@@ -632,7 +681,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
     }
 
     return finalGroupedMessages;
-  }, [displayMessages, streamingTextContent]);
+  }, [displayMessages, streamingTextContent, streamingToolCall]);
 
   if (displayMessages.length === 0 && !streamingTextContent && !streamingToolCall && agentStatus === 'idle') {
     return (
@@ -947,9 +996,56 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       return null;
                     }
                     
-                    // For other tools, could render a spinning indicator here if needed
-                    return null;
+                    // For other tools, render tool call indicator with spinning icon
+                    // Only hide if we can confirm the completed tool call is already rendered
+                    if (toolCalls.length > 0) {
+                      const firstToolCall = toolCalls[0];
+                      const toolName = firstToolCall.function_name?.replace(/_/g, '-') || '';
+                      const toolCallId = firstToolCall.tool_call_id;
+                      
+                      // Check if this tool call has already been completed and rendered
+                      // Look for a tool message in the current group with matching tool_call_id
+                      const currentGroupToolMessages = group.messages.filter(m => m.type === 'tool');
+                      
+                      // Check if any tool message in this group matches the streaming tool call
+                      const matchingCompletedTool = currentGroupToolMessages.some((toolMsg: UnifiedMessage) => {
+                        const toolMetadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
+                        return toolMetadata.tool_call_id === toolCallId;
+                      });
+                      
+                      // Only show streaming indicator if no matching completed tool is found
+                      if (!matchingCompletedTool) {
+                        return (
+                          <StreamingToolCallIndicator 
+                            toolCall={firstToolCall}
+                            toolName={toolName}
+                          />
+                        );
+                      }
+                      
+                      // If matching completed tool exists, don't render streaming indicator
+                      return null;
+                    }
+                    
+                    // Fallback if no tool calls found
+                    return (
+                      <StreamingToolCallIndicator 
+                        toolCall={null}
+                        toolName=""
+                      />
+                    );
                   })()}
+
+                {/* Show loader when agent is running but not streaming, inside the last assistant group */}
+                {groupIndex === groupedMessages.length - 1 && 
+                  (agentStatus === 'running' || agentStatus === 'connecting') && 
+                  !streamingTextContent && 
+                  !streamingToolCall &&
+                  (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                  <View className="mt-3">
+                    <AgentLoader />
+                  </View>
+                )}
 
               </View>
             </View>

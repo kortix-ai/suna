@@ -412,71 +412,17 @@ async def get_thread_messages(
     
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
-        batch_size = 1000
-        offset = 0
-        all_messages = []
+        from core.utils.message_migration import migrate_thread_messages, needs_migration
         
-        while True:
-            if optimized:
-                # Optimized mode: filter types and select only essential fields
-                allowed_types = ['user', 'tool', 'assistant']
-                query = client.table('messages').select(
-                    'message_id,thread_id,type,is_llm_message,content,metadata,created_at,updated_at,agent_id'
-                ).eq('thread_id', thread_id).in_('type', allowed_types)
-            else:
-                # Full mode: get all types and all fields
-                query = client.table('messages').select('*').eq('thread_id', thread_id)
-            
-            query = query.order('created_at', desc=(order == "desc"))
-            query = query.range(offset, offset + batch_size - 1)
-            messages_result = await query.execute()
-            batch = messages_result.data or []
-            
-            if optimized:
-                # Optimize messages: remove content for assistant/tool (use metadata only)
-                optimized_batch = []
-                for msg in batch:
-                    msg_type = msg.get('type')
-                    optimized_msg = {
-                        'message_id': msg.get('message_id'),
-                        'thread_id': msg.get('thread_id'),
-                        'type': msg_type,
-                        'is_llm_message': msg.get('is_llm_message'),
-                        'metadata': msg.get('metadata', {}),
-                        'created_at': msg.get('created_at'),
-                        'updated_at': msg.get('updated_at'),
-                        'agent_id': msg.get('agent_id'),
-                    }
-                    # Only include content for user messages (needed for displaying user input)
-                    if msg_type == 'user':
-                        optimized_msg['content'] = msg.get('content')
-                    # For assistant/tool, content is in metadata, so we exclude it to reduce payload
-                    
-                    optimized_batch.append(optimized_msg)
-                all_messages.extend(optimized_batch)
-                logger.debug(f"Fetched batch of {len(batch)} messages (offset {offset}), optimized to {len(optimized_batch)}")
-            else:
-                # Full mode: return all messages as-is
-                all_messages.extend(batch)
-            
-            # Break if we've fetched all messages
-            if len(batch) < batch_size:
-                break
-            offset += batch_size
-        
-        # LAZY MIGRATION: Migrate messages to new structure if needed
-        from core.utils.message_migration import migrate_thread_messages
-        
-        # Migrate messages in database (idempotent - only migrates if needed)
-        stats = await migrate_thread_messages(client, thread_id, save=True)
-        if stats['migrated'] > 0:
-            logger.info(f"Migrated {stats['migrated']} messages for thread {thread_id}")
-            # Re-fetch messages to get migrated versions
-            all_messages = []
+        # Helper to fetch all messages (with content for migration check)
+        async def fetch_all_messages_raw():
+            batch_size = 1000
             offset = 0
+            messages = []
+            allowed_types = ['user', 'tool', 'assistant']
             while True:
                 if optimized:
-                    allowed_types = ['user', 'tool', 'assistant']
+                    # Need content for migration check, will strip later
                     query = client.table('messages').select(
                         'message_id,thread_id,type,is_llm_message,content,metadata,created_at,updated_at,agent_id'
                     ).eq('thread_id', thread_id).in_('type', allowed_types)
@@ -485,33 +431,57 @@ async def get_thread_messages(
                 
                 query = query.order('created_at', desc=(order == "desc"))
                 query = query.range(offset, offset + batch_size - 1)
-                messages_result = await query.execute()
-                batch = messages_result.data or []
-                
-                if optimized:
-                    optimized_batch = []
-                    for msg in batch:
-                        msg_type = msg.get('type')
-                        optimized_msg = {
-                            'message_id': msg.get('message_id'),
-                            'thread_id': msg.get('thread_id'),
-                            'type': msg_type,
-                            'is_llm_message': msg.get('is_llm_message'),
-                            'metadata': msg.get('metadata', {}),
-                            'created_at': msg.get('created_at'),
-                            'updated_at': msg.get('updated_at'),
-                            'agent_id': msg.get('agent_id'),
-                        }
-                        if msg_type == 'user':
-                            optimized_msg['content'] = msg.get('content')
-                        optimized_batch.append(optimized_msg)
-                    all_messages.extend(optimized_batch)
-                else:
-                    all_messages.extend(batch)
-                
+                result = await query.execute()
+                batch = result.data or []
+                messages.extend(batch)
                 if len(batch) < batch_size:
                     break
                 offset += batch_size
+            return messages
+        
+        # Helper to optimize messages (strip content for non-user messages)
+        def optimize_messages(raw_messages):
+            if not optimized:
+                return raw_messages
+            optimized_list = []
+            for msg in raw_messages:
+                msg_type = msg.get('type')
+                optimized_msg = {
+                    'message_id': msg.get('message_id'),
+                    'thread_id': msg.get('thread_id'),
+                    'type': msg_type,
+                    'is_llm_message': msg.get('is_llm_message'),
+                    'metadata': msg.get('metadata', {}),
+                    'created_at': msg.get('created_at'),
+                    'updated_at': msg.get('updated_at'),
+                    'agent_id': msg.get('agent_id'),
+                }
+                # Only include content for user messages
+                if msg_type == 'user':
+                    optimized_msg['content'] = msg.get('content')
+                optimized_list.append(optimized_msg)
+            return optimized_list
+        
+        # STEP 1: Fetch messages ONCE
+        raw_messages = await fetch_all_messages_raw()
+        
+        # STEP 2: Check in-memory if any messages need migration
+        migration_needed = any(
+            needs_migration(msg) 
+            for msg in raw_messages 
+            if msg.get('type') in ['assistant', 'tool']
+        )
+        
+        # STEP 3: If migration needed, migrate and re-fetch fresh data
+        if migration_needed:
+            stats = await migrate_thread_messages(client, thread_id, save=True)
+            if stats['migrated'] > 0:
+                logger.info(f"Migrated {stats['migrated']} messages for thread {thread_id}")
+                # Re-fetch to get fresh migrated data
+                raw_messages = await fetch_all_messages_raw()
+        
+        # STEP 4: Apply optimization and return
+        all_messages = optimize_messages(raw_messages)
         
         return {"messages": all_messages}
     except Exception as e:

@@ -271,9 +271,6 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                             "instance": mcp_wrapper_instance,
                             "schema": schema
                         }
-                        logger.debug(f"Dynamically registered MCP tool: {method_name}")
-                
-                logger.debug(f"Successfully registered {len(updated_schemas)} MCP tools dynamically for {profile.toolkit_name}")
                 
             except Exception as e:
                 logger.warning(f"Could not dynamically register MCP tools in current runtime: {str(e)}. Tools will be available on next agent run.")

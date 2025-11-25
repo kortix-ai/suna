@@ -22,7 +22,6 @@ class AgentBuilderToolRegistry:
     def register_tool(self, name: str, tool_class: Type[AgentBuilderBaseTool]):
         """Register a new agent builder tool."""
         self.tools[name] = tool_class
-        logger.debug(f"Registered agent builder tool: {name}")
     
     def get_tool(self, name: str) -> Type[AgentBuilderBaseTool]:
         """Get a tool class by name."""
@@ -44,7 +43,6 @@ class AgentBuilderToolRegistry:
                     db_connection=db_connection,
                     agent_id=agent_id
                 )
-                logger.debug(f"Successfully registered agent builder tool: {tool_name}")
             except Exception as e:
                 logger.error(f"Failed to register agent builder tool {tool_name}: {e}")
     

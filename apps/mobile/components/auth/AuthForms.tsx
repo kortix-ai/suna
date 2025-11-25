@@ -201,6 +201,10 @@ interface SignUpFormProps {
   passwordInputRef?: React.RefObject<TextInput | null>;
   confirmPasswordInputRef?: React.RefObject<TextInput | null>;
   hideOAuth?: boolean;
+  acceptedTerms?: boolean;
+  setAcceptedTerms?: (accepted: boolean) => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
 }
 
 export function SignUpForm({
@@ -222,6 +226,10 @@ export function SignUpForm({
   passwordInputRef,
   confirmPasswordInputRef,
   hideOAuth = false,
+  acceptedTerms = false,
+  setAcceptedTerms,
+  onOpenTerms,
+  onOpenPrivacy,
 }: SignUpFormProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -238,6 +246,7 @@ export function SignUpForm({
     password.length >= 8 && 
     confirmPassword.length > 0 && 
     passwordsMatch && 
+    acceptedTerms &&
     !isLoading;
 
   return (
@@ -362,6 +371,55 @@ export function SignUpForm({
             {error}
           </Text>
         </AnimatedView>
+      )}
+
+      {setAcceptedTerms && onOpenTerms && onOpenPrivacy && (
+        <View className="flex-row items-start mt-4 mb-2">
+          <TouchableOpacity
+            onPress={() => {
+              setAcceptedTerms(!acceptedTerms);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            className="mr-3 mt-0.5"
+          >
+            <View
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: acceptedTerms ? (isDark ? '#FFFFFF' : '#000000') : isDark ? '#454444' : '#c2c2c2',
+                backgroundColor: acceptedTerms ? (isDark ? '#FFFFFF' : '#000000') : 'transparent',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              {acceptedTerms && (
+                <Icon as={Check} size={16} color={isDark ? '#000000' : '#FFFFFF'} />
+              )}
+            </View>
+          </TouchableOpacity>
+
+          <View className="flex-1 flex-row flex-wrap">
+            <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
+              {t('auth.agreeTerms')}{' '}
+            </Text>
+            <TouchableOpacity onPress={onOpenTerms}>
+              <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
+                {t('auth.userTerms')}
+              </Text>
+            </TouchableOpacity>
+            <Text className="text-[14px] font-roobert text-muted-foreground leading-5">
+              {' '}{t('auth.acknowledgePrivacy')}{' '}
+            </Text>
+            <TouchableOpacity onPress={onOpenPrivacy}>
+              <Text className="text-[14px] font-roobert text-foreground leading-5 underline">
+                {t('auth.privacyNotice')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
 
       <AnimatedPressable

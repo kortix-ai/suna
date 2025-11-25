@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { Dimensions } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
   withTiming,
   runOnJS
 } from 'react-native-reanimated';
@@ -15,9 +15,10 @@ interface AnimatedPageWrapperProps {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  disableGesture?: boolean;
 }
 
-export function AnimatedPageWrapper({ visible, onClose, children }: AnimatedPageWrapperProps) {
+export function AnimatedPageWrapper({ visible, onClose, children, disableGesture = false }: AnimatedPageWrapperProps) {
   const translateX = useSharedValue(SCREEN_WIDTH);
   const [shouldRender, setShouldRender] = React.useState(false);
 
@@ -38,6 +39,18 @@ export function AnimatedPageWrapper({ visible, onClose, children }: AnimatedPage
   }, [visible]);
 
   const gesture = Gesture.Pan()
+    .activeOffsetX([50, 50])
+    .failOffsetY([-20, 20])
+    .manualActivation(true)
+    .onTouchesMove((event, state) => {
+      // Only activate if horizontal swipe from edge
+      const touch = event.allTouches[0];
+      if (touch.x < 50 && touch.absoluteX - touch.x > 30) {
+        state.activate();
+      } else {
+        state.fail();
+      }
+    })
     .onUpdate((event) => {
       if (event.translationX > 0) {
         translateX.value = event.translationX;
@@ -61,9 +74,20 @@ export function AnimatedPageWrapper({ visible, onClose, children }: AnimatedPage
 
   if (!shouldRender) return null;
 
+  if (disableGesture) {
+    return (
+      <AnimatedView
+        style={animatedStyle}
+        className="absolute inset-0 z-50"
+      >
+        {children}
+      </AnimatedView>
+    );
+  }
+
   return (
     <GestureDetector gesture={gesture}>
-      <AnimatedView 
+      <AnimatedView
         style={animatedStyle}
         className="absolute inset-0 z-50"
       >

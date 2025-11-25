@@ -38,7 +38,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('0.00'),
         display_name='No Plan',
         can_purchase_credits=False,
-        models=[],
+        models=['haiku'],  # Allow haiku for users without subscription (guest/basic access)
         project_limit=0,
         thread_limit=0,
         concurrent_runs=0,
@@ -113,6 +113,77 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
         app_triggers_limit=100
+    ),
+    # Legacy tiers - users may still be on these from previous pricing
+    'tier_12_100': Tier(
+        name='tier_12_100',
+        price_ids=[],  # Legacy - no new signups
+        monthly_credits=Decimal('100.00'),
+        display_name='Legacy Pro',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=1000,
+        thread_limit=1000,
+        concurrent_runs=10,
+        custom_workers_limit=20,
+        scheduled_triggers_limit=20,
+        app_triggers_limit=50
+    ),
+    'tier_50_400': Tier(
+        name='tier_50_400',
+        price_ids=[],  # Legacy - no new signups
+        monthly_credits=Decimal('400.00'),
+        display_name='Legacy Business',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=5000,
+        thread_limit=5000,
+        concurrent_runs=30,
+        custom_workers_limit=100,
+        scheduled_triggers_limit=100,
+        app_triggers_limit=200
+    ),
+    'tier_125_800': Tier(
+        name='tier_125_800',
+        price_ids=[],  # Legacy - no new signups
+        monthly_credits=Decimal('800.00'),
+        display_name='Legacy Enterprise',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=10000,
+        thread_limit=10000,
+        concurrent_runs=50,
+        custom_workers_limit=200,
+        scheduled_triggers_limit=200,
+        app_triggers_limit=500
+    ),
+    'tier_200_1000': Tier(
+        name='tier_200_1000',
+        price_ids=[],  # Legacy - no new signups
+        monthly_credits=Decimal('1000.00'),
+        display_name='Legacy Enterprise Plus',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=25000,
+        thread_limit=25000,
+        concurrent_runs=100,
+        custom_workers_limit=500,
+        scheduled_triggers_limit=500,
+        app_triggers_limit=1000
+    ),
+    'tier_150_1200': Tier(
+        name='tier_150_1200',
+        price_ids=[],  # Legacy - no new signups
+        monthly_credits=Decimal('1200.00'),
+        display_name='Legacy Enterprise Max',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=25000,
+        thread_limit=25000,
+        concurrent_runs=100,
+        custom_workers_limit=500,
+        scheduled_triggers_limit=500,
+        app_triggers_limit=1000
     ),
 }
 

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, ScrollView, useColorScheme } from 'react-native';
-import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -14,6 +13,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { ToolViewProps } from '../types';
 import { useThread } from '@/lib/chat/hooks';
+import { PresentationSlideCard } from './PresentationSlideCard';
 
 interface SlideMetadata {
   title: string;
@@ -336,50 +336,18 @@ export function PresentationToolView({
           </View>
         ) : (
           <View className="gap-4">
-            {slides.map((slide) => {
-              const slideUrl = sandboxUrl
-                ? constructHtmlPreviewUrl(sandboxUrl, slide.file_path)
-                : null;
-              const slideUrlWithCacheBust = slideUrl ? `${slideUrl}?t=${Date.now()}` : null;
-
-              return (
-                <View key={slide.number} className="gap-2">
-                  <View className="flex-row items-center gap-2">
-                    <View className="bg-primary/10 rounded-lg px-2 py-1">
-                      <Text className="text-xs font-roobert-medium text-primary">
-                        Slide {slide.number}
-                      </Text>
-                    </View>
-                    {slide.title && (
-                      <Text className="text-sm font-roobert text-foreground/60 flex-1" numberOfLines={1}>
-                        {slide.title}
-                      </Text>
-                    )}
-                  </View>
-
-                  <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ aspectRatio: 16 / 9 }}>
-                    {slideUrlWithCacheBust ? (
-                      <WebView
-                        source={{ uri: slideUrlWithCacheBust }}
-                        scrollEnabled={false}
-                        showsVerticalScrollIndicator={false}
-                        showsHorizontalScrollIndicator={false}
-                        style={{ flex: 1, backgroundColor: 'transparent' }}
-                        originWhitelist={['*']}
-                        javaScriptEnabled={true}
-                        domStorageEnabled={true}
-                      />
-                    ) : (
-                      <View className="flex-1 items-center justify-center">
-                        <Text className="text-sm font-roobert text-muted-foreground">
-                          Unable to load slide
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
+            {slides.map((slide) => (
+              <PresentationSlideCard
+                key={slide.number}
+                slide={slide}
+                sandboxUrl={sandboxUrl}
+                onFullScreenClick={(slideNumber) => {
+                  // TODO: Implement full screen viewer for mobile
+                  console.log('Open slide in full screen:', slideNumber);
+                }}
+                refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
+              />
+            ))}
           </View>
         )}
       </View>

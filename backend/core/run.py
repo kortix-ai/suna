@@ -101,15 +101,11 @@ class ToolManager:
             if 'web_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
                 self.thread_manager.add_tool(SandboxWebSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered web_search_tool with methods: {enabled_methods}")
         
         if config.SERPER_API_KEY:
             if 'image_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('image_search_tool')
                 self.thread_manager.add_tool(SandboxImageSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered image_search_tool with methods: {enabled_methods}")
         
         # Register other sandbox tools from centralized registry
         from core.tools.tool_registry import SANDBOX_TOOLS, get_tool_class
@@ -135,43 +131,31 @@ class ToolManager:
             if tool_name not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool(tool_name)
                 self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered {tool_name} with methods: {enabled_methods}")
     
     def _register_utility_tools(self, disabled_tools: List[str]):
         """Register utility tools with API key checks."""
         if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
             enabled_methods = self._get_enabled_methods_for_tool('data_providers_tool')
             self.thread_manager.add_tool(DataProvidersTool, function_names=enabled_methods)
-            if enabled_methods:
-                logger.debug(f"✅ Registered data_providers_tool with methods: {enabled_methods}")
         
         if config.SEMANTIC_SCHOLAR_API_KEY and 'paper_search_tool' not in disabled_tools:
             if 'paper_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
                 self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered paper_search_tool with methods: {enabled_methods}")
         
         # Register search tools if EXA API key is available
         if config.EXA_API_KEY:
             if 'people_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('people_search_tool')
                 self.thread_manager.add_tool(PeopleSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered people_search_tool with methods: {enabled_methods}")
             
             if 'company_search_tool' not in disabled_tools:
                 enabled_methods = self._get_enabled_methods_for_tool('company_search_tool')
                 self.thread_manager.add_tool(CompanySearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered company_search_tool with methods: {enabled_methods}")
         
         if config.ENV_MODE != EnvMode.PRODUCTION and config.VAPI_PRIVATE_KEY and 'vapi_voice_tool' not in disabled_tools:
             enabled_methods = self._get_enabled_methods_for_tool('vapi_voice_tool')
             self.thread_manager.add_tool(VapiVoiceTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-            if enabled_methods:
-                logger.debug(f"✅ Registered vapi_voice_tool with methods: {enabled_methods}")
             
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools with proper initialization."""
@@ -201,8 +185,6 @@ class ToolManager:
                         db_connection=db, 
                         agent_id=agent_id
                     )
-                    if enabled_methods:
-                        logger.debug(f"✅ Registered {tool_name} with methods: {enabled_methods}")
                 except Exception as e:
                     logger.warning(f"❌ Failed to register {tool_name}: {e}")
     
@@ -231,8 +213,6 @@ class ToolManager:
                     db_connection=db, 
                     account_id=self.account_id
                 )
-                if enabled_methods:
-                    logger.debug(f"✅ Registered agent_creation_tool with methods: {enabled_methods}")
             except (ImportError, AttributeError) as e:
                 logger.warning(f"❌ Failed to load agent_creation_tool: {e}")
     
@@ -249,8 +229,6 @@ class ToolManager:
                 thread_id=self.thread_id, 
                 thread_manager=self.thread_manager
             )
-            if enabled_methods:
-                logger.debug(f"✅ Registered browser_tool with methods: {enabled_methods}")
     
     def _get_migrated_tools_config(self) -> dict:
         """Migrate tool config once and cache it. This is expensive so we only do it once."""
@@ -651,11 +629,9 @@ class AgentRunner:
                 if enabled_methods is not None:
                     # Register only enabled methods
                     self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                    logger.debug(f"Registered agent_creation_tool for Suna with methods: {enabled_methods}")
                 else:
                     # Register all methods (backward compatibility)
                     self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                    logger.debug("Registered agent_creation_tool for Suna (all methods)")
             else:
                 logger.warning("Could not register agent_creation_tool: account_id not available")
     

@@ -25,10 +25,12 @@ class CreditService:
         
         if use_cache and self.cache:
             cached = await self.cache.get(cache_key)
-            if cached:
-                if isinstance(cached, dict):
-                    return Decimal(str(cached.get('total', 0)))
-                return Decimal(cached)
+            if cached is not None:
+                if isinstance(cached, (str, int, float)):
+                    return Decimal(str(cached))
+                else:
+                    logger.warning(f"Invalid cache entry for {cache_key}: expected str/int/float, got {type(cached)}")
+                    await self.cache.invalidate(cache_key)
         
         try:
             client = await self._get_client()

@@ -6,6 +6,7 @@
  */
 
 import { useProductionStripeIds, ENV_MODE } from '@/lib/utils/env-config';
+import { Sparkles, Zap, Rocket, Crown } from 'lucide-react-native';
 
 export interface PricingTier {
   id: string;  // Backend tier key (e.g., 'free', 'tier_2_20')
@@ -19,8 +20,23 @@ export interface PricingTier {
   isPopular?: boolean;
   buttonText: string;
   hidden?: boolean;
+  icon?: any; // React component type for icon
+  revenueCatId?: string; // RevenueCat product identifier (e.g., 'kortix_plus_monthly')
 }
 
+/**
+ * Pricing Tier Configuration
+ * 
+ * This array contains FEATURE DESCRIPTIONS and METADATA for each tier.
+ * When RevenueCat is enabled (iOS/Android), actual PRICING and AVAILABILITY 
+ * are loaded from App Store/Play Store via getOfferings().
+ * 
+ * The PricingSection component merges:
+ * - RevenueCat data (price, product ID, availability)
+ * - Hardcoded data (features, icons, descriptions)
+ * 
+ * Features MUST match frontend/src/lib/home.tsx exactly.
+ */
 export const PRICING_TIERS: PricingTier[] = [
   {
     id: 'free',
@@ -39,6 +55,7 @@ export const PRICING_TIERS: PricingTier[] = [
     isPopular: false,
     buttonText: 'Select',
     hidden: false,
+    icon: Sparkles,
   },
   {
     id: 'tier_2_20',
@@ -56,8 +73,10 @@ export const PRICING_TIERS: PricingTier[] = [
       'Premium AI Models',
     ],
     isPopular: true,
-    buttonText: 'Get Started',
+    buttonText: 'Get started',
     hidden: false,
+    icon: Zap,
+    revenueCatId: 'kortix_plus',
   },
   {
     id: 'tier_6_50',
@@ -75,8 +94,10 @@ export const PRICING_TIERS: PricingTier[] = [
       'Premium AI Models',
     ],
     isPopular: false,
-    buttonText: 'Get Started',
+    buttonText: 'Get started',
     hidden: false,
+    icon: Rocket,
+    revenueCatId: 'kortix_pro',
   },
   {
     id: 'tier_12_100',
@@ -94,8 +115,10 @@ export const PRICING_TIERS: PricingTier[] = [
       'Premium AI Models',
     ],
     isPopular: false,
-    buttonText: 'Get Started',
+    buttonText: 'Get started',
     hidden: true, // Hidden by default, matching frontend
+    icon: Rocket,
+    revenueCatId: 'kortix_business',
   },
   {
     id: 'tier_25_200',
@@ -114,8 +137,10 @@ export const PRICING_TIERS: PricingTier[] = [
       'Priority Support',
     ],
     isPopular: false,
-    buttonText: 'Get Started',
+    buttonText: 'Get started',
     hidden: false,
+    icon: Crown,
+    revenueCatId: 'kortix_ultra',
   },
 ];
 

@@ -48,10 +48,10 @@ export function extractToolCall(
   // If toolCallId provided, find specific tool call
   if (toolCallId) {
     const toolCall = toolCalls.find(tc => tc.tool_call_id === toolCallId);
-    if (!toolCall) return null;
+    if (!toolCall || !toolCall.function_name) return null;
     
     // Parse arguments if string
-    let args: Record<string, any> | string = toolCall.arguments;
+    let args: Record<string, any> | string = toolCall.arguments || {};
     if (typeof args === 'string') {
       try {
         args = JSON.parse(args);
@@ -61,16 +61,24 @@ export function extractToolCall(
     }
     
     return {
-      tool_call_id: toolCall.tool_call_id,
+      tool_call_id: toolCall.tool_call_id || '',
       function_name: toolCall.function_name,
       arguments: args,
-      source: toolCall.source,
+      source: toolCall.source || 'native',
     };
   }
   
   // Return first tool call if no ID specified
+  if (toolCalls.length === 0) {
+    return null;
+  }
+  
   const toolCall = toolCalls[0];
-  let args: Record<string, any> | string = toolCall.arguments;
+  if (!toolCall || !toolCall.function_name) {
+    return null;
+  }
+  
+  let args: Record<string, any> | string = toolCall.arguments || {};
   if (typeof args === 'string') {
     try {
       args = JSON.parse(args);
@@ -80,10 +88,10 @@ export function extractToolCall(
   }
   
   return {
-    tool_call_id: toolCall.tool_call_id,
+    tool_call_id: toolCall.tool_call_id || '',
     function_name: toolCall.function_name,
     arguments: args,
-    source: toolCall.source,
+    source: toolCall.source || 'native',
   };
 }
 
