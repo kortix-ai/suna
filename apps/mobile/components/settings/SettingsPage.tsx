@@ -100,7 +100,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleBilling = React.useCallback(() => {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     if (isGuestMode) {
       useAuthDrawerStore.getState().openAuthDrawer({
         title: 'Sign up to continue',
@@ -108,7 +108,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
       });
       return;
     }
-    
+
     setIsBillingPageVisible(true);
   }, [isGuestMode]);
 
@@ -133,7 +133,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleBeta = React.useCallback(() => {
     console.log('🎯 Beta pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     if (isGuestMode) {
       useAuthDrawerStore.getState().openAuthDrawer({
         title: 'Sign up to continue',
@@ -141,14 +141,14 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
       });
       return;
     }
-    
+
     setIsBetaPageVisible(true);
   }, [isGuestMode]);
 
   const handleAccountDeletion = React.useCallback(() => {
     console.log('🎯 Account deletion pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
+
     if (isGuestMode) {
       useAuthDrawerStore.getState().openAuthDrawer({
         title: 'Sign up to continue',
@@ -156,7 +156,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
       });
       return;
     }
-    
+
     setIsAccountDeletionPageVisible(true);
   }, [isGuestMode]);
 
@@ -298,18 +298,10 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         />
       </AnimatedPageWrapper>
 
-      <AnimatedPageWrapper visible={isBillingPageVisible} onClose={() => setIsBillingPageVisible(false)}>
+      <AnimatedPageWrapper visible={isBillingPageVisible} onClose={() => setIsBillingPageVisible(false)} disableGesture>
         <BillingPage
           visible
           onClose={() => setIsBillingPageVisible(false)}
-          onOpenCredits={() => {
-            setIsBillingPageVisible(false);
-            setIsCreditsPurchasePageVisible(true);
-          }}
-          onOpenUsage={() => {
-            setIsBillingPageVisible(false);
-            setIsUsagePageVisible(true);
-          }}
         />
       </AnimatedPageWrapper>
 
