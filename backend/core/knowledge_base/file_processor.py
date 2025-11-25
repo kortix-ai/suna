@@ -58,6 +58,129 @@ class FileProcessor:
             pass
         return False
     
+    async def process_file_fast(
+        self, 
+        account_id: str, 
+        folder_id: str,
+        file_content: bytes, 
+        filename: str, 
+        mime_type: str,
+        background_tasks
+    ) -> Dict[str, Any]:
+        """Fast file processing - upload file immediately, generate summary in background."""
+        import time
+        start = time.time()
+        logger.info(f"[PROCESSOR] Starting fast processing for: {filename}")
+        
+        try:
+            if len(file_content) > self.MAX_FILE_SIZE:
+                raise ValueError(f"File too large: {len(file_content)} bytes")
+            
+            file_extension = Path(filename).suffix.lower()
+            
+            # Check if it's text-based first
+            is_text_based = (
+                mime_type.startswith('text/') or 
+                mime_type in ['application/json', 'application/xml', 'text/xml'] or
+                self._is_likely_text_file(file_content)
+            )
+            
+            # If not text-based, check allowed extensions
+            if not is_text_based and file_extension not in self.SUPPORTED_EXTENSIONS:
+                raise ValueError(f"Unsupported file type: {file_extension}")
+            
+            # Generate unique entry ID
+            entry_id = str(uuid.uuid4())
+            
+            # Sanitize filename for S3 storage
+            sanitized_filename = self.sanitize_filename(filename)
+            
+            # Upload to S3
+            s3_path = f"knowledge-base/{folder_id}/{entry_id}/{sanitized_filename}"
+            client = await self.db.client
+            
+            t1 = time.time()
+            await client.storage.from_('file-uploads').upload(
+                s3_path, file_content, {"content-type": mime_type}
+            )
+            logger.info(f"[PROCESSOR] S3 upload took: {time.time() - t1:.2f}s")
+            
+            # Save to database with placeholder summary
+            entry_data = {
+                'entry_id': entry_id,
+                'folder_id': folder_id,
+                'account_id': account_id,
+                'filename': filename,
+                'file_path': s3_path,
+                'file_size': len(file_content),
+                'mime_type': mime_type,
+                'summary': 'Processing...',
+                'is_active': True
+            }
+            
+            t2 = time.time()
+            await client.table('knowledge_base_entries').insert(entry_data).execute()
+            logger.info(f"[PROCESSOR] DB insert took: {time.time() - t2:.2f}s")
+            
+            # Schedule background summary generation
+            t3 = time.time()
+            background_tasks.add_task(
+                self._generate_and_update_summary,
+                entry_id,
+                file_content,
+                filename,
+                mime_type
+            )
+            logger.info(f"[PROCESSOR] Background task scheduled in: {time.time() - t3:.2f}s")
+            logger.info(f"[PROCESSOR] Total fast processing time: {time.time() - start:.2f}s")
+            
+            return {
+                'success': True,
+                'entry_id': entry_id,
+                'filename': filename,
+                'processing': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing file {filename}: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    async def _generate_and_update_summary(
+        self,
+        entry_id: str,
+        file_content: bytes,
+        filename: str,
+        mime_type: str
+    ):
+        """Background task to generate and update file summary."""
+        try:
+            # Extract content
+            content = self._extract_content(file_content, filename, mime_type)
+            if not content:
+                content = f"File: {filename} ({len(file_content)} bytes, {mime_type})"
+            
+            # Generate summary
+            summary = await self._generate_summary(content, filename)
+            
+            # Update database
+            client = await self.db.client
+            await client.table('knowledge_base_entries').update({
+                'summary': summary
+            }).eq('entry_id', entry_id).execute()
+            
+            logger.info(f"Successfully generated summary for entry {entry_id}")
+            
+        except Exception as e:
+            logger.error(f"Error generating summary for entry {entry_id}: {str(e)}")
+            # Update with error message
+            try:
+                client = await self.db.client
+                await client.table('knowledge_base_entries').update({
+                    'summary': f"Error generating summary: {str(e)}"
+                }).eq('entry_id', entry_id).execute()
+            except:
+                pass
+
     async def process_file(
         self, 
         account_id: str, 
@@ -66,6 +189,7 @@ class FileProcessor:
         filename: str, 
         mime_type: str
     ) -> Dict[str, Any]:
+        """Legacy synchronous file processing - kept for backward compatibility."""
         try:
             if len(file_content) > self.MAX_FILE_SIZE:
                 raise ValueError(f"File too large: {len(file_content)} bytes")
