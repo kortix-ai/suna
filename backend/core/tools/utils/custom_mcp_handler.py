@@ -81,7 +81,6 @@ class CustomMCPHandler:
                     tools = tools_result.tools if hasattr(tools_result, 'tools') else tools_result
                     
                     self._register_custom_tools(tools, server_name, enabled_tools, 'composio', server_config)
-                    logger.debug(f"Registered {len(tools)} tools from Composio MCP {server_name}")
             
         except Exception as e:
             logger.error(f"Failed to initialize Composio MCP {server_name}: {str(e)}")
@@ -200,9 +199,6 @@ class CustomMCPHandler:
                     'custom_config': server_config
                 }
                 tools_registered += 1
-                logger.debug(f"Registered custom tool: {tool_name}")
-        
-        logger.debug(f"Successfully initialized custom MCP {server_name} with {tools_registered} tools")
     
     def get_custom_tools(self) -> Dict[str, Dict[str, Any]]:
         return self.custom_tools.copy() 

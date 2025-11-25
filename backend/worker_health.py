@@ -29,7 +29,7 @@ async def main():
     """
     try:
         # Initialize Redis connection
-        await retry(lambda: redis.initialize_async())
+    await retry(lambda: redis.initialize_async())
         
         # Simple ping to verify connection
         client = await redis.get_client()
@@ -46,7 +46,7 @@ async def main():
         
         if value != "ok":
             logger.critical(f"Health check failed: Redis read/write test failed (got {value})")
-            exit(1)
+        exit(1)
         
         logger.info("Health check passed: Redis connectivity OK")
         await redis.close()
