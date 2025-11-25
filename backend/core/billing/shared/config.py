@@ -14,7 +14,7 @@ DEFAULT_TOKEN_COST = Decimal('0.000002')
 
 CREDITS_PER_DOLLAR = 100
 
-FREE_TIER_INITIAL_CREDITS = Decimal('2.00')
+FREE_TIER_INITIAL_CREDITS = Decimal('0.00')
 
 @dataclass
 class Tier:
@@ -30,6 +30,8 @@ class Tier:
     custom_workers_limit: int
     scheduled_triggers_limit: int
     app_triggers_limit: int
+    daily_credit_config: Optional[Dict] = None
+    monthly_refill_enabled: Optional[bool] = True
 
 TIERS: Dict[str, Tier] = {
     'none': Tier(
@@ -38,18 +40,18 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('0.00'),
         display_name='No Plan',
         can_purchase_credits=False,
-        models=['haiku'],  # Allow haiku for users without subscription (guest/basic access)
+        models=['haiku'],
         project_limit=0,
         thread_limit=0,
         concurrent_runs=0,
         custom_workers_limit=0,
         scheduled_triggers_limit=0,
-        app_triggers_limit=0
+        app_triggers_limit=0,
     ),
     'free': Tier(
         name='free',
         price_ids=[config.STRIPE_FREE_TIER_ID],
-        monthly_credits=FREE_TIER_INITIAL_CREDITS,
+        monthly_credits=Decimal('0.00'),
         display_name='Basic',
         can_purchase_credits=False,
         models=['haiku'],
@@ -58,7 +60,13 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=1,
         custom_workers_limit=1,
         scheduled_triggers_limit=1,
-        app_triggers_limit=1
+        app_triggers_limit=1,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
+        monthly_refill_enabled=False
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
@@ -76,7 +84,8 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=3,
         custom_workers_limit=5,
         scheduled_triggers_limit=5,
-        app_triggers_limit=10
+        app_triggers_limit=10,
+        monthly_refill_enabled=True
     ),
     'tier_6_50': Tier(
         name='tier_6_50',
@@ -94,7 +103,8 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=5,
         custom_workers_limit=20,
         scheduled_triggers_limit=10,
-        app_triggers_limit=25
+        app_triggers_limit=25,
+        monthly_refill_enabled=True
     ),
     'tier_25_200': Tier(
         name='tier_25_200',
@@ -112,12 +122,14 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=20,
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
-        app_triggers_limit=100
+        app_triggers_limit=100,
+        monthly_refill_enabled=True
     ),
+    
     # Legacy tiers - users may still be on these from previous pricing
     'tier_12_100': Tier(
         name='tier_12_100',
-        price_ids=[],  # Legacy - no new signups
+        price_ids=[],
         monthly_credits=Decimal('100.00'),
         display_name='Legacy Pro',
         can_purchase_credits=True,
@@ -127,11 +139,12 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=10,
         custom_workers_limit=20,
         scheduled_triggers_limit=20,
-        app_triggers_limit=50
+        app_triggers_limit=50,
+        monthly_refill_enabled=True
     ),
     'tier_50_400': Tier(
         name='tier_50_400',
-        price_ids=[],  # Legacy - no new signups
+        price_ids=[],
         monthly_credits=Decimal('400.00'),
         display_name='Legacy Business',
         can_purchase_credits=True,
@@ -141,11 +154,12 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=30,
         custom_workers_limit=100,
         scheduled_triggers_limit=100,
-        app_triggers_limit=200
+        app_triggers_limit=200,
+        monthly_refill_enabled=True
     ),
     'tier_125_800': Tier(
         name='tier_125_800',
-        price_ids=[],  # Legacy - no new signups
+        price_ids=[],
         monthly_credits=Decimal('800.00'),
         display_name='Legacy Enterprise',
         can_purchase_credits=True,
@@ -155,11 +169,12 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=50,
         custom_workers_limit=200,
         scheduled_triggers_limit=200,
-        app_triggers_limit=500
+        app_triggers_limit=500,
+        monthly_refill_enabled=True
     ),
     'tier_200_1000': Tier(
         name='tier_200_1000',
-        price_ids=[],  # Legacy - no new signups
+        price_ids=[],
         monthly_credits=Decimal('1000.00'),
         display_name='Legacy Enterprise Plus',
         can_purchase_credits=True,
@@ -169,11 +184,12 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=100,
         custom_workers_limit=500,
         scheduled_triggers_limit=500,
-        app_triggers_limit=1000
+        app_triggers_limit=1000,
+        monthly_refill_enabled=True
     ),
     'tier_150_1200': Tier(
         name='tier_150_1200',
-        price_ids=[],  # Legacy - no new signups
+        price_ids=[],
         monthly_credits=Decimal('1200.00'),
         display_name='Legacy Enterprise Max',
         can_purchase_credits=True,
@@ -183,7 +199,8 @@ TIERS: Dict[str, Tier] = {
         concurrent_runs=100,
         custom_workers_limit=500,
         scheduled_triggers_limit=500,
-        app_triggers_limit=1000
+        app_triggers_limit=1000,
+        monthly_refill_enabled=True
     ),
 }
 

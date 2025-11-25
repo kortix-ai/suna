@@ -295,6 +295,7 @@
     "credits": "Créditos",
     "popular": "Popular",
     "creditsExplained": "Créditos explicados",
+    "creditsExhaustedRefreshIn": "Você esgotou seus créditos. Eles serão renovados em {time}",
     "trialActive": "Teste Ativo",
     "trialBadge": "Teste de 7 Dias",
     "currentPlan": "Plano Atual",

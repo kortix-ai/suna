@@ -322,7 +322,7 @@ class CreditManager:
         account_id: str,
         amount: Decimal,
         description: str = "Credit deducted",
-        type: str = 'deduction',
+        type: str = 'usage',
         message_id: Optional[str] = None,
         thread_id: Optional[str] = None
     ) -> Dict:

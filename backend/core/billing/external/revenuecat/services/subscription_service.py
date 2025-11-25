@@ -56,30 +56,33 @@ class SubscriptionService:
         
         logger.info(f"[REVENUECAT] Step 1: Updating credits to ${credits_amount}...")
         
-        try:
-            if existing_account:
-                logger.info(f"[REVENUECAT] Using reset_expiring_credits for existing account")
-                credit_result = await credit_manager.reset_expiring_credits(
-                    account_id=app_user_id,
-                    new_credits=credits_amount,
-                    description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})",
-                    stripe_event_id=revenuecat_event_id
-                )
-                logger.info(f"[REVENUECAT] Credit reset result: {credit_result}")
-            else:
-                logger.info(f"[REVENUECAT] Using add_credits for new account")
-                credit_result = await credit_manager.add_credits(
-                    account_id=app_user_id,
-                    amount=credits_amount,
-                    is_expiring=True,
-                    description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})",
-                    type='tier_grant',
-                    stripe_event_id=revenuecat_event_id
-                )
-                logger.info(f"[REVENUECAT] Credit add result: {credit_result}")
-        except Exception as e:
-            logger.error(f"[REVENUECAT] ❌ Failed to update credits: {e}", exc_info=True)
-            raise
+        if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
+            logger.info(f"[REVENUECAT] Skipping initial credit grant for tier {tier_name} - monthly_refill_enabled=False (using daily credits)")
+        else:
+            try:
+                if existing_account:
+                    logger.info(f"[REVENUECAT] Using reset_expiring_credits for existing account")
+                    credit_result = await credit_manager.reset_expiring_credits(
+                        account_id=app_user_id,
+                        new_credits=credits_amount,
+                        description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})",
+                        stripe_event_id=revenuecat_event_id
+                    )
+                    logger.info(f"[REVENUECAT] Credit reset result: {credit_result}")
+                else:
+                    logger.info(f"[REVENUECAT] Using add_credits for new account")
+                    credit_result = await credit_manager.add_credits(
+                        account_id=app_user_id,
+                        amount=credits_amount,
+                        is_expiring=True,
+                        description=f"RevenueCat subscription: {tier_info.display_name} ({period_type})",
+                        type='tier_grant',
+                        stripe_event_id=revenuecat_event_id
+                    )
+                    logger.info(f"[REVENUECAT] Credit add result: {credit_result}")
+            except Exception as e:
+                logger.error(f"[REVENUECAT] ❌ Failed to update credits: {e}", exc_info=True)
+                raise
         
         logger.info(
             f"[REVENUECAT] Step 2: Updating tier to '{tier_name}' "

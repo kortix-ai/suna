@@ -22,6 +22,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
+import { useCreditBalance } from '@/hooks/billing';
 
 import { useAgents } from '@/hooks/agents/use-agents';
 import { PlanSelectionModal } from '@/components/billing/pricing';
@@ -112,11 +113,30 @@ export function DashboardContent() {
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
   const { data: limits, isLoading: isLimitsLoading } = useLimits();
+  const { data: balance } = useCreditBalance(!!user);
   const canCreateThread = limits?.thread_count?.can_create || false;
   
   const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';
-  // Only show alert after loading is complete and limit is actually exceeded
-  const showAlert = !isLimitsLoading && !canCreateThread && !isDismissed;
+  const threadLimitExceeded = !isLimitsLoading && !canCreateThread && !isDismissed;
+  
+  const dailyCreditsInfo = balance?.daily_credits_info;
+  const hasLowCredits = (balance?.balance || 0) <= 10;
+  const hasDailyRefresh = dailyCreditsInfo?.enabled && dailyCreditsInfo?.seconds_until_refresh;
+  
+  const alertType = hasLowCredits && hasDailyRefresh 
+    ? 'daily_refresh' 
+    : threadLimitExceeded 
+    ? 'thread_limit' 
+    : null;
+  
+  const formatTimeUntilRefresh = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -450,11 +470,34 @@ export function DashboardContent() {
                           selectedTemplate={selectedTemplate}
                         />
 
-                        {showAlert && (
+                        {alertType === 'daily_refresh' && (
+                          <div 
+                            className='w-full h-16 p-2 px-4 dark:bg-blue-500/5 bg-blue-500/10 dark:border-blue-500/10 border-blue-700/10 border rounded-b-3xl flex items-center justify-between overflow-hidden'
+                            style={{
+                              marginTop: '-40px',
+                              transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
+                            }}
+                          >
+                            <span className='-mb-3.5 dark:text-blue-400 text-blue-700 text-sm'>
+                              {tBilling('creditsExhausted', { time: formatTimeUntilRefresh(dailyCreditsInfo!.seconds_until_refresh!) })}
+                            </span>
+                            <div className='flex items-center -mb-3.5'>
+                              <Button 
+                                size='sm' 
+                                className='h-6 text-xs'
+                                onClick={() => pricingModalStore.openPricingModal()}
+                              >
+                              {tCommon('upgrade')}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {alertType === 'thread_limit' && (
                           <div 
                             className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
                             style={{
-                              marginTop: '-32px',
+                              marginTop: '-40px',
                               transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
                             }}
                           >
@@ -471,18 +514,7 @@ export function DashboardContent() {
                                 onClick={() => pricingModalStore.openPricingModal()}
                               >
                                 {tCommon('upgrade')}
-                                </Button>
-                              {/* <Button 
-                                size='icon' 
-                                variant='ghost' 
-                                className='h-6 text-muted-foreground'
-                                onClick={() => {
-                                  sessionStorage.setItem('threadLimitAlertDismissed', 'true');
-                                  window.dispatchEvent(new Event('storage'));
-                                }}
-                              >
-                                <X/>
-                              </Button> */}
+                              </Button>
                             </div>
                           </div>
                         )}

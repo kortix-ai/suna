@@ -19,6 +19,19 @@ class CreditService:
         product_id: str,
         tier_name: str
     ) -> None:
+        from ....shared.config import get_tier_by_name
+        
+        tier_config = get_tier_by_name(tier_name)
+        if tier_config and (not tier_config.monthly_refill_enabled or (tier_config.daily_credit_config and tier_config.daily_credit_config.get('enabled'))):
+            logger.info(
+                f"[REVENUECAT RENEWAL SKIP] Skipping renewal credits for {app_user_id} - "
+                f"tier {tier_name} has monthly_refill_enabled=False (using daily credits instead)"
+            )
+            db = DBConnection()
+            client = await db.client
+            await SubscriptionRepository.update_tier_only(client, app_user_id, tier_name)
+            return
+        
         transaction_id = event.get('transaction_id', '')
         
         logger.info(
