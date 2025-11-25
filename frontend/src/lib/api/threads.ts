@@ -402,7 +402,7 @@ export const addUserMessage = async (
 };
 
 // Flag to toggle optimized messages endpoint (set to false for debugging, true for production)
-const USE_OPTIMIZED_MESSAGES = false;
+const USE_OPTIMIZED_MESSAGES = true;
 
 export const getMessages = async (threadId: string): Promise<Message[]> => {
   try {
