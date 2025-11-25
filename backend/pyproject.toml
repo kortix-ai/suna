@@ -58,7 +58,6 @@ dependencies = [
   "langfuse==2.60.5",
   "Pillow>=10.4.0",
   "mcp==1.9.4",
-  "httpx==0.28.0",
   "aiohttp==3.12.0",
   "email-validator==2.0.0",
   "mailtrap==2.0.1",
@@ -89,6 +88,7 @@ dependencies = [
   "reportlab>=4.0.0",
   "freestyle>=0.0.17",
   "anthropic>=0.69.0",
+  "novu-py>=3.11.0",
 ]
 
 [project.urls]
