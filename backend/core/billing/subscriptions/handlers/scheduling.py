@@ -1,7 +1,7 @@
-from fastapi import HTTPException
+from fastapi import HTTPException # type: ignore
 from typing import Dict, Optional
 from datetime import datetime, timezone, timedelta
-import stripe
+import stripe # type: ignore
 
 from core.services.supabase import DBConnection
 from core.utils.logger import logger

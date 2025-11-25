@@ -316,6 +316,7 @@
     "credits": "Credits",
     "popular": "Beliebt",
     "creditsExplained": "Credits erklärt",
+    "creditsExhaustedRefreshIn": "Ihre Credits sind aufgebraucht. Sie werden in {time} erneuert",
     "trialActive": "Testversion aktiv",
     "trialBadge": "7-Tage-Testversion",
     "currentPlan": "Aktueller Plan",

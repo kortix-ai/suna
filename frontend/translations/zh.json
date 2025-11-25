@@ -295,6 +295,7 @@
     "credits": "积分",
     "popular": "热门",
     "creditsExplained": "积分说明",
+    "creditsExhaustedRefreshIn": "您的积分已用完。将在{time}后刷新",
     "trialActive": "试用激活",
     "trialBadge": "7天试用",
     "currentPlan": "当前套餐",

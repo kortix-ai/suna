@@ -330,6 +330,7 @@
     "credits": "Credits",
     "popular": "Popular",
     "creditsExplained": "Credits explained",
+    "creditsExhaustedRefreshIn": "You've exhausted your credits. They will refresh in {time}",
     "trialActive": "Trial Active",
     "trialBadge": "7-Day Trial",
     "currentPlan": "Current Plan",

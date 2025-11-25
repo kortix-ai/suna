@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { View, Pressable, ScrollView, ActivityIndicator, Linking, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { View, Pressable, ScrollView, ActivityIndicator, Linking, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Check, X, ShoppingCart } from 'lucide-react-native';
+import { Check, X, ShoppingCart, AlertCircle } from 'lucide-react-native';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +20,8 @@ import type { PurchasesOffering, PurchasesPackage } from 'react-native-purchases
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys, invalidateCreditsAfterPurchase, useSubscription, type BillingPeriod } from '@/lib/billing';
 import { BillingPeriodToggle } from './BillingPeriodToggle';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -52,7 +54,9 @@ export function RevenueCatPricingSection({
   const [isRestoring, setIsRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly');
+  const [showExistingSubDrawer, setShowExistingSubDrawer] = useState(false);
 
+  const existingSubDrawerRef = useRef<BottomSheet>(null);
   const closeButtonScale = useSharedValue(1);
   const purchaseButtonScale = useSharedValue(1);
   const restoreButtonScale = useSharedValue(1);
@@ -68,6 +72,24 @@ export function RevenueCatPricingSection({
   const restoreButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: restoreButtonScale.value }],
   }));
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
+  const handleCloseExistingSubDrawer = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowExistingSubDrawer(false);
+  }, []);
 
   useEffect(() => {
     loadOfferings();
@@ -88,6 +110,14 @@ export function RevenueCatPricingSection({
       }
     }
   }, [billingPeriod, offerings]);
+
+  useEffect(() => {
+    if (showExistingSubDrawer) {
+      existingSubDrawerRef.current?.snapToIndex(0);
+    } else {
+      existingSubDrawerRef.current?.close();
+    }
+  }, [showExistingSubDrawer]);
 
   const loadOfferings = async () => {
     try {
@@ -126,27 +156,9 @@ export function RevenueCatPricingSection({
         Object.keys(customerInfo.entitlements.active).length > 0 ||
         customerInfo.activeSubscriptions.length > 0;
 
-      if (hasActiveSubscription) {
-        const activeProductIds = customerInfo.activeSubscriptions;
-        const platformName = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account';
-        
-        console.log('🚫 Blocking purchase - device already has active subscription:', activeProductIds);
-        
-        const errorMessage = `This ${platformName} already has an active subscription. Please use "Restore Purchases" instead.`;
-        
-        Alert.alert(
-          'Subscription Already Exists',
-          `This ${platformName} is already linked to an active subscription.`,
-          [
-            {
-              text: 'Cancel',
-              style: 'cancel'
-            }
-          ]
-        );
-        
-        setError(errorMessage);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      if (hasActiveSubscription && !__DEV__) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setShowExistingSubDrawer(true);
         setIsPurchasing(false);
         return;
       }
@@ -554,6 +566,53 @@ export function RevenueCatPricingSection({
           </Text>
         )}
       </AnimatedView>
+
+      <BottomSheet
+        ref={existingSubDrawerRef}
+        index={-1}
+        enablePanDownToClose
+        enableDynamicSizing
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{
+          backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',
+        }}
+        onClose={handleCloseExistingSubDrawer}
+      >
+        <BottomSheetView style={{ paddingBottom: insets.bottom + 24 }}>
+          <View className="px-6 py-6">
+            <View className="items-center mb-4">
+              <View className="w-16 h-16 rounded-full bg-amber-500/10 items-center justify-center mb-4">
+                <Icon as={AlertCircle} size={32} className="text-amber-500" strokeWidth={2} />
+              </View>
+              <Text className="text-xl font-roobert-semibold text-foreground text-center mb-2">
+                Subscription Already Exists
+              </Text>
+              <Text className="text-base text-muted-foreground text-center leading-relaxed">
+                This {Platform.OS === 'ios' ? 'Apple ID' : 'Google Play account'} is already linked to an active subscription.
+              </Text>
+            </View>
+
+            <View className="bg-primary/5 rounded-2xl p-4 mb-4">
+              <Text className="text-sm text-foreground text-center leading-relaxed">
+                To access your subscription, please use{' '}
+                <Text className="font-roobert-semibold">Restore Purchases</Text> instead.
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={handleCloseExistingSubDrawer}
+              className="w-full h-12 bg-foreground rounded-full items-center justify-center"
+            >
+              <Text className="text-base font-roobert-semibold text-background">
+                Got it
+              </Text>
+            </Pressable>
+          </View>
+        </BottomSheetView>
+      </BottomSheet>
     </View>
   );
 }

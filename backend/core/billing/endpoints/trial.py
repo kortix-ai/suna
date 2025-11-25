@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends # type: ignore
 from typing import Dict
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger

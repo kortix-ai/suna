@@ -1,7 +1,7 @@
 from typing import Dict, Optional
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta # type: ignore
 
 from core.services.supabase import DBConnection
 from core.utils.logger import logger

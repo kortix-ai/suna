@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter # type: ignore
 
 from .endpoints.core import router as core_router
 from .endpoints.subscriptions import router as subscriptions_router

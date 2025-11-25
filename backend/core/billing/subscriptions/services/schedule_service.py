@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 from datetime import datetime, timezone
-import stripe
+import stripe # type: ignore
 
 from core.utils.logger import logger
 from core.billing.shared.config import get_tier_by_price_id, get_price_type
@@ -120,7 +120,7 @@ class ScheduleService:
             if current_plan_type == 'yearly':
                 current_anchor = current_credit_result.get('billing_cycle_anchor')
                 if current_anchor:
-                    from dateutil.relativedelta import relativedelta
+                    from dateutil.relativedelta import relativedelta # type: ignore
                     anchor_dt = datetime.fromisoformat(current_anchor.replace('Z', '+00:00'))
                     correct_next_grant = anchor_dt + relativedelta(months=1)
                     update_data['next_credit_grant'] = correct_next_grant.isoformat()

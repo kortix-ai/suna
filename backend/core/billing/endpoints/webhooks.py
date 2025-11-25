@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request # type: ignore
 from typing import Dict
 from core.utils.logger import logger
 from ..external.stripe import webhook_service

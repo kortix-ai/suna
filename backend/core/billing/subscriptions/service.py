@@ -1,5 +1,5 @@
 from typing import Dict, Optional, List
-import stripe
+import stripe # type: ignore
 from core.utils.config import config
 from .handlers.customer import CustomerHandler
 from .handlers.retrieval import SubscriptionRetrievalHandler

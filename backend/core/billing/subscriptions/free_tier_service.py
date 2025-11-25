@@ -1,12 +1,12 @@
 from typing import Dict, Optional
 from datetime import datetime
-import stripe
+import stripe # type: ignore
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
 from ..shared.config import FREE_TIER_INITIAL_CREDITS
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta # type: ignore
 class FreeTierService:
     def __init__(self):
         self.stripe = stripe

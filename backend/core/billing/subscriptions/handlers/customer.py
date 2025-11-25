@@ -1,4 +1,4 @@
-from fastapi import HTTPException
+from fastapi import HTTPException # type: ignore
 from typing import Optional
 
 from core.utils.logger import logger

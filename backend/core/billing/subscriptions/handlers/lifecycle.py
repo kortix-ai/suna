@@ -1,8 +1,8 @@
-from fastapi import HTTPException
+from fastapi import HTTPException # type: ignore
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
-import stripe
+import stripe # type: ignore
 from core.utils.logger import logger
 from core.billing.shared.config import (
     get_tier_by_price_id, 

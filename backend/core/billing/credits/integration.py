@@ -10,15 +10,14 @@ from ..shared.config import is_model_allowed
 class BillingIntegration:
     @staticmethod
     async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
-        """
-        Check if user can start a new request.
-        - If balance is positive: Allow (can go slightly negative during this request)
-        - If balance is already negative: Block (prevent infinite debt)
-        
-        This allows a single request to push balance negative, but prevents further requests.
-        """
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
+        
+        try:
+            from core.credits import credit_service
+            await credit_service.check_and_refresh_daily_credits(account_id)
+        except Exception as e:
+            logger.warning(f"[DAILY_CREDITS] Failed to check/refresh daily credits for {account_id}: {e}")
         
         balance_info = await credit_manager.get_balance(account_id)
         
@@ -27,12 +26,9 @@ class BillingIntegration:
         else:
             balance = Decimal(str(balance_info or 0))
         
-        # Block if already in debt
         if balance < 0:
             return False, f"Insufficient credits. Your balance is ${balance:.2f}. Please add credits to continue.", None
         
-        # Allow if balance is positive (even if small)
-        # The deduction can push it negative, but only for this one request
         return True, f"Credits available: ${balance:.2f}", None
     
     @staticmethod
@@ -41,19 +37,6 @@ class BillingIntegration:
         model_name: Optional[str], 
         client=None
     ) -> Tuple[bool, str, Dict]:
-        """
-        Unified function to check both model access and billing status.
-        
-        Args:
-            account_id: User's account ID
-            model_name: Model to check access for
-            client: Optional Supabase client
-            
-        Returns:
-            Tuple of (can_proceed, error_message, context_info)
-            context_info contains allowed_models, tier_info, etc.
-        """
-        # Skip all checks in local development mode
         if config.ENV_MODE == EnvMode.LOCAL:
             logger.debug("Running in local development mode - skipping all billing and model access checks")
             return True, "Local development mode", {"local_mode": True}
@@ -64,11 +47,9 @@ class BillingIntegration:
 
             from ..subscriptions import subscription_service
             
-            # Get user's subscription tier
             tier_info = await subscription_service.get_user_subscription_tier(account_id)
             tier_name = tier_info.get('name', 'none')
             
-            # Check model access
             if not is_model_allowed(tier_name, model_name):
                 available_models = tier_info.get('models', [])
                 return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", {
@@ -79,7 +60,6 @@ class BillingIntegration:
                     "error_code": "MODEL_ACCESS_DENIED"
                 }
             
-            # Check billing/credits
             can_run, message, reservation_id = await BillingIntegration.check_and_reserve_credits(account_id)
             if not can_run:
                 return False, f"Billing check failed: {message}", {

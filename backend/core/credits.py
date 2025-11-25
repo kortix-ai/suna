@@ -1,11 +1,11 @@
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List, Any, Tuple
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.config import config, EnvMode
-from core.billing.shared.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
+from core.billing.shared.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED, get_tier_by_name
 import asyncio
 
 class CreditService:
@@ -20,17 +20,93 @@ class CreditService:
             self._client = await self.db.client
         return self._client
     
+    async def check_and_refresh_daily_credits(self, user_id: str) -> Tuple[bool, Decimal]:
+        try:
+            client = await self._get_client()
+            
+            account_result = await client.from_('credit_accounts').select('tier, last_daily_refresh').eq('account_id', user_id).execute()
+            
+            if not account_result.data or len(account_result.data) == 0:
+                return False, Decimal('0')
+            
+            account = account_result.data[0]
+            tier_name = account.get('tier', 'free')
+            last_refresh = account.get('last_daily_refresh')
+            
+            tier = get_tier_by_name(tier_name)
+            if not tier:
+                return False, Decimal('0')
+            
+            daily_config = tier.daily_credit_config
+            if not daily_config or not daily_config.get('enabled'):
+                return False, Decimal('0')
+            
+            should_refresh = False
+            refresh_interval_hours = daily_config.get('refresh_interval_hours', 24)
+            
+            if last_refresh is None:
+                should_refresh = True
+            else:
+                last_refresh_dt = datetime.fromisoformat(last_refresh.replace('Z', '+00:00'))
+                time_since_refresh = datetime.now(timezone.utc) - last_refresh_dt
+                if time_since_refresh > timedelta(hours=refresh_interval_hours):
+                    should_refresh = True
+            
+            if should_refresh:
+                credit_amount = daily_config.get('amount', Decimal('0'))
+                now = datetime.now(timezone.utc)
+                expires_at = now + timedelta(hours=refresh_interval_hours)
+                
+                from core.billing.credits.manager import credit_manager
+                
+                current_balance = await client.from_('credit_accounts').select('expiring_credits').eq('account_id', user_id).single().execute()
+                old_expiring = Decimal(str(current_balance.data.get('expiring_credits', 0))) if current_balance.data else Decimal('0')
+                
+                if old_expiring > 0:
+                    logger.info(f"Resetting ${old_expiring} expiring credits to ${credit_amount} for daily refresh")
+                    await credit_manager.reset_expiring_credits(
+                        account_id=user_id,
+                        new_credits=credit_amount,
+                        description=f"Daily credits refresh (every {refresh_interval_hours}h)"
+                    )
+                else:
+                    await credit_manager.add_credits(
+                        account_id=user_id,
+                        amount=credit_amount,
+                        is_expiring=True,
+                        description=f"Daily credits refresh",
+                        type='tier_grant',
+                        expires_at=expires_at
+                    )
+                
+                await client.from_('credit_accounts').update({
+                    'last_daily_refresh': now.isoformat(),
+                    'updated_at': now.isoformat()
+                }).eq('account_id', user_id).execute()
+                
+                logger.info(f"Daily credits refreshed for user {user_id}: ${credit_amount} (tier: {tier_name}, interval: {refresh_interval_hours}h)")
+                
+                if self.cache:
+                    await self.cache.invalidate(f"credit_balance:{user_id}")
+                    await self.cache.invalidate(f"credit_summary:{user_id}")
+                
+                return True, credit_amount
+            else:
+                return False, Decimal('0')
+                
+        except Exception as e:
+            logger.error(f"Failed to check/refresh daily credits for user {user_id}: {e}")
+            return False, Decimal('0')
+    
     async def get_balance(self, user_id: str, use_cache: bool = True) -> Decimal:
         cache_key = f"credit_balance:{user_id}"
         
         if use_cache and self.cache:
             cached = await self.cache.get(cache_key)
             if cached is not None:
-                # Ensure we handle any type returned from cache (json.loads can return dict/list/etc)
                 if isinstance(cached, (str, int, float)):
                     return Decimal(str(cached))
                 else:
-                    # Invalid cache entry, ignore and fetch from DB
                     logger.warning(f"Invalid cache entry for {cache_key}: expected str/int/float, got {type(cached)}")
                     await self.cache.invalidate(cache_key)
         
@@ -99,7 +175,7 @@ class CreditService:
                 balance = Decimal('0')
         
         if self.cache:
-            await self.cache.set(cache_key, str(balance), ttl=300)
+            await self.cache.set(cache_key, {'total': float(balance), 'account_id': user_id}, ttl=300)
         
         return balance
     

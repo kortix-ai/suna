@@ -463,29 +463,35 @@ class CheckoutHandler:
                                   current_tier != tier_info.name)
                 
                 if is_tier_upgrade:
-                    logger.info(f"[WEBHOOK DEFAULT] Tier upgrade detected: {current_tier} -> {tier_info.name}")
-                    logger.info(f"[WEBHOOK DEFAULT] Replacing existing credits with ${tier_info.monthly_credits} for {tier_info.name} (Stripe handled payment proration)")
-                    
-                    import time
-                    unique_id = f"checkout_upgrade_{account_id}_{tier_info.name}_{int(time.time())}"
-                    
-                    await credit_manager.reset_expiring_credits(
-                        account_id=account_id,
-                        new_credits=Decimal(str(tier_info.monthly_credits)),
-                        description=f"Tier upgrade to {tier_info.display_name} (prorated by Stripe)",
-                        stripe_event_id=unique_id
-                    )
+                    if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
+                        logger.info(f"[WEBHOOK DEFAULT] Skipping upgrade credits for tier {tier_info.name} - monthly_refill_enabled=False")
+                    else:
+                        logger.info(f"[WEBHOOK DEFAULT] Tier upgrade detected: {current_tier} -> {tier_info.name}")
+                        logger.info(f"[WEBHOOK DEFAULT] Replacing existing credits with ${tier_info.monthly_credits} for {tier_info.name} (Stripe handled payment proration)")
+                        
+                        import time
+                        unique_id = f"checkout_upgrade_{account_id}_{tier_info.name}_{int(time.time())}"
+                        
+                        await credit_manager.reset_expiring_credits(
+                            account_id=account_id,
+                            new_credits=Decimal(str(tier_info.monthly_credits)),
+                            description=f"Tier upgrade to {tier_info.display_name} (prorated by Stripe)",
+                            stripe_event_id=unique_id
+                        )
                 else:
-                    logger.info(f"[WEBHOOK DEFAULT] Granting ${tier_info.monthly_credits} credits for new {plan_type} subscription")
-                    
-                    await credit_manager.add_credits(
-                        account_id=account_id,
-                        amount=Decimal(str(tier_info.monthly_credits)),
-                        is_expiring=True,
-                        description=f"Initial {tier_info.display_name} subscription credits (checkout.session.completed)",
-                        expires_at=next_grant_date,
-                        stripe_event_id=f"checkout_{account_id}_{subscription['id']}"
-                    )
+                    if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
+                        logger.info(f"[WEBHOOK DEFAULT] Skipping initial credits for tier {tier_info.name} - monthly_refill_enabled=False (using daily credits)")
+                    else:
+                        logger.info(f"[WEBHOOK DEFAULT] Granting ${tier_info.monthly_credits} credits for new {plan_type} subscription")
+                        
+                        await credit_manager.add_credits(
+                            account_id=account_id,
+                            amount=Decimal(str(tier_info.monthly_credits)),
+                            is_expiring=True,
+                            description=f"Initial {tier_info.display_name} subscription credits (checkout.session.completed)",
+                            expires_at=next_grant_date,
+                            stripe_event_id=f"checkout_{account_id}_{subscription['id']}"
+                        )
                 
                 logger.info(f"[WEBHOOK DEFAULT] Granted {tier_info.monthly_credits} credits to {account_id}")
                 
