@@ -83,35 +83,35 @@ class ModelRegistry:
             )
         ))
         
-        self.register(Model(
-            id="anthropic/claude-sonnet-4-20250514" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
-            name="Sonnet 4",
-            provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "claude-sonnet-4-20250514", "global.anthropic.claude-sonnet-4-20250514-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/global.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf", "arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf"],
-            context_window=1_000_000,
-            capabilities=[
-                ModelCapability.CHAT,
-                ModelCapability.FUNCTION_CALLING,
-                ModelCapability.VISION,
-                ModelCapability.THINKING,
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=3.00,
-                output_cost_per_million_tokens=15.00,
-                cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
-                cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
-                cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
-            ),
-            tier_availability=["paid"],
-            priority=100,
-            recommended=True,
-            enabled=True,
-            config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14" 
-                },
-            )
-        ))
+        # self.register(Model(
+        #     id="anthropic/claude-sonnet-4-20250514" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+        #     name="Sonnet 4",
+        #     provider=ModelProvider.ANTHROPIC,
+        #     aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "anthropic/claude-sonnet-4-20250514", "Claude Sonnet 4", "claude-sonnet-4-20250514", "global.anthropic.claude-sonnet-4-20250514-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/global.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf", "arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf"],
+        #     context_window=1_000_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #         ModelCapability.VISION,
+        #         ModelCapability.THINKING,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=3.00,
+        #         output_cost_per_million_tokens=15.00,
+        #         cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
+        #         cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
+        #         cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
+        #     ),
+        #     tier_availability=["paid"],
+        #     priority=100,
+        #     recommended=True,
+        #     enabled=True,
+        #     config=ModelConfig(
+        #         extra_headers={
+        #             "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14" 
+        #         },
+        #     )
+        # ))
         
         # Sonnet 3.7 - No global inference profile available yet
         # self.register(Model(

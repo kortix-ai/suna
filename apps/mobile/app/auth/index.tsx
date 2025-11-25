@@ -45,7 +45,7 @@ function getRotatingPhrases(t: (key: string) => string) {
     { text: t('auth.rotatingPhrases.research'), color: '' },
     { text: t('auth.rotatingPhrases.planning'), color: '' },
     { text: t('auth.rotatingPhrases.studying'), color: '' },
-    { text: t('auth.rotatingPhrases.anything'), color: '#3B82F6' },
+    { text: t('auth.rotatingPhrases.anything'), color: '' },
   ];
 }
 
@@ -70,7 +70,7 @@ function RotatingText() {
   const chars = currentPhrase.text.split('');
 
   return (
-    <View style={{ height: 48, overflow: 'hidden' }}>
+    <View style={{ height: 40, overflow: 'hidden' }}>
       <View className="flex-row flex-wrap">
         {chars.map((char, index) => (
           <AnimatedChar 
@@ -124,8 +124,9 @@ function AnimatedChar({ char, index, color }: { char: string; index: number; col
         animatedStyle, 
         { 
           fontFamily: 'Roobert-SemiBold', 
-          fontSize: 40, 
-          lineHeight: 48,
+          fontSize: 36, 
+          lineHeight: 40,
+          letterSpacing: -0.3,
         },
         color ? { color } : undefined,
       ]}
@@ -427,15 +428,15 @@ function WelcomeView({
       entering={FadeIn.duration(400)}
       className="flex-1 justify-end px-8 py-16"
     >
-      <View className='absolute inset-0' pointerEvents="none">
+      <View className='absolute inset-0' pointerEvents="none" style={{ transform: [{ translateY: -60 }] }}>
         <BackgroundLogo/>
       </View>
-      <View className="justify-center mb-10">
-        <View className="-mb-4">
-          <KortixLogo variant="logomark" size={80} color={isDark ? 'dark' : 'light'} />
+      <View className="justify-center mb-12">
+        <View className="mb-4">
+          <KortixLogo variant="logomark" size={72} color={isDark ? 'dark' : 'light'} />
         </View>
-        <View className="mb-6">
-          <Text className="text-3xl font-roobert-semibold text-foreground leading-tight">
+        <View className="gap-2">
+          <Text className="text-4xl font-roobert-semibold text-foreground tracking-tight leading-tight">
             {t('auth.welcomeTitle')}
           </Text>
           <RotatingText />

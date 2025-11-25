@@ -381,7 +381,7 @@ class Configuration:
     
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
-    DEBUG_SAVE_LLM_IO: Optional[bool] = False
+    DEBUG_SAVE_LLM_IO: Optional[bool] = True
 
     # LangFuse configuration
     LANGFUSE_PUBLIC_KEY: Optional[str] = None

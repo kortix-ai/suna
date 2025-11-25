@@ -417,7 +417,7 @@ function PricingTier({
     if (isCurrentPlan) {
       buttonText = t('currentPlan');
       buttonDisabled = true;
-      statusBadge = <Badge variant="default" className="text-xs">{t('current')}</Badge>;
+      statusBadge = <Badge variant="default" className="text-xs">{t('currentBadge')}</Badge>;
       ringClass = '';
     }
     else if (isRevenueCatSubscription && !isCurrentPlan) {
