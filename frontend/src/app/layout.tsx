@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@/components/home/theme-provider';
-import { siteConfig } from '@/lib/site';
+import { siteConfig } from '@/lib/home';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
@@ -54,9 +54,9 @@ export const metadata: Metadata = {
     'AI productivity',
   ],
   authors: [
-    { 
-      name: 'Kortix Team', 
-      url: 'https://kortix.com' 
+    {
+      name: 'Kortix Team',
+      url: 'https://kortix.com'
     }
   ],
   creator: 'Kortix Team',
@@ -141,7 +141,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={`${roobert.variable} ${roobertMono.variable}`}>
       <head>
 
-        
+
         <Script id="facebook-pixel" strategy="afterInteractive">
           {`
             !function(f,b,e,v,n,t,s)
@@ -192,7 +192,7 @@ export default function RootLayout({
             }),
           }}
         />
-        
+
         {/* Structured Data for Software Application */}
         <script
           type="application/ld+json"
@@ -218,7 +218,7 @@ export default function RootLayout({
             }),
           }}
         />
-        
+
         <Script id="google-tag-manager" strategy="afterInteractive">
           {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
           new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -246,15 +246,15 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <I18nProvider>
-          <AuthProvider>
-            <ReactQueryProvider>
-              {children}
-              <Toaster />
-              <Suspense fallback={null}>
-                <PlanSelectionModal />
-              </Suspense>
-            </ReactQueryProvider>
-          </AuthProvider>
+            <AuthProvider>
+              <ReactQueryProvider>
+                {children}
+                <Toaster />
+                <Suspense fallback={null}>
+                  <PlanSelectionModal />
+                </Suspense>
+              </ReactQueryProvider>
+            </AuthProvider>
           </I18nProvider>
           <Analytics />
           <GoogleAnalytics gaId="G-6ETJFB3PT3" />
