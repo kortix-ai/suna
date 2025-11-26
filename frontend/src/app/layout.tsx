@@ -60,7 +60,7 @@ export const metadata: Metadata = {
     locale: 'en_US',
     images: [
       {
-        url: '/opengraph-image',
+        url: '/banner.png',
         width: 1200,
         height: 630,
         alt: `${siteMetadata.title} – ${siteMetadata.description}`,
@@ -73,7 +73,7 @@ export const metadata: Metadata = {
     description: siteMetadata.description,
     creator: '@kortix',
     site: '@kortix',
-    images: ['/opengraph-image'],
+    images: ['/banner.png'],
   },
   icons: {
     icon: [
@@ -95,7 +95,22 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${roobert.variable} ${roobertMono.variable}`}>
       <head>
-
+        {/* Static SEO meta tags - rendered in initial HTML */}
+        <title>Kortix: Your Autonomous AI Worker</title>
+        <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
+        <meta name="keywords" content="Kortix, Autonomous AI Worker, AI Worker, Generalist AI, Open Source AI, Autonomous Agent, Complex Tasks, AI Assistant" />
+        <meta property="og:title" content="Kortix: Your Autonomous AI Worker" />
+        <meta property="og:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
+        <meta property="og:image" content="https://kortix.com/banner.png" />
+        <meta property="og:url" content="https://kortix.com" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Kortix" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Kortix: Your Autonomous AI Worker" />
+        <meta name="twitter:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
+        <meta name="twitter:image" content="https://kortix.com/banner.png" />
+        <meta name="twitter:site" content="@kortix" />
+        <link rel="canonical" href="https://kortix.com" />
 
         <Script id="facebook-pixel" strategy="afterInteractive">
           {`
