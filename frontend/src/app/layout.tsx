@@ -36,20 +36,13 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   keywords: siteMetadata.keywords,
-  authors: [siteMetadata.author],
-  creator: siteMetadata.author.name,
-  publisher: siteMetadata.author.name,
-  category: 'Technology',
+  authors: [{ name: 'Kortix Team', url: 'https://kortix.com' }],
+  creator: 'Kortix Team',
+  publisher: 'Kortix Team',
   applicationName: siteMetadata.name,
-  formatDetection: {
-    telephone: false,
-    email: false,
-    address: false,
-  },
   robots: {
     index: true,
     follow: true,
-    nocache: false,
     googleBot: {
       index: true,
       follow: true,
@@ -67,11 +60,10 @@ export const metadata: Metadata = {
     locale: 'en_US',
     images: [
       {
-        url: siteMetadata.images.banner,
+        url: '/opengraph-image',
         width: 1200,
         height: 630,
         alt: `${siteMetadata.title} – ${siteMetadata.description}`,
-        type: 'image/png',
       },
     ],
   },
@@ -79,36 +71,21 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: siteMetadata.title,
     description: siteMetadata.description,
-    creator: siteMetadata.social.twitter,
-    site: siteMetadata.social.twitter,
-    images: [
-      {
-        url: siteMetadata.images.banner,
-        alt: siteMetadata.title,
-      }
-    ],
+    creator: '@kortix',
+    site: '@kortix',
+    images: ['/opengraph-image'],
   },
   icons: {
     icon: [
-      { url: siteMetadata.images.favicon, sizes: '32x32', type: 'image/png' },
-      { url: siteMetadata.images.faviconDark, sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon.png', sizes: '32x32' },
+      { url: '/favicon-light.png', sizes: '32x32', media: '(prefers-color-scheme: dark)' },
     ],
-    shortcut: siteMetadata.images.favicon,
-    apple: [
-      { url: siteMetadata.images.appleTouchIcon, sizes: '180x180', type: 'image/png' },
-    ],
+    shortcut: '/favicon.png',
+    apple: [{ url: '/logo_black.png', sizes: '180x180' }],
   },
   manifest: '/manifest.json',
   alternates: {
     canonical: siteMetadata.url,
-  },
-  verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
-  },
-  other: {
-    'apple-mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'apple-mobile-web-app-title': siteMetadata.name,
   },
 };
 
@@ -154,11 +131,11 @@ export default function RootLayout({
               name: siteMetadata.name,
               alternateName: ['Suna', 'Kortix AI', 'Kortix: Your Autonomous AI Worker'],
               url: siteMetadata.url,
-              logo: `${siteMetadata.url}${siteMetadata.images.favicon}`,
+              logo: `${siteMetadata.url}/favicon.png`,
               description: siteMetadata.description,
               foundingDate: '2024',
               sameAs: [
-                siteMetadata.social.github,
+                'https://github.com/Kortix-ai/Suna',
                 'https://x.com/kortix',
                 'https://linkedin.com/company/kortix',
               ],
@@ -171,7 +148,6 @@ export default function RootLayout({
           }}
         />
 
-        {/* Structured Data for Software Application */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

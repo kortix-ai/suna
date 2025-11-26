@@ -24,13 +24,14 @@ from datetime import datetime, timezone
 litellm.modify_params = True
 litellm.drop_params = True
 
+# CRITICAL: Disable all LiteLLM internal retries to prevent infinite loops on 400 errors
+# We handle retries at our own layer (auto-continue) with proper error checking
+litellm.num_retries = 0
+
 # Enable additional debug logging
 # import logging
 # litellm_logger = logging.getLogger("LiteLLM")
 # litellm_logger.setLevel(logging.DEBUG)
-
-# Constants
-MAX_RETRIES = 3
 provider_router = None
 
 
@@ -128,10 +129,16 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         }
     ]
     
+    # Configure Router with specific retry settings:
+    # - num_retries=0: Disable router-level retries - we handle errors at our layer
+    # - fallbacks: ONLY for rate limits and overloaded errors, NOT for 400 errors
+    # CRITICAL: 400 Bad Request errors must NOT retry or fallback - they're permanent failures
     provider_router = Router(
         model_list=model_list,
-        retry_after=15,
+        num_retries=0,  # CRITICAL: Disable all router-level retries to prevent infinite loops
         fallbacks=fallbacks,
+        # Only use fallbacks for rate limits (429) and server errors (5xx), NOT client errors (4xx)
+        # context_window_fallbacks are separate and only triggered by context length issues
     )
     
     logger.info(f"Configured LiteLLM Router with {len(fallbacks)} Bedrock-only fallback rules")

@@ -12,12 +12,6 @@ export const contentType = 'image/png';
 
 export default async function Image() {
   try {
-    // Get the host from headers
-    const headersList = await headers();
-    const host = headersList.get('host') || '';
-    const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
-    const baseUrl = `${protocol}://${host}`;
-
     return new ImageResponse(
       (
         <div
@@ -27,18 +21,33 @@ export default async function Image() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'black',
+            background: 'linear-gradient(135deg, #000 0%, #1a1a1a 100%)',
+            fontSize: 60,
+            fontWeight: 700,
+            color: 'white',
+            padding: '80px',
           }}
         >
-          <img
-            src={`${baseUrl}/banner.png`}
-            alt={alt}
+          <div
             style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              gap: '20px',
             }}
-          />
+          >
+            <div style={{ fontSize: 72, fontWeight: 800 }}>
+              Kortix
+            </div>
+            <div style={{ fontSize: 36, fontWeight: 400, opacity: 0.9 }}>
+              Your Autonomous AI Worker
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 300, opacity: 0.7, maxWidth: '800px' }}>
+              Built for complex tasks, designed for everything
+            </div>
+          </div>
         </div>
       ),
       { ...size },

@@ -505,6 +505,11 @@ async def add_message_to_thread(
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
 ):
     logger.debug(f"Adding message to thread: {thread_id}")
+    
+    # Validate that message is not empty
+    if not message or not message.strip():
+        raise HTTPException(status_code=400, detail="Message content cannot be empty")
+    
     client = await utils.db.client
     
     thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
@@ -540,6 +545,11 @@ async def create_message(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Creating message in thread: {thread_id}")
+    
+    # Validate that user messages have content
+    if message_data.type == "user" and (not message_data.content or not message_data.content.strip()):
+        raise HTTPException(status_code=400, detail="Message content cannot be empty")
+    
     client = await utils.db.client
     
     try:

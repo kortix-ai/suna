@@ -32,6 +32,9 @@ const PUBLIC_ROUTES = [
   '/support', // Support page should be public
   '/suna', // Suna rebrand page should be public for SEO
   '/model-pricing', // Model pricing page should be public
+  '/opengraph-image', // OpenGraph image generation route
+  '/twitter-image', // Twitter image generation route (if exists)
+  '/icon', // Icon generation route (if exists)
   // Add locale routes for marketing pages
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
@@ -54,12 +57,16 @@ const PROTECTED_ROUTES = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  // Skip middleware for static files and API routes
+  // Skip middleware for static files, API routes, and metadata routes
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.includes('.') ||
-    pathname.startsWith('/api/')
+    pathname.startsWith('/api/') ||
+    pathname === '/opengraph-image' ||
+    pathname === '/twitter-image' ||
+    pathname === '/icon' ||
+    pathname.startsWith('/icon.')
   ) {
     return NextResponse.next();
   }

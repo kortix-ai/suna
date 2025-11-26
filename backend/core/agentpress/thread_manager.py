@@ -19,6 +19,7 @@ from core.services.langfuse import langfuse
 from datetime import datetime, timezone
 from core.billing.credits.integration import billing_integration
 from litellm.utils import token_counter
+import litellm
 
 ToolChoice = Literal["auto", "required", "none"]
 
@@ -692,7 +693,27 @@ class ThreadManager:
                     break
 
             except Exception as e:
-                if "AnthropicException - Overloaded" in str(e):
+                error_str = str(e)
+                
+                # Check for non-retryable errors (400 Bad Request, validation errors, etc.)
+                # These should NEVER be retried as they indicate request issues, not transient failures
+                is_non_retryable = (
+                    isinstance(e, litellm.BadRequestError) or
+                    "BadRequestError" in error_str or
+                    "is blank" in error_str or  # Bedrock "text field is blank" error
+                    "400" in error_str or
+                    "validation" in error_str.lower() or
+                    "invalid" in error_str.lower()
+                )
+                
+                if is_non_retryable:
+                    logger.error(f"🛑 Non-retryable error detected - stopping immediately: {error_str[:200]}")
+                    processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})
+                    ErrorProcessor.log_error(processed_error)
+                    yield processed_error.to_stream_dict()
+                    return
+                
+                if "AnthropicException - Overloaded" in error_str:
                     logger.error(f"Anthropic overloaded, falling back to OpenRouter")
                     llm_model = f"openrouter/{llm_model.replace('-20250514', '')}"
                     auto_continue_state['active'] = True

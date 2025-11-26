@@ -702,14 +702,15 @@ async def start_agent_run(
     t_parallel2 = time.time()
     
     async def create_message():
-        await client.table('messages').insert({
-            "message_id": str(uuid.uuid4()),
-            "thread_id": thread_id,
-            "type": "user",
-            "is_llm_message": True,
-            "content": {"role": "user", "content": final_message_content},
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute()
+        if final_message_content and final_message_content.strip():
+            await client.table('messages').insert({
+                "message_id": str(uuid.uuid4()),
+                "thread_id": thread_id,
+                "type": "user",
+                "is_llm_message": True,
+                "content": {"role": "user", "content": final_message_content},
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
     
     async def create_agent_run():
         return await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id, metadata)
