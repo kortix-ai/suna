@@ -39,6 +39,7 @@ export async function signUp(prevState: any, formData: FormData) {
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
   const returnUrl = formData.get('returnUrl') as string | undefined;
+  const acceptedTerms = formData.get('acceptedTerms') === 'true';
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -59,6 +60,10 @@ export async function signUp(prevState: any, formData: FormData) {
     password,
     options: {
       emailRedirectTo: `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}`,
+      data: {
+        // Save terms acceptance date if checkbox was checked (only first time)
+        ...(acceptedTerms ? { terms_accepted_at: new Date().toISOString() } : {}),
+      },
     },
   });
 
@@ -79,6 +84,20 @@ export async function signUp(prevState: any, formData: FormData) {
       message:
         'Account created! Check your email to confirm your registration.',
     };
+  }
+
+  // If user accepted terms and successfully signed in, update metadata (only if not already set)
+  if (acceptedTerms && signInData.user) {
+    const currentMetadata = signInData.user.user_metadata || {};
+    // Only update if terms_accepted_at is not already set (first time only)
+    if (!currentMetadata.terms_accepted_at) {
+      await supabase.auth.updateUser({
+        data: {
+          ...currentMetadata,
+          terms_accepted_at: new Date().toISOString(),
+        },
+      });
+    }
   }
 
   // Use client-side navigation instead of server-side redirect

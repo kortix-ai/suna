@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type AuthMode = 'choose' | 'sign-in' | 'sign-up';
+type AuthMode = 'choose' | 'email-auth' | 'sign-in' | 'sign-up';
 
 interface AuthDrawerState {
   isOpen: boolean;
@@ -8,7 +8,8 @@ interface AuthDrawerState {
   message?: string;
   mode?: AuthMode;
   onSuccess?: () => void;
-  openAuthDrawer: (options?: { title?: string; message?: string; mode?: AuthMode; onSuccess?: () => void }) => void;
+  onSignUpSuccess?: (email: string) => void;
+  openAuthDrawer: (options?: { title?: string; message?: string; mode?: AuthMode; onSuccess?: () => void; onSignUpSuccess?: (email: string) => void }) => void;
   closeAuthDrawer: () => void;
 }
 
@@ -18,6 +19,7 @@ export const useAuthDrawerStore = create<AuthDrawerState>((set) => ({
   message: undefined,
   mode: undefined,
   onSuccess: undefined,
+  onSignUpSuccess: undefined,
   openAuthDrawer: (options) =>
     set({
       isOpen: true,
@@ -25,6 +27,7 @@ export const useAuthDrawerStore = create<AuthDrawerState>((set) => ({
       message: options?.message,
       mode: options?.mode,
       onSuccess: options?.onSuccess,
+      onSignUpSuccess: options?.onSignUpSuccess,
     }),
   closeAuthDrawer: () =>
     set({
@@ -33,6 +36,7 @@ export const useAuthDrawerStore = create<AuthDrawerState>((set) => ({
       message: undefined,
       mode: undefined,
       onSuccess: undefined,
+      onSignUpSuccess: undefined,
     }),
 }));
 

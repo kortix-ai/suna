@@ -2,16 +2,14 @@ import * as React from 'react';
 import { View, TouchableOpacity } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { Shield } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useLanguage } from '@/contexts';
-
-const AnimatedPressable = Animated.createAnimatedComponent(TouchableOpacity);
 
 interface GuestModeConsentProps {
   visible: boolean;
@@ -25,17 +23,6 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
   const isDark = colorScheme === 'dark';
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const { t } = useLanguage();
-
-  const scale1 = useSharedValue(1);
-  const scale2 = useSharedValue(1);
-
-  const animatedStyle1 = useAnimatedStyle(() => ({
-    transform: [{ scale: scale1.value }],
-  }));
-
-  const animatedStyle2 = useAnimatedStyle(() => ({
-    transform: [{ scale: scale2.value }],
-  }));
 
   React.useEffect(() => {
     if (visible) {
@@ -129,21 +116,11 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
             </Text>
           </View>
           <View className="w-full gap-4 pb-8">
-            <AnimatedPressable
+            <Button
+              variant="default"
+              size="lg"
               onPress={handleAccept}
-              onPressIn={() => {
-                scale1.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-              }}
-              onPressOut={() => {
-                scale1.value = withSpring(1, { damping: 15, stiffness: 400 });
-              }}
-              style={[animatedStyle1, { 
-                backgroundColor: isDark ? '#FFFFFF' : '#000000',
-                height: 56,
-                borderRadius: 28,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }]}
+              className={isDark ? 'bg-white' : 'bg-black'}
             >
               <Text style={{ 
                 color: isDark ? '#000000' : '#FFFFFF',
@@ -152,30 +129,17 @@ export function GuestModeConsent({ visible, onAccept, onDecline, onDismiss }: Gu
               }}>
                 {t('auth.guest.continue')}
               </Text>
-            </AnimatedPressable>
+            </Button>
 
-            <AnimatedPressable
+            <Button
+              variant="outline"
+              size="lg"
               onPress={handleDecline}
-              onPressIn={() => {
-                scale2.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-              }}
-              onPressOut={() => {
-                scale2.value = withSpring(1, { damping: 15, stiffness: 400 });
-              }}
-              style={[animatedStyle2, { 
-                backgroundColor: 'transparent',
-                height: 56,
-                borderRadius: 28,
-                borderWidth: 1,
-                borderColor: isDark ? '#454444' : '#c2c2c2',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }]}
             >
               <Text className="text-foreground text-[16px] font-roobert">
                 {t('auth.guest.signUp')}
               </Text>
-            </AnimatedPressable>
+            </Button>
 
             <View className="flex-row flex-wrap">
               <Text className="text-[14px] font-roobert text-muted-foreground leading-5">

@@ -34,6 +34,7 @@ export {
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const [i18nInitialized, setI18nInitialized] = useState(false);
+  const router = useRouter();
   
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
@@ -78,7 +79,10 @@ export default function RootLayout() {
     let isHandlingDeepLink = false;
 
     const handleDeepLink = async (event: { url: string }) => {
-      if (isHandlingDeepLink) return;
+      if (isHandlingDeepLink) {
+        console.log('⏸️ Already handling deep link, skipping...');
+        return;
+      }
       isHandlingDeepLink = true;
 
       console.log('🔗 Deep link received:', event.url);
@@ -86,57 +90,112 @@ export default function RootLayout() {
       const url = event.url;
       const parsedUrl = Linking.parse(url);
       
-      console.log('🔍 Parsed URL:', { hostname: parsedUrl.hostname, path: parsedUrl.path });
+      console.log('🔍 Parsed URL:', { 
+        hostname: parsedUrl.hostname, 
+        path: parsedUrl.path,
+        queryParams: parsedUrl.queryParams,
+      });
       
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
-        console.log('📧 Email confirmation received, processing...');
+        console.log('📧 Auth callback received, processing...');
         
         try {
-          const hashFragment = url.split('#')[1];
-          console.log('🔍 Hash fragment:', hashFragment);
+          // Check for terms_accepted in query params (from redirect URL)
+          const termsAccepted = parsedUrl.queryParams?.terms_accepted === 'true';
           
-          if (hashFragment) {
-            const hashParams = new URLSearchParams(hashFragment);
-            const access_token = hashParams.get('access_token');
-            const refresh_token = hashParams.get('refresh_token');
+          // Extract tokens from hash fragment (Supabase sends tokens in hash)
+          const hashIndex = url.indexOf('#');
+          let access_token: string | null = null;
+          let refresh_token: string | null = null;
+          
+          if (hashIndex !== -1) {
+            const hashFragment = url.substring(hashIndex + 1);
+            console.log('🔍 Hash fragment:', hashFragment.substring(0, 100) + '...');
             
-            console.log('🔑 Tokens found:', { 
-              hasAccessToken: !!access_token, 
-              hasRefreshToken: !!refresh_token 
+            // Parse hash fragment - can be URLSearchParams format or JSON
+            try {
+              const hashParams = new URLSearchParams(hashFragment);
+              access_token = hashParams.get('access_token');
+              refresh_token = hashParams.get('refresh_token');
+              
+              // Also try parsing as JSON (some formats)
+              if (!access_token && hashFragment.startsWith('{')) {
+                const hashData = JSON.parse(decodeURIComponent(hashFragment));
+                access_token = hashData.access_token || hashData.accessToken;
+                refresh_token = hashData.refresh_token || hashData.refreshToken;
+              }
+            } catch (parseError) {
+              console.warn('⚠️ Error parsing hash fragment:', parseError);
+              // Try direct extraction
+              const accessTokenMatch = hashFragment.match(/access_token=([^&]+)/);
+              const refreshTokenMatch = hashFragment.match(/refresh_token=([^&]+)/);
+              access_token = accessTokenMatch ? decodeURIComponent(accessTokenMatch[1]) : null;
+              refresh_token = refreshTokenMatch ? decodeURIComponent(refreshTokenMatch[1]) : null;
+            }
+          }
+          
+          console.log('🔑 Token extraction result:', { 
+            hasAccessToken: !!access_token, 
+            hasRefreshToken: !!refresh_token,
+            termsAccepted,
+          });
+          
+          if (access_token && refresh_token) {
+            console.log('✅ Setting session with tokens...');
+
+            const { data, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
             });
+
+            if (error) {
+              console.error('❌ Failed to set session:', error);
+              isHandlingDeepLink = false;
+              // Navigate to auth screen on error
+              router.replace('/auth');
+              return;
+            }
+
+            console.log('✅ Session set! User logged in:', data.user?.email);
+
+            // Save terms acceptance date if terms were accepted and not already saved (first time only)
+            if (termsAccepted && data.user) {
+              const currentMetadata = data.user.user_metadata || {};
+              if (!currentMetadata.terms_accepted_at) {
+                try {
+                  await supabase.auth.updateUser({
+                    data: {
+                      ...currentMetadata,
+                      terms_accepted_at: new Date().toISOString(),
+                    },
+                  });
+                  console.log('✅ Terms acceptance date saved to metadata');
+                } catch (updateError) {
+                  console.warn('⚠️ Failed to save terms acceptance:', updateError);
+                }
+              }
+            }
+
+            // Navigate based on user state
+            console.log('🚀 Navigating after successful auth...');
+            // Use replace to prevent going back to callback screen
+            router.replace('/setting-up');
             
-                  if (access_token && refresh_token) {
-                    console.log('✅ Setting session with tokens...');
-
-                    const { data, error } = await supabase.auth.setSession({
-                      access_token,
-                      refresh_token,
-                    });
-
-                    if (error) {
-                      console.error('❌ Failed to set session:', error);
-                      isHandlingDeepLink = false;
-                    } else {
-                      console.log('✅ Session set! User logged in:', data.user?.email);
-
-                      const router = require('expo-router').router;
-                      setTimeout(() => {
-                        console.log('🚀 Navigating to /setting-up');
-                        router.replace('/setting-up');
-                        isHandlingDeepLink = false;
-                      }, 800);
-                    }
-                  } else {
-                    console.log('⚠️ No tokens found in hash params');
-                    isHandlingDeepLink = false;
-                  }
+            // Reset flag after navigation
+            setTimeout(() => {
+              isHandlingDeepLink = false;
+            }, 1000);
           } else {
-            console.log('⚠️ No hash fragment in URL');
+            console.error('❌ No tokens found in URL. Hash fragment:', url.split('#')[1]?.substring(0, 100));
             isHandlingDeepLink = false;
+            // Navigate to auth screen if no tokens
+            router.replace('/auth');
           }
         } catch (err) {
-          console.error('❌ Error handling email confirmation:', err);
+          console.error('❌ Error handling auth callback:', err);
           isHandlingDeepLink = false;
+          // Navigate to auth screen on error
+          router.replace('/auth');
         }
       } else {
         console.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
@@ -146,17 +205,21 @@ export default function RootLayout() {
 
     const subscription = Linking.addEventListener('url', handleDeepLink);
 
+    // Handle initial URL (app opened via deep link)
     Linking.getInitialURL().then((url) => {
       if (url) {
         console.log('🔗 Initial URL found:', url);
-        handleDeepLink({ url });
+        // Small delay to ensure app is ready
+        setTimeout(() => {
+          handleDeepLink({ url });
+        }, 500);
       }
     });
 
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [router]);
 
   if (!fontsLoaded && !fontError) {
     return null;

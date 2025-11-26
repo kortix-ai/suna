@@ -44,7 +44,7 @@ function LoginContent() {
   const message = searchParams.get('message');
   const t = useTranslations('auth');
 
-  const isSignUp = mode === 'signup';
+  const isSignUp = mode !== 'signin';
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [mounted, setMounted] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -125,6 +125,9 @@ function LoginContent() {
 
     // Add origin for email redirects
     formData.append('origin', window.location.origin);
+    
+    // Add terms acceptance status
+    formData.append('acceptedTerms', acceptedTerms.toString());
 
     const result = await signUp(prevState, formData);
 
@@ -395,7 +398,7 @@ function LoginContent() {
               <div>
                 <Link
                   href={isSignUp
-                    ? `/auth${returnUrl ? `?returnUrl=${returnUrl}` : ''}`
+                    ? `/auth?mode=signin${returnUrl ? `&returnUrl=${returnUrl}` : ''}`
                     : `/auth?mode=signup${returnUrl ? `&returnUrl=${returnUrl}` : ''}`
                   }
                   className="text-muted-foreground hover:text-foreground transition-colors"

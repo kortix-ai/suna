@@ -325,6 +325,53 @@ export function useAuth() {
   }, []);
 
   /**
+   * Sign in with magic link (passwordless)
+   * Auto-creates account if it doesn't exist
+   */
+  const signInWithMagicLink = useCallback(async ({ email, acceptedTerms }: { email: string; acceptedTerms?: boolean }) => {
+    try {
+      console.log('🎯 Magic link sign in request:', email);
+      setError(null);
+      setAuthState((prev) => ({ ...prev, isLoading: true }));
+
+      // Use frontend callback page which will detect mobile and redirect accordingly
+      const frontendUrl = process.env.EXPO_PUBLIC_FRONTEND_URL || 'https://kortix.com';
+      // Pass terms acceptance as query parameter so callback can save it
+      const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
+      const emailRedirectTo = `${frontendUrl}/auth/callback?${termsParam}`;
+
+      const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: {
+          emailRedirectTo,
+          shouldCreateUser: true, // Auto-create account if doesn't exist
+        },
+      });
+
+      if (magicLinkError) {
+        console.error('❌ Magic link error:', magicLinkError.message);
+        setError({ message: magicLinkError.message });
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        return { success: false, error: magicLinkError };
+      }
+
+      // If user accepted terms and magic link was sent, update metadata after successful auth
+      // Note: This will be handled when the user clicks the magic link and signs in
+      // For now, we store it in the signup data which will be saved when account is created
+
+      console.log('✅ Magic link email sent');
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
+      return { success: true };
+    } catch (err: any) {
+      console.error('❌ Magic link exception:', err);
+      const error = { message: err.message || 'An unexpected error occurred' };
+      setError(error);
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
+      return { success: false, error };
+    }
+  }, []);
+
+  /**
    * Request password reset email
    */
   const resetPassword = useCallback(async ({ email }: PasswordResetRequest) => {
@@ -502,6 +549,7 @@ export function useAuth() {
     signIn,
     signUp,
     signInWithOAuth,
+    signInWithMagicLink,
     resetPassword,
     updatePassword,
     signOut,

@@ -30,6 +30,11 @@ export interface InputProps extends Omit<TextInputProps, 'className'> {
     label?: string;
 
     /**
+     * Size variant
+     */
+    size?: 'default' | 'lg';
+
+    /**
      * Additional className for the container
      */
     containerClassName?: string;
@@ -68,6 +73,7 @@ export const Input = React.forwardRef<TextInput, InputProps>(
             placeholder,
             error,
             label,
+            size = 'default',
             containerClassName,
             wrapperClassName,
             inputClassName,
@@ -80,6 +86,10 @@ export const Input = React.forwardRef<TextInput, InputProps>(
         },
         ref
     ) => {
+        const height = size === 'lg' ? 56 : 48;
+        const paddingX = size === 'lg' ? 5 : 4;
+        const fontSize = size === 'lg' ? 16 : 15;
+
         return (
             <View className={cn('w-full', containerClassName)}>
                 {label && (
@@ -108,16 +118,18 @@ export const Input = React.forwardRef<TextInput, InputProps>(
                         returnKeyType={returnKeyType}
                         style={{
                             fontFamily: 'Roobert-Regular',
-                            height: 48,
+                            height,
+                            paddingHorizontal: paddingX * 4,
                             paddingVertical: 0,
                             paddingTop: 0,
                             paddingBottom: 0,
+                            fontSize,
                             lineHeight: 20,
                             textAlignVertical: 'center',
                             includeFontPadding: false
                         }}
                         className={cn(
-                            'px-4 text-base text-foreground',
+                            'text-foreground',
                             inputClassName
                         )}
                         {...props}
