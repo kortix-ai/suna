@@ -1,5 +1,5 @@
 import { ThemeProvider } from '@/components/home/theme-provider';
-import { siteConfig } from '@/lib/home';
+import { siteMetadata } from '@/lib/site-metadata';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
@@ -29,40 +29,18 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL(siteConfig.url),
+  metadataBase: new URL(siteMetadata.url),
   title: {
-    default: 'Kortix the Super Mega Giga Worker',
-    template: `%s | ${siteConfig.name}`,
+    default: siteMetadata.title,
+    template: `%s | ${siteMetadata.name}`,
   },
-  description: siteConfig.description,
-  keywords: [
-    'AI assistant',
-    'open source AI',
-    'artificial intelligence',
-    'AI worker',
-    'browser automation',
-    'web scraping',
-    'file management',
-    'research assistant',
-    'data analysis',
-    'task automation',
-    'Kortix',
-    'generalist AI',
-    'code generation',
-    'AI coding assistant',
-    'workflow automation',
-    'AI productivity',
-  ],
-  authors: [
-    {
-      name: 'Kortix Team',
-      url: 'https://kortix.com'
-    }
-  ],
-  creator: 'Kortix Team',
-  publisher: 'Kortix Team',
+  description: siteMetadata.description,
+  keywords: siteMetadata.keywords,
+  authors: [siteMetadata.author],
+  creator: siteMetadata.author.name,
+  publisher: siteMetadata.author.name,
   category: 'Technology',
-  applicationName: 'Kortix',
+  applicationName: siteMetadata.name,
   formatDetection: {
     telephone: false,
     email: false,
@@ -82,47 +60,47 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: 'website',
-    title: 'Kortix – the Super Mega Giga AI Worker',
-    description: siteConfig.description,
-    url: siteConfig.url,
-    siteName: 'Kortix',
+    title: siteMetadata.title,
+    description: siteMetadata.description,
+    url: siteMetadata.url,
+    siteName: siteMetadata.name,
     locale: 'en_US',
     images: [
       {
-        url: '/banner.png',
+        url: siteMetadata.images.banner,
         width: 1200,
         height: 630,
-        alt: 'Kortix the Super Mega Giga Worker – A generalist AI Worker that autonomously tackles complex tasks',
+        alt: `${siteMetadata.title} – ${siteMetadata.description}`,
         type: 'image/png',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Kortix the Super Mega Giga Worker',
-    description: siteConfig.description,
-    creator: '@kortix',
-    site: '@kortix',
+    title: siteMetadata.title,
+    description: siteMetadata.description,
+    creator: siteMetadata.social.twitter,
+    site: siteMetadata.social.twitter,
     images: [
       {
-        url: '/banner.png',
-        alt: 'Kortix the Super Mega Giga Worker',
+        url: siteMetadata.images.banner,
+        alt: siteMetadata.title,
       }
     ],
   },
   icons: {
     icon: [
-      { url: '/favicon.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon-light.png', sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+      { url: siteMetadata.images.favicon, sizes: '32x32', type: 'image/png' },
+      { url: siteMetadata.images.faviconDark, sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
     ],
-    shortcut: '/favicon.png',
+    shortcut: siteMetadata.images.favicon,
     apple: [
-      { url: '/logo_black.png', sizes: '180x180', type: 'image/png' },
+      { url: siteMetadata.images.appleTouchIcon, sizes: '180x180', type: 'image/png' },
     ],
   },
   manifest: '/manifest.json',
   alternates: {
-    canonical: siteConfig.url,
+    canonical: siteMetadata.url,
   },
   verification: {
     google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
@@ -130,7 +108,7 @@ export const metadata: Metadata = {
   other: {
     'apple-mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'apple-mobile-web-app-title': 'Kortix',
+    'apple-mobile-web-app-title': siteMetadata.name,
   },
 };
 
@@ -173,21 +151,21 @@ export default function RootLayout({
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'Organization',
-              name: 'Kortix',
-              alternateName: ['Suna', 'Kortix AI', 'Kortix the Super Mega Giga Worker'],
-              url: 'https://kortix.com',
-              logo: 'https://kortix.com/favicon.png',
-              description: siteConfig.description,
+              name: siteMetadata.name,
+              alternateName: ['Suna', 'Kortix AI', 'Kortix: Your Autonomous AI Worker'],
+              url: siteMetadata.url,
+              logo: `${siteMetadata.url}${siteMetadata.images.favicon}`,
+              description: siteMetadata.description,
               foundingDate: '2024',
               sameAs: [
-                'https://github.com/kortix-ai',
+                siteMetadata.social.github,
                 'https://x.com/kortix',
                 'https://linkedin.com/company/kortix',
               ],
               contactPoint: {
                 '@type': 'ContactPoint',
                 contactType: 'Customer Support',
-                url: 'https://kortix.com',
+                url: siteMetadata.url,
               },
             }),
           }}
@@ -200,11 +178,11 @@ export default function RootLayout({
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'SoftwareApplication',
-              name: 'Kortix the Super Mega Giga Worker',
-              alternateName: ['Kortix', 'Suna'],
+              name: siteMetadata.title,
+              alternateName: [siteMetadata.name, 'Suna'],
               applicationCategory: 'BusinessApplication',
               operatingSystem: 'Web, macOS, Windows, Linux',
-              description: siteConfig.description,
+              description: siteMetadata.description,
               offers: {
                 '@type': 'Offer',
                 price: '0',

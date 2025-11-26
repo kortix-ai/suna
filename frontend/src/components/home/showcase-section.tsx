@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { GrainText } from '@/components/ui/grain-text';
@@ -28,26 +29,15 @@ interface WorkerType {
     fileType: string;
 }
 
-const workers: WorkerType[] = [
+const workerConfigs = [
     {
         id: 'images',
         iconName: 'image',
         iconColor: '#000000',
         backgroundColor: '#FFAFAF',
         borderColor: '#F19C9C',
-        title: 'Images',
-        description: 'Create images on demand. From product shots to social graphics to full illustrations. Adjusts style, lighting, colors, and layout, or refines existing visuals with quick edits and touch-ups.',
-        capabilities: [
-            'Generate product shots',
-            'Create social graphics',
-            'Make illustrations',
-            'Style & lighting variations',
-            'Logo / asset creation',
-            '+ Much more'
-        ],
-        image: '/images/landing-showcase/grow-not-linear.png',
-        imageAlt: 'Growth Isn\'t Linear graphic example',
-        fileType: 'image'
+        image: '/images/landing-showcase/images.png',
+        fileTypeKey: 'image'
     },
     {
         id: 'slides',
@@ -55,19 +45,8 @@ const workers: WorkerType[] = [
         iconColor: '#000000',
         backgroundColor: '#FFCD7E',
         borderColor: '#E0B46F',
-        title: 'Slides',
-        description: 'Create stunning presentations instantly. From pitch decks to reports to training materials. Adjusts themes, layouts, content structure, or refines existing decks with quick edits and updates.',
-        capabilities: [
-            'Pitch decks',
-            'Training material',
-            'Report presentations',
-            'Theme & layout variations',
-            'Content restructuring',
-            '+ Much more'
-        ],
-        image: '/images/landing-showcase/nexus.png',
-        imageAlt: 'Nexus Enterprise Automation Platform slide example',
-        fileType: 'pptx'
+        image: '/images/landing-showcase/slides.png',
+        fileTypeKey: 'pptx'
     },
     {
         id: 'data',
@@ -75,19 +54,8 @@ const workers: WorkerType[] = [
         iconColor: '#000000',
         backgroundColor: '#9DC2FF',
         borderColor: '#91B6F3',
-        title: 'Data',
-        description: 'Transforms raw data into insights. From spreadsheets to dashboards to visualizations. Cleans datasets, creates charts, builds reports, or refines existing analyses with quick updates.',
-        capabilities: [
-            'Dashboards',
-            'Visualizations',
-            'Data reports',
-            'Clean & organize data',
-            'Generate insights',
-            '+ Much more'
-        ],
-        image: '/images/landing-showcase/table-overview.png',
-        imageAlt: 'Financial Model Dashboard example',
-        fileType: 'pptx'
+        image: '/images/landing-showcase/data.png',
+        fileTypeKey: 'preview'
     },
     {
         id: 'docs',
@@ -95,19 +63,8 @@ const workers: WorkerType[] = [
         iconColor: '#000000',
         backgroundColor: '#82DD95',
         borderColor: '#72C283',
-        title: 'Docs',
-        description: 'Writes and edits documents effortlessly. From proposals to guides to content pieces. Adjusts tone, structure, formatting, or refines existing documents with quick rewrites and polish.',
-        capabilities: [
-            'Proposals',
-            'Guides & manuals',
-            'Content pieces',
-            'Tone & style variations',
-            'Format & restructure',
-            '+ Much more'
-        ],
-        image: '/images/landing-showcase/q3_2025.png',
-        imageAlt: 'Q3 2025 Executive Summary Report example',
-        fileType: 'pptx'
+        image: '/images/landing-showcase/docs.png',
+        fileTypeKey: 'document'
     },
     {
         id: 'research',
@@ -115,25 +72,31 @@ const workers: WorkerType[] = [
         iconColor: '#000000',
         backgroundColor: '#FFB5E4',
         borderColor: '#EF9FD1',
-        title: 'Research',
-        description: 'Researcher topics comprehensively. From market trends to competitive analysis to deep dives. Gather sources, synthesize findings, or refines existing research with quick updates.',
-        capabilities: [
-            'Analyze market trends',
-            'Competitive research',
-            'Deep topic dives',
-            'Gather sources',
-            'Synthesize findings',
-            '+ Much more'
-        ],
-        image: '/images/landing-showcase/table-overview.png',
-        imageAlt: 'Detailed Competitor Profiles research example',
-        fileType: 'pptx'
+        image: '/images/landing-showcase/research.png',
+        fileTypeKey: 'document'
     }
 ];
 
 export function ShowCaseSection() {
-    const [activeWorker, setActiveWorker] = useState<string>(workers[0].id);
+    const t = useTranslations('showcase');
+    const [activeWorker, setActiveWorker] = useState<string>(workerConfigs[0].id);
     const isMobile = useIsMobile();
+
+    const workers: WorkerType[] = workerConfigs.map((config) => ({
+        ...config,
+        title: t(`workers.${config.id}.title`),
+        description: t(`workers.${config.id}.description`),
+        capabilities: [
+            t(`workers.${config.id}.capabilities.0`),
+            t(`workers.${config.id}.capabilities.1`),
+            t(`workers.${config.id}.capabilities.2`),
+            t(`workers.${config.id}.capabilities.3`),
+            t(`workers.${config.id}.capabilities.4`),
+            t(`workers.${config.id}.capabilities.5`)
+        ],
+        imageAlt: t(`workers.${config.id}.imageAlt`),
+        fileType: t(`workers.${config.id}.fileType`)
+    }));
 
     const currentWorker = workers.find(w => w.id === activeWorker) || workers[0];
 
@@ -142,14 +105,12 @@ export function ShowCaseSection() {
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-12 md:mb-16">
-                    <h2 className="text-[43px] font-medium leading-tight mb-4">
-                        Different Workers for different jobs.
+                    <h1 className="text-[43px] font-medium leading-tight mb-4">
+                        {t('title')}
+                    </h1>
+                    <h2 className="text-base md:text-lg max-w-3xl mx-auto block text-muted-foreground font-normal">
+                        {t('subtitle')}
                     </h2>
-                    <GrainText className="text-base md:text-lg max-w-3xl mx-auto block text-muted-foreground">
-                        Kortix has specialized Workers depending on the work you need to get done.
-                        <br />
-                        Each Worker is built for a specific type of task, so you always get the right approach.
-                    </GrainText>
                 </div>
 
                 {/* Workers Grid */}
@@ -203,7 +164,7 @@ export function ShowCaseSection() {
                                             size="default"
                                             className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground mt-4"
                                         >
-                                            Try it out
+                                            {t('tryItOut')}
                                             <span>→</span>
                                         </Button>
                                     </Link>
@@ -217,12 +178,12 @@ export function ShowCaseSection() {
                                             <div className="flex items-center gap-2">
                                                 <KortixLogo size={16} className="invert" />
                                                 <span className="text-xl font-medium">
-                                                    Kortix Computer
+                                                    {t('kortixComputer')}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                                                <span className="text-xs text-green-500 font-medium">Running</span>
+                                                <span className="text-xs text-green-500 font-medium">{t('running')}</span>
                                             </div>
                                         </div>
 

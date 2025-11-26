@@ -29,7 +29,7 @@
     "next": "Suivant",
     "upgrade": "Améliorer",
     "basic": "Basique",
-    "tryFree": "Commencer gratuitement"
+    "tryFree": "Commencer"
   },
   "settings": {
     "title": "Paramètres",
@@ -282,6 +282,85 @@
   },
   "home": {
     "heroPlaceholder": "Décris la tâche que tu veux que ton Worker accomplisse..."
+  },
+  "showcase": {
+    "title": "Kortix : Votre Worker IA Autonome",
+    "subtitle": "Conçu pour les tâches complexes, pensé pour tout. L'assistant IA ultime qui gère tout—des demandes simples aux projets méga-complexes.",
+    "tryItOut": "Essayer",
+    "kortixComputer": "Kortix Computer",
+    "running": "En cours d'exécution",
+    "workers": {
+      "images": {
+        "title": "Images",
+        "description": "Crée des images à la demande. Des photos de produits aux graphiques pour réseaux sociaux en passant par des illustrations complètes. Ajuste le style, l'éclairage, les couleurs et la mise en page, ou affine les visuels existants avec des modifications rapides et des retouches.",
+        "capabilities": {
+          "0": "Générer des photos de produits",
+          "1": "Créer des graphiques pour réseaux sociaux",
+          "2": "Créer des illustrations",
+          "3": "Variations de style et d'éclairage",
+          "4": "Création de logos / ressources",
+          "5": "+ Beaucoup plus"
+        },
+        "imageAlt": "Exemple graphique La croissance n'est pas linéaire",
+        "fileType": "image"
+      },
+      "slides": {
+        "title": "Présentations",
+        "description": "Crée des présentations époustouflantes instantanément. Des pitch decks aux rapports en passant par les matériaux de formation. Ajuste les thèmes, les mises en page, la structure du contenu ou affine les présentations existantes avec des modifications et mises à jour rapides.",
+        "capabilities": {
+          "0": "Pitch decks",
+          "1": "Matériel de formation",
+          "2": "Présentations de rapports",
+          "3": "Variations de thème et de mise en page",
+          "4": "Restructuration du contenu",
+          "5": "+ Beaucoup plus"
+        },
+        "imageAlt": "Exemple de diapositive Nexus Enterprise Automation Platform",
+        "fileType": "PPTX"
+      },
+      "data": {
+        "title": "Données",
+        "description": "Transforme les données brutes en insights. Des feuilles de calcul aux tableaux de bord en passant par les visualisations. Nettoie les ensembles de données, crée des graphiques, génère des rapports ou affine les analyses existantes avec des mises à jour rapides.",
+        "capabilities": {
+          "0": "Tableaux de bord",
+          "1": "Visualisations",
+          "2": "Rapports de données",
+          "3": "Nettoyer et organiser les données",
+          "4": "Générer des insights",
+          "5": "+ Beaucoup plus"
+        },
+        "imageAlt": "Exemple de tableau de bord de modèle financier",
+        "fileType": "Aperçu"
+      },
+      "docs": {
+        "title": "Documents",
+        "description": "Écrit et édite des documents sans effort. Des propositions aux guides en passant par les contenus. Ajuste le ton, la structure, le formatage ou affine les documents existants avec des réécritures rapides et du polissage.",
+        "capabilities": {
+          "0": "Propositions",
+          "1": "Guides et manuels",
+          "2": "Contenus",
+          "3": "Variations de ton et de style",
+          "4": "Formater et restructurer",
+          "5": "+ Beaucoup plus"
+        },
+        "imageAlt": "Exemple de rapport exécutif récapitulatif Q3 2025",
+        "fileType": "PDF"
+      },
+      "research": {
+        "title": "Recherche",
+        "description": "Recherche des sujets de manière approfondie. Des tendances du marché à l'analyse concurrentielle en passant par les études approfondies. Rassemble des sources, synthétise les résultats ou affine les recherches existantes avec des mises à jour rapides.",
+        "capabilities": {
+          "0": "Analyser les tendances du marché",
+          "1": "Recherche concurrentielle",
+          "2": "Études approfondies de sujets",
+          "3": "Rassembler des sources",
+          "4": "Synthétiser les résultats",
+          "5": "+ Beaucoup plus"
+        },
+        "imageAlt": "Exemple de recherche Profils détaillés des concurrents",
+        "fileType": "PDF"
+      }
+    }
   },
   "threads": {
     "title": "Fils",

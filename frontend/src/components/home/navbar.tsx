@@ -15,6 +15,7 @@ import { useGitHubStars } from '@/hooks/utils';
 import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
+import { Button } from '@/components/ui/button';
 
 const INITIAL_WIDTH = '70rem';
 const MAX_WIDTH = '1000px';
@@ -166,19 +167,27 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                     </span>
                   </Link>
                   {user ? (
-                    <Link
-                      className="bg-primary h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                      href="/dashboard"
+                    <Button
+                      asChild
+                      variant="default"
+                      size="sm"
+                      className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                     >
-                      Dashboard
-                    </Link>
+                      <Link href="/dashboard">
+                        Dashboard
+                      </Link>
+                    </Button>
                   ) : (
-                    <Link
-                      className="bg-primary text-primary-foreground h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                      href="/auth"
+                    <Button
+                      asChild
+                      variant="default"
+                      size="sm"
+                      className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                     >
-                      {t('tryFree')}
-                    </Link>
+                      <Link href="/auth">
+                        {t('tryFree')}
+                      </Link>
+                    </Button>
                   )}
                 </div>
                 {/* <ThemeToggle /> */}
@@ -287,19 +296,27 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                 {/* Action buttons */}
                 <div className="flex flex-col gap-2">
                   {user ? (
-                    <Link
-                      href="/dashboard"
-                      className="bg-secondary h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-full px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12] hover:bg-secondary/80 transition-all ease-out active:scale-95"
+                    <Button
+                      asChild
+                      variant="default"
+                      size="sm"
+                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                     >
-                      Dashboard
-                    </Link>
+                      <Link href="/dashboard">
+                        Dashboard
+                      </Link>
+                    </Button>
                   ) : (
-                    <Link
-                      href="/auth"
-                      className="bg-secondary h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-full px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12] hover:bg-secondary/80 transition-all ease-out active:scale-95"
+                    <Button
+                      asChild
+                      variant="default"
+                      size="sm"
+                      className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                     >
-                      {t('tryFree')}
-                    </Link>
+                      <Link href="/auth">
+                        {t('tryFree')}
+                      </Link>
+                    </Button>
                   )}
                   <div className="flex justify-between">
                     <ThemeToggle />
