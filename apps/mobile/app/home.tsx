@@ -10,7 +10,6 @@ import { Drawer } from 'react-native-drawer-layout';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Agent } from '@/api/types';
 import type { Conversation } from '@/components/menu/types';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
 
 export default function AppScreen() {
@@ -62,16 +61,12 @@ export default function AppScreen() {
   const handleProfilePress = React.useCallback(() => {
     console.log('🎯 Profile pressed');
     if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, opening auth drawer');
-      useAuthDrawerStore.getState().openAuthDrawer({
-        onSuccess: () => {
-          queryClient.invalidateQueries();
-        }
-      });
+      console.log('🔐 User not authenticated, redirecting to auth');
+      router.push('/auth');
     } else {
       menu.handleProfilePress();
     }
-  }, [isAuthenticated, menu, queryClient]);
+  }, [isAuthenticated, menu, router]);
 
   return (
     <>

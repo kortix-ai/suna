@@ -13,7 +13,6 @@ import * as Haptics from 'expo-haptics';
 import { useSubscription, useCreditBalance } from '@/lib/billing';
 import { useColorScheme } from 'nativewind';
 import { formatCredits } from '@/lib/utils/credit-formatter';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 import { useLanguage } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -85,15 +84,6 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
     onCreditsPress?.();
   };
 
-  const handleSignUpPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    useAuthDrawerStore.getState().openAuthDrawer();
-  };
-
-  const handleLoginPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    useAuthDrawerStore.getState().openAuthDrawer();
-  };
 
   const currentTier = subscriptionData?.tier?.name || subscriptionData?.tier_key || 'free';
   const isFreeTier = currentTier === 'free' || !subscriptionData;

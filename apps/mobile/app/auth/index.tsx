@@ -24,8 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Dimensions, Animated as RNAnimated } from 'react-native';
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
-import { EmailAuthDrawer } from '@/components/auth';
+import { EmailAuthDrawer, type EmailAuthDrawerRef } from '@/components/auth';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
@@ -197,9 +196,8 @@ function GoogleLogo() {
 export default function AuthScreen() {
   const router = useRouter();
   const { signInWithOAuth } = useAuth();
-  const { hasCompletedOnboarding } = useOnboarding();
-  const { openAuthDrawer } = useAuthDrawerStore();
   const { isAuthenticated } = useAuthContext();
+  const emailDrawerRef = React.useRef<EmailAuthDrawerRef>(null);
 
   // Prevent back navigation if authenticated
   useFocusEffect(
@@ -207,7 +205,6 @@ export default function AuthScreen() {
       if (Platform.OS === 'android') {
         const onBackPress = () => {
           if (isAuthenticated) {
-            // Go to splash to determine where to navigate
             router.replace('/');
             return true;
           }
@@ -219,29 +216,25 @@ export default function AuthScreen() {
     }, [isAuthenticated, router])
   );
 
-  // Redirect if already authenticated - go to splash to determine destination
+  // Redirect if already authenticated AND close any open drawer
   React.useEffect(() => {
     if (isAuthenticated) {
-      console.log('🔄 Auth page: user authenticated, redirecting to splash');
+      console.log('🔄 Auth page: user authenticated, closing drawer and redirecting');
+      emailDrawerRef.current?.close();
       router.replace('/');
     }
   }, [isAuthenticated, router]);
 
-  // Navigate to splash after successful auth - it will decide where to go
-  const navigateAfterAuth = React.useCallback(() => {
-    router.replace('/');
-  }, [router]);
-
   const handleOAuth = React.useCallback(async (provider: 'apple' | 'google') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await signInWithOAuth(provider);
-    if (result.success) navigateAfterAuth();
-  }, [signInWithOAuth, navigateAfterAuth]);
+    if (result.success) router.replace('/');
+  }, [signInWithOAuth, router]);
 
   const handleEmail = React.useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    openAuthDrawer({ onSuccess: navigateAfterAuth });
-  }, [openAuthDrawer, navigateAfterAuth]);
+    emailDrawerRef.current?.open();
+  }, []);
 
   return (
     <>
@@ -251,7 +244,7 @@ export default function AuthScreen() {
           <AuthBackgroundLogo />
         </View>
         <WelcomeContent onOAuth={handleOAuth} onEmail={handleEmail} />
-        <EmailAuthDrawer />
+        <EmailAuthDrawer ref={emailDrawerRef} />
       </View>
     </>
   );

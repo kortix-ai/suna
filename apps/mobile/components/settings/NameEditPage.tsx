@@ -15,10 +15,8 @@ import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
 import { ProfilePicture } from './ProfilePicture';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-export const placeholderImageUrl = 'https://i.ibb.co/ksprrY46/Screenshot-2025-11-12-at-2-28-27-AM.png';
   
 interface NameEditPageProps {
   visible: boolean;
@@ -174,7 +172,11 @@ export function NameEditPage({
           
           <View className="px-6 pb-8">
             <View className="mb-8 items-center pt-8">
-              <ProfilePicture imageUrl={placeholderImageUrl} size={24} />
+              <ProfilePicture 
+                imageUrl={user?.user_metadata?.avatar_url} 
+                size={24}
+                fallbackText={name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+              />
               <View className="mt-6 w-full">
                 <TextInput
                   ref={inputRef}

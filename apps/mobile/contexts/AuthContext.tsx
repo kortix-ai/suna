@@ -13,6 +13,7 @@ interface AuthContextType extends AuthState {
   updatePassword: (newPassword: string) => Promise<any>;
   signOut: () => Promise<any>;
   error: any;
+  isSigningOut: boolean;
 }
 
 const AuthContext = React.createContext<AuthContextType | undefined>(undefined);

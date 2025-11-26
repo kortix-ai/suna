@@ -39,6 +39,7 @@ export function useAuth() {
   });
 
   const [error, setError] = useState<AuthError | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const initializedUserIdRef = useRef<string | null>(null);
   const initializedCanTrackRef = useRef<boolean | null>(null);
 
@@ -495,6 +496,12 @@ export function useAuth() {
    * Always succeeds from UI perspective to prevent stuck states
    */
   const signOut = useCallback(async () => {
+    // Prevent multiple simultaneous sign out attempts
+    if (isSigningOut) {
+      console.log('⚠️ Sign out already in progress, ignoring duplicate call');
+      return { success: false, error: { message: 'Sign out already in progress' } };
+    }
+
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     
     /**
@@ -553,6 +560,8 @@ export function useAuth() {
 
     try {
       console.log('🎯 Sign out initiated');
+      setIsSigningOut(true);
+      
       if (shouldUseRevenueCat()) {
         try {
           const { logoutRevenueCat } = require('@/lib/billing/revenuecat');
@@ -586,6 +595,7 @@ export function useAuth() {
       forceSignOutState();
 
       console.log('✅ Sign out completed successfully - all data cleared');
+      setIsSigningOut(false);
       return { success: true };
 
     } catch (error: any) {
@@ -597,13 +607,15 @@ export function useAuth() {
       forceSignOutState();
 
       console.log('✅ Sign out completed (with errors handled) - all data cleared');
+      setIsSigningOut(false);
       return { success: true };
     }
-  }, [queryClient]);
+  }, [queryClient, isSigningOut]);
 
   return {
     ...authState,
     error,
+    isSigningOut,
     signIn,
     signUp,
     signInWithOAuth,

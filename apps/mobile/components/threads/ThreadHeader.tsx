@@ -12,7 +12,6 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 

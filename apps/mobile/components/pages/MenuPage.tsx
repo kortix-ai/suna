@@ -19,7 +19,6 @@ import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsPage } from '@/components/settings/SettingsPage';
-import { placeholderImageUrl } from '@/components/settings/NameEditPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -35,7 +34,6 @@ import type { Conversation, UserProfile, ConversationSection as ConversationSect
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -788,7 +786,11 @@ export function MenuPage({
             style={profileAnimatedStyle}
             className="flex-row items-center gap-3 border border-border p-3 rounded-2xl"
           >
-            <ProfilePicture imageUrl={placeholderImageUrl} size={12} />
+            <ProfilePicture 
+              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar} 
+              size={12}
+              fallbackText={profile.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+            />
             <View className="flex-col items-start -mt-1.5">
               <Text className="text-lg font-roobert-semibold text-foreground">
                 {profile.name || 'User'}

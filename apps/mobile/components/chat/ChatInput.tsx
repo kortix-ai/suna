@@ -17,7 +17,6 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -253,10 +252,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     if (!value?.trim()) return;
 
     if (!isAuthenticated) {
-      Keyboard.dismiss();
-      setTimeout(() => {
-        useAuthDrawerStore.getState().openAuthDrawer();
-      }, 200);
+      console.warn('⚠️ User not authenticated - cannot send message');
       return;
     }
 
@@ -268,10 +264,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Handle sending audio
   const handleSendAudioMessage = React.useCallback(() => {
     if (!isAuthenticated) {
+      console.warn('⚠️ User not authenticated - cannot send audio');
       onCancelRecording?.();
-      setTimeout(() => {
-        useAuthDrawerStore.getState().openAuthDrawer();
-      }, 200);
       return;
     }
     onSendAudio?.();
@@ -288,7 +282,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     } else {
       // Start audio recording
       if (!isAuthenticated) {
-        useAuthDrawerStore.getState().openAuthDrawer();
+        console.warn('⚠️ User not authenticated - cannot record audio');
         return;
       }
       onAudioRecord?.();
@@ -533,9 +527,6 @@ const NormalMode = React.memo(({
           onFocus={() => {
             if (!isAuthenticated) {
               textInputRef.current?.blur();
-              setTimeout(() => {
-                useAuthDrawerStore.getState().openAuthDrawer();
-              }, 100);
             }
           }}
           placeholder={effectivePlaceholder}
@@ -557,10 +548,10 @@ const NormalMode = React.memo(({
           onPressOut={onAttachPressOut}
           onPress={() => {
             if (!isAuthenticated) {
-              useAuthDrawerStore.getState().openAuthDrawer();
-            } else {
-              onAttachPress?.();
+              console.warn('⚠️ User not authenticated - cannot attach');
+              return;
             }
+            onAttachPress?.();
           }}
           disabled={isDisabled}
           className="border border-border rounded-[18px] w-10 h-10 items-center justify-center"

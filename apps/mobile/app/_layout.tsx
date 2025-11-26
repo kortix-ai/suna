@@ -20,7 +20,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -126,16 +125,9 @@ export default function RootLayout() {
                     ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
                     : 'This email link has expired. Please request a new one.';
                   
-                  // Navigate to auth screen and open drawer with error message
+                  // Navigate to auth screen - user can try again there
+                  console.log('⚠️ Link expired, redirecting to auth');
                   router.replace('/auth');
-                  
-                  // Small delay to ensure navigation completes
-                  setTimeout(() => {
-                    useAuthDrawerStore.getState().openAuthDrawer({
-                      message: errorMessage,
-                    });
-                  }, 300);
-                  
                   isHandlingDeepLink = false;
                   return;
                 }
@@ -246,15 +238,8 @@ export default function RootLayout() {
               }
             }
 
-            // Close auth drawer immediately if it's open (user just logged in)
-            const authDrawerStore = useAuthDrawerStore.getState();
-            if (authDrawerStore.isOpen) {
-              console.log('🚪 Closing auth drawer after successful login...');
-              authDrawerStore.closeAuthDrawer();
-            }
-
-            // Small delay to ensure drawer closes and auth state propagates
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // Small delay to ensure auth state propagates
+            await new Promise(resolve => setTimeout(resolve, 100));
 
             // Always navigate to splash screen - it will determine the correct destination
             // This ensures smooth transition with loader while checking account state
@@ -332,7 +317,12 @@ export default function RootLayout() {
                               <Stack.Screen name="index" options={{ animation: 'none' }} />
                               <Stack.Screen name="setting-up" />
                               <Stack.Screen name="onboarding" />
-                              <Stack.Screen name="home" />
+                              <Stack.Screen 
+                                name="home" 
+                                options={{ 
+                                  gestureEnabled: false,
+                                }} 
+                              />
                               <Stack.Screen 
                                 name="auth" 
                                 options={{ 

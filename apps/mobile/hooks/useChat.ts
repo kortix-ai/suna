@@ -30,7 +30,6 @@ import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
