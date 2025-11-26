@@ -39,13 +39,13 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "init_kb",
-            "description": "Initialize the kb-fusion binary. Checks if kb exists and installs/updates if needed. Optionally sync global knowledge base files.",
+            "description": "Initialize the kb-fusion binary for semantic search operations. Use this before performing semantic searches on local files. Set sync_global_knowledge_base=false (default) when only searching local files, or sync_global_knowledge_base=true to also sync your global knowledge base files to the sandbox.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sync_global_knowledge_base": {
                         "type": "boolean",
-                        "description": "Whether to sync agent's knowledge base files to sandbox after initialization",
+                        "description": "Whether to sync agent's knowledge base files to sandbox after initialization. Set to true when you need access to your global knowledge base files.",
                         "default": False
                     }
                 },
@@ -129,18 +129,18 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "search_files",
-            "description": "Perform semantic search on files using kb-fusion. Searches for multiple queries in a specified full file path.",
+            "description": "Perform intelligent semantic search on files using natural language queries. IMPORTANT: Provide the FULL path to files/documents (e.g., '/workspace/documents/dataset.txt'), NOT just filenames. Use this tool when you need to find specific information within large documents or datasets. Example: search_files(path='/workspace/documents/dataset.txt', queries=['What is the main topic?', 'Key findings summary'])",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Full Path to the file or directory to search in."
+                        "description": "FULL path to the file or directory to search in. Must be complete path, not just filename. Example: '/workspace/documents/dataset.txt'"
                     },
                     "queries": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of search queries to execute."
+                        "description": "List of natural language search queries to execute. Each query should be a complete question or search phrase."
                     }
                 },
                 "required": ["path", "queries"]
@@ -175,7 +175,7 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "cleanup_kb",
-            "description": "Perform maintenance and cleanup operations on the knowledge base.",
+            "description": "Perform maintenance and cleanup operations on the knowledge base. Operations: 'default' (missing files + orphan cleanup), 'remove_files' (remove specific files), 'clear_embeddings' (clear embedding cache), 'clear_all' (nuke everything). Example: cleanup_kb(operation='default') for routine maintenance.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -240,7 +240,7 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "ls_kb",
-            "description": "List indexed files in the knowledge base. Shows file status, size, modification time, and paths.",
+            "description": "List all indexed LOCAL files in the sandbox knowledge base. Shows file status, size, modification time, and paths. Use this to see what files are currently indexed and available for semantic search.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -267,7 +267,7 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "global_kb_sync",
-            "description": "Sync agent's knowledge base files to sandbox ~/knowledge-base-global directory. Downloads all assigned knowledge base files and creates a local copy with proper folder structure.",
+            "description": "Download your assigned global knowledge base files to the sandbox at ~/knowledge-base-global/ with proper folder structure. Use this when users ask vague questions without specific file uploads or references. After syncing, you can reference files like 'root/knowledge-base-global/Documentation/api-guide.md'.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -392,7 +392,7 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_create_folder",
-            "description": "Create a new folder in the global knowledge base. Agent can organize files by creating folders.",
+            "description": "Create a new folder in the global knowledge base to organize files. Part of the CRUD workflow: Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access. Note: Structure is 1-level deep (folders contain files only, no nested folders). Example: global_kb_create_folder(name='Documentation')",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -481,13 +481,13 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_upload_file",
-            "description": "Upload a file from sandbox to the global knowledge base. File must exist in sandbox first.",
+            "description": "Upload a file from sandbox to the global knowledge base. IMPORTANT: Use FULL PATH to the file in sandbox. File must exist in sandbox first. Part of the CRUD workflow: Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access. Example: global_kb_upload_file(sandbox_file_path='workspace/analysis.txt', folder_name='Documentation')",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sandbox_file_path": {
                         "type": "string",
-                        "description": "Path to file in sandbox (e.g., 'workspace/document.pdf')"
+                        "description": "FULL path to file in sandbox (e.g., 'workspace/document.pdf')"
                     },
                     "folder_name": {
                         "type": "string",
@@ -611,7 +611,7 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_delete_item",
-            "description": "Delete a file or folder from the global knowledge base using its ID.",
+            "description": "Delete a file or folder from the global knowledge base using its ID. Get IDs from global_kb_list_contents first. Example: global_kb_delete_item(item_type='file', item_id='123e4567-e89b-12d3-a456-426614174000')",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -622,7 +622,7 @@ Agent ID: {agent_id}
                     },
                     "item_id": {
                         "type": "string",
-                        "description": "ID of the file (file_id) or folder (folder_id) to delete. Get these IDs from list_kb_contents."
+                        "description": "ID of the file (file_id) or folder (folder_id) to delete. Get these IDs from global_kb_list_contents."
                     }
                 },
                 "required": ["item_type", "item_id"]
@@ -692,7 +692,7 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_enable_item",
-            "description": "Enable or disable a knowledge base file for this agent. Only enabled items are synced and available.",
+            "description": "Enable or disable a knowledge base file for this agent. Only enabled items are synced and available. Controls what gets synced when you call global_kb_sync. Get file IDs from global_kb_list_contents. Example: global_kb_enable_item(item_type='file', item_id='123e4567-e89b-12d3-a456-426614174000', enabled=True)",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -703,7 +703,7 @@ Agent ID: {agent_id}
                     },
                     "item_id": {
                         "type": "string",
-                        "description": "ID of the file (file_id) to enable/disable. Get this ID from list_kb_contents."
+                        "description": "ID of the file (file_id) to enable/disable. Get this ID from global_kb_list_contents."
                     },
                     "enabled": {
                         "type": "boolean",
@@ -781,7 +781,7 @@ Agent ID: {agent_id}
         "type": "function",
         "function": {
             "name": "global_kb_list_contents",
-            "description": "List all folders and files in the global knowledge base.",
+            "description": "List all folders and files in the global knowledge base with their IDs. Use this to view your knowledge base structure and get IDs needed for other operations like delete or enable/disable.",
             "parameters": {
                 "type": "object",
                 "properties": {},
