@@ -28,6 +28,7 @@ export { useBackgroundScale } from './useBackgroundScale';
 export { useChatCommons } from './useChatCommons';
 
 // Account setup hooks
+export { useAccountInitialization } from './useAccountInitialization';
 export { useAccountSetup } from './useAccountSetup';
 
 // Re-export commonly used hooks from lib for convenience

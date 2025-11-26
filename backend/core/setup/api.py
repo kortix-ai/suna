@@ -3,11 +3,15 @@ from pydantic import BaseModel
 from typing import Dict, Optional
 import os
 import concurrent.futures
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.billing.subscriptions import free_tier_service
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.services.supabase import DBConnection
 from core.services.email import email_service
+
+# Main setup router (prefix="/setup")
+router = APIRouter(prefix="/setup", tags=["setup"])
 
 # Webhook router (no prefix - webhooks are at /api/webhooks/*)
 webhook_router = APIRouter(tags=["webhooks"])
@@ -56,7 +60,9 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None) 
     1. Subscribe to free tier
     2. Install default Suna agent
     
-    This is called automatically by the webhook on signup (triggered by database trigger).
+    This can be called from:
+    - Webhook (automatic on signup - triggered by database trigger)
+    - API endpoint (fallback/retry)
     
     Args:
         account_id: The user's account ID (UUID)
@@ -133,6 +139,25 @@ def _send_welcome_email_async(email: str, user_name: str):
         return None
 
 # ============================================================================
+# API Endpoints
+# ============================================================================
+
+@router.post("/initialize")
+async def initialize_account(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    API endpoint for account initialization (fallback/retry).
+    Most users will be initialized automatically via webhook on signup.
+    """
+    result = await initialize_user_account(account_id)
+    
+    if not result.get('success'):
+        raise HTTPException(status_code=500, detail=result.get('message', 'Failed to initialize account'))
+    
+    return result
+
+# ============================================================================
 # Webhook Endpoints
 # ============================================================================
 
@@ -198,7 +223,7 @@ async def handle_user_created_webhook(
                 f"agent={init_result.get('agent_id')}"
             )
         else:
-            # Log error but don't fail - webhook will retry automatically if needed
+            # Log error but don't fail - user can retry via /setup/initialize endpoint
             error_msg = init_result.get('message', 'Unknown error')
             logger.error(f"⚠️ Account initialization failed for {email}: {error_msg}")
             # Continue to send welcome email even if initialization failed

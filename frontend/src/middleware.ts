@@ -39,6 +39,7 @@ const PUBLIC_ROUTES = [
 const BILLING_ROUTES = [
   '/activate-trial',
   '/subscription',
+  '/setting-up',
 ];
 
 // Routes that require authentication and active subscription
