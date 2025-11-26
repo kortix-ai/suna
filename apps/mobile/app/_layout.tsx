@@ -111,10 +111,10 @@ export default function RootLayout() {
           if (hashIndex !== -1) {
             const hashFragment = url.substring(hashIndex + 1);
             console.log('🔍 Hash fragment:', hashFragment.substring(0, 100) + '...');
-            
+          
             // Parse hash fragment - can be URLSearchParams format or JSON
             try {
-              const hashParams = new URLSearchParams(hashFragment);
+            const hashParams = new URLSearchParams(hashFragment);
               access_token = hashParams.get('access_token');
               refresh_token = hashParams.get('refresh_token');
               
@@ -135,28 +135,28 @@ export default function RootLayout() {
           }
           
           console.log('🔑 Token extraction result:', { 
-            hasAccessToken: !!access_token, 
+              hasAccessToken: !!access_token, 
             hasRefreshToken: !!refresh_token,
             termsAccepted,
-          });
-          
-          if (access_token && refresh_token) {
-            console.log('✅ Setting session with tokens...');
-
-            const { data, error } = await supabase.auth.setSession({
-              access_token,
-              refresh_token,
             });
+            
+                  if (access_token && refresh_token) {
+                    console.log('✅ Setting session with tokens...');
 
-            if (error) {
-              console.error('❌ Failed to set session:', error);
-              isHandlingDeepLink = false;
+                    const { data, error } = await supabase.auth.setSession({
+                      access_token,
+                      refresh_token,
+                    });
+
+                    if (error) {
+                      console.error('❌ Failed to set session:', error);
+                      isHandlingDeepLink = false;
               // Navigate to auth screen on error
               router.replace('/auth');
               return;
             }
 
-            console.log('✅ Session set! User logged in:', data.user?.email);
+                      console.log('✅ Session set! User logged in:', data.user?.email);
 
             // Save terms acceptance date if terms were accepted and not already saved (first time only)
             if (termsAccepted && data.user) {
@@ -182,8 +182,8 @@ export default function RootLayout() {
             router.replace('/setting-up');
             
             // Reset flag after navigation
-            setTimeout(() => {
-              isHandlingDeepLink = false;
+                      setTimeout(() => {
+                        isHandlingDeepLink = false;
             }, 1000);
           } else {
             console.error('❌ No tokens found in URL. Hash fragment:', url.split('#')[1]?.substring(0, 100));
@@ -211,7 +211,7 @@ export default function RootLayout() {
         console.log('🔗 Initial URL found:', url);
         // Small delay to ensure app is ready
         setTimeout(() => {
-          handleDeepLink({ url });
+        handleDeepLink({ url });
         }, 500);
       }
     });

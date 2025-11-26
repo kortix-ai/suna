@@ -436,6 +436,7 @@
   "auth": {
     "logIntoAccount": "In dein Konto einloggen",
     "createAccount": "Konto erstellen",
+    "signInOrCreateAccount": "Melde dich an oder erstelle dein Kortix-Konto",
     "continueWithGoogle": "Mit Google fortfahren",
     "continueWithGitHub": "Mit GitHub fortfahren",
     "orEmail": "oder E-Mail",
@@ -463,7 +464,13 @@
     "cancel": "Abbrechen",
     "pleaseEnterValidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
     "signInFailed": "Login fehlgeschlagen. Check deine Zugangsdaten.",
-    "signUpFailed": "Registrierung fehlgeschlagen. Versuch's nochmal."
+    "signUpFailed": "Registrierung fehlgeschlagen. Versuch's nochmal.",
+    "sendMagicLink": "Magic Link senden",
+    "sending": "Wird gesendet...",
+    "magicLinkSent": "Wir haben einen Magic Link gesendet an",
+    "magicLinkDescription": "Klicke auf den Link in deiner E-Mail, um dich anzumelden. Der Link läuft in 1 Stunde ab.",
+    "magicLinkExplanation": "Wir senden dir einen sicheren Link zum Anmelden. Kein Passwort erforderlich.",
+    "byContinuingYouAgree": "Durch Fortfahren stimmst du unserer <privacyPolicy>Datenschutzerklärung</privacyPolicy> und unseren <termsOfService>Nutzungsbedingungen</termsOfService> zu"
   },
   "onboarding": {
     "welcome": "Willkommen",

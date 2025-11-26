@@ -494,6 +494,7 @@
   "auth": {
     "logIntoAccount": "アカウントにログイン",
     "createAccount": "アカウントを作成",
+    "signInOrCreateAccount": "Kortixアカウントにログインまたは作成",
     "continueWithGoogle": "Googleで続ける",
     "continueWithGitHub": "GitHubで続ける",
     "orEmail": "またはメール",
@@ -521,7 +522,13 @@
     "cancel": "キャンセル",
     "pleaseEnterValidEmail": "有効なメールアドレスを入力してください",
     "signInFailed": "ログイン失敗。認証情報を確認してください。",
-    "signUpFailed": "登録に失敗しました。もう一度お試しください。"
+    "signUpFailed": "登録に失敗しました。もう一度お試しください。",
+    "sendMagicLink": "マジックリンクを送信",
+    "sending": "送信中...",
+    "magicLinkSent": "マジックリンクを送信しました",
+    "magicLinkDescription": "メール内のリンクをクリックしてログインしてください。リンクは1時間で期限切れになります。",
+    "magicLinkExplanation": "安全なリンクをメールでお送りします。パスワードは不要です。",
+    "byContinuingYouAgree": "続行することで、<privacyPolicy>プライバシーポリシー</privacyPolicy>および<termsOfService>利用規約</termsOfService>に同意したものとみなされます"
   },
   "onboarding": {
     "welcome": "ようこそ",

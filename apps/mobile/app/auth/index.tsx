@@ -14,8 +14,8 @@ import { useLanguage, useGuestMode } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import Animated, { 
   FadeIn,
-  useAnimatedStyle,
-  useSharedValue,
+  useAnimatedStyle, 
+  useSharedValue, 
   withSpring,
   withDelay,
   withTiming,
@@ -187,7 +187,7 @@ export default function AuthScreen() {
     openAuthDrawer({
       mode: 'email-auth',
       onSuccess: () => {
-        handleNavigateToHome();
+      handleNavigateToHome();
       },
     });
   };
@@ -202,15 +202,15 @@ export default function AuthScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <WelcomeView 
-            onEmailPress={showEmailAuth}
-            onOAuthSignIn={handleOAuthSignIn}
-            onGuestModePress={() => {
-              console.log('🔵 Guest mode button pressed');
-              setShowGuestConsent(true);
-              console.log('🔵 showGuestConsent set to true');
-            }}
-          />
+            <WelcomeView 
+              onEmailPress={showEmailAuth}
+              onOAuthSignIn={handleOAuthSignIn}
+              onGuestModePress={() => {
+                console.log('🔵 Guest mode button pressed');
+                setShowGuestConsent(true);
+                console.log('🔵 showGuestConsent set to true');
+              }}
+            />
         </ScrollView>
 
         <GuestModeConsent
@@ -273,31 +273,31 @@ function WelcomeView({
         <Button
           variant="default"
           size="lg"
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onOAuthSignIn('apple');
-          }}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onOAuthSignIn('apple');
+            }}
           className="bg-[#000000]"
-        >
-          <FontAwesome5 name="apple" size={20} color="white" />
+          >
+            <FontAwesome5 name="apple" size={20} color="white" />
           <Text className="text-[16px] font-roobert-medium text-white">
-            {t('auth.continueWithApple')}
-          </Text>
+              {t('auth.continueWithApple')}
+            </Text>
         </Button>
 
         <Button
           variant="outline"
           size="lg"
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onOAuthSignIn('google');
-          }}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onOAuthSignIn('google');
+            }}
           className="bg-white border border-[#dadce0]"
-        >
-          <GoogleLogo />
+          >
+            <GoogleLogo />
           <Text className="text-[16px] font-roobert-medium text-[#1f1f1f]">
-            {t('auth.continueWithGoogle')}
-          </Text>
+              {t('auth.continueWithGoogle')}
+            </Text>
         </Button>
 
         <Button
@@ -308,10 +308,10 @@ function WelcomeView({
             onEmailPress();
           }}
         >
-          <Icon as={Mail} size={20} className="text-foreground" />
+            <Icon as={Mail} size={20} className="text-foreground" />
           <Text className="text-[16px] font-roobert-medium text-foreground">
-            {t('auth.continueWithEmail')}
-          </Text>
+              {t('auth.continueWithEmail')}
+            </Text>
         </Button>
 
         <Button

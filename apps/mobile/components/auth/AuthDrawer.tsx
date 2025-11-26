@@ -382,10 +382,10 @@ function EmailSignInButton({ onPress, label }: EmailSignInButtonProps) {
       size="lg"
       onPress={onPress}
     >
-      <Icon as={Mail} size={20} className="text-foreground" />
+                    <Icon as={Mail} size={20} className="text-foreground" />
       <Text className="text-[16px] font-roobert-medium text-foreground">
         {label}
-      </Text>
+                    </Text>
     </Button>
   );
 }
@@ -433,25 +433,25 @@ function EmailAuthForm({
   // Show success state after email is sent
   if (emailSent) {
     return (
-      <View className="gap-6">
+            <View className="gap-6">
         {/* Header */}
         <View className="flex-row items-center justify-between">
-          <TouchableOpacity
+                <TouchableOpacity
             onPress={onBack}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text className="text-muted-foreground text-[16px] font-roobert">
-              {t('common.back')}
-            </Text>
-          </TouchableOpacity>
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text className="text-muted-foreground text-[16px] font-roobert">
+                    {t('common.back')}
+                  </Text>
+                </TouchableOpacity>
 
-          <TouchableOpacity
+                <TouchableOpacity
             onPress={onClose}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Icon as={X} size={24} className="text-muted-foreground" />
-          </TouchableOpacity>
-        </View>
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Icon as={X} size={24} className="text-muted-foreground" />
+                </TouchableOpacity>
+              </View>
 
         {/* Success State */}
         <View className="items-center gap-5">
@@ -514,7 +514,7 @@ function EmailAuthForm({
             />
             <Text className="text-foreground text-[15px] font-roobert-medium">
               {t('auth.openGmailBtn')}
-            </Text>
+                  </Text>
           </Button>
 
           {/* Resend Link */}
@@ -523,16 +523,16 @@ function EmailAuthForm({
             size="default"
             onPress={async () => {
               await onSendMagicLink();
-            }}
+                  }}
             disabled={isLoading}
             className="flex-row items-center justify-center gap-2"
-          >
+                >
             <Text className="text-muted-foreground text-[15px] font-roobert">
               {isLoading ? t('auth.sending') : t('auth.resendLink')}
-            </Text>
+                  </Text>
           </Button>
-        </View>
-      </View>
+              </View>
+            </View>
     );
   }
 
@@ -540,22 +540,22 @@ function EmailAuthForm({
     <View className="gap-6">
       {/* Header */}
       <View className="flex-row items-center justify-between">
-        <TouchableOpacity
+                <TouchableOpacity
           onPress={onBack}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Text className="text-muted-foreground text-[16px] font-roobert">
-            {t('common.back')}
-          </Text>
-        </TouchableOpacity>
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text className="text-muted-foreground text-[16px] font-roobert">
+                    {t('common.back')}
+                  </Text>
+                </TouchableOpacity>
 
-        <TouchableOpacity
+                <TouchableOpacity
           onPress={onClose}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Icon as={X} size={24} className="text-muted-foreground" />
-        </TouchableOpacity>
-      </View>
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Icon as={X} size={24} className="text-muted-foreground" />
+                </TouchableOpacity>
+              </View>
 
       {/* Title */}
       <View className="gap-4">
@@ -564,7 +564,7 @@ function EmailAuthForm({
         </Text>
         <Text className="text-[15px] font-roobert text-muted-foreground">
           {t('auth.magicLinkDescription')}
-        </Text>
+                  </Text>
       </View>
 
       {/* Email Input */}
@@ -589,7 +589,7 @@ function EmailAuthForm({
         <AnimatedView entering={FadeIn.duration(200)}>
           <Text className="text-destructive text-[14px] font-roobert text-center">
             {error}
-          </Text>
+                  </Text>
         </AnimatedView>
       )}
 

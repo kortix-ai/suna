@@ -7,37 +7,44 @@ import { redirect } from 'next/navigation';
 
 export async function signIn(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
   const returnUrl = formData.get('returnUrl') as string | undefined;
+  const origin = formData.get('origin') as string;
+  const acceptedTerms = formData.get('acceptedTerms') === 'true';
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
   }
 
-  if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
-  }
-
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
+  // Use magic link (passwordless) authentication
+  // Pass terms acceptance as query parameter so callback can save it
+  const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
+  const emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${termsParam}`;
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim().toLowerCase(),
+    options: {
+      emailRedirectTo,
+      shouldCreateUser: true, // Auto-create account if doesn't exist
+    },
   });
 
   if (error) {
-    return { message: error.message || 'Could not authenticate user' };
+    return { message: error.message || 'Could not send magic link' };
   }
 
-  // Use client-side navigation instead of server-side redirect
-  return { success: true, redirectTo: returnUrl || '/dashboard' };
+  // Return success message - user needs to check email
+  return { 
+    success: true, 
+    message: 'Check your email for a magic link to sign in',
+    email: email.trim().toLowerCase(),
+  };
 }
 
 export async function signUp(prevState: any, formData: FormData) {
   const origin = formData.get('origin') as string;
   const email = formData.get('email') as string;
-  const password = formData.get('password') as string;
-  const confirmPassword = formData.get('confirmPassword') as string;
   const returnUrl = formData.get('returnUrl') as string | undefined;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
 
@@ -45,63 +52,35 @@ export async function signUp(prevState: any, formData: FormData) {
     return { message: 'Please enter a valid email address' };
   }
 
-  if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
-  }
-
-  if (password !== confirmPassword) {
-    return { message: 'Passwords do not match' };
+  if (!acceptedTerms) {
+    return { message: 'Please accept the terms and conditions' };
   }
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
+  // Use magic link (passwordless) authentication - auto-creates account
+  // Pass terms acceptance as query parameter so callback can save it
+  const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
+  const emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${termsParam}`;
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim().toLowerCase(),
     options: {
-      emailRedirectTo: `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}`,
-      data: {
-        // Save terms acceptance date if checkbox was checked (only first time)
-        ...(acceptedTerms ? { terms_accepted_at: new Date().toISOString() } : {}),
-      },
+      emailRedirectTo,
+      shouldCreateUser: true, // Auto-create account if doesn't exist
     },
   });
 
   if (error) {
-    return { message: error.message || 'Could not create account' };
+    return { message: error.message || 'Could not send magic link' };
   }
 
-  // Welcome email is now sent automatically by Supabase database trigger
-  // See: backend/supabase/migrations/20251113000000_welcome_email_webhook.sql
-
-  const { error: signInError, data: signInData } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (signInError) {
+  // Return success message - user needs to check email
     return {
-      message:
-        'Account created! Check your email to confirm your registration.',
+    success: true, 
+    message: 'Check your email for a magic link to complete sign up',
+    email: email.trim().toLowerCase(),
     };
-  }
-
-  // If user accepted terms and successfully signed in, update metadata (only if not already set)
-  if (acceptedTerms && signInData.user) {
-    const currentMetadata = signInData.user.user_metadata || {};
-    // Only update if terms_accepted_at is not already set (first time only)
-    if (!currentMetadata.terms_accepted_at) {
-      await supabase.auth.updateUser({
-        data: {
-          ...currentMetadata,
-          terms_accepted_at: new Date().toISOString(),
-        },
-      });
-    }
-  }
-
-  // Use client-side navigation instead of server-side redirect
-  return { success: true, redirectTo: returnUrl || '/dashboard' };
 }
 
 export async function forgotPassword(prevState: any, formData: FormData) {

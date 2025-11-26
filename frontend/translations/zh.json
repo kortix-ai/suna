@@ -494,6 +494,7 @@
   "auth": {
     "logIntoAccount": "登录你的账户",
     "createAccount": "创建账号",
+    "signInOrCreateAccount": "登录或创建您的Kortix账户",
     "continueWithGoogle": "使用 Google 继续",
     "continueWithGitHub": "使用 GitHub 继续",
     "orEmail": "或邮箱",
@@ -521,7 +522,13 @@
     "cancel": "取消",
     "pleaseEnterValidEmail": "请输入有效的邮箱地址",
     "signInFailed": "登录失败，请检查你的账号信息",
-    "signUpFailed": "注册失败，请重试"
+    "signUpFailed": "注册失败，请重试",
+    "sendMagicLink": "发送魔法链接",
+    "sending": "发送中...",
+    "magicLinkSent": "我们已向以下地址发送魔法链接",
+    "magicLinkDescription": "点击邮件中的链接以登录。链接将在1小时后过期。",
+    "magicLinkExplanation": "我们将向您发送一个安全的登录链接。无需密码。",
+    "byContinuingYouAgree": "继续即表示您同意我们的<privacyPolicy>隐私政策</privacyPolicy>和<termsOfService>服务条款</termsOfService>"
   },
   "onboarding": {
     "welcome": "欢迎",

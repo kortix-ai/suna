@@ -529,6 +529,7 @@
   "auth": {
     "logIntoAccount": "Log into your account",
     "createAccount": "Create account",
+    "signInOrCreateAccount": "Sign in or create your Kortix account",
     "continueWithGoogle": "Continue with Google",
     "continueWithGitHub": "Continue with GitHub",
     "orEmail": "or email",
@@ -556,7 +557,13 @@
     "cancel": "Cancel",
     "pleaseEnterValidEmail": "Please enter a valid email address",
     "signInFailed": "Sign in failed. Check your credentials.",
-    "signUpFailed": "Sign up failed. Please try again."
+    "signUpFailed": "Sign up failed. Please try again.",
+    "sendMagicLink": "Send magic link",
+    "sending": "Sending...",
+    "magicLinkSent": "We sent a magic link to",
+    "magicLinkDescription": "Click the link in your email to sign in. The link will expire in 1 hour.",
+    "magicLinkExplanation": "We'll send you a secure link to sign in. No password needed.",
+    "byContinuingYouAgree": "By continuing, you agree to our <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>"
   },
   "onboarding": {
     "welcome": "Welcome",
