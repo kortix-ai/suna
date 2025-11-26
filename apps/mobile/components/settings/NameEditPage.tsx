@@ -25,7 +25,6 @@ interface NameEditPageProps {
   currentName: string;
   onClose: () => void;
   onNameUpdated?: (newName: string) => void;
-  isGuestMode?: boolean;
 }
 
 export function NameEditPage({ 
@@ -33,7 +32,6 @@ export function NameEditPage({
   currentName, 
   onClose,
   onNameUpdated,
-  isGuestMode = false
 }: NameEditPageProps) {
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
@@ -69,24 +67,8 @@ export function NameEditPage({
     return null;
   };
   
-  const handleInputFocus = () => {
-    if (isGuestMode) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      inputRef.current?.blur();
-      useAuthDrawerStore.getState().openAuthDrawer({
-        title: 'Sign up to continue',
-        message: 'Create an account to customize your profile'
-      });
-    }
-  };
-
   const handleSave = async () => {
     console.log('🎯 Save name pressed');
-    
-    if (isGuestMode) {
-      handleInputFocus();
-      return;
-    }
     
     const trimmedName = name.trim();
     const validationError = validateName(trimmedName);
@@ -198,16 +180,13 @@ export function NameEditPage({
                   ref={inputRef}
                   value={name}
                   onChangeText={(text) => {
-                    if (!isGuestMode) {
-                      setName(text);
-                      setError(null);
-                    }
+                    setName(text);
+                    setError(null);
                   }}
-                  onFocus={handleInputFocus}
                   placeholder={t('nameEdit.yourNamePlaceholder')}
                   placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
                   className="text-3xl font-roobert-semibold text-foreground text-center tracking-tight"
-                  editable={!isLoading && !isGuestMode}
+                  editable={!isLoading}
                   maxLength={100}
                   autoCapitalize="words"
                   autoCorrect={false}
@@ -249,14 +228,12 @@ export function NameEditPage({
               </View>
             </View>
 
-            {!isGuestMode && (
-              <SaveButton
-                onPress={handleSave}
-                disabled={!hasChanges || isLoading}
-                isLoading={isLoading}
-                hasChanges={hasChanges}
-              />
-            )}
+            <SaveButton
+              onPress={handleSave}
+              disabled={!hasChanges || isLoading}
+              isLoading={isLoading}
+              hasChanges={hasChanges}
+            />
           </View>
           <View className="h-20" />
         </ScrollView>

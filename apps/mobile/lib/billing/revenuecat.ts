@@ -35,6 +35,18 @@ export interface RevenueCatSubscriptionInfo {
 }
 
 let isConfigured = false;
+let initializationPromise: Promise<void> | null = null;
+let customerInfoListenerAdded = false;
+
+async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
+  try {
+    // Try to get customer info - if this succeeds, RevenueCat is already configured
+    await Purchases.getCustomerInfo();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function logoutRevenueCat(): Promise<void> {
   try {
@@ -43,11 +55,15 @@ export async function logoutRevenueCat(): Promise<void> {
     const wasAnonymous = customerInfo.originalAppUserId.startsWith('$RCAnonymousID:');
     await Purchases.logOut();
     isConfigured = false;
+    initializationPromise = null;
+    customerInfoListenerAdded = false;
     console.log('✅ RevenueCat logout successful');
     console.log(`🔓 ${wasAnonymous ? 'Anonymous' : 'User'} subscription detached from device`);
   } catch (error) {
     console.error('❌ Error logging out from RevenueCat:', error);
     isConfigured = false;
+    initializationPromise = null;
+    customerInfoListenerAdded = false;
   }
 }
 
@@ -68,7 +84,50 @@ export async function setRevenueCatAttributes(email?: string, displayName?: stri
 }
 
 export async function initializeRevenueCat(userId: string, email?: string, canTrack: boolean = false): Promise<void> {
-  if (isConfigured) {
+  // If already configured, just update email if needed and return
+  if (isConfigured || (await isRevenueCatAlreadyConfigured())) {
+    console.log('ℹ️ RevenueCat already configured, updating attributes if needed...');
+    isConfigured = true;
+    
+    // Update email if provided and tracking is enabled
+    if (email && canTrack) {
+      try {
+        await Purchases.setEmail(email);
+        console.log('✅ Email updated:', email);
+      } catch (emailError) {
+        console.warn('⚠️ Could not update email:', emailError);
+      }
+    }
+    
+    // Add listener if tracking is enabled and listener hasn't been added yet
+    if (canTrack && !customerInfoListenerAdded) {
+      Purchases.addCustomerInfoUpdateListener((customerInfo) => {
+        console.log('📱 Customer info updated:', customerInfo);
+        notifyBackendOfPurchase(customerInfo);
+      });
+      customerInfoListenerAdded = true;
+      console.log('✅ Customer info update listener added');
+    }
+    
+    // Update user ID if it changed
+    try {
+      const currentInfo = await Purchases.getCustomerInfo();
+      if (currentInfo.originalAppUserId !== userId) {
+        console.log('🔄 User ID changed, logging in with new ID...');
+        await Purchases.logIn(userId);
+        console.log('✅ User ID updated successfully');
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not update user ID:', error);
+    }
+    
+    return;
+  }
+
+  // If initialization is in progress, wait for it to complete
+  if (initializationPromise) {
+    console.log('⏳ RevenueCat initialization already in progress, waiting...');
+    await initializationPromise;
     return;
   }
 
@@ -78,6 +137,8 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
     throw new Error('RevenueCat API key not configured');
   }
 
+  // Create a promise that will be shared by concurrent calls
+  initializationPromise = (async () => {
   try {
     console.log('🚀 Initializing RevenueCat...');
     console.log('👤 User ID:', userId);
@@ -106,13 +167,17 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
       console.warn('⚠️ No email provided to RevenueCat');
     }
     
-    if (canTrack) {
+      if (canTrack && !customerInfoListenerAdded) {
       Purchases.addCustomerInfoUpdateListener((customerInfo) => {
         console.log('📱 Customer info updated:', customerInfo);
         notifyBackendOfPurchase(customerInfo);
       });
+        customerInfoListenerAdded = true;
+        console.log('✅ Customer info update listener added');
+      } else if (!canTrack) {
+        console.log('⚠️ Analytics listener not added (tracking disabled)');
     } else {
-      console.log('⚠️ Analytics listener not added (tracking disabled)');
+        console.log('ℹ️ Customer info listener already added');
     }
 
     isConfigured = true;
@@ -120,8 +185,13 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
     console.log('🔒 SECURITY: Subscription is now locked to this account');
   } catch (error) {
     console.error('❌ Error initializing RevenueCat:', error);
+      isConfigured = false;
+      initializationPromise = null;
     throw error;
   }
+  })();
+
+  await initializationPromise;
 }
 
 export async function getOfferings(forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
@@ -247,7 +317,34 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
       }
     }
     
-    const { customerInfo } = await Purchases.purchasePackage(pkg);
+    let customerInfo: CustomerInfo;
+    try {
+      const result = await Purchases.purchasePackage(pkg);
+      customerInfo = result.customerInfo;
+    } catch (purchaseError: any) {
+      // RevenueCat logs purchase cancellations as errors internally, but they're not real errors
+      // Check for user cancellation using multiple possible indicators
+      const isUserCancelled = 
+        purchaseError.userCancelled === true ||
+        purchaseError.code === 'PURCHASE_CANCELLED' ||
+        purchaseError.code === 'USER_CANCELLED' ||
+        purchaseError.code === 'PURCHASES_ERROR' && purchaseError.underlyingErrorMessage?.includes('cancelled') ||
+        (purchaseError.message && purchaseError.message.toLowerCase().includes('cancelled')) ||
+        (purchaseError.underlyingErrorMessage && purchaseError.underlyingErrorMessage.toLowerCase().includes('cancelled'));
+
+      if (isUserCancelled) {
+        // User cancellation is expected behavior - create a clean error without stack trace issues
+        console.log('🚫 User cancelled purchase');
+        const cancelledError: any = Error('Purchase was cancelled by user');
+        cancelledError.userCancelled = true;
+        cancelledError.code = 'USER_CANCELLED';
+        cancelledError.name = 'PurchaseCancelledError';
+        // Prevent stack trace issues by not including the original error
+        throw cancelledError;
+      }
+      // Re-throw other errors as-is
+      throw purchaseError;
+    }
     
     console.log('✅ Purchase successful');
     console.log('📊 Customer Info - Original App User ID:', customerInfo.originalAppUserId);
@@ -256,8 +353,10 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
     
     return customerInfo;
   } catch (error: any) {
-    if (error.userCancelled) {
+    // Final error handling - check again in case error was re-thrown
+    if (error.userCancelled || error.code === 'USER_CANCELLED') {
       console.log('🚫 User cancelled purchase');
+      // Don't log as error - it's expected behavior
     } else {
       console.error('❌ Purchase error:', error);
     }

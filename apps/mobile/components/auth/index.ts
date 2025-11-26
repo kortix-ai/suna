@@ -1,5 +1,2 @@
-export { GuestAuthGate } from './GuestAuthGate';
-export { GuestModeConsent } from './GuestModeConsent';
-export { AuthDrawer } from './AuthDrawer';
+export { EmailAuthDrawer } from './EmailAuthDrawer';
 export * from './types';
-

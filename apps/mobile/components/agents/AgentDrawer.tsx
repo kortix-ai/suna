@@ -374,7 +374,7 @@ export function AgentDrawer({
             borderOpacity: 0.5,
           }
         ]}
-        className="flex-1 h-16 flex-row gap-2 mt-4 rounded-full items-center justify-center"
+        className="flex-1 h-16 flex-row gap-2 mt-4 rounded-2xl items-center justify-center"
         onPress={handleIntegrationsPress}
         onPressIn={handleIntegrationsPressIn}
         onPressOut={handleIntegrationsPressOut}

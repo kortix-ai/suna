@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Platform, Pressable } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import * as React from 'react';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -99,9 +100,16 @@ type ButtonProps = React.ComponentProps<typeof Pressable> &
 
 function Button({ className, variant, size, onPressIn, onPressOut, ...props }: ButtonProps) {
   const scale = useSharedValue(1);
+  const opacity = useSharedValue(1);
+  
+  // Initialize opacity based on disabled state
+  React.useEffect(() => {
+    opacity.value = props.disabled ? 0.5 : 1;
+  }, [props.disabled, opacity]);
   
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    opacity: opacity.value,
   }));
 
   const handlePressIn = (e: any) => {
@@ -119,7 +127,7 @@ function Button({ className, variant, size, onPressIn, onPressOut, ...props }: B
   return (
     <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
       <AnimatedPressable
-        className={cn(props.disabled && 'opacity-50', buttonVariants({ variant, size }), className)}
+        className={cn(buttonVariants({ variant, size }), className)}
         role="button"
         style={animatedStyle}
         onPressIn={handlePressIn}

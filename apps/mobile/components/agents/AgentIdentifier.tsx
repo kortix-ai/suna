@@ -16,7 +16,6 @@ import { useAgent } from '@/contexts/AgentContext';
 import { useColorScheme } from 'nativewind';
 import type { Agent } from '@/api/types';
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import { useGuestMode } from '@/contexts';
 
 interface AgentIdentifierProps extends ViewProps {
   agentId?: string | null;
@@ -36,7 +35,6 @@ function AgentIdentifierComponent({
   ...props
 }: AgentIdentifierProps) {
   const { agents, selectedAgentId } = useAgent();
-  const { isGuestMode } = useGuestMode();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   
@@ -50,9 +48,6 @@ function AgentIdentifierComponent({
 
   // Memoize agent lookup to avoid recalculation
   const agent = useMemo(() => {
-    if (isGuestMode) {
-      return null;
-    }
     if (providedAgent) return providedAgent;
     if (agentId) {
       const found = agents.find(a => a.agent_id === agentId);
@@ -60,29 +55,7 @@ function AgentIdentifierComponent({
     }
     const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
     return selectedAgent || agents[0] || null;
-  }, [agentId, providedAgent, agents, selectedAgentId, isGuestMode]);
-
-  if (isGuestMode) {
-    return (
-      <View 
-        className="flex-row items-center gap-1.5"
-        style={style}
-        {...props}
-      >
-        <View className="rounded-md bg-primary items-center justify-center" style={{ width: size, height: size }}>
-          <KortixLogo size={size * 0.55} variant="symbol" color={isDark ? 'light' : 'dark'} />
-        </View>
-        {showName && (
-          <Text 
-            className={`${textSizeClass} font-medium opacity-50`} 
-            style={{ color: isDark ? '#f8f8f8' : '#121215' }}
-          >
-            Suna
-          </Text>
-        )}
-      </View>
-    );
-  }
+  }, [agentId, providedAgent, agents, selectedAgentId]);
 
   if (!agent) {
     return (

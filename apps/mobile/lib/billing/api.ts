@@ -234,13 +234,20 @@ async function fetchApi<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
+    const errorData = await response.json().catch(() => ({ message: response.statusText }));
+    
+    // Only log non-auth errors (401/403 are expected when not authenticated)
+    if (response.status !== 401 && response.status !== 403) {
     console.error('❌ Billing API Error:', {
       endpoint,
       status: response.status,
-      error,
+        error: errorData,
     });
-    throw new Error(error.detail?.message || error.message || `HTTP ${response.status}`);
+    }
+    
+    // Include status code in error message for retry logic
+    const errorMessage = errorData.detail?.message || errorData.detail || errorData.message || response.statusText;
+    throw new Error(`HTTP ${response.status}: ${errorMessage}`);
   }
 
   return response.json();

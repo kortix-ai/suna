@@ -54,7 +54,6 @@ interface ChatInputProps extends ViewProps {
   isAgentRunning?: boolean;
   isSendingMessage?: boolean;
   isTranscribing?: boolean;
-  isGuestMode?: boolean;
 }
 
 // Format duration as M:SS - pure function outside component
@@ -103,7 +102,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   isAgentRunning = false,
   isSendingMessage = false,
   isTranscribing = false,
-  isGuestMode = false,
   style,
   ...props
 }, ref) => {
@@ -290,10 +288,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     } else {
       // Start audio recording
       if (!isAuthenticated) {
-        useAuthDrawerStore.getState().openAuthDrawer({
-          title: t('auth.drawer.signInToChat'),
-          message: t('auth.drawer.signInToChatMessage')
-        });
+        useAuthDrawerStore.getState().openAuthDrawer();
         return;
       }
       onAudioRecord?.();
@@ -391,7 +386,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
             isAuthenticated={isAuthenticated}
-            isGuestMode={isGuestMode}
             t={t}
           />
         )}
@@ -492,7 +486,6 @@ interface NormalModeProps {
   buttonIconSize: number;
   buttonIconClass: string;
   isAuthenticated: boolean;
-  isGuestMode: boolean;
   t: (key: string) => string;
 }
 
@@ -525,7 +518,6 @@ const NormalMode = React.memo(({
   buttonIconSize,
   buttonIconClass,
   isAuthenticated,
-  isGuestMode,
   t,
 }: NormalModeProps) => (
   <>
@@ -542,10 +534,7 @@ const NormalMode = React.memo(({
             if (!isAuthenticated) {
               textInputRef.current?.blur();
               setTimeout(() => {
-                useAuthDrawerStore.getState().openAuthDrawer({
-                  title: t('auth.drawer.signInToChat'),
-                  message: t('auth.drawer.signInToChatMessage')
-                });
+                useAuthDrawerStore.getState().openAuthDrawer();
               }, 100);
             }
           }}
@@ -568,10 +557,7 @@ const NormalMode = React.memo(({
           onPressOut={onAttachPressOut}
           onPress={() => {
             if (!isAuthenticated) {
-              useAuthDrawerStore.getState().openAuthDrawer({
-                title: t('auth.drawer.signInToChat'),
-                message: t('auth.drawer.signInToChatMessage')
-              });
+              useAuthDrawerStore.getState().openAuthDrawer();
             } else {
               onAttachPress?.();
             }
@@ -596,11 +582,7 @@ const NormalMode = React.memo(({
 
       <View className="flex-row items-center gap-2">
         <AgentSelector 
-          isGuestMode={isGuestMode}
-          onPress={isGuestMode ? () => useAuthDrawerStore.getState().openAuthDrawer({ 
-            title: t('auth.drawer.signUpToContinue'), 
-            message: t('auth.drawer.signUpToContinueMessage') 
-          }) : onAgentPress} 
+          onPress={onAgentPress} 
           compact={false} 
         />
 

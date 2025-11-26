@@ -92,20 +92,33 @@ export function invalidateCreditsAfterPurchase(queryClient: QueryClient) {
 // Query Hooks
 // ============================================================================
 
+// Don't retry on auth errors (401/403)
+const shouldRetry = (failureCount: number, error: Error) => {
+  const message = error.message || '';
+  if (message.includes('401') || message.includes('403') || message.includes('authentication')) {
+    return false;
+  }
+  return failureCount < 2;
+};
+
 export function useSubscription(options?: {
   enabled?: boolean;
   staleTime?: number;
   refetchOnMount?: boolean;
   refetchOnWindowFocus?: boolean;
 }) {
+  const enabled = options?.enabled ?? true;
+  
   return useQuery<SubscriptionInfo>({
     queryKey: billingKeys.subscription(),
     queryFn: () => billingApi.getSubscription(),
+    enabled, // When false, query won't run at all
     staleTime: 1000 * 60 * 10,
     gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
-    refetchOnReconnect: true,
+    refetchOnReconnect: false,
+    retry: enabled ? shouldRetry : false, // Don't retry if disabled
     ...options,
   });
 }
@@ -113,14 +126,18 @@ export function useSubscription(options?: {
 export function useCreditBalance(
   options?: Omit<UseQueryOptions<CreditBalance, Error>, 'queryKey' | 'queryFn'>
 ) {
+  const enabled = options?.enabled ?? true;
+  
   return useQuery<CreditBalance>({
     queryKey: billingKeys.balance(),
     queryFn: () => billingApi.getCreditBalance(),
-    staleTime: 1000 * 60 * 5, // 5 minutes - increased from 30 seconds
-    gcTime: 1000 * 60 * 10, // 10 minutes cache time
-    refetchOnWindowFocus: false, // Don't refetch on window focus
-    refetchOnMount: false, // Don't refetch on mount if data is fresh
-    refetchOnReconnect: true, // Only refetch on reconnect
+    enabled, // When false, query won't run at all
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    retry: enabled ? shouldRetry : false, // Don't retry if disabled
     ...options,
   });
 }
@@ -128,13 +145,17 @@ export function useCreditBalance(
 export function useBillingStatus(
   options?: Omit<UseQueryOptions<BillingStatus, Error>, 'queryKey' | 'queryFn'>
 ) {
+  const enabled = options?.enabled ?? true;
+  
   return useQuery<BillingStatus>({
     queryKey: billingKeys.status(),
     queryFn: () => billingApi.checkBillingStatus(),
-    staleTime: 1000 * 60 * 5, // 5 minutes - increased from 30 seconds
-    gcTime: 1000 * 60 * 10, // 10 minutes cache time
+    enabled, // When false, query won't run at all
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
+    retry: enabled ? shouldRetry : false, // Don't retry if disabled
     ...options,
   });
 }

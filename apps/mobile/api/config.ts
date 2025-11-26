@@ -29,8 +29,11 @@ export function getServerUrl(): string {
  * Used for auth redirects, sharing links, etc.
  * 
  * Priority:
- * 1. EXPO_PUBLIC_FRONTEND_URL if set
- * 2. Environment-based defaults
+ * 1. EXPO_PUBLIC_FRONTEND_URL if set (explicit override)
+ * 2. Environment-based defaults (staging by default for Expo apps)
+ * 
+ * Note: Defaults to staging since localhost doesn't work on physical devices.
+ * Set EXPO_PUBLIC_ENV_MODE=local explicitly if you want localhost (simulator only).
  */
 export function getFrontendUrl(): string {
   // If explicitly set, use that

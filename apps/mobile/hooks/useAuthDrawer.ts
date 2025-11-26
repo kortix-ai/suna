@@ -33,7 +33,7 @@ export function useAuthDrawer() {
       }
       
       console.log('🔐 Authentication required - navigating to sign in');
-      router.push('/auth');
+      router.replace('/auth'); // Use replace to prevent back navigation
       return false;
     },
     [isAuthenticated, router]

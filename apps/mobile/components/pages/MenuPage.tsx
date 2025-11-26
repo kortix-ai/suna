@@ -36,7 +36,6 @@ import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
 import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
-import { useGuestMode } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -237,7 +236,7 @@ function NewChatButton({ onPress }: NewChatButtonProps) {
       onPressOut={() => {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
-      className="h-14 w-full rounded-full bg-primary flex-row items-center justify-center gap-2"
+      className="h-14 w-full rounded-2xl bg-primary flex-row items-center justify-center gap-2"
     >
       <Icon
         as={Plus}
@@ -396,7 +395,6 @@ export function MenuPage({
   const router = useRouter();
   const { agents } = useAgent();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
-  const { isGuestMode } = useGuestMode();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
@@ -610,21 +608,7 @@ export function MenuPage({
             >
               {activeTab === 'chats' && (
                 <>
-                  {isGuestMode ? (
-                    <EmptyState
-                      type="empty"
-                      icon={MessageSquare}
-                      title="Sign up to save conversations"
-                      description="Create an account to keep your chat history and access it across devices"
-                      actionLabel="Sign Up"
-                      onActionPress={() => {
-                        useAuthDrawerStore.getState().openAuthDrawer({
-                          title: 'Sign up to continue',
-                          message: 'Create an account to save your conversations and access them from anywhere'
-                        });
-                      }}
-                    />
-                  ) : isLoadingThreads ? (
+                  {isLoadingThreads ? (
                     <EmptyState
                       type="loading"
                       icon={MessageSquare}
