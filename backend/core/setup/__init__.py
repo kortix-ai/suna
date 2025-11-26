@@ -9,7 +9,7 @@ Handles account initialization for new users:
 All initialization happens automatically via database webhook on user signup.
 """
 
-from .api import router, webhook_router, initialize_user_account
+from .api import webhook_router, initialize_user_account
 
-__all__ = ['router', 'webhook_router', 'initialize_user_account']
+__all__ = ['webhook_router', 'initialize_user_account']
 

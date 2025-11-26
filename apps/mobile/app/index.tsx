@@ -71,12 +71,9 @@ export default function SplashScreen() {
 
       // User is authenticated
       // Account initialization happens automatically via webhook on signup.
-      // Most users will have a subscription by now. Only show setting-up
-      // as a fallback if webhook failed or user signed up before this change.
-      if (!hasActiveSubscription) {
-        console.log('🚀 → /setting-up (fallback: no subscription detected)');
-        router.replace('/setting-up');
-      } else if (!hasCompletedOnboarding) {
+      // If no subscription yet, webhook is still processing - proceed to onboarding/home.
+      // The webhook will complete initialization in the background.
+      if (!hasCompletedOnboarding) {
         console.log('🚀 → /onboarding');
         router.replace('/onboarding');
       } else {
