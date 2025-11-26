@@ -39,3 +39,6 @@ class Subscription:
     def days_until_renewal(self) -> int:
         delta = self.current_period_end - datetime.utcnow()
         return max(0, delta.days)
+
+
+

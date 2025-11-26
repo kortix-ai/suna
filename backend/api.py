@@ -227,6 +227,9 @@ api_router.include_router(triggers_api.router)
 
 api_router.include_router(notifications_api.router)
 
+from core.notifications import presence_api
+api_router.include_router(presence_api.router)
+
 from core.composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
 

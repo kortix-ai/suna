@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useParams } from 'next/navigation';
 import { FloatingMobileMenuButton } from '@/components/sidebar/sidebar-left';
 import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
@@ -11,6 +12,7 @@ import { useApiHealth } from '@/hooks/usage/use-health';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { StatusOverlay } from '@/components/ui/status-overlay';
 import { useAdminRole } from '@/hooks/admin';
+import { usePresence } from '@/hooks/use-presence';
 
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
@@ -26,6 +28,11 @@ export default function DashboardLayoutContent({
   children,
 }: DashboardLayoutContentProps) {
   const { user, isLoading } = useAuth();
+  const params = useParams();
+  const threadId = params?.threadId as string | undefined;
+  
+  usePresence(threadId);
+  
   const { data: accounts } = useAccounts({ enabled: !!user });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const router = useRouter();

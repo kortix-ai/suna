@@ -23,11 +23,18 @@ import {
     Info,
     FileText,
     Plug,
+    Bell,
+    Mail,
+    Smartphone,
+    AppWindow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
+import { backendApi } from '@/lib/api-client';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Switch } from '@/components/ui/switch';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
 import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
@@ -222,8 +229,15 @@ export function UserSettingsModal({
     );
 }
 
+interface NotificationSettings {
+    email_enabled: boolean;
+    push_enabled: boolean;
+    in_app_enabled: boolean;
+}
+
 function GeneralTab({ onClose }: { onClose: () => void }) {
     const t = useTranslations('settings.general');
+    const tNotifications = useTranslations('notifications');
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
@@ -234,11 +248,55 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
     const supabase = createClient();
+    const queryClient = useQueryClient();
+    const [localSettings, setLocalSettings] = useState<NotificationSettings | null>(null);
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
     const cancelDeletion = useCancelAccountDeletion();
     const deleteImmediately = useDeleteAccountImmediately();
+
+    const { data: notificationSettings } = useQuery({
+        queryKey: ['notification-settings'],
+        queryFn: async () => {
+            const response = await backendApi.get<{ settings: NotificationSettings }>('/notifications/settings');
+            if (!response.success || !response.data) {
+                throw new Error('Failed to fetch notification settings');
+            }
+            return response.data.settings;
+        },
+    });
+
+    useEffect(() => {
+        if (notificationSettings) {
+            setLocalSettings(notificationSettings);
+        }
+    }, [notificationSettings]);
+
+    const updateNotificationsMutation = useMutation({
+        mutationFn: async (updates: Partial<NotificationSettings>) => {
+            const response = await backendApi.put('/notifications/settings', updates);
+            if (!response.success) {
+                throw new Error('Failed to update notification settings');
+            }
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notification-settings'] });
+            toast.success(tNotifications('settingsUpdated'));
+        },
+        onError: () => {
+            toast.error(tNotifications('settingsFailed'));
+            if (notificationSettings) {
+                setLocalSettings(notificationSettings);
+            }
+        },
+    });
+
+    const handleNotificationToggle = (key: keyof NotificationSettings, value: boolean) => {
+        setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
+        updateNotificationsMutation.mutate({ [key]: value });
+    };
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -351,6 +409,44 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     <LanguageSwitcher />
                 </div>
             </div>
+
+            {localSettings && (
+                <div className="space-y-4 pt-6 border-t">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Bell className="h-4 w-4 text-muted-foreground" />
+                            <h4 className="text-sm font-medium">{tNotifications('title')}</h4>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-4">
+                            {tNotifications('description')}
+                        </p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <NotificationToggle
+                            icon={Mail}
+                            label={tNotifications('emailNotifications')}
+                            description={tNotifications('emailDescription')}
+                            enabled={localSettings.email_enabled}
+                            onToggle={(value) => handleNotificationToggle('email_enabled', value)}
+                        />
+                        <NotificationToggle
+                            icon={Smartphone}
+                            label={tNotifications('pushNotifications')}
+                            description={tNotifications('pushDescription')}
+                            enabled={localSettings.push_enabled}
+                            onToggle={(value) => handleNotificationToggle('push_enabled', value)}
+                        />
+                        <NotificationToggle
+                            icon={AppWindow}
+                            label={tNotifications('inAppNotifications')}
+                            description={tNotifications('inAppDescription')}
+                            enabled={localSettings.in_app_enabled}
+                            onToggle={(value) => handleNotificationToggle('in_app_enabled', value)}
+                        />
+                    </div>
+                </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-4">
                 <Button
@@ -554,6 +650,37 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     </AlertDialog>
                 </>
             )}
+        </div>
+    );
+}
+
+interface NotificationToggleProps {
+    icon: React.ElementType;
+    label: string;
+    description: string;
+    enabled: boolean;
+    onToggle: (value: boolean) => void;
+}
+
+function NotificationToggle({ icon: Icon, label, description, enabled, onToggle }: NotificationToggleProps) {
+    return (
+        <div className="flex items-start justify-between gap-4 py-3 border-b last:border-0">
+            <div className="flex items-start gap-3 flex-1">
+                <Icon className="w-4 h-4 text-muted-foreground mt-0.5" />
+                <div className="space-y-0.5 flex-1">
+                    <Label htmlFor={label} className="text-sm font-medium cursor-pointer">
+                        {label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                        {description}
+                    </p>
+                </div>
+            </div>
+            <Switch
+                id={label}
+                checked={enabled}
+                onCheckedChange={onToggle}
+            />
         </div>
     );
 }

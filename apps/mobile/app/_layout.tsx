@@ -4,6 +4,7 @@ import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
 import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, GuestModeProvider, TrackingProvider, useAuthContext, useGuestMode } from '@/contexts';
+import { usePresence } from '@/hooks/usePresence';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
@@ -224,6 +225,10 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isGuestMode, isLoading: guestLoading } = useGuestMode();
   const segments = useSegments();
   const router = useRouter();
+  
+  const segmentsArray = segments as string[];
+  const threadId = (segmentsArray.length > 3 && segmentsArray[2] === 'thread') ? segmentsArray[3] : undefined;
+  usePresence(threadId);
 
   useEffect(() => {
     if (authLoading || guestLoading) return;

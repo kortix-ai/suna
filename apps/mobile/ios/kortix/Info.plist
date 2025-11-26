@@ -33,6 +33,12 @@
           <string>com.kortix.app</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>exp+kortix</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>
@@ -57,6 +63,8 @@
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>
     </array>
+    <key>NSUserNotificationsUsageDescription</key>
+    <string>We'll send you notifications about important updates, agent runs, and task completions so you stay informed about your work.</string>
     <key>NSUserTrackingUsageDescription</key>
     <string>This app uses analytics to improve your experience and understand how features are used. Your data helps us make the app better for everyone.</string>
     <key>RCTNewArchEnabled</key>

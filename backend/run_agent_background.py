@@ -375,18 +375,20 @@ async def run_agent_background(
              await redis.publish(response_channel, "new")
              
              try:
-                 from core.notifications.notification_service import notification_service
-                 thread_info = await client.table('threads').select('account_id').eq('thread_id', thread_id).maybe_single().execute()
-                 if thread_info and thread_info.data:
-                     account_id = thread_info.data.get('account_id')
-                     if account_id:
-                         await notification_service.send_task_completion_notification(
-                             user_id=account_id,
-                             task_name=agent_config.get('name', 'Task') if agent_config else 'Task',
-                             thread_id=thread_id,
-                             agent_name=agent_config.get('name') if agent_config else None,
-                             result_summary="Task completed successfully"
-                         )
+                from core.notifications.notification_service import notification_service
+                thread_info = await client.table('threads').select('account_id').eq('thread_id', thread_id).maybe_single().execute()
+                if thread_info and thread_info.data:
+                    user_id = thread_info.data.get('account_id')
+                    if user_id:
+                        notification_data = await get_thread_data(client, thread_id)
+                        result = await notification_service.send_task_completion_notification(
+                            user_id=user_id,
+                            task_name=notification_data['task_name'],
+                            thread_id=thread_id,
+                            agent_name=agent_config.get('name') if agent_config else None,
+                            result_summary="Task completed successfully"
+                        )
+                        logger.info(f"Task completion notification result: {result}")
              except Exception as notif_error:
                  logger.warning(f"Failed to send completion notification: {notif_error}")
 
@@ -405,13 +407,16 @@ async def run_agent_background(
                 if thread_info and thread_info.data:
                     user_id = thread_info.data.get('account_id')
                     if user_id:
-                        await notification_service.send_task_failed_notification(
+                        notification_data = await get_thread_notification_data(client, thread_id)
+                        result = await notification_service.send_task_failed_notification(
                             user_id=user_id,
-                            task_name=agent_config.get('name', 'Task') if agent_config else 'Task',
-                            task_url=f"/thread/{thread_id}",
+                            task_name=notification_data['task_name'],
+                            task_url=notification_data['task_url'],
                             failure_reason=error_message,
-                            first_name='User'
+                            first_name='User',
+                            thread_id=thread_id
                         )
+                        logger.info(f"Task failed notification result: {result}")
             except Exception as notif_error:
                 logger.warning(f"Failed to send failure notification: {notif_error}")
 
@@ -438,13 +443,16 @@ async def run_agent_background(
             if thread_info and thread_info.data:
                 user_id = thread_info.data.get('account_id')
                 if user_id:
-                    await notification_service.send_task_failed_notification(
+                    notification_data = await get_thread_data(client, thread_id)
+                    result = await notification_service.send_task_failed_notification(
                         user_id=user_id,
-                        task_name=agent_config.get('name', 'Task') if agent_config else 'Task',
-                        task_url=f"/thread/{thread_id}",
+                        task_name=notification_data['task_name'],
+                        task_url=notification_data['task_url'],
                         failure_reason=error_message,
-                        first_name='User'
+                        first_name='User',
+                        thread_id=thread_id
                     )
+                    logger.info(f"Task exception notification result: {result}")
         except Exception as notif_error:
             logger.warning(f"Failed to send failure notification: {notif_error}")
 
@@ -543,6 +551,29 @@ async def _cleanup_redis_response_list(agent_run_id: str):
         # logger.debug(f"Set TTL ({REDIS_RESPONSE_LIST_TTL}s) on response list: {response_list_key}")
     except Exception as e:
         logger.warning(f"Failed to set TTL on response list {response_list_key}: {str(e)}")
+
+async def get_thread_data(client, thread_id: str) -> dict:
+    try:
+        thread_info = await client.table('threads').select('project_id').eq('thread_id', thread_id).maybe_single().execute()
+        if thread_info and thread_info.data:
+            project_id = thread_info.data.get('project_id')
+            if project_id:
+                project_info = await client.table('projects').select('name').eq('project_id', project_id).maybe_single().execute()
+                task_name = 'Task'
+                if project_info and project_info.data:
+                    task_name = project_info.data.get('name', 'Task')
+                
+                return {
+                    'task_name': task_name,
+                    'task_url': f"/projects/{project_id}/thread/{thread_id}"
+                }
+    except Exception as e:
+        logger.warning(f"Failed to get notification data for thread {thread_id}: {e}")
+    
+    return {
+        'task_name': 'Task',
+        'task_url': f"/thread/{thread_id}"
+    }
 
 async def update_agent_run_status(
     client,

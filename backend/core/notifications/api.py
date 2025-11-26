@@ -49,7 +49,7 @@ class SendNotificationRequest(BaseModel):
 async def get_notification_settings(current_user: dict = Depends(get_current_user)):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('id')
+        user_id = current_user.get('user_id')
         settings = await notification_service.get_user_notification_settings(user_id)
         
         if not settings:
@@ -69,7 +69,7 @@ async def update_notification_settings(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('id')
+        user_id = current_user.get('user_id')
         
         update_data = {k: v for k, v in settings_update.dict().items() if v is not None}
         
@@ -103,7 +103,7 @@ async def register_device_token(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('id')
+        user_id = current_user.get('user_id')
         
         success = await notification_service.register_device_token(
             user_id=user_id,
@@ -134,7 +134,7 @@ async def unregister_device_token(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('id')
+        user_id = current_user.get('user_id')
         
         success = await notification_service.unregister_device_token(
             user_id=user_id,
@@ -163,7 +163,7 @@ async def send_test_notification(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('id')
+        user_id = current_user.get('user_id')
         
         result = await notification_service.send_notification(
             event_type=test_request.event_type,

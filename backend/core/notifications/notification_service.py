@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from .novu_service import novu_service
+from .presence_service import presence_service
 from .models import (
     NotificationChannel,
     NotificationEvent,
@@ -22,7 +23,8 @@ class NotificationService:
         data: Dict[str, Any],
         channels: Optional[List[NotificationChannel]] = None,
         priority: NotificationPriority = NotificationPriority.MEDIUM,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        thread_id: Optional[str] = None
     ) -> Dict[str, Any]:
         try:
             user_prefs = await self.get_user_notification_settings(user_id)
@@ -36,6 +38,24 @@ class NotificationService:
             
             enabled_channels = await self.get_enabled_channels(user_id, event_type, channels)
             
+            if enabled_channels and thread_id:
+                filtered_channels = []
+                for channel in enabled_channels:
+                    should_send = await presence_service.should_send_notification(
+                        user_id=user_id,
+                        thread_id=thread_id,
+                        channel=channel.value
+                    )
+                    if should_send:
+                        filtered_channels.append(channel)
+                    else:
+                        logger.info(
+                            f"Suppressing {channel.value} notification for user {user_id} "
+                            f"(actively viewing thread {thread_id})"
+                        )
+                
+                enabled_channels = filtered_channels
+            
             if not enabled_channels:
                 logger.info(f"No enabled channels for {event_type} for user {user_id}")
                 return {"success": False, "reason": "No enabled channels"}
@@ -45,15 +65,8 @@ class NotificationService:
             event_name = self._map_event_to_workflow(event_type)
             
             payload = {
-                **data,
-                "user_id": user_id,
-                "event_type": event_type.value,
-                "priority": priority.value,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                **data
             }
-            
-            if metadata:
-                payload["metadata"] = metadata
             
             override_channels = self._build_channel_overrides(enabled_channels)
             
@@ -81,9 +94,21 @@ class NotificationService:
         result_summary: Optional[str] = None
     ) -> Dict[str, Any]:
         try:
+            from core.notifications.presence_service import presence_service
+            
+            should_send = await presence_service.should_send_notification(
+                user_id=user_id,
+                thread_id=thread_id,
+                channel="email"
+            )
+            
+            if not should_send:
+                logger.info(f"Suppressing task completion notification for user {user_id} (actively viewing thread {thread_id})")
+                return {"success": False, "reason": "User is actively viewing thread"}
+            
             user_info = await self._get_user_info(user_id)
-            user_email = user_info.get("email")
             user_name = user_info.get("name")
+            user_email = user_info.get("email")
             
             first_name = user_name.split()[0] if user_name else "User"
             
@@ -100,18 +125,18 @@ class NotificationService:
             }
             
             result = await self.novu.trigger_workflow(
-                workflow_id='task-completed',
+                workflow_id="task-completed",
                 subscriber_id=user_id,
                 payload=payload,
                 subscriber_email=user_email,
                 subscriber_name=user_name
             )
             
-            logger.info(f"Task completion workflow triggered for user {user_id}")
+            logger.info(f"Task completion workflow triggered for user {user_id}: {result}")
             return {"success": True, "result": result}
             
         except Exception as e:
-            logger.error(f"Error triggering task completion workflow: {str(e)}")
+            logger.error(f"Error triggering task completion notification: {str(e)}")
             return {"success": False, "error": str(e)}
     
     async def send_task_failed_notification(
@@ -120,19 +145,51 @@ class NotificationService:
         task_name: str,
         task_url: str,
         failure_reason: str,
-        first_name: Optional[str] = None
+        first_name: Optional[str] = None,
+        thread_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        payload = {
-            "first_name": first_name,
-            "task_name": task_name,
-            "task_url": task_url,
-            "failure_reason": failure_reason
-        }
-        return await self.novu.trigger_workflow(
-            workflow_id='task-failed',
-            subscriber_id=user_id,
-            payload=payload
-        )
+        try:
+            from core.notifications.presence_service import presence_service
+            
+            if thread_id:
+                should_send = await presence_service.should_send_notification(
+                    user_id=user_id,
+                    thread_id=thread_id,
+                    channel="email"
+                )
+                
+                if not should_send:
+                    logger.info(f"Suppressing task failed notification for user {user_id} (actively viewing thread {thread_id})")
+                    return {"success": False, "reason": "User is actively viewing thread"}
+            
+            user_info = await self._get_user_info(user_id)
+            user_name = user_info.get("name")
+            user_email = user_info.get("email")
+            
+            if not first_name:
+                first_name = user_name.split()[0] if user_name else "User"
+            
+            payload = {
+                "first_name": first_name,
+                "task_name": task_name,
+                "task_url": task_url,
+                "failure_reason": failure_reason
+            }
+            
+            result = await self.novu.trigger_workflow(
+                workflow_id="task-failed",
+                subscriber_id=user_id,
+                payload=payload,
+                subscriber_email=user_email,
+                subscriber_name=user_name
+            )
+            
+            logger.info(f"Task failed workflow triggered for user {user_id}: {result}")
+            return {"success": True, "result": result}
+            
+        except Exception as e:
+            logger.error(f"Error triggering task failed notification: {str(e)}")
+            return {"success": False, "error": str(e)}
     
     async def send_payment_succeeded_notification(
         self,
@@ -378,7 +435,7 @@ class NotificationService:
     
     def _map_event_to_workflow(self, event_type: NotificationEvent) -> str:
         workflow_mapping = {
-            NotificationEvent.TASK_COMPLETED: "task-complete",
+            NotificationEvent.TASK_COMPLETED: "task-completed",
             NotificationEvent.TASK_FAILED: "task-failed",
             NotificationEvent.AGENT_RUN_COMPLETED: "agent-run-completed",
             NotificationEvent.AGENT_RUN_FAILED: "agent-run-failed",
