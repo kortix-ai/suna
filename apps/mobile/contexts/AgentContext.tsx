@@ -2,7 +2,6 @@ import * as React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAgents } from '@/lib/agents';
 import { useAuthContext } from './AuthContext';
-import { useGuestMode } from './GuestModeContext';
 import type { Agent } from '@/api/types';
 
 interface AgentContextType {
@@ -26,7 +25,6 @@ const AgentContext = React.createContext<AgentContextType | undefined>(undefined
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuthContext();
-  const { isGuestMode } = useGuestMode();
   
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | undefined>(undefined);
   const [selectedModelId, setSelectedModelId] = React.useState<string | undefined>(undefined);
@@ -41,8 +39,8 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       sort_order: 'asc'
     },
     {
-      // Only fetch if user is authenticated OR in guest mode
-      enabled: !!session || isGuestMode,
+      // Only fetch if user is authenticated
+      enabled: !!session,
       // Don't refetch on window focus - avoid unnecessary requests
       refetchOnWindowFocus: false,
       // Don't refetch on reconnect - we'll handle this manually

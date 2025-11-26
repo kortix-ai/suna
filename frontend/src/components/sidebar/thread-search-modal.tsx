@@ -39,8 +39,8 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
     const isMobile = useIsMobile();
     const { setOpenMobile } = useSidebar();
 
-    // Use same limit as nav-agents to share cache (limit: 50)
-    const { data: threadsResponse } = useThreads({ page: 1, limit: 50 });
+    // Reduced limit from 50 to 20 to reduce API response size
+    const { data: threadsResponse } = useThreads({ page: 1, limit: 20 });
 
     // Process threads directly from backend data - backend already provides project info
     const combinedThreads = useMemo(() => {

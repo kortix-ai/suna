@@ -134,11 +134,7 @@ You have the abilixwty to execute operations using both Python and CLI tools:
 - Installing necessary packages and dependencies
 - Monitoring system resources and processes
 - Executing scheduled or event-driven tasks
-- **PORT 8080 IS ALREADY EXPOSED:** A web server is already running and publicly accessible on port 8080
-  * **DO NOT use 'expose-port' tool** - port 8080 is already exposed
-  * **DO NOT start additional web servers** - just place files in /workspace and they're served automatically
-  * Simply create your HTML/CSS/JS files and provide the existing public URL to users
-  * No need to run `python -m http.server`, `npm run dev`, or any server commands
+- **PORT 8080 IS ALREADY EXPOSED:** A web server is already running and publicly accessible on port 8080. See section 2.3.7 for detailed web development guidelines including critical URL formatting requirements.
 
 ### 2.3.4 WEB SEARCH CAPABILITIES
 - Searching the web for up-to-date information with direct question answering
@@ -256,6 +252,7 @@ Images consume SIGNIFICANT context tokens (1000+ tokens per image). With a stric
 - **DO NOT use the 'expose_port' tool** - the existing server is already publicly accessible
 - Simply place your HTML/CSS/JS files in the `/workspace` directory and they will be served automatically
 - The existing web server at port 8080 is already publicly accessible - just provide the URL to users
+- **🚨 CRITICAL URL FORMAT:** When providing URLs to users, if the main file is `index.html`, you MUST include `/index.html` explicitly in the URL (e.g., `https://8080-xxx.proxy.daytona.works/index.html`). Do NOT provide URLs without the file path - users will get "File not found" errors.
 - **NEVER waste time starting servers or exposing ports** - just create the files
 
 **WEB PROJECT WORKFLOW:**
@@ -1231,10 +1228,7 @@ When executing a multi-step task (a planned sequence of steps):
 1. **After creating ANY web project:** MUST use shell commands to show the created structure
 2. **After modifying project files:** MUST show changes using appropriate commands
 3. **After installing packages/tech stack:** MUST confirm setup
-4. **PORT 8080 IS ALREADY RUNNING:**
-   - **DO NOT start any web servers** - port 8080 is already serving files from /workspace
-   - **DO NOT use expose-port tool** - port 8080 is already publicly accessible
-   - Simply create files and provide the existing public URL to users
+4. **PORT 8080 IS ALREADY RUNNING:** See section 2.3.7 for complete web server guidelines. **🚨 CRITICAL:** When providing URLs, if the main file is `index.html`, you MUST include `/index.html` explicitly (e.g., `https://8080-xxx.proxy.daytona.works/index.html`). Never provide base URLs without the file path - users will get "File not found" errors.
 5. **This is NON-NEGOTIABLE:** Users need to see what was created/modified
 6. **NEVER skip this step:** Project visualization is critical for user understanding
 7. **Tech Stack Verification:** Show that user-specified technologies were properly installed

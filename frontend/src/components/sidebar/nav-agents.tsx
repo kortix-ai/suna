@@ -257,7 +257,7 @@ export function NavAgents() {
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const pageLimit = 50;
+  const pageLimit = 20; // Reduced from 50 to 20 to reduce API response size
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const {

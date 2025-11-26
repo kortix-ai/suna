@@ -36,20 +36,13 @@ export const metadata: Metadata = {
   },
   description: siteMetadata.description,
   keywords: siteMetadata.keywords,
-  authors: [siteMetadata.author],
-  creator: siteMetadata.author.name,
-  publisher: siteMetadata.author.name,
-  category: 'Technology',
+  authors: [{ name: 'Kortix Team', url: 'https://kortix.com' }],
+  creator: 'Kortix Team',
+  publisher: 'Kortix Team',
   applicationName: siteMetadata.name,
-  formatDetection: {
-    telephone: false,
-    email: false,
-    address: false,
-  },
   robots: {
     index: true,
     follow: true,
-    nocache: false,
     googleBot: {
       index: true,
       follow: true,
@@ -67,11 +60,10 @@ export const metadata: Metadata = {
     locale: 'en_US',
     images: [
       {
-        url: siteMetadata.images.banner,
+        url: '/banner.png',
         width: 1200,
         height: 630,
         alt: `${siteMetadata.title} – ${siteMetadata.description}`,
-        type: 'image/png',
       },
     ],
   },
@@ -79,36 +71,21 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: siteMetadata.title,
     description: siteMetadata.description,
-    creator: siteMetadata.social.twitter,
-    site: siteMetadata.social.twitter,
-    images: [
-      {
-        url: siteMetadata.images.banner,
-        alt: siteMetadata.title,
-      }
-    ],
+    creator: '@kortix',
+    site: '@kortix',
+    images: ['/banner.png'],
   },
   icons: {
     icon: [
-      { url: siteMetadata.images.favicon, sizes: '32x32', type: 'image/png' },
-      { url: siteMetadata.images.faviconDark, sizes: '32x32', type: 'image/png', media: '(prefers-color-scheme: dark)' },
+      { url: '/favicon.png', sizes: '32x32' },
+      { url: '/favicon-light.png', sizes: '32x32', media: '(prefers-color-scheme: dark)' },
     ],
-    shortcut: siteMetadata.images.favicon,
-    apple: [
-      { url: siteMetadata.images.appleTouchIcon, sizes: '180x180', type: 'image/png' },
-    ],
+    shortcut: '/favicon.png',
+    apple: [{ url: '/logo_black.png', sizes: '180x180' }],
   },
   manifest: '/manifest.json',
   alternates: {
     canonical: siteMetadata.url,
-  },
-  verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
-  },
-  other: {
-    'apple-mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-status-bar-style': 'black-translucent',
-    'apple-mobile-web-app-title': siteMetadata.name,
   },
 };
 
@@ -118,7 +95,22 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${roobert.variable} ${roobertMono.variable}`}>
       <head>
-
+        {/* Static SEO meta tags - rendered in initial HTML */}
+        <title>Kortix: Your Autonomous AI Worker</title>
+        <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
+        <meta name="keywords" content="Kortix, Autonomous AI Worker, AI Worker, Generalist AI, Open Source AI, Autonomous Agent, Complex Tasks, AI Assistant" />
+        <meta property="og:title" content="Kortix: Your Autonomous AI Worker" />
+        <meta property="og:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
+        <meta property="og:image" content="https://kortix.com/banner.png" />
+        <meta property="og:url" content="https://kortix.com" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Kortix" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Kortix: Your Autonomous AI Worker" />
+        <meta name="twitter:description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
+        <meta name="twitter:image" content="https://kortix.com/banner.png" />
+        <meta name="twitter:site" content="@kortix" />
+        <link rel="canonical" href="https://kortix.com" />
 
         <Script id="facebook-pixel" strategy="afterInteractive">
           {`
@@ -154,11 +146,11 @@ export default function RootLayout({
               name: siteMetadata.name,
               alternateName: ['Suna', 'Kortix AI', 'Kortix: Your Autonomous AI Worker'],
               url: siteMetadata.url,
-              logo: `${siteMetadata.url}${siteMetadata.images.favicon}`,
+              logo: `${siteMetadata.url}/favicon.png`,
               description: siteMetadata.description,
               foundingDate: '2024',
               sameAs: [
-                siteMetadata.social.github,
+                'https://github.com/Kortix-ai/Suna',
                 'https://x.com/kortix',
                 'https://linkedin.com/company/kortix',
               ],
@@ -171,7 +163,6 @@ export default function RootLayout({
           }}
         />
 
-        {/* Structured Data for Software Application */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{

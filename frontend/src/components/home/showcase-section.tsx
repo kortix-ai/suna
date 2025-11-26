@@ -31,15 +31,6 @@ interface WorkerType {
 
 const workerConfigs = [
     {
-        id: 'images',
-        iconName: 'image',
-        iconColor: '#000000',
-        backgroundColor: '#FFAFAF',
-        borderColor: '#F19C9C',
-        image: '/images/landing-showcase/images.png',
-        fileTypeKey: 'image'
-    },
-    {
         id: 'slides',
         iconName: 'presentation',
         iconColor: '#000000',
@@ -74,6 +65,15 @@ const workerConfigs = [
         borderColor: '#EF9FD1',
         image: '/images/landing-showcase/research.png',
         fileTypeKey: 'document'
+    },
+    {
+        id: 'images',
+        iconName: 'image',
+        iconColor: '#000000',
+        backgroundColor: '#FFAFAF',
+        borderColor: '#F19C9C',
+        image: '/images/landing-showcase/images.png',
+        fileTypeKey: 'image'
     }
 ];
 

@@ -97,7 +97,7 @@ export const getProject = async (projectId: string): Promise<Project> => {
 export const deleteProject = async (projectId: string): Promise<void> => {
   // Projects are deleted via thread deletion
   // First, find a thread with this project_id
-  const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
+  const threadsResponse = await getThreadsPaginated(undefined, 1, 20);
 
   if (!threadsResponse?.threads) {
     handleApiError(new Error('Failed to fetch threads'), { operation: 'delete project', resource: `project ${projectId}` });
@@ -133,7 +133,7 @@ export const updateProject = async (
   }
 
   // Find thread with this project_id
-  const threadsResponse = await getThreadsPaginated(undefined, 1, 50);
+  const threadsResponse = await getThreadsPaginated(undefined, 1, 20);
 
   if (!threadsResponse?.threads) {
     throw new Error('Failed to find thread for project');
@@ -221,7 +221,7 @@ export const getThreads = async (projectId?: string): Promise<Thread[]> => {
   }
 };
 
-export const getThreadsPaginated = async (projectId?: string, page: number = 1, limit: number = 50): Promise<ThreadsResponse> => {
+export const getThreadsPaginated = async (projectId?: string, page: number = 1, limit: number = 20): Promise<ThreadsResponse> => {
   try {
     const params = new URLSearchParams({
       page: page.toString(),
@@ -242,7 +242,7 @@ export const getThreadsPaginated = async (projectId?: string, page: number = 1, 
         threads: [],
         pagination: {
           page: 1,
-          limit: 50,
+          limit: 20,
           total: 0,
           pages: 0,
         }
