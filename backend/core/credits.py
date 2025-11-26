@@ -6,6 +6,7 @@ from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.config import config, EnvMode
 from core.billing.shared.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED, get_tier_by_name
+from core.utils.distributed_lock import DistributedLock
 import asyncio
 
 class CreditService:
@@ -31,7 +32,6 @@ class CreditService:
             
             account = account_result.data[0]
             tier_name = account.get('tier', 'free')
-            last_refresh = account.get('last_daily_refresh')
             
             tier = get_tier_by_name(tier_name)
             if not tier:
@@ -41,61 +41,70 @@ class CreditService:
             if not daily_config or not daily_config.get('enabled'):
                 return False, Decimal('0')
             
-            should_refresh = False
+            credit_amount = daily_config.get('amount', Decimal('0'))
             refresh_interval_hours = daily_config.get('refresh_interval_hours', 24)
             
-            if last_refresh is None:
-                should_refresh = True
-            else:
-                last_refresh_dt = datetime.fromisoformat(last_refresh.replace('Z', '+00:00'))
-                time_since_refresh = datetime.now(timezone.utc) - last_refresh_dt
-                if time_since_refresh > timedelta(hours=refresh_interval_hours):
-                    should_refresh = True
+            today = datetime.now(timezone.utc).date().isoformat()
+            lock_key = f"daily_refresh:{user_id}:{today}"
+            lock = DistributedLock(lock_key, timeout_seconds=60)
             
-            if should_refresh:
-                credit_amount = daily_config.get('amount', Decimal('0'))
-                now = datetime.now(timezone.utc)
-                expires_at = now + timedelta(hours=refresh_interval_hours)
-                
-                from core.billing.credits.manager import credit_manager
-                
-                current_balance = await client.from_('credit_accounts').select('expiring_credits').eq('account_id', user_id).single().execute()
-                old_expiring = Decimal(str(current_balance.data.get('expiring_credits', 0))) if current_balance.data else Decimal('0')
-                
-                if old_expiring > 0:
-                    logger.info(f"Resetting ${old_expiring} expiring credits to ${credit_amount} for daily refresh")
-                    await credit_manager.reset_expiring_credits(
-                        account_id=user_id,
-                        new_credits=credit_amount,
-                        description=f"Daily credits refresh (every {refresh_interval_hours}h)"
-                    )
-                else:
-                    await credit_manager.add_credits(
-                        account_id=user_id,
-                        amount=credit_amount,
-                        is_expiring=True,
-                        description=f"Daily credits refresh",
-                        type='tier_grant',
-                        expires_at=expires_at
-                    )
-                
-                await client.from_('credit_accounts').update({
-                    'last_daily_refresh': now.isoformat(),
-                    'updated_at': now.isoformat()
-                }).eq('account_id', user_id).execute()
-                
-                logger.info(f"Daily credits refreshed for user {user_id}: ${credit_amount} (tier: {tier_name}, interval: {refresh_interval_hours}h)")
-                
-                if self.cache:
-                    await self.cache.invalidate(f"credit_balance:{user_id}")
-                    await self.cache.invalidate(f"credit_summary:{user_id}")
-                
-                return True, credit_amount
-            else:
+            acquired = await lock.acquire(wait=True, wait_timeout=30)
+            if not acquired:
+                logger.warning(f"[DAILY REFRESH] Failed to acquire lock for {user_id} on {today}")
                 return False, Decimal('0')
+            
+            try:
+                logger.info(f"[DAILY REFRESH] 🔒 Acquired lock for {user_id} on {today}")
+                
+                result = await client.rpc('atomic_daily_credit_refresh', {
+                    'p_account_id': user_id,
+                    'p_credit_amount': str(credit_amount),
+                    'p_tier': tier_name,
+                    'p_processed_by': 'api_request',
+                    'p_refresh_interval_hours': refresh_interval_hours
+                }).execute()
+                
+                if not result.data:
+                    logger.error(f"[DAILY REFRESH] No data returned from atomic function for {user_id}")
+                    return False, Decimal('0')
+                
+                response = result.data
+                
+                if response.get('duplicate_prevented'):
+                    reason = response.get('reason', 'unknown')
+                    logger.warning(
+                        f"[DAILY REFRESH] ⛔ Duplicate prevented for {user_id} on {today}\n"
+                        f"Reason: {reason}"
+                    )
+                    return False, Decimal('0')
+                
+                if response.get('success'):
+                    credits_granted = Decimal(str(response.get('credits_granted', 0)))
+                    new_balance = Decimal(str(response.get('new_balance', 0)))
+                    old_expiring = Decimal(str(response.get('old_expiring', 0)))
+                    
+                    logger.info(
+                        f"[DAILY REFRESH] ✅ Granted ${credits_granted} to {user_id}\n"
+                        f"Tier: {tier_name}, Interval: {refresh_interval_hours}h\n"
+                        f"Old expiring: ${old_expiring}, New balance: ${new_balance}"
+                    )
+                    
+                    if self.cache:
+                        await self.cache.invalidate(f"credit_balance:{user_id}")
+                        await self.cache.invalidate(f"credit_summary:{user_id}")
+                    
+                    return True, credits_granted
+                else:
+                    reason = response.get('reason', 'unknown')
+                    logger.info(f"[DAILY REFRESH] Not refreshed for {user_id}: {reason}")
+                    return False, Decimal('0')
+                    
+            finally:
+                await lock.release()
+                logger.info(f"[DAILY REFRESH] 🔓 Released lock for {user_id} on {today}")
                 
         except Exception as e:
-            logger.error(f"Failed to check/refresh daily credits for user {user_id}: {e}")
+            logger.error(f"[DAILY REFRESH] Failed for user {user_id}: {e}")
             return False, Decimal('0')
     
     async def get_balance(self, user_id: str, use_cache: bool = True) -> Decimal:
