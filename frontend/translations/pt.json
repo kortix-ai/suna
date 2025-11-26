@@ -29,7 +29,7 @@
     "next": "Próximo",
     "upgrade": "Melhorar",
     "basic": "Básico",
-    "tryFree": "Começar grátis"
+    "tryFree": "Começar"
   },
   "settings": {
     "title": "Configurações",
@@ -283,6 +283,85 @@
   "home": {
     "heroPlaceholder": "Descreve a tarefa que queres que teu Worker complete..."
   },
+  "showcase": {
+    "title": "Kortix: Teu Worker de IA Autônomo",
+    "subtitle": "Construído para tarefas complexas, projetado para tudo. O assistente de IA definitivo que lida com tudo—de solicitações simples a projetos mega-complexos.",
+    "tryItOut": "Experimentar",
+    "kortixComputer": "Kortix Computer",
+    "running": "Em execução",
+    "workers": {
+      "images": {
+        "title": "Imagens",
+        "description": "Cria imagens sob demanda. De fotos de produtos a gráficos para redes sociais até ilustrações completas. Ajusta estilo, iluminação, cores e layout, ou refina visuais existentes com edições rápidas e retoques.",
+        "capabilities": {
+          "0": "Gerar fotos de produtos",
+          "1": "Criar gráficos para redes sociais",
+          "2": "Criar ilustrações",
+          "3": "Variações de estilo e iluminação",
+          "4": "Criação de logo / recursos",
+          "5": "+ Muito mais"
+        },
+        "imageAlt": "Exemplo gráfico O crescimento não é linear",
+        "fileType": "image"
+      },
+      "slides": {
+        "title": "Apresentações",
+        "description": "Cria apresentações impressionantes instantaneamente. De pitch decks a relatórios até materiais de treinamento. Ajusta temas, layouts, estrutura de conteúdo ou refina apresentações existentes com edições e atualizações rápidas.",
+        "capabilities": {
+          "0": "Pitch decks",
+          "1": "Material de treinamento",
+          "2": "Apresentações de relatórios",
+          "3": "Variações de tema e layout",
+          "4": "Reestruturação de conteúdo",
+          "5": "+ Muito mais"
+        },
+        "imageAlt": "Exemplo de slide Nexus Enterprise Automation Platform",
+        "fileType": "PPTX"
+      },
+      "data": {
+        "title": "Dados",
+        "description": "Transforma dados brutos em insights. De planilhas a dashboards até visualizações. Limpa conjuntos de dados, cria gráficos, gera relatórios ou refina análises existentes com atualizações rápidas.",
+        "capabilities": {
+          "0": "Dashboards",
+          "1": "Visualizações",
+          "2": "Relatórios de dados",
+          "3": "Limpar e organizar dados",
+          "4": "Gerar insights",
+          "5": "+ Muito mais"
+        },
+        "imageAlt": "Exemplo de dashboard modelo financeiro",
+        "fileType": "Visualização"
+      },
+      "docs": {
+        "title": "Documentos",
+        "description": "Escreve e edita documentos sem esforço. De propostas a guias até conteúdos. Ajusta tom, estrutura, formatação ou refina documentos existentes com reescritas rápidas e polimento.",
+        "capabilities": {
+          "0": "Propostas",
+          "1": "Guias e manuais",
+          "2": "Conteúdos",
+          "3": "Variações de tom e estilo",
+          "4": "Formatar e reestruturar",
+          "5": "+ Muito mais"
+        },
+        "imageAlt": "Exemplo de relatório executivo resumo Q3 2025",
+        "fileType": "PDF"
+      },
+      "research": {
+        "title": "Pesquisa",
+        "description": "Pesquisa tópicos de forma abrangente. De tendências de mercado a análises competitivas até estudos aprofundados. Coleta fontes, sintetiza descobertas ou refina pesquisas existentes com atualizações rápidas.",
+        "capabilities": {
+          "0": "Analisar tendências de mercado",
+          "1": "Pesquisa competitiva",
+          "2": "Estudos aprofundados de tópicos",
+          "3": "Coletar fontes",
+          "4": "Sintetizar descobertas",
+          "5": "+ Muito mais"
+        },
+        "imageAlt": "Exemplo de pesquisa Perfis detalhados de concorrentes",
+        "fileType": "PDF"
+      }
+    }
+  },
   "threads": {
     "title": "Threads",
     "newThread": "Nova Thread",
@@ -415,6 +494,7 @@
   "auth": {
     "logIntoAccount": "Entra na tua conta",
     "createAccount": "Criar conta",
+    "signInOrCreateAccount": "Entra ou cria a tua conta Kortix",
     "continueWithGoogle": "Continuar com Google",
     "continueWithGitHub": "Continuar com GitHub",
     "orEmail": "ou email",
@@ -442,7 +522,13 @@
     "cancel": "Cancelar",
     "pleaseEnterValidEmail": "Por favor digite um endereço de email válido",
     "signInFailed": "Falha ao entrar. Confere teus dados.",
-    "signUpFailed": "Cadastro falhou. Tenta de novo."
+    "signUpFailed": "Cadastro falhou. Tenta de novo.",
+    "sendMagicLink": "Enviar magic link",
+    "sending": "Enviando...",
+    "magicLinkSent": "Enviamos um magic link para",
+    "magicLinkDescription": "Clica no link no teu email para entrar. O link expirará em 1 hora.",
+    "magicLinkExplanation": "Vamos te enviar um link seguro para entrar. Não precisa de senha.",
+    "byContinuingYouAgree": "Ao continuar, concordas com a nossa <privacyPolicy>Política de Privacidade</privacyPolicy> e os nossos <termsOfService>Termos de Serviço</termsOfService>"
   },
   "onboarding": {
     "welcome": "Bem-vindo",

@@ -129,9 +129,20 @@ class ErrorProcessor:
             )
         
         elif isinstance(error, BadRequestError):
+            # Clean up the error message - extract just the core error, not fallback details
+            clean_message = error_message
+            # If message contains fallback details, extract just the first error
+            if "Received Model Group=" in error_message:
+                # Extract the actual error before fallback details
+                parts = error_message.split(". Received Model Group=")
+                if parts:
+                    clean_message = parts[0]
+            # If it's a Bedrock content block error, make it user-friendly
+            if "ContentBlock" in clean_message and "is blank" in clean_message:
+                clean_message = "Message contains empty content blocks. This may be a data formatting issue. Please try starting a new conversation."
             return ProcessedError(
                 error_type="bad_request",
-                message=f"Invalid request: {error_message}",
+                message=f"Invalid request: {clean_message}",
                 original_error=error,
                 context=context
             )

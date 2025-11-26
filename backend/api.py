@@ -24,13 +24,12 @@ from core import api as core_api
 
 from core.sandbox import api as sandbox_api
 from core.billing.api import router as billing_router
-from core.billing.setup_api import router as setup_router
+from core.setup import router as setup_router, webhook_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
 from core.admin.master_password_api import router as master_password_router
 from core.services import transcription as transcription_api
 import sys
-from core.services import email_api
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
@@ -202,6 +201,7 @@ api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
 api_router.include_router(setup_router)
+api_router.include_router(webhook_router)  # Webhooks at /api/webhooks/*
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
@@ -218,7 +218,6 @@ api_router.include_router(template_api.router, prefix="/templates")
 api_router.include_router(presentations_api.router, prefix="/presentation-templates")
 
 api_router.include_router(transcription_api.router)
-api_router.include_router(email_api.router)
 
 from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)

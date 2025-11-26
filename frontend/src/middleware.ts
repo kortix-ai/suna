@@ -31,7 +31,6 @@ const PUBLIC_ROUTES = [
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
   '/suna', // Suna rebrand page should be public for SEO
-  '/model-pricing', // Model pricing page should be public
   // Add locale routes for marketing pages
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
@@ -62,6 +61,31 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/')
   ) {
     return NextResponse.next();
+  }
+
+  // Handle Supabase verification redirects at root level
+  // Supabase sometimes redirects to root (/) instead of /auth/callback
+  // Detect authentication parameters and redirect to proper callback handler
+  if (pathname === '/' || pathname === '') {
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get('code');
+    const token = searchParams.get('token');
+    const type = searchParams.get('type');
+    const error = searchParams.get('error');
+    
+    // If we have Supabase auth parameters, redirect to /auth/callback
+    // Note: Mobile apps use direct deep links and bypass this route
+    if (code || token || type || error) {
+      const callbackUrl = new URL('/auth/callback', request.url);
+      
+      // Preserve all query parameters
+      searchParams.forEach((value, key) => {
+        callbackUrl.searchParams.set(key, value);
+      });
+      
+      console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
+      return NextResponse.redirect(callbackUrl);
+    }
   }
 
   // Extract path segments

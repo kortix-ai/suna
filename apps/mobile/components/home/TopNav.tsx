@@ -13,7 +13,6 @@ import * as Haptics from 'expo-haptics';
 import { useSubscription, useCreditBalance } from '@/lib/billing';
 import { useColorScheme } from 'nativewind';
 import { formatCredits } from '@/lib/utils/credit-formatter';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 import { useLanguage } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -23,10 +22,9 @@ interface TopNavProps {
   onMenuPress?: () => void;
   onUpgradePress?: () => void;
   onCreditsPress?: () => void;
-  isGuestMode?: boolean;
 }
 
-export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMode = false }: TopNavProps) {
+export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { data: subscriptionData } = useSubscription();
@@ -86,23 +84,6 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
     onCreditsPress?.();
   };
 
-  const handleSignUpPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    useAuthDrawerStore.getState().openAuthDrawer({
-      title: t('auth.drawer.signUpUnlock'),
-      message: t('auth.drawer.signUpUnlockMessage'),
-      mode: 'sign-up'
-    });
-  };
-
-  const handleLoginPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    useAuthDrawerStore.getState().openAuthDrawer({
-      title: t('auth.drawer.welcomeBack'),
-      message: t('auth.drawer.welcomeBackMessage'),
-      mode: 'sign-in'
-    });
-  };
 
   const currentTier = subscriptionData?.tier?.name || subscriptionData?.tier_key || 'free';
   const isFreeTier = currentTier === 'free' || !subscriptionData;
@@ -130,46 +111,7 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
         <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
       
-      {isGuestMode ? (
-        <View className="absolute right-6 flex-row items-center gap-2">
-          <AnimatedPressable
-            onPressIn={() => {
-              loginButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              loginButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
-            onPress={handleLoginPress}
-            className="flex-row h-9 px-3 items-center gap-1.5 bg-primary rounded-full"
-            style={loginButtonAnimatedStyle}
-            accessibilityRole="button"
-            accessibilityLabel="Log In"
-          >
-            <Text className="text-xs font-roobert-semibold text-primary-foreground">
-              {t('auth.logIn')}
-            </Text>
-          </AnimatedPressable>
-
-          <AnimatedPressable
-            onPressIn={() => {
-              signUpButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              signUpButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
-            onPress={handleSignUpPress}
-            className="flex-row h-9 px-3 items-center gap-1.5 bg-primary/5 rounded-full"
-            style={signUpButtonAnimatedStyle}
-            accessibilityRole="button"
-            accessibilityLabel="Sign Up"
-          >
-            <Text className="text-xs font-roobert-semibold text-foreground">
-              {t('auth.signUp')}
-            </Text>
-          </AnimatedPressable>
-        </View>
-      ) : (
-        <View className="absolute right-6 flex-row items-center gap-2" >
+      <View className="absolute right-6 flex-row items-center gap-2" >
           {isFreeTier && (
             <AnimatedPressable
               onPressIn={() => {
@@ -211,7 +153,6 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, isGuestMod
             </Text>
           </AnimatedPressable>
         </View>
-      )}
     </View>
   );
 }

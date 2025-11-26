@@ -14,10 +14,16 @@ export enum EnvMode {
 /**
  * Get current environment mode
  * Checks EXPO_PUBLIC_ENV_MODE environment variable
- * Falls back to 'local' if not set (safest default for development)
+ * Falls back to 'staging' if not set (localhost doesn't work on physical devices)
  */
 export function getEnvMode(): EnvMode {
-  const envMode = process.env.EXPO_PUBLIC_ENV_MODE?.toLowerCase() || 'local';
+  const envMode = process.env.EXPO_PUBLIC_ENV_MODE?.toLowerCase();
+  
+  if (!envMode) {
+    // Default to staging for Expo apps since localhost won't work on physical devices
+    // Set EXPO_PUBLIC_ENV_MODE=local explicitly if you want localhost (simulator only)
+    return EnvMode.STAGING;
+  }
   
   switch (envMode) {
     case 'production':

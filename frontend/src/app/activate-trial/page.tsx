@@ -2,23 +2,41 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Sparkles, CreditCard, Zap, Shield, ArrowRight, CheckCircle, Clock, XCircle, LogOut, Loader2 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { CreditCard, Zap, Shield, ArrowRight, CheckCircle, LogOut, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { useTrialStatus, useStartTrial, useSubscription } from '@/hooks/billing';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from 'next/link';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useAuth } from '@/components/AuthProvider';
-import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { useAdminRole } from '@/hooks/admin';
+
+// Lazy load heavy components
+const MaintenancePage = lazy(() => import('@/components/maintenance/maintenance-page').then(mod => ({ default: mod.MaintenancePage })));
+
+// Skeleton for immediate FCP
+function ActivateTrialSkeleton() {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
+      <Card className="w-full max-w-2xl border-2 shadow-none bg-transparent border-none">
+        <CardHeader className="text-center space-y-4">
+          <Skeleton className="h-8 w-48 mx-auto" />
+          <Skeleton className="h-4 w-64 mx-auto" />
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Skeleton className="h-40 w-full rounded-lg" />
+          <Skeleton className="h-24 w-full rounded-lg" />
+          <Skeleton className="h-12 w-full rounded-lg" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function ActivateTrialPage() {
   const router = useRouter();
@@ -73,28 +91,20 @@ export default function ActivateTrialPage() {
     router.push('/auth');
   };
 
-  const isMaintenanceLoading = maintenanceLoading || isCheckingAdminRole;
-
-  if (isMaintenanceLoading) {
+  // Show skeleton immediately for FCP instead of blocking loader
+  if (maintenanceNotice?.enabled && !maintenanceLoading && !isCheckingAdminRole && !isAdmin) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
-        <KortixLoader size="large" />
-      </div>
+      <Suspense fallback={<ActivateTrialSkeleton />}>
+        <MaintenancePage />
+      </Suspense>
     );
   }
 
-  if (maintenanceNotice?.enabled && !isAdmin) {
-    return <MaintenancePage/>;
-  }
+  const isLoading = isLoadingSubscription || isLoadingTrial || maintenanceLoading || isCheckingAdminRole;
 
-  const isLoading = isLoadingSubscription || isLoadingTrial;
-
+  // Show skeleton during initial load
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/20">
-        <KortixLoader size="large" />
-      </div>
-    );
+    return <ActivateTrialSkeleton />;
   }
 
   return (

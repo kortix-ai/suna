@@ -3,7 +3,10 @@ import { Pressable, View, Alert, ScrollView } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring
+  withSpring,
+  withRepeat,
+  withTiming,
+  Easing
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
@@ -19,7 +22,8 @@ import {
   LogOut,
   ChevronRight,
   FlaskConical,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -34,8 +38,6 @@ import { SettingsHeader } from './SettingsHeader';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
-import { useGuestMode } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -47,10 +49,9 @@ interface SettingsPageProps {
 
 export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const { colorScheme } = useColorScheme();
-  const { user, signOut } = useAuthContext();
+  const { user, signOut, isSigningOut } = useAuthContext();
   const { t } = useLanguage();
   const router = useRouter();
-  const { isGuestMode } = useGuestMode();
   const [isLanguagePageVisible, setIsLanguagePageVisible] = React.useState(false);
   const [isNameEditPageVisible, setIsNameEditPageVisible] = React.useState(false);
   const [isThemePageVisible, setIsThemePageVisible] = React.useState(false);
@@ -61,7 +62,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
   const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
 
-  const isGuest = !user || isGuestMode;
+  const isGuest = !user;
 
   const { data: deletionStatus } = useAccountDeletionStatus({
     enabled: visible && !isGuest,
@@ -101,16 +102,8 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    if (isGuestMode) {
-      useAuthDrawerStore.getState().openAuthDrawer({
-        title: 'Sign up to continue',
-        message: 'Create an account to manage your billing and subscription'
-      });
-      return;
-    }
-
     setIsBillingPageVisible(true);
-  }, [isGuestMode]);
+  }, []);
 
   const handleIntegrations = React.useCallback(() => {
     console.log('🎯 Integrations pressed');
@@ -134,33 +127,19 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     console.log('🎯 Beta pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    if (isGuestMode) {
-      useAuthDrawerStore.getState().openAuthDrawer({
-        title: 'Sign up to continue',
-        message: 'Create an account to access beta features'
-      });
-      return;
-    }
-
     setIsBetaPageVisible(true);
-  }, [isGuestMode]);
+  }, []);
 
   const handleAccountDeletion = React.useCallback(() => {
     console.log('🎯 Account deletion pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    if (isGuestMode) {
-      useAuthDrawerStore.getState().openAuthDrawer({
-        title: 'Sign up to continue',
-        message: 'Create an account to manage your account settings'
-      });
-      return;
-    }
-
     setIsAccountDeletionPageVisible(true);
-  }, [isGuestMode]);
+  }, []);
 
   const handleSignOut = React.useCallback(async () => {
+    if (isSigningOut) return; // Prevent multiple sign out attempts
+    
     console.log('🎯 Sign Out pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -192,7 +171,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
       ],
       { cancelable: true }
     );
-  }, [t, signOut, onClose, router]);
+  }, [t, signOut, onClose, router, isSigningOut]);
 
 
   if (!visible) return null;
@@ -258,6 +237,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 icon={LogOut}
                 label={t('settings.signOut')}
                 onPress={handleSignOut}
+                isLoading={isSigningOut}
               />
             )}
           </View>
@@ -280,7 +260,6 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
           onNameUpdated={(newName) => {
             console.log('✅ Name updated to:', newName);
           }}
-          isGuestMode={isGuestMode}
         />
       </AnimatedPageWrapper>
 
@@ -335,36 +314,66 @@ interface SettingsItemProps {
   onPress: () => void;
   destructive?: boolean;
   showBadge?: boolean;
+  isLoading?: boolean;
 }
 
-const SettingsItem = React.memo(({ icon, label, onPress, destructive = false, showBadge = false }: SettingsItemProps) => {
+const SettingsItem = React.memo(({ icon, label, onPress, destructive = false, showBadge = false, isLoading = false }: SettingsItemProps) => {
   const scale = useSharedValue(1);
+  const rotation = useSharedValue(0);
+
+  React.useEffect(() => {
+    if (isLoading) {
+      rotation.value = withRepeat(
+        withTiming(360, { duration: 1000, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      rotation.value = 0;
+    }
+  }, [isLoading, rotation]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+    opacity: isLoading ? 0.6 : 1,
+  }));
+
+  const iconAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
   const handlePressIn = React.useCallback(() => {
-    scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-  }, [scale]);
+    if (!isLoading) {
+      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
+    }
+  }, [scale, isLoading]);
 
   const handlePressOut = React.useCallback(() => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  }, [scale]);
+    if (!isLoading) {
+      scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+    }
+  }, [scale, isLoading]);
 
   const iconColor = destructive ? 'text-destructive' : 'dark:text-muted-foreground/50 text-muted/80';
   const textColor = destructive ? 'text-destructive' : 'text-foreground';
 
   return (
     <AnimatedPressable
-      onPress={onPress}
+      onPress={isLoading ? undefined : onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
+      disabled={isLoading}
       style={animatedStyle}
       className="flex-row items-center justify-between py-4"
     >
       <View className="flex-row items-center gap-3">
-        <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
+        {isLoading ? (
+          <Animated.View style={iconAnimatedStyle}>
+            <Icon as={Loader2} size={20} className={iconColor} strokeWidth={2} />
+          </Animated.View>
+        ) : (
+          <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
+        )}
         <Text className={`text-lg font-roobert-medium ${textColor}`}>
           {label}
         </Text>
@@ -377,7 +386,7 @@ const SettingsItem = React.memo(({ icon, label, onPress, destructive = false, sh
         )}
       </View>
 
-      {!destructive && (
+      {!destructive && !isLoading && (
         <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
       )}
     </AnimatedPressable>

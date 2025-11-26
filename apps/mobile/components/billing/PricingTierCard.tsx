@@ -326,7 +326,7 @@ export function PricingTierCard({
                 zIndex: 10,
               }
             ]}
-            className={`w-full h-11 rounded-xl items-center justify-center ${getButtonStyles()
+            className={`w-full h-11 rounded-2xl items-center justify-center ${getButtonStyles()
               }`}
           >
             {isLoading ? (

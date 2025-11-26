@@ -17,26 +17,43 @@ export default function SettingUpScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthContext();
   const { colorScheme } = useColorScheme();
-  const { refetchAll, hasActiveSubscription, subscriptionData } = useBillingContext();
-  const [status, setStatus] = React.useState<'initializing' | 'success' | 'error'>('initializing');
-  const [shouldNavigate, setShouldNavigate] = React.useState(false);
+  const { refetchAll, hasActiveSubscription, subscriptionData, subscriptionLoading } = useBillingContext();
+  const [status, setStatus] = React.useState<'checking' | 'initializing' | 'success' | 'error'>('checking');
   const initializeMutation = useAccountInitialization();
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
 
   React.useEffect(() => {
     if (!isAuthenticated) {
-      console.log('⚠️  User not authenticated in setup screen, redirecting...');
-      router.replace('/auth');
+      console.log('⚠️ User not authenticated in setup screen, redirecting to splash...');
+      router.replace('/');
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, router]);
 
   React.useEffect(() => {
-    if (!user || initializeMutation.isPending || initializeMutation.isSuccess || initializeMutation.isError) {
+    if (!user || status !== 'checking') return;
+
+    // Wait for billing data to load before checking
+    if (subscriptionLoading) {
+      console.log('⏳ Waiting for billing data to load...');
       return;
     }
 
-    console.log('🔧 Starting account initialization...');
+    // Check if account was already initialized via webhook
+    // Most users will have a subscription by now (webhook succeeded)
+    if (hasActiveSubscription) {
+      console.log('✅ Account already initialized via webhook, redirecting to onboarding');
+      setStatus('success');
+      setTimeout(() => {
+        router.replace('/onboarding');
+      }, 500);
+      return;
+    }
+
+    // No subscription found - initialize manually (fallback case)
+    // This handles: webhook failed, network issues, or users who signed up before this change
+    console.log('⚠️ No subscription detected - initializing manually (fallback)');
+    setStatus('initializing');
     
     initializeMutation.mutate(undefined, {
       onSuccess: async (data) => {
@@ -45,26 +62,35 @@ export default function SettingUpScreen() {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         console.log('🔄 Refetching billing data...');
         refetchAll();
-        setShouldNavigate(true);
+        setTimeout(() => {
+          router.replace('/onboarding');
+        }, 500);
       },
-      onError: async (error) => {
-        console.error('❌ Initialization failed:', error);
-        setStatus('error');
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      onError: async (error: any) => {
+        // Check if error indicates account is already initialized
+        const errorMessage = error?.message || '';
+        const isAlreadyInitialized = 
+          errorMessage.includes('already') ||
+          errorMessage.includes('Already') ||
+          errorMessage.includes('already initialized') ||
+          errorMessage.includes('Failed to initialize free tier');
+        
+        if (isAlreadyInitialized) {
+          console.log('✅ Account already initialized, treating as success');
+          setStatus('success');
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          refetchAll();
+          setTimeout(() => {
+            router.replace('/onboarding');
+          }, 500);
+        } else {
+          console.error('❌ Initialization failed:', error);
+          setStatus('error');
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
       },
     });
-  }, [user]);
-
-  React.useEffect(() => {
-    if (shouldNavigate && hasActiveSubscription && subscriptionData?.tier?.name === 'free') {
-      console.log('✅ Billing data confirmed fresh - subscription exists!');
-      console.log('🚀 Navigating to onboarding...');
-      
-      setTimeout(() => {
-        router.replace('/onboarding');
-      }, 500);
-    }
-  }, [shouldNavigate, hasActiveSubscription, subscriptionData]);
+  }, [user, status, hasActiveSubscription, subscriptionLoading, initializeMutation, refetchAll, router]);
 
   const handleContinue = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -81,7 +107,7 @@ export default function SettingUpScreen() {
               <Logomark width={120} height={24} />
             </View>
 
-            {status === 'initializing' && (
+            {(status === 'checking' || status === 'initializing') && (
               <>
                 <Text className="text-[32px] font-roobert-semibold text-foreground text-center mb-4 leading-tight tracking-tight">
                   Setting Up Your Account

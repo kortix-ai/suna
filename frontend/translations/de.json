@@ -29,7 +29,7 @@
     "next": "Weiter",
     "upgrade": "Upgrade",
     "basic": "Basis",
-    "tryFree": "Kostenlos starten"
+    "tryFree": "Loslegen"
   },
   "settings": {
     "title": "Einstellungen",
@@ -436,6 +436,7 @@
   "auth": {
     "logIntoAccount": "In dein Konto einloggen",
     "createAccount": "Konto erstellen",
+    "signInOrCreateAccount": "Melde dich an oder erstelle dein Kortix-Konto",
     "continueWithGoogle": "Mit Google fortfahren",
     "continueWithGitHub": "Mit GitHub fortfahren",
     "orEmail": "oder E-Mail",
@@ -463,7 +464,13 @@
     "cancel": "Abbrechen",
     "pleaseEnterValidEmail": "Bitte gib eine gültige E-Mail-Adresse ein",
     "signInFailed": "Login fehlgeschlagen. Check deine Zugangsdaten.",
-    "signUpFailed": "Registrierung fehlgeschlagen. Versuch's nochmal."
+    "signUpFailed": "Registrierung fehlgeschlagen. Versuch's nochmal.",
+    "sendMagicLink": "Magic Link senden",
+    "sending": "Wird gesendet...",
+    "magicLinkSent": "Wir haben einen Magic Link gesendet an",
+    "magicLinkDescription": "Klicke auf den Link in deiner E-Mail, um dich anzumelden. Der Link läuft in 1 Stunde ab.",
+    "magicLinkExplanation": "Wir senden dir einen sicheren Link zum Anmelden. Kein Passwort erforderlich.",
+    "byContinuingYouAgree": "Durch Fortfahren stimmst du unserer <privacyPolicy>Datenschutzerklärung</privacyPolicy> und unseren <termsOfService>Nutzungsbedingungen</termsOfService> zu"
   },
   "onboarding": {
     "welcome": "Willkommen",
@@ -593,6 +600,85 @@
   "home": {
     "title": "Willkommen",
     "subtitle": "Loslegen"
+  },
+  "showcase": {
+    "title": "Kortix: Dein autonomer KI-Worker",
+    "subtitle": "Gebaut für komplexe Aufgaben, entwickelt für alles. Der ultimative KI-Assistent, der alles bewältigt—von einfachen Anfragen bis hin zu mega-komplexen Projekten.",
+    "tryItOut": "Ausprobieren",
+    "kortixComputer": "Kortix Computer",
+    "running": "Läuft",
+    "workers": {
+      "images": {
+        "title": "Bilder",
+        "description": "Erstelle Bilder nach Bedarf. Von Produktfotos über Social-Media-Grafiken bis hin zu vollständigen Illustrationen. Passt Stil, Beleuchtung, Farben und Layout an oder verfeinert bestehende Visuals mit schnellen Bearbeitungen und Retuschen.",
+        "capabilities": {
+          "0": "Produktfotos generieren",
+          "1": "Social-Media-Grafiken erstellen",
+          "2": "Illustrationen erstellen",
+          "3": "Stil- & Beleuchtungsvarianten",
+          "4": "Logo- / Asset-Erstellung",
+          "5": "+ Vieles mehr"
+        },
+        "imageAlt": "Wachstum ist nicht linear Grafik-Beispiel",
+        "fileType": "image"
+      },
+      "slides": {
+        "title": "Präsentationen",
+        "description": "Erstelle auf Anhieb beeindruckende Präsentationen. Von Pitch-Decks über Berichte bis hin zu Schulungsmaterialien. Passt Designs, Layouts, Inhaltsstruktur an oder verfeinert bestehende Decks mit schnellen Bearbeitungen und Updates.",
+        "capabilities": {
+          "0": "Pitch-Decks",
+          "1": "Schulungsmaterial",
+          "2": "Berichtspräsentationen",
+          "3": "Design- & Layoutvarianten",
+          "4": "Inhaltsumstrukturierung",
+          "5": "+ Vieles mehr"
+        },
+        "imageAlt": "Nexus Enterprise Automation Platform Folien-Beispiel",
+        "fileType": "PPTX"
+      },
+      "data": {
+        "title": "Daten",
+        "description": "Verwandelt Rohdaten in Erkenntnisse. Von Tabellenkalkulationen über Dashboards bis hin zu Visualisierungen. Bereinigt Datensätze, erstellt Diagramme, erstellt Berichte oder verfeinert bestehende Analysen mit schnellen Updates.",
+        "capabilities": {
+          "0": "Dashboards",
+          "1": "Visualisierungen",
+          "2": "Datenberichte",
+          "3": "Daten bereinigen & organisieren",
+          "4": "Erkenntnisse generieren",
+          "5": "+ Vieles mehr"
+        },
+        "imageAlt": "Finanzmodell-Dashboard-Beispiel",
+        "fileType": "Vorschau"
+      },
+      "docs": {
+        "title": "Dokumente",
+        "description": "Schreibt und bearbeitet Dokumente mühelos. Von Vorschlägen über Anleitungen bis hin zu Inhalten. Passt Ton, Struktur, Formatierung an oder verfeinert bestehende Dokumente mit schnellen Umschreibungen und Polierungen.",
+        "capabilities": {
+          "0": "Vorschläge",
+          "1": "Anleitungen & Handbücher",
+          "2": "Inhalte",
+          "3": "Ton- & Stilvarianten",
+          "4": "Formatieren & umstrukturieren",
+          "5": "+ Vieles mehr"
+        },
+        "imageAlt": "Q3 2025 Executive Summary Report Beispiel",
+        "fileType": "PDF"
+      },
+      "research": {
+        "title": "Recherche",
+        "description": "Erforscht Themen umfassend. Von Markttrends über Wettbewerbsanalysen bis hin zu tiefgreifenden Untersuchungen. Sammelt Quellen, synthetisiert Erkenntnisse oder verfeinert bestehende Recherchen mit schnellen Updates.",
+        "capabilities": {
+          "0": "Markttrends analysieren",
+          "1": "Wettbewerbsrecherche",
+          "2": "Tiefgreifende Themenuntersuchungen",
+          "3": "Quellen sammeln",
+          "4": "Erkenntnisse synthetisieren",
+          "5": "+ Vieles mehr"
+        },
+        "imageAlt": "Detaillierte Wettbewerber-Profile Recherche-Beispiel",
+        "fileType": "PDF"
+      }
+    }
   },
   "languages": {
     "en": "English",

@@ -29,7 +29,7 @@
     "next": "Next",
     "upgrade": "Upgrade",
     "basic": "Basic",
-    "tryFree": "Start free"
+    "tryFree": "Get started"
   },
   "settings": {
     "title": "Settings",
@@ -318,6 +318,85 @@
   "home": {
     "heroPlaceholder": "Describe the task you want your Worker to complete..."
   },
+  "showcase": {
+    "title": "Kortix: Your Autonomous AI Worker",
+    "subtitle": "Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects.",
+    "tryItOut": "Try it out",
+    "kortixComputer": "Kortix Computer",
+    "running": "Running",
+    "workers": {
+      "images": {
+        "title": "Images",
+        "description": "Create images on demand. From product shots to social graphics to full illustrations. Adjusts style, lighting, colors, and layout, or refines existing visuals with quick edits and touch-ups.",
+        "capabilities": {
+          "0": "Generate product shots",
+          "1": "Create social graphics",
+          "2": "Make illustrations",
+          "3": "Style & lighting variations",
+          "4": "Logo / asset creation",
+          "5": "+ Much more"
+        },
+        "imageAlt": "Growth Isn't Linear graphic example",
+        "fileType": "image"
+      },
+      "slides": {
+        "title": "Slides",
+        "description": "Create stunning presentations instantly. From pitch decks to reports to training materials. Adjusts themes, layouts, content structure, or refines existing decks with quick edits and updates.",
+        "capabilities": {
+          "0": "Pitch decks",
+          "1": "Training material",
+          "2": "Report presentations",
+          "3": "Theme & layout variations",
+          "4": "Content restructuring",
+          "5": "+ Much more"
+        },
+        "imageAlt": "Nexus Enterprise Automation Platform slide example",
+        "fileType": "PPTX"
+      },
+      "data": {
+        "title": "Data",
+        "description": "Transforms raw data into insights. From spreadsheets to dashboards to visualizations. Cleans datasets, creates charts, builds reports, or refines existing analyses with quick updates.",
+        "capabilities": {
+          "0": "Dashboards",
+          "1": "Visualizations",
+          "2": "Data reports",
+          "3": "Clean & organize data",
+          "4": "Generate insights",
+          "5": "+ Much more"
+        },
+        "imageAlt": "Financial Model Dashboard example",
+        "fileType": "Preview"
+      },
+      "docs": {
+        "title": "Docs",
+        "description": "Writes and edits documents effortlessly. From proposals to guides to content pieces. Adjusts tone, structure, formatting, or refines existing documents with quick rewrites and polish.",
+        "capabilities": {
+          "0": "Proposals",
+          "1": "Guides & manuals",
+          "2": "Content pieces",
+          "3": "Tone & style variations",
+          "4": "Format & restructure",
+          "5": "+ Much more"
+        },
+        "imageAlt": "Q3 2025 Executive Summary Report example",
+        "fileType": "PDF"
+      },
+      "research": {
+        "title": "Research",
+        "description": "Researches topics comprehensively. From market trends to competitive analysis to deep dives. Gathers sources, synthesizes findings, or refines existing research with quick updates.",
+        "capabilities": {
+          "0": "Analyze market trends",
+          "1": "Competitive research",
+          "2": "Deep topic dives",
+          "3": "Gather sources",
+          "4": "Synthesize findings",
+          "5": "+ Much more"
+        },
+        "imageAlt": "Detailed Competitor Profiles research example",
+        "fileType": "PDF"
+      }
+    }
+  },
   "threads": {
     "title": "Threads",
     "newThread": "New Thread",
@@ -450,6 +529,7 @@
   "auth": {
     "logIntoAccount": "Log into your account",
     "createAccount": "Create account",
+    "signInOrCreateAccount": "Sign in or create your Kortix account",
     "continueWithGoogle": "Continue with Google",
     "continueWithGitHub": "Continue with GitHub",
     "orEmail": "or email",
@@ -477,7 +557,13 @@
     "cancel": "Cancel",
     "pleaseEnterValidEmail": "Please enter a valid email address",
     "signInFailed": "Sign in failed. Check your credentials.",
-    "signUpFailed": "Sign up failed. Please try again."
+    "signUpFailed": "Sign up failed. Please try again.",
+    "sendMagicLink": "Send magic link",
+    "sending": "Sending...",
+    "magicLinkSent": "We sent a magic link to",
+    "magicLinkDescription": "Click the link in your email to sign in. The link will expire in 1 hour.",
+    "magicLinkExplanation": "We'll send you a secure link to sign in. No password needed.",
+    "byContinuingYouAgree": "By continuing, you agree to our <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>"
   },
   "onboarding": {
     "welcome": "Welcome",

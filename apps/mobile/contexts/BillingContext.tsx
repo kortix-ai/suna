@@ -65,40 +65,88 @@ interface BillingProviderProps {
 }
 
 export function BillingProvider({ children }: BillingProviderProps) {
-  const { isAuthenticated } = useAuthContext();
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const queryClient = useQueryClient();
 
-  // Fetch all billing data (only when authenticated)
+  // Handle billing cache based on auth state
+  const prevAuthRef = React.useRef<boolean | null>(null);
+  React.useEffect(() => {
+    if (authLoading) return;
+    
+    const wasAuthenticated = prevAuthRef.current;
+    const justLoggedIn = wasAuthenticated === false && isAuthenticated === true;
+    const justLoggedOut = wasAuthenticated === true && isAuthenticated === false;
+    
+    prevAuthRef.current = isAuthenticated;
+    
+    if (justLoggedOut) {
+      // User logged out - clear all billing data
+      console.log('🚫 User logged out - clearing billing cache');
+      queryClient.cancelQueries({ queryKey: billingKeys.all });
+      queryClient.removeQueries({ queryKey: billingKeys.all });
+    } else if (justLoggedIn) {
+      // User just logged in - clear any stale errors and invalidate to trigger fresh fetch
+      console.log('✅ User logged in - clearing stale billing data and fetching fresh');
+      queryClient.removeQueries({ queryKey: billingKeys.all });
+      // Small delay to ensure queries re-mount with enabled=true
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: billingKeys.all });
+      }, 100);
+    }
+  }, [isAuthenticated, authLoading, queryClient]);
+
+  // Fetch all billing data (only when authenticated AND not loading)
+  const shouldFetchBilling = isAuthenticated === true && !authLoading;
+  
   const {
     data: subscriptionData,
     isLoading: subscriptionLoading,
+    isFetching: subscriptionFetching,
     error: subscriptionError,
     refetch: refetchSubscription,
   } = useSubscription({
-    enabled: isAuthenticated,
+    enabled: shouldFetchBilling,
   });
 
   const {
     data: creditBalance,
     isLoading: balanceLoading,
+    isFetching: balanceFetching,
     error: balanceError,
     refetch: refetchBalance,
   } = useCreditBalance({
-    enabled: isAuthenticated,
+    enabled: shouldFetchBilling,
   });
 
   const {
     data: billingStatus,
     isLoading: statusLoading,
+    isFetching: statusFetching,
     error: statusError,
     refetch: refetchStatus,
   } = useBillingStatus({
-    enabled: isAuthenticated,
+    enabled: shouldFetchBilling,
   });
 
-  // Combine loading states
-  const isLoading =
-    subscriptionLoading || balanceLoading || statusLoading;
+  // Loading = true when:
+  // 1. Auth is still loading (we don't know if we need to fetch yet)
+  // 2. We should be fetching but don't have data yet (initial fetch)
+  // 3. Any query is actively loading
+  const needsInitialFetch = shouldFetchBilling && subscriptionData === undefined;
+  const isLoading = authLoading || needsInitialFetch || subscriptionLoading || balanceLoading || statusLoading;
+
+  // Debug logging for billing state
+  React.useEffect(() => {
+    console.log('💰 Billing state:', {
+      authLoading,
+      shouldFetchBilling,
+      subscriptionData: subscriptionData !== undefined ? 'has data' : 'undefined',
+      subscriptionLoading,
+      needsInitialFetch,
+      isLoading,
+      hasActiveSubscription: subscriptionData?.tier?.name !== 'none' && !!subscriptionData?.tier
+    });
+  }, [authLoading, shouldFetchBilling, subscriptionData, subscriptionLoading, needsInitialFetch, isLoading]);
 
   // Combine errors (first error encountered)
   const error =

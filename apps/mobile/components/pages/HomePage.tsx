@@ -15,7 +15,6 @@ interface HomePageProps {
   onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
-  isGuestMode?: boolean;
 }
 
 export interface HomePageRef {
@@ -26,7 +25,6 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   onMenuPress,
   chat,
   isAuthenticated,
-  isGuestMode = false,
 }, ref) => {
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
@@ -104,7 +102,6 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               onMenuPress={onMenuPress}
               onUpgradePress={handleUpgradePress}
               onCreditsPress={handleCreditsPress}
-              isGuestMode={isGuestMode}
             />
             <View className="absolute inset-0" pointerEvents="none">
               <BackgroundLogo />
@@ -116,12 +113,12 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               onSendMessage={handleSendMessage}
               onSendAudio={audioHandlers.handleSendAudio}
               onAttachPress={chat.openAttachmentDrawer}
-              onAgentPress={isGuestMode ? () => {} : agentManager.openDrawer}
+              onAgentPress={agentManager.openDrawer}
               onAudioRecord={audioHandlers.handleStartRecording}
               onCancelRecording={audioHandlers.handleCancelRecording}
               onStopAgentRun={chat.stopAgent}
               placeholder={chat.getPlaceholder()}
-              agent={isGuestMode ? undefined : (agentManager.selectedAgent || undefined)}
+              agent={agentManager.selectedAgent || undefined}
               isRecording={audioRecorder.isRecording}
               recordingDuration={audioRecorder.recordingDuration}
               audioLevel={audioRecorder.audioLevel}
@@ -138,12 +135,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               isAgentRunning={chat.isAgentRunning}
               isSendingMessage={chat.isSendingMessage}
               isTranscribing={isTranscribing}
-              isGuestMode={isGuestMode}
             />
           </View>
         </Pressable>
         <ChatDrawers
-          isAgentDrawerVisible={!isGuestMode && agentManager.isDrawerVisible}
+          isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
           isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
           onCloseAttachmentDrawer={chat.closeAttachmentDrawer}

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ENV_MODE, EnvMode } from '@/lib/utils/env-config';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/api';
 
@@ -24,8 +24,37 @@ export function getServerUrl(): string {
   return url;
 }
 
+/**
+ * Get the frontend URL based on environment
+ * Used for auth redirects, sharing links, etc.
+ * 
+ * Priority:
+ * 1. EXPO_PUBLIC_FRONTEND_URL if set (explicit override)
+ * 2. Environment-based defaults (staging by default for Expo apps)
+ * 
+ * Note: Defaults to staging since localhost doesn't work on physical devices.
+ * Set EXPO_PUBLIC_ENV_MODE=local explicitly if you want localhost (simulator only).
+ */
+export function getFrontendUrl(): string {
+  // If explicitly set, use that
+  if (FRONTEND_URL) {
+    return FRONTEND_URL.replace(/\/$/, ''); // Remove trailing slash
+  }
+  
+  // Environment-based defaults
+  switch (ENV_MODE) {
+    case EnvMode.PRODUCTION:
+      return 'https://kortix.com';
+    case EnvMode.STAGING:
+      return 'https://staging.suna.so';
+    case EnvMode.LOCAL:
+    default:
+      return 'http://localhost:3000';
+  }
+}
+
 export const API_URL = getServerUrl();
-export const FRONTEND_SHARE_URL = FRONTEND_URL;
+export const FRONTEND_SHARE_URL = getFrontendUrl();
 
 export async function getAuthToken(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -35,12 +64,8 @@ export async function getAuthToken(): Promise<string | null> {
 export async function getAuthHeaders(): Promise<HeadersInit> {
   const token = await getAuthToken();
   
-  const isGuestMode = await AsyncStorage.getItem('@kortix_guest_mode');
-  const guestSessionId = await AsyncStorage.getItem('@kortix_guest_session_id');
-  
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(isGuestMode === 'true' && guestSessionId ? { 'X-Guest-Session': guestSessionId } : {}),
   };
 }

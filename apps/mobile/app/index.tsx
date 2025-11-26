@@ -2,67 +2,91 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { KortixLoader } from '@/components/ui';
-import { useAuthContext, useGuestMode } from '@/contexts';
+import { useAuthContext, useBillingContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
-import { useAccountSetup } from '@/hooks/useAccountSetup';
 
+/**
+ * Splash/Decision Screen
+ * 
+ * This is the ONLY place that decides where to route users.
+ * Account initialization now happens automatically via backend webhook on signup,
+ * so most users will go directly to onboarding or home.
+ */
 export default function SplashScreen() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
-  const { isGuestMode, isLoading: guestLoading, exitGuestMode } = useGuestMode();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
-  const { isChecking: setupChecking, needsSetup } = useAccountSetup();
-  const [hasClearedGuestMode, setHasClearedGuestMode] = React.useState(false);
-
-  // Clear guest mode if user is authenticated (only once)
+  const { hasActiveSubscription, isLoading: billingLoading, subscriptionData } = useBillingContext();
+  
+  // Track navigation to prevent double navigation
+  const [hasNavigated, setHasNavigated] = React.useState(false);
+  
+  // Reset navigation flag when component mounts (fresh visit to splash)
   React.useEffect(() => {
-    const clearGuestModeIfAuthenticated = async () => {
-      if (!authLoading && !guestLoading && isAuthenticated && isGuestMode && !hasClearedGuestMode) {
-        console.log('🔐 User is authenticated but guest mode is active. Clearing guest mode...');
-        await exitGuestMode();
-        setHasClearedGuestMode(true);
-        console.log('✅ Guest mode cleared');
-      }
-    };
+    setHasNavigated(false);
+  }, []);
+
+  // Compute ready state
+  // - Auth must be done loading
+  // - If authenticated: billing must be done loading AND have data
+  // - Onboarding check must be done
+  const authReady = !authLoading;
+  const billingReady = !isAuthenticated || (!billingLoading && subscriptionData !== null);
+  const onboardingReady = !isAuthenticated || !onboardingLoading;
+  const allDataReady = authReady && billingReady && onboardingReady;
+
+  // Debug logging
+  React.useEffect(() => {
+    console.log('📊 Splash:', {
+      authLoading,
+      isAuthenticated,
+      billingLoading,
+      subscriptionData: subscriptionData ? '✓' : '✗',
+      onboardingLoading,
+      hasCompletedOnboarding,
+      hasActiveSubscription,
+      allDataReady,
+      hasNavigated
+    });
+  }, [authLoading, isAuthenticated, billingLoading, subscriptionData, onboardingLoading, hasCompletedOnboarding, hasActiveSubscription, allDataReady, hasNavigated]);
+
+  React.useEffect(() => {
+    // Don't navigate twice
+    if (hasNavigated) return;
     
-    clearGuestModeIfAuthenticated();
-  }, [authLoading, guestLoading, isAuthenticated, isGuestMode, exitGuestMode, hasClearedGuestMode]);
+    // Wait until all data is ready
+    if (!allDataReady) return;
 
-  React.useEffect(() => {
-    // Wait for all loading states and guest mode clearing to complete
-    if (!authLoading && !onboardingLoading && !setupChecking && !guestLoading) {
-      const timeoutId = setTimeout(() => {
-        console.log('🚀 App startup routing decision:', {
-          isGuestMode,
-          isAuthenticated,
-          needsSetup,
-          hasCompletedOnboarding,
-          hasClearedGuestMode
-        });
-        
-        // If user is authenticated, don't route to guest mode even if flag is still set
-        // (it will be cleared by the effect above)
-        if (isGuestMode && !isAuthenticated) {
-          console.log('👀 Guest mode active, routing to home');
-          router.replace('/home');
-        } else if (!isAuthenticated) {
-          console.log('🔐 User not authenticated, routing to sign in');
-          router.replace('/auth');
-        } else if (needsSetup) {
-          console.log('🔧 Account needs setup, routing to setup screen');
-          router.replace('/setting-up');
-        } else if (!hasCompletedOnboarding) {
-          console.log('👋 User needs onboarding, routing to onboarding');
-          router.replace('/onboarding');
-        } else {
-          console.log('✅ User authenticated and onboarded, routing to app');
-          router.replace('/home');
-        }
-      }, 300);
+    // Small delay to ensure React state is settled
+    const timer = setTimeout(() => {
+      if (hasNavigated) return;
+      setHasNavigated(true);
 
-      return () => clearTimeout(timeoutId);
-    }
-  }, [authLoading, onboardingLoading, setupChecking, guestLoading, isAuthenticated, isGuestMode, needsSetup, hasCompletedOnboarding, router, hasClearedGuestMode]);
+      // ROUTING DECISION
+      if (!isAuthenticated) {
+        console.log('🚀 → /auth (not authenticated)');
+        router.replace('/auth');
+        return;
+      }
+
+      // User is authenticated
+      // Account initialization happens automatically via webhook on signup.
+      // Most users will have a subscription by now. Only show setting-up
+      // as a fallback if webhook failed or user signed up before this change.
+      if (!hasActiveSubscription) {
+        console.log('🚀 → /setting-up (fallback: no subscription detected)');
+        router.replace('/setting-up');
+      } else if (!hasCompletedOnboarding) {
+        console.log('🚀 → /onboarding');
+        router.replace('/onboarding');
+      } else {
+        console.log('🚀 → /home');
+        router.replace('/home');
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [allDataReady, hasNavigated, isAuthenticated, hasActiveSubscription, hasCompletedOnboarding, router]);
 
   return (
     <>

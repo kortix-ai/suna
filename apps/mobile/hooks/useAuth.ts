@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/api/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -39,12 +39,17 @@ export function useAuth() {
   });
 
   const [error, setError] = useState<AuthError | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const initializedUserIdRef = useRef<string | null>(null);
+  const initializedCanTrackRef = useRef<boolean | null>(null);
 
+  // Initialize session once on mount
   useEffect(() => {
-    console.log('🔐 Initializing auth state');
-    
+    let mounted = true;
+
     supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
-      console.log('📊 Initial session:', session ? 'Active' : 'None');
+      if (!mounted) return;
+
       setAuthState({
         user: session?.user ?? null,
         session,
@@ -53,22 +58,37 @@ export function useAuth() {
       });
 
       if (session?.user && shouldUseRevenueCat()) {
+        // Only initialize if user changed or canTrack changed from false to true
+        const shouldInitialize = 
+          initializedUserIdRef.current !== session.user.id ||
+          (canTrack && initializedCanTrackRef.current !== canTrack);
+
+        if (shouldInitialize) {
         try {
-          if (canTrack) {
-            console.log('✅ Tracking authorized, initializing RevenueCat with analytics');
-          } else {
-            console.log('⚠️ Tracking not authorized, initializing RevenueCat without analytics');
-          }
           await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+            initializedUserIdRef.current = session.user.id;
+            initializedCanTrackRef.current = canTrack;
         } catch (error) {
           console.warn('⚠️ Failed to initialize RevenueCat:', error);
+          }
         }
       }
     });
 
+    return () => {
+      mounted = false;
+    };
+  }, []); // Only run once on mount
+
+  // Handle auth state changes and canTrack changes
+  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
-        console.log('🔄 Auth state changed:', _event);
+        // Only log significant auth events, not every state change
+        if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
+          console.log('🔄 Auth state changed:', _event);
+        }
+        
         setAuthState({
           user: session?.user ?? null,
           session,
@@ -77,22 +97,47 @@ export function useAuth() {
         });
 
         if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
+          // Only initialize if user changed or canTrack changed from false to true
+          const shouldInitialize = 
+            initializedUserIdRef.current !== session.user.id ||
+            (canTrack && initializedCanTrackRef.current !== canTrack);
+
+          if (shouldInitialize) {
           try {
-            if (canTrack) {
-              console.log('✅ Tracking authorized, initializing RevenueCat with analytics');
-            } else {
-              console.log('⚠️ Tracking not authorized, initializing RevenueCat without analytics');
-            }
             await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+              initializedUserIdRef.current = session.user.id;
+              initializedCanTrackRef.current = canTrack;
           } catch (error) {
             console.warn('⚠️ Failed to initialize RevenueCat:', error);
           }
+          }
+        } else if (_event === 'SIGNED_OUT') {
+          initializedUserIdRef.current = null;
+          initializedCanTrackRef.current = null;
         }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [canTrack, trackingLoading]);
+  }, [canTrack]); // Only depend on canTrack, not trackingLoading
+
+  // Handle canTrack changes for already-initialized RevenueCat
+  useEffect(() => {
+    if (!authState.user || !shouldUseRevenueCat() || !canTrack) {
+      return;
+    }
+
+    // If RevenueCat was initialized with canTrack=false but now it's true, update it
+    if (initializedUserIdRef.current === authState.user.id && initializedCanTrackRef.current !== canTrack) {
+      initializeRevenueCat(authState.user.id, authState.user.email, canTrack)
+        .then(() => {
+          initializedCanTrackRef.current = canTrack;
+        })
+        .catch((error) => {
+          console.warn('⚠️ Failed to update RevenueCat tracking:', error);
+        });
+    }
+  }, [canTrack, authState.user]); // Update when canTrack or user changes
 
   const signIn = useCallback(async ({ email, password }: SignInCredentials) => {
     try {
@@ -325,6 +370,67 @@ export function useAuth() {
   }, []);
 
   /**
+   * Sign in with magic link (passwordless)
+   * Auto-creates account if it doesn't exist
+   * Goes directly to mobile deep link - no frontend redirect needed
+   */
+  const signInWithMagicLink = useCallback(async ({ email, acceptedTerms }: { email: string; acceptedTerms?: boolean }) => {
+    try {
+      console.log('🎯 Magic link sign in request:', email);
+      setError(null);
+      setAuthState((prev) => ({ ...prev, isLoading: true }));
+
+      // Build deep link URL directly - no frontend redirect needed for mobile
+      const params = new URLSearchParams();
+      if (acceptedTerms) {
+        params.set('terms_accepted', 'true');
+      }
+      
+      const emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
+
+      console.log('📱 Mobile magic link redirect URL:', emailRedirectTo);
+
+      const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
+        email: email.trim().toLowerCase(),
+        options: {
+          emailRedirectTo,
+          shouldCreateUser: true, // Auto-create account if doesn't exist
+        },
+      });
+
+      if (magicLinkError) {
+        console.error('❌ Supabase rejected redirect URL:', {
+          message: magicLinkError.message,
+          status: magicLinkError.status,
+          attemptedUrl: emailRedirectTo,
+          hint: 'Make sure kortix://auth/callback is in Supabase Dashboard → Auth → Redirect URLs',
+        });
+      }
+
+      if (magicLinkError) {
+        console.error('❌ Magic link error:', magicLinkError.message);
+        setError({ message: magicLinkError.message });
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
+        return { success: false, error: magicLinkError };
+      }
+
+      // If user accepted terms and magic link was sent, update metadata after successful auth
+      // Note: This will be handled when the user clicks the magic link and signs in
+      // For now, we store it in the signup data which will be saved when account is created
+
+      console.log('✅ Magic link email sent');
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
+      return { success: true };
+    } catch (err: any) {
+      console.error('❌ Magic link exception:', err);
+      const error = { message: err.message || 'An unexpected error occurred' };
+      setError(error);
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
+      return { success: false, error };
+    }
+  }, []);
+
+  /**
    * Request password reset email
    */
   const resetPassword = useCallback(async ({ email }: PasswordResetRequest) => {
@@ -390,6 +496,12 @@ export function useAuth() {
    * Always succeeds from UI perspective to prevent stuck states
    */
   const signOut = useCallback(async () => {
+    // Prevent multiple simultaneous sign out attempts
+    if (isSigningOut) {
+      console.log('⚠️ Sign out already in progress, ignoring duplicate call');
+      return { success: false, error: { message: 'Sign out already in progress' } };
+    }
+
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     
     /**
@@ -448,6 +560,8 @@ export function useAuth() {
 
     try {
       console.log('🎯 Sign out initiated');
+      setIsSigningOut(true);
+      
       if (shouldUseRevenueCat()) {
         try {
           const { logoutRevenueCat } = require('@/lib/billing/revenuecat');
@@ -481,6 +595,7 @@ export function useAuth() {
       forceSignOutState();
 
       console.log('✅ Sign out completed successfully - all data cleared');
+      setIsSigningOut(false);
       return { success: true };
 
     } catch (error: any) {
@@ -492,16 +607,19 @@ export function useAuth() {
       forceSignOutState();
 
       console.log('✅ Sign out completed (with errors handled) - all data cleared');
+      setIsSigningOut(false);
       return { success: true };
     }
-  }, [queryClient]);
+  }, [queryClient, isSigningOut]);
 
   return {
     ...authState,
     error,
+    isSigningOut,
     signIn,
     signUp,
     signInWithOAuth,
+    signInWithMagicLink,
     resetPassword,
     updatePassword,
     signOut,

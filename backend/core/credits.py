@@ -184,7 +184,7 @@ class CreditService:
                 balance = Decimal('0')
         
         if self.cache:
-            await self.cache.set(cache_key, {'total': float(balance), 'account_id': user_id}, ttl=300)
+            await self.cache.set(cache_key, str(balance), ttl=300)
         
         return balance
     

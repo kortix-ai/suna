@@ -19,7 +19,6 @@ import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsPage } from '@/components/settings/SettingsPage';
-import { placeholderImageUrl } from '@/components/settings/NameEditPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -35,8 +34,6 @@ import type { Conversation, UserProfile, ConversationSection as ConversationSect
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
-import { useGuestMode } from '@/contexts';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -237,7 +234,7 @@ function NewChatButton({ onPress }: NewChatButtonProps) {
       onPressOut={() => {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
-      className="h-14 w-full rounded-full bg-primary flex-row items-center justify-center gap-2"
+      className="h-14 w-full rounded-2xl bg-primary flex-row items-center justify-center gap-2"
     >
       <Icon
         as={Plus}
@@ -396,7 +393,6 @@ export function MenuPage({
   const router = useRouter();
   const { agents } = useAgent();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
-  const { isGuestMode } = useGuestMode();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
@@ -610,21 +606,7 @@ export function MenuPage({
             >
               {activeTab === 'chats' && (
                 <>
-                  {isGuestMode ? (
-                    <EmptyState
-                      type="empty"
-                      icon={MessageSquare}
-                      title="Sign up to save conversations"
-                      description="Create an account to keep your chat history and access it across devices"
-                      actionLabel="Sign Up"
-                      onActionPress={() => {
-                        useAuthDrawerStore.getState().openAuthDrawer({
-                          title: 'Sign up to continue',
-                          message: 'Create an account to save your conversations and access them from anywhere'
-                        });
-                      }}
-                    />
-                  ) : isLoadingThreads ? (
+                  {isLoadingThreads ? (
                     <EmptyState
                       type="loading"
                       icon={MessageSquare}
@@ -804,7 +786,11 @@ export function MenuPage({
             style={profileAnimatedStyle}
             className="flex-row items-center gap-3 border border-border p-3 rounded-2xl"
           >
-            <ProfilePicture imageUrl={placeholderImageUrl} size={12} />
+            <ProfilePicture 
+              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar} 
+              size={12}
+              fallbackText={profile.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+            />
             <View className="flex-col items-start -mt-1.5">
               <Text className="text-lg font-roobert-semibold text-foreground">
                 {profile.name || 'User'}

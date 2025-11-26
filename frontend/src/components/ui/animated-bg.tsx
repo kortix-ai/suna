@@ -258,7 +258,28 @@ interface AnimatedBgProps {
 export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplier = 1, customArcs }: AnimatedBgProps) {
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
-    if (!mounted) return null;
+    
+    // Show a static placeholder immediately to improve FCP
+    // The animated version will replace it after hydration
+    if (!mounted) {
+        return (
+            <div
+                className={`absolute inset-0 overflow-hidden pointer-events-none ${variant === 'header' ? 'z-0' : '-z-10'}`}
+                aria-hidden="true"
+            >
+                {/* Static gradient placeholder matching the animated bg */}
+                <div 
+                    className="absolute inset-0 opacity-20"
+                    style={{
+                        background: 'radial-gradient(ellipse at 20% 30%, rgba(200, 200, 200, 0.15) 0%, transparent 50%), radial-gradient(ellipse at 80% 40%, rgba(180, 180, 180, 0.12) 0%, transparent 45%)'
+                    }}
+                />
+                {variant === 'hero' && (
+                    <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+                )}
+            </div>
+        );
+    }
 
     // Helper function to apply blur multiplier
     const adjustBlur = (blurValues: string[]): string[] => {

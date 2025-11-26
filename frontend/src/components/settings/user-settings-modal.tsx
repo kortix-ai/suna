@@ -811,6 +811,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     };
 
     const handleManageSubscription = () => {
+        console.log('[BillingTab] Creating portal session with return_url:', returnUrl);
         createPortalSessionMutation.mutate({ return_url: returnUrl });
     };
 

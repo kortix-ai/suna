@@ -502,7 +502,7 @@ export function RevenueCatPricingSection({
               opacity: !selectedPackage || isPurchasing || (selectedPackage && isCurrentPlan(selectedPackage)) ? 0.5 : 1,
             }
           ]}
-          className={`w-full h-14 rounded-full items-center justify-center ${
+          className={`w-full h-14 rounded-2xl items-center justify-center ${
             !selectedPackage || isPurchasing || (selectedPackage && isCurrentPlan(selectedPackage))
               ? 'bg-muted' 
               : 'bg-foreground'
@@ -604,7 +604,7 @@ export function RevenueCatPricingSection({
 
             <Pressable
               onPress={handleCloseExistingSubDrawer}
-              className="w-full h-12 bg-foreground rounded-full items-center justify-center"
+              className="w-full h-12 bg-foreground rounded-2xl items-center justify-center"
             >
               <Text className="text-base font-roobert-semibold text-background">
                 Got it

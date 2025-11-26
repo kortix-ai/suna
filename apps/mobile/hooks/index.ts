@@ -9,8 +9,6 @@
 export { useChat } from './useChat';
 export { useAuth } from './useAuth';
 export { useOnboarding } from './useOnboarding';
-export { useNavigation } from './useNavigation';
-export { useAuthDrawer } from './useAuthDrawer';
 // Advanced Features now provided by context
 export { useAdvancedFeatures } from '@/contexts';
 
