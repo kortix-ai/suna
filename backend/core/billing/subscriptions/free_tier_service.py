@@ -7,6 +7,7 @@ from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
 from ..shared.config import FREE_TIER_INITIAL_CREDITS
 from dateutil.relativedelta import relativedelta # type: ignore
+
 class FreeTierService:
     def __init__(self):
         self.stripe = stripe
@@ -126,6 +127,13 @@ class FreeTierService:
                 'last_grant_date': datetime.now().isoformat()
             }).eq('account_id', account_id).execute()
             
+            from core.credits import credit_service
+            refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
+            if refreshed:
+                logger.info(f"[FREE TIER] ✅ Triggered initial daily refresh: ${amount} credits granted to {account_id}")
+            else:
+                logger.warning(f"[FREE TIER] Daily refresh did not grant credits on signup for {account_id}")
+            
             current_balance = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()
             
             if current_balance.data and float(current_balance.data[0]['balance']) < FREE_TIER_INITIAL_CREDITS:
@@ -163,4 +171,3 @@ class FreeTierService:
             logger.info(f"[FREE TIER] Released lock for {account_id}")
 
 free_tier_service = FreeTierService()
-
