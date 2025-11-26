@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, Query # type: ignore
 from typing import Optional, Dict
 from datetime import datetime, timezone
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.credits import credit_service
 from ..shared.models import (
     CreateCheckoutSessionRequest,
     CreatePortalSessionRequest,
@@ -19,21 +20,9 @@ router = APIRouter(tags=["billing-subscriptions"])
 
 @router.get("/subscription")
 async def get_subscription(
-    account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
-        if not account_id:
-            return {
-                'has_subscription': False,
-                'tier': 'guest',
-                'tier_name': 'Guest',
-                'status': None,
-                'plan_name': None
-            }
-        
-        from core.credits import credit_service
-        await credit_service.check_and_refresh_daily_credits(account_id)
-        
         subscription_info = await subscription_service.get_subscription(account_id)
         
         from decimal import Decimal

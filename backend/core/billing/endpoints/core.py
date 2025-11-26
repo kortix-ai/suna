@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from core.credits import credit_service
 from core.services.supabase import DBConnection
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.ai_models import model_manager
@@ -135,16 +135,12 @@ async def check_status(
 
 @router.get("/balance")
 async def get_credit_balance(
-    account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     from ..shared.config import CREDITS_PER_DOLLAR
     from datetime import datetime, timezone, timedelta
     
-    if not account_id:
-        return {"balance": 0.0, "message": "Guest user"}
-    
-    await credit_service.check_and_refresh_daily_credits(account_id)
-    
+    # Use the same structure as the legacy API
     from core.services.supabase import DBConnection
     db = DBConnection()
     client = await db.client
@@ -351,7 +347,7 @@ async def get_tier_configurations() -> Dict:
 
 @router.get("/available-models")
 async def get_available_models(
-    account_id: Optional[str] = Depends(get_optional_user_id_from_jwt)
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     if config.ENV_MODE == EnvMode.LOCAL:
         all_models = model_manager.list_available_models(include_disabled=True)
@@ -370,12 +366,9 @@ async def get_available_models(
             'local_mode': True
         }
     
-    if not account_id:
-        tier_name = 'free'
-    else:
-        from ..subscriptions import subscription_service
-        tier_info = await subscription_service.get_user_subscription_tier(account_id)
-        tier_name = tier_info.get('name', 'free')
+    from ..subscriptions import subscription_service
+    tier_info = await subscription_service.get_user_subscription_tier(account_id)
+    tier_name = tier_info.get('name', 'free')
     
     all_models = model_manager.list_available_models(include_disabled=True)
     

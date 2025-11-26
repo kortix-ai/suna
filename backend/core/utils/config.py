@@ -90,7 +90,7 @@ class Configuration:
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
     # ============================================
     
-    GUEST_MODE_ADMIN_USER_ID: Optional[str] = None
+    SYSTEM_ADMIN_USER_ID: Optional[str] = None  # User ID that owns shared/fallback agents
 
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
@@ -382,7 +382,7 @@ class Configuration:
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
     # Always False in production, regardless of environment variable
-    _DEBUG_SAVE_LLM_IO: Optional[bool] = False
+    _DEBUG_SAVE_LLM_IO: Optional[bool] = True
     
     @property
     def DEBUG_SAVE_LLM_IO(self) -> bool:

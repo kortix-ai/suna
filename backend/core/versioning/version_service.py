@@ -283,6 +283,14 @@ class VersionService:
         version_count = await self._count_versions(agent_id)
         await self._update_agent_current_version(agent_id, version.version_id, version_count)
         
+        # Invalidate agent config cache (MCPs may have changed)
+        try:
+            from core.runtime_cache import invalidate_agent_config_cache
+            await invalidate_agent_config_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version create")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
+        
         logger.debug(f"Created version {version.version_name} for agent {agent_id}")
         return version
     
@@ -371,6 +379,14 @@ class VersionService:
         
         version_count = await self._count_versions(agent_id)
         await self._update_agent_current_version(agent_id, version_id, version_count)
+        
+        # Invalidate agent config cache (active version changed)
+        try:
+            from core.runtime_cache import invalidate_agent_config_cache
+            await invalidate_agent_config_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version activate")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
         
         logger.debug(f"Activated version {version['version_name']} for agent {agent_id}")
     

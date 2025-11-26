@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Request
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess, get_optional_user_id_from_jwt, get_optional_user_id
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess, get_optional_user_id
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from core.utils.config import config, EnvMode
@@ -17,24 +17,10 @@ router = APIRouter(tags=["threads"])
 @router.get("/threads", summary="List User Threads", operation_id="list_user_threads")
 async def get_user_threads(
     request: Request,
-    user_id: Optional[str] = Depends(get_optional_user_id_from_jwt),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
-    from core.guest_session import guest_session_service
-    
-    if not user_id:
-        guest_session_id = request.headers.get('X-Guest-Session')
-        if guest_session_id:
-            if isinstance(guest_session_id, list):
-                guest_session_id = guest_session_id[0]
-
-            session = await guest_session_service.get_or_create_session(request, guest_session_id)
-            user_id = session['session_id']
-            logger.info(f"Guest user fetching threads: {user_id}")
-        else:
-            raise HTTPException(status_code=401, detail="Authentication required")
-    
     logger.debug(f"Fetching threads with project data for user: {user_id} (page={page}, limit={limit})")
     client = await utils.db.client
     try:
@@ -372,6 +358,21 @@ async def create_thread(
                     logger.error(f"Error deleting sandbox: {str(e)}")
             raise Exception("Database update failed")
 
+        # Update project metadata cache with sandbox data (instead of invalidate)
+        try:
+            from core.runtime_cache import set_cached_project_metadata
+            sandbox_cache_data = {
+                'id': sandbox_id,
+                'pass': sandbox_pass,
+                'vnc_preview': vnc_url,
+                'sandbox_url': website_url,
+                'token': token
+            }
+            await set_cached_project_metadata(project_id, sandbox_cache_data)
+            logger.debug(f"✅ Updated project cache with sandbox data: {project_id}")
+        except Exception as cache_error:
+            logger.warning(f"Failed to update project cache: {cache_error}")
+
         thread_data = {
             "thread_id": str(uuid.uuid4()), 
             "project_id": project_id, 
@@ -389,6 +390,14 @@ async def create_thread(
         thread = await client.table('threads').insert(thread_data).execute()
         thread_id = thread.data[0]['thread_id']
         logger.debug(f"Created new thread: {thread_id}")
+
+        # Increment thread count cache (fire-and-forget)
+        try:
+            import asyncio
+            from core.runtime_cache import increment_thread_count_cache
+            asyncio.create_task(increment_thread_count_cache(account_id))
+        except Exception:
+            pass
 
         logger.debug(f"Successfully created thread {thread_id} with project {project_id}")
         return {"thread_id": thread_id, "project_id": project_id}
@@ -493,46 +502,21 @@ async def add_message_to_thread(
     thread_id: str,
     request: Request,
     message: str = Body(..., embed=True),
-    user_id: Optional[str] = Depends(get_optional_user_id_from_jwt),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
 ):
-    from core.guest_session import guest_session_service
-    
     logger.debug(f"Adding message to thread: {thread_id}")
     client = await utils.db.client
     
-    if not user_id:
-        guest_session_id = request.headers.get('X-Guest-Session')
-        if guest_session_id:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    'error': 'guest_chat_disabled',
-                    'message': 'Chat is not available in guest mode. Please sign up or log in to continue.',
-                    'action': 'signup_required'
-                }
-            )
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
+    thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
     if not thread_result.data:
         raise HTTPException(status_code=404, detail="Thread not found")
     
     thread_data = thread_result.data[0]
     
-    if thread_data['account_id'] == user_id:
-        logger.debug(f"User {user_id} owns thread {thread_id}")
-    else:
-        agent_runs_result = await client.table('agent_runs').select('metadata').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()
-        if agent_runs_result.data:
-            metadata = agent_runs_result.data[0].get('metadata', {})
-            actual_user_id = metadata.get('actual_user_id')
-            if actual_user_id != user_id:
-                logger.error(f"Guest {user_id} unauthorized for thread {thread_id} (belongs to {actual_user_id})")
-                raise HTTPException(status_code=403, detail="Not authorized to access this thread")
-            logger.debug(f"Guest {user_id} authorized for thread {thread_id}")
-        else:
-            logger.error(f"No agent runs found for thread {thread_id}")
-            raise HTTPException(status_code=403, detail="Not authorized to access this thread")
+    # Verify ownership or team access
+    if thread_data['account_id'] != user_id:
+        from core.utils.auth_utils import verify_and_authorize_thread_access
+        await verify_and_authorize_thread_access(client, thread_id, user_id)
     
     try:
         message_result = await client.table('messages').insert({
@@ -712,9 +696,23 @@ async def delete_thread(
         if not thread_delete_result.data:
             raise HTTPException(status_code=500, detail="Failed to delete thread")
         
+        # Invalidate thread count cache for this user
+        try:
+            from core.runtime_cache import invalidate_thread_count_cache
+            await invalidate_thread_count_cache(auth.user_id)
+        except Exception:
+            pass
+        
         if project_id:
             logger.debug(f"Deleting project {project_id}")
             await client.table('projects').delete().eq('project_id', project_id).execute()
+            
+            # Invalidate project cache
+            try:
+                from core.runtime_cache import invalidate_project_cache
+                await invalidate_project_cache(project_id)
+            except Exception:
+                pass
         
         logger.debug(f"Successfully deleted thread {thread_id} and all associated data")
         return {"message": "Thread deleted successfully", "thread_id": thread_id}

@@ -517,6 +517,107 @@ async def delete_trigger(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+class TriggerExecution(BaseModel):
+    """Represents a single trigger execution (agent run)"""
+    execution_id: str
+    thread_id: str
+    trigger_id: str
+    agent_id: str
+    status: str
+    started_at: str
+    completed_at: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+class TriggerExecutionHistoryResponse(BaseModel):
+    """Response for trigger execution history"""
+    executions: List[TriggerExecution]
+    total_count: int
+    next_run_time: Optional[str] = None
+    next_run_time_local: Optional[str] = None
+    timezone: Optional[str] = None
+    human_readable_schedule: Optional[str] = None
+
+
+@router.get("/{trigger_id}/executions", response_model=TriggerExecutionHistoryResponse)
+async def get_trigger_executions(
+    trigger_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Get execution history for a trigger (past runs and next scheduled run)"""
+    
+    try:
+        trigger_service = get_trigger_service(db)
+        trigger = await trigger_service.get_trigger(trigger_id)
+        
+        if not trigger:
+            raise HTTPException(status_code=404, detail="Trigger not found")
+        
+        await verify_and_authorize_trigger_agent_access(trigger.agent_id, user_id)
+        
+        client = await db.client
+        
+        # Get agent runs that were triggered by this trigger
+        # Agent runs store trigger_id in metadata
+        runs_result = await client.table('agent_runs').select(
+            'agent_run_id, thread_id, agent_id, status, created_at, completed_at, error, metadata'
+        ).eq(
+            'metadata->>trigger_id', trigger_id
+        ).order(
+            'created_at', desc=True
+        ).limit(limit).execute()
+        
+        executions = []
+        for run in runs_result.data or []:
+            executions.append(TriggerExecution(
+                execution_id=run['agent_run_id'],
+                thread_id=run['thread_id'],
+                trigger_id=trigger_id,
+                agent_id=run['agent_id'],
+                status=run['status'],
+                started_at=run['created_at'],
+                completed_at=run.get('completed_at'),
+                error_message=run.get('error')
+            ))
+        
+        # Calculate next run time for scheduled triggers
+        next_run_time = None
+        next_run_time_local = None
+        user_timezone = None
+        human_readable = None
+        
+        if trigger.trigger_type == TriggerType.SCHEDULE and trigger.is_active:
+            cron_expression = trigger.config.get('cron_expression')
+            user_timezone = trigger.config.get('timezone', 'UTC')
+            
+            if cron_expression:
+                import pytz
+                next_run = get_next_run_time(cron_expression, user_timezone)
+                if next_run:
+                    next_run_time = next_run.isoformat()
+                    local_tz = pytz.timezone(user_timezone)
+                    next_run_local = next_run.astimezone(local_tz)
+                    next_run_time_local = next_run_local.isoformat()
+                
+                human_readable = get_human_readable_schedule(cron_expression, user_timezone)
+        
+        return TriggerExecutionHistoryResponse(
+            executions=executions,
+            total_count=len(executions),
+            next_run_time=next_run_time,
+            next_run_time_local=next_run_time_local,
+            timezone=user_timezone,
+            human_readable_schedule=human_readable
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting trigger executions: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.post("/{trigger_id}/webhook")
 async def trigger_webhook(
     trigger_id: str,

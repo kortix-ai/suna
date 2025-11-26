@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, BackgroundTasks
 from pydantic import BaseModel, Field, validator
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_agent_access, AuthorizedAgentAccess
 from core.services.supabase import DBConnection
@@ -295,18 +295,25 @@ async def delete_folder(
 @router.post("/folders/{folder_id}/upload")
 async def upload_file(
     folder_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Upload a file to a knowledge base folder."""
+    import time
+    start_time = time.time()
+    logger.info(f"[UPLOAD] Starting upload for file: {file.filename}")
+    
     try:
         client = await db.client
         account_id = user_id
         
         # Verify folder ownership
+        t1 = time.time()
         folder_result = await client.table('knowledge_base_folders').select(
             'folder_id'
         ).eq('folder_id', folder_id).eq('account_id', account_id).execute()
+        logger.info(f"[UPLOAD] Folder verification took: {time.time() - t1:.2f}s")
         
         if not folder_result.data:
             raise HTTPException(status_code=404, detail="Folder not found")
@@ -315,27 +322,38 @@ async def upload_file(
         if not file.filename:
             raise ValidationError("Filename is required")
         
+        t2 = time.time()
         is_valid, error_message = FileNameValidator.validate_name(file.filename, "file")
         if not is_valid:
             raise ValidationError(error_message)
+        logger.info(f"[UPLOAD] Filename validation took: {time.time() - t2:.2f}s")
         
         # Read file content
+        t3 = time.time()
         file_content = await file.read()
+        logger.info(f"[UPLOAD] File read ({len(file_content)} bytes) took: {time.time() - t3:.2f}s")
         
         # Check total file size limit before processing
+        t4 = time.time()
         await check_total_file_size_limit(account_id, len(file_content))
+        logger.info(f"[UPLOAD] Size limit check took: {time.time() - t4:.2f}s")
         
         # Generate unique filename if there's a conflict
+        t5 = time.time()
         final_filename = await validate_file_name_unique_in_folder(file.filename, folder_id)
+        logger.info(f"[UPLOAD] Filename uniqueness check took: {time.time() - t5:.2f}s")
         
-        # Process file
-        result = await file_processor.process_file(
+        # Process file in background
+        t6 = time.time()
+        result = await file_processor.process_file_fast(
             account_id=account_id,
             folder_id=folder_id,
             file_content=file_content,
             filename=final_filename,
-            mime_type=file.content_type or 'application/octet-stream'
+            mime_type=file.content_type or 'application/octet-stream',
+            background_tasks=background_tasks
         )
+        logger.info(f"[UPLOAD] File processing took: {time.time() - t6:.2f}s")
         
         if not result['success']:
             raise HTTPException(status_code=400, detail=result['error'])
@@ -346,6 +364,7 @@ async def upload_file(
             result['original_filename'] = file.filename
             result['final_filename'] = final_filename
         
+        logger.info(f"[UPLOAD] Total upload time: {time.time() - start_time:.2f}s")
         return result
         
     except ValidationError:
@@ -520,6 +539,14 @@ async def update_agent_assignments(
                 'account_id': account_id,
                 'enabled': True
             }).execute()
+        
+        # Invalidate agent config cache (knowledge base assignments changed)
+        try:
+            from core.runtime_cache import invalidate_agent_config_cache
+            await invalidate_agent_config_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after knowledge base update")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
         
         return {"success": True, "message": "Assignments updated successfully"}
         

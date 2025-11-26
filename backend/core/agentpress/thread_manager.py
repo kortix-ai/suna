@@ -462,7 +462,10 @@ class ThreadManager:
             
             # Always fetch messages (needed for LLM call)
             # Fast path just skips compression, not fetching!
+            import time
+            fetch_start = time.time()
             messages = await self.get_llm_messages(thread_id)
+            logger.info(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
             
             # Note: We no longer need to manually append partial assistant messages
             # because we now save complete assistant messages with tool calls before auto-continuing
@@ -477,6 +480,7 @@ class ThreadManager:
                     logger.debug(f"Fast path: Skipping compression check (under threshold)")
                 elif need_compression:
                     # We know we're over threshold, compress now
+                    compress_start = time.time()
                     logger.info(f"Applying context compression on {len(messages)} messages")
                     context_manager = ContextManager()
                     compressed_messages = await context_manager.compress_messages(
@@ -485,10 +489,11 @@ class ThreadManager:
                         system_prompt=system_prompt,
                         thread_id=thread_id
                     )
-                    logger.debug(f"Context compression completed: {len(messages)} -> {len(compressed_messages)} messages")
+                    logger.info(f"⏱️ [TIMING] Context compression: {(time.time() - compress_start) * 1000:.1f}ms ({len(messages)} -> {len(compressed_messages)} messages)")
                     messages = compressed_messages
                 else:
                     # First turn or no fast path data: Run compression check
+                    compress_start = time.time()
                     logger.debug(f"Running compression check on {len(messages)} messages")
                     context_manager = ContextManager()
                     compressed_messages = await context_manager.compress_messages(
@@ -497,6 +502,7 @@ class ThreadManager:
                         system_prompt=system_prompt,
                         thread_id=thread_id
                     )
+                    logger.debug(f"⏱️ [TIMING] Compression check: {(time.time() - compress_start) * 1000:.1f}ms")
                     messages = compressed_messages
 
             # Check if cache needs rebuild due to compression
@@ -517,6 +523,7 @@ class ThreadManager:
                     logger.debug(f"Failed to check cache_needs_rebuild flag: {e}")
             
             # Apply caching
+            cache_start = time.time()
             if ENABLE_PROMPT_CACHING and len(messages) > 2:
                 # Skip caching for first message (minimal context)
                 prepared_messages = await apply_anthropic_caching_strategy(
@@ -527,13 +534,16 @@ class ThreadManager:
                     force_recalc=force_rebuild
                 )
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
+                logger.debug(f"⏱️ [TIMING] Prompt caching: {(time.time() - cache_start) * 1000:.1f}ms")
             else:
                 if ENABLE_PROMPT_CACHING and len(messages) <= 2:
                     logger.debug(f"First message: Skipping caching and validation ({len(messages)} messages)")
                 prepared_messages = [system_prompt] + messages
 
             # Get tool schemas for LLM API call (after compression)
+            schema_start = time.time()
             openapi_tool_schemas = self.tool_registry.get_openapi_schemas() if config.native_tool_calling else None
+            logger.debug(f"⏱️ [TIMING] Get tool schemas: {(time.time() - schema_start) * 1000:.1f}ms")
 
             # Update generation tracking
             if generation:
@@ -557,6 +567,8 @@ class ThreadManager:
 
             # Note: We don't log token count here because cached blocks give inaccurate counts
             # The LLM's usage.prompt_tokens (reported after the call) is the accurate source of truth
+            import time
+            llm_call_start = time.time()
             logger.info(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
 
             # Make LLM call
@@ -575,6 +587,13 @@ class ThreadManager:
                     stream=stream,
                     stop=stop_sequences if stop_sequences else None
                 )
+                
+                # For streaming, the call returns immediately with a generator
+                # For non-streaming, this is the full response time
+                if not stream:
+                    logger.info(f"⏱️ [TIMING] LLM API call (non-streaming): {(time.time() - llm_call_start) * 1000:.1f}ms")
+                else:
+                    logger.info(f"⏱️ [TIMING] LLM API call initiated (streaming): {(time.time() - llm_call_start) * 1000:.1f}ms")
                 
             except LLMError as e:
                 logger.error(f"❌ LLMError: {e}")

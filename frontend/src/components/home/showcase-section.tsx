@@ -142,10 +142,10 @@ export function ShowCaseSection() {
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-12 md:mb-16">
-                    <h2 className="text-[43px] font-semibold leading-tight mb-4">
+                    <h2 className="text-[43px] font-medium leading-tight mb-4">
                         Different Workers for different jobs.
                     </h2>
-                    <GrainText className="text-base md:text-lg max-w-2xl mx-auto block text-muted-foreground">
+                    <GrainText className="text-base md:text-lg max-w-3xl mx-auto block text-muted-foreground">
                         Kortix has specialized Workers depending on the work you need to get done.
                         <br />
                         Each Worker is built for a specific type of task, so you always get the right approach.

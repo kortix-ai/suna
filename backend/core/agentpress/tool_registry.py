@@ -10,6 +10,9 @@ class ToolRegistry:
     Maintains a collection of tool instances and their schemas, allowing for
     selective registration of tool functions and easy access to tool capabilities.
     
+    PERFORMANCE: Uses pre-computed schemas from the global cache when available,
+    avoiding expensive reflection-based schema extraction on each registration.
+    
     Attributes:
         tools (Dict[str, Dict[str, Any]]): OpenAPI-style tools and schemas
         
@@ -35,12 +38,33 @@ class ToolRegistry:
         Notes:
             - If function_names is None, all functions are registered
             - Handles OpenAPI schema registration
+            - Uses cached schemas and instances when available for better performance
         """
-        # logger.debug(f"Registering tool class: {tool_class.__name__}")
-        tool_instance = tool_class(**kwargs)
-        schemas = tool_instance.get_schemas()
+        import time
+        start = time.time()
         
-        # logger.debug(f"Available schemas for {tool_class.__name__}: {list(schemas.keys())}")
+        # Try to use cached instance first (for stateless tools without kwargs)
+        from core.utils.tool_discovery import get_cached_schemas, get_cached_tool_instance
+        
+        tool_instance = None
+        used_cache = False
+        if not kwargs:
+            # Only use cached instance if no custom kwargs
+            tool_instance = get_cached_tool_instance(tool_class)
+            if tool_instance:
+                used_cache = True
+        
+        if tool_instance is None:
+            # Create new instance if not cached or has custom kwargs
+            tool_instance = tool_class(**kwargs)
+        
+        # Try to use cached schemas first (pre-computed at startup)
+        schemas = get_cached_schemas(tool_class)
+        schema_cached = schemas is not None
+        
+        if schemas is None:
+            # Fall back to instance-based schema extraction
+            schemas = tool_instance.get_schemas()
         
         registered_openapi = 0
         
@@ -53,9 +77,11 @@ class ToolRegistry:
                             "schema": schema
                         }
                         registered_openapi += 1
-                        # logger.debug(f"Registered OpenAPI function {func_name} from {tool_class.__name__}")
         
-        # logger.debug(f"Tool registration complete for {tool_class.__name__}: {registered_openapi} OpenAPI functions")
+        elapsed = (time.time() - start) * 1000
+        if elapsed > 10:  # Only log if took >10ms (noisy otherwise)
+            cache_info = f"(instance={'cached' if used_cache else 'new'}, schema={'cached' if schema_cached else 'computed'})"
+            logger.debug(f"⏱️ [TIMING] register_tool({tool_class.__name__}): {elapsed:.1f}ms {cache_info}")
 
     def get_available_functions(self) -> Dict[str, Callable]:
         """Get all available tool functions.

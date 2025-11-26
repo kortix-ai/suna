@@ -3,29 +3,31 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog } from '@/components/ui/dialog';
-import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Clock,
   X,
   Trash2,
-  Power,
-  PowerOff,
-  ExternalLink,
   Edit2,
-  Activity,
   Sparkles,
   Calendar as CalendarIcon,
-  Zap,
   Timer,
   Target,
   Repeat,
   Play,
-  Pause
+  Pause,
+  ExternalLink,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  History,
+  Globe,
+  ArrowRight
 } from 'lucide-react';
 import Link from 'next/link';
 import { TriggerWithAgent } from '@/hooks/triggers/use-all-triggers';
 import { useDeleteTrigger, useToggleTrigger, useUpdateTrigger } from '@/hooks/triggers';
+import { useTriggerExecutions, type TriggerExecution } from '@/hooks/triggers/use-trigger-executions';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -40,6 +42,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { formatDistanceToNow, format, parseISO } from 'date-fns';
 
 interface SimplifiedTriggerDetailPanelProps {
   trigger: TriggerWithAgent;
@@ -63,6 +66,86 @@ const getScheduleDisplay = (cron?: string) => {
   return { name: cron, icon: <Clock className="h-4 w-4" /> };
 };
 
+const getStatusIcon = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+    case 'failed':
+    case 'error':
+      return <XCircle className="h-4 w-4 text-red-500" />;
+    case 'running':
+    case 'in_progress':
+      return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
+    default:
+      return <Clock className="h-4 w-4 text-muted-foreground" />;
+  }
+};
+
+const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destructive" | "outline" | "highlight" => {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return 'highlight';
+    case 'failed':
+    case 'error':
+      return 'destructive';
+    case 'running':
+    case 'in_progress':
+      return 'default';
+    default:
+      return 'secondary';
+  }
+};
+
+const ExecutionItem = ({ execution }: { execution: TriggerExecution }) => {
+  const startedAt = parseISO(execution.started_at);
+  const timeAgo = formatDistanceToNow(startedAt, { addSuffix: true });
+  const formattedTime = format(startedAt, 'MMM d, h:mm a');
+
+  return (
+    <Link
+      href={`/threads/${execution.thread_id}`}
+      className="block"
+    >
+      <div className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors group">
+        <div className="flex items-center gap-3">
+          {getStatusIcon(execution.status)}
+          <div>
+            <div className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+              {formattedTime}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {timeAgo}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge variant={getStatusBadgeVariant(execution.status)} className="text-xs capitalize">
+            {execution.status}
+          </Badge>
+          <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+      </div>
+    </Link>
+  );
+};
+
+const ExecutionsSkeleton = () => (
+  <div className="space-y-2">
+    {[1, 2, 3].map((i) => (
+      <div key={i} className="flex items-center justify-between p-3">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-4 w-4 rounded-full" />
+          <div className="space-y-1">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+        </div>
+        <Skeleton className="h-5 w-16 rounded-full" />
+      </div>
+    ))}
+  </div>
+);
+
 export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTriggerDetailPanelProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -71,9 +154,12 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
   const toggleMutation = useToggleTrigger();
   const updateMutation = useUpdateTrigger();
 
+  // Fetch trigger execution history
+  const { data: executionHistory, isLoading: isLoadingExecutions } = useTriggerExecutions(trigger.trigger_id);
 
   const isScheduled = trigger.trigger_type.toLowerCase() === 'schedule' || trigger.trigger_type.toLowerCase() === 'scheduled';
   const scheduleDisplay = getScheduleDisplay(trigger.config?.cron_expression);
+  const timezone = trigger.config?.timezone || executionHistory?.timezone || 'UTC';
 
   const handleToggle = async () => {
     try {
@@ -121,15 +207,6 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
 
   const isLoading = deleteMutation.isPending || toggleMutation.isPending || updateMutation.isPending;
 
-  const provider = {
-    provider_id: isScheduled ? 'schedule' : trigger.provider_id,
-    name: trigger.name,
-    description: trigger.description || '',
-    trigger_type: trigger.trigger_type,
-    webhook_enabled: !!trigger.webhook_url,
-    config_schema: {}
-  };
-
   const triggerConfig = {
     trigger_id: trigger.trigger_id,
     agent_id: trigger.agent_id,
@@ -143,6 +220,15 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
     updated_at: trigger.updated_at,
     config: trigger.config
   };
+
+  // Format next run time
+  const nextRunDisplay = executionHistory?.next_run_time_local
+    ? format(parseISO(executionHistory.next_run_time_local), 'MMM d, h:mm a')
+    : null;
+
+  const nextRunTimeAgo = executionHistory?.next_run_time_local
+    ? formatDistanceToNow(parseISO(executionHistory.next_run_time_local), { addSuffix: true })
+    : null;
 
   return (
     <div className={"h-full bg-background flex flex-col w-full sm:w-[440px] xl:w-2xl"}>
@@ -223,7 +309,23 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8">
+      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+        {/* Next Run - Only for scheduled triggers */}
+        {isScheduled && trigger.is_active && nextRunDisplay && (
+          <div className="border rounded-lg p-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+            <div className="flex items-start gap-4">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <Timer className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-medium text-foreground mb-1">Next Run</h3>
+                <p className="text-lg font-semibold text-primary">{nextRunDisplay}</p>
+                <p className="text-sm text-muted-foreground">{nextRunTimeAgo}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Schedule Info */}
         {isScheduled && (
           <div className="border rounded-lg p-6 bg-card">
@@ -233,11 +335,57 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
               </div>
               <div className="flex-1">
                 <h3 className="font-medium text-foreground mb-1">Schedule</h3>
-                <p className="text-sm text-muted-foreground">{scheduleDisplay.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {executionHistory?.human_readable_schedule || scheduleDisplay.name}
+                </p>
+                <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                  <Globe className="h-3 w-3" />
+                  <span>{timezone}</span>
+                </div>
               </div>
             </div>
           </div>
         )}
+
+        {/* Execution History */}
+        <div className="border rounded-lg p-6 bg-card">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-muted">
+                <History className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div>
+                <h3 className="font-medium text-foreground">Recent Runs</h3>
+                <p className="text-xs text-muted-foreground">
+                  {executionHistory?.total_count || 0} execution{(executionHistory?.total_count || 0) !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {isLoadingExecutions ? (
+            <ExecutionsSkeleton />
+          ) : executionHistory?.executions && executionHistory.executions.length > 0 ? (
+            <div className="space-y-1 -mx-3">
+              {executionHistory.executions.slice(0, 5).map((execution) => (
+                <ExecutionItem key={execution.execution_id} execution={execution} />
+              ))}
+              {executionHistory.executions.length > 5 && (
+                <div className="text-center pt-2">
+                  <span className="text-xs text-muted-foreground">
+                    Showing 5 of {executionHistory.total_count} runs
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <History className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No executions yet</p>
+              <p className="text-xs mt-1">Runs will appear here when the trigger fires</p>
+            </div>
+          )}
+        </div>
 
         {/* Execution Details */}
         <div className="border rounded-lg p-6 bg-card">
@@ -295,6 +443,12 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
               <span className="text-sm text-muted-foreground">Provider</span>
               <span className="text-sm font-mono text-foreground">{trigger.provider_id}</span>
             </div>
+            {isScheduled && trigger.config?.cron_expression && (
+              <div className="flex justify-between items-center py-2 border-b last:border-b-0">
+                <span className="text-sm text-muted-foreground">Cron Expression</span>
+                <span className="text-sm font-mono text-foreground">{trigger.config.cron_expression}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center py-2 border-b last:border-b-0">
               <span className="text-sm text-muted-foreground">Created</span>
               <span className="text-sm text-foreground">{new Date(trigger.created_at).toLocaleDateString()}</span>

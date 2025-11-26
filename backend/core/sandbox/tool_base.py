@@ -88,6 +88,21 @@ class SandboxToolsBase(Tool):
                             logger.error(f"Failed to delete sandbox {sandbox_id} after DB update failure", exc_info=True)
                         raise Exception("Database update failed when storing sandbox metadata")
 
+                    # Update project metadata cache with sandbox data (instead of invalidate)
+                    try:
+                        from core.runtime_cache import set_cached_project_metadata
+                        sandbox_cache_data = {
+                            'id': sandbox_id,
+                            'pass': sandbox_pass,
+                            'vnc_preview': vnc_url,
+                            'sandbox_url': website_url,
+                            'token': token
+                        }
+                        await set_cached_project_metadata(self.project_id, sandbox_cache_data)
+                        logger.debug(f"✅ Updated project cache with sandbox data: {self.project_id}")
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to update project cache: {cache_error}")
+
                     # Store local metadata and ensure sandbox is ready
                     self._sandbox_id = sandbox_id
                     self._sandbox_pass = sandbox_pass

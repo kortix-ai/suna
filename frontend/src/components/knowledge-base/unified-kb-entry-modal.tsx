@@ -58,33 +58,40 @@ export function UnifiedKbEntryModal({
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(defaultTab);
     const [selectedFolder, setSelectedFolder] = useState<string>('');
+
+    // Auto-select folder if only one exists
+    React.useEffect(() => {
+        if (folders.length === 1 && !selectedFolder) {
+            setSelectedFolder(folders[0].folder_id);
+        }
+    }, [folders, selectedFolder]);
     const [isCreatingFolder, setIsCreatingFolder] = useState(false);
     const [newFolderName, setNewFolderName] = useState('');
     const [isEditingNewFolder, setIsEditingNewFolder] = useState(false);
-    
+
     // File upload state
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [uploadStatuses, setUploadStatuses] = useState<FileUploadStatus[]>([]);
     const [isDragOver, setIsDragOver] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
-    
+
     // Text entry state
     const [filename, setFilename] = useState('');
     const [content, setContent] = useState('');
     const [isCreatingText, setIsCreatingText] = useState(false);
-    
+
     // Git clone state
     const [gitUrl, setGitUrl] = useState('');
     const [gitBranch, setGitBranch] = useState('main');
     const [isCloning, setIsCloning] = useState(false);
-    
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const newFolderInputRef = useRef<HTMLInputElement>(null);
-    
+
     // Validation for new folder name
     const existingFolderNames = folders.map(f => f.name);
     const folderValidation = useNameValidation(newFolderName, 'folder', existingFolderNames);
-    
+
     // Validation for filename
     const filenameValidation = useNameValidation(filename, 'file');
 
@@ -117,13 +124,13 @@ export function UnifiedKbEntryModal({
             if (response.ok) {
                 const newFolder = await response.json();
                 toast.success('Folder created successfully');
-                
+
                 // Refresh folders list
                 onUploadComplete();
-                
+
                 // Select the new folder
                 setSelectedFolder(newFolder.folder_id);
-                
+
                 // Reset state
                 setNewFolderName('');
                 setIsEditingNewFolder(false);
@@ -162,7 +169,7 @@ export function UnifiedKbEntryModal({
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setIsDragOver(false);
-        
+
         const files = Array.from(e.dataTransfer.files);
         if (files.length > 0) {
             addFiles(files);
@@ -406,7 +413,7 @@ export function UnifiedKbEntryModal({
             setNewFolderName('');
             setIsEditingNewFolder(false);
             setIsOpen(false);
-        }, 1500);
+        }, 300);
     };
 
     const formatFileSize = (bytes: number) => {
@@ -442,87 +449,90 @@ export function UnifiedKbEntryModal({
                         {/* Folder Selection */}
                         <div className="space-y-3">
                             <Label className="text-sm font-medium">
-                                Destination Folder
+                                Destination Folder {!selectedFolder && <span className="text-red-500">*</span>}
                             </Label>
-                                    
-                                    {isEditingNewFolder ? (
-                                        <div className="flex items-center gap-2">
-                                            <Input
-                                                ref={newFolderInputRef}
-                                                placeholder="Enter folder name..."
-                                                value={newFolderName}
-                                                onChange={(e) => setNewFolderName(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter' && folderValidation.isValid) {
-                                                        handleFolderCreation();
-                                                    } else if (e.key === 'Escape') {
-                                                        setIsEditingNewFolder(false);
-                                                        setNewFolderName('');
-                                                    }
-                                                }}
-                                                className={cn(
-                                                    "flex-1",
-                                                    !folderValidation.isValid && newFolderName && "border-red-500"
-                                                )}
-                                                disabled={isCreatingFolder}
-                                            />
-                                            <Button
-                                                size="sm"
-                                                onClick={handleFolderCreation}
-                                                disabled={!folderValidation.isValid || isCreatingFolder}
-                                                className="gap-1"
-                                            >
-                                                {isCreatingFolder ? (
-                                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                                ) : (
-                                                    <Check className="h-3 w-3" />
-                                                )}
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                onClick={() => {
-                                                    setIsEditingNewFolder(false);
-                                                    setNewFolderName('');
-                                                }}
-                                                disabled={isCreatingFolder}
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </Button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex gap-2">
-                                            <select 
-                                                value={selectedFolder}
-                                                onChange={(e) => setSelectedFolder(e.target.value)}
-                                                className="flex-1 h-10 px-3 py-2 text-sm border border-input bg-background rounded-md"
-                                                disabled={folders.length === 0}
-                                            >
-                                                <option value="">
-                                                    {folders.length === 0 ? 'No folders available' : 'Choose a folder...'}
-                                                </option>
-                                                {folders.map((folder) => (
-                                                    <option key={folder.folder_id} value={folder.folder_id}>
-                                                        {folder.name} ({folder.entry_count} files)
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                className="h-10"
-                                                onClick={() => {
-                                                    setIsEditingNewFolder(true);
-                                                    setTimeout(() => {
-                                                        newFolderInputRef.current?.focus();
-                                                    }, 100);
-                                                }}
-                                            >
-                                                <FolderPlus className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    )}
-                                    
+
+                            {isEditingNewFolder ? (
+                                <div className="flex items-center gap-2">
+                                    <Input
+                                        ref={newFolderInputRef}
+                                        placeholder="Enter folder name..."
+                                        value={newFolderName}
+                                        onChange={(e) => setNewFolderName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && folderValidation.isValid) {
+                                                handleFolderCreation();
+                                            } else if (e.key === 'Escape') {
+                                                setIsEditingNewFolder(false);
+                                                setNewFolderName('');
+                                            }
+                                        }}
+                                        className={cn(
+                                            "flex-1",
+                                            !folderValidation.isValid && newFolderName && "border-red-500"
+                                        )}
+                                        disabled={isCreatingFolder}
+                                    />
+                                    <Button
+                                        size="sm"
+                                        onClick={handleFolderCreation}
+                                        disabled={!folderValidation.isValid || isCreatingFolder}
+                                        className="gap-1"
+                                    >
+                                        {isCreatingFolder ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                            <Check className="h-3 w-3" />
+                                        )}
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => {
+                                            setIsEditingNewFolder(false);
+                                            setNewFolderName('');
+                                        }}
+                                        disabled={isCreatingFolder}
+                                    >
+                                        <X className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <select
+                                        value={selectedFolder}
+                                        onChange={(e) => setSelectedFolder(e.target.value)}
+                                        className={cn(
+                                            "flex-1 h-10 px-3 py-2 text-sm border bg-background rounded-md",
+                                            !selectedFolder ? "border-red-300 dark:border-red-800" : "border-input"
+                                        )}
+                                        disabled={folders.length === 0}
+                                    >
+                                        <option value="">
+                                            {folders.length === 0 ? 'No folders available' : 'Select a folder first...'}
+                                        </option>
+                                        {folders.map((folder) => (
+                                            <option key={folder.folder_id} value={folder.folder_id}>
+                                                {folder.name} ({folder.entry_count} files)
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="h-10"
+                                        onClick={() => {
+                                            setIsEditingNewFolder(true);
+                                            setTimeout(() => {
+                                                newFolderInputRef.current?.focus();
+                                            }, 100);
+                                        }}
+                                    >
+                                        <FolderPlus className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            )}
+
                             {!folderValidation.isValid && newFolderName && (
                                 <p className="text-sm text-red-600">{folderValidation.friendlyError}</p>
                             )}
@@ -552,8 +562,8 @@ export function UnifiedKbEntryModal({
                                     <div
                                         className={cn(
                                             "relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200",
-                                            isDragOver 
-                                                ? "border-foreground bg-muted/50" 
+                                            isDragOver
+                                                ? "border-foreground bg-muted/50"
                                                 : "border-border hover:border-muted-foreground hover:bg-muted/30"
                                         )}
                                         onDragOver={handleDragOver}
@@ -575,7 +585,7 @@ export function UnifiedKbEntryModal({
                                                     {isDragOver ? 'Drop files here' : 'Drag & drop files here'}
                                                 </p>
                                                 <p className="text-sm text-muted-foreground mt-1">
-                                                    or <button 
+                                                    or <button
                                                         type="button"
                                                         className="underline font-medium"
                                                         onClick={() => fileInputRef.current?.click()}
@@ -631,9 +641,9 @@ export function UnifiedKbEntryModal({
                                                                 </span>
                                                                 <span className="text-xs">
                                                                     {status.status === 'success' ? 'Uploaded' :
-                                                                     status.status === 'error' ? 'Failed' :
-                                                                     status.status === 'uploading' ? 'Uploading...' :
-                                                                     'Ready'}
+                                                                        status.status === 'error' ? 'Failed' :
+                                                                            status.status === 'uploading' ? 'Uploading...' :
+                                                                                'Ready'}
                                                                 </span>
                                                             </div>
                                                             {status.status === 'error' && status.error && (
