@@ -45,7 +45,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information using the Tavily API. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing an array of queries, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images. Use this tool for discovering relevant web pages before potentially crawling them for complete content.",
+            "description": "Search the web for up-to-date information with direct question answering using Tavily API. IMPORTANT - BATCH SEARCHING: Execute multiple queries concurrently for faster research by providing an array of queries to search multiple topics simultaneously. Results include comprehensive search results with titles, URLs, snippets, publication dates, direct answers, and relevant images. Use this for finding recent news, articles, and information beyond training data. Discover relevant web pages before potentially scraping them for complete content.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -251,7 +251,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.",
+            "description": "Extract full text content from multiple webpages for detailed information extraction. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.",
             "parameters": {
                 "type": "object",
                 "properties": {
