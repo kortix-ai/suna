@@ -201,6 +201,20 @@ class ScheduleProvider(TriggerProvider):
             )
     
     def _convert_cron_to_utc(self, cron_expression: str, user_timezone: str) -> str:
+        """
+        Convert a cron expression from user's timezone to UTC.
+        
+        This handles the conversion of hour/minute values to UTC, accounting for DST.
+        Uses today's date as reference to determine the current DST offset.
+        
+        Note: Due to DST changes, there may be a 1-hour shift during DST transitions.
+        For expressions with wildcards or intervals, returns the original expression.
+        
+        Handles:
+        - Single hour values: "0 9 * * *" 
+        - Comma-separated hours: "0 9,17 * * *"
+        - Day boundary crossing when converting timezones
+        """
         try:
             parts = cron_expression.split()
             if len(parts) != 5:
@@ -208,25 +222,107 @@ class ScheduleProvider(TriggerProvider):
                 
             minute, hour, day, month, weekday = parts
             
-            if minute.startswith('*/') and hour == '*':
+            # If minute or hour contain wildcards or step intervals, we can't convert meaningfully
+            if '*' in minute or '*' in hour or '/' in minute or '/' in hour:
+                logger.debug(f"Cron expression {cron_expression} contains wildcards/intervals - will run in UTC")
                 return cron_expression
-            if hour == '*' or minute == '*':
-                return cron_expression
-                
+            
+            # Check if we're dealing with specific days that would need date adjustment
+            # For safety, only convert expressions with wildcard days (daily schedules)
+            has_specific_day = day != '*' and not day.startswith('*/')
+            has_specific_weekday = weekday != '*' and weekday != '0-6' and weekday != '1-7'
+            
             try:
                 user_tz = pytz.timezone(user_timezone)
-                utc_tz = pytz.UTC
-                now = datetime.now(user_tz)
                 
-                if hour.isdigit() and minute.isdigit():
-                    user_time = user_tz.localize(datetime(now.year, now.month, now.day, int(hour), int(minute)))
-                    utc_time = user_time.astimezone(utc_tz)
-                    return f"{utc_time.minute} {utc_time.hour} {day} {month} {weekday}"
+                # Get today's date in the user's timezone to account for current DST
+                now_in_user_tz = datetime.now(user_tz)
+                reference_date = now_in_user_tz.date()
+                
+                # Parse minute - could be single value or comma-separated
+                if ',' in minute:
+                    minutes = [int(m.strip()) for m in minute.split(',')]
+                else:
+                    minutes = [int(minute)]
+                
+                # Parse hour - could be single value, comma-separated, or range
+                if ',' in hour:
+                    hours = [int(h.strip()) for h in hour.split(',')]
+                elif '-' in hour:
+                    # Range like "9-17"
+                    start, end = hour.split('-')
+                    hours = list(range(int(start), int(end) + 1))
+                else:
+                    hours = [int(hour)]
+                
+                # Convert each hour:minute combination to UTC
+                utc_hours = set()
+                utc_minutes = set()
+                day_offset = 0  # Track if we cross day boundary
+                
+                for h in hours:
+                    for m in minutes:
+                        # Create datetime in user's timezone
+                        user_time_naive = datetime.combine(
+                            reference_date, 
+                            datetime.min.time().replace(hour=h, minute=m)
+                        )
+                        user_time = user_tz.localize(user_time_naive)
+                        
+                        # Convert to UTC
+                        utc_time = user_time.astimezone(timezone.utc)
+                        
+                        utc_hours.add(utc_time.hour)
+                        utc_minutes.add(utc_time.minute)
+                        
+                        # Check for day boundary crossing (only relevant for specific day schedules)
+                        if utc_time.date() != user_time.date():
+                            if utc_time.date() < user_time.date():
+                                day_offset = -1
+                            else:
+                                day_offset = 1
+                
+                # Format the UTC hour and minute parts
+                utc_hour_str = ','.join(str(h) for h in sorted(utc_hours))
+                utc_minute_str = ','.join(str(m) for m in sorted(utc_minutes))
+                
+                # Handle day adjustment for specific day schedules
+                converted_day = day
+                converted_weekday = weekday
+                
+                if day_offset != 0:
+                    if has_specific_day:
+                        # Adjust specific day of month - this is imperfect but handles common cases
+                        if day.isdigit():
+                            new_day = int(day) + day_offset
+                            if 1 <= new_day <= 31:
+                                converted_day = str(new_day)
+                            else:
+                                logger.warning(f"Day boundary crossing results in invalid day {new_day}, keeping original")
+                        else:
+                            logger.warning(f"Complex day specification '{day}' with day boundary crossing - timing may be off by one day")
+                    
+                    if has_specific_weekday:
+                        # Adjust weekday - 0=Sunday, 6=Saturday in cron
+                        if weekday.isdigit():
+                            new_weekday = (int(weekday) + day_offset) % 7
+                            converted_weekday = str(new_weekday)
+                        elif '-' in weekday:
+                            # Range like "1-5" (Mon-Fri)
+                            start, end = weekday.split('-')
+                            new_start = (int(start) + day_offset) % 7
+                            new_end = (int(end) + day_offset) % 7
+                            converted_weekday = f"{new_start}-{new_end}"
+                        else:
+                            logger.warning(f"Complex weekday specification '{weekday}' with day boundary crossing - timing may be off by one day")
+                
+                converted = f"{utc_minute_str} {utc_hour_str} {converted_day} {month} {converted_weekday}"
+                logger.debug(f"Converted cron '{cron_expression}' from {user_timezone} to UTC: '{converted}'")
+                return converted
                     
             except Exception as e:
-                logger.warning(f"Failed to convert timezone for cron expression: {e}")
-                
-            return cron_expression
+                logger.warning(f"Failed to convert timezone for cron expression {cron_expression}: {e}")
+                return cron_expression
             
         except Exception as e:
             logger.error(f"Error converting cron expression to UTC: {e}")

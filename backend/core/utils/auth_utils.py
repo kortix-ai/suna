@@ -202,22 +202,25 @@ async def get_optional_user_id_from_jwt(request: Request) -> Optional[str]:
     
 async def get_user_id_from_stream_auth(
     request: Request,
-    token: Optional[str] = None,
-    guest_session: Optional[str] = None
+    token: Optional[str] = None
 ) -> str:
-    logger.debug(f"🔐 get_user_id_from_stream_auth called - has_token: {bool(token)}, has_guest_session: {bool(guest_session)}")
+    """
+    Authenticate user for streaming endpoints.
+    Supports JWT via Authorization header or token query param.
+    """
+    logger.debug(f"🔐 get_user_id_from_stream_auth called - has_token: {bool(token)}")
     
     try:
+        # Try JWT header first
         try:
             user_id = await verify_and_get_user_id_from_jwt(request)
             logger.debug(f"✅ Authenticated via JWT header: {user_id[:8]}...")
             return user_id
         except HTTPException:
-            logger.debug("❌ JWT header auth failed")
             pass
         
+        # Try token query param (for SSE/EventSource which can't set headers)
         if token:
-            logger.debug("🔑 Attempting token query param auth")
             try:
                 payload = _decode_jwt_safely(token)
                 user_id = payload.get('sub')
@@ -231,27 +234,10 @@ async def get_user_id_from_stream_auth(
                     return user_id
             except Exception as e:
                 logger.debug(f"❌ Token param auth failed: {str(e)}")
-                pass
         
-        if guest_session:
-            logger.debug(f"👤 Attempting guest session auth: {guest_session[:8]}...")
-            from core.guest_session import guest_session_service
-            guest_session_data = await guest_session_service.get_or_create_session(request, guest_session)
-            if guest_session_data:
-                session_id = guest_session_data['session_id']
-                structlog.contextvars.bind_contextvars(
-                    user_id=session_id,
-                    auth_method="guest_session"
-                )
-                logger.debug(f"✅ Guest session authenticated for streaming: {session_id[:8]}...")
-                return session_id
-            else:
-                logger.error("❌ Guest session data retrieval failed")
-        
-        logger.error("❌ No valid authentication method succeeded")
         raise HTTPException(
             status_code=401,
-            detail="No valid authentication credentials found",
+            detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"}
         )
     except HTTPException:
@@ -259,15 +245,8 @@ async def get_user_id_from_stream_auth(
     except Exception as e:
         error_msg = str(e)
         if "cannot schedule new futures after shutdown" in error_msg or "connection is closed" in error_msg:
-            raise HTTPException(
-                status_code=503,
-                detail="Server is shutting down"
-            )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error during authentication: {str(e)}"
-            )
+            raise HTTPException(status_code=503, detail="Server is shutting down")
+        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
 
 async def get_optional_user_id(request: Request) -> Optional[str]:
     auth_header = request.headers.get('Authorization')

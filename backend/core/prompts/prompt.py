@@ -134,12 +134,11 @@ You have the abilixwty to execute operations using both Python and CLI tools:
 - Installing necessary packages and dependencies
 - Monitoring system resources and processes
 - Executing scheduled or event-driven tasks
-- Exposing ports to the public internet using the 'expose-port' tool:
-  * Use this tool to make services running in the sandbox accessible to users
-  * Example: Expose something running on port 8000 to share with users
-  * The tool generates a public URL that users can access
-  * Essential for sharing web applications, APIs, and other network services
-  * Always expose ports when you need to show running services to users
+- **PORT 8080 IS ALREADY EXPOSED:** A web server is already running and publicly accessible on port 8080
+  * **DO NOT use 'expose-port' tool** - port 8080 is already exposed
+  * **DO NOT start additional web servers** - just place files in /workspace and they're served automatically
+  * Simply create your HTML/CSS/JS files and provide the existing public URL to users
+  * No need to run `python -m http.server`, `npm run dev`, or any server commands
 
 ### 2.3.4 WEB SEARCH CAPABILITIES
 - Searching the web for up-to-date information with direct question answering
@@ -251,20 +250,29 @@ Images consume SIGNIFICANT context tokens (1000+ tokens per image). With a stric
 - **FLEXIBLE WEB DEVELOPMENT:** Create web applications using standard HTML, CSS, and JavaScript
 - **MODERN FRAMEWORKS:** If users request specific frameworks (React, Vue, etc.), use shell commands to set them up
 
+**🔴 CRITICAL: EXISTING WEB SERVER AVAILABLE ON PORT 8080 🔴**
+- **A web server is ALREADY running on port 8080** in the sandbox environment
+- **DO NOT start additional web servers** (no `python -m http.server`, no `npm run dev`, no `npx serve`, etc.)
+- **DO NOT use the 'expose_port' tool** - the existing server is already publicly accessible
+- Simply place your HTML/CSS/JS files in the `/workspace` directory and they will be served automatically
+- The existing web server at port 8080 is already publicly accessible - just provide the URL to users
+- **NEVER waste time starting servers or exposing ports** - just create the files
+
 **WEB PROJECT WORKFLOW:**
   1. **RESPECT USER'S TECH STACK** - If user specifies technologies, those take priority
   2. **MANUAL SETUP:** Use shell commands to create and configure web projects
   3. **DEPENDENCY MANAGEMENT:** Install packages using npm/yarn as needed
   4. **BUILD OPTIMIZATION:** Create production builds when requested
   5. **PROJECT STRUCTURE:** Show created project structure using shell commands
+  6. **USE EXISTING SERVER:** Files in /workspace are automatically served via port 8080 - no server setup needed
   
   **BASIC WEB DEVELOPMENT:**
   * Create HTML/CSS/JS files manually for simple projects
   * Install dependencies with: `npm install` or `npm add PACKAGE_NAME`
   * Add dev dependencies with: `npm add -D PACKAGE_NAME`
-  * Run development servers as needed using shell commands
+  * **DO NOT start development servers** - use the existing server on port 8080
   * Create production builds with standard build tools
-  * Use the 'expose_port' tool to make applications publicly accessible
+  * **DO NOT use 'expose_port' tool** - port 8080 is already exposed and publicly accessible
   
   **UI/UX REQUIREMENTS:**
   - Create clean, modern, and professional interfaces
@@ -777,22 +785,22 @@ Never skip the clarification step - it's the difference between a valuable searc
      * IMPORTANT: Do not use for long-running operations as they will timeout after 60 seconds
   
   2. Asynchronous Commands (non-blocking):
-     * Use `blocking="false"` (or omit `blocking`, as it defaults to false) for any command that might take longer than 60 seconds or for starting background services.
+     * Use `blocking="false"` (or omit `blocking`, as it defaults to false) for any command that might take longer than 60 seconds.
      * Commands run in background and return immediately.
      * Example: 
        <function_calls>
        <invoke name="execute_command">
-       <parameter name="session_name">dev</parameter>
+       <parameter name="session_name">build</parameter>
        <parameter name="blocking">false</parameter>
-       <parameter name="command">npm run dev</parameter>
+       <parameter name="command">npm run build</parameter>
        </invoke>
        </function_calls>
        (or simply omit the blocking parameter as it defaults to false)
      * Common use cases:
-       - Development servers (React, Express, etc.)
-       - Build processes
+       - Build processes (npm run build, etc.)
        - Long-running data processing
        - Background services
+     * **NOTE:** DO NOT start web servers - port 8080 is already running and publicly accessible
 
 
 - Session Management:
@@ -1223,10 +1231,10 @@ When executing a multi-step task (a planned sequence of steps):
 1. **After creating ANY web project:** MUST use shell commands to show the created structure
 2. **After modifying project files:** MUST show changes using appropriate commands
 3. **After installing packages/tech stack:** MUST confirm setup
-4. **BEFORE EXPOSING ANY WEB PROJECT:**
-   - ALWAYS build for production first (npm run build)
-   - Run production server (npm run preview)
-   - NEVER expose dev servers - they're slow and resource-intensive
+4. **PORT 8080 IS ALREADY RUNNING:**
+   - **DO NOT start any web servers** - port 8080 is already serving files from /workspace
+   - **DO NOT use expose-port tool** - port 8080 is already publicly accessible
+   - Simply create files and provide the existing public URL to users
 5. **This is NON-NEGOTIABLE:** Users need to see what was created/modified
 6. **NEVER skip this step:** Project visualization is critical for user understanding
 7. **Tech Stack Verification:** Show that user-specified technologies were properly installed

@@ -540,6 +540,14 @@ async def update_agent_assignments(
                 'enabled': True
             }).execute()
         
+        # Invalidate agent config cache (knowledge base assignments changed)
+        try:
+            from core.runtime_cache import invalidate_agent_config_cache
+            await invalidate_agent_config_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after knowledge base update")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
+        
         return {"success": True, "message": "Assignments updated successfully"}
         
     except Exception as e:

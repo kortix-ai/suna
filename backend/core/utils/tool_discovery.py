@@ -3,6 +3,11 @@ Auto-discovery system for tools.
 
 Uses Python's class inheritance to discover all Tool subclasses and extract their metadata.
 Tools are discovered via Tool.__subclasses__() rather than filesystem scanning.
+
+PERFORMANCE OPTIMIZATION:
+- Tool classes are pre-imported at startup via warm_up_tools_cache()
+- Tool schemas are pre-computed and cached globally to avoid per-request overhead
+- The schema cache uses tool class identity as key for O(1) lookups
 """
 
 import importlib
@@ -10,37 +15,81 @@ import inspect
 from typing import Dict, List, Any, Optional, Type
 from pathlib import Path
 
-from core.agentpress.tool import Tool, ToolMetadata, MethodMetadata
+from core.agentpress.tool import Tool, ToolMetadata, MethodMetadata, ToolSchema
 from core.utils.logger import logger
 
 
-def _ensure_tools_imported():
-    """Ensure all tool modules are imported so classes are registered.
+# Global cache for pre-computed tool schemas (keyed by tool class)
+# This is populated at startup and reused across all agent runs
+_SCHEMA_CACHE: Dict[Type[Tool], Dict[str, List[ToolSchema]]] = {}
+
+# Global cache for pre-instantiated stateless tools
+# Tools that don't require per-request state can be reused
+_STATELESS_TOOL_INSTANCES: Dict[Type[Tool], Tool] = {}
+
+# Tools that CAN be pre-instantiated (no constructor args required)
+STATELESS_TOOLS = {
+    'expand_msg_tool', 'message_tool', 'task_list_tool',
+    'data_providers_tool', 'web_search_tool', 'image_search_tool',
+    'people_search_tool', 'company_search_tool', 'paper_search_tool',
+}
+
+
+def _precompute_schemas_for_class(tool_class: Type[Tool]) -> Dict[str, List[ToolSchema]]:
+    """Pre-compute schemas for a tool class by examining its methods.
     
-    Recursively scans the tools directory and all subdirectories to find and import
-    all Python modules. This triggers Tool class definitions so they can be found
-    via Tool.__subclasses__().
+    This extracts schemas directly from the class without instantiating it,
+    which is faster and doesn't require constructor arguments.
+    
+    Args:
+        tool_class: The tool class to extract schemas from
+        
+    Returns:
+        Dict mapping method names to their schema definitions
     """
-    tools_dir = Path(__file__).parent.parent / "tools"
+    schemas = {}
     
-    # Recursively find all Python files in tools directory and subdirectories
-    for tool_file in tools_dir.rglob("*.py"):
-        # Skip __init__, __pycache__, and test files
-        if tool_file.name.startswith("__") or tool_file.name.startswith("test_") or "__pycache__" in str(tool_file):
+    # Iterate over all class methods
+    for name in dir(tool_class):
+        if name.startswith('_'):
             continue
-        
-        # Build module name from file path relative to tools dir
-        # Example: tools/agent_builder_tools/mcp_search_tool.py -> core.tools.agent_builder_tools.mcp_search_tool
-        relative_path = tool_file.relative_to(tools_dir.parent)
-        module_parts = relative_path.with_suffix('').parts
-        module_name = f"core.{'.'.join(module_parts)}"
-        
+            
         try:
-            importlib.import_module(module_name)
-            # logger.debug(f"Imported tool module: {module_name}")
-        except Exception as e:
-            # logger.debug(f"Could not import {module_name}: {e}")
+            attr = getattr(tool_class, name)
+            # Check if it's a method with tool_schemas attached by the decorator
+            if callable(attr) and hasattr(attr, 'tool_schemas'):
+                schemas[name] = attr.tool_schemas
+        except Exception:
+            # Skip any attributes that can't be accessed
             pass
+    
+    return schemas
+
+
+def get_cached_schemas(tool_class: Type[Tool]) -> Optional[Dict[str, List[ToolSchema]]]:
+    """Get pre-computed schemas for a tool class from the global cache.
+    
+    Args:
+        tool_class: The tool class to get schemas for
+        
+    Returns:
+        Dict mapping method names to schema definitions, or None if not cached
+    """
+    return _SCHEMA_CACHE.get(tool_class)
+
+
+def get_cached_tool_instance(tool_class: Type[Tool]) -> Optional[Tool]:
+    """Get a pre-instantiated tool instance if available.
+    
+    Only works for stateless tools that don't require constructor arguments.
+    
+    Args:
+        tool_class: The tool class to get an instance of
+        
+    Returns:
+        Pre-instantiated tool instance, or None if not cached
+    """
+    return _STATELESS_TOOL_INSTANCES.get(tool_class)
 
 
 def _get_all_tool_subclasses(base_class: Type[Tool] = None) -> List[Type[Tool]]:
@@ -65,35 +114,6 @@ def _get_all_tool_subclasses(base_class: Type[Tool] = None) -> List[Type[Tool]]:
         all_subclasses.extend(_get_all_tool_subclasses(subclass))
     
     return all_subclasses
-
-
-def _generate_tool_name(class_name: str) -> str:
-    """Generate a tool name from class name.
-    
-    Converts CamelCase class names to snake_case tool names.
-    This is a fallback - normally we use the module file name instead.
-    Example: SandboxFilesTool -> sandbox_files_tool
-    
-    Args:
-        class_name: Name of the tool class
-        
-    Returns:
-        snake_case tool name
-    """
-    # Remove Tool suffix
-    if class_name.endswith('Tool'):
-        class_name = class_name[:-4]
-    
-    # Convert CamelCase to snake_case
-    import re
-    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', class_name)
-    result = re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
-    
-    # Add _tool suffix
-    if not result.endswith('_tool'):
-        result += '_tool'
-    
-    return result
 
 
 def _generate_display_name(name: str) -> str:
@@ -121,20 +141,67 @@ def _generate_display_name(name: str) -> str:
 
 # Cache for discovered tools to avoid repeated expensive imports
 _TOOLS_CACHE = None
+_WARMUP_COMPLETE = False
 
 
 def warm_up_tools_cache():
-    """Pre-load and cache all tool classes on worker startup.
+    """Pre-load and cache all tool classes, schemas, AND stateless instances on startup.
     
-    This should be called when a worker process starts to avoid the first
-    user request paying the ~4s cost of importing all tool modules.
+    This should be called when a worker or API process starts to avoid the first
+    user request paying the cost of:
+    - Importing all tool modules (~100-500ms)
+    - Computing schemas via reflection (~50-200ms per tool)
+    - Instantiating tools (~5-20ms per tool)
+    
+    After warm-up, tool registration is nearly instant as it uses cached schemas
+    and can reuse pre-instantiated stateless tools.
     """
-    logger.info("🔥 Warming up worker: loading tool classes...")
+    global _WARMUP_COMPLETE
+    
+    if _WARMUP_COMPLETE:
+        logger.debug("Tools already warmed up, skipping")
+        return
+        
+    logger.info("🔥 Warming up: loading tool classes, schemas, and stateless instances...")
     import time
     start = time.time()
-    discover_tools()
+    
+    # Step 1: Discover and cache all tool classes
+    tools_map = discover_tools()
+    
+    # Step 2: Pre-compute schemas for all tool classes
+    schema_count = 0
+    instance_count = 0
+    
+    for tool_name, tool_class in tools_map.items():
+        # Cache schemas
+        if tool_class not in _SCHEMA_CACHE:
+            try:
+                schemas = _precompute_schemas_for_class(tool_class)
+                _SCHEMA_CACHE[tool_class] = schemas
+                schema_count += len(schemas)
+            except Exception as e:
+                logger.warning(f"Failed to pre-compute schemas for {tool_name}: {e}")
+        
+        # Pre-instantiate stateless tools (no constructor args)
+        if tool_name in STATELESS_TOOLS and tool_class not in _STATELESS_TOOL_INSTANCES:
+            try:
+                # Only instantiate if constructor has no required args (except self)
+                import inspect
+                sig = inspect.signature(tool_class.__init__)
+                required_params = [
+                    p for p in sig.parameters.values() 
+                    if p.name != 'self' and p.default == inspect.Parameter.empty
+                ]
+                if not required_params:
+                    _STATELESS_TOOL_INSTANCES[tool_class] = tool_class()
+                    instance_count += 1
+            except Exception as e:
+                logger.debug(f"Could not pre-instantiate {tool_name}: {e}")
+    
     elapsed = time.time() - start
-    logger.info(f"✅ Worker ready: {len(_TOOLS_CACHE)} tools loaded in {elapsed:.2f}s")
+    _WARMUP_COMPLETE = True
+    logger.info(f"✅ Ready: {len(_TOOLS_CACHE)} tools, {schema_count} methods, {instance_count} instances cached in {elapsed:.2f}s")
 
 
 def discover_tools() -> Dict[str, Type[Tool]]:

@@ -7,51 +7,127 @@ from core.utils.cache import Cache
 
 async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
     try:
+        import time
+        import asyncio
+        t_start = time.time()
+        
         twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
         twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
         
         logger.debug(f"Checking agent run limit for account {account_id} since {twenty_four_hours_ago_iso}")
         
-        try:
-            from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
-            tier_name = tier_info['name']
-            concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
-            logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit} (fresh from DB)")
-        except Exception as billing_error:
-            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, using global default")
-            concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
+        # FAST PATH: Check Redis cache for running runs (5s TTL)
+        from core.runtime_cache import get_cached_running_runs, set_cached_running_runs
+        cached_runs = await get_cached_running_runs(account_id)
         
-        threads_result = await client.table('threads').select('thread_id').eq('account_id', account_id).execute()
-        
-        if not threads_result.data:
-            logger.debug(f"No threads found for account {account_id}")
+        if cached_runs:
+            # Cache hit - get tier info only (cached 60s)
+            try:
+                from core.billing import subscription_service
+                tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+                concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
+            except Exception:
+                concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
+            
+            running_count = cached_runs['running_count']
+            running_thread_ids = cached_runs['running_thread_ids']
+            
+            query_time = (time.time() - t_start) * 1000
+            logger.debug(f"⚡ Running runs from cache: {running_count} runs in {query_time:.1f}ms")
+            
             return {
-                'can_start': True,
-                'running_count': 0,
-                'running_thread_ids': [],
+                'can_start': running_count < concurrent_runs_limit,
+                'running_count': running_count,
+                'running_thread_ids': running_thread_ids,
                 'limit': concurrent_runs_limit
             }
         
-        thread_ids = [thread['thread_id'] for thread in threads_result.data]
-        logger.debug(f"Found {len(thread_ids)} threads for account {account_id}")
+        # CACHE MISS: Run tier lookup and join query in parallel
+        async def get_tier_info():
+            try:
+                from core.billing import subscription_service
+                # Use cache (60s TTL) - tiers don't change frequently
+                tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+                tier_name = tier_info['name']
+                concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
+                logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit}")
+                return concurrent_runs_limit
+            except Exception as billing_error:
+                logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, using global default")
+                return config.MAX_PARALLEL_AGENT_RUNS
         
-        from core.utils.query_utils import batch_query_in
+        async def get_running_runs():
+            # OPTIMIZED: Query agent_runs directly with join to threads, filtering by account_id
+            # This avoids fetching all 244 threads first, then checking agent_runs
+            # Instead: Single query with join - MUCH faster!
+            try:
+                running_runs_result = await client.table('agent_runs').select(
+                    'id, thread_id, started_at, threads!inner(account_id)'
+                ).eq('threads.account_id', account_id).eq('status', 'running').gte('started_at', twenty_four_hours_ago_iso).execute()
+                
+                running_runs = running_runs_result.data or []
+                running_count = len(running_runs)
+                running_thread_ids = [run['thread_id'] for run in running_runs]
+                return running_count, running_thread_ids
+            except Exception as join_error:
+                # Fallback to old method if join syntax fails (shouldn't happen, but safety net)
+                logger.warning(f"Join query failed, falling back to batch method: {str(join_error)}")
+                raise
         
-        running_runs = await batch_query_in(
-            client=client,
-            table_name='agent_runs',
-            select_fields='id, thread_id, started_at',
-            in_field='thread_id',
-            in_values=thread_ids,
-            additional_filters={
-                'status': 'running',
-                'started_at_gte': twenty_four_hours_ago_iso
-            }
-        )
-        
-        running_count = len(running_runs)
-        running_thread_ids = [run['thread_id'] for run in running_runs]
+        # Run both queries in parallel
+        try:
+            concurrent_runs_limit, (running_count, running_thread_ids) = await asyncio.gather(
+                get_tier_info(),
+                get_running_runs()
+            )
+            
+            # Cache the running runs for next request (5s TTL)
+            await set_cached_running_runs(account_id, running_count, running_thread_ids)
+            
+            query_time = (time.time() - t_start) * 1000
+            logger.debug(f"⚡ Optimized query: Found {running_count} running runs in {query_time:.1f}ms (parallel tier + join query)")
+        except Exception as join_error:
+            # Fallback to old method if join syntax fails (shouldn't happen, but safety net)
+            logger.warning(f"Join query failed, falling back to batch method: {str(join_error)}")
+            
+            # Get tier info (fallback)
+            try:
+                from core.billing import subscription_service
+                tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+                concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
+            except Exception:
+                concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
+            
+            threads_result = await client.table('threads').select('thread_id').eq('account_id', account_id).execute()
+            
+            if not threads_result.data:
+                logger.debug(f"No threads found for account {account_id}")
+                return {
+                    'can_start': True,
+                    'running_count': 0,
+                    'running_thread_ids': [],
+                    'limit': concurrent_runs_limit
+                }
+            
+            thread_ids = [thread['thread_id'] for thread in threads_result.data]
+            logger.debug(f"Found {len(thread_ids)} threads for account {account_id}")
+            
+            from core.utils.query_utils import batch_query_in
+            
+            running_runs = await batch_query_in(
+                client=client,
+                table_name='agent_runs',
+                select_fields='id, thread_id, started_at',
+                in_field='thread_id',
+                in_values=thread_ids,
+                additional_filters={
+                    'status': 'running',
+                    'started_at_gte': twenty_four_hours_ago_iso
+                }
+            )
+            
+            running_count = len(running_runs)
+            running_thread_ids = [run['thread_id'] for run in running_runs]
         
         logger.debug(f"Account {account_id} has {running_count}/{concurrent_runs_limit} running agent runs")
         
@@ -396,24 +472,62 @@ async def check_custom_worker_limit(client, account_id: str) -> Dict[str, Any]:
 
 async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
     try:
+        import asyncio
+        import time
+        t_start = time.time()
+        
         logger.debug(f"Checking thread limit for account {account_id}")
         
-        threads_result = await client.table('threads').select('thread_id', count='exact').eq('account_id', account_id).execute()
+        # FAST PATH: Check Redis cache for thread count (30s TTL)
+        from core.runtime_cache import get_cached_thread_count, set_cached_thread_count
+        cached_count = await get_cached_thread_count(account_id)
         
-        current_count = threads_result.count if hasattr(threads_result, 'count') else (len(threads_result.data) if threads_result.data else 0)
+        if cached_count is not None:
+            # Cache hit - get tier info only (cached 60s)
+            try:
+                from core.billing import subscription_service
+                tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+                tier_name = tier_info['name']
+                thread_limit = tier_info.get('thread_limit', 10)
+            except Exception:
+                tier_name = 'free'
+                thread_limit = 10
+            
+            logger.debug(f"⚡ Thread count from cache: {cached_count} threads in {(time.time() - t_start) * 1000:.1f}ms")
+            
+            return {
+                'can_create': cached_count < thread_limit,
+                'current_count': cached_count,
+                'limit': thread_limit,
+                'tier_name': tier_name
+            }
+        
+        # CACHE MISS: Run thread count and tier lookup in parallel
+        async def get_thread_count():
+            threads_result = await client.table('threads').select('thread_id', count='exact').eq('account_id', account_id).execute()
+            return threads_result.count if hasattr(threads_result, 'count') else (len(threads_result.data) if threads_result.data else 0)
+        
+        async def get_tier_limit():
+            try:
+                from core.billing import subscription_service
+                # Use cache (60s TTL) - tiers don't change frequently
+                tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+                return tier_info['name'], tier_info.get('thread_limit', 10)
+            except Exception as billing_error:
+                logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
+                return 'free', 10
+        
+        # Run both queries in parallel
+        current_count, (tier_name, thread_limit) = await asyncio.gather(
+            get_thread_count(),
+            get_tier_limit()
+        )
+        
+        # Cache the thread count for next request (30s TTL)
+        await set_cached_thread_count(account_id, current_count)
         
         logger.debug(f"Account {account_id} has {current_count} threads")
-        
-        try:
-            from core.billing import subscription_service
-            tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=True)
-            tier_name = tier_info['name']
-            thread_limit = tier_info.get('thread_limit', 10)
-            logger.debug(f"Account {account_id} tier: {tier_name}, thread limit: {thread_limit} (fresh from DB)")
-        except Exception as billing_error:
-            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
-            tier_name = 'free'
-            thread_limit = 10
+        logger.debug(f"Account {account_id} tier: {tier_name}, thread limit: {thread_limit} (parallel query: {(time.time() - t_start) * 1000:.1f}ms)")
         
         can_create = current_count < thread_limit
         

@@ -57,6 +57,14 @@ async def lifespan(app: FastAPI):
     try:
         await db.initialize()
         
+        # Pre-load tool classes and schemas to avoid first-request delay
+        from core.utils.tool_discovery import warm_up_tools_cache
+        warm_up_tools_cache()
+        
+        # Pre-load static Suna config for fast path in API requests
+        from core.runtime_cache import load_static_suna_config
+        load_static_suna_config()
+        
         core_api.initialize(
             db,
             instance_id
@@ -85,10 +93,6 @@ async def lifespan(app: FastAPI):
         from core import limits_api
         limits_api.initialize(db)
         
-        from core.guest_session import guest_session_service
-        guest_session_service.start_cleanup_task()
-        logger.debug("Guest session cleanup task started")
-        
         # Start CloudWatch queue metrics publisher (production only)
         global _queue_metrics_task
         if config.ENV_MODE == EnvMode.PRODUCTION:
@@ -99,9 +103,6 @@ async def lifespan(app: FastAPI):
         
         logger.debug("Cleaning up agent resources")
         await core_api.cleanup()
-        
-        logger.debug("Stopping guest session cleanup task")
-        await guest_session_service.stop_cleanup_task()
         
         # Stop CloudWatch queue metrics task
         if _queue_metrics_task is not None:

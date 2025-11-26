@@ -68,6 +68,17 @@ async def initialize():
     logger.info(f"Initializing worker async resources with Redis at {redis_host}:{redis_port}")
     await retry(lambda: redis.initialize_async())
     await db.initialize()
+    
+    # Pre-load tool classes to avoid first-request delay
+    from core.utils.tool_discovery import warm_up_tools_cache
+    warm_up_tools_cache()
+    
+    # Pre-cache default Suna agent configs (eliminates 1+ second delay on first request)
+    try:
+        from core.runtime_cache import warm_up_suna_config_cache
+        await warm_up_suna_config_cache()
+    except Exception as e:
+        logger.warning(f"Failed to pre-cache Suna configs (non-fatal): {e}")
 
     _initialized = True
     logger.info(f"✅ Worker async resources initialized successfully (instance: {instance_id})")
@@ -86,21 +97,30 @@ async def run_agent_background(
     project_id: str,
     model_name: str = "openai/gpt-5-mini",
     agent_id: Optional[str] = None,  # Changed from agent_config to agent_id
+    account_id: Optional[str] = None,  # Account ID for authorization
     request_id: Optional[str] = None
 ):
     """Run the agent in the background using Redis for state."""
+    import time
+    worker_start = time.time()
+    timings = {}
+    
     structlog.contextvars.clear_contextvars()
     structlog.contextvars.bind_contextvars(
         agent_run_id=agent_run_id,
         thread_id=thread_id,
         request_id=request_id,
     )
+    
+    logger.info(f"⏱️ [TIMING] Worker received job at {worker_start}")
 
+    t = time.time()
     try:
         await initialize()
     except Exception as e:
         logger.critical(f"Failed to initialize Redis connection: {e}")
         raise e
+    timings['initialize'] = (time.time() - t) * 1000
 
     # Idempotency check: prevent duplicate runs
     run_lock_key = f"agent_run_lock:{agent_run_id}"
@@ -150,6 +170,9 @@ async def run_agent_background(
                 return
 
     sentry.sentry.set_tag("thread_id", thread_id)
+    
+    timings['lock_acquisition'] = (time.time() - worker_start) * 1000 - timings['initialize']
+    logger.info(f"⏱️ [TIMING] Worker init: {timings['initialize']:.1f}ms | Lock: {timings['lock_acquisition']:.1f}ms")
 
     logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
     
@@ -219,39 +242,95 @@ async def run_agent_background(
         # Ensure active run key exists and has TTL
         await redis.set(instance_active_key, "running", ex=redis.REDIS_KEY_TTL)
 
-        # Fetch agent_config from agent_id if provided
+        # Fetch agent_config from agent_id if provided (with caching)
         agent_config = None
         if agent_id:
+            t = time.time()
             try:
-                # Get account_id from agent to load config
-                agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).single().execute()
-                if agent_result.data:
-                    account_id = agent_result.data['account_id']
-                    from core.agent_runs import _load_agent_config
-                    agent_config = await _load_agent_config(client, agent_id, account_id, account_id, is_new_thread=False)
-                    logger.debug(f"Fetched agent config for agent_id: {agent_id}")
+                # First check if this is a Suna agent (static config in memory)
+                from core.runtime_cache import (
+                    get_static_suna_config, 
+                    get_cached_user_mcps,
+                    get_cached_agent_config
+                )
+                
+                static_config = get_static_suna_config()
+                
+                # Check if this agent is Suna (we can detect by checking if static config exists
+                # and trying to get user MCPs for this agent)
+                cached_mcps = await get_cached_user_mcps(agent_id)
+                
+                if static_config and cached_mcps is not None:
+                    # This is a Suna agent - use static config + cached MCPs
+                    agent_config = {
+                        'agent_id': agent_id,
+                        'system_prompt': static_config['system_prompt'],
+                        'model': static_config['model'],
+                        'agentpress_tools': static_config['agentpress_tools'],
+                        'centrally_managed': static_config['centrally_managed'],
+                        'is_suna_default': static_config['is_suna_default'],
+                        'restrictions': static_config['restrictions'],
+                        'configured_mcps': cached_mcps.get('configured_mcps', []),
+                        'custom_mcps': cached_mcps.get('custom_mcps', []),
+                        'triggers': cached_mcps.get('triggers', []),
+                    }
+                    logger.info(f"⏱️ [TIMING] ⚡ Suna config from memory + Redis MCPs: {(time.time() - t) * 1000:.1f}ms")
                 else:
-                    logger.warning(f"Agent not found for agent_id: {agent_id}")
+                    # Try custom agent cache
+                    cached_config = await get_cached_agent_config(agent_id)
+                    
+                    if cached_config:
+                        agent_config = cached_config
+                        logger.info(f"⏱️ [TIMING] ⚡ Custom agent config from cache: {(time.time() - t) * 1000:.1f}ms")
+                    elif account_id:
+                        # Cache miss - load from DB with proper account_id
+                        from core.agent_loader import get_agent_loader
+                        loader = await get_agent_loader()
+                        
+                        agent_data = await loader.load_agent(agent_id, account_id, load_config=True)
+                        agent_config = agent_data.to_dict()
+                        logger.info(f"⏱️ [TIMING] Agent config from DB (cached for next time): {(time.time() - t) * 1000:.1f}ms")
+                    else:
+                        # No account_id and cache miss - try loading without access check for public agents
+                        from core.agent_loader import get_agent_loader
+                        loader = await get_agent_loader()
+                        
+                        # Use a special system load that bypasses access check for public agents
+                        agent_data = await loader.load_agent(agent_id, agent_id, load_config=True)
+                        agent_config = agent_data.to_dict()
+                        logger.info(f"⏱️ [TIMING] Agent config from DB (public agent): {(time.time() - t) * 1000:.1f}ms")
             except Exception as e:
                 logger.warning(f"Failed to fetch agent config for agent_id {agent_id}: {e}. Using default config.")
 
         # Initialize agent generator with cancellation event
+        t = time.time()
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id,
             model_name=effective_model,
             agent_config=agent_config,
             trace=trace,
             cancellation_event=cancellation_event,
+            account_id=account_id,  # Skip thread query in setup() - already have account_id
         )
+        
+        # Log total time from worker start to first iteration ready
+        total_to_ready = (time.time() - worker_start) * 1000
+        logger.info(f"⏱️ [TIMING] 🏁 Worker ready for first LLM call: {total_to_ready:.1f}ms from job start")
 
         final_status = "running"
         error_message = None
+        first_response_logged = False
 
         # Push each response immediately for lowest latency streaming
         # Semaphore in redis_worker limits concurrent operations to prevent connection exhaustion
         pending_redis_operations = []
 
         async for response in agent_gen:
+            # Log time to first response
+            if not first_response_logged:
+                first_token_time = (time.time() - worker_start) * 1000
+                logger.info(f"⏱️ [TIMING] 🎯 FIRST RESPONSE from agent: {first_token_time:.1f}ms from job start")
+                first_response_logged = True
             if stop_signal_received:
                 logger.debug(f"Agent run {agent_run_id} stopped by signal.")
                 final_status = "stopped"
@@ -299,8 +378,8 @@ async def run_agent_background(
         all_responses_json = await redis.lrange(response_list_key, 0, -1)
         all_responses = [json.loads(r) for r in all_responses_json]
 
-        # Update DB status
-        await update_agent_run_status(client, agent_run_id, final_status, error=error_message)
+        # Update DB status (pass account_id to invalidate running runs cache)
+        await update_agent_run_status(client, agent_run_id, final_status, error=error_message, account_id=account_id)
 
         # Publish final control signal (END_STREAM or ERROR)
         control_signal = "END_STREAM" if final_status == "completed" else "ERROR" if final_status == "failed" else "STOP"
@@ -327,8 +406,8 @@ async def run_agent_background(
         except Exception as redis_err:
              logger.error(f"Failed to push error response to Redis for {agent_run_id}: {redis_err}")
 
-        # Update DB status
-        await update_agent_run_status(client, agent_run_id, "failed", error=f"{error_message}\n{traceback_str}")
+        # Update DB status (pass account_id to invalidate running runs cache)
+        await update_agent_run_status(client, agent_run_id, "failed", error=f"{error_message}\n{traceback_str}", account_id=account_id)
 
         # Publish ERROR signal
         try:
@@ -422,10 +501,13 @@ async def update_agent_run_status(
     agent_run_id: str,
     status: str,
     error: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> bool:
     """
     Centralized function to update agent run status.
     Returns True if update was successful.
+    
+    If account_id is provided, invalidates the running runs cache for that account.
     """
     try:
         update_data = {
@@ -450,6 +532,15 @@ async def update_agent_run_status(
                         actual_status = verify_result.data[0].get('status')
                         completed_at = verify_result.data[0].get('completed_at')
                         # logger.debug(f"Verified agent run update: status={actual_status}, completed_at={completed_at}")
+                    
+                    # Invalidate running runs cache so next check gets fresh data
+                    if account_id:
+                        try:
+                            from core.runtime_cache import invalidate_running_runs_cache
+                            await invalidate_running_runs_cache(account_id)
+                        except Exception as cache_error:
+                            logger.warning(f"Failed to invalidate running runs cache: {cache_error}")
+                    
                     return True
                 else:
                     logger.warning(f"Database update returned no data for agent run {agent_run_id} on retry {retry}: {update_result}")
