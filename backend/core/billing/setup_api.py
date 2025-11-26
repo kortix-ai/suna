@@ -4,6 +4,7 @@ from core.utils.logger import logger
 from .subscriptions import free_tier_service
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.services.supabase import DBConnection
+from core.notifications.notification_service import notification_service
 
 router = APIRouter(prefix="/setup", tags=["setup"])
 
@@ -27,6 +28,18 @@ async def initialize_account(
         suna_service = SunaDefaultAgentService(db)
         await suna_service.install_suna_agent_for_user(account_id)
         
+        logger.info(f"[SETUP] Creating notification settings for {account_id}")
+        try:
+            await notification_service.create_default_settings(account_id)
+        except Exception as e:
+            logger.warning(f"[SETUP] Failed to create notification settings (non-critical): {e}")
+        
+        logger.info(f"[SETUP] Sending welcome email to {account_id}")
+        try:
+            await notification_service.send_welcome_email(account_id)
+        except Exception as e:
+            logger.warning(f"[SETUP] Failed to send welcome email (non-critical): {e}")
+        
         logger.info(f"[SETUP] ✅ Account initialization complete for {account_id}")
         
         return {
@@ -38,4 +51,3 @@ async def initialize_account(
     except Exception as e:
         logger.error(f"[SETUP] Error initializing account {account_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

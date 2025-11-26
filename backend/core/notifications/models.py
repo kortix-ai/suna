@@ -76,19 +76,7 @@ class NotificationLog(BaseModel):
 class UserNotificationSettings(BaseModel):
     user_id: str
     email_enabled: bool = True
-    push_enabled: bool = True
+    push_enabled: bool = False
     in_app_enabled: bool = True
-    sms_enabled: bool = False
-    
-    task_notifications: bool = True
-    billing_notifications: bool = True
-    promotional_notifications: bool = True
-    system_notifications: bool = True
-    
-    quiet_hours_enabled: bool = False
-    quiet_hours_start: Optional[str] = None
-    quiet_hours_end: Optional[str] = None
-    timezone: str = "UTC"
-    
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-

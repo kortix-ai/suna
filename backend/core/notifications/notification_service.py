@@ -6,12 +6,9 @@ from .novu_service import novu_service
 from .models import (
     NotificationChannel,
     NotificationEvent,
-    NotificationPayload,
     NotificationPriority,
-    NotificationPreference,
     UserNotificationSettings
 )
-
 
 class NotificationService:
     def __init__(self):
@@ -69,16 +66,6 @@ class NotificationService:
                 override_channels=override_channels
             )
             
-            await self._log_notification(
-                user_id=user_id,
-                event_type=event_type,
-                channels=enabled_channels,
-                status="sent" if result.get("success") else "failed",
-                transaction_id=result.get("transaction_id"),
-                error=result.get("error"),
-                payload=payload
-            )
-            
             return result
             
         except Exception as e:
@@ -93,18 +80,39 @@ class NotificationService:
         agent_name: Optional[str] = None,
         result_summary: Optional[str] = None
     ) -> Dict[str, Any]:
-        return await self.send_notification(
-            event_type=NotificationEvent.TASK_COMPLETED,
-            user_id=user_id,
-            data={
+        try:
+            user_info = await self._get_user_info(user_id)
+            user_email = user_info.get("email")
+            user_name = user_info.get("name")
+            
+            first_name = user_name.split()[0] if user_name else "User"
+            
+            client = await self.db.client
+            thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).maybe_single().execute()
+            project_id = thread_result.data.get('project_id') if thread_result and thread_result.data else None
+            
+            task_url = f"https://www.kortix.com/projects/{project_id}/thread/{thread_id}" if project_id else f"https://www.kortix.com/thread/{thread_id}"
+            
+            payload = {
+                "first_name": first_name,
                 "task_name": task_name,
-                "thread_id": thread_id,
-                "agent_name": agent_name or "AI Agent",
-                "result_summary": result_summary or "Task completed successfully",
-                "view_url": f"/thread/{thread_id}"
-            },
-            priority=NotificationPriority.HIGH
-        )
+                "task_url": task_url
+            }
+            
+            result = await self.novu.trigger_workflow(
+                workflow_id='task-completed',
+                subscriber_id=user_id,
+                payload=payload,
+                subscriber_email=user_email,
+                subscriber_name=user_name
+            )
+            
+            logger.info(f"Task completion workflow triggered for user {user_id}")
+            return {"success": True, "result": result}
+            
+        except Exception as e:
+            logger.error(f"Error triggering task completion workflow: {str(e)}")
+            return {"success": False, "error": str(e)}
     
     async def send_task_failed_notification(
         self,
@@ -202,6 +210,35 @@ class NotificationService:
             priority=NotificationPriority.LOW
         )
     
+    
+    async def send_welcome_email(self, user_id: str, user_name: Optional[str] = None, user_email: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            if not user_email or not user_name:
+                user_info = await self._get_user_info(user_id)
+                user_email = user_email or user_info.get("email")
+                user_name = user_name or user_info.get("name")
+            
+            result = await self.novu.trigger_workflow(
+                workflow_id="welcome-email",
+                subscriber_id=user_id,
+                payload={
+                    "user_name": user_name,
+                    "from_url": "https://www.kortix.com",
+                    "discord_url": "https://discord.com/invite/RvFhXUdZ9H"
+                },
+                subscriber_email=user_email,
+                subscriber_name=user_name
+            )
+            
+            logger.info(f"Welcome email workflow triggered for user {user_id}")
+            return {"success": True, "result": result}
+            
+        except Exception as e:
+            logger.error(f"Error triggering welcome email workflow: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+
+
     async def get_user_notification_settings(self, user_id: str) -> Optional[UserNotificationSettings]:
         try:
             client = await self.db.client
@@ -236,14 +273,27 @@ class NotificationService:
             return False
     
     async def create_default_settings(self, user_id: str) -> UserNotificationSettings:
-        default_settings = UserNotificationSettings(user_id=user_id)
-        
-        await self.update_user_notification_settings(
-            user_id=user_id,
-            settings=default_settings.dict()
-        )
-        
-        return default_settings
+        try:
+            client = await self.db.client
+            now = datetime.now(timezone.utc).isoformat()
+            
+            default_settings = {
+                'user_id': user_id,
+                'email_enabled': True,
+                'push_enabled': False,
+                'in_app_enabled': True,
+                'created_at': now,
+                'updated_at': now
+            }
+            
+            await client.table('notification_settings').insert(default_settings).execute()
+            
+            logger.info(f"Created default notification settings for user {user_id}")
+            return UserNotificationSettings(**default_settings)
+            
+        except Exception as e:
+            logger.error(f"Error creating notification settings: {str(e)}")
+            raise
     
     async def get_enabled_channels(
         self,
@@ -266,9 +316,6 @@ class NotificationService:
         
         if user_settings.push_enabled and (not requested_channels or NotificationChannel.PUSH in requested_channels):
             enabled.append(NotificationChannel.PUSH)
-        
-        if user_settings.sms_enabled and (not requested_channels or NotificationChannel.SMS in requested_channels):
-            enabled.append(NotificationChannel.SMS)
         
         return enabled
     
@@ -327,23 +374,11 @@ class NotificationService:
         event_type: NotificationEvent,
         user_settings: UserNotificationSettings
     ) -> bool:
-        if event_type in [NotificationEvent.TASK_COMPLETED, NotificationEvent.TASK_FAILED, NotificationEvent.AGENT_RUN_COMPLETED, NotificationEvent.AGENT_RUN_FAILED, NotificationEvent.TRIGGER_EXECUTED, NotificationEvent.TRIGGER_FAILED]:
-            return user_settings.task_notifications
-        
-        if event_type in [NotificationEvent.SUBSCRIPTION_CREATED, NotificationEvent.SUBSCRIPTION_RENEWED, NotificationEvent.SUBSCRIPTION_CANCELLED, NotificationEvent.PAYMENT_SUCCEEDED, NotificationEvent.PAYMENT_FAILED, NotificationEvent.CREDITS_LOW, NotificationEvent.CREDITS_DEPLETED]:
-            return user_settings.billing_notifications
-        
-        if event_type == NotificationEvent.PROMOTIONAL:
-            return user_settings.promotional_notifications
-        
-        if event_type in [NotificationEvent.SYSTEM_ALERT, NotificationEvent.WELCOME]:
-            return user_settings.system_notifications
-        
         return True
     
     def _map_event_to_workflow(self, event_type: NotificationEvent) -> str:
         workflow_mapping = {
-            NotificationEvent.TASK_COMPLETED: "task-completed",
+            NotificationEvent.TASK_COMPLETED: "task-complete",
             NotificationEvent.TASK_FAILED: "task-failed",
             NotificationEvent.AGENT_RUN_COMPLETED: "agent-run-completed",
             NotificationEvent.AGENT_RUN_FAILED: "agent-run-failed",
@@ -354,7 +389,7 @@ class NotificationService:
             NotificationEvent.SUBSCRIPTION_CANCELLED: "subscription-cancelled",
             NotificationEvent.CREDITS_LOW: "credits-low",
             NotificationEvent.CREDITS_DEPLETED: "credits-depleted",
-            NotificationEvent.WELCOME: "welcome",
+            NotificationEvent.WELCOME: "welcome-email",
             NotificationEvent.PROMOTIONAL: "promotional",
             NotificationEvent.SYSTEM_ALERT: "system-alert",
             NotificationEvent.TRIGGER_EXECUTED: "trigger-executed",
@@ -397,33 +432,6 @@ class NotificationService:
             logger.error(f"Error getting user info: {str(e)}")
             return {}
     
-    async def _log_notification(
-        self,
-        user_id: str,
-        event_type: NotificationEvent,
-        channels: List[NotificationChannel],
-        status: str,
-        transaction_id: Optional[str] = None,
-        error: Optional[str] = None,
-        payload: Optional[Dict[str, Any]] = None
-    ) -> None:
-        try:
-            client = await self.db.client
-            
-            for channel in channels:
-                await client.table('notification_logs').insert({
-                    'user_id': user_id,
-                    'event_type': event_type.value,
-                    'channel': channel.value,
-                    'status': status,
-                    'novu_transaction_id': transaction_id,
-                    'error_message': error,
-                    'payload': payload,
-                    'created_at': datetime.now(timezone.utc).isoformat()
-                }).execute()
-            
-        except Exception as e:
-            logger.error(f"Error logging notification: {str(e)}")
 
 
 notification_service = NotificationService()

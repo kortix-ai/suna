@@ -68,7 +68,6 @@ async def handle_user_created_webhook(
         
         logger.info(f"📧 Sending welcome email to new user: {email}")
         
-        # Send email asynchronously
         def send_email():
             return email_service.send_welcome_email(
                 user_email=email,

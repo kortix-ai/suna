@@ -22,15 +22,6 @@ class NotificationSettingsUpdate(BaseModel):
     email_enabled: Optional[bool] = None
     push_enabled: Optional[bool] = None
     in_app_enabled: Optional[bool] = None
-    sms_enabled: Optional[bool] = None
-    task_notifications: Optional[bool] = None
-    billing_notifications: Optional[bool] = None
-    promotional_notifications: Optional[bool] = None
-    system_notifications: Optional[bool] = None
-    quiet_hours_enabled: Optional[bool] = None
-    quiet_hours_start: Optional[str] = None
-    quiet_hours_end: Optional[str] = None
-    timezone: Optional[str] = None
 
 
 class DeviceTokenRequest(BaseModel):
@@ -219,41 +210,6 @@ async def send_notification_admin(
         
     except Exception as e:
         logger.error(f"Error sending notification: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/logs")
-async def get_notification_logs(
-    limit: int = 50,
-    offset: int = 0,
-    event_type: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
-    check_notifications_enabled()
-    try:
-        from core.services.supabase import DBConnection
-        user_id = current_user.get('id')
-        
-        db = DBConnection()
-        client = await db.client
-        
-        query = client.table('notification_logs').select('*').eq('user_id', user_id)
-        
-        if event_type:
-            query = query.eq('event_type', event_type)
-        
-        query = query.order('created_at', desc=True).range(offset, offset + limit - 1)
-        
-        response = await query.execute()
-        
-        return {
-            "success": True,
-            "logs": response.data,
-            "count": len(response.data)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting notification logs: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
