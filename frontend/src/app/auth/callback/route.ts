@@ -76,8 +76,32 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Account initialization happens automatically via webhook on signup.
-        // No manual fallback needed - webhook handles all initialization.
+        // Check if user needs to complete setup (fallback case)
+        // Account initialization now happens automatically via webhook on signup.
+        // Only redirect to setting-up if webhook failed or user signed up before this change.
+        const { data: accountData } = await supabase
+          .schema('basejump')
+          .from('accounts')
+          .select('id, created_at')
+          .eq('primary_owner_user_id', data.user.id)
+          .eq('personal_account', true)
+          .single();
+
+        if (accountData) {
+          const { data: creditAccount } = await supabase
+            .from('credit_accounts')
+            .select('tier, stripe_subscription_id')
+            .eq('account_id', accountData.id)
+            .single();
+
+          // Only redirect to setting-up if no subscription exists (webhook failed or old user)
+          if (creditAccount && (creditAccount.tier === 'none' || !creditAccount.stripe_subscription_id)) {
+            console.log('⚠️ No subscription detected - redirecting to setting-up (fallback)');
+            finalDestination = '/setting-up'
+          } else {
+            console.log('✅ Account already initialized via webhook');
+          }
+        }
       }
 
       // Web redirect
