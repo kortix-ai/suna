@@ -1,18 +1,26 @@
 'use client';
 
 import { NextIntlClientProvider } from 'next-intl';
-import { ReactNode, useEffect, useState, useCallback, useRef } from 'react';
+import { ReactNode, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
 import { detectBestLocale } from '@/lib/utils/geo-detection';
 import { createClient } from '@/lib/supabase/client';
 
+// Preload default translations synchronously for immediate render
+// This prevents the loading spinner from blocking FCP
+import defaultTranslations from '../../translations/en.json';
+
 async function getTranslations(locale: Locale) {
   try {
+    // Return cached default translations immediately for English
+    if (locale === 'en') {
+      return defaultTranslations;
+    }
     return (await import(`../../translations/${locale}.json`)).default;
   } catch (error) {
     console.error(`Failed to load translations for locale ${locale}:`, error);
     // Fallback to English if locale file doesn't exist
-    return (await import(`../../translations/${defaultLocale}.json`)).default;
+    return defaultTranslations;
   }
 }
 
@@ -65,8 +73,9 @@ const LOCALE_CHANGE_EVENT = 'locale-change';
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>(defaultLocale);
-  const [messages, setMessages] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Initialize with preloaded English translations to prevent blocking FCP
+  const [messages, setMessages] = useState<any>(defaultTranslations);
+  const [isLoading, setIsLoading] = useState(false);
   const localeRef = useRef(locale);
 
   // Update ref when locale changes
@@ -197,24 +206,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     };
   }, [loadTranslations]);
 
-  // Always wrap with NextIntlClientProvider, even if messages are null
-  // This ensures the context is always available
-  // Use empty object as fallback to prevent errors
-  const safeMessages = messages || {};
+  // Memoize messages to prevent unnecessary re-renders
+  const safeMessages = useMemo(() => messages || defaultTranslations, [messages]);
 
-  // Don't render children until messages are loaded to prevent MISSING_MESSAGE errors
-  if (!messages || Object.keys(messages).length === 0) {
-    return (
-      <NextIntlClientProvider locale={defaultLocale} messages={{}}>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      </NextIntlClientProvider>
-    );
-  }
-
+  // Always render children immediately with available translations
+  // This prevents blocking FCP - we start with English and swap if needed
   return (
-    <NextIntlClientProvider locale={locale} messages={safeMessages} key={locale}>
+    <NextIntlClientProvider 
+      locale={locale} 
+      messages={safeMessages} 
+      timeZone="UTC"
+      key={locale}
+    >
       {children}
     </NextIntlClientProvider>
   );

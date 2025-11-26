@@ -5,17 +5,19 @@ import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
 import { ReactQueryProvider } from './react-query-provider';
 import { Toaster } from '@/components/ui/sonner';
-import { Analytics } from '@vercel/analytics/react';
-import { GoogleAnalytics } from '@next/third-parties/google';
-import { SpeedInsights } from '@vercel/speed-insights/next';
 import Script from 'next/script';
-import { PostHogIdentify } from '@/components/posthog-identify';
 import '@/lib/polyfills';
 import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
-import { PlanSelectionModal } from '@/components/billing/pricing/plan-selection-modal';
-import { Suspense } from 'react';
+import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
+
+// Lazy load non-critical analytics and global components
+const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
+const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod => ({ default: mod.SpeedInsights })));
+const GoogleAnalytics = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleAnalytics })));
+const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
+const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 
 
 export const viewport: Viewport = {
@@ -95,6 +97,20 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${roobert.variable} ${roobertMono.variable}`}>
       <head>
+        {/* Preload critical fonts for faster FCP - local fonts need crossOrigin for CORS */}
+        <link
+          rel="preload"
+          href="/fonts/roobert/RoobertUprightsVF.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+        
+        {/* DNS prefetch for analytics (loaded later but resolve DNS early) */}
+        <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+        <link rel="dns-prefetch" href="https://connect.facebook.net" />
+        <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
+        
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix: Your Autonomous AI Worker</title>
         <meta name="description" content="Built for complex tasks, designed for everything. The ultimate AI assistant that handles it all—from simple requests to mega-complex projects." />
@@ -112,7 +128,7 @@ export default function RootLayout({
         <meta name="twitter:site" content="@kortix" />
         <link rel="canonical" href="https://kortix.com" />
 
-        <Script id="facebook-pixel" strategy="afterInteractive">
+        <Script id="facebook-pixel" strategy="lazyOnload">
           {`
             !function(f,b,e,v,n,t,s)
             {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
@@ -188,7 +204,7 @@ export default function RootLayout({
           }}
         />
 
-        <Script id="google-tag-manager" strategy="afterInteractive">
+        <Script id="google-tag-manager" strategy="lazyOnload">
           {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
           new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
           j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
@@ -225,10 +241,19 @@ export default function RootLayout({
               </ReactQueryProvider>
             </AuthProvider>
           </I18nProvider>
-          <Analytics />
-          <GoogleAnalytics gaId="G-6ETJFB3PT3" />
-          <SpeedInsights />
-          <PostHogIdentify />
+          {/* Analytics - lazy loaded to not block FCP */}
+          <Suspense fallback={null}>
+            <Analytics />
+          </Suspense>
+          <Suspense fallback={null}>
+            <GoogleAnalytics gaId="G-6ETJFB3PT3" />
+          </Suspense>
+          <Suspense fallback={null}>
+            <SpeedInsights />
+          </Suspense>
+          <Suspense fallback={null}>
+            <PostHogIdentify />
+          </Suspense>
         </ThemeProvider>
       </body>
     </html>

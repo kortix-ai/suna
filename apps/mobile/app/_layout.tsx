@@ -100,65 +100,84 @@ export default function RootLayout() {
         console.log('📧 Auth callback received, processing...');
         
         try {
-          // Check for terms_accepted in query params (from redirect URL)
+          // Check for error first
+          const errorParam = parsedUrl.queryParams?.error;
+          if (errorParam) {
+            console.error('❌ Auth callback error:', errorParam);
+            isHandlingDeepLink = false;
+            router.replace('/auth');
+            return;
+          }
+
+          // Check for terms_accepted in query params
           const termsAccepted = parsedUrl.queryParams?.terms_accepted === 'true';
+          const returnUrl = parsedUrl.queryParams?.returnUrl as string || '/setting-up';
           
-          // Extract tokens from hash fragment (Supabase sends tokens in hash)
-          const hashIndex = url.indexOf('#');
+          // Extract tokens - check query params first (from smart redirect), then hash fragment (legacy)
           let access_token: string | null = null;
           let refresh_token: string | null = null;
           
-          if (hashIndex !== -1) {
-            const hashFragment = url.substring(hashIndex + 1);
-            console.log('🔍 Hash fragment:', hashFragment.substring(0, 100) + '...');
+          // Method 1: Query params (from smart redirect page)
+          if (parsedUrl.queryParams?.access_token && parsedUrl.queryParams?.refresh_token) {
+            access_token = parsedUrl.queryParams.access_token as string;
+            refresh_token = parsedUrl.queryParams.refresh_token as string;
+            console.log('🔑 Tokens found in query params');
+          }
           
-            // Parse hash fragment - can be URLSearchParams format or JSON
-            try {
-            const hashParams = new URLSearchParams(hashFragment);
-              access_token = hashParams.get('access_token');
-              refresh_token = hashParams.get('refresh_token');
-              
-              // Also try parsing as JSON (some formats)
-              if (!access_token && hashFragment.startsWith('{')) {
-                const hashData = JSON.parse(decodeURIComponent(hashFragment));
-                access_token = hashData.access_token || hashData.accessToken;
-                refresh_token = hashData.refresh_token || hashData.refreshToken;
+          // Method 2: Hash fragment (legacy Supabase direct redirect)
+          if (!access_token || !refresh_token) {
+            const hashIndex = url.indexOf('#');
+            if (hashIndex !== -1) {
+              const hashFragment = url.substring(hashIndex + 1);
+              console.log('🔍 Checking hash fragment...');
+            
+              try {
+                const hashParams = new URLSearchParams(hashFragment);
+                access_token = access_token || hashParams.get('access_token');
+                refresh_token = refresh_token || hashParams.get('refresh_token');
+                
+                // Also try parsing as JSON (some formats)
+                if (!access_token && hashFragment.startsWith('{')) {
+                  const hashData = JSON.parse(decodeURIComponent(hashFragment));
+                  access_token = hashData.access_token || hashData.accessToken;
+                  refresh_token = hashData.refresh_token || hashData.refreshToken;
+                }
+              } catch (parseError) {
+                console.warn('⚠️ Error parsing hash fragment:', parseError);
+                // Try direct extraction
+                const accessTokenMatch = hashFragment.match(/access_token=([^&]+)/);
+                const refreshTokenMatch = hashFragment.match(/refresh_token=([^&]+)/);
+                access_token = access_token || (accessTokenMatch ? decodeURIComponent(accessTokenMatch[1]) : null);
+                refresh_token = refresh_token || (refreshTokenMatch ? decodeURIComponent(refreshTokenMatch[1]) : null);
               }
-            } catch (parseError) {
-              console.warn('⚠️ Error parsing hash fragment:', parseError);
-              // Try direct extraction
-              const accessTokenMatch = hashFragment.match(/access_token=([^&]+)/);
-              const refreshTokenMatch = hashFragment.match(/refresh_token=([^&]+)/);
-              access_token = accessTokenMatch ? decodeURIComponent(accessTokenMatch[1]) : null;
-              refresh_token = refreshTokenMatch ? decodeURIComponent(refreshTokenMatch[1]) : null;
             }
           }
           
           console.log('🔑 Token extraction result:', { 
-              hasAccessToken: !!access_token, 
+            hasAccessToken: !!access_token, 
             hasRefreshToken: !!refresh_token,
             termsAccepted,
-            });
+            returnUrl,
+          });
             
-                  if (access_token && refresh_token) {
-                    console.log('✅ Setting session with tokens...');
+          if (access_token && refresh_token) {
+            console.log('✅ Setting session with tokens...');
 
-                    const { data, error } = await supabase.auth.setSession({
-                      access_token,
-                      refresh_token,
-                    });
+            const { data, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
 
-                    if (error) {
-                      console.error('❌ Failed to set session:', error);
-                      isHandlingDeepLink = false;
-              // Navigate to auth screen on error
+            if (error) {
+              console.error('❌ Failed to set session:', error);
+              isHandlingDeepLink = false;
               router.replace('/auth');
               return;
             }
 
-                      console.log('✅ Session set! User logged in:', data.user?.email);
+            console.log('✅ Session set! User logged in:', data.user?.email);
 
-            // Save terms acceptance date if terms were accepted and not already saved (first time only)
+            // Save terms acceptance date if terms were accepted and not already saved
             if (termsAccepted && data.user) {
               const currentMetadata = data.user.user_metadata || {};
               if (!currentMetadata.terms_accepted_at) {
@@ -176,25 +195,21 @@ export default function RootLayout() {
               }
             }
 
-            // Navigate based on user state
-            console.log('🚀 Navigating after successful auth...');
-            // Use replace to prevent going back to callback screen
-            router.replace('/setting-up');
+            // Navigate to the specified destination
+            console.log('🚀 Navigating to:', returnUrl);
+            router.replace(returnUrl as any);
             
-            // Reset flag after navigation
-                      setTimeout(() => {
-                        isHandlingDeepLink = false;
+            setTimeout(() => {
+              isHandlingDeepLink = false;
             }, 1000);
           } else {
-            console.error('❌ No tokens found in URL. Hash fragment:', url.split('#')[1]?.substring(0, 100));
+            console.error('❌ No tokens found in URL');
             isHandlingDeepLink = false;
-            // Navigate to auth screen if no tokens
             router.replace('/auth');
           }
         } catch (err) {
           console.error('❌ Error handling auth callback:', err);
           isHandlingDeepLink = false;
-          // Navigate to auth screen on error
           router.replace('/auth');
         }
       } else {

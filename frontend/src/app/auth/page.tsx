@@ -4,26 +4,21 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import GoogleSignIn from '@/components/GoogleSignIn';
 import { useMediaQuery } from '@/hooks/utils';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { signUp } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
-import {
-  ArrowLeft,
-  X,
-  MailCheck,
-} from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { MailCheck } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
-
-import GitHubSignIn from '@/components/GithubSignIn';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { AnimatedBg } from '@/components/ui/animated-bg';
-import { ReleaseBadge } from '@/components/auth/release-badge';
+
+// Lazy load heavy components
+const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
+const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
+const AnimatedBg = lazy(() => import('@/components/ui/animated-bg').then(mod => ({ default: mod.AnimatedBg })));
 
 function LoginContent() {
   const router = useRouter();
@@ -118,14 +113,8 @@ function LoginContent() {
     router.refresh();
   };
 
-  // Show loading spinner while checking auth state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <KortixLoader size="large" />
-      </div>
-    );
-  }
+  // Don't block render while checking auth - let content show immediately
+  // The useEffect will redirect if user is already authenticated
 
   // Registration success view
   if (registrationSuccess) {
@@ -191,8 +180,12 @@ function LoginContent() {
               </h1>
             </div>
             <div className="space-y-3 mb-4">
-              <GoogleSignIn returnUrl={returnUrl || undefined} />
-              <GitHubSignIn returnUrl={returnUrl || undefined} />
+              <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
+                <GoogleSignIn returnUrl={returnUrl || undefined} />
+              </Suspense>
+              <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
+                <GitHubSignIn returnUrl={returnUrl || undefined} />
+              </Suspense>
             </div>
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
@@ -279,19 +272,21 @@ function LoginContent() {
         <div className="hidden lg:flex flex-1 items-center justify-center relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-background via-background to-accent/10" />
           <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-            <AnimatedBg
-              variant="hero"
-              customArcs={{
-                left: [
-                  { pos: { left: -120, top: 150 }, opacity: 0.15 },
-                  { pos: { left: -120, top: 400 }, opacity: 0.18 },
-                ],
-                right: [
-                  { pos: { right: -150, top: 50 }, opacity: 0.2 },
-                  { pos: { right: 10, top: 650 }, opacity: 0.17 },
-                ]
-              }}
-            />
+            <Suspense fallback={null}>
+              <AnimatedBg
+                variant="hero"
+                customArcs={{
+                  left: [
+                    { pos: { left: -120, top: 150 }, opacity: 0.15 },
+                    { pos: { left: -120, top: 400 }, opacity: 0.18 },
+                  ],
+                  right: [
+                    { pos: { right: -150, top: 50 }, opacity: 0.2 },
+                    { pos: { right: 10, top: 650 }, opacity: 0.17 },
+                  ]
+                }}
+              />
+            </Suspense>
           </div>
         </div>
       </div>

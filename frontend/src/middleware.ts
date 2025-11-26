@@ -63,6 +63,31 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Handle Supabase verification redirects at root level
+  // Supabase sometimes redirects to root (/) instead of /auth/callback
+  // Detect authentication parameters and redirect to proper callback handler
+  if (pathname === '/' || pathname === '') {
+    const searchParams = request.nextUrl.searchParams;
+    const code = searchParams.get('code');
+    const token = searchParams.get('token');
+    const type = searchParams.get('type');
+    const error = searchParams.get('error');
+    
+    // If we have Supabase auth parameters, redirect to /auth/callback
+    // This ensures consistent handling for both web and mobile
+    if (code || token || type || error) {
+      const callbackUrl = new URL('/auth/callback', request.url);
+      
+      // Preserve all query parameters including source for proper routing
+      searchParams.forEach((value, key) => {
+        callbackUrl.searchParams.set(key, value);
+      });
+      
+      console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
+      return NextResponse.redirect(callbackUrl);
+    }
+  }
+
   // Extract path segments
   const pathSegments = pathname.split('/').filter(Boolean);
   const firstSegment = pathSegments[0];

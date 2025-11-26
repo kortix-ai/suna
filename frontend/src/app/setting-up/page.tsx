@@ -1,15 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense, lazy } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useInitializeAccount } from '@/hooks/account';
-import { AnimatedBg } from '@/components/ui/animated-bg';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+
+// Lazy load heavy components
+const AnimatedBg = lazy(() => import('@/components/ui/animated-bg').then(mod => ({ default: mod.AnimatedBg })));
+const KortixLoader = lazy(() => import('@/components/ui/kortix-loader').then(mod => ({ default: mod.KortixLoader })));
 
 export default function SettingUpPage() {
   const router = useRouter();
@@ -37,7 +39,9 @@ export default function SettingUpPage() {
   return (
     <div className="w-full relative overflow-hidden min-h-screen">
       <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
-        <AnimatedBg variant="hero" />
+        <Suspense fallback={null}>
+          <AnimatedBg variant="hero" />
+        </Suspense>
 
         <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
           <KortixLogo size={32} />
@@ -65,7 +69,9 @@ export default function SettingUpPage() {
                       </div>
                     </div>
                     <div className="h-12 w-12 flex items-center justify-center">
-                      <KortixLoader size="small" customSize={24} />
+                      <Suspense fallback={<div className="h-6 w-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />}>
+                        <KortixLoader size="small" customSize={24} />
+                      </Suspense>
                     </div>
                   </div>
                 </CardContent>

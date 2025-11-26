@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { ENV_MODE, EnvMode } from '@/lib/utils/env-config';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/api';
 
@@ -23,8 +24,34 @@ export function getServerUrl(): string {
   return url;
 }
 
+/**
+ * Get the frontend URL based on environment
+ * Used for auth redirects, sharing links, etc.
+ * 
+ * Priority:
+ * 1. EXPO_PUBLIC_FRONTEND_URL if set
+ * 2. Environment-based defaults
+ */
+export function getFrontendUrl(): string {
+  // If explicitly set, use that
+  if (FRONTEND_URL) {
+    return FRONTEND_URL.replace(/\/$/, ''); // Remove trailing slash
+  }
+  
+  // Environment-based defaults
+  switch (ENV_MODE) {
+    case EnvMode.PRODUCTION:
+      return 'https://kortix.com';
+    case EnvMode.STAGING:
+      return 'https://staging.suna.so';
+    case EnvMode.LOCAL:
+    default:
+      return 'http://localhost:3000';
+  }
+}
+
 export const API_URL = getServerUrl();
-export const FRONTEND_SHARE_URL = FRONTEND_URL;
+export const FRONTEND_SHARE_URL = getFrontendUrl();
 
 export async function getAuthToken(): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();

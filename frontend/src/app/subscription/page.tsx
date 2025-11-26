@@ -1,20 +1,42 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense, lazy } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { PricingSection } from '@/components/billing/pricing';
 import { LogOut } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
-import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { useAdminRole } from '@/hooks/admin';
 import { useSubscription } from '@/hooks/billing';
+
+// Lazy load heavy components
+const PricingSection = lazy(() => import('@/components/billing/pricing').then(mod => ({ default: mod.PricingSection })));
+const MaintenancePage = lazy(() => import('@/components/maintenance/maintenance-page').then(mod => ({ default: mod.MaintenancePage })));
+
+// Skeleton for immediate FCP
+function SubscriptionSkeleton() {
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
+      <Card className="w-full max-w-6xl">
+        <CardHeader className="text-center">
+          <Skeleton className="h-10 w-64 mx-auto mb-2" />
+          <Skeleton className="h-6 w-96 mx-auto" />
+        </CardHeader>
+        <CardContent>
+          <div className="grid md:grid-cols-3 gap-6">
+            <Skeleton className="h-96 w-full" />
+            <Skeleton className="h-96 w-full" />
+            <Skeleton className="h-96 w-full" />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function SubscriptionRequiredPage() {
   const router = useRouter();
@@ -56,38 +78,18 @@ export default function SubscriptionRequiredPage() {
     router.push('/auth');
   };
 
-  const isMaintenanceLoading = maintenanceLoading || isCheckingAdminRole;
-
-  if (isMaintenanceLoading) {
+  // Show skeleton immediately for FCP instead of blocking loader
+  if (maintenanceNotice?.enabled && !maintenanceLoading && !isCheckingAdminRole && !isAdmin) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
-        <KortixLoader size="large" />
-      </div>
+      <Suspense fallback={<SubscriptionSkeleton />}>
+        <MaintenancePage />
+      </Suspense>
     );
   }
 
-  if (maintenanceNotice?.enabled && !isAdmin) {
-    return <MaintenancePage/>;
-  }
-
-  if (isLoadingSubscription) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
-        <Card className="w-full max-w-6xl">
-          <CardHeader className="text-center">
-            <Skeleton className="h-10 w-64 mx-auto mb-2" />
-            <Skeleton className="h-6 w-96 mx-auto" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-3 gap-6">
-              <Skeleton className="h-96 w-full" />
-              <Skeleton className="h-96 w-full" />
-              <Skeleton className="h-96 w-full" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
+  // Show skeleton during initial load
+  if (isLoadingSubscription || maintenanceLoading || isCheckingAdminRole) {
+    return <SubscriptionSkeleton />;
   }
 
   const isTrialExpired = (subscriptionData as any)?.trial_status === 'expired' ||
@@ -122,11 +124,19 @@ export default function SubscriptionRequiredPage() {
               : 'A subscription is required to use Kortix. Choose the plan that works best for you.'}
           </p>
         </div>
-        <PricingSection
-          returnUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/dashboard?subscription=activated`}
-          showTitleAndTabs={false}
-          onSubscriptionUpdate={handleSubscriptionUpdate}
-        />
+        <Suspense fallback={
+          <div className="grid md:grid-cols-3 gap-6">
+            <Skeleton className="h-96 w-full" />
+            <Skeleton className="h-96 w-full" />
+            <Skeleton className="h-96 w-full" />
+          </div>
+        }>
+          <PricingSection
+            returnUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/dashboard?subscription=activated`}
+            showTitleAndTabs={false}
+            onSubscriptionUpdate={handleSubscriptionUpdate}
+          />
+        </Suspense>
         <div className="text-center text-sm text-muted-foreground -mt-10">
           <p>
             Questions? Contact us at{' '}

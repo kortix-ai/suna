@@ -334,11 +334,22 @@ export function useAuth() {
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-      // Use frontend callback page which will detect mobile and redirect accordingly
-      const frontendUrl = process.env.EXPO_PUBLIC_FRONTEND_URL || 'https://kortix.com';
-      // Pass terms acceptance as query parameter so callback can save it
-      const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
-      const emailRedirectTo = `${frontendUrl}/auth/callback?${termsParam}`;
+      // Use frontend callback page with explicit source parameter
+      // This is more reliable than user-agent detection
+      // getFrontendUrl() handles env-based URL resolution (local/staging/production)
+      const { getFrontendUrl } = require('@/api/config');
+      const frontendUrl = getFrontendUrl();
+      
+      console.log('📧 Magic link redirect URL:', frontendUrl);
+      
+      // Build query params - source=mobile tells callback to redirect to deep link
+      const params = new URLSearchParams();
+      params.set('source', 'mobile'); // Explicit mobile source
+      if (acceptedTerms) {
+        params.set('terms_accepted', 'true');
+      }
+      
+      const emailRedirectTo = `${frontendUrl}/auth/callback?${params.toString()}`;
 
       const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
