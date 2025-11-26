@@ -614,15 +614,6 @@ export function useChat(): UseChatReturn {
         } catch (agentStartError: any) {
           console.error('[useChat] Error starting agent for new thread:', agentStartError);
           
-          if (agentStartError?.code === 'RATE_LIMIT_EXCEEDED' || agentStartError?.status === 429) {
-            console.log('⏱️ Rate limit exceeded - showing auth drawer');
-            useAuthDrawerStore.getState().openAuthDrawer({
-              title: 'Sign up to continue',
-              message: 'You\'ve reached the guest message limit. Please sign up to continue chatting.'
-            });
-            return;
-          }
-          
           const errorMessage = agentStartError?.message || '';
           if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
             console.log('💳 Project limit exceeded - opening billing modal');
@@ -754,15 +745,6 @@ export function useChat(): UseChatReturn {
           setAttachments([]);
         } catch (sendMessageError: any) {
           console.error('[useChat] Error sending message to existing thread:', sendMessageError);
-          
-          if (sendMessageError?.code === 'RATE_LIMIT_EXCEEDED' || sendMessageError?.status === 429) {
-            console.log('⏱️ Rate limit exceeded - showing auth drawer');
-            useAuthDrawerStore.getState().openAuthDrawer({
-              title: 'Sign up to continue',
-              message: 'You\'ve reached the guest message limit. Please sign up to continue chatting.'
-            });
-            return;
-          }
           
           const errorMessage = sendMessageError?.message || '';
           if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {

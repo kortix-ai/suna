@@ -138,7 +138,7 @@ export const getPublicProjects = async (): Promise<Project[]> => {
     
     try {
       const { getThreadsPaginated } = await import('@/lib/api/threads');
-      const response = await getThreadsPaginated(undefined, 1, 50);
+      const response = await getThreadsPaginated(undefined, 1, 20);
 
       if (!response?.threads) {
         return [];

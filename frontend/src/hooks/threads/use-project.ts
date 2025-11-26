@@ -28,6 +28,7 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
     const projectData = threadWithProject.project;
     
     // Check if we have valid sandbox data (not just an empty object)
+    // Note: sandbox may be undefined in list view (optimized response)
     const hasSandboxData = projectData.sandbox && 
                           typeof projectData.sandbox === 'object' && 
                           projectData.sandbox.id;
@@ -35,7 +36,7 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
     return {
       id: projectData.project_id,
       name: projectData.name || '',
-      description: projectData.description || '',
+      description: projectData.description || '', // May be undefined in optimized list response
       is_public: projectData.is_public || false,
       created_at: projectData.created_at,
       updated_at: projectData.updated_at,
@@ -52,12 +53,13 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
   return useQuery<Project>({
     queryKey: threadKeys.project(projectId || ""),
     queryFn: async () => {
-      // Use cached data if available, otherwise fetch directly
-      if (project) {
+      // Use cached data if available and has sandbox data (indicates full project data)
+      // Note: Optimized list view excludes sandbox/description, so we fetch full project if missing
+      if (project && project.sandbox && typeof project.sandbox === 'object' && project.sandbox.id) {
         return project;
       }
       
-      // Direct API call using React Query - no wrapper functions!
+      // Fetch full project data (includes sandbox, description, etc.)
       return await getProject(projectId!);
     },
     enabled: !!projectId && (options?.enabled !== false),

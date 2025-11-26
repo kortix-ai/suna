@@ -26,7 +26,8 @@ async def get_user_threads(
     try:
         offset = (page - 1) * limit
         
-        count_result = await client.table('threads').select('*', count='exact').eq('account_id', user_id).execute()
+        # Optimized count query - only count, don't select columns
+        count_result = await client.table('threads').select('thread_id', count='exact').eq('account_id', user_id).execute()
         total_count = count_result.count or 0
         
         if total_count == 0:
@@ -41,8 +42,9 @@ async def get_user_threads(
                 }
             }
         
+        # Optimized: Select only needed columns from threads table
         threads_result = await client.table('threads')\
-            .select('*')\
+            .select('thread_id,project_id,metadata,is_public,created_at,updated_at')\
             .eq('account_id', user_id)\
             .order('created_at', desc=True)\
             .range(offset, offset + limit - 1)\
@@ -60,10 +62,11 @@ async def get_user_threads(
         if unique_project_ids:
             from core.utils.query_utils import batch_query_in
             
+            # Optimized: Select only needed columns from projects table (exclude sandbox, description - they're large and only needed when viewing specific project)
             projects_data = await batch_query_in(
                 client=client,
                 table_name='projects',
-                select_fields='*',
+                select_fields='project_id,name,icon_name,is_public,created_at,updated_at',
                 in_field='project_id',
                 in_values=unique_project_ids
             )
@@ -79,14 +82,13 @@ async def get_user_threads(
             if thread.get('project_id') and thread['project_id'] in projects_by_id:
                 project = projects_by_id[thread['project_id']]
                 
+                # Optimized: Only include fields needed for list view (exclude sandbox, description - they're large and only needed when viewing specific project)
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
                     "icon_name": project.get('icon_name'),
-                    "description": project.get('description', ''),
-                    "sandbox": project.get('sandbox', {}),
                     "is_public": project.get('is_public', False),
-                    "created_at": project['created_at'],
+                    "created_at": project.get('created_at'),
                     "updated_at": project['updated_at']
                 }
 
