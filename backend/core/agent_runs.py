@@ -601,9 +601,19 @@ async def start_agent_run(
     - Trigger execution service
     - Any other internal callers
     
+    Message Creation Behavior:
+    - NEW thread (thread_id=None): Creates user message with prompt (required)
+    - EXISTING thread + prompt provided: Creates user message with prompt
+    - EXISTING thread + NO prompt: Does NOT create a message (assumes message 
+      was already added via /threads/{id}/messages/add)
+    
+    This supports two client patterns:
+    1. Single-call: POST /agent/start with prompt → creates thread + message + starts agent
+    2. Two-call: POST /threads/{id}/messages/add, then POST /agent/start (no prompt)
+    
     Args:
         account_id: User account ID (required)
-        prompt: User prompt/message
+        prompt: User prompt/message (required for new threads, optional for existing)
         agent_id: Agent ID to use (optional, uses default)
         model_name: Model to use (optional, uses agent/tier default)
         thread_id: Existing thread ID (None to create new)
@@ -698,19 +708,37 @@ async def start_agent_run(
         except Exception:
             pass
     
-    # Create message and agent run in parallel
+    # Create agent run (and conditionally create message)
     t_parallel2 = time.time()
     
     async def create_message():
-        if final_message_content and final_message_content.strip():
-            await client.table('messages').insert({
-                "message_id": str(uuid.uuid4()),
-                "thread_id": thread_id,
-                "type": "user",
-                "is_llm_message": True,
-                "content": {"role": "user", "content": final_message_content},
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }).execute()
+        """
+        Message creation logic:
+        - NEW thread: Always create message (prompt is required at endpoint validation)
+        - EXISTING thread + prompt provided: Create message (user wants to add message + start agent)
+        - EXISTING thread + NO prompt: Skip (user already added message via /threads/{id}/messages/add)
+        
+        This prevents duplicate/empty messages when clients use the two-step flow:
+        1. /threads/{id}/messages/add (with message)
+        2. /agent/start (without prompt, just to start the agent)
+        """
+        # Skip if no content to add
+        if not final_message_content or not final_message_content.strip():
+            if is_new_thread:
+                logger.warning(f"Attempted to create empty message for new thread - this shouldn't happen (validation should catch this)")
+            else:
+                logger.debug(f"No prompt provided for existing thread {thread_id} - assuming message already exists")
+            return
+            
+        await client.table('messages').insert({
+            "message_id": str(uuid.uuid4()),
+            "thread_id": thread_id,
+            "type": "user",
+            "is_llm_message": True,
+            "content": {"role": "user", "content": final_message_content},
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }).execute()
+        logger.debug(f"Created user message for thread {thread_id}")
     
     async def create_agent_run():
         return await _create_agent_run_record(client, thread_id, agent_config, effective_model, account_id, metadata)

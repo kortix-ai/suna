@@ -226,6 +226,14 @@ class ThreadManager:
                     try:
                         parsed_item = json.loads(content)
                         parsed_item['message_id'] = item['message_id']
+                        
+                        # Skip empty user messages (defensive filter for legacy data)
+                        if parsed_item.get('role') == 'user':
+                            msg_content = parsed_item.get('content', '')
+                            if isinstance(msg_content, str) and not msg_content.strip():
+                                logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
+                                continue
+                        
                         messages.append(parsed_item)
                     except json.JSONDecodeError:
                         # If compressed, content is a plain string (not JSON) - this is expected
@@ -240,6 +248,13 @@ class ThreadManager:
                 elif isinstance(content, dict):
                     # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
+                    
+                    # Skip empty user messages (defensive filter for legacy data)
+                    if content.get('role') == 'user':
+                        msg_content = content.get('content', '')
+                        if isinstance(msg_content, str) and not msg_content.strip():
+                            logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
+                            continue
                     
                     # Tool messages: content field is already a JSON string from success_response
                     # No conversion needed - it's already in the correct format for Bedrock
