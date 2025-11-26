@@ -11,14 +11,14 @@ import * as Haptics from 'expo-haptics';
 export function WebCrawlToolView({ toolCall, toolResult, isStreaming }: ToolViewProps) {
   const { url, content, success } = extractWebCrawlData({ toolCall, toolResult });
   const [copied, setCopied] = useState(false);
-  
+
   const stats = getContentStats(content);
   const domain = url ? formatDomain(url) : 'Unknown';
   const favicon = url ? getFavicon(url) : null;
 
   const copyContent = async () => {
     if (!content) return;
-    
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await Clipboard.setStringAsync(content);
     setCopied(true);
@@ -74,7 +74,7 @@ export function WebCrawlToolView({ toolCall, toolResult, isStreaming }: ToolView
               Source URL
             </Text>
           </View>
-          
+
           <View className="bg-card border border-border rounded-2xl p-4">
             <View className="flex-row items-center gap-3 mb-2">
               {favicon && (
@@ -110,14 +110,14 @@ export function WebCrawlToolView({ toolCall, toolResult, isStreaming }: ToolView
                     {stats.wordCount} words
                   </Text>
                 </View>
-                <Pressable 
+                <Pressable
                   onPress={copyContent}
                   className="bg-muted/30 rounded-lg p-1.5"
                 >
-                  <Icon 
-                    as={copied ? Check : Copy} 
-                    size={14} 
-                    className={copied ? 'text-primary' : 'text-foreground/60'} 
+                  <Icon
+                    as={copied ? Check : Copy}
+                    size={14}
+                    className={copied ? 'text-primary' : 'text-foreground/60'}
                   />
                 </Pressable>
               </View>
@@ -142,9 +142,9 @@ export function WebCrawlToolView({ toolCall, toolResult, isStreaming }: ToolView
                   {stats.charCount} chars
                 </Text>
               </View>
-              
-              <ScrollView 
-                className="p-4" 
+
+              <ScrollView
+                className="p-4"
                 style={{ maxHeight: 400 }}
                 showsVerticalScrollIndicator={true}
               >

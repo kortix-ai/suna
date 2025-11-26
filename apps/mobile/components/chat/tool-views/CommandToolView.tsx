@@ -9,9 +9,9 @@ import { View, ScrollView, Pressable, Clipboard } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
-import { 
-  Terminal, 
-  CheckCircle2, 
+import {
+  Terminal,
+  CheckCircle2,
   AlertCircle,
   Copy,
   Check,
@@ -21,11 +21,11 @@ import {
 import type { ToolViewProps } from './types';
 import { extractCommandData } from './command-tool/_utils';
 
-export function CommandToolView({ 
-  toolCall, 
-  toolResult, 
+export function CommandToolView({
+  toolCall,
+  toolResult,
   isSuccess = true,
-  toolTimestamp 
+  toolTimestamp
 }: ToolViewProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(true);
@@ -57,13 +57,13 @@ export function CommandToolView({
   const formattedOutput = React.useMemo(() => {
     if (!output) return '';
     let str = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
-    
+
     // Replace escape sequences
     str = str.replace(/\\n/g, '\n')
-             .replace(/\\t/g, '\t')
-             .replace(/\\"/g, '"')
-             .replace(/\\\\/g, '\\');
-    
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+
     return str;
   }, [output]);
 
@@ -121,10 +121,10 @@ export function CommandToolView({
                   }}
                   className="flex-row items-center gap-1.5 bg-secondary active:bg-secondary/80 px-3 py-1.5 rounded-full"
                 >
-                  <Icon 
-                    as={expanded ? ChevronUp : ChevronDown} 
-                    size={14} 
-                    className="text-foreground/60" 
+                  <Icon
+                    as={expanded ? ChevronUp : ChevronDown}
+                    size={14}
+                    className="text-foreground/60"
                   />
                   <Text className="text-xs font-roobert-medium text-foreground/60">
                     {expanded ? 'Collapse' : 'Expand'}
@@ -135,25 +135,23 @@ export function CommandToolView({
                 onPress={handleCopy}
                 className="flex-row items-center gap-1.5 bg-secondary active:bg-secondary/80 px-3 py-1.5 rounded-full"
               >
-                <Icon 
-                  as={copied ? Check : Copy} 
-                  size={14} 
-                  className={copied ? 'text-primary' : 'text-foreground/60'} 
+                <Icon
+                  as={copied ? Check : Copy}
+                  size={14}
+                  className={copied ? 'text-primary' : 'text-foreground/60'}
                 />
-                <Text className={`text-xs font-roobert-medium ${
-                  copied ? 'text-primary' : 'text-foreground/60'
-                }`}>
+                <Text className={`text-xs font-roobert-medium ${copied ? 'text-primary' : 'text-foreground/60'
+                  }`}>
                   {copied ? 'Copied!' : 'Copy'}
                 </Text>
               </Pressable>
             </View>
           </View>
 
-          <View className={`rounded-2xl p-4 border ${
-            isError 
-              ? 'bg-destructive/5 border-destructive/20' 
+          <View className={`rounded-2xl p-4 border ${isError
+              ? 'bg-destructive/5 border-destructive/20'
               : 'bg-card border-border'
-          }`} style={{ maxHeight: expanded ? 400 : 160 }}>
+            }`} style={{ maxHeight: expanded ? 400 : 160 }}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text className="text-sm font-roobert text-foreground/80 leading-5" selectable>
                 {formattedOutput}
@@ -168,14 +166,12 @@ export function CommandToolView({
               </Text>
             </View>
             {exitCode !== undefined && exitCode !== null && (
-              <View className={`rounded-full px-3 py-1 border ${
-                exitCode === 0 
-                  ? 'bg-primary/10 border-primary/20' 
+              <View className={`rounded-full px-3 py-1 border ${exitCode === 0
+                  ? 'bg-primary/10 border-primary/20'
                   : 'bg-destructive/10 border-destructive/20'
-              }`}>
-                <Text className={`text-xs font-roobert-medium ${
-                  exitCode === 0 ? 'text-primary' : 'text-destructive'
                 }`}>
+                <Text className={`text-xs font-roobert-medium ${exitCode === 0 ? 'text-primary' : 'text-destructive'
+                  }`}>
                   Exit code: {exitCode}
                 </Text>
               </View>
@@ -189,19 +185,17 @@ export function CommandToolView({
         <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
           Status
         </Text>
-        <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${
-          isError 
-            ? 'bg-destructive/5 border-destructive/20' 
+        <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${isError
+            ? 'bg-destructive/5 border-destructive/20'
             : 'bg-primary/5 border-primary/20'
-        }`}>
-          <Icon 
-            as={isError ? AlertCircle : CheckCircle2} 
-            size={18} 
-            className={isError ? 'text-destructive' : 'text-primary'} 
-          />
-          <Text className={`text-sm font-roobert-medium ${
-            isError ? 'text-destructive' : 'text-primary'
           }`}>
+          <Icon
+            as={isError ? AlertCircle : CheckCircle2}
+            size={18}
+            className={isError ? 'text-destructive' : 'text-primary'}
+          />
+          <Text className={`text-sm font-roobert-medium ${isError ? 'text-destructive' : 'text-primary'
+            }`}>
             {isError ? 'Command Failed' : completed ? 'Command Completed' : 'Command Running'}
           </Text>
         </View>

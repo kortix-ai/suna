@@ -8,7 +8,7 @@ import { extractDocsData, getActionTitle, stripHtmlTags } from './_utils';
 
 export function DocsToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const data = extractDocsData({ toolCall, toolResult });
-  
+
   const toolName = toolCall?.function?.name || 'docs';
   const actionTitle = getActionTitle(toolName);
 
@@ -93,7 +93,7 @@ export function DocsToolView({ toolCall, toolResult, isStreaming = false }: Tool
               </Text>
               <View className="bg-muted/10 dark:bg-muted/80 rounded-xl p-4 border border-border">
                 {contentLines.map((line, idx) => (
-                  <Text 
+                  <Text
                     key={idx}
                     className="text-sm font-roobert text-foreground leading-6 mb-2"
                     selectable

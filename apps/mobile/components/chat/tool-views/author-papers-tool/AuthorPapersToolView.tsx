@@ -80,7 +80,7 @@ export function AuthorPapersToolView({ toolCall, toolResult, isStreaming = false
                   <Text className="text-base font-roobert-semibold text-foreground" numberOfLines={3}>
                     {paper.title}
                   </Text>
-                  
+
                   <View className="flex-row flex-wrap gap-2">
                     {paper.year && (
                       <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
@@ -90,7 +90,7 @@ export function AuthorPapersToolView({ toolCall, toolResult, isStreaming = false
                         </Text>
                       </View>
                     )}
-                    
+
                     {paper.citation_count !== undefined && (
                       <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                         <Icon as={Award} size={12} className="text-muted-foreground" />

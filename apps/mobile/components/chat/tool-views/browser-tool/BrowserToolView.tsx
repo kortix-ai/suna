@@ -7,17 +7,17 @@ import type { ToolViewProps } from '../types';
 import { extractBrowserData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function BrowserToolView({ 
+export function BrowserToolView({
   toolCall,
   toolResult,
-  assistantMessage, 
-  toolMessage, 
+  assistantMessage,
+  toolMessage,
   isStreaming,
-  project 
+  project
 }: ToolViewProps) {
   const browserData = extractBrowserData({ toolCall, toolResult }, toolMessage || {} as any, assistantMessage || null);
   const { url, operation, screenshotUrl, screenshotBase64, parameters, result } = browserData;
-  
+
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [showContext, setShowContext] = useState(false);
@@ -41,14 +41,14 @@ export function BrowserToolView({
     const imageSource = screenshotUrl
       ? { uri: screenshotUrl }
       : screenshotBase64
-      ? { uri: `data:image/png;base64,${screenshotBase64}` }
-      : null;
+        ? { uri: `data:image/png;base64,${screenshotBase64}` }
+        : null;
 
     if (!imageSource) return null;
 
     return (
       <View className="gap-3">
-        <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ aspectRatio: 16/10 }}>
+        <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ aspectRatio: 16 / 10 }}>
           {imageLoading && (
             <View className="absolute inset-0 items-center justify-center bg-muted/30">
               <ActivityIndicator size="large" color="#0066FF" />
@@ -185,10 +185,10 @@ export function BrowserToolView({
               onPress={toggleContext}
               className="bg-muted/30 rounded-xl p-2"
             >
-              <Icon 
-                as={showContext ? ImageIcon : Code2} 
-                size={16} 
-                className="text-foreground/60" 
+              <Icon
+                as={showContext ? ImageIcon : Code2}
+                size={16}
+                className="text-foreground/60"
               />
             </Pressable>
           )}

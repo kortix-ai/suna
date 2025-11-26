@@ -61,7 +61,7 @@ export function PresentationToolView({
 
   const threadId = toolMessage?.thread_id || assistantMessage?.thread_id;
   const { data: thread } = useThread(threadId);
-  
+
   // Prefer project prop, fallback to thread project
   const effectiveProject = project || thread?.project;
   const sandboxUrl = (effectiveProject as any)?.sandbox?.sandbox_url;
@@ -84,7 +84,7 @@ export function PresentationToolView({
   if (toolResult?.output) {
     try {
       let output = toolResult.output;
-      
+
       // Handle string output
       if (typeof output === 'string') {
         // Check if the string looks like an error message
@@ -102,7 +102,7 @@ export function PresentationToolView({
           }
         }
       }
-      
+
       // Only extract data if we have a valid parsed object
       if (output && typeof output === 'object' && !toolExecutionError) {
         extractedPresentationName = output.presentation_name;
@@ -153,71 +153,71 @@ export function PresentationToolView({
     if (hasLoadedRef.current) {
       return;
     }
-    
+
     // If sandbox URL isn't available yet, wait and don't set loading state
     if (!presentation_name || !sandboxUrl || isStreaming) {
       setIsLoadingMetadata(false);
       return;
     }
-    
+
     setIsLoadingMetadata(true);
     setError(null);
     setRetryAttempt(retryCount);
-    
+
     try {
       // Sanitize the presentation name to match backend directory creation
       const sanitizedPresentationName = sanitizeFilename(presentation_name);
-      
+
       const metadataUrl = constructHtmlPreviewUrl(
         sandboxUrl,
         `presentations/${sanitizedPresentationName}/metadata.json`
       );
-      
+
       // Add cache-busting parameter to ensure fresh data
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
-      
+
       console.log(`🎨 [PresentationToolView] Loading metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
-      
+
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
         headers: {
           'Cache-Control': 'no-cache'
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setMetadata(data);
         hasLoadedRef.current = true; // Mark as successfully loaded
         console.log('🎨 [PresentationToolView] Successfully loaded metadata:', data);
         setIsLoadingMetadata(false);
-        
+
         // Clear any pending retry timeout on success
         if (retryTimeoutRef.current) {
           clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
         }
-        
+
         return; // Success, exit early
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (err) {
       console.error(`🎨 [PresentationToolView] Error loading metadata (attempt ${retryCount + 1}):`, err);
-      
+
       // Calculate delay with exponential backoff, capped at 10 seconds
       // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
-      const delay = retryCount < 5 
+      const delay = retryCount < 5
         ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
         : 5000; // Consistent 5 second intervals after that
-      
+
       console.log(`🎨 [PresentationToolView] Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
-      
+
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
         loadMetadata(retryCount + 1, maxRetries);
       }, delay) as any;
-      
+
       return; // Keep loading state, don't set error
     }
   }, [presentation_name, sandboxUrl, isStreaming]);
@@ -225,17 +225,17 @@ export function PresentationToolView({
   useEffect(() => {
     // Reset loaded flag when presentation name or sandbox URL changes
     hasLoadedRef.current = false;
-    
+
     // Clear any existing retry timeout when dependencies change
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
-    
+
     if (presentation_name && sandboxUrl && !isStreaming) {
       loadMetadata(0);
     }
-    
+
     // Cleanup on unmount
     return () => {
       if (retryTimeoutRef.current) {
@@ -269,9 +269,9 @@ export function PresentationToolView({
           {isStreaming ? 'Creating Slide...' : 'Loading Presentation'}
         </Text>
         <Text className="text-sm font-roobert text-muted-foreground text-center">
-          {isStreaming 
-            ? 'Slide is being created...' 
-            : retryAttempt > 0 
+          {isStreaming
+            ? 'Slide is being created...'
+            : retryAttempt > 0
               ? `Fetching slides... (attempt ${retryAttempt + 1})`
               : 'Fetching slides...'}
         </Text>
@@ -310,7 +310,7 @@ export function PresentationToolView({
               {presentation_name ? 'No Slides Found Yet' : 'No Presentation Found'}
             </Text>
             <Text className="text-sm font-roobert text-muted-foreground text-center px-4">
-              {message || (presentation_name 
+              {message || (presentation_name
                 ? "Slides will appear here once they're created. The metadata file may still be generating."
                 : "This presentation doesn't have any slides yet.")}
             </Text>

@@ -8,7 +8,7 @@ import { extractEndCallData, statusConfig } from './_utils';
 
 export function EndCallToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const data = extractEndCallData({ toolCall, toolResult });
-  
+
   const statusInfo = statusConfig[data.status as keyof typeof statusConfig] || statusConfig.ended;
 
   if (isStreaming) {

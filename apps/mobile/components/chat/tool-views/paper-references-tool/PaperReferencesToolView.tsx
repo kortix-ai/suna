@@ -83,7 +83,7 @@ export function PaperReferencesToolView({ toolCall, toolResult, isStreaming = fa
                     <Text className="text-base font-roobert-semibold text-foreground" numberOfLines={3}>
                       {ref.title}
                     </Text>
-                    
+
                     {authorNames && (
                       <View className="flex-row items-center gap-1.5">
                         <Icon as={Users} size={12} className="text-muted-foreground" />
@@ -102,7 +102,7 @@ export function PaperReferencesToolView({ toolCall, toolResult, isStreaming = fa
                           </Text>
                         </View>
                       )}
-                      
+
                       {ref.citation_count !== undefined && (
                         <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                           <Icon as={Award} size={12} className="text-muted-foreground" />

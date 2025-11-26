@@ -12,7 +12,7 @@ export function AgentToolView({ toolCall, toolResult, isStreaming = false }: Too
   }
 
   const data = extractAgentData(toolCall, toolResult);
-  
+
   const toolName = toolCall.function_name.replace(/_/g, '-');
   const isCreate = toolName.includes('create');
   const isUpdate = toolName.includes('update');
@@ -71,7 +71,7 @@ export function AgentToolView({ toolCall, toolResult, isStreaming = false }: Too
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <View className="p-3">
-                  <Text 
+                  <Text
                     className="text-xs font-roobert-mono text-zinc-300 leading-5"
                     selectable
                   >

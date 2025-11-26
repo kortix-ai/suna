@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 export function WebScrapeToolView({ toolCall, toolResult, isStreaming }: ToolViewProps) {
   const { url, files, message, urlCount, success } = extractWebScrapeData({ toolCall, toolResult });
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
-  
+
   const domain = url ? formatDomain(url) : 'Unknown';
   const favicon = url ? getFavicon(url) : null;
 
@@ -71,7 +71,7 @@ export function WebScrapeToolView({ toolCall, toolResult, isStreaming }: ToolVie
               Source URL
             </Text>
           </View>
-          
+
           <View className="bg-card border border-border rounded-2xl p-4">
             <View className="flex-row items-center gap-3">
               {favicon && (
@@ -148,14 +148,14 @@ export function WebScrapeToolView({ toolCall, toolResult, isStreaming }: ToolVie
                         </Text>
                       </View>
 
-                      <Pressable 
+                      <Pressable
                         onPress={() => copyFilePath(filePath)}
                         className="bg-muted/30 rounded-lg p-1.5"
                       >
-                        <Icon 
-                          as={isCopied ? Check : Copy} 
-                          size={14} 
-                          className={isCopied ? 'text-primary' : 'text-foreground/60'} 
+                        <Icon
+                          as={isCopied ? Check : Copy}
+                          size={14}
+                          className={isCopied ? 'text-primary' : 'text-foreground/60'}
                         />
                       </Pressable>
                     </View>

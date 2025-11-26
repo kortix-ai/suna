@@ -8,7 +8,7 @@ import { extractMakeCallData, formatPhoneNumber, statusConfig } from './_utils';
 
 export function MakeCallToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const data = extractMakeCallData({ toolCall, toolResult });
-  
+
   const status = data.status;
   const statusInfo = statusConfig[status as keyof typeof statusConfig] || statusConfig.queued;
 
@@ -61,12 +61,10 @@ export function MakeCallToolView({ toolCall, toolResult, isStreaming = false }: 
         )}
 
         {data.message && (
-          <View className={`rounded-xl p-4 border ${
-            status === 'failed' ? 'bg-red-500/10 border-red-500/20' : 'bg-muted/50 border-border'
-          }`}>
-            <Text className={`text-sm font-roobert ${
-              status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-foreground'
+          <View className={`rounded-xl p-4 border ${status === 'failed' ? 'bg-red-500/10 border-red-500/20' : 'bg-muted/50 border-border'
             }`}>
+            <Text className={`text-sm font-roobert ${status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-foreground'
+              }`}>
               {data.message}
             </Text>
           </View>

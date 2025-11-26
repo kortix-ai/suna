@@ -8,7 +8,7 @@ import { extractWaitForCallCompletionData, formatDuration, statusConfig } from '
 
 export function WaitForCallCompletionToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const data = extractWaitForCallCompletionData({ toolCall, toolResult });
-  
+
   const statusInfo = statusConfig[data.final_status as keyof typeof statusConfig] || statusConfig.completed;
 
   if (isStreaming) {
@@ -51,7 +51,7 @@ export function WaitForCallCompletionToolView({ toolCall, toolResult, isStreamin
               </Text>
             </View>
           )}
-          
+
           {data.cost !== undefined && (
             <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
               <View className="flex-row items-center gap-2 mb-1">

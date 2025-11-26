@@ -9,8 +9,8 @@ import { View, Pressable, Linking, Clipboard } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
-import { 
-  Globe, 
+import {
+  Globe,
   ExternalLink,
   CheckCircle2,
   AlertCircle,
@@ -69,14 +69,14 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
           <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
             Public URL
           </Text>
-          
+
           {/* URL Display */}
           <View className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
             <Text className="text-sm font-roobert text-primary leading-5" selectable>
               {publicUrl}
             </Text>
           </View>
-            
+
           {/* Action Buttons */}
           <View className="flex-row gap-3">
             <Pressable
@@ -88,15 +88,15 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
                 Open URL
               </Text>
             </Pressable>
-            
+
             <Pressable
               onPress={handleCopy}
               className="bg-primary/10 border border-primary/20 active:bg-primary/20 rounded-2xl px-6 py-4 flex-row items-center justify-center gap-2"
             >
-              <Icon 
-                as={copied ? Check : Copy} 
-                size={18} 
-                className={copied ? 'text-primary' : 'text-primary'} 
+              <Icon
+                as={copied ? Check : Copy}
+                size={18}
+                className={copied ? 'text-primary' : 'text-primary'}
               />
               <Text className="text-primary text-base font-roobert-semibold">
                 {copied ? 'Copied!' : 'Copy'}
@@ -121,19 +121,17 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
         <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
           Status
         </Text>
-        <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${
-          isError 
-            ? 'bg-destructive/5 border-destructive/20' 
+        <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${isError
+            ? 'bg-destructive/5 border-destructive/20'
             : 'bg-primary/5 border-primary/20'
-        }`}>
-          <Icon 
-            as={isError ? AlertCircle : CheckCircle2} 
-            size={18} 
-            className={isError ? 'text-destructive' : 'text-primary'} 
-          />
-          <Text className={`text-sm font-roobert-medium ${
-            isError ? 'text-destructive' : 'text-primary'
           }`}>
+          <Icon
+            as={isError ? AlertCircle : CheckCircle2}
+            size={18}
+            className={isError ? 'text-destructive' : 'text-primary'}
+          />
+          <Text className={`text-sm font-roobert-medium ${isError ? 'text-destructive' : 'text-primary'
+            }`}>
             {isError ? 'Failed to Expose Port' : 'Port Successfully Exposed'}
           </Text>
         </View>

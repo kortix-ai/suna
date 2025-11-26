@@ -8,7 +8,7 @@ import { extractKbData } from './_utils';
 
 export function KbToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const data = extractKbData({ toolCall, toolResult });
-  
+
   const toolName = toolCall?.function_name || '';
   const isInit = toolName.includes('init');
   const isSearch = toolName.includes('search');
@@ -57,7 +57,7 @@ export function KbToolView({ toolCall, toolResult, isStreaming = false }: ToolVi
             <Text className="text-sm font-roobert-medium text-foreground/70">
               Items ({totalItems})
             </Text>
-            
+
             {data.folders && data.folders.length > 0 && (
               <View className="gap-2">
                 {data.folders.map((folder: any, idx: number) => (

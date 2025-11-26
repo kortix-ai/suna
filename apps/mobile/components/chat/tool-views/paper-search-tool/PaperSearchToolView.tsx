@@ -27,7 +27,7 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
       if (domain.includes('nature')) return 'Nature';
       if (domain.includes('springer')) return 'Springer';
       if (domain.includes('sciencedirect')) return 'ScienceDirect';
-      
+
       const urlObj = new URL(url);
       const hostname = urlObj.hostname.replace(/^www\./, '');
       return hostname.split('.')[0].charAt(0).toUpperCase() + hostname.split('.')[0].slice(1);
@@ -141,7 +141,7 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
                       </Text>
                     </View>
                   )}
-                  
+
                   {authorNames && (
                     <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded flex-1">
                       <Icon as={Users} size={12} className="text-muted-foreground" />
@@ -150,7 +150,7 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
                       </Text>
                     </View>
                   )}
-                  
+
                   {result.citation_count !== undefined && result.citation_count > 0 && (
                     <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                       <Icon as={Award} size={12} className="text-muted-foreground" />

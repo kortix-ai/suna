@@ -122,7 +122,7 @@ export function McpServerToolView({ toolCall, toolResult, isStreaming = false }:
           <View className="gap-3">
             {servers.map((srv, idx) => {
               const hasOAuth = srv.auth_schemes?.includes('OAUTH2');
-              
+
               return (
                 <View key={idx} className="bg-card border border-border rounded-xl p-4 gap-3">
                   <View className="flex-row items-start gap-3">
@@ -147,11 +147,11 @@ export function McpServerToolView({ toolCall, toolResult, isStreaming = false }:
                           <Icon as={Sparkles} size={14} className="text-emerald-500" />
                         )}
                       </View>
-                      
+
                       <Text className="text-xs font-roobert-mono text-muted-foreground" numberOfLines={1}>
                         {srv.toolkit_slug}
                       </Text>
-                      
+
                       {srv.description && (
                         <Text className="text-sm font-roobert text-foreground/70" numberOfLines={2}>
                           {srv.description}

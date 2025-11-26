@@ -57,7 +57,7 @@ export function ToolCallPanel({
   }, [visible, initialIndex]);
 
   const currentPair = toolMessages[currentIndex];
-  
+
   // Extract tool call and tool result from messages
   const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
     if (!currentPair?.toolMessage) return { toolCall: null, toolResult: null, isSuccess: false, assistantTimestamp: undefined, toolTimestamp: undefined };
@@ -80,12 +80,12 @@ export function ToolCallPanel({
       ? toolCall.arguments
       : typeof toolCall.arguments === 'string'
         ? (() => {
-            try {
-              return JSON.parse(toolCall.arguments);
-            } catch {
-              return {};
-            }
-          })()
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
         : {};
     return getToolMetadata(toolCall.function_name, args);
   }, [toolCall]);
@@ -166,7 +166,7 @@ export function ToolCallPanel({
       <BottomSheetScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ 
+        contentContainerStyle={{
           paddingBottom: 20,
           backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
         }}

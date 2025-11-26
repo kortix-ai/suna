@@ -90,7 +90,7 @@ export function PeopleSearchToolView({ toolCall, toolResult, isStreaming = false
                   <Text className="text-base font-roobert-semibold text-foreground">
                     {result.person_name}
                   </Text>
-                  
+
                   {result.person_position && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={Briefcase} size={12} className="text-muted-foreground" />
@@ -99,7 +99,7 @@ export function PeopleSearchToolView({ toolCall, toolResult, isStreaming = false
                       </Text>
                     </View>
                   )}
-                  
+
                   {result.person_location && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={MapPin} size={12} className="text-muted-foreground" />

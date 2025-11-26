@@ -83,7 +83,7 @@ export function PaperCitationsToolView({ toolCall, toolResult, isStreaming = fal
                     <Text className="text-base font-roobert-semibold text-foreground" numberOfLines={3}>
                       {citation.title}
                     </Text>
-                    
+
                     {authorNames && (
                       <View className="flex-row items-center gap-1.5">
                         <Icon as={Users} size={12} className="text-muted-foreground" />
@@ -102,7 +102,7 @@ export function PaperCitationsToolView({ toolCall, toolResult, isStreaming = fal
                           </Text>
                         </View>
                       )}
-                      
+
                       {citation.citation_count !== undefined && (
                         <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                           <Icon as={Award} size={12} className="text-muted-foreground" />

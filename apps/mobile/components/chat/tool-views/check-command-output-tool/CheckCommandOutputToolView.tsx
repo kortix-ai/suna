@@ -8,7 +8,7 @@ import { extractCheckCommandOutputData } from './_utils';
 
 export function CheckCommandOutputToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const { sessionName, output, status, success } = extractCheckCommandOutputData({ toolCall, toolResult });
-  
+
   const lines = output ? output.split('\n') : [];
   const isSessionRunning = status?.includes('running');
 
@@ -53,7 +53,7 @@ export function CheckCommandOutputToolView({ toolCall, toolResult, isStreaming =
             </View>
             <View className="p-3">
               {lines.map((line, idx) => (
-                <Text 
+                <Text
                   key={idx}
                   className="text-xs font-roobert-mono text-zinc-300 leading-5"
                   selectable

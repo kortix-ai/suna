@@ -8,7 +8,7 @@ import { extractDocumentParserData } from './_utils';
 
 export function DocumentParserToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const { filePath, fileName, content, pageCount, success } = extractDocumentParserData(toolData);
-  
+
   const lines = content ? content.split('\n') : [];
   const preview = lines.slice(0, 50);
 
@@ -67,7 +67,7 @@ export function DocumentParserToolView({ toolCall, toolResult, isStreaming = fal
             </Text>
             <View className="bg-muted/50 rounded-xl p-4 border border-border">
               {preview.map((line, idx) => (
-                <Text 
+                <Text
                   key={idx}
                   className="text-sm font-roobert text-foreground leading-6"
                   selectable

@@ -98,14 +98,14 @@ export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false
                     {result.paper_count} papers
                   </Text>
                 </View>
-                
+
                 <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                   <Icon as={Award} size={12} className="text-muted-foreground" />
                   <Text className="text-xs font-roobert text-muted-foreground">
                     {result.citation_count} citations
                   </Text>
                 </View>
-                
+
                 <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                   <Icon as={Hash} size={12} className="text-muted-foreground" />
                   <Text className="text-xs font-roobert text-muted-foreground">

@@ -91,7 +91,7 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
                   <Text className="text-base font-roobert-semibold text-foreground">
                     {result.company_name}
                   </Text>
-                  
+
                   {result.company_industry && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={Briefcase} size={12} className="text-muted-foreground" />
@@ -100,7 +100,7 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
                       </Text>
                     </View>
                   )}
-                  
+
                   {result.company_location && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={MapPin} size={12} className="text-muted-foreground" />

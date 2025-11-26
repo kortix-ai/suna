@@ -44,7 +44,7 @@ export function ListCallsToolView({ toolCall, toolResult, isStreaming = false }:
         <View className="gap-3">
           {data.calls.map((call, idx) => {
             const statusInfo = statusConfig[call.status as keyof typeof statusConfig] || statusConfig.queued;
-            
+
             return (
               <View key={call.call_id || idx} className="bg-card border border-border rounded-xl p-4 gap-3">
                 <View className="flex-row items-center justify-between">
@@ -67,7 +67,7 @@ export function ListCallsToolView({ toolCall, toolResult, isStreaming = false }:
                       </Text>
                     </View>
                   )}
-                  
+
                   {call.started_at && (
                     <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                       <Icon as={Calendar} size={12} className="text-muted-foreground" />

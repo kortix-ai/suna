@@ -15,18 +15,18 @@ export function WaitToolView({ toolCall, toolResult, isStreaming }: ToolViewProp
         <View className="bg-muted/10 rounded-2xl items-center justify-center mb-6" style={{ width: 96, height: 96 }}>
           <Icon as={Timer} size={48} className="text-muted-foreground" />
         </View>
-        
+
         <Text className="text-5xl font-roobert-semibold text-foreground mb-3">
           {formatDuration(seconds)}
         </Text>
-        
+
         <Text className="text-sm font-roobert text-muted-foreground text-center max-w-sm mb-4">
-          {isStreaming 
-            ? 'The system is currently pausing execution for the specified duration.' 
+          {isStreaming
+            ? 'The system is currently pausing execution for the specified duration.'
             : `The system paused execution for ${formatDuration(seconds)} as requested.`
           }
         </Text>
-        
+
         {seconds > 0 && (
           <View className="bg-muted/30 rounded-full px-4 py-2">
             <Text className="text-xs font-roobert-medium text-muted-foreground">

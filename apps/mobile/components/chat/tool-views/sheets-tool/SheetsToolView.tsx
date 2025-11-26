@@ -62,7 +62,7 @@ export function SheetsToolView({ toolCall, toolResult, isStreaming = false }: To
               <View>
                 <View className="flex-row bg-muted/50 border-b border-border">
                   {headers.map((header, idx) => (
-                    <View 
+                    <View
                       key={idx}
                       className="px-3 py-2 border-r border-border"
                       style={{ minWidth: 120 }}
@@ -73,11 +73,11 @@ export function SheetsToolView({ toolCall, toolResult, isStreaming = false }: To
                     </View>
                   ))}
                 </View>
-                
+
                 {rows.slice(0, 10).map((row, rowIdx) => (
                   <View key={rowIdx} className="flex-row border-b border-border">
                     {row.map((cell, cellIdx) => (
-                      <View 
+                      <View
                         key={cellIdx}
                         className="px-3 py-2 border-r border-border"
                         style={{ minWidth: 120 }}
@@ -89,7 +89,7 @@ export function SheetsToolView({ toolCall, toolResult, isStreaming = false }: To
                     ))}
                   </View>
                 ))}
-                
+
                 {rows.length > 10 && (
                   <View className="bg-muted/30 p-3">
                     <Text className="text-xs font-roobert text-muted-foreground text-center">

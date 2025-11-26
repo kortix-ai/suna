@@ -8,7 +8,7 @@ import { extractCallStatusData, formatPhoneNumber, formatDuration, statusConfig 
 
 export function CallStatusToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const data = extractCallStatusData({ toolCall, toolResult });
-  
+
   const statusInfo = statusConfig[data.status as keyof typeof statusConfig] || statusConfig.queued;
 
   if (isStreaming) {
@@ -39,7 +39,7 @@ export function CallStatusToolView({ toolCall, toolResult, isStreaming = false }
               </Text>
             </View>
           )}
-          
+
           {data.cost !== undefined && (
             <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
               <View className="flex-row items-center gap-2 mb-1">
@@ -62,17 +62,16 @@ export function CallStatusToolView({ toolCall, toolResult, isStreaming = false }
               {data.transcript.map((msg, idx) => (
                 <View
                   key={idx}
-                  className={`rounded-xl p-3 ${
-                    msg.role === 'assistant' 
-                      ? 'bg-primary/10 ml-4' 
+                  className={`rounded-xl p-3 ${msg.role === 'assistant'
+                      ? 'bg-primary/10 ml-4'
                       : 'bg-muted/50 mr-4'
-                  }`}
+                    }`}
                 >
                   <View className="flex-row items-center gap-2 mb-1">
-                    <Icon 
-                      as={msg.role === 'assistant' ? Bot : User} 
-                      size={12} 
-                      className="text-muted-foreground" 
+                    <Icon
+                      as={msg.role === 'assistant' ? Bot : User}
+                      size={12}
+                      className="text-muted-foreground"
                     />
                     <Text className="text-xs font-roobert-medium text-muted-foreground">
                       {msg.role === 'assistant' ? 'AI' : 'Caller'}

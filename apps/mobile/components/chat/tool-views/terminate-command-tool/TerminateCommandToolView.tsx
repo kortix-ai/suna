@@ -54,7 +54,7 @@ export function TerminateCommandToolView({ toolCall, toolResult, isSuccess = tru
             <View className="rounded-2xl p-4 border bg-card border-border" style={{ maxHeight: 400 }}>
               <ScrollView showsVerticalScrollIndicator={false}>
                 {lines.map((line, idx) => (
-                  <Text 
+                  <Text
                     key={idx}
                     className="text-sm font-roobert-mono text-foreground/80 leading-5"
                     selectable

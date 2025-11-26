@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 export function StrReplaceToolView({ toolCall, toolResult, isStreaming }: ToolViewProps) {
   const { filePath, oldStr, newStr, success } = extractStrReplaceData({ toolCall, toolResult });
   const [expanded, setExpanded] = useState(true);
-  
+
   const lineDiff = oldStr && newStr ? generateLineDiff(oldStr, newStr) : [];
   const stats = calculateDiffStats(lineDiff);
 
@@ -74,7 +74,7 @@ export function StrReplaceToolView({ toolCall, toolResult, isStreaming }: ToolVi
                   {filePath || 'Unknown file'}
                 </Text>
               </View>
-              
+
               <View className="flex-row items-center gap-3">
                 <View className="flex-row items-center gap-3">
                   <View className="flex-row items-center gap-1">
@@ -90,44 +90,42 @@ export function StrReplaceToolView({ toolCall, toolResult, isStreaming }: ToolVi
                     </Text>
                   </View>
                 </View>
-                
-                <Icon 
-                  as={expanded ? ChevronUp : ChevronDown} 
-                  size={16} 
-                  className="text-foreground/60" 
+
+                <Icon
+                  as={expanded ? ChevronUp : ChevronDown}
+                  size={16}
+                  className="text-foreground/60"
                 />
               </View>
             </Pressable>
 
             {expanded && (
-              <ScrollView 
+              <ScrollView
                 className="max-h-96"
                 showsVerticalScrollIndicator={true}
               >
                 <View className="p-2">
                   {lineDiff.map((line, idx) => {
                     if (line.type === 'unchanged') return null;
-                    
+
                     return (
                       <View
                         key={idx}
-                        className={`flex-row items-start gap-2 px-2 py-1 ${
-                          line.type === 'added' 
-                            ? 'bg-primary/5' 
+                        className={`flex-row items-start gap-2 px-2 py-1 ${line.type === 'added'
+                            ? 'bg-primary/5'
                             : 'bg-destructive/5'
-                        }`}
-                      >
-                        <Icon 
-                          as={line.type === 'added' ? Plus : Minus} 
-                          size={14} 
-                          className={line.type === 'added' ? 'text-primary mt-0.5' : 'text-destructive mt-0.5'} 
-                        />
-                        <Text 
-                          className={`text-xs font-roobert flex-1 ${
-                            line.type === 'added' 
-                              ? 'text-primary' 
-                              : 'text-destructive'
                           }`}
+                      >
+                        <Icon
+                          as={line.type === 'added' ? Plus : Minus}
+                          size={14}
+                          className={line.type === 'added' ? 'text-primary mt-0.5' : 'text-destructive mt-0.5'}
+                        />
+                        <Text
+                          className={`text-xs font-roobert flex-1 ${line.type === 'added'
+                              ? 'text-primary'
+                              : 'text-destructive'
+                            }`}
                           selectable
                         >
                           {line.type === 'added' ? line.newLine : line.oldLine}
