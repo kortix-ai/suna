@@ -20,13 +20,13 @@ import {
 } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
 
-export function ExposePortToolView({ toolData }: ToolViewProps) {
-  const { arguments: toolArgs, result } = toolData;
+export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
+  const toolArgs = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   const [copied, setCopied] = useState(false);
-  const isError = !result.success;
+  const isError = !toolResult?.success;
 
   const port = toolArgs.port;
-  const publicUrl = result.output?.url || result.output?.public_url || '';
+  const publicUrl = toolResult?.output?.url || toolResult?.output?.public_url || '';
 
   const handleCopy = async () => {
     if (publicUrl) {
@@ -50,22 +50,7 @@ export function ExposePortToolView({ toolData }: ToolViewProps) {
   };
 
   return (
-    <View className="px-6 py-4 gap-6">
-      {/* Header */}
-      <View className="flex-row items-center gap-3">
-        <View className="bg-primary/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-          <Icon as={Globe} size={24} className="text-primary" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-            Port Exposure
-          </Text>
-          <Text className="text-xl font-roobert-semibold text-foreground">
-            Port Exposed
-          </Text>
-        </View>
-      </View>
-
+    <View className="px-6 gap-6">
       {/* Port Number */}
       <View className="gap-2">
         <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">

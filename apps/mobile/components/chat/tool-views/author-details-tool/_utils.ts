@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface AuthorDetails {
   author_id: string;
@@ -28,15 +28,15 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractAuthorDetailsData(toolData: ParsedToolData): AuthorDetailsData {
-  const { result } = toolData;
+export function extractAuthorDetailsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): AuthorDetailsData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let author: AuthorDetails | null = null;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       author = output.author || output;
@@ -45,7 +45,7 @@ export function extractAuthorDetailsData(toolData: ParsedToolData): AuthorDetail
   
   return {
     author,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

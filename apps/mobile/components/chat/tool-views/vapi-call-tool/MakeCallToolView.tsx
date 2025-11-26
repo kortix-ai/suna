@@ -6,8 +6,8 @@ import { Phone, CheckCircle2, AlertCircle, Clock, User } from 'lucide-react-nati
 import type { ToolViewProps } from '../types';
 import { extractMakeCallData, formatPhoneNumber, statusConfig } from './_utils';
 
-export function MakeCallToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const data = extractMakeCallData(toolData);
+export function MakeCallToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const data = extractMakeCallData({ toolCall, toolResult });
   
   const status = data.status;
   const statusInfo = statusConfig[status as keyof typeof statusConfig] || statusConfig.queued;
@@ -34,26 +34,7 @@ export function MakeCallToolView({ toolData, isStreaming = false }: ToolViewProp
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-blue-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Phone} size={24} className="text-blue-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Phone Call
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {formatPhoneNumber(data.phone_number)}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.bg}`}>
-            <Text className={`text-xs font-roobert-medium ${statusInfo.color}`}>
-              {statusInfo.label}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="bg-card border border-border rounded-xl p-4 gap-3">
           <View className="flex-row items-center gap-2">
             <Icon as={User} size={16} className="text-muted-foreground" />

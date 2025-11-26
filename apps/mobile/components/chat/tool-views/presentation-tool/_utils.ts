@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface Slide {
   slide_number: number;
@@ -34,21 +34,21 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractPresentationData(toolData: ParsedToolData): PresentationData {
-  const { arguments: args, result } = toolData;
+export function extractPresentationData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): PresentationData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   console.log('🎨 [extractPresentationData] Raw data:', {
     args,
-    resultOutput: result.output,
-    resultOutputType: typeof result.output
+    resultOutput: toolResult?.output,
+    resultOutputType: typeof toolResult?.output
   });
   
   let data: any = {};
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     console.log('🎨 [extractPresentationData] Parsed output:', output);
     
@@ -97,7 +97,7 @@ export function extractPresentationData(toolData: ParsedToolData): PresentationD
     slide_count: data.slide_count || outlineData?.slide_count || slides?.length,
     message: data.message || data.status,
     outline: outlineData,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

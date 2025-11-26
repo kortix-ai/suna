@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface ImageEditData {
   prompt?: string;
@@ -23,17 +23,21 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractImageEditData(toolData: ParsedToolData, sandboxId?: string): ImageEditData {
-  const { arguments: args, result } = toolData;
+export function extractImageEditData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }, sandboxId?: string): ImageEditData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => { try { return JSON.parse(toolCall.arguments); } catch { return {}; } })()
+      : {};
   
   let generatedImagePath: string | undefined;
   let error: string | undefined;
   let extractedSandboxId: string | undefined;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       generatedImagePath = output.generated_image_path || output.image_path || output.file_path || output.path;
@@ -67,7 +71,7 @@ export function extractImageEditData(toolData: ParsedToolData, sandboxId?: strin
     width: args?.width,
     height: args?.height,
     error,
-    success: result.success ?? true,
+    success: toolResult?.success ?? true,
     sandboxId: extractedSandboxId || sandboxId
   };
 }

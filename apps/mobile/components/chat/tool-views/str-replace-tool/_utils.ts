@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface StrReplaceData {
   filePath: string | null;
@@ -20,14 +20,14 @@ export interface DiffStats {
   unchanged: number;
 }
 
-export function extractStrReplaceData(toolData: ParsedToolData): StrReplaceData {
-  const { arguments: args, result } = toolData;
+export function extractStrReplaceData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): StrReplaceData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   return {
     filePath: args?.file_path || null,
     oldStr: args?.old_str || null,
     newStr: args?.new_str || null,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

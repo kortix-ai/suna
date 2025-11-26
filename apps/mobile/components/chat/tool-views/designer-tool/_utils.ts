@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface DesignerData {
   mode?: string;
@@ -26,21 +26,23 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractDesignerData(toolData: ParsedToolData): DesignerData {
-  const { arguments: args, result } = toolData;
+export function extractDesignerData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DesignerData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => { try { return JSON.parse(toolCall.arguments); } catch { return {}; } })()
+      : {};
   
   let generatedImagePath: string | undefined;
   let designUrl: string | undefined;
   let error: string | undefined;
   let sandboxId: string | undefined;
-  let success = result.success ?? true;
-  
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
-    
-    if (output && typeof output === 'object') {
+  let success = toolResult?.success ?? true;
+
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;    if (output && typeof output === 'object') {
       generatedImagePath = output.design_path || output.generated_image_path || output.image_path || output.file_path;
       designUrl = output.design_url;
       sandboxId = output.sandbox_id;
@@ -76,7 +78,7 @@ export function extractDesignerData(toolData: ParsedToolData): DesignerData {
     designUrl,
     sandboxId,
     args,
-    output: result.output,
+    output: toolResult?.output,
     success
   });
   

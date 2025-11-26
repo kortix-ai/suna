@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractPaperDetailsData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function PaperDetailsToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { paper, success } = extractPaperDetailsData(toolData);
+export function PaperDetailsToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { paper, success } = extractPaperDetailsData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

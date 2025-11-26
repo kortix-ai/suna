@@ -64,7 +64,7 @@ export function PresentationToolView({
   
   // Prefer project prop, fallback to thread project
   const effectiveProject = project || thread?.project;
-  const sandboxUrl = effectiveProject?.sandbox?.sandbox_url;
+  const sandboxUrl = (effectiveProject as any)?.sandbox?.sandbox_url;
 
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
@@ -216,7 +216,7 @@ export function PresentationToolView({
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
         loadMetadata(retryCount + 1, maxRetries);
-      }, delay);
+      }, delay) as any;
       
       return; // Keep loading state, don't set error
     }
@@ -288,21 +288,7 @@ export function PresentationToolView({
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Presentation} size={24} className="text-primary" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Presentation
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {displayTitle}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {error ? (
           <View className="py-8 items-center">
             <View className="bg-destructive/10 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>

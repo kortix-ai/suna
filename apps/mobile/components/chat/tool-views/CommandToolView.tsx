@@ -71,22 +71,7 @@ export function CommandToolView({
   const hasLongOutput = outputLines.length > 20;
 
   return (
-    <View className="px-6 py-4 gap-6">
-      {/* Header */}
-      <View className="flex-row items-center gap-3">
-        <View className="bg-primary/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-          <Icon as={Terminal} size={24} className="text-primary" />
-        </View>
-        <View className="flex-1">
-          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-            {toolName === 'check-command-output' ? 'Check Output' : 'Execute Command'}
-          </Text>
-          <Text className="text-xl font-roobert-semibold text-foreground">
-            Terminal
-          </Text>
-        </View>
-      </View>
-
+    <View className="px-6 gap-6">
       {/* Command */}
       <View className="gap-2">
         <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">

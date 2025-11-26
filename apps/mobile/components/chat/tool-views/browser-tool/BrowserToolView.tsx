@@ -8,20 +8,21 @@ import { extractBrowserData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
 export function BrowserToolView({ 
-  toolData, 
+  toolCall,
+  toolResult,
   assistantMessage, 
   toolMessage, 
   isStreaming,
   project 
 }: ToolViewProps) {
-  const browserData = extractBrowserData(toolData, toolMessage, assistantMessage);
+  const browserData = extractBrowserData({ toolCall, toolResult }, toolMessage || {} as any, assistantMessage || null);
   const { url, operation, screenshotUrl, screenshotBase64, parameters, result } = browserData;
   
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [showContext, setShowContext] = useState(false);
 
-  const isSuccess = toolData.result.success ?? true;
+  const isSuccess = toolResult?.success ?? true;
   const isLoading = isStreaming;
 
   useEffect(() => {
@@ -177,49 +178,20 @@ export function BrowserToolView({
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={MonitorPlay} size={24} className="text-primary" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Browser
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {operation}
-            </Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            {!isStreaming && (
-              <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-                isSuccess ? 'bg-primary/10' : 'bg-destructive/10'
-              }`}>
-                <Icon 
-                  as={isSuccess ? CheckCircle2 : AlertCircle} 
-                  size={12} 
-                  className={isSuccess ? 'text-primary' : 'text-destructive'} 
-                />
-                <Text className={`text-xs font-roobert-medium ${
-                  isSuccess ? 'text-primary' : 'text-destructive'
-                }`}>
-                  {isSuccess ? 'Done' : 'Failed'}
-                </Text>
-              </View>
-            )}
-            {(result || parameters) && (
-              <Pressable
-                onPress={toggleContext}
-                className="bg-muted/30 rounded-xl p-2"
-              >
-                <Icon 
-                  as={showContext ? ImageIcon : Code2} 
-                  size={16} 
-                  className="text-foreground/60" 
-                />
-              </Pressable>
-            )}
-          </View>
+      <View className="px-6 gap-6">
+        <View className="flex-row items-center justify-end gap-2">
+          {(result || parameters) && (
+            <Pressable
+              onPress={toggleContext}
+              className="bg-muted/30 rounded-xl p-2"
+            >
+              <Icon 
+                as={showContext ? ImageIcon : Code2} 
+                size={16} 
+                className="text-foreground/60" 
+              />
+            </Pressable>
+          )}
         </View>
 
         {showContext ? renderContext() : renderScreenshot()}

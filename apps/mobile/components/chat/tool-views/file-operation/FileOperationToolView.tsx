@@ -212,21 +212,7 @@ export function FileOperationToolView({
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className={`${config.bgColor} rounded-2xl items-center justify-center`} style={{ width: 48, height: 48 }}>
-            <Icon as={OperationIcon} size={24} className={config.color} />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              {getOperationTitle(operation)}
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {fileName}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {fileContent && operation !== 'delete' ? (
           <View className="gap-3">
             <View className="flex-row items-center gap-2">
