@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense, lazy } from 'react';
+import { useEffect, useState, Suspense, lazy, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
@@ -19,9 +19,18 @@ export default function SettingUpPage() {
   const { user } = useAuth();
   const [status, setStatus] = useState<'checking' | 'initializing' | 'success' | 'error'>('checking');
   const initializeMutation = useInitializeAccount();
+  const hasAttemptedInit = useRef(false);
+  const isInitializing = useRef(false);
 
   useEffect(() => {
     if (!user) return;
+    if (hasAttemptedInit.current) return;
+    if (status !== 'checking') return;
+    if (isInitializing.current) return;
+
+    // Mark as attempted immediately to prevent multiple calls
+    hasAttemptedInit.current = true;
+    isInitializing.current = true;
 
     // Check if account was already initialized via webhook
     const checkSubscription = async () => {
@@ -48,6 +57,7 @@ export default function SettingUpPage() {
           // If subscription exists, webhook already succeeded - redirect to dashboard
           if (creditAccount && creditAccount.tier !== 'none' && creditAccount.stripe_subscription_id) {
             console.log('✅ Account already initialized via webhook, redirecting to dashboard');
+            isInitializing.current = false;
             setStatus('success');
             setTimeout(() => {
               router.push('/dashboard');
@@ -59,41 +69,56 @@ export default function SettingUpPage() {
         // No subscription found - initialize manually (fallback)
         console.log('⚠️ No subscription detected - initializing manually (fallback)');
         setStatus('initializing');
-        initializeMutation.mutate(undefined, {
-          onSuccess: () => {
-            setStatus('success');
-            setTimeout(() => {
-              router.push('/dashboard');
-            }, 1500);
-          },
-          onError: (error) => {
-            console.error('Setup error:', error);
-            setStatus('error');
-          },
-        });
+        // Double-check mutation isn't already pending before calling
+        if (!initializeMutation.isPending) {
+          initializeMutation.mutate(undefined, {
+            onSuccess: () => {
+              isInitializing.current = false;
+              setStatus('success');
+              setTimeout(() => {
+                router.push('/dashboard');
+              }, 1500);
+            },
+            onError: (error) => {
+              console.error('Setup error:', error);
+              isInitializing.current = false;
+              setStatus('error');
+            },
+          });
+        } else {
+          // Mutation already in progress, reset flag
+          isInitializing.current = false;
+        }
       } catch (error) {
         console.error('Error checking subscription:', error);
         // If check fails, try initialization anyway
         setStatus('initializing');
-        initializeMutation.mutate(undefined, {
-          onSuccess: () => {
-            setStatus('success');
-            setTimeout(() => {
-              router.push('/dashboard');
-            }, 1500);
-          },
-          onError: (error) => {
-            console.error('Setup error:', error);
-            setStatus('error');
-          },
-        });
+        // Double-check mutation isn't already pending before calling
+        if (!initializeMutation.isPending) {
+          initializeMutation.mutate(undefined, {
+            onSuccess: () => {
+              isInitializing.current = false;
+              setStatus('success');
+              setTimeout(() => {
+                router.push('/dashboard');
+              }, 1500);
+            },
+            onError: (error) => {
+              console.error('Setup error:', error);
+              isInitializing.current = false;
+              setStatus('error');
+            },
+          });
+        } else {
+          // Mutation already in progress, reset flag
+          isInitializing.current = false;
+        }
       }
     };
 
-    if (status === 'checking' && !initializeMutation.isPending) {
-      checkSubscription();
-    }
-  }, [user, status, initializeMutation, router]);
+    checkSubscription();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, status]);
 
   return (
     <div className="w-full relative overflow-hidden min-h-screen">
