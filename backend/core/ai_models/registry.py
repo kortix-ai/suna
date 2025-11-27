@@ -34,7 +34,7 @@ class ModelRegistry:
             name="Kortix Basic",
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-basic", "Kortix Basic"],
-            context_window=200_000,
+            context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
@@ -53,7 +53,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
                 },
             )
         ))
@@ -410,6 +410,46 @@ class ModelRegistry:
         # Return as-is if not found (let LiteLLM handle it)
         return model_id
     
+    def resolve_from_litellm_id(self, litellm_model_id: str) -> str:
+        """Reverse lookup: resolve a LiteLLM model ID (e.g. Bedrock ARN) back to registry model ID.
+        
+        This is the inverse of get_litellm_model_id. Used by cost calculator to find pricing.
+        
+        Args:
+            litellm_model_id: The actual model ID used by LiteLLM (e.g. Bedrock ARN)
+            
+        Returns:
+            The registry model ID (e.g. 'kortix/basic') or the input if not found
+        """
+        # Check if this is the Bedrock ARN that maps to kortix models
+        # Strip common prefixes for comparison
+        normalized_id = litellm_model_id
+        for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
+            if normalized_id.startswith(prefix):
+                normalized_id = normalized_id[len(prefix):]
+                break
+        
+        # Check if this matches _BASIC_MODEL_ID (also normalize it)
+        basic_model_normalized = _BASIC_MODEL_ID
+        for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
+            if basic_model_normalized.startswith(prefix):
+                basic_model_normalized = basic_model_normalized[len(prefix):]
+                break
+        
+        # If the normalized ID matches the basic model ARN, return kortix/basic
+        if normalized_id == basic_model_normalized or litellm_model_id == _BASIC_MODEL_ID:
+            return "kortix/basic"
+        
+        # Also check if the full ID matches
+        if litellm_model_id == _BASIC_MODEL_ID:
+            return "kortix/basic"
+        
+        # Check if this model exists directly in registry
+        if self.get(litellm_model_id):
+            return litellm_model_id
+        
+        # Return as-is if no reverse mapping found
+        return litellm_model_id
     
     def get_aliases(self, model_id: str) -> List[str]:
         model = self.get(model_id)
@@ -434,8 +474,23 @@ class ModelRegistry:
         return model.context_window if model else default
     
     def get_pricing(self, model_id: str) -> Optional[ModelPricing]:
+        """Get pricing for a model, with reverse lookup for LiteLLM model IDs.
+        
+        Handles both registry model IDs (kortix/basic) and LiteLLM model IDs (Bedrock ARNs).
+        """
+        # First try direct lookup
         model = self.get(model_id)
-        return model.pricing if model else None
+        if model and model.pricing:
+            return model.pricing
+        
+        # Try reverse lookup from LiteLLM model ID
+        resolved_id = self.resolve_from_litellm_id(model_id)
+        if resolved_id != model_id:
+            model = self.get(resolved_id)
+            if model and model.pricing:
+                return model.pricing
+        
+        return None
     
     def to_legacy_format(self) -> Dict:
         models_dict = {}

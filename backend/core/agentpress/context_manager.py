@@ -315,6 +315,336 @@ class ContextManager:
         
         return False
     
+    def get_tool_call_ids_from_message(self, msg: Dict[str, Any]) -> List[str]:
+        """Extract tool_call IDs from an assistant message with tool_calls.
+        
+        Returns list of tool_call IDs, or empty list if no tool_calls.
+        """
+        if not isinstance(msg, dict) or msg.get('role') != 'assistant':
+            return []
+        
+        tool_calls = msg.get('tool_calls', [])
+        if not tool_calls:
+            return []
+        
+        ids = []
+        for tc in tool_calls:
+            if isinstance(tc, dict):
+                tc_id = tc.get('id')
+                if tc_id:
+                    ids.append(tc_id)
+        return ids
+    
+    def get_tool_call_id_from_result(self, msg: Dict[str, Any]) -> Optional[str]:
+        """Extract the tool_call_id from a tool result message.
+        
+        Returns the tool_call_id, or None if not a tool result message.
+        """
+        if not isinstance(msg, dict):
+            return None
+        
+        # Native tool results have tool_call_id directly
+        if 'tool_call_id' in msg:
+            return msg.get('tool_call_id')
+        
+        # role="tool" messages should have tool_call_id
+        if msg.get('role') == 'tool':
+            return msg.get('tool_call_id')
+        
+        return None
+    
+    def group_messages_by_tool_calls(self, messages: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """Group messages into atomic units respecting tool call pairing.
+        
+        CRITICAL: This ensures assistant messages with tool_calls are always grouped
+        with their corresponding tool result messages. These groups must be treated
+        as atomic units that cannot be split during compression or caching.
+        
+        Rules:
+        - An assistant message with tool_calls + all following tool messages with 
+          matching tool_call_ids = one atomic group
+        - Regular messages (user, assistant without tool_calls) = standalone groups
+        - Tool results without a preceding assistant (orphans) = standalone groups (with warning)
+        
+        Args:
+            messages: List of conversation messages
+            
+        Returns:
+            List of message groups, where each group is a list of messages
+        """
+        if not messages:
+            return []
+        
+        groups: List[List[Dict[str, Any]]] = []
+        current_group: List[Dict[str, Any]] = []
+        expected_tool_call_ids: set = set()  # IDs we're waiting for results
+        
+        for msg in messages:
+            role = msg.get('role', '')
+            
+            # Check if this is an assistant message with tool_calls
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            
+            if tool_call_ids:
+                # If we have a pending group, save it first
+                if current_group:
+                    groups.append(current_group)
+                
+                # Start a new group with this assistant message
+                current_group = [msg]
+                expected_tool_call_ids = set(tool_call_ids)
+                
+            elif self.is_tool_result_message(msg):
+                # This is a tool result message
+                tool_call_id = self.get_tool_call_id_from_result(msg)
+                
+                if tool_call_id and tool_call_id in expected_tool_call_ids:
+                    # This tool result belongs to the current group
+                    current_group.append(msg)
+                    expected_tool_call_ids.discard(tool_call_id)
+                    
+                    # If we've received all expected tool results, close the group
+                    if not expected_tool_call_ids:
+                        groups.append(current_group)
+                        current_group = []
+                else:
+                    # Orphaned tool result - doesn't match any expected ID
+                    # Log warning and treat as standalone
+                    if tool_call_id:
+                        logger.warning(f"⚠️ Orphaned tool result detected: tool_call_id={tool_call_id} has no matching assistant message")
+                    
+                    # Close current group if any
+                    if current_group:
+                        groups.append(current_group)
+                        current_group = []
+                        expected_tool_call_ids = set()
+                    
+                    # Add orphan as standalone group
+                    groups.append([msg])
+            else:
+                # Regular message (user or assistant without tool_calls)
+                # Close current group if we have pending tool calls
+                if current_group:
+                    if expected_tool_call_ids:
+                        logger.warning(f"⚠️ Closing tool call group with {len(expected_tool_call_ids)} missing tool results")
+                    groups.append(current_group)
+                    current_group = []
+                    expected_tool_call_ids = set()
+                
+                # Add as standalone group
+                groups.append([msg])
+        
+        # Don't forget the last group
+        if current_group:
+            if expected_tool_call_ids:
+                logger.warning(f"⚠️ Final group has {len(expected_tool_call_ids)} missing tool results")
+            groups.append(current_group)
+        
+        return groups
+    
+    def flatten_message_groups(self, groups: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        """Flatten message groups back into a flat list of messages.
+        
+        Args:
+            groups: List of message groups
+            
+        Returns:
+            Flat list of messages preserving order
+        """
+        result = []
+        for group in groups:
+            result.extend(group)
+        return result
+    
+    def validate_tool_call_pairing(self, messages: List[Dict[str, Any]]) -> tuple[bool, List[str], List[str]]:
+        """Validate that tool calls and tool results are properly paired in BOTH directions.
+        
+        Bedrock requires:
+        1. Every tool result must have a preceding assistant message with matching tool_call_id
+        2. Every assistant tool_call must have a following tool result with matching tool_call_id
+        
+        This should be called before sending messages to the LLM to catch any
+        issues that would cause Bedrock errors.
+        
+        Args:
+            messages: List of messages to validate
+            
+        Returns:
+            Tuple of (is_valid, orphaned_tool_result_ids, unanswered_tool_call_ids)
+        """
+        # Track all tool_call IDs from assistant messages
+        all_tool_call_ids: set = set()
+        # Track all tool_call_ids that have been answered with tool results
+        answered_tool_call_ids: set = set()
+        # Track orphaned tool results (results without matching assistant)
+        orphaned_tool_result_ids: List[str] = []
+        
+        # First pass: collect all tool_call IDs from assistant messages
+        for msg in messages:
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            all_tool_call_ids.update(tool_call_ids)
+        
+        # Second pass: check tool results and track which tool_calls are answered
+        for msg in messages:
+            if self.is_tool_result_message(msg):
+                tool_call_id = self.get_tool_call_id_from_result(msg)
+                if tool_call_id:
+                    if tool_call_id not in all_tool_call_ids:
+                        # Tool result without matching assistant
+                        orphaned_tool_result_ids.append(tool_call_id)
+                    else:
+                        # This tool_call has been answered
+                        answered_tool_call_ids.add(tool_call_id)
+        
+        # Find unanswered tool_calls (assistant tool_calls without matching tool results)
+        unanswered_tool_call_ids = list(all_tool_call_ids - answered_tool_call_ids)
+        
+        is_valid = len(orphaned_tool_result_ids) == 0 and len(unanswered_tool_call_ids) == 0
+        
+        if orphaned_tool_result_ids:
+            logger.error(f"🚨 VALIDATION FAILED: {len(orphaned_tool_result_ids)} orphaned tool results (no matching assistant): {orphaned_tool_result_ids}")
+        if unanswered_tool_call_ids:
+            logger.error(f"🚨 VALIDATION FAILED: {len(unanswered_tool_call_ids)} unanswered tool calls (no matching tool result): {unanswered_tool_call_ids}")
+        
+        return is_valid, orphaned_tool_result_ids, unanswered_tool_call_ids
+    
+    def remove_orphaned_tool_results(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove orphaned tool results that have no matching assistant message.
+        
+        This is a repair function to fix invalid message structures before sending to LLM.
+        
+        Args:
+            messages: List of messages
+            
+        Returns:
+            Messages with orphaned tool results removed
+        """
+        # First pass: collect all valid tool_call IDs from assistant messages
+        valid_tool_call_ids: set = set()
+        for msg in messages:
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            valid_tool_call_ids.update(tool_call_ids)
+        
+        # Second pass: filter out orphaned tool results
+        result = []
+        removed_count = 0
+        
+        for msg in messages:
+            if self.is_tool_result_message(msg):
+                tool_call_id = self.get_tool_call_id_from_result(msg)
+                if tool_call_id and tool_call_id not in valid_tool_call_ids:
+                    logger.warning(f"🗑️ Removing orphaned tool result: tool_call_id={tool_call_id}")
+                    removed_count += 1
+                    continue
+            result.append(msg)
+        
+        if removed_count > 0:
+            logger.info(f"🔧 Removed {removed_count} orphaned tool results to fix message structure")
+        
+        return result
+    
+    def remove_unanswered_tool_calls(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove or fix assistant messages with tool_calls that have no matching tool results.
+        
+        This is a repair function to fix invalid message structures before sending to LLM.
+        If an assistant message has ONLY unanswered tool_calls and no content, it's removed.
+        If it has content, the tool_calls are removed but content is preserved.
+        
+        Args:
+            messages: List of messages
+            
+        Returns:
+            Messages with unanswered tool_calls fixed
+        """
+        # First pass: collect all tool_call_ids that have results
+        answered_tool_call_ids: set = set()
+        for msg in messages:
+            if self.is_tool_result_message(msg):
+                tool_call_id = self.get_tool_call_id_from_result(msg)
+                if tool_call_id:
+                    answered_tool_call_ids.add(tool_call_id)
+        
+        # Second pass: fix assistant messages with unanswered tool_calls
+        result = []
+        fixed_count = 0
+        removed_count = 0
+        
+        for msg in messages:
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            
+            if tool_call_ids:
+                # Check which tool_calls are unanswered
+                unanswered = [tc_id for tc_id in tool_call_ids if tc_id not in answered_tool_call_ids]
+                
+                if unanswered:
+                    # Some tool_calls don't have results
+                    answered = [tc_id for tc_id in tool_call_ids if tc_id in answered_tool_call_ids]
+                    
+                    content = msg.get('content', '')
+                    has_content = bool(content and str(content).strip())
+                    
+                    if not answered and not has_content:
+                        # All tool_calls are unanswered and no content - remove the message entirely
+                        logger.warning(f"🗑️ Removing assistant message with {len(unanswered)} unanswered tool_calls and no content: {unanswered}")
+                        removed_count += 1
+                        continue
+                    elif not answered and has_content:
+                        # All tool_calls are unanswered but has content - keep content, remove tool_calls
+                        fixed_msg = msg.copy()
+                        fixed_msg.pop('tool_calls', None)
+                        logger.warning(f"🔧 Removing {len(unanswered)} unanswered tool_calls from assistant message (keeping content): {unanswered}")
+                        result.append(fixed_msg)
+                        fixed_count += 1
+                        continue
+                    else:
+                        # Some tool_calls are answered - keep only answered ones
+                        fixed_msg = msg.copy()
+                        original_tool_calls = fixed_msg.get('tool_calls', [])
+                        fixed_msg['tool_calls'] = [
+                            tc for tc in original_tool_calls 
+                            if isinstance(tc, dict) and tc.get('id') in answered_tool_call_ids
+                        ]
+                        logger.warning(f"🔧 Removed {len(unanswered)} unanswered tool_calls from assistant message (kept {len(answered)}): {unanswered}")
+                        result.append(fixed_msg)
+                        fixed_count += 1
+                        continue
+            
+            result.append(msg)
+        
+        if fixed_count > 0 or removed_count > 0:
+            logger.info(f"🔧 Fixed {fixed_count} assistant messages, removed {removed_count} to fix unanswered tool_calls")
+        
+        return result
+    
+    def repair_tool_call_pairing(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Repair both directions of tool call pairing issues.
+        
+        This handles:
+        1. Orphaned tool results (tool results without matching assistant) - removed
+        2. Unanswered tool calls (assistant tool_calls without matching results) - removed/fixed
+        
+        Args:
+            messages: List of messages
+            
+        Returns:
+            Messages with all tool call pairing issues fixed
+        """
+        # Fix orphaned tool results first
+        result = self.remove_orphaned_tool_results(messages)
+        
+        # Then fix unanswered tool calls
+        result = self.remove_unanswered_tool_calls(result)
+        
+        # Validate the result
+        is_valid, orphaned, unanswered = self.validate_tool_call_pairing(result)
+        
+        if not is_valid:
+            logger.error(f"🚨 CRITICAL: Could not fully repair message structure. Orphaned: {len(orphaned)}, Unanswered: {len(unanswered)}")
+        else:
+            logger.info(f"✅ Message structure successfully repaired")
+        
+        return result
+    
     async def update_old_tool_outputs_in_db(
         self,
         messages: List[Dict[str, Any]],
@@ -578,20 +908,36 @@ class ContextManager:
         messages: List[Dict[str, Any]], 
         keep_last_n: int = 8
     ) -> List[Dict[str, Any]]:
-        """Remove old tool output messages IN-MEMORY, keeping only the most recent N.
+        """Compress old tool output messages IN-MEMORY, keeping only the most recent N uncompressed.
+        
+        CRITICAL: This method compresses CONTENT only - it never removes messages.
+        This preserves the tool_call_id field and maintains the assistant+tool_result pairing
+        required by Bedrock.
         
         This is used for in-memory compression after database updates.
         The database update should be called first to persist changes.
         
         Args:
             messages: List of conversation messages
-            keep_last_n: Number of most recent tool outputs to preserve
+            keep_last_n: Number of most recent tool outputs to preserve uncompressed
             
         Returns:
-            Messages with old tool outputs replaced by summaries
+            Messages with old tool outputs' content replaced by summaries (structure intact)
         """
         if not messages:
             return messages
+        
+        # First, validate input has valid tool call pairing
+        is_valid, orphaned_ids, unanswered_ids = self.validate_tool_call_pairing(messages)
+        if not is_valid:
+            logger.warning(f"⚠️ Input to remove_old_tool_outputs has pairing issues (orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)}) - repairing first")
+            messages = self.repair_tool_call_pairing(messages)
+        
+        # Group messages to understand which tool results belong to which assistant messages
+        message_groups = self.group_messages_by_tool_calls(messages)
+        
+        # Flatten to get back to list form for processing
+        # But now we understand the structure
         
         # First pass: identify tool result messages and their positions
         tool_result_positions = []
@@ -602,29 +948,39 @@ class ContextManager:
         total_tool_results = len(tool_result_positions)
         
         if total_tool_results <= keep_last_n:
-            # No removal needed
-            logger.debug(f"Only {total_tool_results} tool outputs found, keeping all (threshold: {keep_last_n})")
+            # No compression needed
+            logger.debug(f"Only {total_tool_results} tool outputs found, keeping all uncompressed (threshold: {keep_last_n})")
             return messages
         
-        # Calculate how many to remove
-        num_to_remove = total_tool_results - keep_last_n
-        positions_to_compress = tool_result_positions[:num_to_remove]
+        # Calculate how many to compress (oldest ones)
+        num_to_compress = total_tool_results - keep_last_n
+        positions_to_compress = set(tool_result_positions[:num_to_compress])
         
-        logger.debug(f"Removing {num_to_remove} old tool outputs in-memory (keeping last {keep_last_n} of {total_tool_results})")
+        logger.debug(f"Compressing {num_to_compress} old tool outputs in-memory (keeping last {keep_last_n} of {total_tool_results} uncompressed)")
         
-        # Second pass: replace old tool outputs with summaries
+        # Second pass: compress old tool outputs' CONTENT (keep structure intact)
         result = []
         for i, msg in enumerate(messages):
             if i in positions_to_compress:
-                # Replace with summary
+                # Compress content but PRESERVE all other fields (especially tool_call_id!)
                 message_id = msg.get('message_id', 'unknown')
-                summary_content = f"[Tool output removed for token management] message_id: \"{message_id}\". Use expand-message tool to view full output."
+                tool_call_id = self.get_tool_call_id_from_result(msg)
                 
+                summary_content = f"[Tool output compressed for token management] message_id: \"{message_id}\". Use expand-message tool to view full output."
+                
+                # Copy message and only replace content - preserve tool_call_id, role, name, etc.
                 compressed_msg = msg.copy()
                 compressed_msg['content'] = summary_content
                 result.append(compressed_msg)
+                
+                logger.debug(f"Compressed tool output at position {i}, tool_call_id={tool_call_id}")
             else:
                 result.append(msg)
+        
+        # Final validation - structure should still be valid
+        is_valid_after, orphaned_after, unanswered_after = self.validate_tool_call_pairing(result)
+        if not is_valid_after:
+            logger.error(f"🚨 BUG: remove_old_tool_outputs broke tool call pairing! Orphaned: {orphaned_after}, Unanswered: {unanswered_after}")
         
         return result
     
@@ -1044,18 +1400,22 @@ class ContextManager:
             messages: List[Dict[str, Any]], 
             llm_model: str, 
             max_tokens: Optional[int] = 41000,
-            removal_batch_size: int = 10,
-            min_messages_to_keep: int = 10,
+            removal_batch_size: int = 3,  # Now operates on groups, not individual messages
+            min_groups_to_keep: int = 5,  # Minimum number of groups to preserve
             system_prompt: Optional[Dict[str, Any]] = None
         ) -> List[Dict[str, Any]]:
-        """Compress the messages by omitting messages from the middle.
+        """Compress the messages by omitting message GROUPS from the middle.
+        
+        CRITICAL: This method operates on atomic message groups to preserve
+        the assistant+tool_calls / tool_result pairing required by Bedrock.
         
         Args:
             messages: List of messages to compress
             llm_model: Model name for token counting
             max_tokens: Maximum allowed tokens
-            removal_batch_size: Number of messages to remove per iteration
-            min_messages_to_keep: Minimum number of messages to preserve
+            removal_batch_size: Number of groups to remove per iteration
+            min_groups_to_keep: Minimum number of groups to preserve
+            system_prompt: Optional system prompt for token counting
         """
         if not messages:
             return messages
@@ -1071,55 +1431,125 @@ class ContextManager:
         if initial_token_count <= max_allowed_tokens:
             return result
 
-        # Separate system message (assumed to be first) from conversation messages
-        system_message = system_prompt
-        conversation_messages = result
+        # Group messages into atomic units (assistant+tool_calls grouped with their tool results)
+        message_groups = self.group_messages_by_tool_calls(result)
+        logger.info(f"📦 Grouped {len(result)} messages into {len(message_groups)} atomic groups for compression")
         
+        system_message = system_prompt
         safety_limit = 500
         current_token_count = initial_token_count
         
         while current_token_count > max_allowed_tokens and safety_limit > 0:
             safety_limit -= 1
             
-            if len(conversation_messages) <= min_messages_to_keep:
-                logger.warning(f"Cannot compress further: only {len(conversation_messages)} messages remain (min: {min_messages_to_keep})")
+            if len(message_groups) <= min_groups_to_keep:
+                logger.warning(f"Cannot compress further: only {len(message_groups)} groups remain (min: {min_groups_to_keep})")
                 break
 
-            # Calculate removal strategy based on current message count
-            if len(conversation_messages) > (removal_batch_size * 2):
+            # Calculate removal strategy based on current group count
+            if len(message_groups) > (removal_batch_size * 2):
                 # Remove from middle, keeping recent and early context
-                middle_start = len(conversation_messages) // 2 - (removal_batch_size // 2)
+                middle_start = len(message_groups) // 2 - (removal_batch_size // 2)
                 middle_end = middle_start + removal_batch_size
-                conversation_messages = conversation_messages[:middle_start] + conversation_messages[middle_end:]
+                
+                # Log what we're removing
+                removed_groups = message_groups[middle_start:middle_end]
+                removed_msg_count = sum(len(g) for g in removed_groups)
+                logger.debug(f"Removing {len(removed_groups)} groups ({removed_msg_count} messages) from middle")
+                
+                message_groups = message_groups[:middle_start] + message_groups[middle_end:]
             else:
-                # Remove from earlier messages, preserving recent context
-                messages_to_remove = min(removal_batch_size, len(conversation_messages) // 2)
-                if messages_to_remove > 0:
-                    conversation_messages = conversation_messages[messages_to_remove:]
+                # Remove from earlier groups, preserving recent context
+                groups_to_remove = min(removal_batch_size, len(message_groups) // 2)
+                if groups_to_remove > 0:
+                    removed_groups = message_groups[:groups_to_remove]
+                    removed_msg_count = sum(len(g) for g in removed_groups)
+                    logger.debug(f"Removing {groups_to_remove} early groups ({removed_msg_count} messages)")
+                    
+                    message_groups = message_groups[groups_to_remove:]
                 else:
-                    # Can't remove any more messages
+                    # Can't remove any more groups
                     break
 
+            # Flatten groups back to messages for token counting
+            conversation_messages = self.flatten_message_groups(message_groups)
+            
             # Recalculate token count WITH caching
             current_token_count = await self.count_tokens(llm_model, conversation_messages, system_message, apply_caching=True)
 
-        # Prepare final result - return only conversation messages (matches compress_messages pattern)
-        final_messages = conversation_messages
+        # Flatten final groups to messages
+        final_messages = self.flatten_message_groups(message_groups)
+        
+        # Validate tool call pairing is intact
+        is_valid, orphaned_ids, unanswered_ids = self.validate_tool_call_pairing(final_messages)
+        if not is_valid:
+            logger.warning(f"⚠️ Post-compression validation found pairing issues (orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)}) - repairing")
+            final_messages = self.repair_tool_call_pairing(final_messages)
         
         # Log with system prompt included for accurate token reporting WITH caching
         final_token_count = await self.count_tokens(llm_model, final_messages, system_message, apply_caching=True)
         
-        logger.info(f"Context compression (omit): {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
+        logger.info(f"Context compression (omit): {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages, {len(message_groups)} groups)")
             
         return final_messages
     
     def middle_out_messages(self, messages: List[Dict[str, Any]], max_messages: int = 320) -> List[Dict[str, Any]]:
-        """Remove messages from the middle of the list, keeping max_messages total."""
+        """Remove message GROUPS from the middle of the list, keeping approximately max_messages total.
+        
+        CRITICAL: This method operates on atomic message groups to preserve
+        the assistant+tool_calls / tool_result pairing required by Bedrock.
+        
+        Args:
+            messages: List of messages
+            max_messages: Approximate maximum messages to keep (actual may vary due to group sizes)
+            
+        Returns:
+            Messages with middle groups removed, preserving tool call pairing
+        """
         if len(messages) <= max_messages:
             return messages
         
-        # Keep half from the beginning and half from the end
-        keep_start = max_messages // 2
-        keep_end = max_messages - keep_start
+        # Group messages into atomic units
+        message_groups = self.group_messages_by_tool_calls(messages)
         
-        return messages[:keep_start] + messages[-keep_end:] 
+        # If already few enough groups, return as-is
+        total_messages = sum(len(g) for g in message_groups)
+        if total_messages <= max_messages:
+            return messages
+        
+        # Estimate how many groups we need to keep
+        # Use average group size to estimate
+        avg_group_size = total_messages / len(message_groups) if message_groups else 1
+        target_groups = int(max_messages / avg_group_size)
+        
+        # Ensure we keep at least 4 groups (2 from start, 2 from end)
+        target_groups = max(4, target_groups)
+        
+        if len(message_groups) <= target_groups:
+            return messages
+        
+        # Keep half from the beginning and half from the end (by groups)
+        keep_start_groups = target_groups // 2
+        keep_end_groups = target_groups - keep_start_groups
+        
+        # Ensure we keep at least 1 group from each end
+        keep_start_groups = max(1, keep_start_groups)
+        keep_end_groups = max(1, keep_end_groups)
+        
+        # Build the result by keeping start and end groups
+        kept_groups = message_groups[:keep_start_groups] + message_groups[-keep_end_groups:]
+        
+        removed_count = len(message_groups) - len(kept_groups)
+        if removed_count > 0:
+            logger.info(f"📦 Middle-out: removed {removed_count} groups from middle ({len(message_groups)} -> {len(kept_groups)} groups)")
+        
+        # Flatten groups back to messages
+        result = self.flatten_message_groups(kept_groups)
+        
+        # Validate tool call pairing is intact
+        is_valid, orphaned_ids, unanswered_ids = self.validate_tool_call_pairing(result)
+        if not is_valid:
+            logger.warning(f"⚠️ Middle-out validation found pairing issues (orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)}) - repairing")
+            result = self.repair_tool_call_pairing(result)
+        
+        return result 
