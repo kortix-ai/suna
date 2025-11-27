@@ -52,11 +52,11 @@ import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/
 import { ScheduledDowngradeCard } from '@/components/billing/scheduled-downgrade-card';
 import { 
     useAccountState,
-    accountStateKeys,
     accountStateSelectors,
     useCreatePortalSession,
     useCancelSubscription,
     useReactivateSubscription,
+    invalidateAccountState,
 } from '@/hooks/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -770,9 +770,8 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         // Only refetch if tab just became active (not on every render)
         if (isActive && !prevIsActiveRef.current && session && !authLoading) {
             console.log('🔄 Billing tab activated, refetching billing info...');
-            // Use queryClient to invalidate instead of individual refetches to avoid cascading
-            // This will trigger refetches but React Query will dedupe concurrent requests
-            queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
+            // Use centralized invalidation which includes deduplication
+            invalidateAccountState(queryClient, true);
         }
         prevIsActiveRef.current = isActive;
         // Only depend on isActive, session, and authLoading - not the refetch functions

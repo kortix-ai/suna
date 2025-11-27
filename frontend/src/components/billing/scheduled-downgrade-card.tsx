@@ -69,7 +69,7 @@ export function ScheduledDowngradeCard({
     cancelScheduledChangeMutation.mutate(undefined, {
       onSuccess: () => {
         setShowConfirmDialog(false);
-        queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
+        // Note: useCancelScheduledChange mutation already handles cache invalidation
         if (onCancel) {
           onCancel();
         }

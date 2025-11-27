@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useAccountState, accountStateKeys, accountStateSelectors } from '@/hooks/billing';
+import { useAccountState, accountStateSelectors, invalidateAccountState } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isLocalMode } from '@/lib/config';
@@ -42,8 +42,8 @@ export function CreditsDisplay() {
     setShowPlanModal(open);
     
     if (!open) {
-      // Invalidate unified account state
-      queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
+      // Invalidate account state when modal closes (in case of changes)
+      invalidateAccountState(queryClient, true);
     }
   };
 

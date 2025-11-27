@@ -42,36 +42,61 @@ export const accountStateKeys = {
 // UTILITY - Invalidation helper for mutations
 // =============================================================================
 
-// Debounce refetch calls to prevent duplicate requests
+// Global deduplication state for account state refetches
 let refetchTimeout: NodeJS.Timeout | null = null;
-const REFETCH_DEBOUNCE_MS = 500;
+let pendingSkipCache = false;
+let activeRefetchPromise: Promise<void> | null = null;
+const REFETCH_DEBOUNCE_MS = 200;
 
 export function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>, refetch = false, skipCache = false) {
+  // Invalidate the query cache (marks data as stale)
   queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
-  if (refetch) {
-    // Clear any pending refetch
-    if (refetchTimeout) {
-      clearTimeout(refetchTimeout);
-    }
-    // Debounce refetch to prevent multiple rapid calls
-    refetchTimeout = setTimeout(async () => {
-      // Force refetch even if data isn't stale (bypasses staleTime)
-      // If skipCache=true, manually fetch with skipCache to bypass backend cache
-      if (skipCache) {
-        await queryClient.fetchQuery({
-          queryKey: accountStateKeys.state(),
-          queryFn: () => billingApi.getAccountState(true), // skipCache=true
-        });
-      } else {
-        queryClient.refetchQueries({ 
-          queryKey: accountStateKeys.state(),
-          type: 'active', // Only refetch active queries (currently mounted)
-          cancelRefetch: false, // Don't cancel in-flight requests
-        });
-      }
-      refetchTimeout = null;
-    }, REFETCH_DEBOUNCE_MS);
+  
+  if (!refetch) return;
+  
+  // Track if any caller wants skipCache (most aggressive wins)
+  if (skipCache) {
+    pendingSkipCache = true;
   }
+  
+  // If there's already an active refetch in progress, just queue the skipCache preference
+  if (activeRefetchPromise) {
+    return;
+  }
+  
+  // Clear any pending debounce timeout
+  if (refetchTimeout) {
+    clearTimeout(refetchTimeout);
+  }
+  
+  // Debounce to batch multiple rapid calls into one
+  refetchTimeout = setTimeout(() => {
+    const shouldSkipCache = pendingSkipCache;
+    pendingSkipCache = false;
+    refetchTimeout = null;
+    
+    // Create a single promise that all callers will share
+    activeRefetchPromise = (async () => {
+      try {
+        // Use refetchQueries which properly deduplicates across components
+        // The queryFn in the useAccountState hook will handle skipCache
+        if (shouldSkipCache) {
+          // For skipCache, we need to bypass the cached queryFn
+          // Use setQueryData with fresh data
+          const freshData = await billingApi.getAccountState(true);
+          queryClient.setQueryData(accountStateKeys.state(), freshData);
+        } else {
+          // Normal refetch - React Query handles deduplication
+          await queryClient.refetchQueries({ 
+            queryKey: accountStateKeys.state(),
+            type: 'active',
+          });
+        }
+      } finally {
+        activeRefetchPromise = null;
+      }
+    })();
+  }, REFETCH_DEBOUNCE_MS);
 }
 
 // =============================================================================
@@ -193,7 +218,7 @@ export function useCancelSubscription() {
   return useMutation({
     mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient);
+      invalidateAccountState(queryClient, true); // Refetch to show updated state
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -212,7 +237,7 @@ export function useReactivateSubscription() {
   return useMutation({
     mutationFn: () => billingApi.reactivateSubscription(),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient);
+      invalidateAccountState(queryClient, true); // Refetch to show updated state
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -257,7 +282,7 @@ export function useScheduleDowngrade() {
   return useMutation({
     mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient);
+      invalidateAccountState(queryClient, true); // Refetch to show scheduled change
       if (response.success) {
         toast.success(response.message);
       } else {
@@ -276,7 +301,7 @@ export function useCancelScheduledChange() {
   return useMutation({
     mutationFn: () => billingApi.cancelScheduledChange(),
     onSuccess: (response) => {
-      invalidateAccountState(queryClient);
+      invalidateAccountState(queryClient, true); // Refetch to show updated state
       if (response.success) {
         toast.success(response.message);
       } else {
