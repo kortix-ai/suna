@@ -32,6 +32,7 @@ from core.services import transcription as transcription_api
 import sys
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
+from core.notifications import api as notifications_api
 
 
 if sys.platform == "win32":
@@ -222,6 +223,11 @@ from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
 
 api_router.include_router(triggers_api.router)
+
+api_router.include_router(notifications_api.router)
+
+from core.notifications import presence_api
+api_router.include_router(presence_api.router)
 
 from core.composio_integration import api as composio_api
 api_router.include_router(composio_api.router)

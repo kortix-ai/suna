@@ -4,6 +4,17 @@ import { useRouter, Stack } from 'expo-router';
 import { KortixLoader } from '@/components/ui';
 import { useAuthContext, useBillingContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import * as Notifications from 'expo-notifications';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 /**
  * Splash/Decision Screen
@@ -17,6 +28,8 @@ export default function SplashScreen() {
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
   const { hasActiveSubscription, isLoading: billingLoading, subscriptionData } = useBillingContext();
+  const { expoPushToken } = usePushNotifications();
+  console.log('expoPushToken', expoPushToken);
   
   // Track navigation to prevent double navigation
   const [hasNavigated, setHasNavigated] = React.useState(false);

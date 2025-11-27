@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -1277,7 +1277,7 @@ wheels = [
 
 [[package]]
 name = "httpx"
-version = "0.28.0"
+version = "0.28.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1285,9 +1285,9 @@ dependencies = [
     { name = "httpcore" },
     { name = "idna" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/df/676b7cf674dd1bdc71a64ad393c89879f75e4a0ab8395165b498262ae106/httpx-0.28.0.tar.gz", hash = "sha256:0858d3bab51ba7e386637f22a61d8ccddaeec5f3fe4209da3a6168dbb91573e0", size = 141307, upload-time = "2024-11-28T14:54:56.977Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8f/fb/a19866137577ba60c6d8b69498dc36be479b13ba454f691348ddf428f185/httpx-0.28.0-py3-none-any.whl", hash = "sha256:dc0b419a0cfeb6e8b34e85167c0da2671206f5095f1baa9663d23bcfd6b535fc", size = 73551, upload-time = "2024-11-28T14:54:55.141Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad", size = 73517, upload-time = "2024-12-06T15:37:21.509Z" },
 ]
 
 [package.optional-dependencies]
@@ -1825,6 +1825,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/43/16/fc88b08840de0e0a72a2f9d8c6bae36be573e475a6326ae854bcc549fc45/nodeenv-1.9.1.tar.gz", hash = "sha256:6ec12890a2dab7946721edbfbcd91f3319c6ccc9aec47be7c7e6b7011ee6645f", size = 47437, upload-time = "2024-06-04T18:44:11.171Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d2/1d/1b658dbd2b9fa9c4c9f32accbfc0205d532c8c6194dc0f2a4c0428e7128a/nodeenv-1.9.1-py2.py3-none-any.whl", hash = "sha256:ba11c9782d29c27c70ffbdda2d7415098754709be8a7056d79a737cd901155c9", size = 22314, upload-time = "2024-06-04T18:44:08.352Z" },
+]
+
+[[package]]
+name = "novu-py"
+version = "3.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpcore" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/e5/1a5575c5aeafb96e9191803a2af2bf56debdab59cbff884a8f6ac8f54b2c/novu_py-3.11.0.tar.gz", hash = "sha256:2652d7fbe7d2290dbb7b4ea92ff5d688a4224e67f7b7d3f4246a8db679240d47", size = 164434, upload-time = "2025-11-19T09:55:26.034Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/72/dc56cc35bd23e27b9c9c6cfd651804ea6c01439b4cd02c59a5c78e153203/novu_py-3.11.0-py3-none-any.whl", hash = "sha256:2bfe01690572aa1a0d41ab0eec2a99a26596f2940d0c59321390cab720d24c7c", size = 368949, upload-time = "2025-11-19T09:55:24.855Z" },
 ]
 
 [[package]]
@@ -3249,12 +3263,12 @@ dependencies = [
     { name = "google-auth-httplib2" },
     { name = "google-auth-oauthlib" },
     { name = "gunicorn" },
-    { name = "httpx" },
     { name = "langfuse" },
     { name = "litellm" },
     { name = "mailtrap" },
     { name = "mcp" },
     { name = "nest-asyncio" },
+    { name = "novu-py" },
     { name = "openai" },
     { name = "openpyxl" },
     { name = "packaging" },
@@ -3336,12 +3350,12 @@ requires-dist = [
     { name = "google-auth-httplib2", specifier = ">=0.2.0" },
     { name = "google-auth-oauthlib", specifier = ">=1.2.0" },
     { name = "gunicorn", specifier = ">=23.0.0" },
-    { name = "httpx", specifier = "==0.28.0" },
     { name = "langfuse", specifier = "==2.60.5" },
     { name = "litellm", specifier = ">=1.77.5" },
     { name = "mailtrap", specifier = "==2.0.1" },
     { name = "mcp", specifier = "==1.9.4" },
     { name = "nest-asyncio", specifier = "==1.6.0" },
+    { name = "novu-py", specifier = ">=3.11.0" },
     { name = "openai", specifier = ">=1.99.5" },
     { name = "openpyxl", specifier = "==3.1.2" },
     { name = "packaging", specifier = "==24.1" },

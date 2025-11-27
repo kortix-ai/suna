@@ -69,7 +69,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
-  // Check if user is authenticated
   const { user } = useAuth();
   const isAuthenticated = !!user;
 
