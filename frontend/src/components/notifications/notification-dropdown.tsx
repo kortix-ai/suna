@@ -166,9 +166,10 @@ const NotificationItem = (notification: Notification) => {
                     </h4>
                 )}
                 <Markdown
-                    children={notification.body}
                     className={`text-xs text-muted-foreground line-clamp-2 ${notification.isRead ? 'text-muted-foreground font-normal' : 'text-foreground font-medium'}`}
-                />
+                >
+                    {notification.body}
+                </Markdown>
                 </div>
                 
                 {!notification.isRead && (
