@@ -13,7 +13,7 @@ import { PricingSection } from './pricing-section';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
-import { billingKeys } from '@/hooks/billing/use-subscription';
+import { accountStateKeys } from '@/hooks/billing/use-account-state';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
@@ -53,7 +53,7 @@ export function PlanSelectionModal({
             
             if (checkoutSuccess === 'success' || sessionId || clientSecret) {
                 console.log('🔄 Checkout success detected in modal, invalidating billing queries...');
-                queryClient.invalidateQueries({ queryKey: billingKeys.all });
+                queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
                 
                 const url = new URL(window.location.href);
                 url.searchParams.delete('checkout');
@@ -65,7 +65,7 @@ export function PlanSelectionModal({
     }, [isOpen, queryClient, router]);
 
     const handleSubscriptionUpdate = () => {
-        queryClient.invalidateQueries({ queryKey: billingKeys.all });
+        queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
         setTimeout(() => {
             onOpenChange(false);
         }, 500);

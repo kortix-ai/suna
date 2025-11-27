@@ -53,7 +53,7 @@ class SubscriptionCheckoutHandler:
             )
         elif flow_type == 'upgrade_existing':
             return await self._handle_existing_subscription_upgrade(
-                customer_id, account_id, price_id, subscription_status, 
+                customer_id, account_id, price_id, success_url, subscription_status, 
                 commitment_type, idempotency_key
             )
         else:
@@ -126,6 +126,7 @@ class SubscriptionCheckoutHandler:
         customer_id: str,
         account_id: str, 
         price_id: str,
+        success_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str],
         idempotency_key: str
@@ -138,7 +139,7 @@ class SubscriptionCheckoutHandler:
         
         if current_amount == 0 or current_tier == 'free':
             return await self._handle_free_tier_upgrade(
-                customer_id, account_id, price_id, subscription_status, 
+                customer_id, account_id, price_id, success_url, subscription_status, 
                 commitment_type, idempotency_key
             )
         
@@ -168,6 +169,7 @@ class SubscriptionCheckoutHandler:
         customer_id: str,
         account_id: str,
         price_id: str,
+        success_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str],
         idempotency_key: str
@@ -184,7 +186,7 @@ class SubscriptionCheckoutHandler:
         )
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, config.FRONTEND_URL, metadata, idempotency_key
+            customer_id, price_id, success_url, metadata, idempotency_key
         )
         
         return self.checkout_service.build_checkout_response(

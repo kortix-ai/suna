@@ -416,7 +416,7 @@
     "currentBadge": "Current",
     "scheduled": "Scheduled",
     "scheduledBadge": "Scheduled",
-    "loading": "Loading billing information...",
+    "loading": "Loading...",
     "subscriptionChangeScheduled": "Subscription change scheduled",
     "planWillChangeOn": "Your plan will change on {date}.",
     "failedToInitiateSubscription": "Failed to initiate subscription. Please try again.",

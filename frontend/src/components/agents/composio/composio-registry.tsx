@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
-import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Loader2, Server } from 'lucide-react';
+import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Loader2, Server, Lock } from 'lucide-react';
 import { useComposioCategories, useComposioToolkitsInfinite } from '@/hooks/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
 import { useAgent } from '@/hooks/agents/use-agents';
@@ -50,6 +50,8 @@ interface ComposioRegistryProps {
   selectedAgentId?: string;
   onAgentChange?: (agentId: string | undefined) => void;
   initialSelectedApp?: string | null;
+  isBlocked?: boolean;
+  onBlockedClick?: () => void;
 }
 
 const getAgentConnectedApps = (
@@ -189,7 +191,7 @@ const ConnectedAppCard = ({
   );
 };
 
-const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, currentAgentId, mode }: {
+const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, currentAgentId, mode, isBlocked, onBlockedClick }: {
   app: ComposioToolkit;
   profiles: ComposioProfile[];
   onConnect: () => void;
@@ -197,11 +199,16 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
   isConnectedToAgent: boolean;
   currentAgentId?: string;
   mode?: 'full' | 'profile-only';
+  isBlocked?: boolean;
+  onBlockedClick?: () => void;
 }) => {
   const connectedProfiles = profiles.filter(p => p.is_connected);
   const canConnect = mode === 'profile-only' ? true : (!isConnectedToAgent && currentAgentId);
 
   const getStatusInfo = () => {
+    if (isBlocked) {
+      return { text: 'Upgrade to connect', color: 'text-primary' };
+    }
     if (mode === 'profile-only') {
       return connectedProfiles.length > 0
         ? { text: `${connectedProfiles.length} profile${connectedProfiles.length !== 1 ? 's' : ''}`, color: 'text-green-600 dark:text-green-400' }
@@ -218,23 +225,41 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
 
   const status = getStatusInfo();
 
+  const handleClick = () => {
+    if (isBlocked && onBlockedClick) {
+      onBlockedClick();
+      return;
+    }
+    if (!canConnect) return;
+    if (connectedProfiles.length > 0) {
+      onConfigure(connectedProfiles[0]);
+    } else {
+      onConnect();
+    }
+  };
+
   return (
     <Card
       className={cn(
         "p-4 flex flex-col transition-all duration-200 gap-1 relative",
-        canConnect ? "hover:bg-muted cursor-pointer" : "opacity-60 cursor-not-allowed"
+        isBlocked ? "hover:bg-muted cursor-pointer hover:border-primary/50" : (canConnect ? "hover:bg-muted cursor-pointer" : "opacity-60 cursor-not-allowed")
       )}
-      onClick={canConnect ? (connectedProfiles.length > 0 ? () => onConfigure(connectedProfiles[0]) : onConnect) : undefined}
+      onClick={handleClick}
     >
       <div className={cn("absolute top-4 right-4 text-xs", status.color)}>
         {status.text}
       </div>
 
-      <div className="w-[40px] h-[40px] rounded-xl border border-border bg-background flex items-center justify-center mb-4">
+      <div className="w-[40px] h-[40px] rounded-xl border border-border bg-background flex items-center justify-center mb-4 relative">
         {app.logo ? (
           <img src={app.logo} alt={app.name} className="w-5 h-5 object-contain" />
         ) : (
           <span className="text-foreground text-sm font-medium">{app.name.charAt(0)}</span>
+        )}
+        {isBlocked && (
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
+            <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
+          </div>
         )}
       </div>
 
@@ -245,11 +270,20 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
       </p>
 
       <Button
-        variant="default"
-        className="w-full"
-        disabled={!canConnect}
+        variant={isBlocked ? "outline" : "default"}
+        className={cn("w-full", isBlocked && "border-primary text-primary hover:bg-primary hover:text-primary-foreground")}
+        disabled={!canConnect && !isBlocked}
       >
-        <span className="text-lg font-light mr-2">+</span> Add
+        {isBlocked ? (
+          <>
+            <Lock className="h-3.5 w-3.5 mr-2" />
+            Upgrade
+          </>
+        ) : (
+          <>
+            <span className="text-lg font-light mr-2">+</span> Add
+          </>
+        )}
       </Button>
     </Card>
   );
@@ -264,6 +298,8 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
   selectedAgentId,
   onAgentChange,
   initialSelectedApp,
+  isBlocked = false,
+  onBlockedClick,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -658,6 +694,8 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                             isConnectedToAgent={isAppConnectedToAgent(agent, app.slug, profiles || [])}
                             currentAgentId={currentAgentId}
                             mode={mode}
+                            isBlocked={isBlocked}
+                            onBlockedClick={onBlockedClick}
                           />
                         ))}
                       </div>

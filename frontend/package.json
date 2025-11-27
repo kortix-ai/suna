@@ -98,6 +98,7 @@
     "@vercel/speed-insights": "^1.2.0",
     "autoprefixer": "10.4.17",
     "canvas": "^3.1.0",
+    "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^0.2.1",
@@ -178,6 +179,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4.1.4",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/color": "^4.2.0",
     "@types/colorthief": "^2.6.0",
     "@types/diff": "^7.0.2",

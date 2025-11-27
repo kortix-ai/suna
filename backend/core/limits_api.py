@@ -27,16 +27,19 @@ async def get_limits(
             check_agent_count_limit,
             check_project_count_limit,
             check_trigger_limit,
-            check_custom_worker_limit
+            check_custom_mcp_limit
         )
 
         limit_map = {
             "thread_count": check_thread_limit,
             "concurrent_runs": check_agent_run_limit,
-            "agent_count": check_agent_count_limit,
+            "ai_worker_count": check_agent_count_limit,
             "project_count": check_project_count_limit,
             "trigger_count": check_trigger_limit,
-            "custom_worker_count": check_custom_worker_limit,
+            "custom_mcp_count": check_custom_mcp_limit,
+            # Legacy support - keep old names for backward compatibility
+            "agent_count": check_agent_count_limit,
+            "custom_worker_count": check_custom_mcp_limit,
         }
 
         if limit_type:
@@ -51,10 +54,10 @@ async def get_limits(
         results = {
             "thread_count": await limit_map['thread_count'](client, user_id),
             "concurrent_runs": await limit_map['concurrent_runs'](client, user_id),
-            "agent_count": await limit_map['agent_count'](client, user_id),
+            "ai_worker_count": await limit_map['ai_worker_count'](client, user_id),
             "project_count": await limit_map['project_count'](client, user_id),
             "trigger_count": await limit_map['trigger_count'](client, user_id),
-            "custom_worker_count": await limit_map['custom_worker_count'](client, user_id),
+            "custom_mcp_count": await limit_map['custom_mcp_count'](client, user_id),
         }
         return results
 

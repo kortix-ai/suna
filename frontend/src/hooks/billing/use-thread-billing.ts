@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { isLocalMode } from '@/lib/config';
-import { useBillingStatusQuery } from './use-billing-status';
+import { useAccountState, accountStateSelectors } from './use-account-state';
 import { AgentStatus } from '@/components/thread/types';
 
 interface UseThreadBillingReturn {
   checkBillingLimits: () => Promise<boolean>;
-  billingStatusQuery: ReturnType<typeof useBillingStatusQuery>;
+  canRun: boolean;
+  isLoading: boolean;
 }
 
 export function useThreadBilling(
@@ -13,10 +14,12 @@ export function useThreadBilling(
   agentStatus: AgentStatus,
   initialLoadCompleted: boolean,
   onBillingError?: () => void,
-  enabled = true // Add enabled parameter, default to true
+  enabled = true
 ): UseThreadBillingReturn {
   const previousAgentStatus = useRef<AgentStatus>('idle');
-  const billingStatusQuery = useBillingStatusQuery(enabled); // Pass enabled to query
+  const accountState = useAccountState({ enabled });
+  
+  const canRun = accountStateSelectors.canRun(accountState.data);
 
   const checkBillingLimits = useCallback(async () => {
     if (isLocalMode()) {
@@ -24,11 +27,9 @@ export function useThreadBilling(
     }
 
     try {
-      await billingStatusQuery.refetch();
-      const result = billingStatusQuery.data;
-
-      if (result && !result.can_run) {
-        // Trigger callback if billing limit reached
+      const result = await accountState.refetch();
+      
+      if (result.data && !accountStateSelectors.canRun(result.data)) {
         if (onBillingError) {
           onBillingError();
         }
@@ -39,8 +40,9 @@ export function useThreadBilling(
       console.error('Error checking billing status:', err);
       return false;
     }
-  }, [billingStatusQuery, onBillingError]);
+  }, [accountState, onBillingError]);
 
+  // Check billing after agent run completes
   useEffect(() => {
     const previousStatus = previousAgentStatus.current;
     if (previousStatus === 'running' && agentStatus === 'idle') {
@@ -49,15 +51,16 @@ export function useThreadBilling(
     previousAgentStatus.current = agentStatus;
   }, [agentStatus, checkBillingLimits]);
 
+  // Initial billing check
   useEffect(() => {
-    if (projectAccountId && initialLoadCompleted && !billingStatusQuery.data) {
+    if (projectAccountId && initialLoadCompleted && !accountState.data) {
       checkBillingLimits();
     }
-  }, [projectAccountId, checkBillingLimits, initialLoadCompleted, billingStatusQuery.data]);
+  }, [projectAccountId, checkBillingLimits, initialLoadCompleted, accountState.data]);
 
   return {
     checkBillingLimits,
-    billingStatusQuery,
+    canRun,
+    isLoading: accountState.isLoading,
   };
 }
-

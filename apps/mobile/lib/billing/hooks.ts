@@ -1,96 +1,61 @@
 /**
- * Billing React Query Hooks
+ * Unified Billing React Query Hooks
  * 
- * React Query hooks for billing data fetching and mutations
+ * Single hook for all billing data with proper invalidation
  */
 
 import {
   useMutation,
   useQuery,
   useQueryClient,
-  type QueryClient,
-  type UseMutationOptions,
   type UseQueryOptions,
 } from '@tanstack/react-query';
 import {
   billingApi,
-  type SubscriptionInfo,
-  type CreditBalance,
-  type BillingStatus,
+  accountStateSelectors,
+  type AccountState,
   type CreateCheckoutSessionRequest,
   type CreateCheckoutSessionResponse,
-  type CommitmentInfo,
   type ScheduleDowngradeRequest,
   type ScheduleDowngradeResponse,
-  type ScheduledChangesResponse,
   type CancelScheduledChangeResponse,
   type CreatePortalSessionRequest,
   type CreatePortalSessionResponse,
   type CancelSubscriptionRequest,
 } from './api';
-import {
-  usageApi,
-  type ThreadUsageResponse,
-  type UseThreadUsageParams,
-} from './usage-api';
 
 // Re-export types for convenience
 export type {
-  SubscriptionInfo,
-  CreditBalance,
-  BillingStatus,
+  AccountState,
   CreateCheckoutSessionRequest,
   CreateCheckoutSessionResponse,
-  CommitmentInfo,
   ScheduleDowngradeRequest,
   ScheduleDowngradeResponse,
-  ScheduledChangesResponse,
   CancelScheduledChangeResponse,
   CreatePortalSessionRequest,
   CreatePortalSessionResponse,
   CancelSubscriptionRequest,
-  ThreadUsageResponse,
-  UseThreadUsageParams,
 };
 
-// ============================================================================
-// Query Keys
-// ============================================================================
+// Re-export selectors
+export { accountStateSelectors };
 
-export const billingKeys = {
-  all: ['billing'] as const,
-  subscription: () => [...billingKeys.all, 'subscription'] as const,
-  balance: () => [...billingKeys.all, 'balance'] as const,
-  status: () => [...billingKeys.all, 'status'] as const,
-  scheduledChanges: () => [...billingKeys.all, 'scheduled-changes'] as const,
-  threadUsage: (params: UseThreadUsageParams) => [...billingKeys.all, 'thread-usage', params] as const,
+// =============================================================================
+// QUERY KEYS - Single key for all billing state
+// =============================================================================
+
+export const accountStateKeys = {
+  all: ['account-state'] as const,
+  state: () => [...accountStateKeys.all, 'state'] as const,
 };
 
-export function invalidateCreditsAfterPurchase(queryClient: QueryClient) {
-  console.log('💳 Invalidating credit balance after purchase...');
-  
-  queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
-  queryClient.invalidateQueries({ queryKey: billingKeys.status() });
-  
-  setTimeout(() => {
-    queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
-    queryClient.invalidateQueries({ queryKey: billingKeys.status() });
-  }, 3000);
-  
-  setTimeout(() => {
-    queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
-    queryClient.invalidateQueries({ queryKey: billingKeys.status() });
-  }, 6000);
+// =============================================================================
+// UTILITY - Invalidation helper for mutations
+// =============================================================================
 
-  setTimeout(() => {
-    queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
-    queryClient.invalidateQueries({ queryKey: billingKeys.status() });
-  }, 9000);
+export function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
 }
-
-// ============================================================================
-// Query Hooks
-// ============================================================================
 
 // Don't retry on auth errors (401/403)
 const shouldRetry = (failureCount: number, error: Error) => {
@@ -101,68 +66,44 @@ const shouldRetry = (failureCount: number, error: Error) => {
   return failureCount < 2;
 };
 
-export function useSubscription(options?: {
+// =============================================================================
+// MAIN HOOK - Single query for all billing data
+// =============================================================================
+
+interface UseAccountStateOptions {
   enabled?: boolean;
   staleTime?: number;
   refetchOnMount?: boolean;
   refetchOnWindowFocus?: boolean;
-}) {
+}
+
+/**
+ * Unified hook for all account billing state.
+ * 
+ * The data is cached for 10 minutes and only refetched when:
+ * - A mutation occurs (upgrade, downgrade, purchase, etc.)
+ * - User explicitly refreshes
+ * - Agent run completes (credits deducted)
+ */
+export function useAccountState(options?: UseAccountStateOptions) {
   const enabled = options?.enabled ?? true;
   
-  return useQuery<SubscriptionInfo>({
-    queryKey: billingKeys.subscription(),
-    queryFn: () => billingApi.getSubscription(),
-    enabled, // When false, query won't run at all
-    staleTime: 1000 * 60 * 10,
-    gcTime: 1000 * 60 * 15,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    retry: enabled ? shouldRetry : false, // Don't retry if disabled
-    ...options,
+  return useQuery<AccountState>({
+    queryKey: accountStateKeys.state(),
+    queryFn: () => billingApi.getAccountState(),
+    enabled,
+    staleTime: options?.staleTime ?? 1000 * 60 * 10, // 10 minutes
+    gcTime: 1000 * 60 * 15, // 15 minutes
+    refetchOnWindowFocus: options?.refetchOnWindowFocus ?? false,
+    refetchOnMount: options?.refetchOnMount ?? false,
+    refetchOnReconnect: true,
+    retry: enabled ? shouldRetry : false,
   });
 }
 
-export function useCreditBalance(
-  options?: Omit<UseQueryOptions<CreditBalance, Error>, 'queryKey' | 'queryFn'>
-) {
-  const enabled = options?.enabled ?? true;
-  
-  return useQuery<CreditBalance>({
-    queryKey: billingKeys.balance(),
-    queryFn: () => billingApi.getCreditBalance(),
-    enabled, // When false, query won't run at all
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    retry: enabled ? shouldRetry : false, // Don't retry if disabled
-    ...options,
-  });
-}
-
-export function useBillingStatus(
-  options?: Omit<UseQueryOptions<BillingStatus, Error>, 'queryKey' | 'queryFn'>
-) {
-  const enabled = options?.enabled ?? true;
-  
-  return useQuery<BillingStatus>({
-    queryKey: billingKeys.status(),
-    queryFn: () => billingApi.checkBillingStatus(),
-    enabled, // When false, query won't run at all
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    retry: enabled ? shouldRetry : false, // Don't retry if disabled
-    ...options,
-  });
-}
-
-// ============================================================================
-// Mutation Hooks
-// ============================================================================
+// =============================================================================
+// MUTATION HOOKS - All invalidate account state after success
+// =============================================================================
 
 export function useCreateCheckoutSession() {
   const queryClient = useQueryClient();
@@ -171,8 +112,9 @@ export function useCreateCheckoutSession() {
     mutationFn: (request: CreateCheckoutSessionRequest) => 
       billingApi.createCheckoutSession(request),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
-      // Mobile will handle opening URL in Linking
+      if (data.status === 'upgraded' || data.status === 'updated') {
+        invalidateAccountState(queryClient);
+      }
       return data;
     },
   });
@@ -183,10 +125,8 @@ export function useCancelSubscription() {
   
   return useMutation({
     mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request),
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
-      queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
-      // Note: Mobile doesn't have toast, so we'll handle success in components
+    onSuccess: () => {
+      invalidateAccountState(queryClient);
     },
   });
 }
@@ -194,27 +134,6 @@ export function useCancelSubscription() {
 export function useCreatePortalSession() {
   return useMutation({
     mutationFn: (params: CreatePortalSessionRequest) => billingApi.createPortalSession(params),
-    onSuccess: (data) => {
-      // Mobile will handle opening URL in Linking
-      return data;
-    },
-  });
-}
-
-export function useSubscriptionCommitment(
-  subscriptionId?: string,
-  options?: Omit<UseQueryOptions<CommitmentInfo, Error>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery<CommitmentInfo>({
-    queryKey: [...billingKeys.subscription(), 'commitment', subscriptionId || ''],
-    queryFn: () => billingApi.getSubscriptionCommitment(subscriptionId!),
-    enabled: (options?.enabled ?? true) && !!subscriptionId,
-    staleTime: 1000 * 60 * 15,
-    gcTime: 1000 * 60 * 30,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: false,
-    ...options,
   });
 }
 
@@ -223,26 +142,9 @@ export function useScheduleDowngrade() {
   
   return useMutation({
     mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request),
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
-      queryClient.invalidateQueries({ queryKey: billingKeys.scheduledChanges() });
-      // Note: Mobile doesn't have toast, so we'll handle success in components
+    onSuccess: () => {
+      invalidateAccountState(queryClient);
     },
-  });
-}
-
-export function useScheduledChanges(
-  options?: Omit<UseQueryOptions<ScheduledChangesResponse, Error>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery<ScheduledChangesResponse>({
-    queryKey: billingKeys.scheduledChanges(),
-    queryFn: () => billingApi.getScheduledChanges(),
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    refetchOnReconnect: true,
-    ...options,
   });
 }
 
@@ -251,41 +153,19 @@ export function useCancelScheduledChange() {
   
   return useMutation({
     mutationFn: () => billingApi.cancelScheduledChange(),
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
-      queryClient.invalidateQueries({ queryKey: billingKeys.scheduledChanges() });
-      // Note: Mobile doesn't have toast, so we'll handle success in components
+    onSuccess: () => {
+      invalidateAccountState(queryClient);
     },
   });
 }
 
-export function useReactivateSubscription(
-  options?: UseMutationOptions<
-    { success: boolean; message: string },
-    Error,
-    void
-  >
-) {
+export function useReactivateSubscription() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: () => billingApi.reactivateSubscription(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+      invalidateAccountState(queryClient);
     },
-    ...options,
-  });
-}
-
-export function useThreadUsage(params: UseThreadUsageParams) {
-  const { enabled, ...queryParams } = params;
-  return useQuery<ThreadUsageResponse>({
-    queryKey: billingKeys.threadUsage(queryParams),
-    queryFn: () => usageApi.getThreadUsage(queryParams),
-    staleTime: 1000 * 30,
-    gcTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    enabled: enabled ?? true,
   });
 }

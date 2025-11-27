@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound } from 'lucide-react';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +24,32 @@ import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import Link from 'next/link';
+
+// Helper to render model labels with special styling for Kortix modes
+const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
+    if (label === 'Kortix POWER Mode') {
+        return (
+            <span className={cn("flex items-center gap-1.5", className)}>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-md">
+                    <KortixLogo size={12} variant="symbol" />
+                    <span className="text-xs font-semibold text-primary">
+                        Power
+                    </span>
+                </span>
+            </span>
+        );
+    }
+    if (label === 'Kortix Basic') {
+        return (
+            <span className={cn("flex items-center gap-1.5", className)}>
+                <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded-md">
+                    Basic
+                </span>
+            </span>
+        );
+    }
+    return <span className={cn("font-medium", className)}>{label}</span>;
+};
 
 interface CustomModel {
   id: string;
@@ -309,7 +336,7 @@ export function AgentModelSelector({
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <ModelProviderIcon modelId={model.id} size={24} />
-                  <span className="font-medium">{model.label}</span>
+                  <ModelLabel label={model.label} />
                 </div>
                 <div className="w-16 text-right text-xs text-muted-foreground">
                   {inputCost || '—'}
@@ -386,7 +413,7 @@ export function AgentModelSelector({
                         modelId={selectedModel} 
                         size={24}
                       />
-                      <span className="truncate">{selectedModelDisplay}</span>
+                      <span className="truncate"><ModelLabel label={selectedModelDisplay} /></span>
                     </div>
                   </div>
                 ) : (
@@ -400,7 +427,7 @@ export function AgentModelSelector({
                     )}
                   >
                     <ModelProviderIcon modelId={selectedModel} size={24} />
-                    <span className="text-sm">{selectedModelDisplay}</span>
+                    <span className="text-sm"><ModelLabel label={selectedModelDisplay} /></span>
                   </Button>
                 )}
               </DropdownMenuTrigger>
@@ -530,7 +557,7 @@ export function AgentModelSelector({
                                       >
                                         <div className="flex items-center gap-3 min-w-0 flex-1 pl-2">
                                           <ModelProviderIcon modelId={model.id} size={24} />
-                                          <span className="font-medium">{model.label}</span>
+                                          <ModelLabel label={model.label} />
                                         </div>
                                         <div className="w-16 text-right text-xs text-muted-foreground pr-2">
                                           {inputCost || '—'}

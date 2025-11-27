@@ -214,7 +214,7 @@ async def make_llm_api_call(
     
     # Prepare parameters using centralized model configuration
     from core.ai_models import model_manager
-    resolved_model_name = model_manager.resolve_model_id(model_name)
+    resolved_model_name = model_manager.resolve_model_id(model_name) or model_name
     
     # Only pass headers/extra_headers if they are not None to avoid overriding model config
     override_params = {

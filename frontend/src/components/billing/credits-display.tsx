@@ -2,11 +2,10 @@
 
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
-import { useCreditBalance, useSubscription, billingKeys } from '@/hooks/billing';
+import { useAccountState, accountStateKeys, accountStateSelectors } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { isLocalMode } from '@/lib/config';
-import { getPlanName } from '@/components/billing/plan-utils';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { cn } from '@/lib/utils';
@@ -15,13 +14,12 @@ import { formatCredits } from '@/lib/utils/credit-formatter';
 
 export function CreditsDisplay() {
   const { user } = useAuth();
-  const { data: balance, isLoading: balanceLoading } = useCreditBalance(!!user);
-  const { data: subscriptionData, isLoading: subscriptionLoading } = useSubscription({ enabled: !!user });
+  const { data: accountState, isLoading } = useAccountState({ enabled: !!user });
   const [showPlanModal, setShowPlanModal] = useState(false);
   const queryClient = useQueryClient();
   const isLocal = isLocalMode();
-  const isLoading = balanceLoading || subscriptionLoading;
-  const planName = getPlanName(subscriptionData, isLocal);
+  
+  const planName = accountStateSelectors.tierDisplayName(accountState);
 
   if (!user) return null;
 
@@ -33,10 +31,8 @@ export function CreditsDisplay() {
     );
   }
 
-  const credits = balance?.balance || 0;
+  const credits = accountStateSelectors.totalCredits(accountState);
   const formattedCredits = formatCredits(credits);
-  const dailyCreditsInfo = balance?.daily_credits_info;
-  console.log('[CreditsDisplay] Daily credits info:', dailyCreditsInfo);
 
   const handleClick = () => {
     setShowPlanModal(true);
@@ -46,9 +42,8 @@ export function CreditsDisplay() {
     setShowPlanModal(open);
     
     if (!open) {
-      console.log('[CreditsDisplay] Modal closed - refetching billing data');
-      queryClient.invalidateQueries({ queryKey: billingKeys.balance() });
-      queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+      // Invalidate unified account state
+      queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
     }
   };
 

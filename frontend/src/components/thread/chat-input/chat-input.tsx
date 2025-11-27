@@ -18,7 +18,7 @@ import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug } from 'lucide-react';
+import { ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug, Lock } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
@@ -223,6 +223,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const { data: subscriptionData } = useSubscriptionData();
     const deleteFileMutation = useFileDelete();
     const queryClient = useQueryClient();
+    
+    // Check if user is on free tier - only when we have subscriptionData and can confirm it's free
+    const isFreeTier = subscriptionData && (
+      subscriptionData.tier_key === 'free' ||
+      subscriptionData.tier?.name === 'free' ||
+      subscriptionData.plan_name === 'free'
+    );
     
     // Chat input button has inverted background from theme
     // Dark theme → light button → needs black loader
@@ -644,27 +651,45 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 <TooltipTrigger asChild>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
-                        disabled={loading || (disabled && !isAgentRunning)}
-                      >
-                        <Plug className="h-4 w-4" />
-                      </Button>
+                      <div className="relative">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                          disabled={loading || (disabled && !isAgentRunning)}
+                        >
+                          <Plug className="h-4 w-4" />
+                        </Button>
+                        {isFreeTier && !isLocalMode() && (
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
+                            <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
+                          </div>
+                        )}
+                      </div>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
                       <div className="px-3 mb-3">
                         <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
                       </div>
-                      <div className="space-y-0.5 px-2">
+                      <div className="space-y-0.5 px-2 relative">
                         {quickIntegrations.map((integration) => (
-                          <SpotlightCard key={integration.id} className="transition-colors cursor-pointer bg-transparent">
+                          <SpotlightCard 
+                            key={integration.id} 
+                            className={cn(
+                              "transition-colors bg-transparent",
+                              isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
+                            )}
+                          >
                             <div
-                              className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                              className={cn(
+                                "flex items-center gap-3 text-sm px-1 py-1 relative",
+                                isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
+                              )}
                               onClick={() => {
-                                setSelectedIntegration(integration.slug);
-                                setRegistryDialogOpen(true);
+                                if (!isFreeTier || isLocalMode()) {
+                                  setSelectedIntegration(integration.slug);
+                                  setRegistryDialogOpen(true);
+                                }
                               }}
                             >
                               <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
@@ -683,17 +708,60 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                             </div>
                           </SpotlightCard>
                         ))}
-                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                        <SpotlightCard 
+                          className={cn(
+                            "transition-colors bg-transparent",
+                            isFreeTier && !isLocalMode() ? "cursor-not-allowed" : "cursor-pointer"
+                          )}
+                        >
                           <div
-                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px]"
+                            className={cn(
+                              "flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px] relative",
+                              isFreeTier && !isLocalMode() && "blur-[3px] opacity-70"
+                            )}
                             onClick={() => {
-                              setSelectedIntegration(null);
-                              setRegistryDialogOpen(true);
+                              if (!isFreeTier || isLocalMode()) {
+                                setSelectedIntegration(null);
+                                setRegistryDialogOpen(true);
+                              }
                             }}
                           >
                             <span className="text-muted-foreground font-medium">+ See all integrations</span>
                           </div>
                         </SpotlightCard>
+                        
+                        {isFreeTier && !isLocalMode() && (
+                          <div className="absolute inset-0 z-10 pointer-events-none">
+                            {/* Subtle backdrop blur */}
+                            <div className="absolute inset-0 bg-background/60 backdrop-blur-sm rounded-lg" />
+                            
+                            {/* Content overlay - proper flex column layout */}
+                            <div className="relative h-full flex flex-col items-center justify-center px-6 py-5 gap-4">
+                              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 border border-primary/20">
+                                <Lock className="h-5 w-5 text-primary" strokeWidth={2} />
+                              </div>
+                              <div className="text-center space-y-1">
+                                <p className="text-sm font-semibold text-foreground">Unlock Integrations</p>
+                                <p className="text-xs text-muted-foreground max-w-[200px]">
+                                  Connect Google Drive, Slack, Notion, and 100+ apps
+                                </p>
+                              </div>
+                              
+                              {/* Explore button - opens registry dialog */}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedIntegration(null);
+                                  setRegistryDialogOpen(true);
+                                }}
+                                className="h-8 px-4 text-xs font-medium shadow-md hover:shadow-lg transition-all pointer-events-auto"
+                              >
+                                Explore
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -857,14 +925,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           </div>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, planModalOpen, setPlanSelectionModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon, buttonLoaderVariant]);
-
-    // Check if user is on free tier - only when we have subscriptionData and can confirm it's free
-    const isFreeTier = subscriptionData && (
-      subscriptionData.tier_key === 'free' ||
-      subscriptionData.tier?.name === 'free' ||
-      subscriptionData.plan_name === 'free'
-    );
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, planModalOpen, setPlanSelectionModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon, buttonLoaderVariant, isFreeTier, subscriptionData]);
 
     const isSnackVisible = showToolPreview || !!showSnackbar || (isFreeTier && subscriptionData && !isLocalMode());
 
@@ -1033,6 +1094,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 onToolsSelected={(profileId, selectedTools, appName, appSlug) => {
                 }}
                 initialSelectedApp={selectedIntegration}
+                isBlocked={isFreeTier && !isLocalMode()}
+                onBlockedClick={() => setPlanSelectionModalOpen(true)}
               />
             </DialogContent>
           </Dialog>

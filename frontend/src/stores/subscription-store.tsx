@@ -1,61 +1,45 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { SubscriptionInfo, CreditBalance } from '@/lib/api/billing';
-import { useSubscription, useCreditBalance } from '@/hooks/billing';
+import { AccountState } from '@/lib/api/billing';
+import { useAccountState } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import React from 'react';
 
 interface SubscriptionStore {
-  subscriptionData: SubscriptionInfo | null;
-  creditBalance: CreditBalance | null;
+  accountState: AccountState | null;
   isLoading: boolean;
   error: Error | null;
   
   // Actions
-  setSubscriptionData: (data: SubscriptionInfo | null) => void;
-  setCreditBalance: (balance: CreditBalance | null) => void;
+  setAccountState: (data: AccountState | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: Error | null) => void;
   refetch: () => void;
-  refetchBalance: () => void;
   
   // Refetch callbacks (set by hooks)
-  _refetchSubscription?: () => void;
-  _refetchBalance?: () => void;
+  _refetchAccountState?: () => void;
   
-  setRefetchCallbacks: (callbacks: {
-    refetchSubscription?: () => void;
-    refetchBalance?: () => void;
-  }) => void;
+  setRefetchCallback: (callback: (() => void) | undefined) => void;
 }
 
 export const useSubscriptionStore = create<SubscriptionStore>()(
   devtools(
     (set, get) => ({
-      subscriptionData: null,
-      creditBalance: null,
+      accountState: null,
       isLoading: false,
       error: null,
       
-      setSubscriptionData: (data) => set({ subscriptionData: data }),
-      setCreditBalance: (balance) => set({ creditBalance: balance }),
+      setAccountState: (data) => set({ accountState: data }),
       setLoading: (loading) => set({ isLoading: loading }),
       setError: (error) => set({ error }),
       
-      setRefetchCallbacks: (callbacks) => {
-        set({
-          _refetchSubscription: callbacks.refetchSubscription,
-          _refetchBalance: callbacks.refetchBalance,
-        });
+      setRefetchCallback: (callback) => {
+        set({ _refetchAccountState: callback });
       },
       
       refetch: () => {
-        get()._refetchSubscription?.();
-      },
-      
-      refetchBalance: () => {
-        get()._refetchBalance?.();
+        get()._refetchAccountState?.();
       },
     }),
     {
@@ -70,49 +54,33 @@ export function useSubscriptionStoreSync() {
   const isAuthenticated = !!user;
   
   const { 
-    data: subscriptionData, 
-    isLoading: subscriptionLoading, 
-    error: subscriptionError, 
-    refetch: refetchSubscription 
-  } = useSubscription({ enabled: isAuthenticated });
+    data: accountState, 
+    isLoading, 
+    error, 
+    refetch 
+  } = useAccountState({ enabled: isAuthenticated });
   
-  const {
-    data: creditBalance,
-    isLoading: balanceLoading,
-    error: balanceError,
-    refetch: refetchBalance
-  } = useCreditBalance(isAuthenticated);
-  
-  const setSubscriptionData = useSubscriptionStore((state) => state.setSubscriptionData);
-  const setCreditBalance = useSubscriptionStore((state) => state.setCreditBalance);
+  const setAccountState = useSubscriptionStore((state) => state.setAccountState);
   const setLoading = useSubscriptionStore((state) => state.setLoading);
   const setError = useSubscriptionStore((state) => state.setError);
-  const setRefetchCallbacks = useSubscriptionStore((state) => state.setRefetchCallbacks);
+  const setRefetchCallback = useSubscriptionStore((state) => state.setRefetchCallback);
   
   // Sync data to store
   useEffect(() => {
-    setSubscriptionData(subscriptionData || null);
-  }, [subscriptionData, setSubscriptionData]);
+    setAccountState(accountState || null);
+  }, [accountState, setAccountState]);
   
   useEffect(() => {
-    setCreditBalance(creditBalance || null);
-  }, [creditBalance, setCreditBalance]);
+    setLoading(isLoading);
+  }, [isLoading, setLoading]);
   
   useEffect(() => {
-    setLoading(subscriptionLoading || balanceLoading);
-  }, [subscriptionLoading, balanceLoading, setLoading]);
+    setError(error as Error | null);
+  }, [error, setError]);
   
   useEffect(() => {
-    const error = (subscriptionError || balanceError) as Error | null;
-    setError(error);
-  }, [subscriptionError, balanceError, setError]);
-  
-  useEffect(() => {
-    setRefetchCallbacks({
-      refetchSubscription: () => refetchSubscription(),
-      refetchBalance: () => refetchBalance(),
-    });
-  }, [refetchSubscription, refetchBalance, setRefetchCallbacks]);
+    setRefetchCallback(() => refetch());
+  }, [refetch, setRefetchCallback]);
 }
 
 // Component wrapper to sync React Query with Zustand store
@@ -121,25 +89,56 @@ export function SubscriptionStoreSync({ children }: { children: React.ReactNode 
   return <>{children}</>;
 }
 
-// Backward compatibility hooks
+// Backward compatibility hooks - map to new unified structure
 export function useSubscriptionContext() {
   const store = useSubscriptionStore();
   
   return {
-    subscriptionData: store.subscriptionData,
-    creditBalance: store.creditBalance,
+    subscriptionData: store.accountState ? {
+      status: store.accountState.subscription.status,
+      plan_name: store.accountState.subscription.tier_display_name,
+      tier_key: store.accountState.subscription.tier_key,
+      subscription: store.accountState.subscription.subscription_id ? {
+        id: store.accountState.subscription.subscription_id,
+        status: store.accountState.subscription.status,
+        tier_key: store.accountState.subscription.tier_key,
+        current_period_end: store.accountState.subscription.current_period_end || 0,
+        cancel_at: store.accountState.subscription.cancellation_effective_date,
+        cancel_at_period_end: store.accountState.subscription.cancel_at_period_end,
+      } : null,
+      tier: {
+        name: store.accountState.subscription.tier_key,
+        credits: store.accountState.tier.monthly_credits,
+      },
+      credits: {
+        balance: store.accountState.credits.total,
+        tier_credits: store.accountState.tier.monthly_credits,
+        lifetime_granted: 0,
+        lifetime_purchased: 0,
+        lifetime_used: 0,
+        can_purchase_credits: store.accountState.subscription.can_purchase_credits,
+      },
+    } : null,
+    creditBalance: store.accountState ? {
+      balance: store.accountState.credits.total,
+      expiring_credits: store.accountState.credits.daily + store.accountState.credits.monthly,
+      non_expiring_credits: store.accountState.credits.extra,
+      tier: store.accountState.subscription.tier_key,
+      can_purchase_credits: store.accountState.subscription.can_purchase_credits,
+    } : null,
     isLoading: store.isLoading,
     error: store.error,
     refetch: store.refetch,
-    refetchBalance: store.refetchBalance,
+    refetchBalance: store.refetch, // Same as refetch now
   };
 }
 
 export function useSharedSubscription() {
   const store = useSubscriptionStore();
+  const ctx = useSubscriptionContext();
   
   return {
-    data: store.subscriptionData,
+    data: ctx.subscriptionData,
     isLoading: store.isLoading,
     error: store.error,
     refetch: store.refetch,
@@ -150,47 +149,62 @@ export function useSubscriptionData() {
   const store = useSubscriptionStore();
   const { user } = useAuth();
   
-  const directSubscription = useSubscription({ enabled: !!user });
-  const directCreditBalance = useCreditBalance(!!user);
+  const { data: accountState, isLoading, error, refetch } = useAccountState({ enabled: !!user });
   
-  if (store.subscriptionData) {
+  // Use store data if available, otherwise direct query
+  const state = store.accountState || accountState;
+  
+  if (!state) {
     return {
-      data: store.subscriptionData ? {
-        ...store.subscriptionData,
-        current_usage: store.creditBalance?.lifetime_used || 0,
-        cost_limit: store.subscriptionData.tier.credits,
-        credit_balance: store.creditBalance?.balance || 0,
-        can_purchase_credits: store.creditBalance?.can_purchase_credits || false,
-        subscription: store.subscriptionData.subscription ? {
-          ...store.subscriptionData.subscription,
-          cancel_at_period_end: store.subscriptionData.subscription.cancel_at ? true : false
-        } : null
-      } : null,
-      isLoading: store.isLoading,
-      error: store.error,
-      refetch: store.refetch,
+      data: null,
+      isLoading: store.isLoading || isLoading,
+      error: (store.error || error) as Error | null,
+      refetch: store.refetch || refetch,
     };
   }
   
-  // If no store data, use the hooks directly (for use outside provider)
-  const { data, isLoading, error, refetch } = directSubscription;
-  const { data: creditBalance } = directCreditBalance;
-  
   return {
-    data: data ? {
-      ...data,
-      current_usage: creditBalance?.lifetime_used || 0,
-      cost_limit: data.tier.credits,
-      credit_balance: creditBalance?.balance || 0,
-      can_purchase_credits: creditBalance?.can_purchase_credits || false,
-      subscription: data.subscription ? {
-        ...data.subscription,
-        cancel_at_period_end: data.subscription.cancel_at ? true : false
-      } : null
-    } : null,
-    isLoading,
-    error: error as Error | null,
-    refetch,
+    data: {
+      status: state.subscription.status,
+      plan_name: state.subscription.tier_display_name,
+      tier_key: state.subscription.tier_key,
+      billing_period: state.subscription.billing_period,
+      provider: state.subscription.provider,
+      subscription: state.subscription.subscription_id ? {
+        id: state.subscription.subscription_id,
+        status: state.subscription.status,
+        tier_key: state.subscription.tier_key,
+        current_period_end: state.subscription.current_period_end || 0,
+        cancel_at: state.subscription.cancellation_effective_date,
+        cancel_at_period_end: state.subscription.cancel_at_period_end,
+      } : null,
+      tier: {
+        name: state.subscription.tier_key,
+        credits: state.tier.monthly_credits,
+        display_name: state.subscription.tier_display_name,
+      },
+      credits: {
+        balance: state.credits.total,
+        tier_credits: state.tier.monthly_credits,
+        lifetime_granted: 0,
+        lifetime_purchased: 0,
+        lifetime_used: 0,
+        can_purchase_credits: state.subscription.can_purchase_credits,
+      },
+      current_usage: 0,
+      cost_limit: state.tier.monthly_credits,
+      credit_balance: state.credits.total,
+      can_purchase_credits: state.subscription.can_purchase_credits,
+      is_trial: state.subscription.is_trial,
+      trial_status: state.subscription.trial_status,
+      has_scheduled_change: state.subscription.has_scheduled_change,
+      scheduled_change: state.subscription.scheduled_change,
+      commitment: state.subscription.commitment,
+      is_cancelled: state.subscription.is_cancelled,
+      cancellation_effective_date: state.subscription.cancellation_effective_date,
+    },
+    isLoading: store.isLoading || isLoading,
+    error: (store.error || error) as Error | null,
+    refetch: store.refetch || refetch,
   };
 }
-

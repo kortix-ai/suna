@@ -1,58 +1,65 @@
 /**
  * Billing Hooks Index
- * Central export point for all billing-related hooks
+ * 
+ * UNIFIED APPROACH: All billing state comes from useAccountState
+ * This provides a single source of truth and optimizes API calls.
  */
 
-// Subscription & Payment
+// =============================================================================
+// PRIMARY HOOK - Use this for all billing data
+// =============================================================================
+
 export {
-  billingKeys,
-  subscriptionKeys,
-  useSubscription,
-  useSubscriptionWithStreaming,
-  useSubscriptionCommitment,
+  // Main hook
+  useAccountState,
+  useAccountStateWithStreaming,
+  
+  // Query keys for manual invalidation if needed
+  accountStateKeys,
+  invalidateAccountState,
+  
+  // Mutation hooks
+  useCreateCheckoutSession,
   useCreatePortalSession,
   useCancelSubscription,
   useReactivateSubscription,
-  useCreditBalance,
-  useBillingStatus,
-  useUsageHistory,
-  useCreateCheckoutSession,
   usePurchaseCredits,
   useDeductTokenUsage,
-  useTriggerTestRenewal,
   useScheduleDowngrade,
-  useScheduledChanges,
   useCancelScheduledChange,
-  isPlan,
-} from './use-subscription';
+  useSyncSubscription,
+  
+  // Usage/transactions (separate queries)
+  useUsageHistory,
+  useTransactions,
+  
+  // Trial
+  useTrialStatus,
+  useStartTrial,
+  useCancelTrial,
+  
+  // Selectors for extracting data
+  accountStateSelectors,
+} from './use-account-state';
 
-// Billing Error Handling
+// =============================================================================
+// SPECIALIZED HOOKS - Use the unified data internally
+// =============================================================================
+
+// Thread billing (uses useAccountState internally)
+export { useThreadBilling } from './use-thread-billing';
+
+// Billing modal state
 export { useBillingModal } from './use-billing-modal';
 
-// Credit & Thread Usage
+// Credit & Thread Usage analytics
 export { useCreditUsage } from './use-credit-usage';
 export { useThreadUsage } from './use-thread-usage';
 
-// Billing Status
-export { useBillingStatusQuery } from './use-billing-status';
+// =============================================================================
+// TIER CONFIGURATIONS - Static data, separate endpoint
+// =============================================================================
 
-// Thread Billing
-export { useThreadBilling } from './use-thread-billing';
-
-// Trial Management
-export { useTrialStatus, useStartTrial } from './use-trial-status';
-export { useCancelTrial } from './use-cancel-trial';
-
-// Transactions
-export {
-  useTransactions,
-  useTransactionsSummary,
-  type CreditTransaction,
-  type TransactionsResponse,
-  type TransactionsSummary,
-} from './use-transactions';
-
-// Tier Configurations
 export {
   useTierConfigurations,
   getTierByKey,
@@ -60,7 +67,10 @@ export {
   type TierConfigurationsResponse,
 } from './use-tier-configurations';
 
-// Admin Billing
+// =============================================================================
+// ADMIN HOOKS - For admin dashboard
+// =============================================================================
+
 export {
   useUserBillingSummary,
   useAdminUserTransactions,
@@ -68,3 +78,8 @@ export {
   useProcessRefund,
 } from './use-admin-billing';
 
+// =============================================================================
+// TYPE EXPORTS
+// =============================================================================
+
+export type { AccountState } from '@/lib/api/billing';

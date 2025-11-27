@@ -7,9 +7,18 @@ export * from './provider';
 export * from './revenuecat';
 export * from './unified-checkout';
 export * from './plan-utils';
-export { invalidateCreditsAfterPurchase } from './hooks';
 
-export { billingApi } from './api';
+// Unified account state
+export { 
+  billingApi,
+  accountStateSelectors,
+  type AccountState 
+} from './api';
+export { 
+  useAccountState,
+  accountStateKeys,
+  invalidateAccountState 
+} from './hooks';
 export { usageApi } from './usage-api';
 export {
   startPlanCheckout,

@@ -1,81 +1,106 @@
 /**
- * Billing API Client & Types
+ * Unified Billing API Client & Types
  * 
- * Core billing API functions and type definitions
+ * Single endpoint for all billing state
  */
 
 import { API_URL, getAuthHeaders } from '@/api/config';
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
+// =============================================================================
+// UNIFIED ACCOUNT STATE
+// =============================================================================
 
-export interface CreditBalance {
-  balance: number;
-  expiring_credits: number;
-  non_expiring_credits: number;
-  tier: string;
-  tier_display_name?: string;
-  next_credit_grant?: string;
-  can_purchase_credits: boolean;
-  breakdown?: {
-    expiring: number;
-    non_expiring: number;
-    total: number;
-  };
-  lifetime_granted?: number;
-  lifetime_purchased?: number;
-  lifetime_used?: number;
-}
-
-export interface SubscriptionInfo {
-  status: string;
-  plan_name: string;
-  display_plan_name?: string;
-  tier_key: string;
-  billing_period?: 'monthly' | 'yearly' | 'yearly_commitment' | null;
-  provider?: 'stripe' | 'revenuecat';
-  revenuecat_customer_id?: string | null;
-  revenuecat_subscription_id?: string | null;
-  revenuecat_product_id?: string | null;
-  subscription: {
-    id: string;
-    status: string;
-    tier_key: string;
-    current_period_end: string | number;
-    cancel_at?: string | number | null;
-    canceled_at?: string | number | null;
-    cancel_at_period_end?: boolean;
-  } | null;
-  tier: {
-    name: string;
-    credits: number;
-    display_name?: string;
-  };
+export interface AccountState {
   credits: {
-    balance: number;
-    tier_credits: number;
-    lifetime_granted: number;
-    lifetime_purchased: number;
-    lifetime_used: number;
+    total: number;
+    daily: number;
+    monthly: number;
+    extra: number;
+    can_run: boolean;
+    daily_refresh: {
+      enabled: boolean;
+      daily_amount: number;
+      refresh_interval_hours: number;
+      last_refresh?: string;
+      next_refresh_at?: string;
+      seconds_until_refresh?: number;
+    } | null;
+  };
+  subscription: {
+    tier_key: string;
+    tier_display_name: string;
+    status: string;
+    billing_period: 'monthly' | 'yearly' | 'yearly_commitment' | null;
+    provider: 'stripe' | 'revenuecat' | 'local';
+    subscription_id: string | null;
+    current_period_end: number | null;
+    cancel_at_period_end: boolean;
+    is_trial: boolean;
+    trial_status: string | null;
+    trial_ends_at: string | null;
+    is_cancelled: boolean;
+    cancellation_effective_date: string | null;
+    has_scheduled_change: boolean;
+    scheduled_change: {
+      type: 'downgrade';
+      current_tier: {
+        name: string;
+        display_name: string;
+        monthly_credits?: number;
+      };
+      target_tier: {
+        name: string;
+        display_name: string;
+        monthly_credits?: number;
+      };
+      effective_date: string;
+    } | null;
+    commitment: {
+      has_commitment: boolean;
+      can_cancel: boolean;
+      commitment_type?: string | null;
+      months_remaining?: number | null;
+      commitment_end_date?: string | null;
+    };
     can_purchase_credits: boolean;
   };
-  subscription_id?: string | null;
-  credit_balance?: number;
-  current_usage?: number;
-  cost_limit?: number;
-  can_purchase_credits?: boolean;
+  models: Array<{
+    id: string;
+    name: string;
+    provider: string;
+    allowed: boolean;
+    context_window: number;
+    capabilities: string[];
+    priority: number;
+    recommended: boolean;
+  }>;
+  limits: {
+    projects: { current: number; max: number };
+    threads: { current: number; max: number };
+    concurrent_runs: number;
+    custom_workers: number;
+    scheduled_triggers: number;
+    app_triggers: number;
+  };
+  tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+    can_purchase_credits: boolean;
+  };
+  _cache?: {
+    cached: boolean;
+    ttl_seconds?: number;
+    local_mode?: boolean;
+  };
 }
 
-export interface BillingStatus {
-  can_run: boolean;
-  balance: number;
-  tier: string;
-  message: string;
-}
+// =============================================================================
+// MUTATION REQUEST/RESPONSE TYPES
+// =============================================================================
 
 export interface CreateCheckoutSessionRequest {
-  tier_key: string;  // Backend tier key like 'tier_2_20', 'free', etc.
+  tier_key: string;
   success_url: string;
   cancel_url: string;
   commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
@@ -97,7 +122,7 @@ export interface CreateCheckoutSessionResponse {
   session_id?: string;
   url?: string;
   checkout_url?: string;
-  fe_checkout_url?: string;  // Kortix-branded embedded checkout
+  fe_checkout_url?: string;
   effective_date?: string;
   message?: string;
   details?: {
@@ -113,49 +138,6 @@ export interface CreateCheckoutSessionResponse {
       currency: string;
     };
   };
-}
-
-export interface PurchaseCreditsRequest {
-  amount: number;
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface PurchaseCreditsResponse {
-  checkout_url: string;
-}
-
-export interface CancelSubscriptionRequest {
-  feedback?: string;
-}
-
-export interface Transaction {
-  id: string;
-  user_id: string;
-  type: 'credit' | 'debit';
-  amount: number;
-  description: string;
-  reference_id?: string;
-  reference_type?: string;
-  created_at: string;
-}
-
-export interface UsageHistory {
-  daily_usage: Record<string, {
-    credits: number;
-    debits: number;
-    count: number;
-  }>;
-  total_period_usage: number;
-  total_period_credits: number;
-}
-
-export interface CommitmentInfo {
-  has_commitment: boolean;
-  can_cancel: boolean;
-  commitment_type?: string | null;
-  months_remaining?: number | null;
-  commitment_end_date?: string | null;
 }
 
 export interface ScheduleDowngradeRequest {
@@ -183,24 +165,6 @@ export interface ScheduleDowngradeResponse {
   change_description: string;
 }
 
-export interface ScheduledChangesResponse {
-  has_scheduled_change: boolean;
-  scheduled_change: {
-    type: 'downgrade';
-    current_tier: {
-      name: string;
-      display_name: string;
-      monthly_credits?: number;
-    };
-    target_tier: {
-      name: string;
-      display_name: string;
-      monthly_credits?: number;
-    };
-    effective_date: string;
-  } | null;
-}
-
 export interface CancelScheduledChangeResponse {
   success: boolean;
   message: string;
@@ -214,9 +178,13 @@ export interface CreatePortalSessionResponse {
   portal_url: string;
 }
 
-// ============================================================================
+export interface CancelSubscriptionRequest {
+  feedback?: string;
+}
+
+// =============================================================================
 // API Helper
-// ============================================================================
+// =============================================================================
 
 async function fetchApi<T>(
   endpoint: string,
@@ -238,14 +206,13 @@ async function fetchApi<T>(
     
     // Only log non-auth errors (401/403 are expected when not authenticated)
     if (response.status !== 401 && response.status !== 403) {
-    console.error('❌ Billing API Error:', {
-      endpoint,
-      status: response.status,
+      console.error('❌ Billing API Error:', {
+        endpoint,
+        status: response.status,
         error: errorData,
-    });
+      });
     }
     
-    // Include status code in error message for retry logic
     const errorMessage = errorData.detail?.message || errorData.detail || errorData.message || response.statusText;
     throw new Error(`HTTP ${response.status}: ${errorMessage}`);
   }
@@ -253,35 +220,17 @@ async function fetchApi<T>(
   return response.json();
 }
 
-// ============================================================================
+// =============================================================================
 // API Functions
-// ============================================================================
+// =============================================================================
 
 export const billingApi = {
-  async getSubscription(): Promise<SubscriptionInfo> {
-    console.log('🔄 Fetching subscription data...');
-    const data = await fetchApi<SubscriptionInfo>('/billing/subscription');
-    console.log('✅ Subscription data received:', {
-      provider: data.provider,
-      revenuecat_product_id: data.revenuecat_product_id,
-      revenuecat_subscription_id: data.revenuecat_subscription_id,
-      tier_key: data.tier_key,
-      status: data.status
-    });
-    return data;
-  },
-
-  async checkBillingStatus(): Promise<BillingStatus> {
-    return fetchApi<BillingStatus>('/billing/check-status', {
-      method: 'GET',
-    });
-  },
-
-  async getCreditBalance(): Promise<CreditBalance> {
-    // console.log('🔄 Fetching credit balance...');
-    const data = await fetchApi<CreditBalance>('/billing/balance');
-    // console.log('✅ Credit balance received:', JSON.stringify(data, null, 2));
-    return data;
+  /**
+   * Get unified account state - single source of truth for all billing data
+   */
+  async getAccountState(skipCache = false): Promise<AccountState> {
+    const params = skipCache ? '?skip_cache=true' : '';
+    return fetchApi<AccountState>(`/billing/account-state${params}`);
   },
 
   async createCheckoutSession(
@@ -314,19 +263,11 @@ export const billingApi = {
     });
   },
 
-  async getSubscriptionCommitment(subscriptionId: string): Promise<CommitmentInfo> {
-    return fetchApi(`/billing/subscription-commitment/${subscriptionId}`);
-  },
-
   async scheduleDowngrade(request: ScheduleDowngradeRequest): Promise<ScheduleDowngradeResponse> {
     return fetchApi('/billing/schedule-downgrade', {
       method: 'POST',
       body: JSON.stringify(request),
     });
-  },
-
-  async getScheduledChanges(): Promise<ScheduledChangesResponse> {
-    return fetchApi('/billing/scheduled-changes');
   },
 
   async cancelScheduledChange(): Promise<CancelScheduledChangeResponse> {
@@ -343,3 +284,26 @@ export const billingApi = {
   },
 };
 
+// =============================================================================
+// SELECTORS - Helper functions to extract data from account state
+// =============================================================================
+
+export const accountStateSelectors = {
+  canRun: (state: AccountState | undefined) => state?.credits.can_run ?? false,
+  totalCredits: (state: AccountState | undefined) => state?.credits.total ?? 0,
+  tierKey: (state: AccountState | undefined) => state?.subscription.tier_key ?? 'none',
+  tierDisplayName: (state: AccountState | undefined) => 
+    state?.subscription.tier_display_name ?? 'No Plan',
+  isTrial: (state: AccountState | undefined) => state?.subscription.is_trial ?? false,
+  isCancelled: (state: AccountState | undefined) => state?.subscription.is_cancelled ?? false,
+  allowedModels: (state: AccountState | undefined) => 
+    state?.models.filter(m => m.allowed) ?? [],
+  isModelAllowed: (state: AccountState | undefined, modelId: string) =>
+    state?.models.find(m => m.id === modelId)?.allowed ?? false,
+  scheduledChange: (state: AccountState | undefined) => state?.subscription.scheduled_change,
+  hasScheduledChange: (state: AccountState | undefined) => 
+    state?.subscription.has_scheduled_change ?? false,
+  canPurchaseCredits: (state: AccountState | undefined) => 
+    state?.subscription.can_purchase_credits ?? false,
+  dailyCreditsInfo: (state: AccountState | undefined) => state?.credits.daily_refresh,
+};

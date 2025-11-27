@@ -1,10 +1,8 @@
 'use client';
 
 import { useModelStore } from '@/stores/model-store';
-import { useSubscriptionData } from '@/stores/subscription-store';
-import { useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getAvailableModels } from '@/lib/api/billing';
+import { useEffect, useMemo, useRef } from 'react';
+import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 
 export interface ModelOption {
@@ -19,11 +17,20 @@ export interface ModelOption {
 }
 
 const getDefaultModel = (models: ModelOption[], hasActiveSubscription: boolean): string => {
+  // Paid users get kortix/power, free users get kortix/basic
   if (hasActiveSubscription) {
+    const powerModel = models.find(m => m.id === 'kortix/power');
+    if (powerModel) return powerModel.id;
+    
+    // Fallback to any recommended model
     const recommendedModel = models.find(m => m.recommended);
     if (recommendedModel) return recommendedModel.id;
+  } else {
+    const basicModel = models.find(m => m.id === 'kortix/basic');
+    if (basicModel) return basicModel.id;
   }
   
+  // Fallback: pick from free models sorted by priority
   const freeModels = models.filter(m => !m.requiresSubscription);
   if (freeModels.length > 0) {
     const sortedFreeModels = freeModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
@@ -36,32 +43,24 @@ const getDefaultModel = (models: ModelOption[], hasActiveSubscription: boolean):
 export const useModelSelection = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
   
-  // Fetch models directly in this hook
-  // Only fetch if user is authenticated
-  const { data: modelsData, isLoading } = useQuery({
-    queryKey: ['models', 'available'],
-    queryFn: getAvailableModels,
-    enabled: !!user && !isAuthLoading, // Only fetch when authenticated
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchOnWindowFocus: false,
-    retry: (failureCount, error: any) => {
-      // Don't retry on 401 errors (unauthorized)
-      if (error?.status === 401) return false;
-      return failureCount < 2;
-    },
+  // Get account state which includes models
+  const { data: accountState, isLoading } = useAccountState({ 
+    enabled: !!user && !isAuthLoading 
   });
 
-  const { data: subscriptionData } = useSubscriptionData();
   const { selectedModel, setSelectedModel } = useModelStore();
+  
+  // Track previous subscription status to detect upgrades
+  const prevSubscriptionStatus = useRef<string | null>(null);
 
   // Transform API data to ModelOption format
   const availableModels = useMemo<ModelOption[]>(() => {
-    if (!modelsData?.models) return [];
+    if (!accountState?.models) return [];
     
-    return modelsData.models.map(model => ({
-      id: model.id, // Always use the actual model ID
-      label: model.display_name || model.short_name || model.id,
-      requiresSubscription: model.requires_subscription || false,
+    return accountState.models.map(model => ({
+      id: model.id,
+      label: model.name,
+      requiresSubscription: !model.allowed, // If not allowed, requires subscription
       priority: model.priority || 0,
       recommended: model.recommended || false,
       capabilities: model.capabilities || [],
@@ -72,21 +71,34 @@ export const useModelSelection = () => {
       if (a.priority !== b.priority) return b.priority - a.priority;
       return a.label.localeCompare(b.label);
     });
-  }, [modelsData]);
+  }, [accountState?.models]);
 
   // Get accessible models based on subscription
   const accessibleModels = useMemo(() => {
-    const hasActiveSubscription = subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing';
+    const hasActiveSubscription = accountState?.subscription.status === 'active' || 
+                                   accountState?.subscription.status === 'trialing';
     return availableModels.filter(model => hasActiveSubscription || !model.requiresSubscription);
-  }, [availableModels, subscriptionData]);
+  }, [availableModels, accountState?.subscription.status]);
 
   // Initialize selected model when data loads
   useEffect(() => {
     if (isLoading || !accessibleModels.length) return;
 
-    // If no model selected or selected model is not accessible, pick default from API data
-    if (!selectedModel || !accessibleModels.some(m => m.id === selectedModel)) {
-      const hasActiveSubscription = subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing';
+    const hasActiveSubscription = accountState?.subscription.status === 'active' || 
+                                   accountState?.subscription.status === 'trialing';
+    
+    // For paid users: always ensure they're on kortix/power (unless they manually changed it)
+    // For free users: ensure they're on kortix/basic
+    const expectedModel = hasActiveSubscription ? 'kortix/power' : 'kortix/basic';
+    const hasExpectedModel = availableModels.some(m => m.id === expectedModel);
+    
+    // If no model selected, selected model is not accessible, or user is on wrong tier default
+    const needsUpdate = !selectedModel || 
+                        !accessibleModels.some(m => m.id === selectedModel) ||
+                        (hasExpectedModel && selectedModel !== expectedModel && 
+                         (selectedModel === 'kortix/basic' || selectedModel === 'kortix/power'));
+    
+    if (needsUpdate) {
       const defaultModelId = getDefaultModel(availableModels, hasActiveSubscription);
       
       // Make sure the default model is accessible
@@ -94,12 +106,40 @@ export const useModelSelection = () => {
         ? defaultModelId 
         : accessibleModels[0]?.id;
         
-      if (finalModel) {
-        console.log('🔧 useModelSelection: Setting API-determined default model:', finalModel);
+      if (finalModel && finalModel !== selectedModel) {
+        console.log('🔧 useModelSelection: Setting default model:', finalModel, '(subscription:', hasActiveSubscription ? 'active' : 'free', ')');
         setSelectedModel(finalModel);
       }
     }
-  }, [selectedModel, accessibleModels, availableModels, isLoading, setSelectedModel, subscriptionData]);
+  }, [selectedModel, accessibleModels, availableModels, isLoading, setSelectedModel, accountState?.subscription.status]);
+
+  // Auto-switch to Power mode when subscription becomes active (upgrade detected)
+  useEffect(() => {
+    if (isLoading || !availableModels.length) return;
+    
+    const currentStatus = accountState?.subscription.status;
+    const wasInactive = prevSubscriptionStatus.current === null || 
+                        prevSubscriptionStatus.current === 'canceled' || 
+                        prevSubscriptionStatus.current === 'incomplete' ||
+                        prevSubscriptionStatus.current === 'incomplete_expired' ||
+                        prevSubscriptionStatus.current === 'past_due' ||
+                        prevSubscriptionStatus.current === 'unpaid' ||
+                        prevSubscriptionStatus.current === 'no_subscription' ||
+                        !prevSubscriptionStatus.current;
+    const isNowActive = currentStatus === 'active' || currentStatus === 'trialing';
+    
+    // Detect upgrade: was inactive, now active
+    if (wasInactive && isNowActive && prevSubscriptionStatus.current !== null) {
+      const powerModel = availableModels.find(m => m.id === 'kortix/power');
+      if (powerModel) {
+        console.log('🚀 useModelSelection: Subscription upgraded! Switching to kortix/power');
+        setSelectedModel('kortix/power');
+      }
+    }
+    
+    // Update ref for next comparison
+    prevSubscriptionStatus.current = currentStatus || null;
+  }, [accountState?.subscription.status, availableModels, isLoading, setSelectedModel]);
 
   const handleModelChange = (modelId: string) => {
     const model = accessibleModels.find(m => m.id === modelId);
@@ -109,17 +149,24 @@ export const useModelSelection = () => {
     }
   };
 
+  const subscriptionStatus = (accountState?.subscription.status === 'active' || 
+                              accountState?.subscription.status === 'trialing') 
+    ? 'active' as const 
+    : 'no_subscription' as const;
+
   return {
     selectedModel,
     setSelectedModel: handleModelChange,
     availableModels: accessibleModels,
     allModels: availableModels,
     isLoading,
-    modelsData,
-    subscriptionStatus: (subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing') ? 'active' as const : 'no_subscription' as const,
+    modelsData: accountState ? { models: accountState.models, tier: accountState.subscription.tier_key } : undefined,
+    subscriptionStatus,
     canAccessModel: (modelId: string) => {
       const model = availableModels.find(m => m.id === modelId);
-      return model ? !model.requiresSubscription : false;
+      if (!model) return false;
+      const hasActiveSubscription = subscriptionStatus === 'active';
+      return hasActiveSubscription || !model.requiresSubscription;
     },
     isSubscriptionRequired: (modelId: string) => {
       const model = availableModels.find(m => m.id === modelId);

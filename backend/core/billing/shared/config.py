@@ -55,12 +55,12 @@ TIERS: Dict[str, Tier] = {
         display_name='Basic',
         can_purchase_credits=False,
         models=['haiku'],
-        project_limit=5,
-        thread_limit=5,
+        project_limit=3,
+        thread_limit=10,
         concurrent_runs=1,
-        custom_workers_limit=1,
-        scheduled_triggers_limit=1,
-        app_triggers_limit=1,
+        custom_workers_limit=0,
+        scheduled_triggers_limit=0,
+        app_triggers_limit=0,
         daily_credit_config={
             'enabled': True,
             'amount': Decimal('2.00'),
@@ -75,7 +75,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_2_20_YEARLY_ID,
             config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('20.00'),
+        monthly_credits=Decimal('40.00'),
         display_name='Starter',
         can_purchase_credits=False,
         models=['all'],
@@ -85,6 +85,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=5,
         scheduled_triggers_limit=5,
         app_triggers_limit=10,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
     'tier_6_50': Tier(
@@ -94,7 +99,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_6_50_YEARLY_ID,
             config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('50.00'),
+        monthly_credits=Decimal('100.00'),
         display_name='Professional',
         can_purchase_credits=False,
         models=['all'],
@@ -104,6 +109,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=20,
         scheduled_triggers_limit=10,
         app_triggers_limit=25,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
     'tier_25_200': Tier(
@@ -113,7 +123,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_25_200_YEARLY_ID,
             config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('200.00'),
+        monthly_credits=Decimal('400.00'),
         display_name='Business',
         can_purchase_credits=True,
         models=['all'],
@@ -123,6 +133,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
         app_triggers_limit=100,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
     
@@ -140,6 +155,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=20,
         scheduled_triggers_limit=20,
         app_triggers_limit=50,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
     'tier_50_400': Tier(
@@ -153,6 +173,11 @@ TIERS: Dict[str, Tier] = {
         thread_limit=5000,
         concurrent_runs=30,
         custom_workers_limit=100,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         scheduled_triggers_limit=100,
         app_triggers_limit=200,
         monthly_refill_enabled=True
@@ -170,6 +195,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=200,
         scheduled_triggers_limit=200,
         app_triggers_limit=500,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
     'tier_200_1000': Tier(
@@ -185,6 +215,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=500,
         scheduled_triggers_limit=500,
         app_triggers_limit=1000,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
     'tier_150_1200': Tier(
@@ -200,6 +235,11 @@ TIERS: Dict[str, Tier] = {
         custom_workers_limit=500,
         scheduled_triggers_limit=500,
         app_triggers_limit=1000,
+        daily_credit_config={
+            'enabled': True,
+            'amount': Decimal('2.00'),
+            'refresh_interval_hours': 24
+        },
         monthly_refill_enabled=True
     ),
 }
@@ -239,6 +279,7 @@ def can_purchase_credits(tier_name: str) -> bool:
 def is_model_allowed(tier_name: str, model: str) -> bool:
     tier = TIERS.get(tier_name, TIERS['none'])
     
+    # Tier has access to all models
     if 'all' in tier.models:
         return True
     
@@ -249,6 +290,18 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
     if not model_obj:
         return False
     
+    # Check the model's tier_availability from the registry
+    # This is the primary source of truth for model access
+    if tier_name in ['free', 'none']:
+        # Free tier can only access models with "free" in tier_availability
+        if 'free' in model_obj.tier_availability:
+            return True
+    else:
+        # Paid tiers can access models with "paid" in tier_availability
+        if 'paid' in model_obj.tier_availability:
+            return True
+    
+    # Fallback: check against tier's hardcoded patterns
     for allowed_pattern in tier.models:
         if allowed_pattern.lower() in model_obj.name.lower():
             return True

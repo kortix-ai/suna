@@ -6,7 +6,8 @@ import stripe
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.distributed_lock import DistributedLock
-from core.billing.shared.config import get_tier_by_price_id, get_plan_type, is_commitment_price_id
+from core.billing.shared.config import get_tier_by_price_id, get_tier_by_name, get_plan_type, is_commitment_price_id
+from core.billing.shared.cache_utils import invalidate_account_state_cache
 
 from ..services.subscription_service import SubscriptionService
 from ..services.cleanup_service import CleanupService
@@ -109,6 +110,11 @@ class SubscriptionHandler:
             
             from core.billing.subscriptions import subscription_service
             await subscription_service.handle_subscription_change(subscription, previous_attributes)
+        
+        # Invalidate account state cache after any subscription change
+        account_id = await self.subscription_service.get_account_id(subscription)
+        if account_id:
+            await invalidate_account_state_cache(account_id)
     
     @classmethod
     async def handle_subscription_deleted(cls, event, client):
@@ -131,6 +137,9 @@ class SubscriptionHandler:
             )
         
         await self.cancellation_service.process_subscription_deletion(subscription, other_active_subs)
+        
+        # Invalidate account state cache after subscription deletion
+        await invalidate_account_state_cache(account_id)
     
     async def _handle_subscription_updated(self, event, subscription, client):
         account_id = await self.subscription_service.get_account_id(subscription)
@@ -195,13 +204,30 @@ class SubscriptionHandler:
             return
         
         current_price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+        current_tier_info = get_tier_by_price_id(current_price_id) if current_price_id else None
         
+        # Check if scheduled downgrade completed (current tier matches scheduled tier)
         if self.commitment_service.is_scheduled_downgrade_ready(scheduled_changes, current_price_id):
-            tier_info = get_tier_by_price_id(current_price_id)
-            if tier_info:
-                await self.subscription_service.repository.clear_scheduled_changes(account_id, tier_info.name)
+            if current_tier_info:
+                await self.subscription_service.repository.clear_scheduled_changes(account_id, current_tier_info.name)
                 await Cache.invalidate(f"subscription_tier:{account_id}")
-                logger.info(f"[DOWNGRADE] ✅ Applied scheduled downgrade to {tier_info.name}")
+                logger.info(f"[DOWNGRADE] ✅ Applied scheduled downgrade to {current_tier_info.name}")
+            return
+        
+        # Check if user upgraded to a higher tier than the scheduled downgrade target
+        # If so, cancel the scheduled downgrade
+        scheduled_tier_key = scheduled_changes.get('scheduled_tier_change')
+        if scheduled_tier_key and current_tier_info:
+            scheduled_tier_info = get_tier_by_name(scheduled_tier_key)
+            if scheduled_tier_info:
+                current_credits = float(current_tier_info.monthly_credits) if current_tier_info.monthly_credits else 0
+                scheduled_credits = float(scheduled_tier_info.monthly_credits) if scheduled_tier_info.monthly_credits else 0
+                
+                # If current tier is higher than scheduled tier, user upgraded - cancel scheduled downgrade
+                if current_credits > scheduled_credits:
+                    await self.subscription_service.repository.clear_scheduled_changes(account_id, current_tier_info.name)
+                    await Cache.invalidate(f"subscription_tier:{account_id}")
+                    logger.info(f"[UPGRADE] Cancelled scheduled downgrade to {scheduled_tier_info.display_name} - user upgraded to {current_tier_info.display_name}")
     
     async def _handle_commitment_updates(self, event, subscription: Dict, account_id: str):
         price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
