@@ -27,7 +27,9 @@ import {
   MessageSquarePlus,
   Palette,
   Presentation,
-  type LucideIcon
+  Settings,
+  type LucideIcon,
+  ImageIcon
 } from 'lucide-react-native';
 
 export interface ToolMetadata {
@@ -81,6 +83,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
   },
 
   // Browser Tools
+  'browser-act': {
+    icon: MonitorPlay,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Browser',
+    defaultTitle: 'Browser Action',
+  },
   'browser-navigate-to': {
     icon: MonitorPlay,
     iconColor: 'text-blue-600',
@@ -323,6 +332,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'Knowledge Base',
     defaultTitle: 'Initialized',
   },
+  'init-kb': {
+    icon: BookOpen,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Knowledge Base',
+    defaultTitle: 'Initialized',
+  },
   'kb-search': {
     icon: Database,
     iconColor: 'text-blue-500',
@@ -336,6 +352,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     iconBgColor: 'bg-blue-500/10',
     subtitle: 'Knowledge Base',
     defaultTitle: 'Contents',
+  },
+  'global-kb-list-contents': {
+    icon: BookOpen,
+    iconColor: 'text-emerald-600',
+    iconBgColor: 'bg-emerald-50',
+    subtitle: 'Knowledge Base',
+    defaultTitle: 'KB Contents',
   },
   'kb-sync': {
     icon: Database,
@@ -368,6 +391,20 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     iconBgColor: 'bg-emerald-50',
     subtitle: 'Data Provider',
     defaultTitle: 'Data Retrieved',
+  },
+  'execute-data-provider-call': {
+    icon: Network,
+    iconColor: 'text-purple-600',
+    iconBgColor: 'bg-purple-50',
+    subtitle: 'Data Provider',
+    defaultTitle: 'API Call',
+  },
+  'get-data-provider-endpoints': {
+    icon: Database,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Data Provider',
+    defaultTitle: 'Endpoints Loaded',
   },
 
   // Document Parser
@@ -431,6 +468,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'Author Details',
     defaultTitle: 'Author Information',
   },
+  'get-author-details': {
+    icon: GraduationCap,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Author Details',
+    defaultTitle: 'Author Information',
+  },
   'author-papers': {
     icon: GraduationCap,
     iconColor: 'text-blue-600',
@@ -464,6 +508,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
 
   // VAPI Tools
   'make-call': {
+    icon: Phone,
+    iconColor: 'text-green-600',
+    iconBgColor: 'bg-green-50',
+    subtitle: 'Phone Call',
+    defaultTitle: 'Call Started',
+  },
+  'make-phone-call': {
     icon: Phone,
     iconColor: 'text-green-600',
     iconBgColor: 'bg-green-50',
@@ -507,6 +558,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'MCP Server',
     defaultTitle: 'Server Action',
   },
+  'get-current-agent-config': {
+    icon: Settings,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Agent Config',
+    defaultTitle: 'Current Configuration',
+  },
 
   // Agent Tool
   'agent': {
@@ -543,6 +601,13 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'Designer',
     defaultTitle: 'Design Generated',
   },
+  'designer-create-or-edit': {
+    icon: Palette,
+    iconColor: 'text-purple-600',
+    iconBgColor: 'bg-purple-50',
+    subtitle: 'Designer',
+    defaultTitle: 'Design Created',
+  },
 
   // Image Edit
   'image-edit': {
@@ -552,14 +617,102 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'Image Edit',
     defaultTitle: 'Image Edited',
   },
+  'image-edit-or-generate': {
+    icon: Palette,
+    iconColor: 'text-pink-600',
+    iconBgColor: 'bg-pink-50',
+    subtitle: 'AI Image',
+    defaultTitle: 'AI Image Generated',
+  },
 
-  // Presentation Tool
+  // Load Image
+  'load-image': {
+    icon: ImageIcon,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Image',
+    defaultTitle: 'Load Image',
+  },
+
+  // Presentation Tools
   'presentation': {
     icon: Presentation,
     iconColor: 'text-orange-600',
     iconBgColor: 'bg-orange-50',
     subtitle: 'Presentation',
     defaultTitle: 'Slides Created',
+  },
+  'list-presentations': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentations',
+    defaultTitle: 'Presentations Listed',
+  },
+  'create-presentation-outline': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Outline Created',
+  },
+  'list-presentation-templates': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Templates Listed',
+  },
+  'create-slide': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Slide Created',
+  },
+  'list-slides': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Slides Listed',
+  },
+  'delete-slide': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Slide Deleted',
+  },
+  'delete-presentation': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Presentation Deleted',
+  },
+  'validate-slide': {
+    icon: Presentation,
+    iconColor: 'text-orange-600',
+    iconBgColor: 'bg-orange-50',
+    subtitle: 'Presentation',
+    defaultTitle: 'Slide Validated',
+  },
+  'export-to-pdf': {
+    icon: FileText,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Export',
+    defaultTitle: 'Exported to PDF',
+    getTitle: (args) => args?.presentation_name ? `${args.presentation_name}.pdf` : 'Exported to PDF',
+  },
+  'export-to-pptx': {
+    icon: Presentation,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Export',
+    defaultTitle: 'Exported to PPTX',
+    getTitle: (args) => args?.presentation_name ? `${args.presentation_name}.pptx` : 'Exported to PPTX',
   },
 };
 

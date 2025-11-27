@@ -36,6 +36,8 @@ export function extractBrowserUrl(content: string | undefined): string | null {
 
 export function getBrowserOperation(toolName: string): string {
   const operations: Record<string, string> = {
+    'browser-act': 'Browser Action',
+    'browser_act': 'Browser Action',
     'browser-navigate-to': 'Navigate',
     'browser-click-element': 'Click Element',
     'browser-input-text': 'Input Text',

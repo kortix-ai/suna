@@ -179,22 +179,7 @@ export function BrowserToolView({
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
       <View className="px-6 gap-6">
-        <View className="flex-row items-center justify-end gap-2">
-          {(result || parameters) && (
-            <Pressable
-              onPress={toggleContext}
-              className="bg-muted/30 rounded-xl p-2"
-            >
-              <Icon
-                as={showContext ? ImageIcon : Code2}
-                size={16}
-                className="text-foreground/60"
-              />
-            </Pressable>
-          )}
-        </View>
-
-        {showContext ? renderContext() : renderScreenshot()}
+        {renderScreenshot()}
       </View>
     </ScrollView>
   );

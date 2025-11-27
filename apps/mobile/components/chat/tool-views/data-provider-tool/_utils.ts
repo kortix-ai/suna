@@ -72,3 +72,83 @@ export function extractDataProviderData({ toolCall, toolResult }: { toolCall: To
   };
 }
 
+export interface DataProviderEndpointsData {
+  serviceName: string | null;
+  endpoints: any;
+  success: boolean;
+}
+
+export function extractDataProviderEndpointsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DataProviderEndpointsData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+  
+  let output: any = {};
+  if (toolResult?.output) {
+    if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
+    } else if (typeof toolResult.output === 'string') {
+      try {
+        output = JSON.parse(toolResult.output);
+      } catch (e) {
+        // Not JSON, ignore
+      }
+    }
+  }
+
+  return {
+    serviceName: args.service_name || args.serviceName || null,
+    endpoints: output.endpoints || null,
+    success: toolResult?.success ?? true
+  };
+}
+
+export interface DataProviderCallData {
+  serviceName: string | null;
+  route: string | null;
+  payload: any;
+  output: string | null;
+  success: boolean;
+}
+
+export function extractDataProviderCallData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DataProviderCallData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+  
+  let output: any = null;
+  if (toolResult?.output) {
+    if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = typeof toolResult.output.output === 'string' 
+        ? toolResult.output.output 
+        : JSON.stringify(toolResult.output, null, 2);
+    } else if (typeof toolResult.output === 'string') {
+      output = toolResult.output;
+    }
+  }
+
+  return {
+    serviceName: args.service_name || args.serviceName || null,
+    route: args.route || null,
+    payload: args.payload || null,
+    output,
+    success: toolResult?.success ?? true
+  };
+}
+

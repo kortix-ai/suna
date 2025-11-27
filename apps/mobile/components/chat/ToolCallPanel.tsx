@@ -28,7 +28,12 @@ interface ToolCallPanelProps {
   project?: {
     id: string;
     name: string;
-    sandbox_id?: string;
+    sandbox?: {
+      vnc_preview?: string;
+      sandbox_url?: string;
+      id?: string;
+      pass?: string;
+    };
   };
 }
 

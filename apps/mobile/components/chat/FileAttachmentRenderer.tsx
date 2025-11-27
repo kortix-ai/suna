@@ -22,10 +22,10 @@ import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { WebView } from 'react-native-webview';
 import { getAuthToken } from '@/api/config';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -58,18 +58,18 @@ interface FileAttachmentRendererProps {
 function parseFilePath(path: string): FileAttachment {
   const name = path.split('/').pop() || 'file';
   const extension = name.split('.').pop()?.toLowerCase();
-  
+
   const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
   const documentExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
-  
+
   let type: 'image' | 'document' | 'other' = 'other';
-  
+
   if (extension && imageExtensions.includes(extension)) {
     type = 'image';
   } else if (extension && documentExtensions.includes(extension)) {
     type = 'document';
   }
-  
+
   return { path, type, name, extension };
 }
 
@@ -85,12 +85,12 @@ export function FileAttachmentRenderer({
   onPress,
 }: FileAttachmentRendererProps) {
   const file = useMemo(() => parseFilePath(filePath), [filePath]);
-  
+
   switch (file.type) {
     case 'image':
       return (
-        <ImageAttachment 
-          file={file} 
+        <ImageAttachment
+          file={file}
           sandboxId={sandboxId}
           compact={compact}
           showName={showName}
@@ -100,7 +100,7 @@ export function FileAttachmentRenderer({
       );
     case 'document':
       return (
-        <DocumentAttachment 
+        <DocumentAttachment
           file={file}
           compact={compact}
           showPreview={showPreview}
@@ -110,7 +110,7 @@ export function FileAttachmentRenderer({
       );
     default:
       return (
-        <GenericAttachment 
+        <GenericAttachment
           file={file}
           compact={compact}
           onPress={onPress}
@@ -141,7 +141,7 @@ function ImageAttachment({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const scale = useSharedValue(1);
-  
+
   // For sandbox files, we need to use blob URLs with authentication
   // The useSandboxImageBlob hook handles this properly
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
@@ -152,33 +152,41 @@ function ImageAttachment({
       if (!filePath.startsWith('/')) {
         filePath = '/workspace/' + filePath;
       }
-      
+
       const fetchImage = async () => {
         try {
           const token = await getAuthToken();
-          const response = await fetch(
-            `${process.env.EXPO_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${token}`,
-              },
-            }
-          );
-          
+          const url = `${process.env.EXPO_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`;
+          console.log('[ImageAttachment] Fetching image:', { url, filePath, sandboxId });
+
+          const response = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+
           if (!response.ok) {
+            console.error('[ImageAttachment] Fetch failed:', response.status, response.statusText);
             throw new Error(`Failed to fetch image: ${response.status}`);
           }
-          
+
           const blob = await response.blob();
-          
+          console.log('[ImageAttachment] Blob received:', blob.size, blob.type);
+
           import('@/lib/files/hooks').then(({ blobToDataURL }) => {
-            blobToDataURL(blob).then(setBlobUrl).catch(console.error);
+            blobToDataURL(blob).then((url) => {
+              console.log('[ImageAttachment] Blob URL created');
+              setBlobUrl(url);
+            }).catch((err) => {
+              console.error('[ImageAttachment] blobToDataURL failed:', err);
+            });
           });
         } catch (error) {
           console.error('[ImageAttachment] Failed to fetch:', error);
+          setHasError(true);
         }
       };
-      
+
       fetchImage();
     } else {
       setBlobUrl(file.path);
@@ -186,6 +194,9 @@ function ImageAttachment({
   }, [sandboxId, file.path]);
 
   const imageUrl = blobUrl || file.path;
+
+  // For sandbox images, wait for blob URL before rendering
+  const shouldWaitForBlob = sandboxId && !blobUrl && !hasError;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -199,7 +210,7 @@ function ImageAttachment({
 
   const containerWidth = showPreview ? '100%' : (compact ? 120 : 200);
   const containerHeight = showPreview ? 240 : (compact ? 120 : 200);
-  
+
   return (
     <View className="mb-2" style={{ width: showPreview ? '100%' : undefined }}>
       <AnimatedPressable
@@ -214,34 +225,51 @@ function ImageAttachment({
         className="rounded-2xl overflow-hidden border border-border bg-card"
       >
         <View style={{ width: showPreview ? '100%' : containerWidth, height: containerHeight }}>
-          {!hasError ? (
+          {!hasError && !shouldWaitForBlob ? (
             <>
               <Image
                 source={{ uri: imageUrl }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
-                onLoadStart={() => setIsLoading(true)}
-                onLoadEnd={() => setIsLoading(false)}
-                onError={() => {
+                onLoadStart={() => {
+                  console.log('[ImageAttachment] Image loading started:', imageUrl?.substring(0, 50));
+                  setIsLoading(true);
+                }}
+                onLoadEnd={() => {
+                  console.log('[ImageAttachment] Image loaded successfully');
+                  setIsLoading(false);
+                }}
+                onError={(error) => {
+                  console.error('[ImageAttachment] Image onError:', error.nativeEvent);
                   setIsLoading(false);
                   setHasError(true);
                 }}
               />
-              
+
               {isLoading && (
                 <View className="absolute inset-0 bg-muted/50 items-center justify-center">
-                  <ActivityIndicator 
-                    size="small" 
-                    color={colorScheme === 'dark' ? '#ffffff' : '#000000'} 
+                  <ActivityIndicator
+                    size="small"
+                    color={colorScheme === 'dark' ? '#ffffff' : '#000000'}
                   />
                 </View>
               )}
             </>
+          ) : shouldWaitForBlob ? (
+            <View className="flex-1 items-center justify-center bg-muted/30">
+              <ActivityIndicator
+                size="small"
+                color={colorScheme === 'dark' ? '#ffffff' : '#000000'}
+              />
+              <Text className="text-xs text-muted-foreground mt-2">
+                Loading...
+              </Text>
+            </View>
           ) : (
             <View className="flex-1 items-center justify-center bg-muted/30">
-              <Icon 
-                as={ImageIcon} 
-                size={32} 
+              <Icon
+                as={ImageIcon}
+                size={32}
                 className="text-muted-foreground mb-2"
                 strokeWidth={1.5}
               />
@@ -251,22 +279,22 @@ function ImageAttachment({
             </View>
           )}
         </View>
-        
+
         {/* Image overlay with icon */}
         {!isLoading && !hasError && (
           <View className="absolute top-2 right-2 bg-black/50 rounded-full p-1.5">
-            <Icon 
-              as={ExternalLink} 
-              size={12} 
+            <Icon
+              as={ExternalLink}
+              size={12}
               className="text-white"
               strokeWidth={2}
             />
           </View>
         )}
       </AnimatedPressable>
-      
+
       {showName && !showPreview && (
-        <Text 
+        <Text
           className="text-xs text-muted-foreground mt-1.5 font-roobert"
           numberOfLines={1}
           style={{ width: typeof containerWidth === 'number' ? containerWidth : undefined }}
@@ -299,7 +327,7 @@ function DocumentAttachment({
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
@@ -309,7 +337,7 @@ function DocumentAttachment({
       onPress(file.path);
     }
   };
-  
+
   const isPreviewable = useMemo(() => {
     if (!showPreview || !file.extension) return false;
     const ext = file.extension.toLowerCase();
@@ -321,28 +349,28 @@ function DocumentAttachment({
     if (isPreviewable && sandboxId) {
       setIsLoading(true);
       setHasError(false);
-      
+
       const fetchFileContent = async () => {
         try {
           const token = await getAuthToken();
           const apiUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
-          
+
           let filePath = file.path;
           if (!filePath.startsWith('/')) {
             filePath = '/workspace/' + filePath;
           }
-          
+
           const url = `${apiUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`;
           const response = await fetch(url, {
             headers: {
               'Authorization': `Bearer ${token}`,
             },
           });
-          
+
           if (!response.ok) {
             throw new Error(`Failed to fetch file: ${response.status}`);
           }
-          
+
           const text = await response.text();
           console.log('[DocumentAttachment] Fetched content length:', text.length);
           setFileContent(text);
@@ -353,16 +381,16 @@ function DocumentAttachment({
           setIsLoading(false);
         }
       };
-      
+
       fetchFileContent();
     }
   }, [isPreviewable, sandboxId, file.path]);
-  
+
   if (showPreview && isPreviewable) {
     const ext = file.extension?.toLowerCase();
     const isMarkdown = ext === 'md' || ext === 'markdown';
     const isHtml = ext === 'html' || ext === 'htm';
-    
+
     console.log('[DocumentAttachment] Render state:', {
       isLoading,
       hasError,
@@ -373,7 +401,7 @@ function DocumentAttachment({
       isHtml,
       path: file.path,
     });
-    
+
     return (
       <View className="mb-3 rounded-2xl overflow-hidden border border-border bg-card" style={{ width: '100%' }}>
         <Pressable onPress={handlePress} className="border-b border-border bg-neutral-200 dark:bg-neutral-800 px-4 py-3">
@@ -387,7 +415,7 @@ function DocumentAttachment({
             <Icon as={ExternalLink} size={14} className="text-muted-foreground" />
           </View>
         </Pressable>
-        
+
         <View className="bg-background" style={{ height: 400 }}>
           {isLoading ? (
             <View className="flex-1 items-center justify-center p-8">
@@ -447,16 +475,16 @@ function DocumentAttachment({
       className="flex-row items-center bg-muted/30 rounded-2xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
     >
       <View className="bg-primary/10 rounded-2xl p-2 mr-3">
-        <Icon 
-          as={FileText} 
-          size={compact ? 18 : 20} 
+        <Icon
+          as={FileText}
+          size={compact ? 18 : 20}
           className="text-primary"
           strokeWidth={2}
         />
       </View>
-      
+
       <View className="flex-1">
-        <Text 
+        <Text
           className="text-sm font-roobert-medium text-foreground"
           numberOfLines={1}
         >
@@ -468,10 +496,10 @@ function DocumentAttachment({
           </Text>
         )}
       </View>
-      
-      <Icon 
-        as={ExternalLink} 
-        size={16} 
+
+      <Icon
+        as={ExternalLink}
+        size={16}
         className="text-muted-foreground ml-2"
         strokeWidth={2}
       />
@@ -492,7 +520,7 @@ function GenericAttachment({
   onPress?: (path: string) => void;
 }) {
   const scale = useSharedValue(1);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
@@ -516,16 +544,16 @@ function GenericAttachment({
       className="flex-row items-center bg-muted/30 rounded-2xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
     >
       <View className="bg-muted rounded-2xl p-2 mr-3">
-        <Icon 
-          as={File} 
-          size={compact ? 18 : 20} 
+        <Icon
+          as={File}
+          size={compact ? 18 : 20}
           className="text-muted-foreground"
           strokeWidth={2}
         />
       </View>
-      
+
       <View className="flex-1">
-        <Text 
+        <Text
           className="text-sm font-roobert-medium text-foreground"
           numberOfLines={1}
         >
@@ -537,10 +565,10 @@ function GenericAttachment({
           </Text>
         )}
       </View>
-      
-      <Icon 
-        as={Download} 
-        size={16} 
+
+      <Icon
+        as={Download}
+        size={16}
         className="text-muted-foreground ml-2"
         strokeWidth={2}
       />
@@ -556,11 +584,11 @@ export function extractFileReferences(content: string): string[] {
   const filePattern = /\[Uploaded File: ([^\]]+)\]/g;
   const matches = content.matchAll(filePattern);
   const files: string[] = [];
-  
+
   for (const match of matches) {
     files.push(match[1]);
   }
-  
+
   return files;
 }
 
@@ -588,7 +616,7 @@ export function FileAttachmentsGrid({
   showPreviews?: boolean;
 }) {
   if (filePaths.length === 0) return null;
-  
+
   return (
     <View className="my-2">
       {filePaths.map((path, index) => (
