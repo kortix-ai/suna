@@ -19,7 +19,7 @@ class NotificationService:
     async def send_notification(
         self,
         event_type: NotificationEvent,
-        user_id: str,
+        account_id: str,
         data: Dict[str, Any],
         channels: Optional[List[NotificationChannel]] = None,
         priority: NotificationPriority = NotificationPriority.MEDIUM,
@@ -27,22 +27,22 @@ class NotificationService:
         thread_id: Optional[str] = None
     ) -> Dict[str, Any]:
         try:
-            user_prefs = await self.get_user_notification_settings(user_id)
+            account_prefs = await self.get_account_notification_settings(account_id)
             
-            if not user_prefs:
-                user_prefs = await self.create_default_settings(user_id)
+            if not account_prefs:
+                account_prefs = await self.create_default_settings(account_id)
             
-            if not self._should_send_notification(event_type, user_prefs):
-                logger.info(f"Notification {event_type} disabled for user {user_id}")
-                return {"success": False, "reason": "Notification disabled by user preferences"}
+            if not self._should_send_notification(event_type, account_prefs):
+                logger.info(f"Notification {event_type} disabled for account {account_id}")
+                return {"success": False, "reason": "Notification disabled by account preferences"}
             
-            enabled_channels = await self.get_enabled_channels(user_id, event_type, channels)
+            enabled_channels = await self.get_enabled_channels(account_id, event_type, channels)
             
             if enabled_channels and thread_id:
                 filtered_channels = []
                 for channel in enabled_channels:
                     should_send = await presence_service.should_send_notification(
-                        user_id=user_id,
+                        account_id=account_id,
                         thread_id=thread_id,
                         channel=channel.value
                     )
@@ -50,17 +50,17 @@ class NotificationService:
                         filtered_channels.append(channel)
                     else:
                         logger.info(
-                            f"Suppressing {channel.value} notification for user {user_id} "
+                            f"Suppressing {channel.value} notification for account {account_id} "
                             f"(actively viewing thread {thread_id})"
                         )
                 
                 enabled_channels = filtered_channels
             
             if not enabled_channels:
-                logger.info(f"No enabled channels for {event_type} for user {user_id}")
+                logger.info(f"No enabled channels for {event_type} for account {account_id}")
                 return {"success": False, "reason": "No enabled channels"}
             
-            user_info = await self._get_user_info(user_id)
+            account_info = await self._get_account_info(account_id)
             
             event_name = self._map_event_to_workflow(event_type)
             
@@ -72,10 +72,10 @@ class NotificationService:
             
             result = await self.novu.trigger_notification(
                 event_name=event_name,
-                user_id=user_id,
+                user_id=account_id,
                 payload=payload,
-                subscriber_email=user_info.get("email"),
-                subscriber_name=user_info.get("name"),
+                subscriber_email=account_info.get("email"),
+                subscriber_name=account_info.get("name"),
                 override_channels=override_channels
             )
             
@@ -87,7 +87,7 @@ class NotificationService:
     
     async def send_task_completion_notification(
         self,
-        user_id: str,
+        account_id: str,
         task_name: str,
         thread_id: str,
         agent_name: Optional[str] = None,
@@ -97,20 +97,20 @@ class NotificationService:
             from core.notifications.presence_service import presence_service
             
             should_send = await presence_service.should_send_notification(
-                user_id=user_id,
+                account_id=account_id,
                 thread_id=thread_id,
                 channel="email"
             )
             
             if not should_send:
-                logger.info(f"Suppressing task completion notification for user {user_id} (actively viewing thread {thread_id})")
-                return {"success": False, "reason": "User is actively viewing thread"}
+                logger.info(f"Suppressing task completion notification for account {account_id} (actively viewing thread {thread_id})")
+                return {"success": False, "reason": "Account is actively viewing thread"}
             
-            user_info = await self._get_user_info(user_id)
-            user_name = user_info.get("name")
-            user_email = user_info.get("email")
+            account_info = await self._get_account_info(account_id)
+            account_name = account_info.get("name")
+            account_email = account_info.get("email")
             
-            first_name = user_name.split()[0] if user_name else "User"
+            first_name = account_name.split()[0] if account_name else "User"
             
             client = await self.db.client
             thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).maybe_single().execute()
@@ -126,13 +126,13 @@ class NotificationService:
             
             result = await self.novu.trigger_workflow(
                 workflow_id="task-completed",
-                subscriber_id=user_id,
+                subscriber_id=account_id,
                 payload=payload,
-                subscriber_email=user_email,
-                subscriber_name=user_name
+                subscriber_email=account_email,
+                subscriber_name=account_name
             )
             
-            logger.info(f"Task completion workflow triggered for user {user_id}: {result}")
+            logger.info(f"Task completion workflow triggered for account {account_id}: {result}")
             return {"success": True, "result": result}
             
         except Exception as e:
@@ -141,7 +141,7 @@ class NotificationService:
     
     async def send_task_failed_notification(
         self,
-        user_id: str,
+        account_id: str,
         task_name: str,
         task_url: str,
         failure_reason: str,
@@ -153,21 +153,21 @@ class NotificationService:
             
             if thread_id:
                 should_send = await presence_service.should_send_notification(
-                    user_id=user_id,
+                    account_id=account_id,
                     thread_id=thread_id,
                     channel="email"
                 )
                 
                 if not should_send:
-                    logger.info(f"Suppressing task failed notification for user {user_id} (actively viewing thread {thread_id})")
-                    return {"success": False, "reason": "User is actively viewing thread"}
+                    logger.info(f"Suppressing task failed notification for account {account_id} (actively viewing thread {thread_id})")
+                    return {"success": False, "reason": "Account is actively viewing thread"}
             
-            user_info = await self._get_user_info(user_id)
-            user_name = user_info.get("name")
-            user_email = user_info.get("email")
+            account_info = await self._get_account_info(account_id)
+            account_name = account_info.get("name")
+            account_email = account_info.get("email")
             
             if not first_name:
-                first_name = user_name.split()[0] if user_name else "User"
+                first_name = account_name.split()[0] if account_name else "User"
             
             payload = {
                 "first_name": first_name,
@@ -178,13 +178,13 @@ class NotificationService:
             
             result = await self.novu.trigger_workflow(
                 workflow_id="task-failed",
-                subscriber_id=user_id,
+                subscriber_id=account_id,
                 payload=payload,
-                subscriber_email=user_email,
-                subscriber_name=user_name
+                subscriber_email=account_email,
+                subscriber_name=account_name
             )
             
-            logger.info(f"Task failed workflow triggered for user {user_id}: {result}")
+            logger.info(f"Task failed workflow triggered for account {account_id}: {result}")
             return {"success": True, "result": result}
             
         except Exception as e:
@@ -193,14 +193,14 @@ class NotificationService:
     
     async def send_payment_succeeded_notification(
         self,
-        user_id: str,
+        account_id: str,
         amount: float,
         currency: str = "USD",
         plan_name: Optional[str] = None
     ) -> Dict[str, Any]:
         return await self.send_notification(
             event_type=NotificationEvent.PAYMENT_SUCCEEDED,
-            user_id=user_id,
+            account_id=account_id,
             data={
                 "amount": amount,
                 "currency": currency,
@@ -212,14 +212,14 @@ class NotificationService:
     
     async def send_payment_failed_notification(
         self,
-        user_id: str,
+        account_id: str,
         amount: float,
         currency: str = "USD",
         reason: Optional[str] = None
     ) -> Dict[str, Any]:
         return await self.send_notification(
             event_type=NotificationEvent.PAYMENT_FAILED,
-            user_id=user_id,
+            account_id=account_id,
             data={
                 "amount": amount,
                 "currency": currency,
@@ -232,13 +232,13 @@ class NotificationService:
     
     async def send_credits_low_notification(
         self,
-        user_id: str,
+        account_id: str,
         remaining_credits: float,
         threshold_percentage: int = 20
     ) -> Dict[str, Any]:
         return await self.send_notification(
             event_type=NotificationEvent.CREDITS_LOW,
-            user_id=user_id,
+            account_id=account_id,
             data={
                 "remaining_credits": remaining_credits,
                 "threshold_percentage": threshold_percentage,
@@ -249,7 +249,7 @@ class NotificationService:
     
     async def send_promotional_notification(
         self,
-        user_id: str,
+        account_id: str,
         title: str,
         message: str,
         action_url: Optional[str] = None,
@@ -257,7 +257,7 @@ class NotificationService:
     ) -> Dict[str, Any]:
         return await self.send_notification(
             event_type=NotificationEvent.PROMOTIONAL,
-            user_id=user_id,
+            account_id=account_id,
             data={
                 "title": title,
                 "message": message,
@@ -268,26 +268,26 @@ class NotificationService:
         )
     
     
-    async def send_welcome_email(self, user_id: str, user_name: Optional[str] = None, user_email: Optional[str] = None) -> Dict[str, Any]:
+    async def send_welcome_email(self, account_id: str, account_name: Optional[str] = None, account_email: Optional[str] = None) -> Dict[str, Any]:
         try:
-            if not user_email or not user_name:
-                user_info = await self._get_user_info(user_id)
-                user_email = user_email or user_info.get("email")
-                user_name = user_name or user_info.get("name")
+            if not account_email or not account_name:
+                account_info = await self._get_account_info(account_id)
+                account_email = account_email or account_info.get("email")
+                account_name = account_name or account_info.get("name")
             
             result = await self.novu.trigger_workflow(
                 workflow_id="welcome-email",
-                subscriber_id=user_id,
+                subscriber_id=account_id,
                 payload={
-                    "user_name": user_name,
+                    "user_name": account_name,
                     "from_url": "https://www.kortix.com",
                     "discord_url": "https://discord.com/invite/RvFhXUdZ9H"
                 },
-                subscriber_email=user_email,
-                subscriber_name=user_name
+                subscriber_email=account_email,
+                subscriber_name=account_name
             )
             
-            logger.info(f"Welcome email workflow triggered for user {user_id}")
+            logger.info(f"Welcome email workflow triggered for account {account_id}")
             return {"success": True, "result": result}
             
         except Exception as e:
@@ -296,46 +296,46 @@ class NotificationService:
     
 
 
-    async def get_user_notification_settings(self, user_id: str) -> Optional[UserNotificationSettings]:
+    async def get_account_notification_settings(self, account_id: str) -> Optional[UserNotificationSettings]:
         try:
             client = await self.db.client
-            response = await client.table('notification_settings').select('*').eq('user_id', user_id).maybe_single().execute()
+            response = await client.table('notification_settings').select('*').eq('account_id', account_id).maybe_single().execute()
             
             if response and response.data:
                 return UserNotificationSettings(**response.data)
             return None
             
         except Exception as e:
-            logger.error(f"Error getting notification settings for user {user_id}: {str(e)}")
+            logger.error(f"Error getting notification settings for account {account_id}: {str(e)}")
             return None
     
-    async def update_user_notification_settings(
+    async def update_account_notification_settings(
         self,
-        user_id: str,
+        account_id: str,
         settings: Dict[str, Any]
     ) -> bool:
         try:
             client = await self.db.client
             
-            settings['user_id'] = user_id
+            settings['account_id'] = account_id
             settings['updated_at'] = datetime.now(timezone.utc).isoformat()
             
             await client.table('notification_settings').upsert(settings).execute()
             
-            logger.info(f"Updated notification settings for user {user_id}")
+            logger.info(f"Updated notification settings for account {account_id}")
             return True
             
         except Exception as e:
             logger.error(f"Error updating notification settings: {str(e)}")
             return False
     
-    async def create_default_settings(self, user_id: str) -> UserNotificationSettings:
+    async def create_default_settings(self, account_id: str) -> UserNotificationSettings:
         try:
             client = await self.db.client
             now = datetime.now(timezone.utc).isoformat()
             
             default_settings = {
-                'user_id': user_id,
+                'account_id': account_id,
                 'email_enabled': True,
                 'push_enabled': False,
                 'in_app_enabled': True,
@@ -345,7 +345,7 @@ class NotificationService:
             
             await client.table('notification_settings').insert(default_settings).execute()
             
-            logger.info(f"Created default notification settings for user {user_id}")
+            logger.info(f"Created default notification settings for account {account_id}")
             return UserNotificationSettings(**default_settings)
             
         except Exception as e:
@@ -354,31 +354,31 @@ class NotificationService:
     
     async def get_enabled_channels(
         self,
-        user_id: str,
+        account_id: str,
         event_type: NotificationEvent,
         requested_channels: Optional[List[NotificationChannel]] = None
     ) -> List[NotificationChannel]:
-        user_settings = await self.get_user_notification_settings(user_id)
+        account_settings = await self.get_account_notification_settings(account_id)
         
-        if not user_settings:
+        if not account_settings:
             return [NotificationChannel.EMAIL, NotificationChannel.IN_APP]
         
         enabled = []
         
-        if user_settings.email_enabled and (not requested_channels or NotificationChannel.EMAIL in requested_channels):
+        if account_settings.email_enabled and (not requested_channels or NotificationChannel.EMAIL in requested_channels):
             enabled.append(NotificationChannel.EMAIL)
         
-        if user_settings.in_app_enabled and (not requested_channels or NotificationChannel.IN_APP in requested_channels):
+        if account_settings.in_app_enabled and (not requested_channels or NotificationChannel.IN_APP in requested_channels):
             enabled.append(NotificationChannel.IN_APP)
         
-        if user_settings.push_enabled and (not requested_channels or NotificationChannel.PUSH in requested_channels):
+        if account_settings.push_enabled and (not requested_channels or NotificationChannel.PUSH in requested_channels):
             enabled.append(NotificationChannel.PUSH)
         
         return enabled
     
     async def register_device_token(
         self,
-        user_id: str,
+        account_id: str,
         device_token: str,
         device_type: str = "mobile",
         provider: str = "fcm"
@@ -387,7 +387,7 @@ class NotificationService:
             client = await self.db.client
             
             await client.table('device_tokens').upsert({
-                'user_id': user_id,
+                'account_id': account_id,
                 'device_token': device_token,
                 'device_type': device_type,
                 'provider': provider,
@@ -397,29 +397,29 @@ class NotificationService:
             }).execute()
             
             await self.novu.register_push_token(
-                user_id=user_id,
+                user_id=account_id,
                 provider_id=provider,
                 device_token=device_token,
                 device_type=device_type
             )
             
-            logger.info(f"Registered device token for user {user_id}")
+            logger.info(f"Registered device token for account {account_id}")
             return True
             
         except Exception as e:
             logger.error(f"Error registering device token: {str(e)}")
             return False
     
-    async def unregister_device_token(self, user_id: str, device_token: str) -> bool:
+    async def unregister_device_token(self, account_id: str, device_token: str) -> bool:
         try:
             client = await self.db.client
             
             await client.table('device_tokens').update({
                 'is_active': False,
                 'updated_at': datetime.now(timezone.utc).isoformat()
-            }).eq('user_id', user_id).eq('device_token', device_token).execute()
+            }).eq('account_id', account_id).eq('device_token', device_token).execute()
             
-            logger.info(f"Unregistered device token for user {user_id}")
+            logger.info(f"Unregistered device token for account {account_id}")
             return True
             
         except Exception as e:
@@ -429,7 +429,7 @@ class NotificationService:
     def _should_send_notification(
         self,
         event_type: NotificationEvent,
-        user_settings: UserNotificationSettings
+        account_settings: UserNotificationSettings
     ) -> bool:
         return True
     
@@ -466,11 +466,11 @@ class NotificationService:
         
         return overrides
     
-    async def _get_user_info(self, user_id: str) -> Dict[str, Any]:
+    async def _get_account_info(self, account_id: str) -> Dict[str, Any]:
         try:
             client = await self.db.client
             
-            user_response = await client.auth.admin.get_user_by_id(user_id)
+            user_response = await client.auth.admin.get_user_by_id(account_id)
             
             if user_response and user_response.user:
                 user = user_response.user
@@ -486,7 +486,7 @@ class NotificationService:
             return {}
             
         except Exception as e:
-            logger.error(f"Error getting user info: {str(e)}")
+            logger.error(f"Error getting account info: {str(e)}")
             return {}
     
 

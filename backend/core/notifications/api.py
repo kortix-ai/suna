@@ -38,7 +38,7 @@ class TestNotificationRequest(BaseModel):
 
 
 class SendNotificationRequest(BaseModel):
-    user_id: str
+    account_id: str
     event_type: NotificationEvent
     data: Dict[str, Any]
     channels: Optional[List[NotificationChannel]] = None
@@ -49,11 +49,11 @@ class SendNotificationRequest(BaseModel):
 async def get_notification_settings(current_user: dict = Depends(get_current_user)):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('user_id')
-        settings = await notification_service.get_user_notification_settings(user_id)
+        account_id = current_user.get('user_id')
+        settings = await notification_service.get_account_notification_settings(account_id)
         
         if not settings:
-            settings = await notification_service.create_default_settings(user_id)
+            settings = await notification_service.create_default_settings(account_id)
         
         return {"success": True, "settings": settings.dict()}
         
@@ -69,19 +69,19 @@ async def update_notification_settings(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('user_id')
+        account_id = current_user.get('user_id')
         
         update_data = {k: v for k, v in settings_update.dict().items() if v is not None}
         
-        success = await notification_service.update_user_notification_settings(
-            user_id=user_id,
+        success = await notification_service.update_account_notification_settings(
+            account_id=account_id,
             settings=update_data
         )
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update settings")
         
-        updated_settings = await notification_service.get_user_notification_settings(user_id)
+        updated_settings = await notification_service.get_account_notification_settings(account_id)
         
         return {
             "success": True,
@@ -103,10 +103,10 @@ async def register_device_token(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('user_id')
+        account_id = current_user.get('user_id')
         
         success = await notification_service.register_device_token(
-            user_id=user_id,
+            account_id=account_id,
             device_token=token_request.device_token,
             device_type=token_request.device_type,
             provider=token_request.provider
@@ -134,10 +134,10 @@ async def unregister_device_token(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('user_id')
+        account_id = current_user.get('user_id')
         
         success = await notification_service.unregister_device_token(
-            user_id=user_id,
+            account_id=account_id,
             device_token=device_token
         )
         
@@ -163,11 +163,11 @@ async def send_test_notification(
 ):
     check_notifications_enabled()
     try:
-        user_id = current_user.get('user_id')
+        account_id = current_user.get('user_id')
         
         result = await notification_service.send_notification(
             event_type=test_request.event_type,
-            user_id=user_id,
+            account_id=account_id,
             data={
                 "title": test_request.title,
                 "message": test_request.message,
@@ -196,7 +196,7 @@ async def send_notification_admin(
     try:
         result = await notification_service.send_notification(
             event_type=notification_request.event_type,
-            user_id=notification_request.user_id,
+            account_id=notification_request.account_id,
             data=notification_request.data,
             channels=notification_request.channels,
             priority=notification_request.priority

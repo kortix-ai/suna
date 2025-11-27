@@ -382,7 +382,7 @@ async def run_agent_background(
                     if user_id:
                         notification_data = await get_thread_data(client, thread_id)
                         result = await notification_service.send_task_completion_notification(
-                            user_id=user_id,
+                            account_id=user_id,
                             task_name=notification_data['task_name'],
                             thread_id=thread_id,
                             agent_name=agent_config.get('name') if agent_config else None,
@@ -407,9 +407,9 @@ async def run_agent_background(
                 if thread_info and thread_info.data:
                     user_id = thread_info.data.get('account_id')
                     if user_id:
-                        notification_data = await get_thread_notification_data(client, thread_id)
+                        notification_data = await get_thread_data(client, thread_id)
                         result = await notification_service.send_task_failed_notification(
-                            user_id=user_id,
+                            account_id=user_id,
                             task_name=notification_data['task_name'],
                             task_url=notification_data['task_url'],
                             failure_reason=error_message,
@@ -445,7 +445,7 @@ async def run_agent_background(
                 if user_id:
                     notification_data = await get_thread_data(client, thread_id)
                     result = await notification_service.send_task_failed_notification(
-                        user_id=user_id,
+                        account_id=user_id,
                         task_name=notification_data['task_name'],
                         task_url=notification_data['task_url'],
                         failure_reason=error_message,

@@ -28,8 +28,13 @@ const StatusOverlay = lazy(() =>
 const PresentationViewerWrapper = lazy(() => 
   import('@/stores/presentation-viewer-store').then(mod => ({ default: mod.PresentationViewerWrapper }))
 );
+
 const OnboardingProvider = lazy(() => 
   import('@/components/onboarding/onboarding-provider').then(mod => ({ default: mod.OnboardingProvider }))
+);
+
+const PresenceDebug = lazy(() => 
+  import('@/components/debug/presence-debug').then(mod => ({ default: mod.PresenceDebug }))
 );
 
 // Skeleton shell that renders immediately for FCP

@@ -44,7 +44,7 @@ class NotificationPriority(str, Enum):
 
 
 class NotificationPreference(BaseModel):
-    user_id: str
+    account_id: str
     event_type: NotificationEvent
     enabled_channels: List[NotificationChannel]
     enabled: bool = True
@@ -74,7 +74,7 @@ class NotificationLog(BaseModel):
 
 
 class UserNotificationSettings(BaseModel):
-    user_id: str
+    account_id: str
     email_enabled: bool = True
     push_enabled: bool = False
     in_app_enabled: bool = True

@@ -36,6 +36,7 @@ import { useLimits } from '@/hooks/dashboard/use-limits';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Progress } from '../ui/progress';
 import { useTranslations } from 'next-intl';
+import { NotificationDropdown } from '../notifications/notification-dropdown';
 
 // Lazy load heavy components that aren't immediately visible
 const PlanSelectionModal = lazy(() => 
@@ -348,8 +349,8 @@ export function DashboardContent() {
       </Suspense>
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
-        {/* Credits Display - Top right corner */}
-        <div className="absolute flex items-center gap-2 top-4 right-4 z-10">
+        <div className="absolute flex items-center gap-2 top-4 right-4">
+        <NotificationDropdown />
           <Suspense fallback={<div className="h-8 w-20 bg-muted/30 rounded animate-pulse" />}>
             <CreditsDisplay />
           </Suspense>
