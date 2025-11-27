@@ -14,6 +14,8 @@ PODS:
   - EXJSONUtils (0.15.0)
   - EXManifests (1.0.9):
     - ExpoModulesCore
+  - EXNotifications (0.32.13):
+    - ExpoModulesCore
   - Expo (54.0.25):
     - ExpoModulesCore
     - hermes-engine
@@ -2431,6 +2433,7 @@ DEPENDENCIES:
   - EXImageLoader (from `../node_modules/expo-image-loader/ios`)
   - EXJSONUtils (from `../node_modules/expo-json-utils/ios`)
   - EXManifests (from `../node_modules/expo-manifests/ios`)
+  - EXNotifications (from `../node_modules/expo-notifications/ios`)
   - Expo (from `../node_modules/expo`)
   - expo-dev-client (from `../node_modules/expo-dev-client/ios`)
   - expo-dev-launcher (from `../node_modules/expo-dev-launcher`)
@@ -2569,6 +2572,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-json-utils/ios"
   EXManifests:
     :path: "../node_modules/expo-manifests/ios"
+  EXNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   Expo:
     :path: "../node_modules/expo"
   expo-dev-client:
@@ -2803,6 +2808,7 @@ SPEC CHECKSUMS:
   EXImageLoader: 189e3476581efe3ad4d1d3fb4735b7179eb26f05
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: 26e15640538c3d5ef028077ebcaf004b744d4932
+  EXNotifications: a62e1f8e3edd258dc3b155d3caa49f32920f1c6c
   Expo: c347cdb69706ea3de83da97ce956042aafd8e62a
   expo-dev-client: cc9491ad3e25a7a89f367c30f72884584c682b77
   expo-dev-launcher: 61322d7e368e7fa78e355b8882df90f5e8eafe93

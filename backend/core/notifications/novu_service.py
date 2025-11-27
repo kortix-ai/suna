@@ -151,9 +151,11 @@ class NovuService:
         self,
         user_id: str,
         provider_id: str,
-        credentials: Dict[str, Any]
+        credentials: Dict[str, Any],
+        integration_identifier: Optional[str] = None
     ) -> bool:
         if not self.enabled:
+            logger.debug(f"Skipping credential update (not in staging mode)")
             return True
         
         if not self.api_key:
@@ -165,18 +167,25 @@ class NovuService:
                 server_url=self.backend_url,
                 secret_key=self.api_key,
             ) as novu:
-                creds_dto = novu_py.ChannelCredentialsDto(**credentials)
+                update_params = {
+                    "subscriber_id": user_id,
+                    "provider_id": provider_id,
+                }
                 
-                novu.subscribers.credentials.update(
-                    subscriber_id=user_id,
-                    provider_id=provider_id,
-                    channel_credentials_dto=creds_dto
+                if integration_identifier:
+                    update_params["integration_identifier"] = integration_identifier
+                
+                novu.subscribers.set_credentials(
+                    **update_params,
+                    credentials=credentials
                 )
-            logger.info(f"Updated credentials for subscriber {user_id}, provider {provider_id}")
+            
+            logger.info(f"✅ Set push credentials for subscriber {user_id} with provider {provider_id}")
             return True
             
         except Exception as e:
-            logger.error(f"Error updating subscriber credentials: {str(e)}")
+            logger.error(f"❌ Error updating subscriber credentials: {str(e)}")
+            logger.error(f"   User ID: {user_id}, Provider: {provider_id}")
             return False
     
     async def set_subscriber_preference(
@@ -304,9 +313,11 @@ class NovuService:
         user_id: str,
         provider_id: str,
         device_token: str,
-        device_type: str = "mobile"
+        device_type: str = "mobile",
+        integration_identifier: Optional[str] = None
     ) -> bool:
         if not self.enabled:
+            logger.debug(f"Skipping push token registration (not in staging mode)")
             return True
         
         if not self.api_key:
@@ -315,18 +326,20 @@ class NovuService:
         
         try:
             credentials = {
-                "deviceTokens": [device_token],
-                "deviceType": device_type
+                "deviceTokens": [device_token]
             }
+            
+            logger.info(f"📱 Registering push token for user {user_id[:8]}... with provider {provider_id}")
             
             return await self.update_subscriber_credentials(
                 user_id=user_id,
                 provider_id=provider_id,
-                credentials=credentials
+                credentials=credentials,
+                integration_identifier=integration_identifier
             )
             
         except Exception as e:
-            logger.error(f"Error registering push token: {str(e)}")
+            logger.error(f"❌ Error registering push token: {str(e)}")
             return False
 
 

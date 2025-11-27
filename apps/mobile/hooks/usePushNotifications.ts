@@ -3,6 +3,8 @@ import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import { notificationsApi } from '@/lib/notifications/api';
+import { useAuthContext } from '@/contexts';
 
 export interface PushNotificationState {
   expoPushToken?: string;
@@ -12,6 +14,7 @@ export interface PushNotificationState {
 export const usePushNotifications = (): PushNotificationState => {
   const [expoPushToken, setExpoPushToken] = useState<string>();
   const [notification, setNotification] = useState<Notifications.Notification | undefined>();
+  const { isAuthenticated } = useAuthContext();
 
   const notificationListener = useRef<Notifications.Subscription | undefined>(undefined);
   const responseListener = useRef<Notifications.Subscription | undefined>(undefined);
@@ -82,6 +85,14 @@ export const usePushNotifications = (): PushNotificationState => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (expoPushToken && isAuthenticated) {
+      notificationsApi.registerDeviceToken(expoPushToken).catch(error => {
+        console.error('Failed to register device token:', error);
+      });
+    }
+  }, [expoPushToken, isAuthenticated]);
 
   return {
     expoPushToken,

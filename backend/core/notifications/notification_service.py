@@ -381,30 +381,22 @@ class NotificationService:
         account_id: str,
         device_token: str,
         device_type: str = "mobile",
-        provider: str = "fcm"
+        provider: str = "expo"
     ) -> bool:
         try:
-            client = await self.db.client
-            
-            await client.table('device_tokens').upsert({
-                'account_id': account_id,
-                'device_token': device_token,
-                'device_type': device_type,
-                'provider': provider,
-                'is_active': True,
-                'registered_at': datetime.now(timezone.utc).isoformat(),
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).execute()
-            
-            await self.novu.register_push_token(
+            success = await self.novu.register_push_token(
                 user_id=account_id,
                 provider_id=provider,
                 device_token=device_token,
                 device_type=device_type
             )
             
-            logger.info(f"Registered device token for account {account_id}")
-            return True
+            if success:
+                logger.info(f"Registered device token with Novu for account {account_id}")
+            else:
+                logger.error(f"Failed to register device token with Novu for account {account_id}")
+            
+            return success
             
         except Exception as e:
             logger.error(f"Error registering device token: {str(e)}")
@@ -412,14 +404,8 @@ class NotificationService:
     
     async def unregister_device_token(self, account_id: str, device_token: str) -> bool:
         try:
-            client = await self.db.client
-            
-            await client.table('device_tokens').update({
-                'is_active': False,
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).eq('account_id', account_id).eq('device_token', device_token).execute()
-            
-            logger.info(f"Unregistered device token for account {account_id}")
+            logger.info(f"Device token unregistration requested for account {account_id}")
+            logger.info(f"Note: Novu manages token lifecycle automatically")
             return True
             
         except Exception as e:

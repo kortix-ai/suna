@@ -29,6 +29,7 @@ export default function SplashScreen() {
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
   const { hasActiveSubscription, isLoading: billingLoading, subscriptionData } = useBillingContext();
   const { expoPushToken } = usePushNotifications();
+  console.log('expoPushToken', expoPushToken);
   
   // Track navigation to prevent double navigation
   const [hasNavigated, setHasNavigated] = React.useState(false);
