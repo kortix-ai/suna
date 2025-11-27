@@ -114,7 +114,16 @@ enabled = true
 # in emails.
 site_url = "http://localhost:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["kortix://auth/callback"]
+# Note: For cloud Supabase, configure these in Dashboard → Authentication → URL Configuration
+additional_redirect_urls = [
+  "kortix://auth/callback",
+  "http://localhost:3000/**",
+  "http://localhost:3000/auth/callback",
+  "https://staging.suna.so/**",
+  "https://staging.suna.so/auth/callback",
+  "https://kortix.com/**",
+  "https://kortix.com/auth/callback",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # If disabled, the refresh token will never expire.

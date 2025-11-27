@@ -18,10 +18,9 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 interface AgentSelectorProps {
   onPress?: () => void;
   compact?: boolean;
-  isGuestMode?: boolean
 }
 
-export function AgentSelector({ onPress, compact = true, isGuestMode = false }: AgentSelectorProps) {
+export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   const { getCurrentAgent, isLoading, agents } = useAgent();
   const agent = getCurrentAgent();
   const scale = useSharedValue(1);
@@ -32,73 +31,16 @@ export function AgentSelector({ onPress, compact = true, isGuestMode = false }: 
     transform: [{ scale: scale.value }],
   }));
 
-  if(!isGuestMode){
-    if (isLoading || agents.length === 0) {
-      return (
-        <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
-          <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
-          <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
-        </View>
-      );
-    }
+  if (isLoading || agents.length === 0) {
+    return (
+      <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
+        <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
+        <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
+      </View>
+    );
   }
 
   if (!agent) {
-    if (isGuestMode) {
-      if (compact) {
-        return (
-          <AnimatedPressable
-            onPressIn={() => {
-              scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
-            onPress={onPress}
-            className="relative"
-            style={animatedStyle}
-          >
-            <View className="rounded-md bg-primary items-center justify-center" style={{ width: 22, height: 22 }}>
-              <KortixLogo size={12} variant="symbol" color={isDark ? 'light' : 'dark'} />
-            </View>
-            <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
-              <Icon
-                as={ChevronDown}
-                size={8}
-                className="text-foreground"
-                strokeWidth={2.5}
-              />
-            </View>
-          </AnimatedPressable>
-        );
-      }
-      
-      return (
-        <AnimatedPressable
-          onPressIn={() => {
-            scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
-          }}
-          onPressOut={() => {
-            scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-          }}
-          onPress={onPress}
-          className="flex-row items-center gap-1.5 rounded-2xl px-3.5 py-2"
-          style={animatedStyle}
-        >
-          <View className="rounded-md bg-primary items-center justify-center" style={{ width: 22, height: 22 }}>
-            <KortixLogo size={12} variant="symbol" color={isDark ? 'light' : 'dark'} />
-          </View>
-          <Text className="text-foreground text-sm font-roobert-medium">Suna</Text>
-          <Icon
-            as={ChevronDown}
-            size={15}
-            className="text-foreground/60 pt-0.5"
-            strokeWidth={2}
-          />
-        </AnimatedPressable>
-      );
-    }
-    
     return (
       <AnimatedPressable
         onPressIn={() => {

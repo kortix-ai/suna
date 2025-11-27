@@ -57,8 +57,6 @@ export interface ChatInputSectionProps {
   // Container styles
   containerClassName?: string;
 
-  // Guest mode
-  isGuestMode: boolean;
 }
 
 export interface ChatInputSectionRef {
@@ -120,7 +118,6 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   isAuthenticated,
   isSendingMessage,
   isTranscribing,
-  isGuestMode = false,
   containerClassName = "mx-3 mb-8",
 }, ref) => {
   const { colorScheme } = useColorScheme();
@@ -200,7 +197,6 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           isAgentRunning={isAgentRunning}
           isSendingMessage={isSendingMessage}
           isTranscribing={isTranscribing}
-          isGuestMode={isGuestMode}
         />
       </View>
     </KeyboardAvoidingView>

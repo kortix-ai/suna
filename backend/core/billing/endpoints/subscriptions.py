@@ -301,11 +301,8 @@ async def create_portal_session(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
-        return {
-            'url': f'https://billing.stripe.com/session/create?return_url={request.return_url}',
-            'success': True,
-            'message': 'Portal session created (simplified)'
-        }
+        from ..subscriptions.handlers.portal import PortalHandler
+        result = await PortalHandler.create_portal_session(account_id, request.return_url)
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error creating portal session: {e}")

@@ -1,7 +1,7 @@
 import { MenuPage, HomePage, ThreadPage } from '@/components/pages';
 import type { HomePageRef } from '@/components/pages/HomePage';
 import { useSideMenu, usePageNavigation, useChat, useAgentManager } from '@/hooks';
-import { useAuthContext, useGuestMode } from '@/contexts';
+import { useAuthContext } from '@/contexts';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -10,14 +10,11 @@ import { Drawer } from 'react-native-drawer-layout';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Agent } from '@/api/types';
 import type { Conversation } from '@/components/menu/types';
-import { AuthDrawer } from '@/components/auth';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
 
 export default function AppScreen() {
   const { colorScheme } = useColorScheme();
   const { isAuthenticated } = useAuthContext();
-  const { isGuestMode } = useGuestMode();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
@@ -64,16 +61,12 @@ export default function AppScreen() {
   const handleProfilePress = React.useCallback(() => {
     console.log('🎯 Profile pressed');
     if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, opening auth drawer');
-      useAuthDrawerStore.getState().openAuthDrawer({
-        onSuccess: () => {
-          queryClient.invalidateQueries();
-        }
-      });
+      console.log('🔐 User not authenticated, redirecting to auth');
+      router.push('/auth');
     } else {
       menu.handleProfilePress();
     }
-  }, [isAuthenticated, menu, queryClient]);
+  }, [isAuthenticated, menu, router]);
 
   return (
     <>
@@ -133,11 +126,9 @@ export default function AppScreen() {
               onMenuPress={pageNav.openDrawer}
               chat={chat}
               isAuthenticated={canSendMessages}
-              isGuestMode={isGuestMode}
             />
           )}
       </Drawer>
-      <AuthDrawer />
       <FeedbackDrawer />
     </>
   );

@@ -44,7 +44,7 @@
     "resetLinkSent": "We sent a reset link to",
     "didntReceiveEmail": "Didn't get the email? Tap to resend",
     "backToSignIn": "Back to sign in",
-    "magicLinkSent": "We sent you a magic link. Click it in your email to sign in.",
+    "magicLinkSent": "We sent you a magic link. Click your inbox.",
     "magicLinkDescription": "Enter your email and we'll send you a magic link to sign in",
     "sendMagicLink": "Send magic link",
     "resendLink": "Resend link",
@@ -104,6 +104,7 @@
     "openGmailBtn": "Open Gmail App",
     "browseAsGuest": "Browse as Guest",
     "validationErrors": {
+      "emailRequired": "Please enter a valid email address",
       "emailPasswordRequired": "Please enter both email and password",
       "passwordsNoMatch": "Passwords don't match",
       "passwordTooShort": "Password must be at least 8 characters"

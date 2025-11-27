@@ -74,11 +74,11 @@ export async function middleware(request: NextRequest) {
     const error = searchParams.get('error');
     
     // If we have Supabase auth parameters, redirect to /auth/callback
-    // This ensures consistent handling for both web and mobile
+    // Note: Mobile apps use direct deep links and bypass this route
     if (code || token || type || error) {
       const callbackUrl = new URL('/auth/callback', request.url);
       
-      // Preserve all query parameters including source for proper routing
+      // Preserve all query parameters
       searchParams.forEach((value, key) => {
         callbackUrl.searchParams.set(key, value);
       });

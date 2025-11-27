@@ -93,7 +93,7 @@ interface NavButtonProps {
  * - Text: 15px font-roobert-medium
  * - Active: Filled background (bg-card) with border
  * - Inactive: Subtle background with transparency
- * - Border radius: 20px (rounded-[20px])
+ * - Border radius: 16px (rounded-2xl)
  * - Press animation: Scale to 0.98
  * - Gap: 8px (gap-2) between icon and label
  * 
@@ -141,7 +141,7 @@ function NavButton({ icon, label, isActive = false, onPress }: NavButtonProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className={`flex-1 items-center justify-center rounded-[20px] h-24 ${
+      className={`flex-1 items-center justify-center rounded-2xl h-24 ${
         isActive 
           ? 'bg-card border-[1.5px] border-border' 
           : 'bg-card/30'

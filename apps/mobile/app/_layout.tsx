@@ -3,11 +3,12 @@ import '@/global.css';
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
-import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, GuestModeProvider, TrackingProvider, useAuthContext, useGuestMode } from '@/contexts';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
+import { ToastProvider } from '@/components/ui/toast-provider';
 import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -100,10 +101,52 @@ export default function RootLayout() {
         console.log('📧 Auth callback received, processing...');
         
         try {
-          // Check for error first
+          // Extract hash fragment first to check for errors
+          const hashIndex = url.indexOf('#');
+          let hashFragment = '';
+          if (hashIndex !== -1) {
+            hashFragment = url.substring(hashIndex + 1);
+          }
+
+          // Check for errors in hash fragment first
+          if (hashFragment) {
+            try {
+              const hashParams = new URLSearchParams(hashFragment);
+              const error = hashParams.get('error');
+              const errorCode = hashParams.get('error_code');
+              const errorDescription = hashParams.get('error_description');
+              
+              if (error) {
+                console.log('⚠️ Auth callback error detected:', { error, errorCode, errorDescription });
+                
+                // Handle expired OTP/link
+                if (errorCode === 'otp_expired' || error === 'access_denied') {
+                  const errorMessage = errorDescription 
+                    ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
+                    : 'This email link has expired. Please request a new one.';
+                  
+                  // Navigate to auth screen - user can try again there
+                  console.log('⚠️ Link expired, redirecting to auth');
+                  router.replace('/auth');
+                  isHandlingDeepLink = false;
+                  return;
+                }
+                
+                // Other errors - just redirect to auth
+                console.error('❌ Auth callback error:', error);
+                isHandlingDeepLink = false;
+                router.replace('/auth');
+                return;
+              }
+            } catch (hashParseError) {
+              console.warn('⚠️ Error parsing hash fragment for errors:', hashParseError);
+            }
+          }
+
+          // Check for error in query params
           const errorParam = parsedUrl.queryParams?.error;
           if (errorParam) {
-            console.error('❌ Auth callback error:', errorParam);
+            console.error('❌ Auth callback error in query params:', errorParam);
             isHandlingDeepLink = false;
             router.replace('/auth');
             return;
@@ -111,7 +154,9 @@ export default function RootLayout() {
 
           // Check for terms_accepted in query params
           const termsAccepted = parsedUrl.queryParams?.terms_accepted === 'true';
-          const returnUrl = parsedUrl.queryParams?.returnUrl as string || '/setting-up';
+          // Default to index (splash) screen - it will route based on user state
+          // Only use explicit returnUrl if provided (e.g., from web redirect)
+          const returnUrl = parsedUrl.queryParams?.returnUrl as string || '/';
           
           // Extract tokens - check query params first (from smart redirect), then hash fragment (legacy)
           let access_token: string | null = null;
@@ -126,10 +171,8 @@ export default function RootLayout() {
           
           // Method 2: Hash fragment (legacy Supabase direct redirect)
           if (!access_token || !refresh_token) {
-            const hashIndex = url.indexOf('#');
-            if (hashIndex !== -1) {
-              const hashFragment = url.substring(hashIndex + 1);
-              console.log('🔍 Checking hash fragment...');
+            if (hashFragment) {
+              console.log('🔍 Checking hash fragment for tokens...');
             
               try {
                 const hashParams = new URLSearchParams(hashFragment);
@@ -154,28 +197,28 @@ export default function RootLayout() {
           }
           
           console.log('🔑 Token extraction result:', { 
-            hasAccessToken: !!access_token, 
+              hasAccessToken: !!access_token, 
             hasRefreshToken: !!refresh_token,
             termsAccepted,
             returnUrl,
-          });
-            
-          if (access_token && refresh_token) {
-            console.log('✅ Setting session with tokens...');
-
-            const { data, error } = await supabase.auth.setSession({
-              access_token,
-              refresh_token,
             });
+            
+                  if (access_token && refresh_token) {
+                    console.log('✅ Setting session with tokens...');
 
-            if (error) {
-              console.error('❌ Failed to set session:', error);
-              isHandlingDeepLink = false;
+                    const { data, error } = await supabase.auth.setSession({
+                      access_token,
+                      refresh_token,
+                    });
+
+                    if (error) {
+                      console.error('❌ Failed to set session:', error);
+                      isHandlingDeepLink = false;
               router.replace('/auth');
               return;
             }
 
-            console.log('✅ Session set! User logged in:', data.user?.email);
+                      console.log('✅ Session set! User logged in:', data.user?.email);
 
             // Save terms acceptance date if terms were accepted and not already saved
             if (termsAccepted && data.user) {
@@ -195,15 +238,20 @@ export default function RootLayout() {
               }
             }
 
-            // Navigate to the specified destination
-            console.log('🚀 Navigating to:', returnUrl);
-            router.replace(returnUrl as any);
+            // Small delay to ensure auth state propagates
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // Always navigate to splash screen - it will determine the correct destination
+            // This ensures smooth transition with loader while checking account state
+            console.log('🚀 Navigating to splash screen to determine next step...');
+            router.replace('/');
             
             setTimeout(() => {
               isHandlingDeepLink = false;
             }, 1000);
           } else {
-            console.error('❌ No tokens found in URL');
+            // No tokens found - could be an error we didn't catch or a malformed URL
+            console.warn('⚠️ No tokens found in URL - redirecting to auth');
             isHandlingDeepLink = false;
             router.replace('/auth');
           }
@@ -251,11 +299,11 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <TrackingProvider>
           <LanguageProvider>
-            <GuestModeProvider>
-              <AuthProvider>
-                <BillingProvider>
-                  <AgentProvider>
-                    <AdvancedFeaturesProvider>
+            <AuthProvider>
+              <BillingProvider>
+                <AgentProvider>
+                  <AdvancedFeaturesProvider>
+                    <ToastProvider>
                       <BottomSheetModalProvider>
                         <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                           <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
@@ -269,26 +317,30 @@ export default function RootLayout() {
                               <Stack.Screen name="index" options={{ animation: 'none' }} />
                               <Stack.Screen name="setting-up" />
                               <Stack.Screen name="onboarding" />
-                              <Stack.Screen name="home" />
-                              <Stack.Screen name="auth" />
-                              <Stack.Screen name="trigger-detail" />
                               <Stack.Screen 
-                                name="tool-modal" 
+                                name="home" 
                                 options={{ 
-                                  presentation: 'modal',
-                                  animation: 'slide_from_bottom',
+                                  gestureEnabled: false,
                                 }} 
                               />
+                              <Stack.Screen 
+                                name="auth" 
+                                options={{ 
+                                  gestureEnabled: false,
+                                  animation: 'fade',
+                                }} 
+                              />
+                              <Stack.Screen name="trigger-detail" />
                             </Stack>
                           </AuthProtection>
                           <PortalHost />
                         </ThemeProvider>
                       </BottomSheetModalProvider>
-                    </AdvancedFeaturesProvider>
-                  </AgentProvider>
-                </BillingProvider>
-              </AuthProvider>
-            </GuestModeProvider>
+                    </ToastProvider>
+                  </AdvancedFeaturesProvider>
+                </AgentProvider>
+              </BillingProvider>
+            </AuthProvider>
           </LanguageProvider>
         </TrackingProvider>
       </GestureHandlerRootView>
@@ -299,21 +351,27 @@ export default function RootLayout() {
 
 function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
-  const { isGuestMode, isLoading: guestLoading } = useGuestMode();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (authLoading || guestLoading) return;
+    // Don't do anything while auth is loading
+    if (authLoading) return;
+    
+    // Wait for segments
+    if (!segments || segments.length < 1) return;
 
-    const inAuthGroup = segments[0] === 'auth';
-    const canAccessWithoutAuth = isAuthenticated || isGuestMode;
+    const currentSegment = segments[0] as string | undefined;
+    const inAuthGroup = currentSegment === 'auth';
+    // Index/splash screen has no segment or empty segment
+    const onSplashScreen = !currentSegment;
 
-    if (!canAccessWithoutAuth && !inAuthGroup) {
-      console.log('🚫 User not authenticated or in guest mode, redirecting to /auth');
+    // Simple rule: Unauthenticated users can only be on auth or splash screens
+    if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
+      console.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
       router.replace('/auth');
     }
-  }, [isAuthenticated, isGuestMode, authLoading, guestLoading, segments, router]);
+  }, [isAuthenticated, authLoading, segments, router]);
 
   return <>{children}</>;
 }

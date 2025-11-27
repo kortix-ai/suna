@@ -55,14 +55,13 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  const { signOut } = useAuthContext();
+  const { signOut, isSigningOut } = useAuthContext();
   const { loadAgents } = useAgent();
   const { refetchAll: refetchBilling } = useBillingContext();
   const { markSetupComplete } = useAccountSetup();
   const { markAsCompleted } = useOnboarding();
   const queryClient = useQueryClient();
   const [currentSlide, setCurrentSlide] = React.useState(0);
-  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const scrollX = useSharedValue(0);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
@@ -146,18 +145,17 @@ export default function OnboardingScreen() {
   }, [loadAgents, refetchBilling, queryClient, router, markSetupComplete, markAsCompleted]);
 
   const handleLogout = React.useCallback(async () => {
+    if (isSigningOut) return; // Prevent multiple sign out attempts
+    
     try {
-      setIsLoggingOut(true);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       
       console.log('🔓 Logging out from onboarding...');
       await signOut();
     } catch (error) {
       console.error('❌ Logout error:', error);
-    } finally {
-      setIsLoggingOut(false);
     }
-  }, [signOut]);
+  }, [signOut, isSigningOut]);
 
   const handleNext = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -196,13 +194,13 @@ export default function OnboardingScreen() {
           <View className="flex-row items-center gap-4">
             <TouchableOpacity 
               onPress={handleLogout}
-              disabled={isLoggingOut}
+              disabled={isSigningOut}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Icon 
                 as={LogOut} 
                 size={20} 
-                className={isLoggingOut ? "text-muted-foreground/50" : "text-muted-foreground"} 
+                className={isSigningOut ? "text-muted-foreground/50" : "text-muted-foreground"} 
               />
             </TouchableOpacity>
           </View>

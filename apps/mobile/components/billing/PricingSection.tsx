@@ -430,7 +430,7 @@ export function PricingSection({
                   creditsButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                 }}
                 style={creditsButtonStyle}
-                className="w-full h-12 border border-border rounded-xl items-center justify-center flex-row gap-2 mb-6 bg-transparent"
+                className="w-full h-12 border border-border rounded-2xl items-center justify-center flex-row gap-2 mb-6 bg-transparent"
               >
                 <Icon as={ShoppingCart} size={18} className="text-foreground" strokeWidth={2} />
                 <Text className="text-sm font-roobert-semibold text-foreground">

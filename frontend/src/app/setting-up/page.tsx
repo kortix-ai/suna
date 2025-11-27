@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, Suspense, lazy } from 'react';
+import { useEffect, useState, Suspense, lazy, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useInitializeAccount } from '@/hooks/account';
+import { createClient } from '@/lib/supabase/client';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,25 +17,108 @@ const KortixLoader = lazy(() => import('@/components/ui/kortix-loader').then(mod
 export default function SettingUpPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const [status, setStatus] = useState<'initializing' | 'success' | 'error'>('initializing');
+  const [status, setStatus] = useState<'checking' | 'initializing' | 'success' | 'error'>('checking');
   const initializeMutation = useInitializeAccount();
+  const hasAttemptedInit = useRef(false);
+  const isInitializing = useRef(false);
 
   useEffect(() => {
-    if (user && status === 'initializing' && !initializeMutation.isPending) {
-      initializeMutation.mutate(undefined, {
-        onSuccess: () => {
-          setStatus('success');
-          setTimeout(() => {
-            router.push('/dashboard');
-          }, 1500);
-        },
-        onError: (error) => {
-          console.error('Setup error:', error);
-          setStatus('error');
-        },
-      });
-    }
-  }, [user, status, initializeMutation.isPending]);
+    if (!user) return;
+    if (hasAttemptedInit.current) return;
+    if (status !== 'checking') return;
+    if (isInitializing.current) return;
+
+    // Mark as attempted immediately to prevent multiple calls
+    hasAttemptedInit.current = true;
+    isInitializing.current = true;
+
+    // Check if account was already initialized via webhook
+    const checkSubscription = async () => {
+      try {
+        const supabase = createClient();
+        
+        // Get user's account
+        const { data: accountData } = await supabase
+          .schema('basejump')
+          .from('accounts')
+          .select('id')
+          .eq('primary_owner_user_id', user.id)
+          .eq('personal_account', true)
+          .single();
+
+        if (accountData) {
+          // Check if subscription exists
+          const { data: creditAccount } = await supabase
+            .from('credit_accounts')
+            .select('tier, stripe_subscription_id')
+            .eq('account_id', accountData.id)
+            .single();
+
+          // If subscription exists, webhook already succeeded - redirect to dashboard
+          if (creditAccount && creditAccount.tier !== 'none' && creditAccount.stripe_subscription_id) {
+            console.log('✅ Account already initialized via webhook, redirecting to dashboard');
+            isInitializing.current = false;
+            setStatus('success');
+            setTimeout(() => {
+              router.push('/dashboard');
+            }, 500);
+            return;
+          }
+        }
+
+        // No subscription found - initialize manually (fallback)
+        console.log('⚠️ No subscription detected - initializing manually (fallback)');
+        setStatus('initializing');
+        // Double-check mutation isn't already pending before calling
+        if (!initializeMutation.isPending) {
+          initializeMutation.mutate(undefined, {
+            onSuccess: () => {
+              isInitializing.current = false;
+              setStatus('success');
+              setTimeout(() => {
+                router.push('/dashboard');
+              }, 1500);
+            },
+            onError: (error) => {
+              console.error('Setup error:', error);
+              isInitializing.current = false;
+              setStatus('error');
+            },
+          });
+        } else {
+          // Mutation already in progress, reset flag
+          isInitializing.current = false;
+        }
+      } catch (error) {
+        console.error('Error checking subscription:', error);
+        // If check fails, try initialization anyway
+        setStatus('initializing');
+        // Double-check mutation isn't already pending before calling
+        if (!initializeMutation.isPending) {
+          initializeMutation.mutate(undefined, {
+            onSuccess: () => {
+              isInitializing.current = false;
+              setStatus('success');
+              setTimeout(() => {
+                router.push('/dashboard');
+              }, 1500);
+            },
+            onError: (error) => {
+              console.error('Setup error:', error);
+              isInitializing.current = false;
+              setStatus('error');
+            },
+          });
+        } else {
+          // Mutation already in progress, reset flag
+          isInitializing.current = false;
+        }
+      }
+    };
+
+    checkSubscription();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, status]);
 
   return (
     <div className="w-full relative overflow-hidden min-h-screen">
@@ -46,7 +130,7 @@ export default function SettingUpPage() {
         <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
           <KortixLogo size={32} />
 
-          {status === 'initializing' && (
+          {(status === 'checking' || status === 'initializing') && (
             <>
               <h1 className="text-[43px] font-normal tracking-tight text-foreground leading-none text-center">
                 Setting Up Your Account

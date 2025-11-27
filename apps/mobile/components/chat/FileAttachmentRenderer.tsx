@@ -398,7 +398,7 @@ function DocumentAttachment({
             <View className="flex-1 items-center justify-center p-8">
               <Icon as={FileText} size={32} className="text-muted-foreground mb-2" />
               <Text className="text-xs text-muted-foreground">Failed to load preview</Text>
-              <Pressable onPress={handlePress} className="mt-3 px-4 py-2 bg-primary/10 rounded-lg">
+              <Pressable onPress={handlePress} className="mt-3 px-4 py-2 bg-primary/10 rounded-2xl">
                 <Text className="text-xs text-primary font-medium">Open file</Text>
               </Pressable>
             </View>

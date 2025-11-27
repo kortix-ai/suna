@@ -19,7 +19,6 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { useGuestMode } from '@/contexts';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -225,7 +224,6 @@ export function ThreadPage({
   chat,
   isAuthenticated,
 }: ThreadPageProps) {
-  const { isGuestMode } = useGuestMode();
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -487,8 +485,8 @@ export function ThreadPage({
       )}
 
       <ThreadHeader
-        threadTitle={isGuestMode ? 'Temporary Chat' : (fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title)}
-        onTitleChange={isGuestMode ? undefined : async (newTitle) => {
+        threadTitle={fullThreadData?.project?.name || fullThreadData?.title || chat.activeThread?.title}
+        onTitleChange={async (newTitle) => {
           try {
             await chat.updateThreadTitle(newTitle);
           } catch (error) {
@@ -497,7 +495,6 @@ export function ThreadPage({
         }}
         onMenuPress={onMenuPress}
         onActionsPress={() => setIsThreadActionsVisible(true)}
-        isGuestMode={isGuestMode}
       />
 
       <ChatInputSection
@@ -508,12 +505,12 @@ export function ThreadPage({
         }}
         onSendAudio={audioHandlers.handleSendAudio}
         onAttachPress={chat.openAttachmentDrawer}
-        onAgentPress={isGuestMode ? () => { } : agentManager.openDrawer}
+        onAgentPress={agentManager.openDrawer}
         onAudioRecord={audioHandlers.handleStartRecording}
         onCancelRecording={audioHandlers.handleCancelRecording}
         onStopAgentRun={chat.stopAgent}
         placeholder={chat.getPlaceholder()}
-        agent={isGuestMode ? undefined : (agentManager.selectedAgent || undefined)}
+        agent={agentManager.selectedAgent || undefined}
         isRecording={audioRecorder.isRecording}
         recordingDuration={audioRecorder.recordingDuration}
         audioLevel={audioRecorder.audioLevel}
@@ -527,11 +524,10 @@ export function ThreadPage({
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
         isTranscribing={isTranscribing}
-        isGuestMode={isGuestMode}
       />
 
       <ChatDrawers
-        isAgentDrawerVisible={!isGuestMode && agentManager.isDrawerVisible}
+        isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}

@@ -12,7 +12,6 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { useAuthDrawerStore } from '@/stores/auth-drawer-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -22,7 +21,6 @@ interface ThreadHeaderProps {
   onMenuPress?: () => void;
   onActionsPress?: () => void;
   isLoading?: boolean;
-  isGuestMode?: boolean;
 }
 
 export function ThreadHeader({
@@ -31,7 +29,6 @@ export function ThreadHeader({
   onMenuPress,
   onActionsPress,
   isLoading = false,
-  isGuestMode = false,
 }: ThreadHeaderProps) {
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
@@ -98,13 +95,6 @@ export function ThreadHeader({
   };
 
   const handleActionsPress = () => {
-    if (isGuestMode){
-      useAuthDrawerStore.getState().openAuthDrawer({
-        title: 'Sign up to continue',
-        message: 'Create an account to access thread actions'
-      });
-      return;
-    }
     console.log('🎯 Thread actions menu pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onActionsPress?.();

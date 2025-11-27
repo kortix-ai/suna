@@ -143,6 +143,39 @@ export function PresentationViewer({
     return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
   };
 
+  // Ensure sandbox is active and wait for sandbox URL
+  const ensureSandboxActive = useCallback(async () => {
+    if (!project?.id || !project?.sandbox?.id || isEnsuringSandboxRef.current) {
+      return;
+    }
+
+    isEnsuringSandboxRef.current = true;
+    
+    try {
+      const response = await backendApi.post(
+        `/project/${project.id}/sandbox/ensure-active`,
+        {},
+        { showErrors: false }
+      );
+
+      if (response.error) {
+        console.warn('Failed to ensure sandbox is active:', response.error);
+        isEnsuringSandboxRef.current = false;
+        return;
+      }
+      
+      // Dispatch event for other components
+      window.dispatchEvent(new CustomEvent('sandbox-active', {
+        detail: { sandboxId: project.sandbox.id, projectId: project.id }
+      }));
+      
+      isEnsuringSandboxRef.current = false;
+    } catch (err) {
+      console.error('Error ensuring sandbox is active:', err);
+      isEnsuringSandboxRef.current = false;
+    }
+  }, [project?.id, project?.sandbox?.id]);
+
   // Load metadata.json for the presentation with retry logic
   const loadMetadata = useCallback(async (retryCount = 0, maxRetries = Infinity) => {
     // Don't load if we already successfully loaded metadata
@@ -172,8 +205,6 @@ export function PresentationViewer({
       // Add cache-busting parameter to ensure fresh data
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
       
-      console.log(`Loading presentation metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
-      
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
         headers: {
@@ -185,7 +216,6 @@ export function PresentationViewer({
         const data = await response.json();
         setMetadata(data);
         hasLoadedRef.current = true; // Mark as successfully loaded
-        console.log('Successfully loaded presentation metadata:', data);
         setIsLoadingMetadata(false);
         
         // Clear any pending retry timeout on success
@@ -201,13 +231,20 @@ export function PresentationViewer({
     } catch (err) {
       console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
       
+      // If we get HTTP 400 or 502, the sandbox might be stopped - try to wake it up
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage.includes('400') || errorMessage.includes('502') || errorMessage.includes('503')) {
+        // Reset the ensuring flag so ensureSandboxActive can run again
+        isEnsuringSandboxRef.current = false;
+        // Trigger sandbox wake-up
+        ensureSandboxActive();
+      }
+      
       // Calculate delay with exponential backoff, capped at 10 seconds
       // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
       const delay = retryCount < 5 
         ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
         : 5000; // Consistent 5 second intervals after that
-      
-      console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
       
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
@@ -216,43 +253,7 @@ export function PresentationViewer({
       
       return; // Keep loading state, don't set error
     }
-  }, [extractedPresentationName, project?.sandbox?.sandbox_url]);
-
-  // Ensure sandbox is active and wait for sandbox URL
-  const ensureSandboxActive = useCallback(async () => {
-    if (!project?.id || !project?.sandbox?.id || isEnsuringSandboxRef.current) {
-      return;
-    }
-
-    isEnsuringSandboxRef.current = true;
-    
-    try {
-      console.log('Ensuring sandbox is active for project:', project.id);
-      const response = await backendApi.post(
-        `/project/${project.id}/sandbox/ensure-active`,
-        {},
-        { showErrors: false }
-      );
-
-      if (response.error) {
-        console.warn('Failed to ensure sandbox is active:', response.error);
-        isEnsuringSandboxRef.current = false;
-        return;
-      }
-
-      console.log('Sandbox ensure-active response:', response.data);
-      
-      // Dispatch event for other components
-      window.dispatchEvent(new CustomEvent('sandbox-active', {
-        detail: { sandboxId: project.sandbox.id, projectId: project.id }
-      }));
-      
-      isEnsuringSandboxRef.current = false;
-    } catch (err) {
-      console.error('Error ensuring sandbox is active:', err);
-      isEnsuringSandboxRef.current = false;
-    }
-  }, [project?.id, project?.sandbox?.id]);
+  }, [extractedPresentationName, project?.sandbox?.sandbox_url, ensureSandboxActive]);
 
   // Poll for sandbox URL availability and listen for sandbox-active events
   useEffect(() => {
@@ -274,7 +275,6 @@ export function PresentationViewer({
     // Listen for sandbox-active event
     const handleSandboxActive = (event: CustomEvent) => {
       if (event.detail?.projectId === project?.id) {
-        console.log('Sandbox active event received, checking for sandbox URL...');
         // The project prop should update, but we can also trigger a check
         // by clearing the ensuring flag so we can try again
         isEnsuringSandboxRef.current = false;

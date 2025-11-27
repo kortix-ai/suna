@@ -5,8 +5,12 @@ import { API_URL, getAuthHeaders } from '@/api/config';
 /**
  * Account Initialization Hook
  * 
- * Matches frontend implementation using React Query mutation.
- * Should be called explicitly when account initialization is needed.
+ * Fallback hook for manual account initialization.
+ * 
+ * NOTE: Most users are initialized automatically via backend webhook on signup.
+ * This hook is only used as a fallback if:
+ * - Webhook failed (network issues, backend down during signup)
+ * - User signed up before automatic initialization was implemented
  * 
  * @example
  * const initializeMutation = useAccountInitialization();
