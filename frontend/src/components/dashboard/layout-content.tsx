@@ -176,6 +176,9 @@ export default function DashboardLayoutContent({
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
         </Suspense>
+        <Suspense fallback={null}>
+          <PresenceDebug />
+        </Suspense>
       </div>
     </AppProviders>
   );

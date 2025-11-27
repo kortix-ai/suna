@@ -1,12 +1,13 @@
-'use client';
-
-import { backendApi } from '@/lib/api-client';
-import { useAuth } from '@/components/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
-import { RealtimeChannel } from '@supabase/supabase-js';
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, AppStateStatus, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL, getAuthToken } from '@/api/config';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { supabase } from '@/api/supabase';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 type PresenceStatus = 'online' | 'idle' | 'offline';
+
 type PresenceEventPayload = {
   type: string;
   session_id?: string;
@@ -29,30 +30,41 @@ type PresenceContextValue = {
 const PresenceContext = createContext<PresenceContextValue | undefined>(undefined);
 
 const HEARTBEAT_INTERVAL = 60000;
+const SESSION_STORAGE_KEY = 'presence_session_id';
 
 function generateSessionId(): string {
-  return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 }
 
 export function PresenceProvider({ children }: { children: ReactNode }) {
-  const { user, session } = useAuth();
+  const { isAuthenticated, user } = useAuthContext();
   const [activeThreadId, setActiveThreadState] = useState<string | null>(null);
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [presences, setPresences] = useState<Record<string, PresenceEventPayload>>({});
-  const [sessionId, setSessionId] = useState<string | null>(() => {
-    if (typeof window === 'undefined') return null;
-    
-    let storedId = sessionStorage.getItem('presence_session_id');
-    if (!storedId) {
-      storedId = generateSessionId();
-      sessionStorage.setItem('presence_session_id', storedId);
-    } else {
-    }
-    return storedId;
-  });
-  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const latestThreadRef = useRef<string | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+
+  useEffect(() => {
+    async function loadSessionId() {
+      try {
+        let storedId = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
+        if (!storedId) {
+          storedId = generateSessionId();
+          await AsyncStorage.setItem(SESSION_STORAGE_KEY, storedId);
+        }
+        setSessionId(storedId);
+      } catch (error) {
+        console.error('[Presence] Failed to load session ID:', error);
+        const fallbackId = generateSessionId();
+        setSessionId(fallbackId);
+      }
+    }
+    loadSessionId();
+  }, []);
 
   const stopHeartbeat = useCallback(() => {
     if (heartbeatRef.current) {
@@ -63,46 +75,53 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
   const sendPresenceUpdate = useCallback(
     async (threadId: string | null) => {
-      if (!user || !sessionId) {
+      if (!isAuthenticated || !user || !sessionId) {
         return;
       }
       const timestamp = new Date().toISOString();
       try {
-        await backendApi.post('/presence/update', {
-          session_id: sessionId,
-          active_thread_id: threadId,
-          platform: 'web',
-          client_timestamp: timestamp,
-        }, { showErrors: false });
+        const token = await getAuthToken();
+        if (!token) return;
+
+        await fetch(`${API_URL}/presence/update`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            active_thread_id: threadId,
+            platform: Platform.OS,
+            client_timestamp: timestamp,
+          }),
+        });
       } catch (err) {
         console.error('[Presence] Update failed:', err);
       }
     },
-    [user, sessionId],
+    [isAuthenticated, user, sessionId],
   );
 
   const startHeartbeat = useCallback(() => {
     stopHeartbeat();
-    if (!user) {
+    if (!isAuthenticated || !user) {
       return;
     }
     heartbeatRef.current = setInterval(() => {
       sendPresenceUpdate(latestThreadRef.current);
     }, HEARTBEAT_INTERVAL);
-  }, [sendPresenceUpdate, stopHeartbeat, user]);
+  }, [sendPresenceUpdate, stopHeartbeat, isAuthenticated, user]);
 
   const disconnectChannel = useCallback(() => {
     if (channelRef.current) {
-      const supabase = createClient();
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
   }, []);
 
   const handlePresenceChange = useCallback((payload: any) => {
-    if (!payload.new) {
-      return;
-    }
+    if (!payload.new) return;
     
     const record = payload.new as {
       session_id: string;
@@ -113,9 +132,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       client_timestamp: string;
     };
 
-    if (!record.account_id) {
-      return;
-    }
+    if (!record.account_id) return;
 
     const presencePayload: PresenceEventPayload = {
       type: payload.eventType === 'DELETE' ? 'presence_clear' : 'presence_update',
@@ -145,10 +162,8 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handlePresenceDelete = useCallback((payload: any) => {
-    if (!payload.old) {
-      return;
-    }
-
+    if (!payload.old) return;
+    
     const record = payload.old as {
       session_id: string;
       account_id: string;
@@ -163,19 +178,14 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectChannel = useCallback(() => {
-    if (!user) {
-      return;
-    }
-    
-    if (channelRef.current) {
+    if (!isAuthenticated || !user || channelRef.current) {
       return;
     }
 
     setConnectionState('connecting');
 
-    const supabase = createClient();
     const channel = supabase
-      .channel('presence-updates')
+      .channel('presence-updates-mobile')
       .on(
         'postgres_changes',
         {
@@ -183,7 +193,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           schema: 'public',
           table: 'user_presence_sessions',
         },
-        (payload) => {
+        (payload: any) => {
           if (payload.eventType === 'DELETE') {
             handlePresenceDelete(payload);
           } else {
@@ -191,7 +201,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
           setConnectionState('connected');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
@@ -202,41 +212,45 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       });
 
     channelRef.current = channel;
-  }, [user, handlePresenceChange, handlePresenceDelete]);
+  }, [isAuthenticated, user, handlePresenceChange, handlePresenceDelete]);
 
-  const sendBeaconClear = useCallback(() => {
-    if (typeof navigator === 'undefined' || !sessionId) {
+  const clearPresence = useCallback(async () => {
+    if (!sessionId || !API_URL) {
       return;
     }
-    const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    if (!apiUrl || !session?.access_token) {
-      return;
-    }
-    const url = new URL(`${apiUrl}/presence/clear`);
-    url.searchParams.set('token', session.access_token);
-    url.searchParams.set('session_id', sessionId);
     
-    const payload = new Blob([JSON.stringify({})], { type: 'application/json' });
-    navigator.sendBeacon(url.toString(), payload);
-    
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('presence_session_id');
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+
+      await fetch(`${API_URL}/presence/clear?token=${token}&session_id=${sessionId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      
+      await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      console.error('[Presence] Failed to clear presence:', error);
     }
-  }, [session?.access_token, sessionId]);
+  }, [sessionId]);
 
   const setActiveThreadId = useCallback((threadId: string | null) => {
     const normalized = threadId || null;
     latestThreadRef.current = normalized;
     setActiveThreadState(normalized);
-    if (!user) {
+    if (!isAuthenticated || !user) {
       return;
     }
     sendPresenceUpdate(normalized);
     startHeartbeat();
-  }, [sendPresenceUpdate, startHeartbeat, user]);
+  }, [sendPresenceUpdate, startHeartbeat, isAuthenticated, user]);
 
   useEffect(() => {
-    if (!user) {
+    if (!isAuthenticated || !user || !sessionId) {
       stopHeartbeat();
       disconnectChannel();
       setConnectionState('idle');
@@ -254,42 +268,33 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       stopHeartbeat();
       disconnectChannel();
     };
-  }, [connectChannel, disconnectChannel, sendPresenceUpdate, startHeartbeat, stopHeartbeat, user]);
+  }, [connectChannel, disconnectChannel, sendPresenceUpdate, startHeartbeat, stopHeartbeat, isAuthenticated, user, sessionId]);
 
   useEffect(() => {
-    if (typeof document === 'undefined') {
-      return;
-    }
-    const handleVisibilityChange = () => {
-      if (!user) {
-        return;
-      }
-      if (document.hidden) {
-        stopHeartbeat();
-        sendPresenceUpdate(null);
-      } else {
-        sendPresenceUpdate(latestThreadRef.current);
+    if (!isAuthenticated || !user) return;
+
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      const currentThread = latestThreadRef.current;
+
+      if (nextAppState === 'active' && appStateRef.current.match(/inactive|background/)) {
+        sendPresenceUpdate(currentThread);
         startHeartbeat();
+        connectChannel();
+      } else if (nextAppState === 'inactive' || nextAppState === 'background') {
+        stopHeartbeat();
+        disconnectChannel();
+        sendPresenceUpdate(null);
       }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [sendPresenceUpdate, startHeartbeat, stopHeartbeat, user]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    const handler = () => {
-      sendBeaconClear();
-    };
-    window.addEventListener('beforeunload', handler);
+      appStateRef.current = nextAppState;
+    });
+
     return () => {
-      window.removeEventListener('beforeunload', handler);
+      subscription.remove();
+      stopHeartbeat();
+      disconnectChannel();
     };
-  }, [sendBeaconClear]);
+  }, [isAuthenticated, user, sendPresenceUpdate, startHeartbeat, stopHeartbeat, connectChannel, disconnectChannel]);
 
   const value = useMemo(() => ({
     activeThreadId,
@@ -313,3 +318,4 @@ export function usePresenceContext() {
   }
   return context;
 }
+
