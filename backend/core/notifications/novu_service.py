@@ -163,22 +163,24 @@ class NovuService:
             return False
         
         try:
-            with Novu(
-                server_url=self.backend_url,
-                secret_key=self.api_key,
-            ) as novu:
-                update_params = {
-                    "subscriber_id": user_id,
-                    "provider_id": provider_id,
-                }
+            import requests
+            url = f"{self.backend_url}/v1/subscribers/{user_id}/credentials"
+            headers = {
+                "Authorization": f"ApiKey {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            
+            payload = {
+                "providerId": provider_id,
+                "credentials": credentials
+            }
+            
+            if integration_identifier:
+                payload["integrationIdentifier"] = integration_identifier
                 
-                if integration_identifier:
-                    update_params["integration_identifier"] = integration_identifier
-                
-                novu.subscribers.set_credentials(
-                    **update_params,
-                    credentials=credentials
-                )
+            response = requests.put(url, json=payload, headers=headers)
+            response.raise_for_status()
             
             logger.info(f"✅ Set push credentials for subscriber {user_id} with provider {provider_id}")
             return True
