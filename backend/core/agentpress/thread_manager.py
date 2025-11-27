@@ -388,18 +388,11 @@ class ThreadManager:
                         usage = llm_end_content.get('usage', {})
                         stored_model = llm_end_content.get('model', '')
                         
-                        # Normalize model names for comparison (strip any provider prefix like anthropic/, openai/, google/, etc.)
-                        def normalize_model_name(model: str) -> str:
-                            """Strip provider prefix (e.g., 'anthropic/claude-3' -> 'claude-3')"""
-                            return model.split('/')[-1] if '/' in model else model
+                        logger.debug(f"Fast check data - stored model: {stored_model}, current model: {llm_model}")
                         
-                        normalized_stored = normalize_model_name(stored_model)
-                        normalized_current = normalize_model_name(llm_model)
-                        
-                        logger.debug(f"Fast check data - stored: {stored_model}, current: {llm_model}, match: {normalized_stored == normalized_current}")
-                        
-                        # Only use fast path if model matches and we have stored tokens
-                        if usage and normalized_stored == normalized_current:
+                        # Use fast path if we have usage data
+                        # Token counts are similar enough for compression decisions even if model changed
+                        if usage:
                             # Use total_tokens (includes prev completion) for better accuracy
                             last_total_tokens = int(usage.get('total_tokens', 0))
                             
@@ -470,7 +463,7 @@ class ThreadManager:
                                 need_compression = True
                                 # Will fetch and compress below
                         else:
-                            logger.debug(f"Fast check skipped - usage: {bool(usage)}, model_match: {normalized_stored == normalized_current}")
+                            logger.debug(f"Fast check skipped - no usage data available")
                     else:
                         logger.debug(f"Fast check skipped - no last llm_response_end message found")
                 except Exception as e:
