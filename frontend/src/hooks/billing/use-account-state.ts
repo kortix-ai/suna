@@ -296,10 +296,11 @@ export function useTransactions(limit = 50, offset = 0) {
 // TRIAL HOOKS
 // =============================================================================
 
-export function useTrialStatus() {
+export function useTrialStatus(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: accountStateKeys.trial(),
     queryFn: () => billingApi.getTrialStatus(),
+    enabled: options?.enabled ?? true,
     staleTime: 1000 * 60 * 5,
   });
 }

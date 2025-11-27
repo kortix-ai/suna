@@ -190,10 +190,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const {
     checkBillingLimits,
-    billingStatusQuery,
   } = isShared ? {
     checkBillingLimits: async () => false,
-    billingStatusQuery: { data: undefined, isLoading: false, error: null, refetch: async () => { } } as any,
   } : threadBilling;
 
   // Real-time project updates (for sandbox creation) - always call unconditionally

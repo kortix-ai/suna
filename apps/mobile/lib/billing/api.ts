@@ -182,6 +182,13 @@ export interface CancelSubscriptionRequest {
   feedback?: string;
 }
 
+export interface PurchaseCreditsRequest {
+  amount: number;
+  success_url: string;
+  cancel_url: string;
+  package_id?: string;
+}
+
 // =============================================================================
 // API Helper
 // =============================================================================
@@ -307,3 +314,9 @@ export const accountStateSelectors = {
     state?.subscription.can_purchase_credits ?? false,
   dailyCreditsInfo: (state: AccountState | undefined) => state?.credits.daily_refresh,
 };
+
+// Re-export types for backward compatibility
+export type { SubscriptionInfo, CreditBalance, BillingStatus } from './hooks';
+
+// Re-export types for backward compatibility
+export type { SubscriptionInfo, CreditBalance, BillingStatus } from './hooks';

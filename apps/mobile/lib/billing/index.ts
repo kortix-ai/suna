@@ -1,38 +1,64 @@
-export * from './api';
-export * from './hooks';
-export * from './pricing';
-export * from './checkout';
-export * from './usage-api';
-export * from './provider';
-export * from './revenuecat';
-export * from './unified-checkout';
-export * from './plan-utils';
-
-// Unified account state
-export { 
-  billingApi,
-  accountStateSelectors,
-  type AccountState 
-} from './api';
+// =============================================================================
+// CORE EXPORTS - Unified Account State
+// =============================================================================
+export { billingApi, accountStateSelectors, type AccountState } from './api';
 export { 
   useAccountState,
   accountStateKeys,
-  invalidateAccountState 
+  invalidateAccountState,
+  useSubscription,
+  useCreditBalance,
+  useBillingStatus,
+  useCancelScheduledChange,
+  useSubscriptionCommitment,
+  useScheduledChanges,
+  invalidateCreditsAfterPurchase,
+  billingKeys,
+  type SubscriptionInfo,
+  type CreditBalance,
+  type BillingStatus,
 } from './hooks';
+
+// =============================================================================
+// USAGE & THREAD HOOKS
+// =============================================================================
+export { useThreadUsage } from './use-thread-usage';
+export type { ThreadUsageResponse, ThreadUsageRecord } from './use-thread-usage';
 export { usageApi } from './usage-api';
+
+// =============================================================================
+// CHECKOUT & PAYMENTS
+// =============================================================================
 export {
   startPlanCheckout,
   startCreditPurchase,
   openBillingPortal,
   openExternalUrl,
 } from './checkout';
-export { PRICING_TIERS } from './pricing';
+export {
+  startUnifiedPlanCheckout,
+  startUnifiedCreditPurchase,
+} from './unified-checkout';
+
+// =============================================================================
+// PRICING & TIERS
+// =============================================================================
+export { PRICING_TIERS, getDisplayPrice } from './pricing';
+export type { PricingTier, BillingPeriod } from './pricing';
+
+// =============================================================================
+// PROVIDER UTILITIES
+// =============================================================================
 export {
   getBillingProvider,
   shouldUseRevenueCat,
   shouldUseStripe,
   isRevenueCatConfigured,
 } from './provider';
+
+// =============================================================================
+// REVENUECAT
+// =============================================================================
 export {
   initializeRevenueCat,
   setRevenueCatAttributes,
@@ -44,8 +70,10 @@ export {
   checkSubscriptionStatus,
   presentPaywall,
 } from './revenuecat';
-export {
-  startUnifiedPlanCheckout,
-  startUnifiedCreditPurchase,
-} from './unified-checkout';
+export type { RevenueCatProduct } from './revenuecat';
+
+// =============================================================================
+// PLAN UTILITIES
+// =============================================================================
+export { getPlanName, getPlanIcon } from './plan-utils';
 

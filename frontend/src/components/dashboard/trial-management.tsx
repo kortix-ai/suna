@@ -28,7 +28,7 @@ import { formatDistanceToNow, format } from 'date-fns';
 export function TrialManagement() {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const { user } = useAuth();
-  const { data: trialStatus, isLoading } = useTrialStatus(!!user);
+  const { data: trialStatus, isLoading } = useTrialStatus({ enabled: !!user });
   const cancelTrialMutation = useCancelTrial();
 
   if (isLoading || !trialStatus) {

@@ -43,7 +43,7 @@ export default function ActivateTrialPage() {
   const { user } = useAuth();
   const { data: accountState, isLoading: isLoadingSubscription } = useAccountState({ enabled: !!user });
   const subscription = accountState?.subscription;
-  const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus(!!user);
+  const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus({ enabled: !!user });
   const startTrialMutation = useStartTrial();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
   const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();

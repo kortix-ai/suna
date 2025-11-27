@@ -105,19 +105,17 @@ export function AgentModelSelector({
 
     if (modelsData?.models) {
       modelsData.models.forEach(model => {
-        const displayName = model.display_name || model.short_name || model.id;
+        const displayName = model.name || model.id;
         
         modelMap.set(model.id, {
           id: model.id, // Use the actual model ID
           label: displayName,
-          requiresSubscription: model.requires_subscription || false,
+          requiresSubscription: !model.allowed, // If not allowed, requires subscription
           priority: model.priority || 0,
           recommended: false, // Remove recommended badges since we commented out non-Anthropic models
           top: (model.priority || 0) >= 90,
           capabilities: model.capabilities || [],
           contextWindow: model.context_window || 128000,
-          inputCostPerMillionTokens: model.input_cost_per_million_tokens,
-          outputCostPerMillionTokens: model.output_cost_per_million_tokens,
           isCustom: false
         });
       });
