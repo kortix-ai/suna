@@ -271,6 +271,8 @@ class NotificationService:
     
     async def send_welcome_email(self, account_id: str, account_name: Optional[str] = None, account_email: Optional[str] = None) -> Dict[str, Any]:
         try:
+            logger.info(f"[WELCOME_EMAIL] ENV_MODE={config.ENV_MODE.value if config.ENV_MODE else 'None'}, Novu enabled={self.novu.enabled}, API key configured={bool(self.novu.api_key)}")
+            
             if not account_email or not account_name:
                 account_info = await self._get_account_info(account_id)
                 account_email = account_email or account_info.get("email")
@@ -289,10 +291,10 @@ class NotificationService:
             )
             
             if not result:
-                logger.error(f"Failed to trigger welcome email workflow for account {account_id}")
+                logger.error(f"Failed to trigger welcome email workflow for account {account_id} - Novu returned False (ENV_MODE={config.ENV_MODE.value if config.ENV_MODE else 'None'})")
                 return {"success": False, "error": "Failed to trigger workflow"}
             
-            logger.info(f"Welcome email workflow triggered for account {account_id} (ENV_MODE: {config.ENV_MODE.value})")
+            logger.info(f"Welcome email workflow triggered for account {account_id} (ENV_MODE: {config.ENV_MODE.value if config.ENV_MODE else 'None'})")
             return {"success": True, "result": result}
             
         except Exception as e:
