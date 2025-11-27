@@ -187,13 +187,16 @@ function PricingTier({
           commitment_type: commitmentType,
         } as CreateCheckoutSessionRequest);
 
+      // Handle checkout URL - support both checkout_url and url fields
+      const checkoutUrl = response.checkout_url || response.url;
+
       switch (response.status) {
         case 'new':
         case 'checkout_created':
         case 'commitment_created':
-          if (response.url) {
+          if (checkoutUrl) {
             posthog.capture('plan_purchase_attempted');
-            window.location.href = response.url;
+            window.location.href = checkoutUrl;
           } else {
             console.error(
               "Error: Received status but no checkout URL.",
@@ -1049,7 +1052,7 @@ export function PricingSection({
                   className={cn(
                     "px-4 py-2 rounded-full font-medium text-sm transition-all duration-200",
                     selectedPaidTierIndex === index
-                      ? "bg-primary text-primary-foreground shadow-lg"
+                      ? "bg-primary text-primary-foreground"
                       : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >

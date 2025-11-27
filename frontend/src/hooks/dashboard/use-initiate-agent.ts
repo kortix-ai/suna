@@ -80,18 +80,6 @@ export const useInitiateAgentMutation = () => {
   });
 };
 
-export const useThreadLimit = () => {
-  return useQuery({
-    queryKey: threadKeys.limit(),
-    queryFn: async () => {
-      const response = await backendApi.get('/limits?type=thread_count');
-      return response.data.thread_count || response.data;
-    },
-    staleTime: 30000,
-    refetchOnWindowFocus: false,
-  });
-}
-
 export const useInitiateAgentWithInvalidation = () => {
   const queryClient = useQueryClient();
   const baseMutation = useInitiateAgentMutation();

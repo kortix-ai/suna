@@ -90,9 +90,6 @@ async def lifespan(app: FastAPI):
         template_api.initialize(db)
         composio_api.initialize(db)
         
-        from core import limits_api
-        limits_api.initialize(db)
-        
         # Start CloudWatch queue metrics publisher (production only)
         global _queue_metrics_task
         if config.ENV_MODE == EnvMode.PRODUCTION:

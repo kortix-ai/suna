@@ -33,7 +33,6 @@ import { toast } from 'sonner';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
 import { X } from 'lucide-react';
-import { useLimits } from '@/hooks/dashboard/use-limits';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
 import { UsageLimitsPopover } from './usage-limits-popover';
@@ -132,14 +131,13 @@ export function DashboardContent() {
     : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
-  const { data: limits, isLoading: isLimitsLoading } = useLimits();
   const { data: accountState, isLoading: isAccountStateLoading } = useAccountState({ enabled: !!user });
   const isLocal = isLocalMode();
   const planName = accountStateSelectors.planName(accountState);
-  const canCreateThread = limits?.thread_count?.can_create || false;
+  const canCreateThread = accountState?.limits?.threads?.can_create || false;
   
   const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';
-  const threadLimitExceeded = !isLimitsLoading && !canCreateThread && !isDismissed;
+  const threadLimitExceeded = !isAccountStateLoading && !canCreateThread && !isDismissed;
   
   const dailyCreditsInfo = accountState?.credits.daily_refresh;
   const hasLowCredits = accountStateSelectors.totalCredits(accountState) <= 10;
@@ -496,8 +494,8 @@ export function DashboardContent() {
                           >
                             <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>
                               {t('limitsExceeded', { 
-                                current: limits?.thread_count?.current_count ?? 0, 
-                                limit: limits?.thread_count?.limit ?? 0 
+                                current: accountState?.limits?.threads?.current ?? 0, 
+                                limit: accountState?.limits?.threads?.max ?? 0 
                               })}
                             </span>
                             <div className='flex items-center -mb-3.5'>

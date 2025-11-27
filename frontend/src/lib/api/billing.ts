@@ -69,12 +69,49 @@ export interface AccountState {
     recommended: boolean;
   }>;
   limits: {
-    projects: { current: number; max: number };
-    threads: { current: number; max: number };
-    concurrent_runs: number;
-    custom_workers: number;
-    scheduled_triggers: number;
-    app_triggers: number;
+    projects: {
+      current: number;
+      max: number;
+      can_create: boolean;
+      tier_name: string;
+    };
+    threads: {
+      current: number;
+      max: number;
+      can_create: boolean;
+      tier_name: string;
+    };
+    concurrent_runs: {
+      running_count: number;
+      limit: number;
+      can_start: boolean;
+      tier_name: string;
+    };
+    ai_worker_count: {
+      current_count: number;
+      limit: number;
+      can_create: boolean;
+      tier_name: string;
+    };
+    custom_mcp_count: {
+      current_count: number;
+      limit: number;
+      can_create: boolean;
+      tier_name: string;
+    };
+    trigger_count: {
+      scheduled: {
+        current_count: number;
+        limit: number;
+        can_create: boolean;
+      };
+      app: {
+        current_count: number;
+        limit: number;
+        can_create: boolean;
+      };
+      tier_name: string;
+    };
   };
   tier: {
     name: string;
