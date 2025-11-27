@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Header # type: ignore
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Optional
 import os
@@ -207,12 +207,9 @@ async def handle_user_created_webhook(
             )
         
         logger.info(f"🎉 New user signup: {email} (ID: {user_id})")
-        
-        # Extract user name for welcome email
+
         user_name = _extract_user_name(user_record, email)
-        
-        # Initialize account (free tier + Suna agent)
-        # The account_id is the same as user_id for personal accounts (basejump pattern)
+
         account_id = user_id
         init_result = await initialize_user_account(account_id, email)
         
@@ -228,19 +225,15 @@ async def handle_user_created_webhook(
         
         from core.notifications.notification_service import notification_service
         
-        async def send_welcome_notification(acc_id: str, name: str, user_email: str):
-            try:
-                await notification_service.send_welcome_email(
-                    account_id=acc_id,
-                    account_name=name,
-                    account_email=user_email
-                )
-            except Exception as ex:
-                logger.error(f"Error sending welcome notification: {ex}")
-                _send_welcome_email_async(user_email, name)
-
-        import asyncio
-        asyncio.create_task(send_welcome_notification(account_id, user_name, email))
+        try:
+            await notification_service.send_welcome_email(
+                account_id=account_id,
+                account_name=user_name,
+                account_email=email
+            )
+        except Exception as ex:
+            logger.error(f"Error sending welcome notification: {ex}")
+            _send_welcome_email_async(email, user_name)
         
         return WebhookResponse(
             success=True,
@@ -253,4 +246,3 @@ async def handle_user_created_webhook(
             success=False,
             message=str(e)
         )
-

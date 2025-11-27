@@ -20,6 +20,7 @@ from core.utils.retry import retry
 import time
 
 from core.services.redis import get_redis_config as _get_redis_config
+from core.setup import tasks
 
 redis_config = _get_redis_config()
 redis_host = redis_config["host"]
