@@ -101,6 +101,7 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None) 
 
         from core.notifications.notification_service import notification_service
         
+        logger.info(f"Sending welcome email to {email} with name {name}")
         try:
             await notification_service.send_welcome_email(
                 account_id=account_id,
