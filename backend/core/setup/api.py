@@ -97,6 +97,21 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None) 
         logger.info(f"[SETUP] Installing Suna agent for {account_id}")
         suna_service = SunaDefaultAgentService(db)
         agent_id = await suna_service.install_suna_agent_for_user(account_id)
+        name = email.split('@')[0].title(),
+
+        from core.notifications.notification_service import notification_service
+        
+        logger.info(f"Sending welcome email to {email} with name {name}")
+        try:
+            await notification_service.send_welcome_email(
+                account_id=account_id,
+                account_name=name,
+                account_email=email
+            )
+
+        except Exception as ex:
+            logger.error(f"Error sending welcome notification: {ex}")
+            _send_welcome_email_async(email, name)
         
         if not agent_id:
             logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}, but continuing")
@@ -222,18 +237,6 @@ async def handle_user_created_webhook(
         else:
             error_msg = init_result.get('message', 'Unknown error')
             logger.error(f"⚠️ Account initialization failed for {email}: {error_msg}")
-        
-        from core.notifications.notification_service import notification_service
-        
-        try:
-            await notification_service.send_welcome_email(
-                account_id=account_id,
-                account_name=user_name,
-                account_email=email
-            )
-        except Exception as ex:
-            logger.error(f"Error sending welcome notification: {ex}")
-            _send_welcome_email_async(email, user_name)
         
         return WebhookResponse(
             success=True,
