@@ -37,7 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useSubscriptionData } from '@/stores/subscription-store';
+import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
@@ -220,15 +220,66 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       refreshCustomModels,
     } = useModelSelection();
 
-    const { data: subscriptionData } = useSubscriptionData();
+    const { data: accountState, isLoading: isAccountStateLoading } = useAccountState({ enabled: isLoggedIn });
     const deleteFileMutation = useFileDelete();
     const queryClient = useQueryClient();
     
-    // Check if user is on free tier - only when we have subscriptionData and can confirm it's free
-    const isFreeTier = subscriptionData && (
-      subscriptionData.tier_key === 'free' ||
-      subscriptionData.tier?.name === 'free' ||
-      subscriptionData.plan_name === 'free'
+    // Transform accountState to subscriptionData format for backward compatibility
+    const subscriptionData = accountState ? (() => {
+      const isFreeTier = accountState.subscription.tier_key === 'free' || 
+                         accountState.subscription.tier_key === 'none' ||
+                         accountState.tier.monthly_credits === 0;
+      
+      // For free tier with daily credits, use daily credits
+      if (isFreeTier && accountState.credits.daily_refresh?.enabled) {
+        const dailyAmount = accountState.credits.daily_refresh.daily_amount || 0;
+        const dailyRemaining = accountState.credits.daily || 0;
+        const currentUsage = Math.max(0, dailyAmount - dailyRemaining);
+        
+        return {
+          tier_key: accountState.subscription.tier_key,
+          tier: {
+            name: accountState.subscription.tier_key,
+            display_name: accountState.subscription.tier_display_name,
+          },
+          plan_name: accountState.subscription.tier_display_name,
+          status: accountState.subscription.status,
+          current_usage: currentUsage,
+          cost_limit: dailyAmount,
+          credits: {
+            balance: accountState.credits.total,
+            tier_credits: dailyAmount,
+          },
+        };
+      }
+      
+      // For paid tiers, use monthly credits
+      const monthlyCreditsGranted = accountState.tier.monthly_credits || 0;
+      const monthlyCreditsRemaining = accountState.credits.monthly || 0;
+      const currentUsage = Math.max(0, monthlyCreditsGranted - monthlyCreditsRemaining);
+      
+      return {
+        tier_key: accountState.subscription.tier_key,
+        tier: {
+          name: accountState.subscription.tier_key,
+          display_name: accountState.subscription.tier_display_name,
+        },
+        plan_name: accountState.subscription.tier_display_name,
+        status: accountState.subscription.status,
+        current_usage: currentUsage,
+        cost_limit: monthlyCreditsGranted,
+        credits: {
+          balance: accountState.credits.total,
+          tier_credits: accountState.tier.monthly_credits,
+        },
+      };
+    })() : null;
+    
+    // Check if user is on free tier
+    const isFreeTier = accountState && (
+      accountState.subscription.tier_key === 'free' ||
+      accountState.subscription.tier_key === 'none' ||
+      !accountState.subscription.tier_key
     );
     
     // Chat input button has inverted background from theme
@@ -254,25 +305,23 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       'googledrive': googleDriveIcon?.icon_url,
       'slack': slackIcon?.icon_url,
       'notion': notionIcon?.icon_url,
-    }), [googleDriveIcon, slackIcon, notionIcon]);    // Show usage preview logic:
-    // - Always show to free users when showToLowCreditUsers is true
-    // - For paid users, only show when they're at 70% or more of their cost limit (30% or below remaining)
+    }), [googleDriveIcon, slackIcon, notionIcon]);
+    
+    // Show usage preview logic:
+    // - For free users with daily credits: only show when they've used 70%+ of daily credits
+    // - For paid users: only show when they're at 70% or more of their monthly credit limit
     const shouldShowUsage = useMemo(() => {
-      if (!subscriptionData || !showToLowCreditUsers || isLocalMode()) return false;
+      if (!accountState || !subscriptionData || !showToLowCreditUsers || isLocalMode()) return false;
 
-      // Free users: always show
-      if (subscriptionStatus === 'no_subscription') {
-        return true;
-      }
-
-      // Paid users: only show when at 70% or more of cost limit
-      const currentUsage = subscriptionData.current_usage || 0;
       const costLimit = subscriptionData.cost_limit || 0;
+      const currentUsage = subscriptionData.current_usage || 0;
+      
+      // Don't show if no limit is set
+      if (costLimit === 0) return false;
 
-      if (costLimit === 0) return false; // No limit set
-
-      return currentUsage >= (costLimit * 0.7); // 70% or more used (30% or less remaining)
-    }, [subscriptionData, showToLowCreditUsers, subscriptionStatus]);
+      // Show when at 70% or more of limit (30% or less remaining)
+      return currentUsage >= (costLimit * 0.7);
+    }, [accountState, subscriptionData, showToLowCreditUsers, isLocalMode]);
 
     // Auto-show usage preview when we have subscription data
     useEffect(() => {

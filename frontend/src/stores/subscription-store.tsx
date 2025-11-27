@@ -191,8 +191,38 @@ export function useSubscriptionData() {
         lifetime_used: 0,
         can_purchase_credits: state.subscription.can_purchase_credits,
       },
-      current_usage: 0,
-      cost_limit: state.tier.monthly_credits,
+      // Calculate usage based on tier type
+      current_usage: (() => {
+        const isFreeTier = state.subscription.tier_key === 'free' || 
+                          state.subscription.tier_key === 'none' ||
+                          state.tier.monthly_credits === 0;
+        
+        // For free tier with daily credits, use daily credits
+        if (isFreeTier && state.credits.daily_refresh?.enabled) {
+          const dailyAmount = state.credits.daily_refresh.daily_amount || 0;
+          const dailyRemaining = state.credits.daily || 0;
+          return Math.max(0, dailyAmount - dailyRemaining);
+        }
+        
+        // For paid tiers, use monthly credits
+        const monthlyCreditsGranted = state.tier.monthly_credits || 0;
+        const monthlyCreditsRemaining = state.credits.monthly || 0;
+        return Math.max(0, monthlyCreditsGranted - monthlyCreditsRemaining);
+      })(),
+      // Set cost limit based on tier type
+      cost_limit: (() => {
+        const isFreeTier = state.subscription.tier_key === 'free' || 
+                          state.subscription.tier_key === 'none' ||
+                          state.tier.monthly_credits === 0;
+        
+        // For free tier with daily credits, use daily amount
+        if (isFreeTier && state.credits.daily_refresh?.enabled) {
+          return state.credits.daily_refresh.daily_amount || 0;
+        }
+        
+        // For paid tiers, use monthly credits
+        return state.tier.monthly_credits || 0;
+      })(),
       credit_balance: state.credits.total,
       can_purchase_credits: state.subscription.can_purchase_credits,
       is_trial: state.subscription.is_trial,

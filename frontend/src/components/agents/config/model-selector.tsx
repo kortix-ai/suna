@@ -22,7 +22,6 @@ import { useModelSelection } from '@/hooks/agents';
 import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
-import { PlanSelectionModal } from '@/components/billing/pricing';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import Link from 'next/link';
 
@@ -30,10 +29,11 @@ import Link from 'next/link';
 const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
     if (label === 'Kortix POWER Mode') {
         return (
-            <span className={cn("flex items-center gap-1.5", className)}>
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-md">
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full">
                     <KortixLogo size={12} variant="symbol" />
-                    <span className="text-xs font-semibold text-primary">
+                    <span className="text-[11px] font-semibold tracking-wide uppercase text-primary">
                         Power
                     </span>
                 </span>
@@ -42,7 +42,8 @@ const ModelLabel = ({ label, className }: { label: string; className?: string })
     }
     if (label === 'Kortix Basic') {
         return (
-            <span className={cn("flex items-center gap-1.5", className)}>
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
                 <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded-md">
                     Basic
                 </span>
@@ -90,6 +91,7 @@ export function AgentModelSelector({
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   const openPricingModal = usePricingModalStore((state) => state.openPricingModal);
+  const isFreeTier = subscriptionStatus !== 'active';
   
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<CustomModelFormData>({ id: '', label: '' });
@@ -589,9 +591,9 @@ export function AgentModelSelector({
                                 </Tooltip>
                             );
                           })}
-                          {subscriptionStatus !== 'active' && (
-                            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent flex items-end justify-center">
-                              <div className="w-full p-3">
+                          {isFreeTier && premiumModels.length > 0 && (
+                            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent flex items-end justify-center pointer-events-none">
+                              <div className="w-full p-3 pointer-events-auto">
                                 <div className="rounded-xl bg-gradient-to-br from-muted/80 to-muted/70 dark:from-muted/40 dark:to-muted/30 shadow-sm border border-border p-3">
                                   <div className="flex flex-col space-y-2">
                                     <div className="flex items-center">
@@ -603,7 +605,13 @@ export function AgentModelSelector({
                                     <Button
                                       size="sm"
                                       className="w-full h-8 font-medium"
-                                      onClick={handleUpgradeClick}
+                                      onClick={() => {
+                                        setIsOpen(false);
+                                        openPricingModal({
+                                          isAlert: true,
+                                          alertTitle: 'Upgrade to access premium models',
+                                        });
+                                      }}
                                     >
                                       Upgrade now
                                     </Button>

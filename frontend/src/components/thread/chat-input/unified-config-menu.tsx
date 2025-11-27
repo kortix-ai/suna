@@ -40,10 +40,11 @@ import { isLocalMode } from '@/lib/config';
 const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
     if (label === 'Kortix POWER Mode') {
         return (
-            <span className={cn("flex items-center gap-1.5", className)}>
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-md">
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full">
                     <KortixLogo size={12} variant="symbol" />
-                    <span className="text-xs font-semibold text-primary">
+                    <span className="text-[11px] font-semibold tracking-wide uppercase text-primary">
                         Power
                     </span>
                 </span>
@@ -52,7 +53,8 @@ const ModelLabel = ({ label, className }: { label: string; className?: string })
     }
     if (label === 'Kortix Basic') {
         return (
-            <span className={cn("flex items-center gap-1.5", className)}>
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
                 <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded-md">
                     Basic
                 </span>
