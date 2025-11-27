@@ -2,6 +2,7 @@ import os
 import base64
 import mimetypes
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Optional, Tuple
 from io import BytesIO
@@ -46,12 +47,19 @@ DEFAULT_PNG_COMPRESS_LEVEL = 6
 class SandboxVisionTool(SandboxToolsBase):
     """Tool for allowing the agent to 'see' images within the sandbox."""
 
+    # Class-level dictionary to store locks per thread (prevents race conditions in parallel tool execution)
+    _thread_locks = {}
+
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         # Make thread_manager accessible within the tool instance
         self.thread_manager = thread_manager
         self.db = DBConnection()
+        
+        # Ensure this thread has a lock
+        if self.thread_id not in SandboxVisionTool._thread_locks:
+            SandboxVisionTool._thread_locks[self.thread_id] = asyncio.Lock()
 
     async def convert_svg_with_sandbox_browser(self, svg_full_path: str) -> Tuple[bytes, str]:
         """Convert SVG to PNG using sandbox browser API for better rendering support.
@@ -278,11 +286,20 @@ class SandboxVisionTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "load_image",
-            "description": """Loads an image file into conversation context from the /workspace directory or from a URL so you can see and analyze it.
+            "description": """Loads an image file into conversation context so you can see and analyze it.
 
-⚠️ HARD LIMIT: Maximum 3 images can be loaded in context at any time. Images consume 1000+ tokens each.
+IMAGE LIMIT & AUTO-CLEARING:
+• Maximum 3 images in context at once (each consumes 1000+ tokens)
+• When loading a 4th image, ALL previous images are automatically cleared to make room
+• You'll be notified when auto-clearing happens
+• Image files remain in sandbox - only conversation context is cleared
+• You can reload images later if needed
 
-Images remain in the sandbox and can be loaded again anytime. SVG files are automatically converted to PNG.""",
+USAGE:
+• Provide relative path from /workspace (e.g., 'screenshots/ui.png') or URL
+• Supported formats: JPG, PNG, GIF, WEBP, SVG (auto-converted to PNG)
+• Maximum file size: 10MB
+• Only load images when you need to actively see them""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -415,66 +432,108 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                 print(f"[LoadImage] Failed to upload to cloud storage: {upload_error}")
                 return self.fail_response(f"Failed to upload image to cloud storage: {str(upload_error)}")
 
-            # Check current image count in context (enforce 3-image limit)
-            current_image_count = await self._count_images_in_context()
-            if current_image_count >= 3:
-                return self.fail_response(
-                    f"Cannot load image '{cleaned_path}': Maximum limit of 3 images in context reached. "
-                    f"You currently have {current_image_count} images loaded. Use a tool to clear old images first."
-                )
-            
-            # Add the image to the thread as an image_context message with multi-modal content
-            # This allows the LLM to actually "see" the image
-            message_content = {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"[Image loaded from '{cleaned_path}']"},
-                    {"type": "image_url", "image_url": {"url": public_url}}
-                ]
-            }
-            
-            await self.thread_manager.add_message(
-                thread_id=self.thread_id,
-                type="image_context",
-                content=message_content,
-                is_llm_message=True,
-                metadata={
-                    "file_path": cleaned_path,
-                    "mime_type": compressed_mime_type,
-                    "original_size": original_size,
-                    "compressed_size": len(compressed_bytes)
+            # CRITICAL SECTION: Use lock to prevent race conditions with parallel load_image calls
+            # This ensures check-then-act-then-update is atomic across concurrent executions
+            async with SandboxVisionTool._thread_locks[self.thread_id]:
+                # Get current metadata and image count (single DB call)
+                metadata, current_image_count = await self._get_metadata_and_image_count()
+                auto_cleared = False
+                
+                if current_image_count >= 3:
+                    # Automatically clear old images to make room
+                    deleted_count = await self._clear_images_from_context()
+                    auto_cleared = True
+                    print(f"[LoadImage] Auto-cleared {deleted_count} images to make room for new image")
+                
+                # Add the image to the thread as an image_context message with multi-modal content
+                # This allows the LLM to actually "see" the image
+                message_content = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"[Image loaded from '{cleaned_path}']"},
+                        {"type": "image_url", "image_url": {"url": public_url}}
+                    ]
                 }
-            )
-            
-            print(f"[LoadImage] Added image to context. Current count: {current_image_count + 1}/3")
-            
-            # Return structured output
-            result_data = {
-                "message": f"Successfully loaded image '{cleaned_path}' into context (reduced from {original_size/1024:.1f}KB to {len(compressed_bytes)/1024:.1f}KB). Image {current_image_count + 1}/3 in context.",
-                "file_path": cleaned_path,
-                "image_url": public_url
-            }
-            
-            return self.success_response(result_data)
+                
+                await self.thread_manager.add_message(
+                    thread_id=self.thread_id,
+                    type="image_context",
+                    content=message_content,
+                    is_llm_message=True,
+                    metadata={
+                        "file_path": cleaned_path,
+                        "mime_type": compressed_mime_type,
+                        "original_size": original_size,
+                        "compressed_size": len(compressed_bytes)
+                    }
+                )
+                
+                # Update image count in thread metadata (reuse existing metadata to avoid extra SELECT)
+                new_count = 1 if auto_cleared else current_image_count + 1
+                await self._update_image_count_in_metadata(new_count, existing_metadata=metadata)
+                
+                print(f"[LoadImage] Added image to context. Current count: {new_count}/3")
+                
+                # Return structured output
+                base_message = f"Successfully loaded image '{cleaned_path}' into context (reduced from {original_size/1024:.1f}KB to {len(compressed_bytes)/1024:.1f}KB)."
+                
+                if auto_cleared:
+                    base_message += f"\n\nNote: The 3-image limit was reached, so all previous images were automatically cleared to make room for this new image."
+                
+                base_message += f" Image {new_count}/3 in context."
+                
+                result_data = {
+                    "message": base_message,
+                    "file_path": cleaned_path,
+                    "image_url": public_url,
+                    "auto_cleared": auto_cleared
+                }
+                
+                return self.success_response(result_data)
 
         except Exception as e:
             return self.fail_response(f"An unexpected error occurred while trying to see the image: {str(e)}")
     
-    async def _count_images_in_context(self) -> int:
-        """Count how many image_context messages are currently in the conversation."""
+    async def _get_metadata_and_image_count(self) -> tuple[dict, int]:
+        """Get thread metadata and current image count in a single call."""
         try:
-            messages = await self.thread_manager.get_messages(thread_id=self.thread_id)
+            client = await self.db.client
+            result = await client.table('threads').select('metadata').eq('thread_id', self.thread_id).single().execute()
             
-            # Count messages with type "image_context"
-            image_count = sum(1 for msg in messages if msg.get("type") == "image_context")
+            if result.data:
+                metadata = result.data.get('metadata', {})
+                image_count = metadata.get('image_count', 0)
+                return metadata, image_count
             
-            return image_count
+            return {}, 0
         except Exception as e:
-            print(f"[LoadImage] Error counting images in context: {e}")
-            return 0
+            print(f"[LoadImage] Error getting metadata and image count: {e}")
+            return {}, 0
+    
+    async def _update_image_count_in_metadata(self, count: int, existing_metadata: dict = None) -> None:
+        """Update the image count in thread metadata."""
+        try:
+            client = await self.db.client
+            
+            # Use existing metadata if provided, otherwise fetch it
+            if existing_metadata is not None:
+                metadata = existing_metadata
+            else:
+                result = await client.table('threads').select('metadata').eq('thread_id', self.thread_id).single().execute()
+                metadata = result.data.get('metadata', {}) if result.data else {}
+            
+            # Update image count
+            metadata['image_count'] = count
+            
+            # Write back
+            await client.table('threads').update({'metadata': metadata}).eq('thread_id', self.thread_id).execute()
+            
+            print(f"[LoadImage] Updated image count in metadata: {count}")
+        except Exception as e:
+            print(f"[LoadImage] Error updating image count in metadata: {e}")
     
     async def _clear_images_from_context(self) -> int:
-        """Remove all image_context messages from the thread."""
+        """Remove all image_context messages from the thread and reset metadata count."""
         try:
             messages = await self.thread_manager.get_messages(thread_id=self.thread_id)
             
@@ -488,78 +547,12 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                     )
                     deleted_count += 1
             
+            # Reset the count in metadata to 0
+            await self._update_image_count_in_metadata(0)
+            
             return deleted_count
         except Exception as e:
             print(f"[LoadImage] Error clearing images from context: {e}")
             return 0
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "clear_images_from_context",
-            "description": """Removes all images from conversation context to free up slots for new images.
-
-⚠️ HARD LIMIT: Maximum 3 images allowed in context at any time.
-
-Call this when you need to load new images but have reached the limit.""",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
-    })
-    async def clear_images_from_context(self) -> ToolResult:
-        """Removes all image_context messages from the current thread."""
-        try:
-            await self._ensure_sandbox()
-            
-            deleted_count = await self._clear_images_from_context()
-            
-            if deleted_count > 0:
-                return self.success_response(
-                    f"Successfully cleared {deleted_count} image(s) from conversation context. "
-                    f"You can now load up to 3 new images."
-                )
-            else:
-                return self.success_response("No images found in conversation context to clear.")
-                
-        except Exception as e:
-            return self.fail_response(f"Failed to clear images from context: {str(e)}")
- 
-    # @openapi_schema({
-    #     "type": "function",
-    #     "function": {
-    #         "name": "list_images_in_context",
-    #         "description": "Lists all images currently loaded in the conversation context, showing file paths and sizes.",
-    #         "parameters": {
-    #             "type": "object",
-    #             "properties": {},
-    #             "required": []
-    #         }
-    #     }
-    # })
-    # async def list_images_in_context(self) -> ToolResult:
-    #     """Lists all images currently in the conversation context."""
-    #     try:
-    #         await self._ensure_sandbox()
-            
-    #         # Get list of images using the image context manager
-    #         images = await self.image_context_manager.list_images_in_context(self.thread_id)
-            
-    #         if not images:
-    #             return self.success_response("No images currently in conversation context.")
-            
-    #         # Format the response
-    #         image_list = []
-    #         for img in images:
-    #             image_list.append(
-    #                 f"• {img['file_path']} ({img['compressed_size'] / 1024:.1f}KB, "
-    #                 f"compressed from {img['original_size'] / 1024:.1f}KB)"
-    #             )
-            
-    #         response = f"Found {len(images)} image(s) in conversation context:\n" + "\n".join(image_list)
-    #         return self.success_response(response)
-                
-    #     except Exception as e:
-    #         return self.fail_response(f"Failed to list images in context: {str(e)}") 
+   
