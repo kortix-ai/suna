@@ -6,10 +6,10 @@ import { FileText, CheckCircle2, AlertCircle, Calendar, Hash } from 'lucide-reac
 import type { ToolViewProps } from '../types';
 import { extractDocsData, getActionTitle, stripHtmlTags } from './_utils';
 
-export function DocsToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const data = extractDocsData(toolData);
-  
-  const toolName = toolData?.toolName || 'docs';
+export function DocsToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const data = extractDocsData({ toolCall, toolResult });
+
+  const toolName = toolCall?.function?.name || 'docs';
   const actionTitle = getActionTitle(toolName);
 
   if (isStreaming) {
@@ -31,21 +31,7 @@ export function DocsToolView({ toolData, isStreaming = false }: ToolViewProps) {
   if (data.error) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-red-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={AlertCircle} size={24} className="text-red-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-                {actionTitle}
-              </Text>
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Error
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="bg-red-500/10 rounded-xl p-4 border border-red-500/20">
             <Text className="text-sm font-roobert text-red-600 dark:text-red-400">
               {data.error}
@@ -62,25 +48,7 @@ export function DocsToolView({ toolData, isStreaming = false }: ToolViewProps) {
   if (documents && documents.length > 0) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-blue-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={FileText} size={24} className="text-blue-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-                Documents
-              </Text>
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                {documents.length} {documents.length === 1 ? 'Document' : 'Documents'}
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10">
-              <Icon as={CheckCircle2} size={12} className="text-primary" />
-              <Text className="text-xs font-roobert-medium text-primary">Success</Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="gap-3">
             {documents.map((doc, idx) => (
               <View key={idx} className="bg-card border border-border rounded-xl p-4">
@@ -117,32 +85,7 @@ export function DocsToolView({ toolData, isStreaming = false }: ToolViewProps) {
 
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-blue-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={FileText} size={24} className="text-blue-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={2}>
-                {document.title}
-              </Text>
-            </View>
-            <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-              data.success ? 'bg-primary/10' : 'bg-destructive/10'
-            }`}>
-              <Icon 
-                as={data.success ? CheckCircle2 : AlertCircle} 
-                size={12} 
-                className={data.success ? 'text-primary' : 'text-destructive'} 
-              />
-              <Text className={`text-xs font-roobert-medium ${
-                data.success ? 'text-primary' : 'text-destructive'
-              }`}>
-                {data.success ? 'Success' : 'Failed'}
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           {contentLines.length > 0 && (
             <View className="gap-2">
               <Text className="text-sm font-roobert-medium text-foreground/70">
@@ -150,7 +93,7 @@ export function DocsToolView({ toolData, isStreaming = false }: ToolViewProps) {
               </Text>
               <View className="bg-muted/10 dark:bg-muted/80 rounded-xl p-4 border border-border">
                 {contentLines.map((line, idx) => (
-                  <Text 
+                  <Text
                     key={idx}
                     className="text-sm font-roobert text-foreground leading-6 mb-2"
                     selectable
@@ -186,25 +129,7 @@ export function DocsToolView({ toolData, isStreaming = false }: ToolViewProps) {
   if (data.message) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-blue-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={FileText} size={24} className="text-blue-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-                {actionTitle}
-              </Text>
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Success
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10">
-              <Icon as={CheckCircle2} size={12} className="text-primary" />
-              <Text className="text-xs font-roobert-medium text-primary">Success</Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="bg-primary/10 rounded-xl p-4 border border-primary/20">
             <Text className="text-sm font-roobert text-foreground">
               {data.message}

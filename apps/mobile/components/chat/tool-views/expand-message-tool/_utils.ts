@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface ExpandMessageData {
   expanded_content: string | null;
@@ -17,16 +17,16 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractExpandMessageData(toolData: ParsedToolData): ExpandMessageData {
-  const { arguments: args, result } = toolData;
+export function extractExpandMessageData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): ExpandMessageData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let expanded_content: string | null = null;
   let original_content: string | undefined;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       expanded_content = output.expanded_content || output.content || null;
@@ -39,7 +39,7 @@ export function extractExpandMessageData(toolData: ParsedToolData): ExpandMessag
   return {
     expanded_content,
     original_content,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

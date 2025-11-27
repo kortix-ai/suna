@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractCompanySearchData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function CompanySearchToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { query, total_results, results, success } = extractCompanySearchData(toolData);
+export function CompanySearchToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { query, total_results, results, success } = extractCompanySearchData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -38,18 +38,7 @@ export function CompanySearchToolView({ toolData, isStreaming = false }: ToolVie
   if (results.length === 0) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-indigo-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={Building2} size={24} className="text-indigo-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Company Search
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="py-8 items-center">
             <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
               <Icon as={Building2} size={40} className="text-muted-foreground" />
@@ -75,35 +64,7 @@ export function CompanySearchToolView({ toolData, isStreaming = false }: ToolVie
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-indigo-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Building2} size={24} className="text-indigo-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Company Search
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {total_results} {total_results === 1 ? 'Company' : 'Companies'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Found' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="gap-3">
           {results.map((result, idx) => (
             <Pressable
@@ -130,7 +91,7 @@ export function CompanySearchToolView({ toolData, isStreaming = false }: ToolVie
                   <Text className="text-base font-roobert-semibold text-foreground">
                     {result.company_name}
                   </Text>
-                  
+
                   {result.company_industry && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={Briefcase} size={12} className="text-muted-foreground" />
@@ -139,7 +100,7 @@ export function CompanySearchToolView({ toolData, isStreaming = false }: ToolVie
                       </Text>
                     </View>
                   )}
-                  
+
                   {result.company_location && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={MapPin} size={12} className="text-muted-foreground" />

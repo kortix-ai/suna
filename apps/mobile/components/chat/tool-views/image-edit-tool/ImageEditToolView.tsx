@@ -1,16 +1,28 @@
-import React from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useState } from 'react';
+import { View, ScrollView, ActivityIndicator, Image as RNImage } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Wand2, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractImageEditData } from './_utils';
 import { FileAttachmentRenderer } from '@/components/chat/FileAttachmentRenderer';
+import { useThread } from '@/lib/chat/hooks';
 
-export function ImageEditToolView({ toolData, isStreaming = false, assistantMessage, project }: ToolViewProps) {
-  const fallbackSandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
-  const extractedData = extractImageEditData(toolData, fallbackSandboxId);
-  const { mode, prompt, generatedImagePath, imagePath, width, height, error, success, sandboxId: extractedSandboxId } = extractedData;
+export function ImageEditToolView({ toolCall, toolResult, isStreaming = false, assistantMessage, toolMessage, project }: ToolViewProps) {
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
+
+  // Get thread data to access project/sandbox info
+  const threadId = toolMessage?.thread_id || assistantMessage?.thread_id;
+  const { data: thread } = useThread(threadId);
+
+  // Prefer project prop, fallback to thread project
+  const effectiveProject = project || thread?.project;
+  const effectiveSandboxId = effectiveProject?.sandbox_id || effectiveProject?.sandbox?.id;
+
+  const fallbackSandboxId = effectiveSandboxId || assistantMessage?.sandbox_id;
+  const extractedData = extractImageEditData({ toolCall, toolResult }, fallbackSandboxId);
+  const { mode, prompt, generatedImagePath, imagePath, imageUrl, width, height, error, success, sandboxId: extractedSandboxId } = extractedData;
 
   // Prefer extracted sandbox ID from tool output, fallback to project/message
   const sandboxId = extractedSandboxId || fallbackSandboxId;
@@ -20,10 +32,17 @@ export function ImageEditToolView({ toolData, isStreaming = false, assistantMess
     prompt,
     generatedImagePath,
     imagePath,
+    imageUrl,
     sandboxId,
-    toolDataArgs: toolData.arguments,
-    toolDataResult: toolData.result,
+    extractedSandboxId,
+    fallbackSandboxId,
+    effectiveSandboxId,
+    threadId,
+    hasThread: !!thread,
+    toolDataArgs: toolCall.arguments,
+    toolDataResult: toolResult,
     projectSandboxId: project?.sandbox_id,
+    threadProjectSandboxId: thread?.project?.sandbox_id,
     assistantSandboxId: assistantMessage?.sandbox_id
   });
 
@@ -50,18 +69,7 @@ export function ImageEditToolView({ toolData, isStreaming = false, assistantMess
   if (error) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-red-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={AlertCircle} size={24} className="text-red-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Generation Failed
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="bg-red-500/10 rounded-xl p-4 border border-red-500/20">
             <Text className="text-sm font-roobert text-red-600 dark:text-red-400">
               {error}
@@ -74,21 +82,7 @@ export function ImageEditToolView({ toolData, isStreaming = false, assistantMess
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Wand2} size={24} className="text-purple-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              AI Image
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {mode === 'edit' ? 'Edited' : 'Generated'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {prompt && (
           <View className="gap-2">
             <Text className="text-sm font-roobert-medium text-foreground/70">
@@ -123,7 +117,42 @@ export function ImageEditToolView({ toolData, isStreaming = false, assistantMess
           </View>
         )}
 
-        {generatedImagePath && sandboxId ? (
+        {imageUrl ? (
+          <View className="gap-2">
+            <Text className="text-sm font-roobert-medium text-foreground/70">
+              Generated Image
+            </Text>
+            <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ aspectRatio: 1 }}>
+              {imageLoading && (
+                <View className="absolute inset-0 items-center justify-center bg-muted/30">
+                  <ActivityIndicator size="large" color="#0066FF" />
+                </View>
+              )}
+              {imageError ? (
+                <View className="flex-1 items-center justify-center">
+                  <Icon as={AlertCircle} size={32} className="text-muted-foreground mb-2" />
+                  <Text className="text-sm font-roobert text-muted-foreground">
+                    Failed to load image
+                  </Text>
+                </View>
+              ) : (
+                <RNImage
+                  source={{ uri: imageUrl }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="contain"
+                  onLoad={() => {
+                    setImageLoading(false);
+                    setImageError(false);
+                  }}
+                  onError={() => {
+                    setImageLoading(false);
+                    setImageError(true);
+                  }}
+                />
+              )}
+            </View>
+          </View>
+        ) : generatedImagePath ? (
           <View className="gap-2">
             <Text className="text-sm font-roobert-medium text-foreground/70">
               Generated Image

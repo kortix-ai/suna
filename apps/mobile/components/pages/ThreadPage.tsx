@@ -599,7 +599,7 @@ export function ThreadPage({
         project={fullThreadData?.project ? {
           id: fullThreadData.project.id,
           name: fullThreadData.project.name,
-          sandbox_id: fullThreadData.project.sandbox?.id
+          sandbox: fullThreadData.project.sandbox
         } : undefined}
       />
 

@@ -6,9 +6,9 @@ import { Clock, CheckCircle2, AlertCircle, DollarSign, Hash } from 'lucide-react
 import type { ToolViewProps } from '../types';
 import { extractWaitForCallCompletionData, formatDuration, statusConfig } from './_utils';
 
-export function WaitForCallCompletionToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const data = extractWaitForCallCompletionData(toolData);
-  
+export function WaitForCallCompletionToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const data = extractWaitForCallCompletionData({ toolCall, toolResult });
+
   const statusInfo = statusConfig[data.final_status as keyof typeof statusConfig] || statusConfig.completed;
 
   if (isStreaming) {
@@ -29,31 +29,7 @@ export function WaitForCallCompletionToolView({ toolData, isStreaming = false }:
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-amber-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Clock} size={24} className="text-amber-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Call Completion
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              Completed
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.bg}`}>
-            <Icon 
-              as={CheckCircle2} 
-              size={12} 
-              className="text-primary" 
-            />
-            <Text className={`text-xs font-roobert-medium ${statusInfo.color}`}>
-              {statusInfo.label}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="bg-card border border-border rounded-xl p-4 gap-3">
           <Text className="text-sm font-roobert-medium text-muted-foreground">
             Call ID
@@ -75,7 +51,7 @@ export function WaitForCallCompletionToolView({ toolData, isStreaming = false }:
               </Text>
             </View>
           )}
-          
+
           {data.cost !== undefined && (
             <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
               <View className="flex-row items-center gap-2 mb-1">

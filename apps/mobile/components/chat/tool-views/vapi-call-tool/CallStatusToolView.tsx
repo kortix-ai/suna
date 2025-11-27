@@ -6,9 +6,9 @@ import { Phone, Clock, DollarSign, User, Bot } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractCallStatusData, formatPhoneNumber, formatDuration, statusConfig } from './_utils';
 
-export function CallStatusToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const data = extractCallStatusData(toolData);
-  
+export function CallStatusToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const data = extractCallStatusData({ toolCall, toolResult });
+
   const statusInfo = statusConfig[data.status as keyof typeof statusConfig] || statusConfig.queued;
 
   if (isStreaming) {
@@ -26,26 +26,7 @@ export function CallStatusToolView({ toolData, isStreaming = false }: ToolViewPr
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-blue-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Phone} size={24} className="text-blue-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Call Status
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {formatPhoneNumber(data.phone_number)}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${statusInfo.bg}`}>
-            <Text className={`text-xs font-roobert-medium ${statusInfo.color}`}>
-              {statusInfo.label}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="flex-row gap-2">
           {data.duration_seconds !== undefined && (
             <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
@@ -58,7 +39,7 @@ export function CallStatusToolView({ toolData, isStreaming = false }: ToolViewPr
               </Text>
             </View>
           )}
-          
+
           {data.cost !== undefined && (
             <View className="bg-muted/30 rounded-xl p-3 border border-border flex-1">
               <View className="flex-row items-center gap-2 mb-1">
@@ -81,17 +62,16 @@ export function CallStatusToolView({ toolData, isStreaming = false }: ToolViewPr
               {data.transcript.map((msg, idx) => (
                 <View
                   key={idx}
-                  className={`rounded-xl p-3 ${
-                    msg.role === 'assistant' 
-                      ? 'bg-primary/10 ml-4' 
+                  className={`rounded-xl p-3 ${msg.role === 'assistant'
+                      ? 'bg-primary/10 ml-4'
                       : 'bg-muted/50 mr-4'
-                  }`}
+                    }`}
                 >
                   <View className="flex-row items-center gap-2 mb-1">
-                    <Icon 
-                      as={msg.role === 'assistant' ? Bot : User} 
-                      size={12} 
-                      className="text-muted-foreground" 
+                    <Icon
+                      as={msg.role === 'assistant' ? Bot : User}
+                      size={12}
+                      className="text-muted-foreground"
                     />
                     <Text className="text-xs font-roobert-medium text-muted-foreground">
                       {msg.role === 'assistant' ? 'AI' : 'Caller'}

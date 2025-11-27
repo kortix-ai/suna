@@ -6,10 +6,10 @@ import { Database, CheckCircle2, AlertCircle, FileText, Folder, File } from 'luc
 import type { ToolViewProps } from '../types';
 import { extractKbData } from './_utils';
 
-export function KbToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const data = extractKbData(toolData);
-  
-  const toolName = toolData?.toolName || '';
+export function KbToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const data = extractKbData({ toolCall, toolResult });
+
+  const toolName = toolCall?.function_name || '';
   const isInit = toolName.includes('init');
   const isSearch = toolName.includes('search');
   const isList = toolName.includes('ls') || toolName.includes('list');
@@ -32,35 +32,7 @@ export function KbToolView({ toolData, isStreaming = false }: ToolViewProps) {
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-blue-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Database} size={24} className="text-blue-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Knowledge Base
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {isInit ? 'Initialized' : isSearch ? 'Search Results' : isList ? 'Contents' : 'KB'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            data.success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={data.success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={data.success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              data.success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {data.success ? 'Success' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {data.message && (
           <View className="bg-muted/50 rounded-xl p-4 border border-border">
             <Text className="text-sm font-roobert text-foreground">
@@ -85,7 +57,7 @@ export function KbToolView({ toolData, isStreaming = false }: ToolViewProps) {
             <Text className="text-sm font-roobert-medium text-foreground/70">
               Items ({totalItems})
             </Text>
-            
+
             {data.folders && data.folders.length > 0 && (
               <View className="gap-2">
                 {data.folders.map((folder: any, idx: number) => (

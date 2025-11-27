@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface WebScrapeData {
   url: string | null;
@@ -19,8 +19,8 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractWebScrapeData(toolData: ParsedToolData): WebScrapeData {
-  const { arguments: args, result } = toolData;
+export function extractWebScrapeData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WebScrapeData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let url: string | null = null;
   let files: string[] = [];
@@ -36,10 +36,10 @@ export function extractWebScrapeData(toolData: ParsedToolData): WebScrapeData {
     }
   }
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? result.output 
-      : JSON.stringify(result.output);
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? toolResult.output 
+      : JSON.stringify(toolResult.output);
     
     message = output;
     
@@ -55,7 +55,7 @@ export function extractWebScrapeData(toolData: ParsedToolData): WebScrapeData {
     files,
     message,
     urlCount,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

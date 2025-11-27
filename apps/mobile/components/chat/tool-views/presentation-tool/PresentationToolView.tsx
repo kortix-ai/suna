@@ -56,15 +56,16 @@ export function PresentationToolView({
     return null;
   }
 
+  const toolName = toolCall.function_name;
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const threadId = toolMessage?.thread_id || assistantMessage?.thread_id;
   const { data: thread } = useThread(threadId);
-  
+
   // Prefer project prop, fallback to thread project
   const effectiveProject = project || thread?.project;
-  const sandboxUrl = effectiveProject?.sandbox?.sandbox_url;
+  const sandboxUrl = (effectiveProject as any)?.sandbox?.sandbox_url;
 
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
@@ -81,12 +82,20 @@ export function PresentationToolView({
   let toolExecutionError: string | undefined;
   let toolMessageText: string | undefined;
 
+  console.log('🎨🎨🎨 [PresentationToolView] RAW TOOL DATA:', {
+    toolName,
+    'toolCall.arguments': toolCall.arguments,
+    'toolResult?.output': toolResult?.output,
+    'typeof output': typeof toolResult?.output
+  });
+
   if (toolResult?.output) {
     try {
       let output = toolResult.output;
-      
+
       // Handle string output
       if (typeof output === 'string') {
+        console.log('🎨 [PresentationToolView] Output is STRING, attempting to parse');
         // Check if the string looks like an error message
         if (output.startsWith('Error') || output.includes('exec')) {
           console.error('Tool execution error:', output);
@@ -95,14 +104,17 @@ export function PresentationToolView({
           // Try to parse as JSON
           try {
             output = JSON.parse(output);
+            console.log('🎨 [PresentationToolView] Successfully parsed string to object:', output);
           } catch (parseError) {
             console.error('Failed to parse tool output as JSON:', parseError);
             console.error('Raw tool output:', output);
             toolMessageText = output; // Keep as message text
           }
         }
+      } else {
+        console.log('🎨 [PresentationToolView] Output is OBJECT:', output);
       }
-      
+
       // Only extract data if we have a valid parsed object
       if (output && typeof output === 'object' && !toolExecutionError) {
         extractedPresentationName = output.presentation_name;
@@ -110,6 +122,14 @@ export function PresentationToolView({
         currentSlideNumber = output.slide_number;
         presentationTitle = output.presentation_title || output.title;
         toolMessageText = output.message;
+
+        console.log('🎨 [PresentationToolView] EXTRACTED DATA:', {
+          extractedPresentationName,
+          extractedPresentationPath,
+          currentSlideNumber,
+          presentationTitle,
+          toolMessageText
+        });
       }
     } catch (e) {
       console.error('Failed to process tool output:', e);
@@ -141,9 +161,24 @@ export function PresentationToolView({
 
   const displayTitle = metadata?.title || title || 'Presentation';
 
+  // Handle list_slides output - extract slides directly from output
+  let slidesFromOutput: any[] = [];
+  if (toolName === 'list_slides' && toolResult?.output && typeof toolResult.output === 'object') {
+    const rawSlides = (toolResult.output as any).slides || [];
+    // Transform raw slides to match expected format
+    slidesFromOutput = rawSlides.map((slide: any) => ({
+      number: slide.slide_number,
+      title: slide.title,
+      filename: slide.filename,
+      file_path: slide.preview_url || slide.file_path,
+      preview_url: slide.preview_url,
+      created_at: slide.created_at
+    }));
+  }
+
   const slides = metadata ? Object.entries(metadata.slides)
     .map(([num, slide]) => ({ number: parseInt(num), ...slide }))
-    .sort((a, b) => a.number - b.number) : [];
+    .sort((a, b) => a.number - b.number) : slidesFromOutput;
 
   const slideCount = slides.length;
 
@@ -153,71 +188,71 @@ export function PresentationToolView({
     if (hasLoadedRef.current) {
       return;
     }
-    
+
     // If sandbox URL isn't available yet, wait and don't set loading state
     if (!presentation_name || !sandboxUrl || isStreaming) {
       setIsLoadingMetadata(false);
       return;
     }
-    
+
     setIsLoadingMetadata(true);
     setError(null);
     setRetryAttempt(retryCount);
-    
+
     try {
       // Sanitize the presentation name to match backend directory creation
       const sanitizedPresentationName = sanitizeFilename(presentation_name);
-      
+
       const metadataUrl = constructHtmlPreviewUrl(
         sandboxUrl,
         `presentations/${sanitizedPresentationName}/metadata.json`
       );
-      
+
       // Add cache-busting parameter to ensure fresh data
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
-      
+
       console.log(`🎨 [PresentationToolView] Loading metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
-      
+
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
         headers: {
           'Cache-Control': 'no-cache'
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setMetadata(data);
         hasLoadedRef.current = true; // Mark as successfully loaded
         console.log('🎨 [PresentationToolView] Successfully loaded metadata:', data);
         setIsLoadingMetadata(false);
-        
+
         // Clear any pending retry timeout on success
         if (retryTimeoutRef.current) {
           clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
         }
-        
+
         return; // Success, exit early
       } else {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (err) {
       console.error(`🎨 [PresentationToolView] Error loading metadata (attempt ${retryCount + 1}):`, err);
-      
+
       // Calculate delay with exponential backoff, capped at 10 seconds
       // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
-      const delay = retryCount < 5 
+      const delay = retryCount < 5
         ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
         : 5000; // Consistent 5 second intervals after that
-      
+
       console.log(`🎨 [PresentationToolView] Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
-      
+
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
         loadMetadata(retryCount + 1, maxRetries);
-      }, delay);
-      
+      }, delay) as any;
+
       return; // Keep loading state, don't set error
     }
   }, [presentation_name, sandboxUrl, isStreaming]);
@@ -225,17 +260,17 @@ export function PresentationToolView({
   useEffect(() => {
     // Reset loaded flag when presentation name or sandbox URL changes
     hasLoadedRef.current = false;
-    
+
     // Clear any existing retry timeout when dependencies change
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
       retryTimeoutRef.current = null;
     }
-    
+
     if (presentation_name && sandboxUrl && !isStreaming) {
       loadMetadata(0);
     }
-    
+
     // Cleanup on unmount
     return () => {
       if (retryTimeoutRef.current) {
@@ -244,6 +279,10 @@ export function PresentationToolView({
       }
     };
   }, [presentation_name, sandboxUrl, isStreaming, loadMetadata]);
+
+  // For validate_slide, just show success message
+  const isValidateSlide = toolName === 'validate_slide';
+  const validationPassed = toolResult?.output?.validation_passed;
 
   console.log('🎨 [PresentationToolView] Display data:', {
     toolName: toolCall?.function_name,
@@ -255,11 +294,35 @@ export function PresentationToolView({
     isLoadingMetadata,
     retryAttempt,
     error,
-    sandboxUrl
+    sandboxUrl,
+    slidesFromOutput: slidesFromOutput.length,
+    isValidateSlide,
+    validationPassed
   });
 
+  // For validate_slide, show simple success/error
+  if (isValidateSlide && !isStreaming) {
+    return (
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <View className="px-6 py-8 items-center">
+          <View className={`${validationPassed ? 'bg-green-500/10' : 'bg-red-500/10'} rounded-2xl items-center justify-center mb-4`} style={{ width: 64, height: 64 }}>
+            <Icon as={validationPassed ? CheckCircle2 : AlertTriangle} size={32} className={validationPassed ? 'text-green-600' : 'text-red-600'} />
+          </View>
+          <Text className="text-base font-roobert-medium text-foreground mb-2 text-center">
+            {validationPassed ? 'Slide Validated' : 'Validation Failed'}
+          </Text>
+          {message && (
+            <Text className="text-sm font-roobert text-muted-foreground text-center">
+              {message}
+            </Text>
+          )}
+        </View>
+      </ScrollView>
+    );
+  }
+
   // Show loading state while streaming or loading metadata (with retry attempts)
-  if (isStreaming || (isLoadingMetadata && !metadata)) {
+  if (isStreaming || (isLoadingMetadata && !metadata && slidesFromOutput.length === 0)) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
         <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
@@ -269,40 +332,19 @@ export function PresentationToolView({
           {isStreaming ? 'Creating Slide...' : 'Loading Presentation'}
         </Text>
         <Text className="text-sm font-roobert text-muted-foreground text-center">
-          {isStreaming 
-            ? 'Slide is being created...' 
-            : retryAttempt > 0 
+          {isStreaming
+            ? 'Slide is being created...'
+            : retryAttempt > 0
               ? `Fetching slides... (attempt ${retryAttempt + 1})`
               : 'Fetching slides...'}
         </Text>
-        {message && !isStreaming && (
-          <View className="mt-4 px-4 py-2 bg-muted/50 rounded-lg">
-            <Text className="text-xs font-roobert text-muted-foreground text-center">
-              {message}
-            </Text>
-          </View>
-        )}
       </View>
     );
   }
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Presentation} size={24} className="text-primary" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Presentation
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {displayTitle}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {error ? (
           <View className="py-8 items-center">
             <View className="bg-destructive/10 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
@@ -317,20 +359,15 @@ export function PresentationToolView({
           </View>
         ) : slideCount === 0 ? (
           <View className="py-8 items-center">
-            <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
-              <Icon as={Presentation} size={32} className="text-muted-foreground" />
+            <View className="bg-green-500/10 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
+              <Icon as={CheckCircle2} size={32} className="text-green-600" />
             </View>
-            <Text className="text-base font-roobert-medium text-foreground mb-1">
-              {presentation_name ? 'No Slides Found Yet' : 'No Presentation Found'}
+            <Text className="text-base font-roobert-medium text-foreground mb-2">
+              {toolName === 'create_slide' ? 'Slide Created Successfully' : 'No Slides Yet'}
             </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center px-4">
-              {message || (presentation_name 
-                ? "Slides will appear here once they're created. The metadata file may still be generating."
-                : "This presentation doesn't have any slides yet.")}
-            </Text>
-            {presentation_name && !sandboxUrl && (
-              <Text className="text-xs font-roobert text-muted-foreground/60 text-center px-4 mt-2">
-                Waiting for sandbox to be available...
+            {toolName === 'create_slide' && currentSlideNumber && (
+              <Text className="text-sm font-roobert text-muted-foreground">
+                Slide {currentSlideNumber}
               </Text>
             )}
           </View>

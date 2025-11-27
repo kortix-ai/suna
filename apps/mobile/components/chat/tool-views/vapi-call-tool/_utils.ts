@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface MakeCallData {
   phone_number: string;
@@ -55,12 +55,12 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractMakeCallData(toolData: ParsedToolData): MakeCallData {
-  const { arguments: args, result } = toolData;
+export function extractMakeCallData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): MakeCallData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
-  const output = typeof result.output === 'string' 
-    ? parseContent(result.output) 
-    : result.output;
+  const output = typeof toolResult?.output === 'string' 
+    ? parseContent(toolResult.output) 
+    : toolResult?.output;
   
   return {
     phone_number: output?.phone_number || args?.phone_number || '',
@@ -71,12 +71,12 @@ export function extractMakeCallData(toolData: ParsedToolData): MakeCallData {
   };
 }
 
-export function extractCallStatusData(toolData: ParsedToolData): CallStatusData {
-  const { result } = toolData;
+export function extractCallStatusData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CallStatusData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
-  const output = typeof result.output === 'string' 
-    ? parseContent(result.output) 
-    : result.output;
+  const output = typeof toolResult?.output === 'string' 
+    ? parseContent(toolResult.output) 
+    : toolResult?.output;
   
   let transcript = output?.transcript;
   if (transcript && typeof transcript === 'string') {
@@ -109,12 +109,12 @@ export function extractCallStatusData(toolData: ParsedToolData): CallStatusData 
   };
 }
 
-export function extractEndCallData(toolData: ParsedToolData): EndCallData {
-  const { result } = toolData;
+export function extractEndCallData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): EndCallData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
-  const output = typeof result.output === 'string' 
-    ? parseContent(result.output) 
-    : result.output;
+  const output = typeof toolResult?.output === 'string' 
+    ? parseContent(toolResult.output) 
+    : toolResult?.output;
   
   return {
     call_id: output?.call_id || '',
@@ -123,12 +123,12 @@ export function extractEndCallData(toolData: ParsedToolData): EndCallData {
   };
 }
 
-export function extractListCallsData(toolData: ParsedToolData): ListCallsData {
-  const { result } = toolData;
+export function extractListCallsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): ListCallsData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
-  const output = typeof result.output === 'string' 
-    ? parseContent(result.output) 
-    : result.output;
+  const output = typeof toolResult?.output === 'string' 
+    ? parseContent(toolResult.output) 
+    : toolResult?.output;
   
   return {
     calls: output?.calls || [],
@@ -136,12 +136,12 @@ export function extractListCallsData(toolData: ParsedToolData): ListCallsData {
   };
 }
 
-export function extractWaitForCallCompletionData(toolData: ParsedToolData): WaitForCallCompletionData {
-  const { result } = toolData;
+export function extractWaitForCallCompletionData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WaitForCallCompletionData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
-  const output = typeof result.output === 'string' 
-    ? parseContent(result.output) 
-    : result.output;
+  const output = typeof toolResult?.output === 'string' 
+    ? parseContent(toolResult.output) 
+    : toolResult?.output;
   
   return {
     call_id: output?.call_id || '',

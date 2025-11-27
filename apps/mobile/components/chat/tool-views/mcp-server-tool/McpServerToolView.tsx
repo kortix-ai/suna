@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractMcpServerData, getPrimaryAuthScheme } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function McpServerToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { query, servers, server, message, success } = extractMcpServerData(toolData);
+export function McpServerToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { query, servers, server, message, success } = extractMcpServerData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -57,35 +57,7 @@ export function McpServerToolView({ toolData, isStreaming = false }: ToolViewPro
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Server} size={24} className="text-purple-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              MCP Servers
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {servers.length} {servers.length === 1 ? 'Server' : 'Servers'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Found' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {message && (
           <View className="bg-muted/50 rounded-xl p-4 border border-border">
             <Text className="text-sm font-roobert text-foreground">
@@ -150,7 +122,7 @@ export function McpServerToolView({ toolData, isStreaming = false }: ToolViewPro
           <View className="gap-3">
             {servers.map((srv, idx) => {
               const hasOAuth = srv.auth_schemes?.includes('OAUTH2');
-              
+
               return (
                 <View key={idx} className="bg-card border border-border rounded-xl p-4 gap-3">
                   <View className="flex-row items-start gap-3">
@@ -175,11 +147,11 @@ export function McpServerToolView({ toolData, isStreaming = false }: ToolViewPro
                           <Icon as={Sparkles} size={14} className="text-emerald-500" />
                         )}
                       </View>
-                      
+
                       <Text className="text-xs font-roobert-mono text-muted-foreground" numberOfLines={1}>
                         {srv.toolkit_slug}
                       </Text>
-                      
+
                       {srv.description && (
                         <Text className="text-sm font-roobert text-foreground/70" numberOfLines={2}>
                           {srv.description}

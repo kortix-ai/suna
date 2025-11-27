@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractAuthorSearchData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function AuthorSearchToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { query, total_results, results, success } = extractAuthorSearchData(toolData);
+export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { query, total_results, results, success } = extractAuthorSearchData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -38,18 +38,7 @@ export function AuthorSearchToolView({ toolData, isStreaming = false }: ToolView
   if (results.length === 0) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-indigo-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={GraduationCap} size={24} className="text-indigo-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Author Search
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="py-8 items-center">
             <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
               <Icon as={GraduationCap} size={40} className="text-muted-foreground" />
@@ -75,35 +64,7 @@ export function AuthorSearchToolView({ toolData, isStreaming = false }: ToolView
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-indigo-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={GraduationCap} size={24} className="text-indigo-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Authors
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {total_results} {total_results === 1 ? 'Author' : 'Authors'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Found' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="gap-3">
           {results.map((result, idx) => (
             <Pressable
@@ -137,14 +98,14 @@ export function AuthorSearchToolView({ toolData, isStreaming = false }: ToolView
                     {result.paper_count} papers
                   </Text>
                 </View>
-                
+
                 <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                   <Icon as={Award} size={12} className="text-muted-foreground" />
                   <Text className="text-xs font-roobert text-muted-foreground">
                     {result.citation_count} citations
                   </Text>
                 </View>
-                
+
                 <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                   <Icon as={Hash} size={12} className="text-muted-foreground" />
                   <Text className="text-xs font-roobert text-muted-foreground">

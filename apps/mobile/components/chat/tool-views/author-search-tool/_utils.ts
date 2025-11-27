@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface AuthorSearchResult {
   author_id: string;
@@ -29,15 +29,19 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractAuthorSearchData(toolData: ParsedToolData): AuthorSearchData {
-  const { arguments: args, result } = toolData;
+export function extractAuthorSearchData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): AuthorSearchData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => { try { return JSON.parse(toolCall.arguments); } catch { return {}; } })()
+      : {};
   
   let query = args?.query || null;
   let results: AuthorSearchResult[] = [];
   let total_results = 0;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
       ? parseContent(result.output) 
       : result.output;
     
@@ -64,7 +68,7 @@ export function extractAuthorSearchData(toolData: ParsedToolData): AuthorSearchD
     query,
     total_results,
     results,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

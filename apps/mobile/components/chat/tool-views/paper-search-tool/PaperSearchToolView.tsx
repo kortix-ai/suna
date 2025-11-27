@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractPaperSearchData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function PaperSearchToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { query, total_results, results, success } = extractPaperSearchData(toolData);
+export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { query, total_results, results, success } = extractPaperSearchData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -27,7 +27,7 @@ export function PaperSearchToolView({ toolData, isStreaming = false }: ToolViewP
       if (domain.includes('nature')) return 'Nature';
       if (domain.includes('springer')) return 'Springer';
       if (domain.includes('sciencedirect')) return 'ScienceDirect';
-      
+
       const urlObj = new URL(url);
       const hostname = urlObj.hostname.replace(/^www\./, '');
       return hostname.split('.')[0].charAt(0).toUpperCase() + hostname.split('.')[0].slice(1);
@@ -59,18 +59,7 @@ export function PaperSearchToolView({ toolData, isStreaming = false }: ToolViewP
   if (results.length === 0) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={BookOpen} size={24} className="text-purple-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Paper Search
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="py-8 items-center">
             <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
               <Icon as={BookOpen} size={40} className="text-muted-foreground" />
@@ -96,35 +85,7 @@ export function PaperSearchToolView({ toolData, isStreaming = false }: ToolViewP
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={BookOpen} size={24} className="text-purple-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Research Papers
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {total_results} {total_results === 1 ? 'Paper' : 'Papers'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Found' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="gap-3">
           {results.map((result, idx) => {
             const sourceName = getSourceName(result.url);
@@ -180,7 +141,7 @@ export function PaperSearchToolView({ toolData, isStreaming = false }: ToolViewP
                       </Text>
                     </View>
                   )}
-                  
+
                   {authorNames && (
                     <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded flex-1">
                       <Icon as={Users} size={12} className="text-muted-foreground" />
@@ -189,7 +150,7 @@ export function PaperSearchToolView({ toolData, isStreaming = false }: ToolViewP
                       </Text>
                     </View>
                   )}
-                  
+
                   {result.citation_count !== undefined && result.citation_count > 0 && (
                     <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                       <Icon as={Award} size={12} className="text-muted-foreground" />

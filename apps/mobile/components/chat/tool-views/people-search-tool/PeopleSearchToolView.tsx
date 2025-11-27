@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractPeopleSearchData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function PeopleSearchToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { query, total_results, results, success } = extractPeopleSearchData(toolData);
+export function PeopleSearchToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { query, total_results, results, success } = extractPeopleSearchData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -38,18 +38,7 @@ export function PeopleSearchToolView({ toolData, isStreaming = false }: ToolView
   if (results.length === 0) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={Users} size={24} className="text-purple-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                People Search
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="py-8 items-center">
             <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
               <Icon as={Users} size={40} className="text-muted-foreground" />
@@ -75,35 +64,7 @@ export function PeopleSearchToolView({ toolData, isStreaming = false }: ToolView
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Users} size={24} className="text-purple-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              People Search
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {total_results} {total_results === 1 ? 'Person' : 'People'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Found' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="gap-3">
           {results.map((result, idx) => (
             <Pressable
@@ -129,7 +90,7 @@ export function PeopleSearchToolView({ toolData, isStreaming = false }: ToolView
                   <Text className="text-base font-roobert-semibold text-foreground">
                     {result.person_name}
                   </Text>
-                  
+
                   {result.person_position && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={Briefcase} size={12} className="text-muted-foreground" />
@@ -138,7 +99,7 @@ export function PeopleSearchToolView({ toolData, isStreaming = false }: ToolView
                       </Text>
                     </View>
                   )}
-                  
+
                   {result.person_location && (
                     <View className="flex-row items-center gap-1.5">
                       <Icon as={MapPin} size={12} className="text-muted-foreground" />

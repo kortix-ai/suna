@@ -6,9 +6,9 @@ import { FileText, CheckCircle2, AlertCircle, FileType, Hash } from 'lucide-reac
 import type { ToolViewProps } from '../types';
 import { extractDocumentParserData } from './_utils';
 
-export function DocumentParserToolView({ toolData, isStreaming = false }: ToolViewProps) {
+export function DocumentParserToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
   const { filePath, fileName, content, pageCount, success } = extractDocumentParserData(toolData);
-  
+
   const lines = content ? content.split('\n') : [];
   const preview = lines.slice(0, 50);
 
@@ -34,35 +34,7 @@ export function DocumentParserToolView({ toolData, isStreaming = false }: ToolVi
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-orange-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={FileText} size={24} className="text-orange-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Document Parser
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {fileName || 'Document'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Parsed' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         <View className="flex-row gap-2">
           {pageCount !== null && (
             <View className="bg-muted/50 rounded-xl p-3 border border-border flex-1">
@@ -95,7 +67,7 @@ export function DocumentParserToolView({ toolData, isStreaming = false }: ToolVi
             </Text>
             <View className="bg-muted/50 rounded-xl p-4 border border-border">
               {preview.map((line, idx) => (
-                <Text 
+                <Text
                   key={idx}
                   className="text-sm font-roobert text-foreground leading-6"
                   selectable

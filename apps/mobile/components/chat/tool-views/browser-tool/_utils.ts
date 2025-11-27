@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 import type { UnifiedMessage } from '@/api/types';
 
 export interface BrowserData {
@@ -36,6 +36,8 @@ export function extractBrowserUrl(content: string | undefined): string | null {
 
 export function getBrowserOperation(toolName: string): string {
   const operations: Record<string, string> = {
+    'browser-act': 'Browser Action',
+    'browser_act': 'Browser Action',
     'browser-navigate-to': 'Navigate',
     'browser-click-element': 'Click Element',
     'browser-input-text': 'Input Text',
@@ -57,11 +59,12 @@ export function getBrowserOperation(toolName: string): string {
 }
 
 export function extractBrowserData(
-  toolData: ParsedToolData,
+  { toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData },
   toolMessage: UnifiedMessage,
   assistantMessage: UnifiedMessage | null
 ): BrowserData {
-  const { arguments: args, result, toolName } = toolData;
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  const toolName = toolCall.function?.name || '';
   
   let url = args?.url || null;
   let screenshotUrl: string | null = null;
@@ -70,10 +73,10 @@ export function extractBrowserData(
   let parameters: Record<string, any> | null = args || null;
   let resultData: Record<string, any> | null = null;
 
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     screenshotUrl = output?.image_url || null;
     messageId = output?.message_id || null;

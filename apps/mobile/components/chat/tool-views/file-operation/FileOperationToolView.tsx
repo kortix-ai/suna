@@ -19,7 +19,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 
-export function FileOperationToolView({ 
+export function FileOperationToolView({
   toolCall,
   toolResult,
   isStreaming = false,
@@ -43,20 +43,20 @@ export function FileOperationToolView({
     ? toolCall.arguments
     : typeof toolCall.arguments === 'string'
       ? (() => {
-          try {
-            return JSON.parse(toolCall.arguments);
-          } catch {
-            return {};
-          }
-        })()
+        try {
+          return JSON.parse(toolCall.arguments);
+        } catch {
+          return {};
+        }
+      })()
       : {};
 
-  let filePath: string | null = args.file_path || 
-                                args.path || 
-                                args.target_path ||
-                                args.target_file ||
-                                args.filename ||
-                                null;
+  let filePath: string | null = args.file_path ||
+    args.path ||
+    args.target_path ||
+    args.target_file ||
+    args.filename ||
+    null;
 
   let fileContent: string | null = null;
 
@@ -92,23 +92,23 @@ export function FileOperationToolView({
   // Extract from arguments for create/rewrite/edit operations
   if (!fileContent) {
     if (operation === 'create' || operation === 'rewrite') {
-      fileContent = args.file_contents ||  
-                    args.content || 
-                    args.contents || 
-                    args.file_content ||
-                    args.text ||
-                    args.data ||
-                    null;
-      
+      fileContent = args.file_contents ||
+        args.content ||
+        args.contents ||
+        args.file_content ||
+        args.text ||
+        args.data ||
+        null;
+
       if (fileContent && typeof fileContent !== 'string') {
         fileContent = JSON.stringify(fileContent, null, 2);
       }
     } else if (operation === 'edit' || operation === 'str-replace') {
-      fileContent = args.new_str || 
-                    args.new_string || 
-                    args.new_content ||
-                    args.code_edit ||
-                    null;
+      fileContent = args.new_str ||
+        args.new_string ||
+        args.new_content ||
+        args.code_edit ||
+        null;
     }
   }
 
@@ -212,21 +212,7 @@ export function FileOperationToolView({
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className={`${config.bgColor} rounded-2xl items-center justify-center`} style={{ width: 48, height: 48 }}>
-            <Icon as={OperationIcon} size={24} className={config.color} />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              {getOperationTitle(operation)}
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {fileName}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {fileContent && operation !== 'delete' ? (
           <View className="gap-3">
             <View className="flex-row items-center gap-2">

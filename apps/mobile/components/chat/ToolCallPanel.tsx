@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import type { UnifiedMessage } from '@/api/types';
 import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import { getToolViewComponent } from './tool-views';
+import { ToolHeader } from './tool-views/ToolHeader';
+import { getToolMetadata } from './tool-views/tool-metadata';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
@@ -26,7 +28,12 @@ interface ToolCallPanelProps {
   project?: {
     id: string;
     name: string;
-    sandbox_id?: string;
+    sandbox?: {
+      vnc_preview?: string;
+      sandbox_url?: string;
+      id?: string;
+      pass?: string;
+    };
   };
 }
 
@@ -55,7 +62,7 @@ export function ToolCallPanel({
   }, [visible, initialIndex]);
 
   const currentPair = toolMessages[currentIndex];
-  
+
   // Extract tool call and tool result from messages
   const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
     if (!currentPair?.toolMessage) return { toolCall: null, toolResult: null, isSuccess: false, assistantTimestamp: undefined, toolTimestamp: undefined };
@@ -70,6 +77,23 @@ export function ToolCallPanel({
   const ToolViewComponent = useMemo(() => {
     return getToolViewComponent(toolName);
   }, [toolName]);
+
+  // Get tool metadata for header
+  const toolMetadata = useMemo(() => {
+    if (!toolCall || !toolCall.function_name) return null;
+    const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+      ? toolCall.arguments
+      : typeof toolCall.arguments === 'string'
+        ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+        : {};
+    return getToolMetadata(toolCall.function_name, args);
+  }, [toolCall]);
 
   const handlePrev = useCallback(() => {
     if (currentIndex > 0) {
@@ -147,7 +171,7 @@ export function ToolCallPanel({
       <BottomSheetScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ 
+        contentContainerStyle={{
           paddingBottom: 20,
           backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
         }}
@@ -162,18 +186,37 @@ export function ToolCallPanel({
             </Text>
           </View>
         ) : (
-          <ToolViewComponent
-            toolCall={toolCall}
-            toolResult={toolResult || undefined}
-            assistantMessage={currentPair.assistantMessage}
-            toolMessage={currentPair.toolMessage}
-            assistantTimestamp={currentPair.assistantMessage?.created_at}
-            toolTimestamp={currentPair.toolMessage?.created_at}
-            isSuccess={toolResult?.success !== false}
-            currentIndex={currentIndex}
-            totalCalls={toolMessages.length}
-            project={project}
-          />
+          <View className="flex-1">
+            {/* Standardized Tool Header */}
+            {toolMetadata && (
+              <View className="px-6 pt-4 pb-6">
+                <ToolHeader
+                  icon={toolMetadata.icon}
+                  iconColor={toolMetadata.iconColor}
+                  iconBgColor={toolMetadata.iconBgColor}
+                  subtitle={toolMetadata.subtitle}
+                  title={toolMetadata.title}
+                  isSuccess={toolResult?.success !== false}
+                  showStatus={true}
+                  isStreaming={false}
+                />
+              </View>
+            )}
+
+            {/* Tool View Content */}
+            <ToolViewComponent
+              toolCall={toolCall}
+              toolResult={toolResult || undefined}
+              assistantMessage={currentPair.assistantMessage}
+              toolMessage={currentPair.toolMessage}
+              assistantTimestamp={currentPair.assistantMessage?.created_at}
+              toolTimestamp={currentPair.toolMessage?.created_at}
+              isSuccess={toolResult?.success !== false}
+              currentIndex={currentIndex}
+              totalCalls={toolMessages.length}
+              project={project}
+            />
+          </View>
         )}
       </BottomSheetScrollView>
 
