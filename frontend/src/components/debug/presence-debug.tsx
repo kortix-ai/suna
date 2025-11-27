@@ -11,6 +11,8 @@ export function PresenceDebug() {
   const { connectionState, presences, activeThreadId, sessionId } = usePresenceContext();
   const [isCleaningUp, setIsCleaningUp] = useState(false);
   
+  console.log('[PresenceDebug] Presences:', presences, 'Keys:', Object.keys(presences));
+  
   const clearSessionStorage = () => {
     if (typeof window !== 'undefined') {
       sessionStorage.removeItem('presence_session_id');

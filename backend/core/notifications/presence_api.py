@@ -1,16 +1,11 @@
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
-import asyncio
-import json
 from core.utils.logger import logger
 from core.utils.auth_utils import get_user_id_from_stream_auth
-from core.services import redis
-from .presence_service import presence_service, REDIS_EVENT_CHANNEL
+from .presence_service import presence_service
 
 router = APIRouter(tags=["presence"], prefix="/presence")
-STREAM_KEEPALIVE_SECONDS = 20
 
 class UpdatePresenceRequest(BaseModel):
     session_id: str
@@ -84,65 +79,6 @@ async def clear_presence(
     except Exception as e:
         logger.error(f"Error in clear_presence endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/stream")
-async def presence_stream(
-    request: Request,
-    token: Optional[str] = None
-):
-    try:
-        account_id = await get_user_id_from_stream_auth(request, token)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Presence stream auth error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Presence stream authentication failed")
-    
-    try:
-        pubsub = await redis.create_pubsub()
-        await pubsub.subscribe(REDIS_EVENT_CHANNEL)
-    except Exception as e:
-        logger.error(f"Presence stream setup error: {str(e)}")
-        raise HTTPException(status_code=503, detail="Presence stream unavailable")
-    
-    async def event_generator():
-        try:
-            logger.debug(f"Presence stream started for account {account_id}")
-            
-            asyncio.create_task(presence_service.cleanup_stale_sessions(account_id))
-            
-            yield f"data: {json.dumps({'type': 'presence_connected', 'account_id': account_id})}\n\n"
-            while True:
-                if await request.is_disconnected():
-                    logger.debug(f"Client disconnected from presence stream: {account_id}")
-                    break
-                try:
-                    message = await asyncio.wait_for(
-                        pubsub.get_message(ignore_subscribe_messages=True),
-                        timeout=STREAM_KEEPALIVE_SECONDS
-                    )
-                except asyncio.TimeoutError:
-                    yield ": keep-alive\n\n"
-                    continue
-                
-                if not message:
-                    yield ": keep-alive\n\n"
-                    continue
-                
-                data = message.get("data")
-                if isinstance(data, bytes):
-                    data = data.decode("utf-8")
-                logger.debug(f"Sending presence event to {account_id}: {data[:100]}")
-                yield f"data: {data}\n\n"
-        finally:
-            try:
-                logger.debug(f"Cleaning up presence stream for account {account_id}")
-                await pubsub.unsubscribe(REDIS_EVENT_CHANNEL)
-            finally:
-                await pubsub.close()
-    
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.get("/thread/{thread_id}/viewers")
