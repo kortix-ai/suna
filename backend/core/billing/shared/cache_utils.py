@@ -8,7 +8,7 @@ from core.utils.cache import Cache
 from core.utils.logger import logger
 
 
-ACCOUNT_STATE_CACHE_TTL = 300  # 5 minutes
+ACCOUNT_STATE_CACHE_TTL = 30  # 30 seconds - reduced to prevent stale data after checkout
 
 
 async def invalidate_account_state_cache(account_id: str):

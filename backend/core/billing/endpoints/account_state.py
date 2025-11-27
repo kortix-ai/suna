@@ -72,10 +72,11 @@ async def _build_account_state(account_id: str, client) -> Dict:
     last_daily_refresh = credit_account.get('last_daily_refresh')
     
     # Convert to credits
-    total_credits = balance_dollars * CREDITS_PER_DOLLAR
     daily_credits = daily_dollars * CREDITS_PER_DOLLAR
     monthly_credits = monthly_dollars * CREDITS_PER_DOLLAR
     extra_credits = extra_dollars * CREDITS_PER_DOLLAR
+    # Total = sum of all credit types (daily + monthly + extra)
+    total_credits = daily_credits + monthly_credits + extra_credits
     
     # Daily credits refresh info
     daily_credits_info = None
@@ -213,15 +214,26 @@ async def _build_account_state(account_id: str, client) -> Dict:
             'recommended': model.get('recommended', False)
         })
     
-    # Get tier limits
-    tier_limits = get_tier_limits(tier_name)
+    # Get tier limits with detailed usage info
+    from core.utils.limits_checker import (
+        check_thread_limit,
+        check_agent_run_limit,
+        check_agent_count_limit,
+        check_project_count_limit,
+        check_trigger_limit,
+        check_custom_mcp_limit
+    )
     
-    # Get current usage counts
-    projects_result = await client.from_('projects').select('project_id', count='exact').eq('account_id', account_id).execute()
-    threads_result = await client.from_('threads').select('thread_id', count='exact').eq('account_id', account_id).execute()
-    
-    current_projects = projects_result.count or 0
-    current_threads = threads_result.count or 0
+    # Fetch all detailed limits in parallel
+    import asyncio
+    thread_limit, concurrent_runs_limit, agent_count_limit, project_count_limit, trigger_limit, custom_mcp_limit = await asyncio.gather(
+        check_thread_limit(client, account_id),
+        check_agent_run_limit(client, account_id),
+        check_agent_count_limit(client, account_id),
+        check_project_count_limit(client, account_id),
+        check_trigger_limit(client, account_id),
+        check_custom_mcp_limit(client, account_id)
+    )
     
     # Build response
     return {
@@ -259,20 +271,51 @@ async def _build_account_state(account_id: str, client) -> Dict:
         # Models section
         'models': models,
         
-        # Limits section
+        # Limits section - detailed usage info
         'limits': {
             'projects': {
-                'current': current_projects,
-                'max': tier_limits['project_limit']
+                'current': project_count_limit.get('current_count', 0),
+                'max': project_count_limit.get('limit', 0),
+                'can_create': project_count_limit.get('can_create', False),
+                'tier_name': project_count_limit.get('tier_name', tier_name)
             },
             'threads': {
-                'current': current_threads,
-                'max': tier_limits['thread_limit']
+                'current': thread_limit.get('current_count', 0),
+                'max': thread_limit.get('limit', 0),
+                'can_create': thread_limit.get('can_create', False),
+                'tier_name': thread_limit.get('tier_name', tier_name)
             },
-            'concurrent_runs': tier_limits['concurrent_runs'],
-            'custom_workers': tier_limits['custom_workers_limit'],
-            'scheduled_triggers': tier_limits['scheduled_triggers_limit'],
-            'app_triggers': tier_limits['app_triggers_limit']
+            'concurrent_runs': {
+                'running_count': concurrent_runs_limit.get('running_count', 0),
+                'limit': concurrent_runs_limit.get('limit', 0),
+                'can_start': concurrent_runs_limit.get('can_start', False),
+                'tier_name': concurrent_runs_limit.get('tier_name', tier_name)
+            },
+            'ai_worker_count': {
+                'current_count': agent_count_limit.get('current_count', 0),
+                'limit': agent_count_limit.get('limit', 0),
+                'can_create': agent_count_limit.get('can_create', False),
+                'tier_name': agent_count_limit.get('tier_name', tier_name)
+            },
+            'custom_mcp_count': {
+                'current_count': custom_mcp_limit.get('current_count', 0),
+                'limit': custom_mcp_limit.get('limit', 0),
+                'can_create': custom_mcp_limit.get('can_create', False),
+                'tier_name': custom_mcp_limit.get('tier_name', tier_name)
+            },
+            'trigger_count': {
+                'scheduled': {
+                    'current_count': trigger_limit.get('scheduled', {}).get('current_count', 0),
+                    'limit': trigger_limit.get('scheduled', {}).get('limit', 0),
+                    'can_create': trigger_limit.get('scheduled', {}).get('can_create', False)
+                },
+                'app': {
+                    'current_count': trigger_limit.get('app', {}).get('current_count', 0),
+                    'limit': trigger_limit.get('app', {}).get('limit', 0),
+                    'can_create': trigger_limit.get('app', {}).get('can_create', False)
+                },
+                'tier_name': trigger_limit.get('tier_name', tier_name)
+            }
         },
         
         # Tier config (for UI display)
@@ -347,12 +390,49 @@ async def get_account_state(
                 for model in all_models
             ],
             'limits': {
-                'projects': {'current': 0, 'max': 99999},
-                'threads': {'current': 0, 'max': 99999},
-                'concurrent_runs': 99999,
-                'custom_workers': 99999,
-                'scheduled_triggers': 99999,
-                'app_triggers': 99999
+                'projects': {
+                    'current': 0,
+                    'max': 99999,
+                    'can_create': True,
+                    'tier_name': 'tier_25_200'
+                },
+                'threads': {
+                    'current': 0,
+                    'max': 99999,
+                    'can_create': True,
+                    'tier_name': 'tier_25_200'
+                },
+                'concurrent_runs': {
+                    'running_count': 0,
+                    'limit': 99999,
+                    'can_start': True,
+                    'tier_name': 'tier_25_200'
+                },
+                'ai_worker_count': {
+                    'current_count': 0,
+                    'limit': 99999,
+                    'can_create': True,
+                    'tier_name': 'tier_25_200'
+                },
+                'custom_mcp_count': {
+                    'current_count': 0,
+                    'limit': 99999,
+                    'can_create': True,
+                    'tier_name': 'tier_25_200'
+                },
+                'trigger_count': {
+                    'scheduled': {
+                        'current_count': 0,
+                        'limit': 99999,
+                        'can_create': True
+                    },
+                    'app': {
+                        'current_count': 0,
+                        'limit': 99999,
+                        'can_create': True
+                    },
+                    'tier_name': 'tier_25_200'
+                }
             },
             'tier': {
                 'name': 'tier_25_200',

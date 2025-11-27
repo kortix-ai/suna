@@ -172,7 +172,10 @@ function PricingTier({
         }, {
           onSuccess: () => {
             posthog.capture('plan_downgrade_scheduled');
-            queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
+            // Note: invalidateAccountState is already called by the mutation hook
+          },
+          onSettled: () => {
+            // Always clear loading state when mutation completes (success or error)
             if (onSubscriptionUpdate) onSubscriptionUpdate();
           }
         });
@@ -187,13 +190,16 @@ function PricingTier({
           commitment_type: commitmentType,
         } as CreateCheckoutSessionRequest);
 
+      // Handle checkout URL - support both checkout_url and url fields
+      const checkoutUrl = response.checkout_url || response.url;
+
       switch (response.status) {
         case 'new':
         case 'checkout_created':
         case 'commitment_created':
-          if (response.url) {
+          if (checkoutUrl) {
             posthog.capture('plan_purchase_attempted');
-            window.location.href = response.url;
+            window.location.href = checkoutUrl;
           } else {
             console.error(
               "Error: Received status but no checkout URL.",
@@ -204,9 +210,8 @@ function PricingTier({
         case 'upgraded':
         case 'updated':
           posthog.capture('plan_upgraded');
-          queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
           if (onSubscriptionUpdate) onSubscriptionUpdate();
-          // Always redirect with success param to trigger celebration
+          // Redirect to dashboard which will handle cache invalidation
           setTimeout(() => {
             window.location.href = '/dashboard?subscription=success';
           }, 500);
@@ -248,9 +253,8 @@ function PricingTier({
             </div>,
           );
           posthog.capture('plan_downgraded');
-          // Invalidate queries to show scheduled change
-          queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
-          // Trigger subscription update callback to refetch data
+          // Note: Cache invalidation is handled by the calling context
+          // Just trigger UI update callback
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           break;
         case 'no_change':
@@ -983,10 +987,9 @@ export function PricingSection({
   };
 
   const handleSubscriptionUpdate = () => {
-    // Invalidate all billing-related queries to force refetch
-    queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
-    // Refetch subscription directly (now includes scheduled changes and commitment)
-    refetchSubscription();
+    // Note: Cache invalidation is handled by mutation hooks (useScheduleDowngrade, etc.)
+    // This function just handles UI state updates
+    
     // Clear loading states
     setTimeout(() => {
       setPlanLoadingStates({});
@@ -1049,7 +1052,7 @@ export function PricingSection({
                   className={cn(
                     "px-4 py-2 rounded-full font-medium text-sm transition-all duration-200",
                     selectedPaidTierIndex === index
-                      ? "bg-primary text-primary-foreground shadow-lg"
+                      ? "bg-primary text-primary-foreground"
                       : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
@@ -1069,9 +1072,7 @@ export function PricingSection({
             <ScheduledDowngradeCard
               scheduledChange={scheduledChange}
               variant="compact"
-              onCancel={() => {
-                refetchSubscription();
-              }}
+              onCancel={handleSubscriptionUpdate}
             />
           </div>
         )}

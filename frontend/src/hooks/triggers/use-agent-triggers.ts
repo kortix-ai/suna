@@ -122,7 +122,8 @@ export const useCreateTrigger = () => {
     onSuccess: (newTrigger) => {
       queryClient.invalidateQueries({ queryKey: ['agent-upcoming-runs', newTrigger.agent_id] });
       queryClient.invalidateQueries({ queryKey: ['all-triggers'] });
-      queryClient.invalidateQueries({ queryKey: ['tier-limits'] });
+      // Invalidate account state to refresh trigger limits
+      queryClient.invalidateQueries({ queryKey: ['account-state'] });
       queryClient.setQueryData(
         ['agent-triggers', newTrigger.agent_id],
         (old: TriggerConfiguration[] | undefined) => {

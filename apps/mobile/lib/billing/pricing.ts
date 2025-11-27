@@ -134,7 +134,6 @@ export const PRICING_TIERS: PricingTier[] = [
       'Private projects',
       '100+ integrations',
       'Premium AI Models',
-      'Priority Support',
     ],
     isPopular: false,
     buttonText: 'Get started',

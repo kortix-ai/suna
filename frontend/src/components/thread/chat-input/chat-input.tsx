@@ -987,9 +987,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             onExpandToolPreview={onExpandToolPreview}
             agentName={agentName}
             showToolPreview={showToolPreview}
-            showUsagePreview={showSnackbar}
             subscriptionData={subscriptionData}
-            onCloseUsage={() => { setShowSnackbar(false); setUserDismissedUsage(true); }}
             onOpenUpgrade={() => setPlanSelectionModalOpen(true)}
             isVisible={isSnackVisible}
           />

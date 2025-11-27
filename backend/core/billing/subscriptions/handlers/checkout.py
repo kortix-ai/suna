@@ -48,17 +48,17 @@ class SubscriptionCheckoutHandler:
         
         if flow_type == 'trial_conversion':
             return await self._handle_trial_conversion(
-                customer_id, account_id, price_id, success_url, 
+                customer_id, account_id, price_id, success_url, cancel_url,
                 subscription_status, commitment_type, idempotency_key
             )
         elif flow_type == 'upgrade_existing':
             return await self._handle_existing_subscription_upgrade(
-                customer_id, account_id, price_id, success_url, subscription_status, 
-                commitment_type, idempotency_key
+                customer_id, account_id, price_id, success_url, cancel_url,
+                subscription_status, commitment_type, idempotency_key
             )
         else:
             return await self._handle_new_subscription(
-                customer_id, account_id, price_id, success_url, 
+                customer_id, account_id, price_id, success_url, cancel_url,
                 commitment_type, idempotency_key
             )
 
@@ -68,6 +68,7 @@ class SubscriptionCheckoutHandler:
         account_id: str, 
         price_id: str, 
         success_url: str,
+        cancel_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str], 
         idempotency_key: str
@@ -76,15 +77,18 @@ class SubscriptionCheckoutHandler:
         tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
 
         existing_subscription_id = subscription_status['subscription_id']
-        await self._cancel_existing_subscription(existing_subscription_id, 'trial conversion')
-
+        
+        # DON'T cancel here - pass the subscription ID to cancel in the webhook
+        # This ensures if user abandons checkout, they still have their trial
         metadata = self.checkout_service.build_subscription_metadata(
             account_id, commitment_type, 'trial_conversion', 
             subscription_status['current_tier'], existing_subscription_id
         )
+        # Mark which subscription to cancel after checkout succeeds
+        metadata['cancel_after_checkout'] = existing_subscription_id
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, success_url, metadata, idempotency_key
+            customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
         )
         
         return self.checkout_service.build_checkout_response(
@@ -107,15 +111,20 @@ class SubscriptionCheckoutHandler:
         price_id: str,
         success_url: str,
         metadata: Dict,
-        idempotency_key: str
+        idempotency_key: str,
+        cancel_url: str = None
     ):
+        """
+        Create a Stripe checkout session.
+        By default uses hosted mode (Stripe's hosted checkout page).
+        """
         return await StripeAPIWrapper.create_checkout_session(
             customer=customer_id,
             payment_method_types=['card'],
             line_items=[{'price': price_id, 'quantity': 1}],
             mode='subscription',
-            ui_mode='embedded',
-            return_url=success_url,
+            success_url=success_url,
+            cancel_url=cancel_url or success_url,
             allow_promotion_codes=True,
             subscription_data={'metadata': metadata},
             idempotency_key=idempotency_key
@@ -127,6 +136,7 @@ class SubscriptionCheckoutHandler:
         account_id: str, 
         price_id: str,
         success_url: str,
+        cancel_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str],
         idempotency_key: str
@@ -139,8 +149,8 @@ class SubscriptionCheckoutHandler:
         
         if current_amount == 0 or current_tier == 'free':
             return await self._handle_free_tier_upgrade(
-                customer_id, account_id, price_id, success_url, subscription_status, 
-                commitment_type, idempotency_key
+                customer_id, account_id, price_id, success_url, cancel_url,
+                subscription_status, commitment_type, idempotency_key
             )
         
         upgrade_type = self.upgrade_service.classify_upgrade_type(subscription, price_id)
@@ -158,6 +168,11 @@ class SubscriptionCheckoutHandler:
                 account_id, subscription, price_id, commitment_type
             )
         else:
+            # For standard paid-to-paid upgrades, use Stripe's subscription modification API
+            # This is instant and handles proration automatically - no checkout needed since 
+            # payment method is already on file
+            logger.info(f"[STANDARD UPGRADE] Modifying subscription in-place from {current_tier} to {price_id}")
+            
             result = await self.upgrade_service.perform_standard_upgrade(
                 existing_subscription_id, subscription, price_id, account_id
             )
@@ -170,6 +185,7 @@ class SubscriptionCheckoutHandler:
         account_id: str,
         price_id: str,
         success_url: str,
+        cancel_url: str,
         subscription_status: Dict,
         commitment_type: Optional[str],
         idempotency_key: str
@@ -178,15 +194,18 @@ class SubscriptionCheckoutHandler:
         tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
         
         existing_subscription_id = subscription_status['subscription_id']
-        await self._cancel_existing_subscription(existing_subscription_id, 'free tier upgrade')
-
+        
+        # DON'T cancel here - pass the subscription ID to cancel in the webhook
+        # This ensures if user abandons checkout, they still have their free tier
         metadata = self.checkout_service.build_subscription_metadata(
             account_id, commitment_type, 'free_upgrade', 
             subscription_status['current_tier'], existing_subscription_id
         )
+        # Mark which subscription to cancel after checkout succeeds
+        metadata['cancel_after_checkout'] = existing_subscription_id
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, success_url, metadata, idempotency_key
+            customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
         )
         
         return self.checkout_service.build_checkout_response(
@@ -199,6 +218,7 @@ class SubscriptionCheckoutHandler:
         account_id: str,
         price_id: str,
         success_url: str,
+        cancel_url: str,
         commitment_type: Optional[str],
         idempotency_key: str
     ) -> Dict:
@@ -207,7 +227,7 @@ class SubscriptionCheckoutHandler:
         )
 
         session = await self._create_stripe_checkout_session(
-            customer_id, price_id, success_url, metadata, idempotency_key
+            customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
         )
         
         return self.checkout_service.build_checkout_response(session)

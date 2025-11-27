@@ -12,11 +12,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { useLimits } from '@/hooks/dashboard/use-limits';
+import { useAccountState } from '@/hooks/billing';
 
 export function UsageLimitsPopover() {
   const t = useTranslations('dashboard');
-  const { data: limits } = useLimits();
+  const { data: accountState } = useAccountState();
+  const limits = accountState?.limits;
 
   return (
     <Popover>
@@ -35,7 +36,7 @@ export function UsageLimitsPopover() {
                   <TooltipTrigger asChild>
                     <div className="flex justify-between text-xs cursor-help">
                       <span className="text-muted-foreground">Chats</span>
-                      <span className="font-medium">{limits?.thread_count?.current_count || 0} / {limits?.thread_count?.limit || 0}</span>
+                      <span className="font-medium">{limits?.threads?.current || 0} / {limits?.threads?.max || 0}</span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -44,7 +45,7 @@ export function UsageLimitsPopover() {
                 </Tooltip>
                 <Progress 
                   className='h-1'
-                  value={((limits?.thread_count?.current_count || 0) / (limits?.thread_count?.limit || 1)) * 100} 
+                  value={((limits?.threads?.current || 0) / (limits?.threads?.max || 1)) * 100} 
                 />
               </div>
               <div className='space-y-2'>
@@ -69,7 +70,7 @@ export function UsageLimitsPopover() {
                   <TooltipTrigger asChild>
                     <div className="flex justify-between text-xs cursor-help">
                       <span className="text-muted-foreground">Custom AI Workers</span>
-                      <span className="font-medium">{(limits?.ai_worker_count?.current_count ?? limits?.agent_count?.current_count) || 0} / {(limits?.ai_worker_count?.limit ?? limits?.agent_count?.limit) || 0}</span>
+                      <span className="font-medium">{limits?.ai_worker_count?.current_count || 0} / {limits?.ai_worker_count?.limit || 0}</span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -78,7 +79,7 @@ export function UsageLimitsPopover() {
                 </Tooltip>
                 <Progress 
                   className='h-1'
-                  value={((((limits?.ai_worker_count?.current_count ?? limits?.agent_count?.current_count) || 0) / (((limits?.ai_worker_count?.limit ?? limits?.agent_count?.limit) || 1))) * 100)} 
+                  value={((limits?.ai_worker_count?.current_count || 0) / (limits?.ai_worker_count?.limit || 1)) * 100} 
                 />
               </div>
               <div className='space-y-2'>
@@ -86,7 +87,7 @@ export function UsageLimitsPopover() {
                   <TooltipTrigger asChild>
                     <div className="flex justify-between text-xs cursor-help">
                       <span className="text-muted-foreground">Integrations</span>
-                      <span className="font-medium">{(limits?.custom_mcp_count?.current_count ?? limits?.custom_worker_count?.current_count) || 0} / {(limits?.custom_mcp_count?.limit ?? limits?.custom_worker_count?.limit) || 0}</span>
+                      <span className="font-medium">{limits?.custom_mcp_count?.current_count || 0} / {limits?.custom_mcp_count?.limit || 0}</span>
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -95,7 +96,7 @@ export function UsageLimitsPopover() {
                 </Tooltip>
                 <Progress 
                   className='h-1'
-                  value={((((limits?.custom_mcp_count?.current_count ?? limits?.custom_worker_count?.current_count) || 0) / (((limits?.custom_mcp_count?.limit ?? limits?.custom_worker_count?.limit) || 1))) * 100)} 
+                  value={((limits?.custom_mcp_count?.current_count || 0) / (limits?.custom_mcp_count?.limit || 1)) * 100} 
                 />
               </div>
               <div className='space-y-2'>

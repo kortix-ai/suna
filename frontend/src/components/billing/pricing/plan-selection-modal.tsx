@@ -12,10 +12,6 @@ import { Button } from '@/components/ui/button';
 import { PricingSection } from './pricing-section';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
-import { useQueryClient } from '@tanstack/react-query';
-import { accountStateKeys } from '@/hooks/billing/use-account-state';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 interface PlanSelectionModalProps {
@@ -34,8 +30,6 @@ export function PlanSelectionModal({
     upgradeReason: controlledUpgradeReason,
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/dashboard?subscription=success` : '/';
-    const queryClient = useQueryClient();
-    const router = useRouter();
     
     const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle } = usePricingModalStore();
     
@@ -44,28 +38,11 @@ export function PlanSelectionModal({
     const returnUrl = controlledReturnUrl || storeReturnUrl || defaultReturnUrl;
     const displayReason = controlledUpgradeReason || storeCustomTitle;
 
-    useEffect(() => {
-        if (isOpen && typeof window !== 'undefined') {
-            const searchParams = new URLSearchParams(window.location.search);
-            const checkoutSuccess = searchParams.get('checkout');
-            const sessionId = searchParams.get('session_id');
-            const clientSecret = searchParams.get('client_secret');
-            
-            if (checkoutSuccess === 'success' || sessionId || clientSecret) {
-                console.log('🔄 Checkout success detected in modal, invalidating billing queries...');
-                queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
-                
-                const url = new URL(window.location.href);
-                url.searchParams.delete('checkout');
-                url.searchParams.delete('session_id');
-                url.searchParams.delete('client_secret');
-                router.replace(url.pathname + url.search, { scroll: false });
-            }
-        }
-    }, [isOpen, queryClient, router]);
+    // Note: Checkout success detection is handled by dashboard-content.tsx
+    // The modal just needs to close after subscription updates
 
     const handleSubscriptionUpdate = () => {
-        queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
+        // Let the dashboard handle cache invalidation - just close the modal
         setTimeout(() => {
             onOpenChange(false);
         }, 500);
