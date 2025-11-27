@@ -280,11 +280,11 @@ class NovuService:
         subscriber_name: Optional[str] = None
     ) -> Any:
         if not self.enabled:
-            logger.warning(f"Workflow skipped (Novu disabled in {config.ENV_MODE.value} mode): {workflow_id}")
+            logger.error(f"❌ Workflow skipped (Novu disabled in {config.ENV_MODE.value} mode): {workflow_id} - Set ENV_MODE to 'staging' or 'production' to enable")
             return False
         
         if not self.api_key:
-            logger.error("Cannot trigger workflow: NOVU_SECRET_KEY not configured")
+            logger.error("❌ Cannot trigger workflow: NOVU_SECRET_KEY not configured")
             return False
         
         try:

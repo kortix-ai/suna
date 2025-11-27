@@ -97,7 +97,8 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None) 
         logger.info(f"[SETUP] Installing Suna agent for {account_id}")
         suna_service = SunaDefaultAgentService(db)
         agent_id = await suna_service.install_suna_agent_for_user(account_id)
-        name = email.split('@')[0].title(),
+        
+        name = email.split('@')[0].title() if not email else "User"
 
         from core.notifications.notification_service import notification_service
         
