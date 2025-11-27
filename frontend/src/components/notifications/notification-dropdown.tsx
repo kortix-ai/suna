@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { isStagingMode } from '@/lib/config';
 import { Inbox } from '@novu/nextjs';
 import { Circle, Check } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -245,9 +244,7 @@ const NotificationItem = (notification: Notification) => {
 export function NotificationDropdown() {
   const { user } = useAuth();
   const applicationIdentifier = process.env.NEXT_PUBLIC_NOVU_APP_IDENTIFIER;
-  const [unreadCount, setUnreadCount] = useState(0);
-  const { theme } = useTheme();
-
+  
   const appearance = {
     variables: {
       colorBackground: 'var(--card)',
@@ -261,10 +258,6 @@ export function NotificationDropdown() {
       colorPopover: 'var(--popover)',
     },
   };
-
-  if (!isStagingMode() || !user?.id || !applicationIdentifier) {
-    return null;
-  }
 
   return (
     <div className='z-12'>
