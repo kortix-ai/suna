@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
+from core.utils.config import config
 from .novu_service import novu_service
 from .presence_service import presence_service
 from .models import (
@@ -287,7 +288,11 @@ class NotificationService:
                 subscriber_name=account_name
             )
             
-            logger.info(f"Welcome email workflow triggered for account {account_id}")
+            if not result:
+                logger.error(f"Failed to trigger welcome email workflow for account {account_id}")
+                return {"success": False, "error": "Failed to trigger workflow"}
+            
+            logger.info(f"Welcome email workflow triggered for account {account_id} (ENV_MODE: {config.ENV_MODE.value})")
             return {"success": True, "result": result}
             
         except Exception as e:
