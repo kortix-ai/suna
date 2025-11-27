@@ -584,6 +584,34 @@ class ThreadManager:
             # Note: We don't log token count here because cached blocks give inaccurate counts
             # The LLM's usage.prompt_tokens (reported after the call) is the accurate source of truth
             import time
+            
+            # CRITICAL: Validate tool call pairing before sending to LLM
+            # This catches any orphaned tool results that would cause Bedrock errors
+            validation_start = time.time()
+            
+            # Ensure we have a ContextManager instance for validation (may not exist if compression was skipped)
+            if 'context_manager' not in locals():
+                context_manager = ContextManager()
+            
+            is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
+            if not is_valid:
+                logger.warning(f"⚠️ PRE-SEND VALIDATION: Found pairing issues - attempting repair")
+                logger.warning(f"⚠️ Orphaned tool_results: {orphaned_ids}")
+                logger.warning(f"⚠️ Unanswered tool_calls: {unanswered_ids}")
+                
+                # Attempt to repair by fixing both directions
+                prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+                
+                # Re-validate after repair
+                is_valid_after, orphans_after, unanswered_after = context_manager.validate_tool_call_pairing(prepared_messages)
+                if not is_valid_after:
+                    logger.error(f"🚨 CRITICAL: Could not repair message structure. Orphaned: {len(orphans_after)}, Unanswered: {len(unanswered_after)}")
+                else:
+                    logger.info(f"✅ Message structure repaired successfully")
+            else:
+                logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
+            logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
+            
             llm_call_start = time.time()
             logger.info(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
 

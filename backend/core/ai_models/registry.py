@@ -34,7 +34,7 @@ class ModelRegistry:
             name="Kortix Basic",
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-basic", "Kortix Basic"],
-            context_window=200_000,
+            context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
@@ -53,7 +53,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
                 },
             )
         ))

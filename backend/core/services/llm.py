@@ -129,14 +129,42 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         }
     ]
     
+    # Context window fallbacks: When context window is exceeded, fallback to models with larger context windows
+    # Order: Smaller context models -> Larger context models
+    # Note: All Bedrock models here have 1M context, but this allows LiteLLM to handle the error gracefully
+    context_window_fallbacks = [
+        # Haiku 4.5 (200k) -> Sonnet 4 (1M) -> Sonnet 4.5 (1M)
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
+            ]
+        },
+        # Sonnet 4.5 (1M) -> Sonnet 4 (1M) - both have same context, but allows retry
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+            ]
+        },
+        # Sonnet 4 (1M) -> Sonnet 4.5 (1M) - both have same context, but allows retry
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
+            ]
+        }
+    ]
+    
     # Configure Router with specific retry settings:
     # - num_retries=0: Disable router-level retries - we handle errors at our layer
     # - fallbacks: ONLY for rate limits and overloaded errors, NOT for 400 errors
+    # - context_window_fallbacks: Automatically fallback to models with larger context windows when context is exceeded
     # CRITICAL: 400 Bad Request errors must NOT retry or fallback - they're permanent failures
+    # EXCEPTION: ContextWindowExceededError is a special case where fallback to larger context models is appropriate
     provider_router = Router(
         model_list=model_list,
         num_retries=0,  # CRITICAL: Disable all router-level retries to prevent infinite loops
         fallbacks=fallbacks,
+        context_window_fallbacks=context_window_fallbacks,  # Handle context window exceeded errors
         # Only use fallbacks for rate limits (429) and server errors (5xx), NOT client errors (4xx)
         # context_window_fallbacks are separate and only triggered by context length issues
     )
