@@ -95,7 +95,7 @@ export const useModelSelection = () => {
       const hasActiveSubscription = accountState?.subscription.status === 'active' || 
                                      accountState?.subscription.status === 'trialing';
       const defaultModelId = getDefaultModel(accessibleModels, hasActiveSubscription);
-        
+      
       if (defaultModelId && defaultModelId !== selectedModel) {
         console.log('🔧 useModelSelection: Setting default model:', defaultModelId, '(subscription:', hasActiveSubscription ? 'active' : 'free', ')');
         setSelectedModel(defaultModelId);

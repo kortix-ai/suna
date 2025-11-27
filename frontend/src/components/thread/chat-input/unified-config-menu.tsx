@@ -443,16 +443,18 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                             {modelOptions.map((model) => {
                                                 const isActive = selectedModel === model.id;
                                                 const canAccess = canAccessModel(model.id);
+                                                const isPowerModel = model.id === 'kortix/power';
                                                 const modelItem = (
                                                     <SpotlightCard
                                                         key={model.id}
                                                         className={cn(
-                                                            "transition-colors cursor-pointer bg-transparent",
+                                                            "transition-colors bg-transparent",
+                                                            canAccess ? "cursor-pointer" : "cursor-not-allowed",
                                                             !canAccess && "opacity-60"
                                                         )}
                                                     >
                                                         <div
-                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1.5 relative"
+                                                            className="flex items-center gap-3 text-sm px-1 py-1.5 relative"
                                                             onClick={() => {
                                                                 if (canAccess) {
                                                                     onModelChange(model.id);
@@ -461,7 +463,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                                     setIsOpen(false);
                                                                     usePricingModalStore.getState().openPricingModal({ 
                                                                         isAlert: true, 
-                                                                        alertTitle: 'Upgrade to access Kortix Power mode' 
+                                                                        alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'
                                                                     });
                                                                 }
                                                             }}
@@ -487,7 +489,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                                     {modelItem}
                                                                 </TooltipTrigger>
                                                                 <TooltipContent side="left" className="text-xs">
-                                                                    <p>Upgrade to access this model</p>
+                                                                    <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
                                                                 </TooltipContent>
                                                             </Tooltip>
                                                         </TooltipProvider>

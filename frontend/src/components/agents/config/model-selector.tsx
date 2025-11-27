@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound } from 'lucide-react';
+import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound, Lock } from 'lucide-react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
 import { PlanSelectionModal } from '@/components/billing/pricing';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import Link from 'next/link';
 
 // Helper to render model labels with special styling for Kortix modes
@@ -88,7 +89,7 @@ export function AgentModelSelector({
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
-  const [planModalOpen, setPlanSelectionModalOpen] = useState(false);
+  const openPricingModal = usePricingModalStore((state) => state.openPricingModal);
   
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<CustomModelFormData>({ id: '', label: '' });
@@ -204,13 +205,15 @@ export function AgentModelSelector({
       onChange(modelId);
       setIsOpen(false);
     } else {
-      // If user doesn't have access, open plan selection modal
-      setPlanSelectionModalOpen(true);
+      // If user doesn't have access, open pricing modal
+      setIsOpen(false);
+      const model = enhancedModelOptions.find(m => m.id === modelId);
+      const isPowerModel = modelId === 'kortix/power';
+      openPricingModal({
+        isAlert: true,
+        alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model',
+      });
     }
-  };
-
-  const handleUpgradeClick = () => {
-    setPlanSelectionModalOpen(true);
   };
 
   const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -308,6 +311,7 @@ export function AgentModelSelector({
     const isPremium = model.requiresSubscription;
     const isLowQuality = false; // API models are quality controlled
     const isRecommended = false; // Remove recommended badges
+    const isPowerModel = model.id === 'kortix/power';
 
     // Format cost display
     const formatCost = (cost: number | null | undefined) => {
@@ -324,30 +328,35 @@ export function AgentModelSelector({
             <div className='w-full'>
               <DropdownMenuItem
                 className={cn(
-                  "text-sm px-2 py-2 mx-2 my-0.5 flex items-center gap-0 cursor-pointer rounded-lg transition-all duration-200",
-                  isHighlighted && "bg-accent",
-                  selectedModel === model.id && "bg-muted border border-border",
-                  !accessible && !disabled && "opacity-70"
+                  "text-sm px-2 py-2 mx-2 my-0.5 flex items-center gap-0 rounded-lg transition-all duration-200",
+                  accessible ? "cursor-pointer" : "cursor-not-allowed",
+                  isHighlighted && accessible && "bg-accent",
+                  selectedModel === model.id && accessible && "bg-muted border border-border",
+                  !accessible && !disabled && "opacity-60 hover:opacity-70"
                 )}
                 onClick={() => !disabled && handleSelect(model.id)}
                 onMouseEnter={() => setHighlightedIndex(index)}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className={cn("relative", !accessible && "opacity-60")}>
                   <ModelProviderIcon modelId={model.id} size={24} />
-                  <ModelLabel label={model.label} />
+                  </div>
+                  <div className={cn("flex-1", !accessible && "opacity-60")}>
+                    <ModelLabel label={model.label} className={!accessible ? "opacity-60" : ""} />
+                  </div>
                 </div>
-                <div className="w-16 text-right text-xs text-muted-foreground">
+                <div className={cn("w-16 text-right text-xs text-muted-foreground", !accessible && "opacity-60")}>
                   {inputCost || '—'}
                 </div>
-                <div className="w-16 text-right text-xs text-muted-foreground">
+                <div className={cn("w-16 text-right text-xs text-muted-foreground", !accessible && "opacity-60")}>
                   {outputCost || '—'}
                 </div>
                 <div className="w-8 flex items-center justify-center">
                   {isLowQuality && (
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                   )}
-                  {isPremium && !accessible && !isLocalMode() && (
-                    <Crown className="h-3.5 w-3.5 text-muted-foreground" />
+                  {!accessible && !isLocalMode() && (
+                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
                   {isLocalMode() && isCustom && (
                     <div className="flex items-center gap-1">
@@ -377,7 +386,7 @@ export function AgentModelSelector({
           </TooltipTrigger>
           {!accessible && !isLocalMode() ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
-              <p>Requires subscription to access premium model</p>
+              <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
             </TooltipContent>
           ) : isLowQuality ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
@@ -639,10 +648,6 @@ export function AgentModelSelector({
           mode={dialogMode}
         />
       )}
-      <PlanSelectionModal
-        open={planModalOpen}
-        onOpenChange={setPlanSelectionModalOpen}
-      />
     </div>
   );
 }
