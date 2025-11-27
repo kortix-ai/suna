@@ -133,8 +133,8 @@ def is_anthropic_model(model_name: str) -> bool:
             logger.debug(f"Model '{model_name}' detected as Anthropic via provider registration")
             return True
         
-        # Check 3: Model resolves to a Bedrock ARN via get_llm_model_id
-        llm_model_id = registry.get_llm_model_id(model_name).lower()
+        # Check 3: Model resolves to a Bedrock ARN via get_litellm_model_id
+        llm_model_id = registry.get_litellm_model_id(model_name).lower()
         if 'bedrock' in llm_model_id or 'anthropic' in llm_model_id:
             logger.debug(f"Model '{model_name}' detected as Anthropic via LLM model ID: {llm_model_id}")
             return True
