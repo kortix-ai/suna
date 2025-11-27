@@ -72,10 +72,11 @@ async def _build_account_state(account_id: str, client) -> Dict:
     last_daily_refresh = credit_account.get('last_daily_refresh')
     
     # Convert to credits
-    total_credits = balance_dollars * CREDITS_PER_DOLLAR
     daily_credits = daily_dollars * CREDITS_PER_DOLLAR
     monthly_credits = monthly_dollars * CREDITS_PER_DOLLAR
     extra_credits = extra_dollars * CREDITS_PER_DOLLAR
+    # Total = sum of all credit types (daily + monthly + extra)
+    total_credits = daily_credits + monthly_credits + extra_credits
     
     # Daily credits refresh info
     daily_credits_info = None

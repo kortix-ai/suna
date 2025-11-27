@@ -42,8 +42,36 @@ export const accountStateKeys = {
 // UTILITY - Invalidation helper for mutations
 // =============================================================================
 
-export function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>) {
+// Debounce refetch calls to prevent duplicate requests
+let refetchTimeout: NodeJS.Timeout | null = null;
+const REFETCH_DEBOUNCE_MS = 500;
+
+export function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>, refetch = false, skipCache = false) {
   queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
+  if (refetch) {
+    // Clear any pending refetch
+    if (refetchTimeout) {
+      clearTimeout(refetchTimeout);
+    }
+    // Debounce refetch to prevent multiple rapid calls
+    refetchTimeout = setTimeout(async () => {
+      // Force refetch even if data isn't stale (bypasses staleTime)
+      // If skipCache=true, manually fetch with skipCache to bypass backend cache
+      if (skipCache) {
+        await queryClient.fetchQuery({
+          queryKey: accountStateKeys.state(),
+          queryFn: () => billingApi.getAccountState(true), // skipCache=true
+        });
+      } else {
+        queryClient.refetchQueries({ 
+          queryKey: accountStateKeys.state(),
+          type: 'active', // Only refetch active queries (currently mounted)
+          cancelRefetch: false, // Don't cancel in-flight requests
+        });
+      }
+      refetchTimeout = null;
+    }, REFETCH_DEBOUNCE_MS);
+  }
 }
 
 // =============================================================================
@@ -55,6 +83,7 @@ interface UseAccountStateOptions {
   staleTime?: number;
   refetchOnMount?: boolean;
   refetchOnWindowFocus?: boolean;
+  skipCache?: boolean; // Skip backend cache (useful after checkout/subscription changes)
 }
 
 /**
@@ -77,13 +106,15 @@ export function useAccountState(options?: UseAccountStateOptions) {
   
   return useQuery<AccountState>({
     queryKey: accountStateKeys.state(),
-    queryFn: () => billingApi.getAccountState(),
+    queryFn: () => billingApi.getAccountState(options?.skipCache ?? false),
     enabled,
     staleTime: options?.staleTime ?? 1000 * 60 * 10, // 10 minutes
     gcTime: 1000 * 60 * 15, // 15 minutes
     refetchOnWindowFocus: options?.refetchOnWindowFocus ?? false,
     refetchOnMount: options?.refetchOnMount ?? false,
     refetchOnReconnect: true,
+    // Enable request deduplication - React Query will batch simultaneous requests
+    structuralSharing: true,
     retry: enabled ? (failureCount, error) => {
       const message = (error as Error).message || '';
       // Don't retry on auth errors
@@ -128,9 +159,9 @@ export function useCreateCheckoutSession() {
     mutationFn: (request: CreateCheckoutSessionRequest) => 
       billingApi.createCheckoutSession(request),
     onSuccess: (data) => {
-      // Invalidate on upgrade/update - checkout redirects user anyway
+      // Invalidate and refetch on upgrade/update - checkout redirects user anyway
       if (data.status === 'upgraded' || data.status === 'updated') {
-        invalidateAccountState(queryClient);
+        invalidateAccountState(queryClient, true, true); // Force refetch with skipCache after checkout
       }
       if (data.checkout_url) {
         window.location.href = data.checkout_url;

@@ -77,12 +77,15 @@ class SubscriptionCheckoutHandler:
         tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
 
         existing_subscription_id = subscription_status['subscription_id']
-        await self._cancel_existing_subscription(existing_subscription_id, 'trial conversion')
-
+        
+        # DON'T cancel here - pass the subscription ID to cancel in the webhook
+        # This ensures if user abandons checkout, they still have their trial
         metadata = self.checkout_service.build_subscription_metadata(
             account_id, commitment_type, 'trial_conversion', 
             subscription_status['current_tier'], existing_subscription_id
         )
+        # Mark which subscription to cancel after checkout succeeds
+        metadata['cancel_after_checkout'] = existing_subscription_id
 
         session = await self._create_stripe_checkout_session(
             customer_id, price_id, success_url, metadata, idempotency_key, cancel_url
@@ -165,6 +168,11 @@ class SubscriptionCheckoutHandler:
                 account_id, subscription, price_id, commitment_type
             )
         else:
+            # For standard paid-to-paid upgrades, use Stripe's subscription modification API
+            # This is instant and handles proration automatically - no checkout needed since 
+            # payment method is already on file
+            logger.info(f"[STANDARD UPGRADE] Modifying subscription in-place from {current_tier} to {price_id}")
+            
             result = await self.upgrade_service.perform_standard_upgrade(
                 existing_subscription_id, subscription, price_id, account_id
             )
@@ -186,12 +194,15 @@ class SubscriptionCheckoutHandler:
         tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
         
         existing_subscription_id = subscription_status['subscription_id']
-        await self._cancel_existing_subscription(existing_subscription_id, 'free tier upgrade')
-
+        
+        # DON'T cancel here - pass the subscription ID to cancel in the webhook
+        # This ensures if user abandons checkout, they still have their free tier
         metadata = self.checkout_service.build_subscription_metadata(
             account_id, commitment_type, 'free_upgrade', 
             subscription_status['current_tier'], existing_subscription_id
         )
+        # Mark which subscription to cancel after checkout succeeds
+        metadata['cancel_after_checkout'] = existing_subscription_id
 
         session = await self._create_stripe_checkout_session(
             customer_id, price_id, success_url, metadata, idempotency_key, cancel_url

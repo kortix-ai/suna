@@ -22,7 +22,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
-import { useAccountState, accountStateSelectors } from '@/hooks/billing';
+import { useAccountState, accountStateSelectors, invalidateAccountState } from '@/hooks/billing';
 import { getPlanName } from '@/components/billing/plan-utils';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
@@ -214,8 +214,10 @@ export function DashboardContent() {
       console.log('🎉 Subscription success detected! Showing celebration...');
       celebrationTriggeredRef.current = true;
       
-      // Invalidate billing queries to refresh data
-      queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
+      // Invalidate and force refetch billing queries to refresh data immediately
+      // This ensures fresh data after checkout, bypassing staleTime
+      // Use invalidateAccountState helper which includes debouncing
+      invalidateAccountState(queryClient, true, true); // skipCache=true to bypass backend cache after checkout
       
       // Close sidebar for cleaner celebration view
       setSidebarOpen(false);

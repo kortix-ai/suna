@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { accountStateKeys } from './use-account-state';
 
 export interface TierConfiguration {
   tier_key: string;
@@ -30,7 +31,7 @@ async function fetchTierConfigurations(): Promise<TierConfigurationsResponse> {
 
 export function useTierConfigurations() {
   return useQuery({
-    queryKey: ['tier-configurations'],
+    queryKey: [...accountStateKeys.all, 'tier-configurations'],
     queryFn: fetchTierConfigurations,
     staleTime: 1000 * 60 * 60, // 1 hour - tier configs don't change often
     gcTime: 1000 * 60 * 60 * 24, // 24 hours (formerly cacheTime)

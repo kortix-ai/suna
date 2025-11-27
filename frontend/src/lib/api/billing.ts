@@ -367,12 +367,49 @@ export const billingApi = {
         },
         models: [],
         limits: {
-          projects: { current: 0, max: 0 },
-          threads: { current: 0, max: 0 },
-          concurrent_runs: 0,
-          custom_workers: 0,
-          scheduled_triggers: 0,
-          app_triggers: 0,
+          projects: {
+            current: 0,
+            max: 0,
+            can_create: false,
+            tier_name: 'none'
+          },
+          threads: {
+            current: 0,
+            max: 0,
+            can_create: false,
+            tier_name: 'none'
+          },
+          concurrent_runs: {
+            running_count: 0,
+            limit: 0,
+            can_start: false,
+            tier_name: 'none'
+          },
+          ai_worker_count: {
+            current_count: 0,
+            limit: 0,
+            can_create: false,
+            tier_name: 'none'
+          },
+          custom_mcp_count: {
+            current_count: 0,
+            limit: 0,
+            can_create: false,
+            tier_name: 'none'
+          },
+          trigger_count: {
+            scheduled: {
+              current_count: 0,
+              limit: 0,
+              can_create: false
+            },
+            app: {
+              current_count: 0,
+              limit: 0,
+              can_create: false
+            },
+            tier_name: 'none'
+          }
         },
         tier: {
           name: 'none',

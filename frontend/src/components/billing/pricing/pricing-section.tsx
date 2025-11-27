@@ -19,7 +19,7 @@ import { AccountState } from '@/lib/api/billing';
 import { createCheckoutSession, CreateCheckoutSessionRequest, CreateCheckoutSessionResponse } from '@/lib/api/billing';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
-import { useAccountState, useScheduleDowngrade, accountStateKeys, accountStateSelectors } from '@/hooks/billing';
+import { useAccountState, useScheduleDowngrade, accountStateKeys, accountStateSelectors, invalidateAccountState } from '@/hooks/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { useQueryClient } from '@tanstack/react-query';
 import { ScheduledDowngradeCard } from '@/components/billing/scheduled-downgrade-card';
@@ -207,7 +207,7 @@ function PricingTier({
         case 'upgraded':
         case 'updated':
           posthog.capture('plan_upgraded');
-          queryClient.invalidateQueries({ queryKey: accountStateKeys.all });
+          invalidateAccountState(queryClient, true, true); // skipCache=true to bypass backend cache after checkout
           if (onSubscriptionUpdate) onSubscriptionUpdate();
           // Always redirect with success param to trigger celebration
           setTimeout(() => {

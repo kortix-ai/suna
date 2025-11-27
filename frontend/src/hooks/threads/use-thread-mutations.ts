@@ -53,8 +53,8 @@ export const useDeleteThread = () => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
-      await queryClient.invalidateQueries({ queryKey: threadKeys.limit() });
-      await queryClient.refetchQueries({ queryKey: threadKeys.limit() });
+      // Invalidate account state to refresh thread limits
+      await queryClient.invalidateQueries({ queryKey: ['account-state'] });
     },
   });
 };
@@ -92,8 +92,8 @@ export const useDeleteMultipleThreads = () => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: threadKeys.lists() });
-      await queryClient.invalidateQueries({ queryKey: threadKeys.limit() });
-      await queryClient.refetchQueries({ queryKey: threadKeys.limit() });
+      // Invalidate account state to refresh thread limits
+      await queryClient.invalidateQueries({ queryKey: ['account-state'] });
     },
   });
 };
