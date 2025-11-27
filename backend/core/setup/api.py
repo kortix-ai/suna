@@ -223,14 +223,24 @@ async def handle_user_created_webhook(
                 f"agent={init_result.get('agent_id')}"
             )
         else:
-            # Log error but don't fail - user can retry via /setup/initialize endpoint
             error_msg = init_result.get('message', 'Unknown error')
             logger.error(f"⚠️ Account initialization failed for {email}: {error_msg}")
-            # Continue to send welcome email even if initialization failed
         
-        # Send welcome email asynchronously (non-blocking)
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            executor.submit(_send_welcome_email_async, email, user_name)
+        from core.notifications.notification_service import notification_service
+        
+        async def send_welcome_notification(acc_id: str, name: str, user_email: str):
+            try:
+                await notification_service.send_welcome_email(
+                    account_id=acc_id,
+                    account_name=name,
+                    account_email=user_email
+                )
+            except Exception as ex:
+                logger.error(f"Error sending welcome notification: {ex}")
+                _send_welcome_email_async(user_email, name)
+
+        import asyncio
+        asyncio.create_task(send_welcome_notification(account_id, user_name, email))
         
         return WebhookResponse(
             success=True,
@@ -239,7 +249,6 @@ async def handle_user_created_webhook(
             
     except Exception as e:
         logger.error(f"Error handling user created webhook: {str(e)}")
-        # Don't raise exception - we don't want to break user signup
         return WebhookResponse(
             success=False,
             message=str(e)
