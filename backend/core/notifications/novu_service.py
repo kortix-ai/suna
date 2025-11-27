@@ -163,6 +163,7 @@ class NovuService:
             return False
         
         try:
+            await self.upsert_subscriber(user_id=user_id)
             import requests
             url = f"{self.backend_url}/v1/subscribers/{user_id}/credentials"
             headers = {
