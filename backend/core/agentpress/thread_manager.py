@@ -245,7 +245,7 @@ class ThreadManager:
                             })
                         else:
                             logger.error(f"Failed to parse message: {content[:100]}")
-                elif isinstance(content, dict) and content.get('content'):
+                elif isinstance(content, dict):
                     # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
                     

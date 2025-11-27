@@ -23,6 +23,7 @@ export function useInitializeAccount() {
       }
       return response.data;
     },
+    retry: false, // Don't retry on failure - initialization should only happen once
   });
 }
 
