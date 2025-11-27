@@ -713,7 +713,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     const cancelSubscriptionMutation = useCancelSubscription();
     const reactivateSubscriptionMutation = useReactivateSubscription();
 
-    const planName = accountStateSelectors.tierDisplayName(accountState);
+    const planName = accountStateSelectors.planName(accountState);
     const planIcon = getPlanIcon(planName, isLocal);
     
     // Get scheduled change from account state

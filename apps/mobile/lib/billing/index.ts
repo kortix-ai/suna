@@ -4,6 +4,7 @@
 export { billingApi, accountStateSelectors, type AccountState } from './api';
 export { 
   useAccountState,
+  useAccountStateWithStreaming,
   accountStateKeys,
   invalidateAccountState,
   useSubscription,
@@ -13,6 +14,19 @@ export {
   useSubscriptionCommitment,
   useScheduledChanges,
   invalidateCreditsAfterPurchase,
+  useCreateCheckoutSession,
+  useCreatePortalSession,
+  useCancelSubscription,
+  useReactivateSubscription,
+  usePurchaseCredits,
+  useDeductTokenUsage,
+  useScheduleDowngrade,
+  useSyncSubscription,
+  useUsageHistory,
+  useTransactions,
+  useTrialStatus,
+  useStartTrial,
+  useCancelTrial,
   billingKeys,
   type SubscriptionInfo,
   type CreditBalance,
@@ -24,6 +38,8 @@ export {
 // =============================================================================
 export { useThreadUsage } from './use-thread-usage';
 export type { ThreadUsageResponse, ThreadUsageRecord } from './use-thread-usage';
+export { useCreditUsage } from './use-credit-usage';
+export type { UsageRecord, UsageResponse } from './use-credit-usage';
 export { usageApi } from './usage-api';
 
 // =============================================================================

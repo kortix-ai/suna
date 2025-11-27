@@ -135,7 +135,7 @@ export function DashboardContent() {
   const { data: limits, isLoading: isLimitsLoading } = useLimits();
   const { data: accountState, isLoading: isAccountStateLoading } = useAccountState({ enabled: !!user });
   const isLocal = isLocalMode();
-  const planName = accountStateSelectors.tierDisplayName(accountState);
+  const planName = accountStateSelectors.planName(accountState);
   const canCreateThread = limits?.thread_count?.can_create || false;
   
   const isDismissed = typeof window !== 'undefined' && sessionStorage.getItem('threadLimitAlertDismissed') === 'true';

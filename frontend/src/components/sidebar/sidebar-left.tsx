@@ -37,10 +37,10 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useAdminRole } from '@/hooks/admin';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
-import { useSubscriptionData } from '@/stores/subscription-store';
 import { isLocalMode } from '@/lib/config';
+import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 
-import { getPlanIcon, getPlanName } from '@/components/billing/plan-utils';
+import { getPlanIcon } from '@/components/billing/plan-utils';
 import { Kbd } from '../ui/kbd';
 import { useTranslations } from 'next-intl';
 import { KbdGroup } from '../ui/kbd';
@@ -48,10 +48,10 @@ import { NotificationDropdown } from '../notifications/notification-dropdown';
 
 
 function UserProfileSection({ user }: { user: any }) {
-  const { data: subscriptionData } = useSubscriptionData();
+  const { data: accountState } = useAccountState({ enabled: true });
   const { state } = useSidebar();
   const isLocal = isLocalMode();
-  const planName = getPlanName(subscriptionData, isLocal);
+  const planName = accountStateSelectors.planName(accountState);
 
   // Return the enhanced user object with plan info for NavUserWithTeams
   const enhancedUser = {

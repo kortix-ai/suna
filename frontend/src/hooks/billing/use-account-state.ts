@@ -14,6 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { siteConfig } from '@/lib/home';
 import {
   billingApi,
   AccountState,
@@ -351,6 +352,17 @@ export const accountStateSelectors = {
   /** Get tier display name */
   tierDisplayName: (state: AccountState | undefined) => 
     state?.subscription.tier_display_name ?? 'No Plan',
+  
+  /** Get plan name for TierBadge (e.g., 'Plus', 'Pro', 'Ultra', 'Basic') */
+  planName: (state: AccountState | undefined) => {
+    if (!state) return 'Basic';
+    const tierKey = state.subscription.tier_key || state.tier?.name;
+    if (!tierKey || tierKey === 'none' || tierKey === 'free') return 'Basic';
+    
+    // Use siteConfig to match tier_key to frontend tier names
+    const tier = siteConfig.cloudPricingItems.find(p => p.tierKey === tierKey);
+    return tier?.name || 'Basic';
+  },
   
   /** Check if on trial */
   isTrial: (state: AccountState | undefined) => state?.subscription.is_trial ?? false,

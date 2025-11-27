@@ -19,7 +19,7 @@ export function CreditsDisplay() {
   const queryClient = useQueryClient();
   const isLocal = isLocalMode();
   
-  const planName = accountStateSelectors.tierDisplayName(accountState);
+  const planName = accountStateSelectors.planName(accountState);
 
   if (!user) return null;
 

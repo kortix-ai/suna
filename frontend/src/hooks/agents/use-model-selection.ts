@@ -16,28 +16,31 @@ export interface ModelOption {
   contextWindow?: number;
 }
 
-const getDefaultModel = (models: ModelOption[], hasActiveSubscription: boolean): string => {
-  // Paid users get kortix/power, free users get kortix/basic
+const getDefaultModel = (accessibleModels: ModelOption[], hasActiveSubscription: boolean): string => {
+  // Only suggest models that are actually accessible
+  // Paid users get kortix/power if accessible, free users get kortix/basic
   if (hasActiveSubscription) {
-    const powerModel = models.find(m => m.id === 'kortix/power');
+    const powerModel = accessibleModels.find(m => m.id === 'kortix/power');
     if (powerModel) return powerModel.id;
     
-    // Fallback to any recommended model
-    const recommendedModel = models.find(m => m.recommended);
+    // Fallback to any recommended model that's accessible
+    const recommendedModel = accessibleModels.find(m => m.recommended);
     if (recommendedModel) return recommendedModel.id;
   } else {
-    const basicModel = models.find(m => m.id === 'kortix/basic');
+    const basicModel = accessibleModels.find(m => m.id === 'kortix/basic');
     if (basicModel) return basicModel.id;
   }
   
-  // Fallback: pick from free models sorted by priority
-  const freeModels = models.filter(m => !m.requiresSubscription);
-  if (freeModels.length > 0) {
-    const sortedFreeModels = freeModels.sort((a, b) => (b.priority || 0) - (a.priority || 0));
-    return sortedFreeModels[0].id;
+  // Fallback: pick from accessible models sorted by priority
+  if (accessibleModels.length > 0) {
+    const sortedModels = accessibleModels.sort((a, b) => {
+      if (a.recommended !== b.recommended) return a.recommended ? -1 : 1;
+      return (b.priority || 0) - (a.priority || 0);
+    });
+    return sortedModels[0].id;
   }
 
-  return models.length > 0 ? models[0].id : '';
+  return '';
 };
 
 export const useModelSelection = () => {
@@ -84,38 +87,25 @@ export const useModelSelection = () => {
   useEffect(() => {
     if (isLoading || !accessibleModels.length) return;
 
-    const hasActiveSubscription = accountState?.subscription.status === 'active' || 
-                                   accountState?.subscription.status === 'trialing';
-    
-    // For paid users: always ensure they're on kortix/power (unless they manually changed it)
-    // For free users: ensure they're on kortix/basic
-    const expectedModel = hasActiveSubscription ? 'kortix/power' : 'kortix/basic';
-    const hasExpectedModel = availableModels.some(m => m.id === expectedModel);
-    
-    // If no model selected, selected model is not accessible, or user is on wrong tier default
+    // If no model selected or selected model is not accessible, set a default
     const needsUpdate = !selectedModel || 
-                        !accessibleModels.some(m => m.id === selectedModel) ||
-                        (hasExpectedModel && selectedModel !== expectedModel && 
-                         (selectedModel === 'kortix/basic' || selectedModel === 'kortix/power'));
+                        !accessibleModels.some(m => m.id === selectedModel);
     
     if (needsUpdate) {
-      const defaultModelId = getDefaultModel(availableModels, hasActiveSubscription);
-      
-      // Make sure the default model is accessible
-      const finalModel = accessibleModels.some(m => m.id === defaultModelId) 
-        ? defaultModelId 
-        : accessibleModels[0]?.id;
+      const hasActiveSubscription = accountState?.subscription.status === 'active' || 
+                                     accountState?.subscription.status === 'trialing';
+      const defaultModelId = getDefaultModel(accessibleModels, hasActiveSubscription);
         
-      if (finalModel && finalModel !== selectedModel) {
-        console.log('🔧 useModelSelection: Setting default model:', finalModel, '(subscription:', hasActiveSubscription ? 'active' : 'free', ')');
-        setSelectedModel(finalModel);
+      if (defaultModelId && defaultModelId !== selectedModel) {
+        console.log('🔧 useModelSelection: Setting default model:', defaultModelId, '(subscription:', hasActiveSubscription ? 'active' : 'free', ')');
+        setSelectedModel(defaultModelId);
       }
     }
-  }, [selectedModel, accessibleModels, availableModels, isLoading, setSelectedModel, accountState?.subscription.status]);
+  }, [selectedModel, accessibleModels, isLoading, setSelectedModel, accountState?.subscription.status]);
 
   // Auto-switch to Power mode when subscription becomes active (upgrade detected)
   useEffect(() => {
-    if (isLoading || !availableModels.length) return;
+    if (isLoading || !accessibleModels.length) return;
     
     const currentStatus = accountState?.subscription.status;
     const wasInactive = prevSubscriptionStatus.current === null || 
@@ -129,8 +119,9 @@ export const useModelSelection = () => {
     const isNowActive = currentStatus === 'active' || currentStatus === 'trialing';
     
     // Detect upgrade: was inactive, now active
+    // Only switch if kortix/power is actually accessible
     if (wasInactive && isNowActive && prevSubscriptionStatus.current !== null) {
-      const powerModel = availableModels.find(m => m.id === 'kortix/power');
+      const powerModel = accessibleModels.find(m => m.id === 'kortix/power');
       if (powerModel) {
         console.log('🚀 useModelSelection: Subscription upgraded! Switching to kortix/power');
         setSelectedModel('kortix/power');
@@ -139,7 +130,7 @@ export const useModelSelection = () => {
     
     // Update ref for next comparison
     prevSubscriptionStatus.current = currentStatus || null;
-  }, [accountState?.subscription.status, availableModels, isLoading, setSelectedModel]);
+  }, [accountState?.subscription.status, accessibleModels, isLoading, setSelectedModel]);
 
   const handleModelChange = (modelId: string) => {
     const model = accessibleModels.find(m => m.id === modelId);

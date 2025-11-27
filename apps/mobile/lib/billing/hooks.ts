@@ -22,6 +22,8 @@ import {
   type CreatePortalSessionRequest,
   type CreatePortalSessionResponse,
   type CancelSubscriptionRequest,
+  type PurchaseCreditsRequest,
+  type TokenUsage,
 } from './api';
 
 // Re-export types for convenience
@@ -403,4 +405,121 @@ export function useScheduledChanges(options?: { enabled?: boolean }) {
     error: null,
     refetch: async () => {},
   };
+}
+
+// =============================================================================
+// ADDITIONAL MUTATION HOOKS - Matching frontend
+// =============================================================================
+
+export function usePurchaseCredits() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request),
+    onSuccess: (data) => {
+      // Will redirect to checkout - invalidation happens on return via backend
+      if (data.checkout_url) {
+        // In mobile, handled by checkout functions
+      }
+      invalidateAccountState(queryClient);
+    },
+  });
+}
+
+export function useDeductTokenUsage() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (usage: TokenUsage) => billingApi.deductTokenUsage(usage),
+    onSuccess: () => {
+      invalidateAccountState(queryClient);
+    },
+  });
+}
+
+export function useSyncSubscription() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => billingApi.syncSubscription(),
+    onSuccess: () => {
+      invalidateAccountState(queryClient);
+    },
+  });
+}
+
+// =============================================================================
+// USAGE HISTORY & TRANSACTIONS
+// =============================================================================
+
+export function useUsageHistory(days = 30) {
+  return useQuery({
+    queryKey: [...accountStateKeys.all, 'usage-history', days],
+    queryFn: () => billingApi.getUsageHistory(days),
+    staleTime: 1000 * 60 * 10, // 10 minutes
+  });
+}
+
+export function useTransactions(limit = 50, offset = 0) {
+  return useQuery({
+    queryKey: [...accountStateKeys.all, 'transactions', limit, offset],
+    queryFn: () => billingApi.getTransactions(limit, offset),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+// =============================================================================
+// TRIAL HOOKS
+// =============================================================================
+
+export function useTrialStatus(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: [...accountStateKeys.all, 'trial'],
+    queryFn: () => billingApi.getTrialStatus(),
+    enabled: options?.enabled ?? true,
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+export function useStartTrial() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (request: { success_url: string; cancel_url: string }) => 
+      billingApi.startTrial(request),
+    onSuccess: (data) => {
+      invalidateAccountState(queryClient);
+      if (data.checkout_url) {
+        // In mobile, handled by checkout functions
+      }
+    },
+  });
+}
+
+export function useCancelTrial() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => billingApi.cancelTrial(),
+    onSuccess: (response) => {
+      invalidateAccountState(queryClient);
+    },
+  });
+}
+
+// =============================================================================
+// STREAMING VARIANT
+// =============================================================================
+
+export function useAccountStateWithStreaming(isStreaming: boolean = false) {
+  return useQuery<AccountState>({
+    queryKey: accountStateKeys.state(),
+    queryFn: () => billingApi.getAccountState(),
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchInterval: isStreaming ? 2 * 60 * 1000 : false, // 2 minutes if streaming
+    refetchIntervalInBackground: false,
+  });
 }

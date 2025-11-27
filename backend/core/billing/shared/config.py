@@ -291,17 +291,16 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
         return False
     
     # Check the model's tier_availability from the registry
-    # This is the primary source of truth for model access
-    if tier_name in ['free', 'none']:
-        # Free tier can only access models with "free" in tier_availability
-        if 'free' in model_obj.tier_availability:
-            return True
-    else:
-        # Paid tiers can access models with "paid" in tier_availability
-        if 'paid' in model_obj.tier_availability:
-            return True
+    # This is the PRIMARY source of truth for model access - if set, it's definitive
+    if model_obj.tier_availability:
+        if tier_name in ['free', 'none']:
+            # Free tier can only access models with "free" in tier_availability
+            return 'free' in model_obj.tier_availability
+        else:
+            # Paid tiers can access models with "paid" in tier_availability
+            return 'paid' in model_obj.tier_availability
     
-    # Fallback: check against tier's hardcoded patterns
+    # Fallback: only use pattern matching if tier_availability is not set (legacy models)
     for allowed_pattern in tier.models:
         if allowed_pattern.lower() in model_obj.name.lower():
             return True
