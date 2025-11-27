@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound } from 'lucide-react';
+import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound, Lock } from 'lucide-react';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,8 +22,36 @@ import { useModelSelection } from '@/hooks/agents';
 import { formatModelName } from '@/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
-import { PlanSelectionModal } from '@/components/billing/pricing';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import Link from 'next/link';
+
+// Helper to render model labels with special styling for Kortix modes
+const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
+    if (label === 'Kortix POWER Mode') {
+        return (
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full">
+                    <KortixLogo size={12} variant="symbol" />
+                    <span className="text-[11px] font-semibold tracking-wide uppercase text-primary">
+                        Power
+                    </span>
+                </span>
+            </span>
+        );
+    }
+    if (label === 'Kortix Basic') {
+        return (
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded-md">
+                    Basic
+                </span>
+            </span>
+        );
+    }
+    return <span className={cn("font-medium", className)}>{label}</span>;
+};
 
 interface CustomModel {
   id: string;
@@ -61,7 +90,8 @@ export function AgentModelSelector({
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
-  const [planModalOpen, setPlanSelectionModalOpen] = useState(false);
+  const openPricingModal = usePricingModalStore((state) => state.openPricingModal);
+  const isFreeTier = subscriptionStatus !== 'active';
   
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<CustomModelFormData>({ id: '', label: '' });
@@ -78,19 +108,17 @@ export function AgentModelSelector({
 
     if (modelsData?.models) {
       modelsData.models.forEach(model => {
-        const displayName = model.display_name || model.short_name || model.id;
+        const displayName = model.name || model.id;
         
         modelMap.set(model.id, {
           id: model.id, // Use the actual model ID
           label: displayName,
-          requiresSubscription: model.requires_subscription || false,
+          requiresSubscription: !model.allowed, // If not allowed, requires subscription
           priority: model.priority || 0,
           recommended: false, // Remove recommended badges since we commented out non-Anthropic models
           top: (model.priority || 0) >= 90,
           capabilities: model.capabilities || [],
           contextWindow: model.context_window || 128000,
-          inputCostPerMillionTokens: model.input_cost_per_million_tokens,
-          outputCostPerMillionTokens: model.output_cost_per_million_tokens,
           isCustom: false
         });
       });
@@ -179,13 +207,15 @@ export function AgentModelSelector({
       onChange(modelId);
       setIsOpen(false);
     } else {
-      // If user doesn't have access, open plan selection modal
-      setPlanSelectionModalOpen(true);
+      // If user doesn't have access, open pricing modal
+      setIsOpen(false);
+      const model = enhancedModelOptions.find(m => m.id === modelId);
+      const isPowerModel = modelId === 'kortix/power';
+      openPricingModal({
+        isAlert: true,
+        alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model',
+      });
     }
-  };
-
-  const handleUpgradeClick = () => {
-    setPlanSelectionModalOpen(true);
   };
 
   const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -283,6 +313,7 @@ export function AgentModelSelector({
     const isPremium = model.requiresSubscription;
     const isLowQuality = false; // API models are quality controlled
     const isRecommended = false; // Remove recommended badges
+    const isPowerModel = model.id === 'kortix/power';
 
     // Format cost display
     const formatCost = (cost: number | null | undefined) => {
@@ -299,30 +330,35 @@ export function AgentModelSelector({
             <div className='w-full'>
               <DropdownMenuItem
                 className={cn(
-                  "text-sm px-2 py-2 mx-2 my-0.5 flex items-center gap-0 cursor-pointer rounded-lg transition-all duration-200",
-                  isHighlighted && "bg-accent",
-                  selectedModel === model.id && "bg-muted border border-border",
-                  !accessible && !disabled && "opacity-70"
+                  "text-sm px-2 py-2 mx-2 my-0.5 flex items-center gap-0 rounded-lg transition-all duration-200",
+                  accessible ? "cursor-pointer" : "cursor-not-allowed",
+                  isHighlighted && accessible && "bg-accent",
+                  selectedModel === model.id && accessible && "bg-muted border border-border",
+                  !accessible && !disabled && "opacity-60 hover:opacity-70"
                 )}
                 onClick={() => !disabled && handleSelect(model.id)}
                 onMouseEnter={() => setHighlightedIndex(index)}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className={cn("relative", !accessible && "opacity-60")}>
                   <ModelProviderIcon modelId={model.id} size={24} />
-                  <span className="font-medium">{model.label}</span>
+                  </div>
+                  <div className={cn("flex-1", !accessible && "opacity-60")}>
+                    <ModelLabel label={model.label} className={!accessible ? "opacity-60" : ""} />
+                  </div>
                 </div>
-                <div className="w-16 text-right text-xs text-muted-foreground">
+                <div className={cn("w-16 text-right text-xs text-muted-foreground", !accessible && "opacity-60")}>
                   {inputCost || '—'}
                 </div>
-                <div className="w-16 text-right text-xs text-muted-foreground">
+                <div className={cn("w-16 text-right text-xs text-muted-foreground", !accessible && "opacity-60")}>
                   {outputCost || '—'}
                 </div>
                 <div className="w-8 flex items-center justify-center">
                   {isLowQuality && (
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                   )}
-                  {isPremium && !accessible && !isLocalMode() && (
-                    <Crown className="h-3.5 w-3.5 text-muted-foreground" />
+                  {!accessible && !isLocalMode() && (
+                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
                   {isLocalMode() && isCustom && (
                     <div className="flex items-center gap-1">
@@ -352,7 +388,7 @@ export function AgentModelSelector({
           </TooltipTrigger>
           {!accessible && !isLocalMode() ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
-              <p>Requires subscription to access premium model</p>
+              <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
             </TooltipContent>
           ) : isLowQuality ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
@@ -386,7 +422,7 @@ export function AgentModelSelector({
                         modelId={selectedModel} 
                         size={24}
                       />
-                      <span className="truncate">{selectedModelDisplay}</span>
+                      <span className="truncate"><ModelLabel label={selectedModelDisplay} /></span>
                     </div>
                   </div>
                 ) : (
@@ -400,7 +436,7 @@ export function AgentModelSelector({
                     )}
                   >
                     <ModelProviderIcon modelId={selectedModel} size={24} />
-                    <span className="text-sm">{selectedModelDisplay}</span>
+                    <span className="text-sm"><ModelLabel label={selectedModelDisplay} /></span>
                   </Button>
                 )}
               </DropdownMenuTrigger>
@@ -530,7 +566,7 @@ export function AgentModelSelector({
                                       >
                                         <div className="flex items-center gap-3 min-w-0 flex-1 pl-2">
                                           <ModelProviderIcon modelId={model.id} size={24} />
-                                          <span className="font-medium">{model.label}</span>
+                                          <ModelLabel label={model.label} />
                                         </div>
                                         <div className="w-16 text-right text-xs text-muted-foreground pr-2">
                                           {inputCost || '—'}
@@ -555,9 +591,9 @@ export function AgentModelSelector({
                                 </Tooltip>
                             );
                           })}
-                          {subscriptionStatus !== 'active' && (
-                            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent flex items-end justify-center">
-                              <div className="w-full p-3">
+                          {isFreeTier && premiumModels.length > 0 && (
+                            <div className="absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent flex items-end justify-center pointer-events-none">
+                              <div className="w-full p-3 pointer-events-auto">
                                 <div className="rounded-xl bg-gradient-to-br from-muted/80 to-muted/70 dark:from-muted/40 dark:to-muted/30 shadow-sm border border-border p-3">
                                   <div className="flex flex-col space-y-2">
                                     <div className="flex items-center">
@@ -569,7 +605,13 @@ export function AgentModelSelector({
                                     <Button
                                       size="sm"
                                       className="w-full h-8 font-medium"
-                                      onClick={handleUpgradeClick}
+                                      onClick={() => {
+                                        setIsOpen(false);
+                                        openPricingModal({
+                                          isAlert: true,
+                                          alertTitle: 'Upgrade to access premium models',
+                                        });
+                                      }}
                                     >
                                       Upgrade now
                                     </Button>
@@ -614,10 +656,6 @@ export function AgentModelSelector({
           mode={dialogMode}
         />
       )}
-      <PlanSelectionModal
-        open={planModalOpen}
-        onOpenChange={setPlanSelectionModalOpen}
-      />
     </div>
   );
 }

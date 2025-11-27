@@ -135,6 +135,8 @@ class SchedulingHandler:
         existing_schedule_id: str, subscription: Dict, target_price_id: str, 
         current_period_end: int, schedule_metadata: Dict
     ):
+        import asyncio
+        
         try:
             existing_schedule = await StripeAPIWrapper.safe_stripe_call(
                 stripe.SubscriptionSchedule.retrieve_async,
@@ -145,6 +147,27 @@ class SchedulingHandler:
             logger.info(f"[DOWNGRADE] Existing schedule status: {schedule_status}")
             
             if schedule_status in ['active', 'not_started']:
+                # Check if the current phase has already ended
+                # This can happen when user upgraded after a schedule was created
+                phases = existing_schedule.get('phases', [])
+                now = int(datetime.now(timezone.utc).timestamp())
+                
+                if phases and len(phases) > 0:
+                    first_phase_end = phases[0].get('end_date', 0)
+                    if first_phase_end and first_phase_end < now:
+                        # Phase 0 has already ended - release and create new
+                        logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} phase 0 has ended (ended at {first_phase_end}, now is {now}), releasing and creating new")
+                        try:
+                            await StripeAPIWrapper.safe_stripe_call(
+                                stripe.SubscriptionSchedule.release_async,
+                                existing_schedule_id
+                            )
+                            logger.info(f"[DOWNGRADE] Released stale schedule {existing_schedule_id}")
+                        except Exception as e:
+                            logger.warning(f"[DOWNGRADE] Could not release schedule {existing_schedule_id}: {e}")
+                        await asyncio.sleep(1)
+                        return None
+                
                 logger.info(f"[DOWNGRADE] Updating active schedule {existing_schedule_id}")
                 await StripeAPIWrapper.safe_stripe_call(
                     stripe.SubscriptionSchedule.modify_async,
@@ -175,19 +198,34 @@ class SchedulingHandler:
                 return existing_schedule
             else:
                 logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} is {schedule_status}, releasing and creating new")
-                await StripeAPIWrapper.safe_stripe_call(
-                    stripe.SubscriptionSchedule.release_async,
-                    existing_schedule_id
-                )
-                logger.info(f"[DOWNGRADE] Released completed/canceled schedule {existing_schedule_id}")
+                try:
+                    await StripeAPIWrapper.safe_stripe_call(
+                        stripe.SubscriptionSchedule.release_async,
+                        existing_schedule_id
+                    )
+                    logger.info(f"[DOWNGRADE] Released completed/canceled schedule {existing_schedule_id}")
+                except Exception as e:
+                    logger.warning(f"[DOWNGRADE] Could not release schedule {existing_schedule_id}: {e}")
                 
-                import asyncio
                 await asyncio.sleep(1)
                 return None
                 
         except stripe.error.InvalidRequestError as e:
-            if 'No such subscription_schedule' in str(e):
+            error_str = str(e)
+            if 'No such subscription_schedule' in error_str:
                 logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} no longer exists, will create new")
+                return None
+            elif 'phase that has already ended' in error_str:
+                # Phase already ended - release and create new
+                logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} has ended phase, releasing and creating new")
+                try:
+                    await StripeAPIWrapper.safe_stripe_call(
+                        stripe.SubscriptionSchedule.release_async,
+                        existing_schedule_id
+                    )
+                except Exception as release_err:
+                    logger.warning(f"[DOWNGRADE] Could not release schedule: {release_err}")
+                await asyncio.sleep(1)
                 return None
             else:
                 raise
@@ -429,4 +467,103 @@ class SchedulingHandler:
         return {
             'has_scheduled_change': False,
             'scheduled_change': None
+        }
+
+    @staticmethod
+    async def cancel_scheduled_change(account_id: str) -> Dict:
+        """Cancel any scheduled tier change for the account."""
+        db = DBConnection()
+        client = await db.client
+        
+        # First check if there's a scheduled change
+        credit_result = await client.from_('credit_accounts').select(
+            'stripe_subscription_id, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id'
+        ).eq('account_id', account_id).execute()
+        
+        if not credit_result.data:
+            return {
+                'success': False,
+                'message': 'No account found'
+            }
+        
+        data = credit_result.data[0]
+        scheduled_tier = data.get('scheduled_tier_change')
+        subscription_id = data.get('stripe_subscription_id')
+        
+        if not scheduled_tier:
+            # Check Stripe metadata as fallback
+            if subscription_id:
+                try:
+                    subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+                    if subscription.get('metadata', {}).get('downgrade') == 'true':
+                        # Clear Stripe metadata
+                        await StripeAPIWrapper.modify_subscription(subscription_id, {
+                            'metadata': {
+                                'downgrade': None,
+                                'target_tier': None,
+                                'scheduled_change': None
+                            }
+                        })
+                        
+                        # Also try to release any Stripe schedule
+                        schedule_id = subscription.get('schedule')
+                        if schedule_id:
+                            try:
+                                await StripeAPIWrapper.safe_stripe_call(
+                                    stripe.SubscriptionSchedule.release_async, schedule_id
+                                )
+                                logger.info(f"[CANCEL_SCHEDULE] Released Stripe schedule {schedule_id}")
+                            except Exception as e:
+                                logger.warning(f"[CANCEL_SCHEDULE] Could not release schedule: {e}")
+                        
+                        return {
+                            'success': True,
+                            'message': 'Scheduled change cancelled successfully'
+                        }
+                except Exception as e:
+                    logger.error(f"[CANCEL_SCHEDULE] Error checking Stripe: {e}")
+            
+            return {
+                'success': False,
+                'message': 'No scheduled change found'
+            }
+        
+        # Clear the scheduled change in database
+        await client.from_('credit_accounts').update({
+            'scheduled_tier_change': None,
+            'scheduled_tier_change_date': None,
+            'scheduled_price_id': None
+        }).eq('account_id', account_id).execute()
+        
+        # Also clear Stripe subscription schedule if it exists
+        if subscription_id:
+            try:
+                subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+                schedule_id = subscription.get('schedule')
+                
+                if schedule_id:
+                    try:
+                        await StripeAPIWrapper.safe_stripe_call(
+                            stripe.SubscriptionSchedule.release_async, schedule_id
+                        )
+                        logger.info(f"[CANCEL_SCHEDULE] Released Stripe schedule {schedule_id}")
+                    except Exception as e:
+                        logger.warning(f"[CANCEL_SCHEDULE] Could not release schedule: {e}")
+                
+                # Clear metadata
+                await StripeAPIWrapper.modify_subscription(subscription_id, {
+                    'metadata': {
+                        'downgrade': None,
+                        'target_tier': None,
+                        'scheduled_change': None
+                    }
+                })
+            except Exception as e:
+                logger.warning(f"[CANCEL_SCHEDULE] Error clearing Stripe data: {e}")
+        
+        logger.info(f"[CANCEL_SCHEDULE] Successfully cancelled scheduled change for {account_id}")
+        
+        return {
+            'success': True,
+            'message': 'Scheduled change cancelled successfully'
         }

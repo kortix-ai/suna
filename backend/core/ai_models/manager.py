@@ -12,11 +12,24 @@ class ModelManager:
         return self.registry.get(model_id)
     
     def resolve_model_id(self, model_id: str) -> str:
+        """Resolve a model ID to its registry ID.
+        
+        Handles:
+        - Registry model IDs (kortix/basic) → returns as-is
+        - Model aliases → resolves to registry ID
+        - LiteLLM model IDs (Bedrock ARNs) → reverse lookup to registry ID (e.g. kortix/basic)
+        """
         # logger.debug(f"resolve_model_id called with: '{model_id}' (type: {type(model_id)})")
         
+        # First try direct registry lookup
         resolved = self.registry.resolve_model_id(model_id)
         if resolved:
             return resolved
+        
+        # Try reverse lookup from LiteLLM model ID (e.g. Bedrock ARN → kortix/basic)
+        reverse_resolved = self.registry.resolve_from_litellm_id(model_id)
+        if reverse_resolved != model_id:
+            return reverse_resolved
             
         return model_id
     
@@ -62,16 +75,15 @@ class ModelManager:
         """Get complete LiteLLM parameters for a model from the registry."""
         model = self.get_model(model_id)
         if not model:
-            # logger.warning(f"Model '{model_id}' not found in registry, using basic params")
             return {
                 "model": model_id,
                 "num_retries": 5,
                 **override_params
             }
         
-        # Get the complete configuration from the model
+        # Get config from model, then override the model ID with the actual LiteLLM model ID
         params = model.get_litellm_params(**override_params)
-        # logger.debug(f"Generated LiteLLM params for {model.name}: {list(params.keys())}")
+        params["model"] = self.registry.get_litellm_model_id(model_id)
         
         return params
     

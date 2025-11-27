@@ -3,6 +3,7 @@ import '@/global.css';
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
+import { usePresence } from '@/hooks/usePresence';
 import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -353,6 +354,10 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
+  
+  const segmentsArray = segments as string[];
+  const threadId = (segmentsArray.length > 3 && segmentsArray[2] === 'thread') ? segmentsArray[3] : undefined;
+  usePresence(threadId);
 
   useEffect(() => {
     // Don't do anything while auth is loading

@@ -42,8 +42,8 @@ export interface SelectableListItemProps {
   /** Avatar component (AgentAvatar, ModelAvatar, etc.) */
   avatar: ReactNode;
   
-  /** Primary title */
-  title: string;
+  /** Primary title (can be string or ReactNode for custom styling) */
+  title: string | ReactNode;
   
   /** Optional subtitle */
   subtitle?: string;
@@ -68,6 +68,9 @@ export interface SelectableListItemProps {
   
   /** Custom selection background */
   selectionBackground?: string;
+  
+  /** Right icon (e.g., Crown for premium) */
+  rightIcon?: ReactNode;
 }
 
 export function SelectableListItem({
@@ -81,6 +84,7 @@ export function SelectableListItem({
   onPress,
   accessibilityLabel,
   selectionBackground,
+  rightIcon,
 }: SelectableListItemProps) {
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
@@ -126,13 +130,17 @@ export function SelectableListItem({
         
         {/* Text Content */}
         <View className="flex-1">
-          <Text 
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="text-base font-roobert-medium"
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
+          {typeof title === 'string' ? (
+            <Text 
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="text-base font-roobert-medium"
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+          ) : (
+            title
+          )}
           {subtitle && (
             <Text 
               style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
@@ -155,7 +163,12 @@ export function SelectableListItem({
         )}
       </View>
       
-      {/* Right: Selection Indicator */}
+      {/* Right: Selection Indicator or Right Icon */}
+      {rightIcon && (
+        <View className="mr-2">
+          {rightIcon}
+        </View>
+      )}
       {!hideIndicator && (
         <View className="w-6 items-center justify-center">
           {showChevron ? (

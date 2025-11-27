@@ -14,11 +14,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow, Lock } from 'lucide-react';
+import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow, Lock, Sparkles } from 'lucide-react';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/agents';
-import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 
 export type SubscriptionStatus = 'no_subscription' | 'active';
@@ -34,6 +33,36 @@ import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AgentModelSelector } from '@/components/agents/config/model-selector';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useAccountState, accountStateSelectors } from '@/hooks/billing';
+import { isLocalMode } from '@/lib/config';
+
+// Helper to render model labels with special styling for Kortix modes
+const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
+    if (label === 'Kortix POWER Mode') {
+        return (
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full">
+                    <KortixLogo size={12} variant="symbol" />
+                    <span className="text-[11px] font-semibold tracking-wide uppercase text-primary">
+                        Power
+                    </span>
+                </span>
+            </span>
+        );
+    }
+    if (label === 'Kortix Basic') {
+        return (
+            <span className={cn("flex items-center gap-2", className)}>
+                <span className="font-medium">Kortix</span>
+                <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded-md">
+                    Basic
+                </span>
+            </span>
+        );
+    }
+    return <span className={cn("font-medium", className)}>{label}</span>;
+};
 
 type UnifiedConfigMenuProps = {
     isLoggedIn?: boolean;
@@ -72,6 +101,14 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
+    const { data: accountState } = useAccountState();
+    const { openPricingModal } = usePricingModalStore();
+    
+    const tierKey = accountStateSelectors.tierKey(accountState);
+    const isFreeTier = tierKey && (
+      tierKey === 'free' ||
+      tierKey === 'none'
+    ) && !isLocalMode();
 
     // Debounce search query
     useEffect(() => {
@@ -272,14 +309,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                 </div>
                                                 <div className="flex items-center justify-between mb-3 px-3">
                                                     <span className="text-xs font-medium text-muted-foreground">My Workers</span>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        className="h-5 w-5 p-0 text-muted-foreground cursor-pointer hover:text-foreground hover:bg-card rounded-2xl"
-                                                        onClick={() => { setIsOpen(false); setShowNewAgentDialog(true); }}
-                                                    >
-                                                        <Plus className="h-4 w-4" />
-                                                    </Button>
                                                 </div>
                                                 {isLoading && orderedAgents.length === 0 ? (
                                                     <div className="space-y-2 px-2">
@@ -342,6 +371,48 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                         )}
                                                     </>
                                                 )}
+                                                {/* Create AI Worker button - always visible */}
+                                                <div className="px-2 pt-2 pb-1 border-t border-border/50 mt-2">
+                                                    <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                                        <div
+                                                            className="flex items-center gap-3 text-sm px-1 py-1.5"
+                                                            onClick={() => {
+                                                                setIsOpen(false);
+                                                                if (isFreeTier) {
+                                                                    openPricingModal();
+                                                                } else {
+                                                                    setShowNewAgentDialog(true);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <div className={cn(
+                                                                "flex items-center justify-center w-8 h-8 border-[1.5px] flex-shrink-0 transition-colors",
+                                                                isFreeTier 
+                                                                    ? "bg-primary/10 border-primary/30" 
+                                                                    : "bg-card border-border"
+                                                            )} style={{ borderRadius: '10.4px' }}>
+                                                                {isFreeTier ? (
+                                                                    <Sparkles className="h-4 w-4 text-primary" />
+                                                                ) : (
+                                                                    <Plus className="h-4 w-4 text-muted-foreground" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <span className={cn(
+                                                                    "font-medium",
+                                                                    isFreeTier ? "text-primary" : "text-foreground"
+                                                                )}>
+                                                                    Create AI Worker
+                                                                </span>
+                                                                {isFreeTier && (
+                                                                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                                                                        Unlock the full Kortix experience
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </SpotlightCard>
+                                                </div>
                                             </DropdownMenuSubContent>
                                         </DropdownMenuPortal>
                                     </DropdownMenuSub>
@@ -351,44 +422,41 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         </>
                     )}
 
-                    {/* Models Submenu */}
+                    {/* Modes Submenu */}
                     <div className="px-3">
                         <div className="mb-3">
-                            <span className="text-xs font-medium text-muted-foreground">Models</span>
+                            <span className="text-xs font-medium text-muted-foreground">Modes</span>
                         </div>
                     </div>
                     <div className="px-2">
                         <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
                             <DropdownMenuSub>
                                 <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
-                                    <ModelProviderIcon
-                                        modelId={selectedModel}
-                                        size={32}
-                                        className="flex-shrink-0"
-                                    />
-                                    <span className="flex-1 truncate font-medium text-left">
-                                        {modelOptions.find(m => m.id === selectedModel)?.label || 'Select Model'}
+                                    <span className="flex-1 truncate text-left">
+                                        <ModelLabel label={modelOptions.find(m => m.id === selectedModel)?.label || 'Select Model'} />
                                     </span>
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuPortal>
                                     <DropdownMenuSubContent className="w-[320px] p-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-y-auto" sideOffset={8}>
                                         <div className="mb-3">
-                                            <span className="text-xs font-medium text-muted-foreground pl-1">Available Models</span>
+                                            <span className="text-xs font-medium text-muted-foreground pl-1">Available Modes</span>
                                         </div>
                                         <div className="space-y-0.5">
                                             {modelOptions.map((model) => {
                                                 const isActive = selectedModel === model.id;
                                                 const canAccess = canAccessModel(model.id);
+                                                const isPowerModel = model.id === 'kortix/power';
                                                 const modelItem = (
                                                     <SpotlightCard
                                                         key={model.id}
                                                         className={cn(
-                                                            "transition-colors cursor-pointer bg-transparent",
+                                                            "transition-colors bg-transparent",
+                                                            canAccess ? "cursor-pointer" : "cursor-not-allowed",
                                                             !canAccess && "opacity-60"
                                                         )}
                                                     >
                                                         <div
-                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 relative"
+                                                            className="flex items-center gap-3 text-sm px-1 py-1.5 relative"
                                                             onClick={() => {
                                                                 if (canAccess) {
                                                                     onModelChange(model.id);
@@ -397,17 +465,14 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                                     setIsOpen(false);
                                                                     usePricingModalStore.getState().openPricingModal({ 
                                                                         isAlert: true, 
-                                                                        alertTitle: 'Upgrade to access this AI model' 
+                                                                        alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'
                                                                     });
                                                                 }
                                                             }}
                                                         >
-                                                            <ModelProviderIcon
-                                                                modelId={model.id}
-                                                                size={32}
-                                                                className={cn("flex-shrink-0", !canAccess && "opacity-50")}
-                                                            />
-                                                            <span className={cn("flex-1 truncate font-medium", !canAccess && "text-muted-foreground")}>{model.label}</span>
+                                                            <span className={cn("flex-1", !canAccess && "text-muted-foreground")}>
+                                                                <ModelLabel label={model.label} className={!canAccess ? "opacity-60" : ""} />
+                                                            </span>
                                                             {!canAccess && (
                                                                 <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                                                             )}
@@ -426,7 +491,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                                     {modelItem}
                                                                 </TooltipTrigger>
                                                                 <TooltipContent side="left" className="text-xs">
-                                                                    <p>Upgrade to access this model</p>
+                                                                    <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
                                                                 </TooltipContent>
                                                             </Tooltip>
                                                         </TooltipProvider>
@@ -479,6 +544,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         selectedAgentId={selectedAgentId}
                         onAgentChange={onAgentSelect}
                         onClose={() => setIntegrationsOpen(false)}
+                        isBlocked={isFreeTier}
+                        onBlockedClick={() => openPricingModal()}
                     />
                 </DialogContent>
             </Dialog>

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { accountStateKeys } from './use-account-state';
 
 interface UsageRecord {
   id: string;
@@ -32,7 +33,7 @@ export function useCreditUsage(
   days: number = 30
 ) {
   return useQuery<UsageResponse>({
-    queryKey: ['billing', 'credit-usage', limit, offset, days],
+    queryKey: [...accountStateKeys.all, 'credit-usage', limit, offset, days],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),

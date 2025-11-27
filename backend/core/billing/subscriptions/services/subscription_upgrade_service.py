@@ -152,6 +152,8 @@ class SubscriptionUpgradeService:
     
     async def _process_subscription_change(self, updated_subscription: Dict, account_id: str, price_id: str) -> Dict:
         from ..handlers.lifecycle import SubscriptionLifecycleHandler
+        from ..handlers.scheduling import SchedulingHandler
+        
         await SubscriptionLifecycleHandler.handle_subscription_change(updated_subscription)
         
         old_tier = get_tier_by_price_id(updated_subscription['items']['data'][0]['price']['id'])
@@ -159,6 +161,14 @@ class SubscriptionUpgradeService:
         
         old_amount = float(old_tier.monthly_credits) if old_tier else 0
         new_amount = float(new_tier.monthly_credits) if new_tier else 0
+        
+        # If this is an upgrade (or any plan change), cancel any scheduled downgrade
+        # This ensures that if user was scheduled to downgrade but then upgrades, the downgrade is cancelled
+        try:
+            await SchedulingHandler.cancel_scheduled_change(account_id)
+            logger.info(f"[UPGRADE] Cleared any scheduled downgrades for {account_id} after plan change")
+        except Exception as e:
+            logger.warning(f"[UPGRADE] Could not clear scheduled changes for {account_id}: {e}")
         
         return {
             'status': 'upgraded' if new_amount > old_amount else 'updated',

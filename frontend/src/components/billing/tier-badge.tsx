@@ -24,29 +24,29 @@ interface TierBadgeProps {
 
 const sizeConfig = {
   xxs: {
-    height: 12,
+    height: 14,
     padding: 'px-1.5 py-0.5',
-    circleSize: 'size-[12px]',
+    circleSize: 'size-[14px]',
   },
   xs: {
-    height: 14,
+    height: 18,
     padding: 'px-2 py-0.5',
-    circleSize: 'size-[16px]',
+    circleSize: 'size-[18px]',
   },
   sm: {
-    height: 16,
+    height: 22,
     padding: 'px-2 py-0.5',
-    circleSize: 'size-[20px]',
-  },
-  md: {
-    height: 20,
-    padding: 'px-2 py-1',
     circleSize: 'size-[24px]',
   },
+  md: {
+    height: 26,
+    padding: 'px-2 py-1',
+    circleSize: 'size-[28px]',
+  },
   lg: {
-    height: 24,
+    height: 32,
     padding: 'px-2.5 py-1',
-    circleSize: 'size-[36px]',
+    circleSize: 'size-[40px]',
   },
 };
 

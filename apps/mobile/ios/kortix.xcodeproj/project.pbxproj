@@ -7,34 +7,31 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0E44296014640BC3E2F8E398 /* Pods_Kortix.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A052D615AFC256A41CAFEFC3 /* Pods_Kortix.framework */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		2FE4712A7A16DDAA5583DA85 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74805DEE975F6F66C3483C40 /* ExpoModulesProvider.swift */; };
-		36B378D13F583DA618C17C86 /* Pods_Kortix.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 06BEAE84633E2C326AAFFAF7 /* Pods_Kortix.framework */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		AD9D6AC0B89C0BB09E41AD26 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0681294CE37217ED8B9BAAAF /* PrivacyInfo.xcprivacy */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		C59412AB2ECD0F380039EFCE /* Kortix.storekit in Resources */ = {isa = PBXBuildFile; fileRef = C59412AA2ECD0F380039EFCE /* Kortix.storekit */; };
-		C59412AD2ECDA6600039EFCE /* StoreKitTestCertificate.cer in Resources */ = {isa = PBXBuildFile; fileRef = C59412AC2ECDA6600039EFCE /* StoreKitTestCertificate.cer */; };
-		DD882A922F87E38C66209BC7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F43ED1F4B323D134F0ED94E9 /* PrivacyInfo.xcprivacy */; };
+		C5AF5C2A2ED6F52C0065ECE9 /* Kortix.storekit in Resources */ = {isa = PBXBuildFile; fileRef = C5AF5C292ED6F52C0065ECE9 /* Kortix.storekit */; };
+		D9ECECD1A3EFD6779780D38C /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E6D80F13B98A6DB40F9D3AE /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		06BEAE84633E2C326AAFFAF7 /* Pods_Kortix.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Kortix.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		0681294CE37217ED8B9BAAAF /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Kortix/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Kortix.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kortix.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Kortix/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Kortix/Info.plist; sourceTree = "<group>"; };
-		695369CAD4A348A087958EF8 /* SplashScreen.storyboard */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = undefined; includeInIndex = 0; lastKnownFileType = unknown; name = SplashScreen.storyboard; path = kortix/SplashScreen.storyboard; sourceTree = "<group>"; };
-		74805DEE975F6F66C3483C40 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Kortix/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		3EDB8866CF491F4645B4A145 /* Pods-Kortix.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.release.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.release.xcconfig"; sourceTree = "<group>"; };
+		411D66F4201F06D4C8B9E8EA /* Pods-Kortix.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.debug.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.debug.xcconfig"; sourceTree = "<group>"; };
+		7E6D80F13B98A6DB40F9D3AE /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Kortix/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		A052D615AFC256A41CAFEFC3 /* Pods_Kortix.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Kortix.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Kortix/SplashScreen.storyboard; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C59412AA2ECD0F380039EFCE /* Kortix.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; name = Kortix.storekit; path = Kortix/Kortix.storekit; sourceTree = "<group>"; };
-		C59412AC2ECDA6600039EFCE /* StoreKitTestCertificate.cer */ = {isa = PBXFileReference; lastKnownFileType = file; path = StoreKitTestCertificate.cer; sourceTree = "<group>"; };
+		C5AF5C292ED6F52C0065ECE9 /* Kortix.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Kortix.storekit; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
-		F1FB1205380D77715C48B89D /* Pods-Kortix.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.debug.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.debug.xcconfig"; sourceTree = "<group>"; };
-		F3969CAC3BEEB3F31AC9C481 /* Pods-Kortix.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.release.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.release.xcconfig"; sourceTree = "<group>"; };
-		F43ED1F4B323D134F0ED94E9 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Kortix/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -42,7 +39,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				36B378D13F583DA618C17C86 /* Pods_Kortix.framework in Frameworks */,
+				0E44296014640BC3E2F8E398 /* Pods_Kortix.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -58,15 +55,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				F43ED1F4B323D134F0ED94E9 /* PrivacyInfo.xcprivacy */,
-			);
-			name = Kortix;
-			sourceTree = "<group>";
-		};
-		24125B10368E411ABE1BA18C /* Kortix */ = {
-			isa = PBXGroup;
-			children = (
-				74805DEE975F6F66C3483C40 /* ExpoModulesProvider.swift */,
+				0681294CE37217ED8B9BAAAF /* PrivacyInfo.xcprivacy */,
 			);
 			name = Kortix;
 			sourceTree = "<group>";
@@ -75,17 +64,17 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				06BEAE84633E2C326AAFFAF7 /* Pods_Kortix.framework */,
+				A052D615AFC256A41CAFEFC3 /* Pods_Kortix.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		6B6DF1C5A56598237A1C0253 /* ExpoModulesProviders */ = {
+		467F879A243DD5410105C6AF /* Kortix */ = {
 			isa = PBXGroup;
 			children = (
-				24125B10368E411ABE1BA18C /* Kortix */,
+				7E6D80F13B98A6DB40F9D3AE /* ExpoModulesProvider.swift */,
 			);
-			name = ExpoModulesProviders;
+			name = Kortix;
 			sourceTree = "<group>";
 		};
 		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
@@ -98,15 +87,13 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
-				C59412AA2ECD0F380039EFCE /* Kortix.storekit */,
-				C59412AC2ECDA6600039EFCE /* StoreKitTestCertificate.cer */,
+				C5AF5C292ED6F52C0065ECE9 /* Kortix.storekit */,
 				13B07FAE1A68108700A75B9A /* Kortix */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				D5FD145A04B972B08451F387 /* Pods */,
-				6B6DF1C5A56598237A1C0253 /* ExpoModulesProviders */,
-				695369CAD4A348A087958EF8 /* SplashScreen.storyboard */,
+				ABA0B58D5252D79A0A24B3ED /* Pods */,
+				8B4CB465F4CDA11BCA000E0C /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -121,6 +108,23 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		8B4CB465F4CDA11BCA000E0C /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				467F879A243DD5410105C6AF /* Kortix */,
+			);
+			name = ExpoModulesProviders;
+			sourceTree = "<group>";
+		};
+		ABA0B58D5252D79A0A24B3ED /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				411D66F4201F06D4C8B9E8EA /* Pods-Kortix.debug.xcconfig */,
+				3EDB8866CF491F4645B4A145 /* Pods-Kortix.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -128,15 +132,6 @@
 			);
 			name = Supporting;
 			path = Kortix/Supporting;
-			sourceTree = "<group>";
-		};
-		D5FD145A04B972B08451F387 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				F1FB1205380D77715C48B89D /* Pods-Kortix.debug.xcconfig */,
-				F3969CAC3BEEB3F31AC9C481 /* Pods-Kortix.release.xcconfig */,
-			);
-			path = Pods;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -147,13 +142,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Kortix" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				B4287003B897A786AE7E912A /* [Expo] Configure project */,
+				FE258F9ED48CD0B14E6529D0 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				F8CBA459AF30E7CB9A18F102 /* [CP] Embed Pods Frameworks */,
+				B4855660B24D13B1E3E94927 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -203,9 +198,8 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				DD882A922F87E38C66209BC7 /* PrivacyInfo.xcprivacy in Resources */,
-				C59412AB2ECD0F380039EFCE /* Kortix.storekit in Resources */,
-				C59412AD2ECDA6600039EFCE /* StoreKitTestCertificate.cer in Resources */,
+				AD9D6AC0B89C0BB09E41AD26 /* PrivacyInfo.xcprivacy in Resources */,
+				C5AF5C2A2ED6F52C0065ECE9 /* Kortix.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,7 +255,9 @@
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXApplication/ExpoApplication_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/EXConstants.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXConstants/ExpoConstants_privacy.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/EXNotifications/ExpoNotifications_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/EXUpdates/EXUpdates.bundle",
+				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoDevice/ExpoDevice_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoFileSystem/ExpoFileSystem_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/ExpoSystemUI/ExpoSystemUI_privacy.bundle",
 				"${PODS_CONFIGURATION_BUILD_DIR}/PurchasesHybridCommon/PurchasesHybridCommon.bundle",
@@ -301,7 +297,9 @@
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoApplication_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXConstants.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoConstants_privacy.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoNotifications_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/EXUpdates.bundle",
+				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoDevice_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoFileSystem_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ExpoSystemUI_privacy.bundle",
 				"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/PurchasesHybridCommon.bundle",
@@ -341,7 +339,29 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Kortix/Pods-Kortix-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		B4287003B897A786AE7E912A /* [Expo] Configure project */ = {
+		B4855660B24D13B1E3E94927 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Kortix/Pods-Kortix-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Kortix/Pods-Kortix-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		FE258F9ED48CD0B14E6529D0 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -365,28 +385,6 @@
 			shellPath = /bin/sh;
 			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-Kortix/expo-configure-project.sh\"\n";
 		};
-		F8CBA459AF30E7CB9A18F102 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Kortix/Pods-Kortix-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Kortix/Pods-Kortix-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -395,7 +393,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				2FE4712A7A16DDAA5583DA85 /* ExpoModulesProvider.swift in Sources */,
+				D9ECECD1A3EFD6779780D38C /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -404,7 +402,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = F1FB1205380D77715C48B89D /* Pods-Kortix.debug.xcconfig */;
+			baseConfigurationReference = 411D66F4201F06D4C8B9E8EA /* Pods-Kortix.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -441,7 +439,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = F3969CAC3BEEB3F31AC9C481 /* Pods-Kortix.release.xcconfig */;
+			baseConfigurationReference = 3EDB8866CF491F4645B4A145 /* Pods-Kortix.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;

@@ -6,7 +6,7 @@ import { CreditCard, Zap, Shield, ArrowRight, CheckCircle, LogOut, Loader2 } fro
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, Suspense, lazy } from 'react';
-import { useTrialStatus, useStartTrial, useSubscription } from '@/hooks/billing';
+import { useTrialStatus, useStartTrial, useAccountState } from '@/hooks/billing';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from 'next/link';
@@ -41,15 +41,16 @@ function ActivateTrialSkeleton() {
 export default function ActivateTrialPage() {
   const router = useRouter();
   const { user } = useAuth();
-  const { data: subscription, isLoading: isLoadingSubscription } = useSubscription({ enabled: !!user });
-  const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus(!!user);
+  const { data: accountState, isLoading: isLoadingSubscription } = useAccountState({ enabled: !!user });
+  const subscription = accountState?.subscription;
+  const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus({ enabled: !!user });
   const startTrialMutation = useStartTrial();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
   const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
   useEffect(() => {
-    if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
+    if (!isLoadingSubscription && !isLoadingTrial && accountState && trialStatus) {
       const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
       const hasUsedTrial = trialStatus.trial_status === 'used' ||
         trialStatus.trial_status === 'expired' ||
@@ -57,7 +58,7 @@ export default function ActivateTrialPage() {
         trialStatus.trial_status === 'converted';
       
       // ✅ Use tier_key and allow free tier
-      const tierKey = subscription.tier_key || subscription.tier?.name;
+      const tierKey = accountState?.subscription?.tier_key || accountState?.tier?.name;
       const hasActiveSubscription = tierKey && tierKey !== 'none';
 
       if (hasActiveTrial || hasActiveSubscription) {
@@ -66,7 +67,7 @@ export default function ActivateTrialPage() {
         router.push('/subscription');
       }
     }
-  }, [subscription, trialStatus, isLoadingSubscription, isLoadingTrial, router]);
+  }, [accountState, trialStatus, isLoadingSubscription, isLoadingTrial, router]);
 
   const handleStartTrial = async () => {
     try {

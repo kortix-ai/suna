@@ -1,17 +1,20 @@
 from typing import Dict, List, Optional, Set
 from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
 from core.utils.config import config, EnvMode
+from core.utils.logger import logger
 
 # SHOULD_USE_ANTHROPIC = False
 # CRITICAL: Production and Staging must ALWAYS use Bedrock, never Anthropic API directly
 SHOULD_USE_ANTHROPIC = config.ENV_MODE == EnvMode.LOCAL and bool(config.ANTHROPIC_API_KEY)
 
-if SHOULD_USE_ANTHROPIC:
-    FREE_MODEL_ID = "anthropic/claude-haiku-4-5"
-    PREMIUM_MODEL_ID = "anthropic/claude-haiku-4-5"
-else:  
-    FREE_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
-    PREMIUM_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
+# Actual model IDs for LiteLLM
+_BASIC_MODEL_ID = "anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"
+_POWER_MODEL_ID = "anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"
+
+# Default model IDs (these are aliases that resolve to actual IDs)
+FREE_MODEL_ID = "kortix/basic"
+PREMIUM_MODEL_ID = "kortix/power"
+
 
 is_local = config.ENV_MODE == EnvMode.LOCAL
 is_prod = config.ENV_MODE == EnvMode.PRODUCTION
@@ -23,13 +26,15 @@ class ModelRegistry:
         self._aliases: Dict[str, str] = {}
         self._initialize_models()
     
+    # KORTIX BASIC & POWER – Same underlying model, different configs
     def _initialize_models(self):
+        # Kortix Basic
         self.register(Model(
-            id="anthropic/claude-haiku-4-5" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
-            name="Haiku 4.5",
+            id="kortix/basic",
+            name="Kortix Basic",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4-5", "Claude Haiku 4.5", "anthropic/claude-haiku-4-5-20251001", "global.anthropic.claude-haiku-4-5-20251001-v1:0", "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48", "arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"],
-            context_window=200_000,
+            aliases=["kortix-basic", "Kortix Basic"],
+            context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
@@ -38,26 +43,27 @@ class ModelRegistry:
             pricing=ModelPricing(
                 input_cost_per_million_tokens=1.00,
                 output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,  # Cache hits & refreshes
-                cache_write_5m_cost_per_million_tokens=1.25,  # 5-minute cache writes
-                cache_write_1h_cost_per_million_tokens=2.00  # 1-hour cache writes
+                cached_read_cost_per_million_tokens=0.10,
+                cache_write_5m_cost_per_million_tokens=1.25,
+                cache_write_1h_cost_per_million_tokens=2.00
             ),
-            tier_availability=["free", "paid"],  # Available to all users as default model
+            tier_availability=["free", "paid"],
             priority=102,
             recommended=True,
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
                 },
             )
         ))
         
+        # Kortix Power - extended context & thinking
         self.register(Model(
-            id="anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
-            name="Sonnet 4.5",
+            id="kortix/power",
+            name="Kortix POWER Mode",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "anthropic/claude-sonnet-4-5", "anthropic/claude-sonnet-4-5-20250929", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh", "arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"],
+            aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -66,11 +72,11 @@ class ModelRegistry:
                 ModelCapability.THINKING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=3.00,
-                output_cost_per_million_tokens=15.00,
-                cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
-                cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
-                cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
+                input_cost_per_million_tokens=1.00,
+                output_cost_per_million_tokens=5.00,
+                cached_read_cost_per_million_tokens=0.10,
+                cache_write_5m_cost_per_million_tokens=1.25,
+                cache_write_1h_cost_per_million_tokens=2.00
             ),
             tier_availability=["paid"],
             priority=101,
@@ -82,6 +88,66 @@ class ModelRegistry:
                 },
             )
         ))
+
+
+        # self.register(Model(
+        #     id="anthropic/claude-haiku-4-5" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
+        #     name="Haiku 4.5",
+        #     provider=ModelProvider.ANTHROPIC,
+        #     aliases=["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4-5", "Claude Haiku 4.5", "anthropic/claude-haiku-4-5-20251001", "global.anthropic.claude-haiku-4-5-20251001-v1:0", "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48", "arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"],
+        #     context_window=200_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #         ModelCapability.VISION,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=1.00,
+        #         output_cost_per_million_tokens=5.00,
+        #         cached_read_cost_per_million_tokens=0.10,  # Cache hits & refreshes
+        #         cache_write_5m_cost_per_million_tokens=1.25,  # 5-minute cache writes
+        #         cache_write_1h_cost_per_million_tokens=2.00  # 1-hour cache writes
+        #     ),
+        #     tier_availability=["free", "paid"],  # Available to all users as default model
+        #     priority=102,
+        #     recommended=True,
+        #     enabled=True,
+        #     config=ModelConfig(
+        #         extra_headers={
+        #             "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+        #         },
+        #     )
+        # ))
+        
+        # self.register(Model(
+        #     id="anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
+        #     name="Sonnet 4.5",
+        #     provider=ModelProvider.ANTHROPIC,
+        #     aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "anthropic/claude-sonnet-4-5", "anthropic/claude-sonnet-4-5-20250929", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh", "arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"],
+        #     context_window=1_000_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #         ModelCapability.VISION,
+        #         ModelCapability.THINKING,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=3.00,
+        #         output_cost_per_million_tokens=15.00,
+        #         cached_read_cost_per_million_tokens=0.30,  # Cache hits & refreshes
+        #         cache_write_5m_cost_per_million_tokens=3.75,  # 5-minute cache writes
+        #         cache_write_1h_cost_per_million_tokens=6.00  # 1-hour cache writes
+        #     ),
+        #     tier_availability=["paid"],
+        #     priority=101,
+        #     recommended=True,
+        #     enabled=True,
+        #     config=ModelConfig(
+        #         extra_headers={
+        #             "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
+        #         },
+        #     )
+        # ))
         
         # self.register(Model(
         #     id="anthropic/claude-sonnet-4-20250514" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
@@ -113,32 +179,6 @@ class ModelRegistry:
         #     )
         # ))
         
-        # Sonnet 3.7 - No global inference profile available yet
-        # self.register(Model(
-        #     id="anthropic/claude-3-7-sonnet-latest" if SHOULD_USE_ANTHROPIC else "global.anthropic.claude-3-7-sonnet-20250219-v1:0",
-        #     name="Sonnet 3.7",
-        #     provider=ModelProvider.ANTHROPIC,
-        #     aliases=["claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "global.anthropic.claude-3-7-sonnet-20250219-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-3-7-sonnet-20250219-v1:0", "bedrock/global.anthropic.claude-3-7-sonnet-20250219-v1:0"],
-        #     context_window=200_000,
-        #     capabilities=[
-        #         ModelCapability.CHAT,
-        #         ModelCapability.FUNCTION_CALLING,
-        #         ModelCapability.VISION,
-        #     ],
-        #     pricing=ModelPricing(
-        #         input_cost_per_million_tokens=3.00,
-        #         output_cost_per_million_tokens=15.00
-        #     ),
-        #     tier_availability=["paid"],
-        #     priority=99,
-        #     enabled=True,
-        #     config=ModelConfig(
-        #         # extra_headers={
-        #         #     "anthropic-beta": "prompt-caching-2024-07-31"
-        #         # },
-        #     )
-        # ))
-
         # Commented out non-Anthropic models as requested
         # self.register(Model(
         #     id="xai/grok-4-fast-non-reasoning",
@@ -316,7 +356,6 @@ class ModelRegistry:
             self._aliases[alias] = model.id
     
     def get(self, model_id: str) -> Optional[Model]:
-        # Handle None or empty model_id
         if not model_id:
             return None
             
@@ -351,6 +390,66 @@ class ModelRegistry:
         model = self.get(model_id)
         return model.id if model else None
     
+    def get_litellm_model_id(self, model_id: str) -> str:
+        """Get the actual model ID to pass to LiteLLM.
+        
+        Resolves kortix/basic and kortix/power to actual provider model IDs.
+        """
+        # Map kortix model IDs to actual LiteLLM model IDs
+        if model_id in ("kortix/basic", "kortix/power"):
+            return _BASIC_MODEL_ID  # Both use the same underlying model
+        
+        # For other models, check if it's an alias and resolve
+        model = self.get(model_id)
+        if model:
+            # Check if this model's ID needs resolution
+            if model.id in ("kortix/basic", "kortix/power"):
+                return _BASIC_MODEL_ID
+            return model.id
+        
+        # Return as-is if not found (let LiteLLM handle it)
+        return model_id
+    
+    def resolve_from_litellm_id(self, litellm_model_id: str) -> str:
+        """Reverse lookup: resolve a LiteLLM model ID (e.g. Bedrock ARN) back to registry model ID.
+        
+        This is the inverse of get_litellm_model_id. Used by cost calculator to find pricing.
+        
+        Args:
+            litellm_model_id: The actual model ID used by LiteLLM (e.g. Bedrock ARN)
+            
+        Returns:
+            The registry model ID (e.g. 'kortix/basic') or the input if not found
+        """
+        # Check if this is the Bedrock ARN that maps to kortix models
+        # Strip common prefixes for comparison
+        normalized_id = litellm_model_id
+        for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
+            if normalized_id.startswith(prefix):
+                normalized_id = normalized_id[len(prefix):]
+                break
+        
+        # Check if this matches _BASIC_MODEL_ID (also normalize it)
+        basic_model_normalized = _BASIC_MODEL_ID
+        for prefix in ['bedrock/converse/', 'bedrock/', 'converse/']:
+            if basic_model_normalized.startswith(prefix):
+                basic_model_normalized = basic_model_normalized[len(prefix):]
+                break
+        
+        # If the normalized ID matches the basic model ARN, return kortix/basic
+        if normalized_id == basic_model_normalized or litellm_model_id == _BASIC_MODEL_ID:
+            return "kortix/basic"
+        
+        # Also check if the full ID matches
+        if litellm_model_id == _BASIC_MODEL_ID:
+            return "kortix/basic"
+        
+        # Check if this model exists directly in registry
+        if self.get(litellm_model_id):
+            return litellm_model_id
+        
+        # Return as-is if no reverse mapping found
+        return litellm_model_id
     
     def get_aliases(self, model_id: str) -> List[str]:
         model = self.get(model_id)
@@ -375,8 +474,23 @@ class ModelRegistry:
         return model.context_window if model else default
     
     def get_pricing(self, model_id: str) -> Optional[ModelPricing]:
+        """Get pricing for a model, with reverse lookup for LiteLLM model IDs.
+        
+        Handles both registry model IDs (kortix/basic) and LiteLLM model IDs (Bedrock ARNs).
+        """
+        # First try direct lookup
         model = self.get(model_id)
-        return model.pricing if model else None
+        if model and model.pricing:
+            return model.pricing
+        
+        # Try reverse lookup from LiteLLM model ID
+        resolved_id = self.resolve_from_litellm_id(model_id)
+        if resolved_id != model_id:
+            model = self.get(resolved_id)
+            if model and model.pricing:
+                return model.pricing
+        
+        return None
     
     def to_legacy_format(self) -> Dict:
         models_dict = {}

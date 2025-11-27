@@ -561,5 +561,11 @@ export function useInstallTemplate() {
       queryClient.invalidateQueries({ queryKey: ['marketplace-templates'] });
       queryClient.invalidateQueries({ queryKey: ['templates'] });
     },
+    onError: (error) => {
+      // Use centralized error handler for billing errors
+      import('@/lib/error-handler').then(({ handleApiError }) => {
+        handleApiError(error);
+      });
+    },
   });
 } 

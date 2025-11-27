@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Header # type: ignore
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Optional
 import os
@@ -97,6 +97,21 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None) 
         logger.info(f"[SETUP] Installing Suna agent for {account_id}")
         suna_service = SunaDefaultAgentService(db)
         agent_id = await suna_service.install_suna_agent_for_user(account_id)
+        name = email.split('@')[0].title(),
+
+        from core.notifications.notification_service import notification_service
+        
+        logger.info(f"Sending welcome email to {email} with name {name}")
+        try:
+            await notification_service.send_welcome_email(
+                account_id=account_id,
+                account_name=name,
+                account_email=email
+            )
+
+        except Exception as ex:
+            logger.error(f"Error sending welcome notification: {ex}")
+            _send_welcome_email_async(email, name)
         
         if not agent_id:
             logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}, but continuing")
@@ -207,12 +222,9 @@ async def handle_user_created_webhook(
             )
         
         logger.info(f"🎉 New user signup: {email} (ID: {user_id})")
-        
-        # Extract user name for welcome email
+
         user_name = _extract_user_name(user_record, email)
-        
-        # Initialize account (free tier + Suna agent)
-        # The account_id is the same as user_id for personal accounts (basejump pattern)
+
         account_id = user_id
         init_result = await initialize_user_account(account_id, email)
         
@@ -223,14 +235,8 @@ async def handle_user_created_webhook(
                 f"agent={init_result.get('agent_id')}"
             )
         else:
-            # Log error but don't fail - user can retry via /setup/initialize endpoint
             error_msg = init_result.get('message', 'Unknown error')
             logger.error(f"⚠️ Account initialization failed for {email}: {error_msg}")
-            # Continue to send welcome email even if initialization failed
-        
-        # Send welcome email asynchronously (non-blocking)
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            executor.submit(_send_welcome_email_async, email, user_name)
         
         return WebhookResponse(
             success=True,
@@ -239,9 +245,7 @@ async def handle_user_created_webhook(
             
     except Exception as e:
         logger.error(f"Error handling user created webhook: {str(e)}")
-        # Don't raise exception - we don't want to break user signup
         return WebhookResponse(
             success=False,
             message=str(e)
         )
-

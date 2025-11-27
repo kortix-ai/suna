@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { accountStateKeys } from './use-account-state';
 
 interface ThreadUsageRecord {
   thread_id: string;
@@ -43,7 +44,7 @@ export function useThreadUsage({
   endDate,
 }: UseThreadUsageParams) {
   return useQuery<ThreadUsageResponse>({
-    queryKey: ['billing', 'thread-usage', limit, offset, days, startDate?.toISOString(), endDate?.toISOString()],
+    queryKey: [...accountStateKeys.all, 'thread-usage', limit, offset, days, startDate?.toISOString(), endDate?.toISOString()],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),

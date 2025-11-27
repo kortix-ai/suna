@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon, Book, Database, PanelLeftClose } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
@@ -15,24 +15,10 @@ import { siteConfig } from '@/lib/home';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarRail,
-  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 import { ThreadSearchModal } from '@/components/sidebar/thread-search-modal';
 import { useEffect, useState } from 'react';
@@ -51,32 +37,21 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useAdminRole } from '@/hooks/admin';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
-import { useSubscriptionData } from '@/stores/subscription-store';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import Image from 'next/image';
 import { isLocalMode } from '@/lib/config';
-import { KortixProcessModal } from './kortix-enterprise-modal';
+import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 
-import { getPlanIcon, getPlanName } from '@/components/billing/plan-utils';
+import { getPlanIcon } from '@/components/billing/plan-utils';
 import { Kbd } from '../ui/kbd';
 import { useTranslations } from 'next-intl';
 import { KbdGroup } from '../ui/kbd';
+import { NotificationDropdown } from '../notifications/notification-dropdown';
 
-// Helper function to get user initials
-function getInitials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-}
 
 function UserProfileSection({ user }: { user: any }) {
-  const { data: subscriptionData } = useSubscriptionData();
+  const { data: accountState } = useAccountState({ enabled: true });
   const { state } = useSidebar();
   const isLocal = isLocalMode();
-  const planName = getPlanName(subscriptionData, isLocal);
+  const planName = accountStateSelectors.planName(accountState);
 
   // Return the enhanced user object with plan info for NavUserWithTeams
   const enhancedUser = {
@@ -267,20 +242,22 @@ export function SidebarLeft({
             )}
 
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => {
-              if (isMobile) {
-                setOpenMobile(false);
-              } else {
-                setOpen(false);
-              }
-            }}
-          >
-            <PanelLeftClose className="!h-5 !w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                if (isMobile) {
+                  setOpenMobile(false);
+                } else {
+                  setOpen(false);
+                }
+              }}
+            >
+              <PanelLeftClose className="!h-5 !w-5" />
+            </Button>
+          </div>
         </div>
       </SidebarHeader>
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
@@ -314,8 +291,6 @@ export function SidebarLeft({
                   </Link>
                 </Button>
               </div>
-
-              {/* State buttons vertically */}
               <div className="w-full flex flex-col items-center space-y-3">
                 {[
                   { view: 'chats' as const, icon: MessageCircle },
