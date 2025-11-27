@@ -358,7 +358,7 @@ class ModelRegistry:
     def get(self, model_id: str) -> Optional[Model]:
         if not model_id:
             return None
-        
+            
         if model_id in self._models:
             return self._models[model_id]
         

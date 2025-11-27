@@ -295,6 +295,13 @@ export async function middleware(request: NextRequest) {
       const trialExpired = creditAccount.trial_status === 'expired' || creditAccount.trial_status === 'cancelled';
       const trialConverted = creditAccount.trial_status === 'converted';
       
+      // If user is coming from Stripe checkout with subscription=success, allow access to dashboard
+      // The webhook might not have processed yet, but we should still allow them to see the success page
+      const subscriptionSuccess = request.nextUrl.searchParams.get('subscription') === 'success';
+      if (subscriptionSuccess && pathname === '/dashboard') {
+        return supabaseResponse;
+      }
+      
       if (hasPaidTier || hasFreeTier) {
         return supabaseResponse;
       }

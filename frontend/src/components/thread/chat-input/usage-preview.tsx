@@ -37,7 +37,14 @@ export const UsagePreview: React.FC<UsagePreviewProps> = ({
         const current = subscriptionData.current_usage || 0;
         const limit = subscriptionData.cost_limit || 0;
 
-        if (limit === 0) return 'No usage limit set';
+        // For free tier or tiers without monthly credits, show total credits instead
+        if (limit === 0) {
+            const totalCredits = subscriptionData.credits?.balance || 0;
+            if (totalCredits > 0) {
+                return `${formatCredits(totalCredits, { showDecimals: true })} credits available`;
+            }
+            return 'No credits available';
+        }
 
         const isOverLimit = current > limit;
         const usageText = `${formatCredits(current, { showDecimals: true })} / ${formatCredits(limit, { showDecimals: true })}`;
