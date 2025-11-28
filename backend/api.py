@@ -53,7 +53,8 @@ _queue_metrics_task = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {config.ENV_MODE.value} mode")
+    env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
+    logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
         await db.initialize()
         
