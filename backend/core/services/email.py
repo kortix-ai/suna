@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 class EmailService:
     def __init__(self):
         self.api_token = os.getenv('MAILTRAP_API_TOKEN')
-        self.sender_email = os.getenv('MAILTRAP_SENDER_EMAIL', 'dom@kortix.ai')
-        self.sender_name = os.getenv('MAILTRAP_SENDER_NAME', 'Dom from Kortix')
+        self.sender_email = os.getenv('MAILTRAP_SENDER_EMAIL', 'hey@kortix.com')
+        self.sender_name = os.getenv('MAILTRAP_SENDER_NAME', 'Kortix Team')
         
         if not self.api_token:
             logger.warning("MAILTRAP_API_TOKEN not found in environment variables")

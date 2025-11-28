@@ -12,6 +12,16 @@ class InitialPurchaseHandler:
         product_id = event.get('product_id')
         price = event.get('price', 0)
         
+        # SECURITY: Reject purchases from anonymous users
+        if not app_user_id or app_user_id.startswith('$RCAnonymousID:'):
+            logger.error(
+                f"[REVENUECAT INITIAL_PURCHASE] 🚫 REJECTED - Anonymous user purchase blocked\n"
+                f"app_user_id: {app_user_id}\n"
+                f"product_id: {product_id}\n"
+                f"Purchases must be linked to a real account"
+            )
+            return
+        
         if not ProductMapper.validate_product_id(product_id):
             logger.error(f"[REVENUECAT] Skipping INITIAL_PURCHASE for invalid product: {product_id}")
             return

@@ -23,7 +23,9 @@ import {
   ChevronRight,
   FlaskConical,
   Trash2,
-  Loader2
+  Loader2,
+  Wallet,
+  BarChart3,
 } from 'lucide-react-native';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
@@ -31,6 +33,7 @@ import { NameEditPage } from './NameEditPage';
 import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { BillingPage } from './BillingPage';
+import { PlanPage } from './PlanPage';
 import { CreditsPurchasePage } from './CreditsPurchasePage';
 import { UsagePage } from './UsagePage';
 import { AccountDeletionPage } from './AccountDeletionPage';
@@ -56,6 +59,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const [isNameEditPageVisible, setIsNameEditPageVisible] = React.useState(false);
   const [isThemePageVisible, setIsThemePageVisible] = React.useState(false);
   const [isBetaPageVisible, setIsBetaPageVisible] = React.useState(false);
+  const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
   const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
   const [isCreditsPurchasePageVisible, setIsCreditsPurchasePageVisible] = React.useState(false);
   const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
@@ -98,11 +102,22 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
     setIsNameEditPageVisible(true);
   }, []);
 
+  const handlePlan = React.useCallback(() => {
+    console.log('🎯 Plan pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsPlanPageVisible(true);
+  }, []);
+
   const handleBilling = React.useCallback(() => {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
     setIsBillingPageVisible(true);
+  }, []);
+
+  const handleUsage = React.useCallback(() => {
+    console.log('🎯 Usage pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsUsagePageVisible(true);
   }, []);
 
   const handleIntegrations = React.useCallback(() => {
@@ -203,8 +218,20 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
 
             <SettingsItem
               icon={CreditCard}
-              label={t('settings.billing')}
+              label={t('settings.plan', 'Plan')}
+              onPress={handlePlan}
+            />
+
+            <SettingsItem
+              icon={Wallet}
+              label={t('settings.billing', 'Billing')}
               onPress={handleBilling}
+            />
+
+            <SettingsItem
+              icon={BarChart3}
+              label={t('settings.usage', 'Usage')}
+              onPress={handleUsage}
             />
 
             <SettingsItem
@@ -277,10 +304,21 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         />
       </AnimatedPageWrapper>
 
+      <AnimatedPageWrapper visible={isPlanPageVisible} onClose={() => setIsPlanPageVisible(false)} disableGesture>
+        <PlanPage
+          visible
+          onClose={() => setIsPlanPageVisible(false)}
+        />
+      </AnimatedPageWrapper>
+
       <AnimatedPageWrapper visible={isBillingPageVisible} onClose={() => setIsBillingPageVisible(false)} disableGesture>
         <BillingPage
           visible
           onClose={() => setIsBillingPageVisible(false)}
+          onChangePlan={() => {
+            setIsBillingPageVisible(false);
+            setTimeout(() => setIsPlanPageVisible(true), 100);
+          }}
         />
       </AnimatedPageWrapper>
 
@@ -354,7 +392,7 @@ const SettingsItem = React.memo(({ icon, label, onPress, destructive = false, sh
     }
   }, [scale, isLoading]);
 
-  const iconColor = destructive ? 'text-destructive' : 'dark:text-muted-foreground/50 text-muted/80';
+  const iconColor = destructive ? 'text-destructive' : 'text-primary';
   const textColor = destructive ? 'text-destructive' : 'text-foreground';
 
   return (

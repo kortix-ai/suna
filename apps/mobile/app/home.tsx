@@ -24,12 +24,14 @@ export default function AppScreen() {
   
   const canSendMessages = isAuthenticated;
   
+  // Load thread from URL parameter - only depend on threadId to prevent infinite loops
   React.useEffect(() => {
     if (threadId && threadId !== chat.activeThread?.id) {
       console.log('🎯 Loading thread from URL parameter:', threadId);
       chat.loadThread(threadId);
     }
-  }, [threadId, chat]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId]);
   
   const handleNewChat = React.useCallback(() => {
     console.log('🆕 New Chat clicked - Starting new chat');

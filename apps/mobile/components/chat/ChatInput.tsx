@@ -125,7 +125,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const hasText = !!(value && value.trim());
   const hasAttachments = attachments.length > 0;
   const hasContent = hasText || hasAttachments;
-  const isDisabled = isSendingMessage || isAgentRunning || isTranscribing;
+  // Allow input to be editable during streaming - only disable when sending or transcribing
+  const isDisabled = isSendingMessage || isTranscribing;
 
   // Get quick action icon
   const QuickActionIcon = selectedQuickAction ? QUICK_ACTION_ICONS[selectedQuickAction] : null;
@@ -262,13 +263,25 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   }, [value, isAuthenticated, onSendMessage, agent]);
 
   // Handle sending audio
-  const handleSendAudioMessage = React.useCallback(() => {
+  const handleSendAudioMessage = React.useCallback(async () => {
     if (!isAuthenticated) {
       console.warn('⚠️ User not authenticated - cannot send audio');
       onCancelRecording?.();
       return;
     }
-    onSendAudio?.();
+    
+    if (!onSendAudio) {
+      console.error('❌ onSendAudio handler is not provided');
+      return;
+    }
+    
+    try {
+      console.log('📤 ChatInput: Calling onSendAudio handler');
+      await onSendAudio();
+      console.log('✅ ChatInput: onSendAudio completed successfully');
+    } catch (error) {
+      console.error('❌ ChatInput: Error in onSendAudio:', error);
+    }
   }, [isAuthenticated, onCancelRecording, onSendAudio]);
 
   // Main button press handler

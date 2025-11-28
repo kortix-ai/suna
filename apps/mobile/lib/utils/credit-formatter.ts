@@ -31,7 +31,12 @@ export function creditsToDollars(credits: number): number {
  * @param options - Formatting options
  * @returns Formatted credit string with thousand separators (commas)
  */
-export function formatCredits(credits: number, options?: { showDecimals?: boolean }): string {
+export function formatCredits(credits: number | null | undefined, options?: { showDecimals?: boolean }): string {
+  // Handle null/undefined values
+  if (credits === null || credits === undefined || isNaN(credits)) {
+    return '0';
+  }
+  
   const rounded = Math.round(credits);
   
   if (options?.showDecimals) {
@@ -52,7 +57,12 @@ export function formatCredits(credits: number, options?: { showDecimals?: boolea
  * @param options - Formatting options
  * @returns Formatted credit string with sign prefix and thousand separators
  */
-export function formatCreditsWithSign(credits: number, options?: { showDecimals?: boolean }): string {
+export function formatCreditsWithSign(credits: number | null | undefined, options?: { showDecimals?: boolean }): string {
+  // Handle null/undefined values
+  if (credits === null || credits === undefined || isNaN(credits)) {
+    return '0';
+  }
+  
   const formatted = formatCredits(Math.abs(credits), options);
   return credits >= 0 ? `+${formatted}` : `-${formatted}`;
 }

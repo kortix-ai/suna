@@ -135,7 +135,7 @@
       "example": "Crea un pitch deck per la mia startup"
     },
     "research": {
-      "title": "Ricerca Approfondita",
+      "title": "Deep Research",
       "description": "Ricerca web completa con insights istantanei, riassunti e analisi.",
       "example": "Ricerca le tendenze IA nella sanità"
     },
@@ -154,6 +154,11 @@
       "description": "Imposta trigger per automatizzare i flussi di lavoro. Programma attività e monitora eventi.",
       "example": "Invia report giornalieri alle 9:00"
     },
+    "final": {
+      "title": "Tutto Pronto!",
+      "description": "Costruito per compiti complessi, progettato per tutto. Cosa vuoi realizzare?",
+      "example": "Descrivi il compito che vuoi che il tuo Worker completi..."
+    },
     "superworker": {
       "title": "Il Tuo Super Worker IA",
       "description": "Combina tutte le funzionalità per costruire worker IA personalizzati per qualsiasi attività di cui hai bisogno.",
@@ -163,7 +168,9 @@
   "settings": {
     "title": "Impostazioni",
     "name": "Nome",
+    "plan": "Piano",
     "billing": "Fatturazione",
+    "usage": "Utilizzo",
     "integrations": "Integrazioni",
     "theme": "Tema & Icona",
     "language": "Lingua",
@@ -177,6 +184,7 @@
   "chat": {
     "newChat": "Nuova Chat",
     "placeholder": "Dai a Kortix un compito...",
+    "inputPlaceholder": "Chiedi qualsiasi cosa a Kortix...",
     "recording": "Registrazione...",
     "cancelRecording": "Annulla registrazione",
     "stopRecording": "Interrompi registrazione",
@@ -224,11 +232,11 @@
   },
   "quickActions": {
     "image": "Immagine",
-    "slides": "Slides",
+    "slides": "Presentazioni",
     "data": "Dati",
-    "docs": "Docs",
+    "docs": "Documenti",
     "people": "Persone",
-    "research": "Research",
+    "research": "Ricerca",
     "chooseStyle": "Scegli stile {{action}}",
     "imageStyles": {
       "abstract": "Astratto",
@@ -296,6 +304,61 @@
       "articles": "Articoli",
       "papers": "Papers",
       "database": "Database"
+    },
+    "examplePrompts": "Esempi di Prompt",
+    "chooseTemplate": "Scegli modello",
+    "selected": "Selezionato",
+    "starterPrompts": {
+      "image": [
+        "Un'aquila dorata maestosa che vola attraverso picchi montuosi nebbiosi all'alba",
+        "Ritratto ravvicinato di una modella con trucco avant-garde e illuminazione da studio",
+        "Soggiorno scandinavo accogliente con mobili in legno naturale e piante d'appartamento",
+        "Mercato stradale cyberpunk futuristico di notte con insegne al neon e display olografici",
+        "Fotografia di prodotto elegante di una bottiglia di profumo di lusso su superficie di marmo",
+        "Isole galleggianti capricciose collegate da ponti di corda in un cielo pastello",
+        "Primo piano macro di gocce di rugiada mattutina su petali di fiori vibranti",
+        "Setup moderno di scrivania con laptop, caffè e piante grasse dall'alto"
+      ],
+      "slides": [
+        "Crea un pitch deck Serie A con dimensione del mercato, trazione e proiezioni finanziarie",
+        "Costruisci una revisione aziendale Q4 che mostra KPI, vittorie e iniziative strategiche",
+        "Progetta una presentazione di lancio prodotto con video demo e testimonianze clienti",
+        "Sviluppa un deck di abilitazione vendite che spiega la nostra proposta di valore e vantaggi competitivi",
+        "Crea un aggiornamento investitori evidenziando metriche chiave e traguardi imminenti",
+        "Costruisci una presentazione case study cliente che mostra ROI e metriche di successo"
+      ],
+      "data": [
+        "Costruisci un modello finanziario che proietta la crescita ARR con diversi scenari di prezzo",
+        "Crea una dashboard vendite interattiva che traccia metriche per regione e trimestre",
+        "Analizza recensioni clienti e visualizza tendenze di sentimento nel tempo",
+        "Progetta un calendario contenuti che traccia campagne con grafici ROI e coinvolgimento",
+        "Costruisci un'analisi di coorte che mostra modelli di fidelizzazione e abbandono utenti",
+        "Crea un modello di attribuzione marketing che confronta le prestazioni dei canali"
+      ],
+      "docs": [
+        "Scrivi un PRD completo per un motore di raccomandazione alimentato da IA",
+        "Redigi un documento di architettura tecnica per una piattaforma di microservizi scalabile",
+        "Crea un documento di strategia go-to-market per il nostro lancio prodotto Q2",
+        "Sviluppa un playbook di onboarding di 90 giorni per manager di ingegneria",
+        "Scrivi una guida di documentazione API con esempi e best practice",
+        "Crea un manuale aziendale che copre cultura, politiche e benefici"
+      ],
+      "people": [
+        "Trova candidati VP Ingegneria presso startup Serie B+ IA/ML a San Francisco",
+        "Costruisci una lista lead di CMO presso aziende B2B SaaS che hanno recentemente raccolto Serie A/B",
+        "Ricerca Ingegneri Blockchain Senior con esperienza Solidity",
+        "Genera una lista prospect di fondatori tecnici presso startup Seed-Serie A in Enterprise IA",
+        "Identifica Product Manager Senior presso aziende fintech con esperienza FAANG",
+        "Trova CIO presso aziende IT sanità mid-market che pianificano migrazione cloud"
+      ],
+      "research": [
+        "Analizza tendenze emergenti nel calcolo quantistico e applicazioni commerciali potenziali",
+        "Ricerca i top 10 concorrenti nello spazio CRM alimentato da IA con confronto funzionalità",
+        "Investiga requisiti normativi per lanciare un'app fintech nell'UE",
+        "Compila un'analisi di mercato sui tassi di adozione veicoli elettrici nei mercati principali",
+        "Studia l'impatto del lavoro remoto sulla domanda di immobili commerciali",
+        "Ricerca modelli di adozione Web3 tra aziende Fortune 500"
+      ]
     }
   },
   "menu": {
@@ -403,7 +466,27 @@
     "plus": "più",
     "addCredits": "Aggiungi Crediti",
     "needMoreCredits": "Hai bisogno di più crediti?",
-    "purchaseAdditional": "Acquista crediti aggiuntivi in qualsiasi momento"
+    "purchaseAdditional": "Acquista crediti aggiuntivi in qualsiasi momento",
+    "pickPlan": "Scegli il piano che fa per te",
+    "billingStatus": "Stato Fatturazione",
+    "manageCredits": "Gestisci i tuoi crediti e abbonamento",
+    "checkoutMode": "Metodo di Pagamento",
+    "nativeCheckout": "Nativo",
+    "webCheckout": "Web",
+    "nativeCheckoutDescription": "Pagamento tramite App Store/Play Store",
+    "webCheckoutDescription": "Pagamento tramite browser web",
+    "monthlyCredits": "Crediti Mensili",
+    "extraCredits": "Crediti Extra",
+    "renews": "Si rinnova il {date}",
+    "allCredits": "Tutti i crediti",
+    "creditTransactions": "Transazioni Crediti",
+    "loadingTransactionHistory": "Caricamento storico transazioni...",
+    "noTransactions": "Nessuna transazione trovata",
+    "transactionHistoryAppearHere": "Il tuo storico transazioni apparirà qui",
+    "balanceAfter": "Saldo dopo",
+    "noDescription": "Nessuna descrizione",
+    "popular": "Popolare",
+    "subscription": "Abbonamento"
   },
   "theme": {
     "title": "Aspetto",
@@ -424,17 +507,13 @@
   },
   "beta": {
     "title": "Funzionalità Beta",
-    "experimentalFeatures": "Funzionalità Sperimentali",
-    "earlyAccess": "Ottieni accesso anticipato alle nuove funzionalità",
+    "webSupportTitle": "Completamente Supportato sul Web",
+    "webSupportDescription": "Disponibile su Kortix.com. In arrivo su mobile presto—ancora in sviluppo qui.",
+    "visitKortix": "Visita Kortix.com",
     "advancedFeatures": "Funzionalità Avanzate",
-    "advancedDescription": "Accedi a funzionalità sperimentali e strumenti avanzati prima che vengano rilasciati a tutti",
-    "whatsIncluded": "Cosa è Incluso",
-    "experimentalTools": "Strumenti Sperimentali",
-    "experimentalToolsDescription": "Prova nuove funzionalità prima del rilascio ufficiale",
-    "advancedSettings": "Impostazioni Avanzate",
-    "advancedSettingsDescription": "Personalizza la tua esperienza con opzioni per utenti avanzati",
+    "mobileBeta": "Beta Mobile",
     "pleaseNote": "Nota Bene",
-    "betaWarning": "Le funzionalità beta potrebbero essere instabili e cambiare senza preavviso. Usa a tua discrezione."
+    "mobileWarning": "In sviluppo su mobile e potrebbe avere problemi. Per la migliore esperienza, usa Kortix.com."
   },
   "accountDeletion": {
     "title": "Elimina Account",

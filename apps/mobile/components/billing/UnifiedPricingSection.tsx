@@ -1,6 +1,6 @@
 import React from 'react';
 import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
-import { RevenueCatPricingSection } from './RevenueCatPricingSection';
+import { PlanPage } from '@/components/settings/PlanPage';
 import { PricingSection } from './PricingSection';
 
 interface UnifiedPricingSectionProps {
@@ -19,7 +19,8 @@ export function UnifiedPricingSection(props: UnifiedPricingSectionProps) {
 
   if (useRevenueCat) {
     return (
-      <RevenueCatPricingSection
+      <PlanPage
+        visible={true}
         onClose={props.onClose}
         onPurchaseComplete={props.onSubscriptionUpdate}
         customTitle={props.customTitle}

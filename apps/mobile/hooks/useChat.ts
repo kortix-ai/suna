@@ -157,20 +157,32 @@ export function useChat(): UseChatReturn {
       return hasActiveSubscription;
     });
     
-    console.log('🔍 [useChat] Accessible models:', {
-      total: availableModels.length,
-      accessible: filtered.length,
-      hasActiveSubscription,
-      modelIds: filtered.map(m => m.id),
-    });
-    
     return filtered;
   }, [availableModels, hasActiveSubscription]);
+  
+  // Log accessible models only when they actually change
+  const prevAccessibleModelIdsRef = useRef<string>('');
+  useEffect(() => {
+    const currentIds = accessibleModels.map(m => m.id).join(',');
+    if (currentIds !== prevAccessibleModelIdsRef.current) {
+      console.log('🔍 [useChat] Accessible models:', {
+        total: availableModels.length,
+        accessible: accessibleModels.length,
+        hasActiveSubscription,
+        modelIds: accessibleModels.map(m => m.id),
+      });
+      prevAccessibleModelIdsRef.current = currentIds;
+    }
+  }, [accessibleModels, availableModels.length, hasActiveSubscription]);
 
+  // Get stable accessible model IDs for dependency comparison
+  const accessibleModelIds = useMemo(() => accessibleModels.map(m => m.id).join(','), [accessibleModels]);
+  const accessibleModelsLength = accessibleModels.length;
+  
   // Auto-select model when models first load and none is selected
   useEffect(() => {
     // Skip if still loading or no accessible models
-    if (modelsLoading || accessibleModels.length === 0) {
+    if (modelsLoading || accessibleModelsLength === 0) {
       return;
     }
 
@@ -196,7 +208,8 @@ export function useChat(): UseChatReturn {
         selectModel(fallbackModel.id);
       }
     }
-  }, [selectedModelId, accessibleModels, selectModel, modelsLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModelId, accessibleModelIds, accessibleModelsLength, selectModel, modelsLoading]);
   
   // Determine current model to use
   const currentModel = useMemo(() => {
@@ -204,26 +217,13 @@ export function useChat(): UseChatReturn {
     if (modelsLoading) {
       return undefined;
     }
-
-    // Log model selection state
-    console.log('🔍 [useChat] Model selection:', {
-      selectedModelId,
-      hasActiveSubscription,
-      totalModels: availableModels.length,
-      accessibleModels: accessibleModels.length,
-      accessibleModelIds: accessibleModels.map(m => m.id),
-      modelsLoading,
-      modelsError: modelsError?.message,
-    });
     
     // If a model is selected and accessible, use it
     if (selectedModelId) {
       const model = accessibleModels.find(m => m.id === selectedModelId);
       if (model) {
-        console.log('✅ [useChat] Using selected accessible model:', model.id);
         return model.id;
       }
-      console.warn('⚠️ [useChat] Selected model not accessible:', selectedModelId);
     }
     
     // Fallback to recommended model or first accessible model
@@ -231,17 +231,36 @@ export function useChat(): UseChatReturn {
     const firstAccessibleModel = accessibleModels[0];
     const fallbackModel = recommendedModel?.id || firstAccessibleModel?.id;
     
-    if (fallbackModel) {
-      console.log('✅ [useChat] Using fallback model:', fallbackModel, {
-        recommended: recommendedModel?.id,
-        firstAccessible: firstAccessibleModel?.id,
-      });
-    } else {
-      console.warn('⚠️ [useChat] No accessible models available');
-    }
-    
     return fallbackModel;
-  }, [selectedModelId, accessibleModels, hasActiveSubscription, availableModels.length, modelsLoading, modelsError]);
+  }, [selectedModelId, accessibleModels, modelsLoading]);
+  
+  // Log model selection only when it actually changes
+  const prevModelSelectionRef = useRef<string>('');
+  useEffect(() => {
+    if (modelsLoading) return;
+    
+    const selectionKey = `${selectedModelId || 'none'}-${currentModel || 'none'}-${accessibleModels.length}`;
+    if (selectionKey !== prevModelSelectionRef.current) {
+      console.log('🔍 [useChat] Model selection:', {
+        selectedModelId,
+        currentModel,
+        hasActiveSubscription,
+        totalModels: availableModels.length,
+        accessibleModels: accessibleModels.length,
+        accessibleModelIds: accessibleModels.map(m => m.id),
+        modelsLoading,
+        modelsError: modelsError?.message,
+      });
+      
+      if (currentModel) {
+        console.log('✅ [useChat] Using selected accessible model:', currentModel);
+      } else {
+        console.warn('⚠️ [useChat] No accessible models available');
+      }
+      
+      prevModelSelectionRef.current = selectionKey;
+    }
+  }, [selectedModelId, currentModel, accessibleModels, hasActiveSubscription, availableModels.length, modelsLoading, modelsError]);
   
   const shouldFetchThread = !!activeThreadId;
   const shouldFetchMessages = !!activeThreadId;

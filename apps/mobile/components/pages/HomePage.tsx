@@ -70,6 +70,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     usePricingModalStore.getState().openPricingModal();
   }, []);
 
+  const handleThreadPressFromUsage = React.useCallback((threadId: string, _projectId: string | null) => {
+    console.log('🎯 Loading thread from UsageDrawer:', threadId);
+    chat.loadThread(threadId);
+  }, [chat]);
+
   // Memoized handlers for ChatInputSection to prevent re-renders
   const handleSendMessage = React.useCallback((content: string, agentId: string, agentName: string) => {
     chat.sendMessage(content, agentId, agentName);
@@ -157,6 +162,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           onClose={handleCloseUsageDrawer}
           onUpgradePress={handleUpgradeFromUsage}
           onTopUpPress={handleTopUpPress}
+          onThreadPress={handleThreadPressFromUsage}
         />
         <CreditsPurchasePage
           visible={isCreditsPurchaseOpen}

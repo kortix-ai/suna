@@ -389,31 +389,35 @@ export function AgentDrawer({
         )}
       </View>
 
-      <AnimatedPressable
-        style={[
-          integrationsAnimatedStyle,
-          {
-            borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
-            borderWidth: 1,
-            borderOpacity: 0.5,
-          }
-        ]}
-        className="flex-1 h-16 flex-row gap-2 mt-4 rounded-2xl items-center justify-center"
-        onPress={handleIntegrationsPress}
-        onPressIn={handleIntegrationsPressIn}
-        onPressOut={handleIntegrationsPressOut}
-      >
-        <AppBubble />
-        <Text className="font-roobert-medium" style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}>
-          {t('integrations.connectApps')}
-        </Text>
-      </AnimatedPressable>
       {advancedFeaturesEnabled && (
         <>
+          <AnimatedPressable
+            style={[
+              integrationsAnimatedStyle,
+              {
+                borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
+                borderWidth: 1,
+                borderOpacity: 0.5,
+              }
+            ]}
+            className="flex-1 h-16 flex-row gap-2 mt-4 rounded-2xl items-center justify-center"
+            onPress={handleIntegrationsPress}
+            onPressIn={handleIntegrationsPressIn}
+            onPressOut={handleIntegrationsPressOut}
+          >
+            <AppBubble />
+            <Text className="font-roobert-medium" style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}>
+              {t('integrations.connectApps')}
+            </Text>
+          </AnimatedPressable>
           <View
             style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
             className="h-px w-full my-3"
           />
+        </>
+      )}
+      {advancedFeaturesEnabled && (
+        <>
           <View className="pb-2">
             <View className="flex-row items-center justify-between mb-2.5">
               <Text

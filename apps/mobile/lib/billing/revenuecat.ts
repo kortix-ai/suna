@@ -37,6 +37,9 @@ export interface RevenueCatSubscriptionInfo {
 let isConfigured = false;
 let initializationPromise: Promise<void> | null = null;
 let customerInfoListenerAdded = false;
+let lastSetEmail: string | null = null;
+let lastSetUserId: string | null = null;
+let currentInitializationParams: { userId: string; email?: string; canTrack: boolean } | null = null;
 
 async function isRevenueCatAlreadyConfigured(): Promise<boolean> {
   try {
@@ -57,6 +60,9 @@ export async function logoutRevenueCat(): Promise<void> {
     isConfigured = false;
     initializationPromise = null;
     customerInfoListenerAdded = false;
+    lastSetEmail = null;
+    lastSetUserId = null;
+    currentInitializationParams = null;
     console.log('✅ RevenueCat logout successful');
     console.log(`🔓 ${wasAnonymous ? 'Anonymous' : 'User'} subscription detached from device`);
   } catch (error) {
@@ -64,6 +70,9 @@ export async function logoutRevenueCat(): Promise<void> {
     isConfigured = false;
     initializationPromise = null;
     customerInfoListenerAdded = false;
+    lastSetEmail = null;
+    lastSetUserId = null;
+    currentInitializationParams = null;
   }
 }
 
@@ -84,16 +93,28 @@ export async function setRevenueCatAttributes(email?: string, displayName?: stri
 }
 
 export async function initializeRevenueCat(userId: string, email?: string, canTrack: boolean = false): Promise<void> {
+  // Check if we're already initializing with the same parameters
+  if (currentInitializationParams && 
+      currentInitializationParams.userId === userId &&
+      currentInitializationParams.email === email &&
+      currentInitializationParams.canTrack === canTrack) {
+    // Same initialization already in progress, wait for it
+    if (initializationPromise) {
+      await initializationPromise;
+    }
+    return;
+  }
+
   // If already configured, just update email if needed and return
   if (isConfigured || (await isRevenueCatAlreadyConfigured())) {
-    console.log('ℹ️ RevenueCat already configured, updating attributes if needed...');
     isConfigured = true;
     
-    // Update email if provided and tracking is enabled
-    if (email && canTrack) {
+    // Update email if provided, tracking is enabled, and email actually changed
+    if (email && canTrack && email !== lastSetEmail) {
       try {
         await Purchases.setEmail(email);
         console.log('✅ Email updated:', email);
+        lastSetEmail = email;
       } catch (emailError) {
         console.warn('⚠️ Could not update email:', emailError);
       }
@@ -110,15 +131,21 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
     }
     
     // Update user ID if it changed
-    try {
-      const currentInfo = await Purchases.getCustomerInfo();
-      if (currentInfo.originalAppUserId !== userId) {
-        console.log('🔄 User ID changed, logging in with new ID...');
-        await Purchases.logIn(userId);
-        console.log('✅ User ID updated successfully');
+    if (userId !== lastSetUserId) {
+      try {
+        const currentInfo = await Purchases.getCustomerInfo();
+        if (currentInfo.originalAppUserId !== userId) {
+          console.log('🔄 User ID changed, logging in with new ID...');
+          await Purchases.logIn(userId);
+          console.log('✅ User ID updated successfully');
+          lastSetUserId = userId;
+        } else {
+          // User ID matches, just track it
+          lastSetUserId = userId;
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not update user ID:', error);
       }
-    } catch (error) {
-      console.warn('⚠️ Could not update user ID:', error);
     }
     
     return;
@@ -137,6 +164,9 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
     throw new Error('RevenueCat API key not configured');
   }
 
+  // Track current initialization parameters
+  currentInitializationParams = { userId, email, canTrack };
+  
   // Create a promise that will be shared by concurrent calls
   initializationPromise = (async () => {
   try {
@@ -158,6 +188,7 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
       try {
         await Purchases.setEmail(email);
         console.log('✅ Email set successfully:', email);
+        lastSetEmail = email;
       } catch (emailError) {
         console.error('❌ Error setting email:', emailError);
       }
@@ -181,17 +212,21 @@ export async function initializeRevenueCat(userId: string, email?: string, canTr
     }
 
     isConfigured = true;
+    lastSetUserId = userId;
+    currentInitializationParams = null;
     console.log('✅ RevenueCat initialized successfully');
     console.log('🔒 SECURITY: Subscription is now locked to this account');
   } catch (error) {
     console.error('❌ Error initializing RevenueCat:', error);
       isConfigured = false;
       initializationPromise = null;
+      currentInitializationParams = null;
     throw error;
   }
   })();
 
   await initializationPromise;
+  currentInitializationParams = null;
 }
 
 export async function getOfferings(forceRefresh: boolean = false): Promise<PurchasesOffering | null> {
@@ -224,6 +259,7 @@ export async function getOfferings(forceRefresh: boolean = false): Promise<Purch
     if (offerings.current) {
       console.log('✅ Current offering:', offerings.current.identifier);
       console.log('📦 Available packages:', offerings.current.availablePackages.map(p => p.identifier).join(', '));
+      console.log('📦 Available product IDs:', offerings.current.availablePackages.map(p => p.product.identifier).join(', '));
       return offerings.current;
     }
     
@@ -277,34 +313,53 @@ export async function getOfferingById(offeringId: string, forceRefresh: boolean 
   }
 }
 
-export async function purchasePackage(pkg: PurchasesPackage, email?: string): Promise<CustomerInfo> {
+export async function purchasePackage(pkg: PurchasesPackage, email?: string, expectedUserId?: string): Promise<CustomerInfo> {
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
     
-    const isOneTimePurchase = pkg.identifier.toLowerCase().includes('topup') || 
-                              pkg.identifier.toLowerCase().includes('credit');
+    // CRITICAL: Verify RevenueCat is linked to the correct user before purchase
+    let currentCustomerInfo = await Purchases.getCustomerInfo();
+    let rcUserId = currentCustomerInfo.originalAppUserId;
     
-    const currentCustomerInfo = await Purchases.getCustomerInfo();
+    console.log('🔐 RevenueCat User ID:', rcUserId);
+    console.log('🔐 Expected User ID:', expectedUserId);
     
-    const hasActiveSubscription = 
-      Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
-      currentCustomerInfo.activeSubscriptions.length > 0;
-
-    if (hasActiveSubscription && !isOneTimePurchase) {
-      const activeProductIds = currentCustomerInfo.activeSubscriptions;
-      console.log('🚫 BLOCKING PURCHASE - Device already has active subscription:', activeProductIds);
-      console.log('🔒 Security: Preventing subscription sharing/transfer abuse');
-      
-      const error: any = new Error(
-        'This device already has an active subscription. Please use "Restore Purchases" to access your existing subscription.'
-      );
-      error.code = 'SUBSCRIPTION_ALREADY_EXISTS';
-      error.userCancelled = false;
-      throw error;
-    }
+    // If RevenueCat is anonymous or mismatched, try to fix it
+    const isAnonymous = rcUserId.startsWith('$RCAnonymousID:');
+    const isMismatched = expectedUserId && rcUserId !== expectedUserId;
     
-    if (isOneTimePurchase) {
-      console.log('💰 One-time credit purchase detected - bypassing subscription guard');
+    if ((isAnonymous || isMismatched) && expectedUserId) {
+      console.log('🔄 RevenueCat session mismatch - attempting to fix...');
+      try {
+        // Try to log in with the correct user ID
+        const loginResult = await Purchases.logIn(expectedUserId);
+        currentCustomerInfo = loginResult.customerInfo;
+        rcUserId = currentCustomerInfo.originalAppUserId;
+        console.log('✅ RevenueCat session fixed, new user ID:', rcUserId);
+        
+        // Check if this Apple ID already has an active subscription
+        const hasActiveSubscription = 
+          Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
+          currentCustomerInfo.activeSubscriptions.length > 0;
+        
+        if (hasActiveSubscription) {
+          console.log('⚠️ This Apple ID already has an active subscription on another account');
+          const error: any = new Error('You are already subscribed with a different account.');
+          error.code = 'ALREADY_SUBSCRIBED_DIFFERENT_ACCOUNT';
+          error.userCancelled = false;
+          throw error;
+        }
+      } catch (loginError: any) {
+        // If login failed and it's not the "already subscribed" error, throw session error
+        if (loginError.code === 'ALREADY_SUBSCRIBED_DIFFERENT_ACCOUNT') {
+          throw loginError;
+        }
+        console.error('❌ Failed to fix RevenueCat session:', loginError);
+        const error: any = new Error('Unable to link your account. Please restart the app and try again.');
+        error.code = 'SESSION_FIX_FAILED';
+        error.userCancelled = false;
+        throw error;
+      }
     }
     
     if (email) {
@@ -360,38 +415,6 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string): Pr
     } else {
       console.error('❌ Purchase error:', error);
     }
-    throw error;
-  }
-}
-
-export async function restorePurchases(email?: string): Promise<CustomerInfo> {
-  try {
-    console.log('🔄 Restoring purchases...');
-    console.warn('⚠️ SECURITY WARNING: Restore will link this Apple ID subscription to current account');
-    console.warn('⚠️ Backend will validate transfer - only allows if emails match');
-    console.warn('⚠️ Transfer between different user accounts will be BLOCKED');
-    
-    if (email) {
-      console.log('📧 Setting email before restore:', email);
-      try {
-        await Purchases.setEmail(email);
-        console.log('✅ Email set successfully - needed for backend validation');
-      } catch (emailError) {
-        console.warn('⚠️ Could not set email before restore:', emailError);
-      }
-    }
-    
-    const customerInfo = await Purchases.restorePurchases();
-    
-    console.log('✅ Purchases restored');
-    console.log('📊 Active subscriptions:', customerInfo.activeSubscriptions);
-    console.log('📊 Active entitlements:', Object.keys(customerInfo.entitlements.active));
-    
-    await notifyBackendOfPurchase(customerInfo);
-    
-    return customerInfo;
-  } catch (error) {
-    console.error('❌ Error restoring purchases:', error);
     throw error;
   }
 }

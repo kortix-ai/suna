@@ -1,5 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, { 
@@ -23,15 +24,19 @@ interface QuickActionCardProps {
  * Features smooth scale animation on press.
  */
 export function QuickActionCard({ action }: QuickActionCardProps) {
+  const { t } = useLanguage();
   const scale = useSharedValue(1);
+  
+  // Get translated label
+  const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
   
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
   const handlePress = () => {
-    console.log('🎯 Quick action pressed:', action.label);
-    console.log('📊 Action data:', { id: action.id, label: action.label });
+    console.log('🎯 Quick action pressed:', translatedLabel);
+    console.log('📊 Action data:', { id: action.id, label: translatedLabel });
     action.onPress?.();
   };
 
@@ -62,7 +67,7 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
       <Text className={`text-sm font-roobert ${
         isSelected ? 'text-primary-foreground font-roobert-medium' : 'text-foreground/80'
       }`}>
-        {action.label}
+        {translatedLabel}
       </Text>
     </AnimatedPressable>
   );

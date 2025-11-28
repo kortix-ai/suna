@@ -12,6 +12,11 @@ class ProductChangeHandler:
         new_product_id = event.get('new_product_id')
         old_product_id = event.get('product_id')
 
+        # SECURITY: Reject product changes from anonymous users
+        if not app_user_id or app_user_id.startswith('$RCAnonymousID:'):
+            logger.error(f"[REVENUECAT PRODUCT_CHANGE] 🚫 REJECTED - Anonymous user: {app_user_id}")
+            return
+
         if not new_product_id:
             logger.warning(
                 f"[REVENUECAT PRODUCT_CHANGE] No new_product_id - this might be a "

@@ -11,9 +11,8 @@ import {
   Search, 
   BarChart3, 
   FileText, 
-  Sparkles, 
-  Zap,
-  LogOut 
+  LogOut,
+  Rocket
 } from 'lucide-react-native';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import * as Haptics from 'expo-haptics';
@@ -104,21 +103,12 @@ export default function OnboardingScreen() {
     },
     {
       id: '5',
-      icon: Sparkles,
-      title: t('onboarding.automation.title'),
-      description: t('onboarding.automation.description'),
-      color: '#8B5CF6',
-      gradient: ['#8B5CF6', '#EC4899'],
-      example: t('onboarding.automation.example'),
-    },
-    {
-      id: '6',
-      icon: Zap,
-      title: t('onboarding.superworker.title'),
-      description: t('onboarding.superworker.description'),
-      color: '#EC4899',
-      gradient: ['#EC4899', '#F43F5E'],
-      example: t('onboarding.superworker.example'),
+      icon: Rocket,
+      title: t('onboarding.final.title'),
+      description: t('onboarding.final.description'),
+      color: '#6366F1',
+      gradient: ['#6366F1', '#8B5CF6'],
+      example: t('onboarding.final.example'),
     },
   ];
 
@@ -190,7 +180,7 @@ export default function OnboardingScreen() {
           <BackgroundLogo/>
         </View>
         <View className="pt-16 px-8 pb-4 flex-row justify-between items-center">
-          <KortixLogo variant="logomark" size={60} color={colorScheme === 'dark' ? 'dark' : 'light'} />
+          <KortixLogo variant="logomark" size={90} color={colorScheme === 'dark' ? 'dark' : 'light'} />
           <View className="flex-row items-center gap-4">
             <TouchableOpacity 
               onPress={handleLogout}

@@ -16,9 +16,10 @@ interface UsageDrawerProps {
   onClose: () => void;
   onUpgradePress?: () => void;
   onTopUpPress?: () => void;
+  onThreadPress?: (threadId: string, projectId: string | null) => void;
 }
 
-export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: UsageDrawerProps) {
+export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress, onThreadPress }: UsageDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -53,9 +54,11 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onTopUpPress }: 
   }, [onClose]);
 
   const handleThreadPress = React.useCallback((threadId: string, projectId: string | null) => {
-    console.log('🎯 Thread pressed:', threadId);
+    console.log('🎯 Thread pressed from UsageDrawer:', threadId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+    onClose();
+    onThreadPress?.(threadId, projectId);
+  }, [onClose, onThreadPress]);
 
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (

@@ -187,12 +187,24 @@ export async function startPlanCheckout(
   console.log('💳 Starting plan checkout...', { tierKey, commitmentType });
 
   try {
+    // For Stripe web checkout, map 'yearly_commitment' to 'yearly'
+    // The backend expects 'yearly' for Stripe products, not 'yearly_commitment'
+    const stripeCommitmentType = commitmentType === 'yearly_commitment' 
+      ? 'yearly' 
+      : commitmentType;
+
     const request: CreateCheckoutSessionRequest = {
       tier_key: tierKey,
       success_url: buildSuccessUrl('plan'),
       cancel_url: buildCancelUrl(),
-      commitment_type: commitmentType,
+      commitment_type: stripeCommitmentType,
     };
+    
+    console.log('📤 Sending checkout request:', { 
+      tier_key: tierKey, 
+      commitment_type: stripeCommitmentType,
+      original_commitment_type: commitmentType 
+    });
 
     const response = await checkoutApi.createCheckoutSession(request);
 

@@ -100,33 +100,12 @@ export const PRICING_TIERS: PricingTier[] = [
     revenueCatId: 'kortix_pro',
   },
   {
-    id: 'tier_12_100',
-    name: 'Business',
-    displayName: 'Business',
-    price: '$100',
-    priceMonthly: 100,
-    priceYearly: 85, // 15% off = $85/month billed yearly
-    credits: 100,
-    features: [
-      '10,000 credits/month',
-      '20 custom workers',
-      'Private projects',
-      '100+ integrations',
-      'Premium AI Models',
-    ],
-    isPopular: false,
-    buttonText: 'Get started',
-    hidden: true, // Hidden by default, matching frontend
-    icon: Rocket,
-    revenueCatId: 'kortix_business',
-  },
-  {
     id: 'tier_25_200',
     name: 'Ultra',
     displayName: 'Ultra',
     price: '$200',
     priceMonthly: 200,
-    priceYearly: 170, // 15% off = $170/month billed yearly
+    // No yearly option available for Ultra
     credits: 200,
     features: [
       '20,000 credits/month',

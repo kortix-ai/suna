@@ -11,7 +11,6 @@ from .handlers import (
     ExpirationHandler,
     ProductChangeHandler,
     TopupHandler,
-    TransferHandler,
     BillingIssueHandler,
 )
 from .services import SyncService
@@ -73,7 +72,7 @@ class RevenueCatService:
             'EXPIRATION': ExpirationHandler.handle,
             'BILLING_ISSUE': BillingIssueHandler.handle_billing_issue,
             'PRODUCT_CHANGE': ProductChangeHandler.handle,
-            'TRANSFER': TransferHandler.handle,
+            # TRANSFER events are intentionally ignored - no subscription transfers allowed
         }
         
         handler = event_handlers.get(event_type)
