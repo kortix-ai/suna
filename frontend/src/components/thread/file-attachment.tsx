@@ -255,7 +255,8 @@ export function FileAttachment({
     const {
         data: fileContent,
         isLoading: fileContentLoading,
-        error: fileContentError
+        error: fileContentError,
+        failureCount: fileRetryAttempt
     } = useFileContent(
         shouldLoadContent ? sandboxId : undefined,
         shouldLoadContent ? filepath : undefined
@@ -265,7 +266,8 @@ export function FileAttachment({
     const {
         data: imageUrl,
         isLoading: imageLoading,
-        error: imageError
+        error: imageError,
+        failureCount: imageRetryAttempt
     } = useImageContent(
         isImage && showPreview && sandboxId ? sandboxId : undefined,
         isImage && showPreview ? filepath : undefined
@@ -303,10 +305,13 @@ export function FileAttachment({
         );
     };
 
-    // Set error state based on query errors
+    // Set error state based on query errors - but only after retries exhausted
     React.useEffect(() => {
         const anyError = fileContentError || imageError || pdfError || xlsxError;
-        if (anyError) {
+        const isStillRetrying = imageRetryAttempt < 15 || fileRetryAttempt < 15;
+        
+        if (anyError && !isStillRetrying) {
+            // Only show error after retries exhausted
             // Check if it's a sandbox deleted error
             if (isSandboxDeletedError(anyError)) {
                 setIsSandboxDeleted(true);
@@ -315,8 +320,12 @@ export function FileAttachment({
                 setHasError(true);
                 setIsSandboxDeleted(false);
             }
+        } else if (!anyError) {
+            // Clear error state if no error
+            setHasError(false);
+            setIsSandboxDeleted(false);
         }
-    }, [fileContentError, imageError, pdfError, xlsxError]);
+    }, [fileContentError, imageError, pdfError, xlsxError, imageRetryAttempt, fileRetryAttempt]);
 
     // Reset image loaded state when URL changes
     React.useEffect(() => {
@@ -514,8 +523,13 @@ export function FileAttachment({
             >
                 {/* Show loading spinner overlay while image is loading */}
                 {!imageLoaded && isGridLayout && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-black/5 to-black/10 dark:from-white/5 dark:to-white/10 z-10">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-black/5 to-black/10 dark:from-white/5 dark:to-white/10 z-10">
                         <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                        {imageRetryAttempt > 0 && (
+                            <div className="text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
+                                Retrying... (attempt {imageRetryAttempt + 1})
+                            </div>
+                        )}
                     </div>
                 )}
                 
@@ -712,8 +726,13 @@ export function FileAttachment({
 
                     {/* Loading state */}
                     {fileContentLoading && !isPdf && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/50 z-10">
                             <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                            {fileRetryAttempt > 0 && (
+                                <div className="text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
+                                    Retrying... (attempt {fileRetryAttempt + 1})
+                                </div>
+                            )}
                         </div>
                     )}
 

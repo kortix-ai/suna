@@ -15,6 +15,7 @@ export function useImageContent(
     data: blobData,
     isLoading,
     error,
+    failureCount,
   } = useFileContentQuery(sandboxId, filePath, {
     contentType: 'blob',
     enabled: options.enabled,
@@ -39,5 +40,6 @@ export function useImageContent(
     data: blobUrl,
     isLoading,
     error,
+    failureCount,
   };
 } 
