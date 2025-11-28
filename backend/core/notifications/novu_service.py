@@ -275,7 +275,7 @@ class NovuService:
         self,
         workflow_id: str,
         subscriber_id: str,
-        payload: Dict[str, Any],
+        payload: Optional[Dict[str, Any]] = None,
         subscriber_email: Optional[str] = None,
         subscriber_name: Optional[str] = None
     ) -> Any:
@@ -288,13 +288,6 @@ class NovuService:
             return False
         
         try:
-            if subscriber_email or subscriber_name:
-                await self.upsert_subscriber(
-                    user_id=subscriber_id,
-                    email=subscriber_email,
-                    name=subscriber_name
-                )
-            
             with Novu(
                 server_url=self.backend_url,
                 secret_key=self.api_key,
@@ -302,7 +295,11 @@ class NovuService:
                 response = novu.trigger(
                     trigger_event_request_dto=novu_py.TriggerEventRequestDto(
                         workflow_id=workflow_id,
-                        to=subscriber_id,
+                        to={
+                            "subscriber_id": subscriber_id,
+                            "email": subscriber_email,
+                            "name": subscriber_name
+                        },
                         payload=payload
                     )
                 )

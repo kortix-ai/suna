@@ -269,25 +269,58 @@ class NotificationService:
         )
     
     
-    async def send_welcome_email(self, account_id: str, account_name: Optional[str] = None, account_email: Optional[str] = None) -> Dict[str, Any]:
+    async def send_welcome_email(self, account_id: str) -> Dict[str, Any]:
         try:
             logger.info(f"[WELCOME_EMAIL] ENV_MODE={config.ENV_MODE.value if config.ENV_MODE else 'None'}, Novu enabled={self.novu.enabled}, API key configured={bool(self.novu.api_key)}")
             
-            if not account_email or not account_name:
-                account_info = await self._get_account_info(account_id)
-                account_email = account_email or account_info.get("email")
-                account_name = account_name or account_info.get("name")
+            client = await self.db.client
             
+            email = None
+            name = None
+            
+            if not email:
+                try:
+                    email_result = await client.rpc('get_user_email', {'user_id': account_id}).execute()
+                    if email_result.data:
+                        email = email_result.data
+                        if isinstance(email, (list, tuple)):
+                            email = email[0] if len(email) > 0 else None
+                        email = str(email) if email else None
+                except Exception as e:
+                    logger.error(f"Error getting user email via RPC: {str(e)}")
+            
+            if not name:
+                try:
+                    metadata_result = await client.rpc('get_user_metadata', {'user_id': account_id}).execute()
+                    if metadata_result.data:
+                        metadata = metadata_result.data
+                        if isinstance(metadata, dict):
+                            name = metadata.get('full_name') or metadata.get('name')
+                        elif isinstance(metadata, (list, tuple)):
+                            metadata = metadata[0] if len(metadata) > 0 else {}
+                            if isinstance(metadata, dict):
+                                name = metadata.get('full_name') or metadata.get('name')
+                except Exception as e:
+                    logger.error(f"Error getting user metadata via RPC: {str(e)}")
+            
+            if not name and email:
+                name = email.split('@')[0]
+            
+            if isinstance(name, (list, tuple)):
+                name = name[0] if len(name) > 0 else None
+            name = str(name) if name else None
+            
+            if isinstance(email, (list, tuple)):
+                email = email[0] if len(email) > 0 else None
+            email = str(email) if email else None
+            
+            logger.info(f"[WELCOME_EMAIL] Triggering for {account_id}: email={email}, name={name}")
+
             result = await self.novu.trigger_workflow(
                 workflow_id="welcome-email",
                 subscriber_id=account_id,
-                payload={
-                    "user_name": account_name,
-                    "from_url": "https://www.kortix.com",
-                    "discord_url": "https://discord.com/invite/RvFhXUdZ9H"
-                },
-                subscriber_email=account_email,
-                subscriber_name=account_name
+                subscriber_email=email,
+                subscriber_name=name
             )
             
             if not result:
