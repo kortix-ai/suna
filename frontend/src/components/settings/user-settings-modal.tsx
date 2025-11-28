@@ -231,15 +231,9 @@ export function UserSettingsModal({
     );
 }
 
-interface NotificationSettings {
-    email_enabled: boolean;
-    push_enabled: boolean;
-    in_app_enabled: boolean;
-}
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
     const t = useTranslations('settings.general');
-    const tNotifications = useTranslations('notifications');
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
@@ -251,54 +245,11 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
     const supabase = createClient();
     const queryClient = useQueryClient();
-    const [localSettings, setLocalSettings] = useState<NotificationSettings | null>(null);
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
     const cancelDeletion = useCancelAccountDeletion();
     const deleteImmediately = useDeleteAccountImmediately();
-
-    const { data: notificationSettings } = useQuery({
-        queryKey: ['notification-settings'],
-        queryFn: async () => {
-            const response = await backendApi.get<{ settings: NotificationSettings }>('/notifications/settings');
-            if (!response.success || !response.data) {
-                throw new Error('Failed to fetch notification settings');
-            }
-            return response.data.settings;
-        },
-    });
-
-    useEffect(() => {
-        if (notificationSettings) {
-            setLocalSettings(notificationSettings);
-        }
-    }, [notificationSettings]);
-
-    const updateNotificationsMutation = useMutation({
-        mutationFn: async (updates: Partial<NotificationSettings>) => {
-            const response = await backendApi.put('/notifications/settings', updates);
-            if (!response.success) {
-                throw new Error('Failed to update notification settings');
-            }
-            return response.data;
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notification-settings'] });
-            toast.success(tNotifications('settingsUpdated'));
-        },
-        onError: () => {
-            toast.error(tNotifications('settingsFailed'));
-            if (notificationSettings) {
-                setLocalSettings(notificationSettings);
-            }
-        },
-    });
-
-    const handleNotificationToggle = (key: keyof NotificationSettings, value: boolean) => {
-        setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
-        updateNotificationsMutation.mutate({ [key]: value });
-    };
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -411,44 +362,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     <LanguageSwitcher />
                 </div>
             </div>
-
-            {localSettings && (
-                <div className="space-y-4 pt-6 border-t">
-                    <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <Bell className="h-4 w-4 text-muted-foreground" />
-                            <h4 className="text-sm font-medium">{tNotifications('title')}</h4>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-4">
-                            {tNotifications('description')}
-                        </p>
-                    </div>
-                    
-                    <div className="space-y-4">
-                        <NotificationToggle
-                            icon={Mail}
-                            label={tNotifications('emailNotifications')}
-                            description={tNotifications('emailDescription')}
-                            enabled={localSettings.email_enabled}
-                            onToggle={(value) => handleNotificationToggle('email_enabled', value)}
-                        />
-                        <NotificationToggle
-                            icon={Smartphone}
-                            label={tNotifications('pushNotifications')}
-                            description={tNotifications('pushDescription')}
-                            enabled={localSettings.push_enabled}
-                            onToggle={(value) => handleNotificationToggle('push_enabled', value)}
-                        />
-                        <NotificationToggle
-                            icon={AppWindow}
-                            label={tNotifications('inAppNotifications')}
-                            description={tNotifications('inAppDescription')}
-                            enabled={localSettings.in_app_enabled}
-                            onToggle={(value) => handleNotificationToggle('in_app_enabled', value)}
-                        />
-                    </div>
-                </div>
-            )}
 
             <div className="flex justify-end gap-2 pt-4">
                 <Button
