@@ -217,8 +217,15 @@ class ThreadManager:
                 if isinstance(metadata, dict) and metadata.get('compressed'):
                     compressed_content = metadata.get('compressed_content')
                     if compressed_content:
-                        content = compressed_content
-                        is_compressed = True
+                        # New format: compressed_content is a full message dict
+                        if isinstance(compressed_content, dict):
+                            compressed_content['message_id'] = item['message_id']
+                            messages.append(compressed_content)
+                            continue  # Skip regular parsing below
+                        else:
+                            # Legacy format: compressed_content is a plain string
+                            content = compressed_content
+                            is_compressed = True
                         # logger.debug(f"Using compressed content for message {item['message_id']}")
                 
                 # Parse content and add message_id
@@ -236,15 +243,16 @@ class ThreadManager:
                         
                         messages.append(parsed_item)
                     except json.JSONDecodeError:
-                        # If compressed, content is a plain string (not JSON) - this is expected
+                        # If compressed (legacy string format), assume user role (not ideal but backwards compat)
                         if is_compressed:
+                            logger.warning(f"Using legacy compressed format for message {item['message_id']} - assuming user role")
                             messages.append({
                                 'role': 'user',
                                 'content': content,
                                 'message_id': item['message_id']
                             })
                         else:
-                            logger.error(f"Failed to parse message: {content[:100]}")
+                            logger.error(f"Failed to parse message: {content[:100] if content else 'empty'}")
                 elif isinstance(content, dict):
                     # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']

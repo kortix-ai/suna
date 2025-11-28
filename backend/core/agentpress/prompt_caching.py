@@ -458,7 +458,9 @@ async def apply_anthropic_caching_strategy(
             # This prevents leaving large portions uncached
             # Use 1.8x multiplier to balance cache efficiency and stability
             if optimal_chunk_size > cache_threshold_tokens * 1.8:
-                adjusted_threshold = min(optimal_chunk_size, 30000)  # Cap at 30k per block
+                # Use optimal size, cap at 15% of context window to leave room for new messages
+                max_chunk_size = int(context_window_tokens * 0.15)
+                adjusted_threshold = min(optimal_chunk_size, max_chunk_size)
                 logger.info(f"🔄 Redistributing cache blocks: {total_conversation_tokens} tokens across {max_conversation_blocks} blocks (~{adjusted_threshold} tokens/block)")
                 logger.debug(f"   Previous threshold: {cache_threshold_tokens} tokens, new: {adjusted_threshold} tokens")
                 cache_threshold_tokens = adjusted_threshold

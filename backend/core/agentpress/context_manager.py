@@ -645,6 +645,65 @@ class ContextManager:
         
         return result
     
+    async def _write_compressed_messages_to_db(
+        self,
+        compressed_messages: Dict[str, Dict[str, Any]],
+        operation_name: str = "compression"
+    ) -> int:
+        """Generic function to persist compressed messages to database.
+        
+        Args:
+            compressed_messages: Dict mapping message_id -> compressed message dict
+            operation_name: Name of operation for logging (e.g., "tool output compression")
+            
+        Returns:
+            Number of messages successfully updated
+        """
+        if not compressed_messages:
+            return 0
+        
+        client = await self.db.client
+        updated_count = 0
+        
+        for message_id, compressed_msg in compressed_messages.items():
+            try:
+                # Fetch current message metadata from DB
+                result = await client.table('messages').select('metadata').eq('message_id', message_id).execute()
+                if not result.data:
+                    logger.warning(f"Message {message_id} not found in database, skipping")
+                    continue
+                
+                # Parse existing metadata
+                existing_metadata = result.data[0].get('metadata', {})
+                if isinstance(existing_metadata, str):
+                    try:
+                        existing_metadata = json.loads(existing_metadata)
+                    except:
+                        existing_metadata = {}
+                
+                if not isinstance(existing_metadata, dict):
+                    existing_metadata = {}
+                
+                # Update metadata with compressed version
+                existing_metadata.update({
+                    'compressed_content': compressed_msg,
+                    'compressed': True
+                })
+                
+                # Write ONLY metadata - never touch content field (preserves original)
+                await client.table('messages').update({
+                    'metadata': existing_metadata
+                }).eq('message_id', message_id).execute()
+                
+                updated_count += 1
+                
+            except Exception as e:
+                logger.error(f"Failed to persist {operation_name} for message {message_id}: {str(e)}")
+        
+        if updated_count > 0:
+            logger.info(f"Successfully persisted {operation_name} for {updated_count} messages to database")
+        return updated_count
+    
     async def update_old_tool_outputs_in_db(
         self,
         messages: List[Dict[str, Any]],
@@ -683,49 +742,24 @@ class ContextManager:
         
         logger.info(f"Updating {num_to_compress} tool outputs in database (keeping last {keep_last_n} of {total_tool_results})")
         
-        # Update database
-        client = await self.db.client
-        updated_count = 0
-        
+        # Prepare compressed messages mapping
+        compressed_mapping = {}
         for msg in messages_to_compress:
             message_id = msg.get('message_id')
             if not message_id:
                 logger.warning(f"Tool output message missing message_id, skipping: {str(msg)[:100]}")
                 continue
             
-            # Store compressed summary in metadata, keep original in content
-            original_content = msg.get('content')
+            # Create compressed version with summary
             summary_content = f"[Tool output removed for token management] message_id: \"{message_id}\". Use expand-message tool to view full output."
+            compressed_msg = msg.copy()  # Copy ALL fields (tool_call_id, etc.)
+            compressed_msg['content'] = summary_content  # Replace only content
+            compressed_msg['message_id'] = message_id  # Ensure message_id is set
             
-            try:
-                # CRITICAL: Preserve existing metadata (especially assistant_message_id for frontend pairing)
-                existing_metadata = msg.get('metadata', {})
-                if isinstance(existing_metadata, str):
-                    try:
-                        existing_metadata = json.loads(existing_metadata)
-                    except:
-                        existing_metadata = {}
-                
-                # Merge compression data with existing metadata
-                if not isinstance(existing_metadata, dict):
-                    existing_metadata = {}
-                
-                existing_metadata.update({
-                    'compressed_content': summary_content,
-                    'compressed': True
-                })
-                
-                # Update: keep original in content, merge metadata
-                await client.table('messages').update({
-                    'content': original_content,  # Keep original for frontend
-                    'metadata': existing_metadata  # Preserve all existing fields!
-                }).eq('message_id', message_id).execute()
-                updated_count += 1
-            except Exception as e:
-                logger.error(f"Failed to update message {message_id}: {str(e)}")
+            compressed_mapping[message_id] = compressed_msg
         
-        logger.info(f"Successfully updated {updated_count} tool outputs in database")
-        return updated_count
+        # Use generic DB writer
+        return await self._write_compressed_messages_to_db(compressed_mapping, "tool output compression")
     
     async def persist_user_message_compressions_to_db(
         self,
@@ -762,10 +796,8 @@ class ContextManager:
         
         logger.info(f"Compressing {num_to_compress} user messages in database (keeping last {keep_last_n} of {total_user_messages})")
         
-        # Update database
-        client = await self.db.client
-        updated_count = 0
-        
+        # Prepare compressed messages mapping
+        compressed_mapping = {}
         for msg in messages_to_compress:
             message_id = msg.get('message_id')
             if not message_id:
@@ -786,34 +818,15 @@ class ContextManager:
                 # Short messages (<500 chars): keep as is, mark as compressed for consistency
                 summary_content = original_content
             
-            try:
-                # CRITICAL: Preserve existing metadata
-                existing_metadata = msg.get('metadata', {})
-                if isinstance(existing_metadata, str):
-                    try:
-                        existing_metadata = json.loads(existing_metadata)
-                    except:
-                        existing_metadata = {}
-                
-                # Merge compression data with existing metadata
-                if not isinstance(existing_metadata, dict):
-                    existing_metadata = {}
-                
-                existing_metadata.update({
-                    'compressed_content': summary_content,
-                    'compressed': True
-                })
-                
-                await client.table('messages').update({
-                    'content': original_content,  # Keep original for frontend
-                    'metadata': existing_metadata  # Preserve all existing fields!
-                }).eq('message_id', message_id).execute()
-                updated_count += 1
-            except Exception as e:
-                logger.error(f"Failed to compress user message {message_id}: {str(e)}")
+            # Create compressed version preserving full message structure
+            compressed_msg = msg.copy()  # Copy ALL fields
+            compressed_msg['content'] = summary_content  # Replace only content
+            compressed_msg['message_id'] = message_id  # Ensure message_id is set
+            
+            compressed_mapping[message_id] = compressed_msg
         
-        logger.info(f"Successfully compressed {updated_count} user messages in database")
-        return updated_count
+        # Use generic DB writer
+        return await self._write_compressed_messages_to_db(compressed_mapping, "user message compression")
     
     async def persist_assistant_message_compressions_to_db(
         self,
@@ -850,10 +863,8 @@ class ContextManager:
         
         logger.info(f"Compressing {num_to_compress} assistant messages in database (keeping last {keep_last_n} of {total_assistant_messages})")
         
-        # Update database
-        client = await self.db.client
-        updated_count = 0
-        
+        # Prepare compressed messages mapping
+        compressed_mapping = {}
         for msg in messages_to_compress:
             message_id = msg.get('message_id')
             if not message_id:
@@ -874,34 +885,41 @@ class ContextManager:
                 # Short messages (<500 chars): keep as is, mark as compressed for consistency
                 summary_content = original_content
             
-            try:
-                # CRITICAL: Preserve existing metadata
-                existing_metadata = msg.get('metadata', {})
-                if isinstance(existing_metadata, str):
-                    try:
-                        existing_metadata = json.loads(existing_metadata)
-                    except:
-                        existing_metadata = {}
-                
-                # Merge compression data with existing metadata
-                if not isinstance(existing_metadata, dict):
-                    existing_metadata = {}
-                
-                existing_metadata.update({
-                    'compressed_content': summary_content,
-                    'compressed': True
-                })
-                
-                await client.table('messages').update({
-                    'content': original_content,  # Keep original for frontend
-                    'metadata': existing_metadata  # Preserve all existing fields!
-                }).eq('message_id', message_id).execute()
-                updated_count += 1
-            except Exception as e:
-                logger.error(f"Failed to compress assistant message {message_id}: {str(e)}")
+            # Create compressed version preserving full message structure
+            compressed_msg = msg.copy()  # Copy ALL fields (tool_use, etc.)
+            compressed_msg['content'] = summary_content  # Replace only content
+            compressed_msg['message_id'] = message_id  # Ensure message_id is set
+            
+            compressed_mapping[message_id] = compressed_msg
         
-        logger.info(f"Successfully compressed {updated_count} assistant messages in database")
-        return updated_count
+        # Use generic DB writer
+        return await self._write_compressed_messages_to_db(compressed_mapping, "assistant message compression")
+    
+    async def persist_secondary_compression_to_db(
+        self,
+        thread_id: str,
+        messages: List[Dict[str, Any]]
+    ) -> int:
+        """Persist secondary compression (from compress_tool_result_messages, compress_user_messages, 
+        compress_assistant_messages) to database.
+        
+        These functions modify messages in-memory, so we need to save those changes to DB
+        so they're available on the next turn (avoiding repeated compression).
+        """
+        # Prepare compressed messages mapping (messages are already compressed, just need to persist)
+        compressed_mapping = {}
+        for msg in messages:
+            message_id = msg.get('message_id')
+            if not message_id:
+                continue
+            
+            # Messages are already compressed, just copy them
+            compressed_msg = msg.copy()  # Copy ALL fields (tool_use, tool_call_id, etc.)
+            compressed_msg['message_id'] = message_id  # Ensure message_id is set
+            compressed_mapping[message_id] = compressed_msg
+        
+        # Use generic DB writer
+        return await self._write_compressed_messages_to_db(compressed_mapping, "secondary compression")
     
     def remove_old_tool_outputs(
         self, 
@@ -1018,13 +1036,20 @@ class ContextManager:
         
         logger.debug(f"Compressing {num_to_compress} user messages in-memory (keeping last {keep_last_n})")
         
-        # Compress old user messages
+        # Compress old user messages (match DB compression logic)
         result = []
         for i, msg in enumerate(messages):
             if i in positions_to_compress:
                 original_content = msg.get('content', '')
-                if isinstance(original_content, str) and len(original_content) > 3000:
-                    summary = original_content[:3000] + "... (truncated)"
+                if isinstance(original_content, str):
+                    # Match DB compression thresholds for consistency
+                    if len(original_content) > 1500:
+                        summary = original_content[:1500] + "... (truncated)"
+                    elif len(original_content) > 500:
+                        summary = original_content[:500] + "... (truncated)"
+                    else:
+                        summary = original_content  # Keep short messages as-is
+                    
                     compressed_msg = msg.copy()
                     compressed_msg['content'] = summary
                     result.append(compressed_msg)
@@ -1362,6 +1387,10 @@ class ContextManager:
             result = await self.compress_tool_result_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
             result = await self.compress_user_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
             result = await self.compress_assistant_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
+        
+        # CRITICAL: Persist secondary compression to DB so it's available on next turn!
+        # Without this, secondary compression is lost when fetching messages from DB
+        await self.persist_secondary_compression_to_db(thread_id, result)
 
         # Recalculate WITH caching (to match API reality)
         compressed_total = await self.count_tokens(llm_model, result, system_prompt, apply_caching=True)
