@@ -13,7 +13,7 @@ _initialized = False
 _init_lock = asyncio.Lock()
 
 # Constants
-REDIS_KEY_TTL = 3600 * 24  # 24 hour TTL as safety mechanism
+REDIS_KEY_TTL = 3600 * 2  # 2 hour TTL as safety mechanism (was 24h)
 
 
 def get_redis_config():

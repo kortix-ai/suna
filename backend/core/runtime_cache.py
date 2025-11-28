@@ -62,7 +62,7 @@ def load_static_suna_config() -> Dict[str, Any]:
 # ============================================================================
 # AGENT CONFIG CACHE - Redis, invalidated on version changes
 # ============================================================================
-AGENT_CONFIG_TTL = 86400  # 24 hours (invalidated on version change)
+AGENT_CONFIG_TTL = 3600  # 1 hour (was 24h - reduced to save Redis memory)
 
 def _get_cache_key(agent_id: str, version_id: Optional[str] = None) -> str:
     """Generate Redis cache key for agent config."""

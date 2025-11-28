@@ -43,7 +43,10 @@ logger.info("✅ Worker process ready, tool cache warmed")
 _initialized = False
 db = DBConnection()
 instance_id = ""
-REDIS_RESPONSE_LIST_TTL = 3600 * 24
+# Response list TTL: 1 hour after run completes
+# Users can reconnect to stream within 1 hour; after that, data is gone but
+# the run results are persisted in the database anyway
+REDIS_RESPONSE_LIST_TTL = 3600  # 1 hour (was 24h - too long, fills Redis)
 
 
 def check_terminating_tool_call(response: Dict[str, Any]) -> Optional[str]:
@@ -351,6 +354,14 @@ async def process_agent_responses(
         )
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
+        
+        # Safety: Set TTL on response list every 50 responses (in case worker crashes before cleanup)
+        # This ensures data doesn't live forever if cleanup never runs
+        if total_responses % 50 == 0:
+            try:
+                await redis.expire(redis_keys['response_list'], 3600)
+            except Exception:
+                pass  # Best effort, don't fail the run
 
         terminating_tool = check_terminating_tool_call(response)
         if terminating_tool == 'complete':
