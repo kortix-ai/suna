@@ -278,30 +278,22 @@ class NotificationService:
             email = None
             name = None
             
-            if not email:
-                try:
-                    email_result = await client.rpc('get_user_email', {'user_id': account_id}).execute()
-                    if email_result.data:
-                        email = email_result.data
-                        if isinstance(email, (list, tuple)):
-                            email = email[0] if len(email) > 0 else None
-                        email = str(email) if email else None
-                except Exception as e:
-                    logger.error(f"Error getting user email via RPC: {str(e)}")
-            
-            if not name:
-                try:
-                    metadata_result = await client.rpc('get_user_metadata', {'user_id': account_id}).execute()
-                    if metadata_result.data:
-                        metadata = metadata_result.data
+            try:
+                metadata_result = await client.rpc('get_user_metadata', {'user_id': account_id}).execute()
+                if metadata_result.data:
+                    metadata = metadata_result.data
+                    if isinstance(metadata, dict):
+                        email = metadata.get('email')
+                    elif isinstance(metadata, (list, tuple)) and len(metadata) > 0:
+                        metadata = metadata[0]
                         if isinstance(metadata, dict):
-                            name = metadata.get('full_name') or metadata.get('name')
-                        elif isinstance(metadata, (list, tuple)):
-                            metadata = metadata[0] if len(metadata) > 0 else {}
-                            if isinstance(metadata, dict):
-                                name = metadata.get('full_name') or metadata.get('name')
-                except Exception as e:
-                    logger.error(f"Error getting user metadata via RPC: {str(e)}")
+                            email = metadata.get('email')
+            except Exception as e:
+                logger.error(f"Error getting user metadata via RPC: {str(e)}")
+            
+            if isinstance(email, (list, tuple)):
+                email = email[0] if len(email) > 0 else None
+            email = str(email) if email else None
             
             if not name and email:
                 name = email.split('@')[0]
@@ -309,10 +301,6 @@ class NotificationService:
             if isinstance(name, (list, tuple)):
                 name = name[0] if len(name) > 0 else None
             name = str(name) if name else None
-            
-            if isinstance(email, (list, tuple)):
-                email = email[0] if len(email) > 0 else None
-            email = str(email) if email else None
             
             logger.info(f"[WELCOME_EMAIL] Triggering for {account_id}: email={email}, name={name}")
 
