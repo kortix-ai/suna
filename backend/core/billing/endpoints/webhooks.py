@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Request # type: ignore
+from fastapi import APIRouter, Request, Depends # type: ignore
 from typing import Dict
 from core.utils.logger import logger
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from ..external.stripe import webhook_service
 from ..external.revenuecat import revenuecat_service
 
@@ -22,13 +23,14 @@ async def revenuecat_webhook(request: Request) -> Dict:
         return {'status': 'error', 'message': str(e)}
 
 @router.post("/revenuecat/sync")
-async def sync_revenuecat_customer(request: Request) -> Dict:
+async def sync_revenuecat_customer(
+    request: Request,
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
     try:
         from ..external.revenuecat.services import SyncService
-        from core.auth import get_user_id_from_request
         
         body = await request.json()
-        account_id = await get_user_id_from_request(request)
         customer_info = body.get('customer_info', {})
         
         result = await SyncService.sync_customer_info(account_id, customer_info)
