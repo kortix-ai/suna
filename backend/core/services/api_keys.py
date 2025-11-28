@@ -17,6 +17,7 @@ import string
 import hmac
 import hashlib
 import time
+from collections import OrderedDict
 from pydantic import BaseModel, Field, field_validator
 from fastapi import HTTPException
 from core.utils.logger import logger
@@ -104,7 +105,9 @@ class APIKeyService:
     """
 
     # Class-level in-memory throttle cache (fallback when Redis unavailable)
-    _throttle_cache: Dict[str, float] = {}
+    # LRU cache with max size to prevent unbounded growth
+    _throttle_cache: OrderedDict[str, float] = OrderedDict()
+    _max_throttle_cache_size = 500  # Maximum entries before cleanup
 
     def __init__(self, db: DBConnection):
         self.db = db
@@ -496,14 +499,20 @@ class APIKeyService:
                 f"Redis unavailable for throttling, using in-memory fallback: {redis_error}"
             )
 
-            # Clean up old entries (simple cleanup every 100 operations)
-            if len(self._throttle_cache) > 1000:
-                cutoff_time = current_time - (
-                    throttle_interval * 2
-                )  # Keep extra buffer
-                self._throttle_cache = {
-                    k: v for k, v in self._throttle_cache.items() if v > cutoff_time
-                }
+            # Clean up expired entries and enforce LRU limit
+            cutoff_time = current_time - (throttle_interval * 2)  # Keep extra buffer
+            
+            # Remove expired entries
+            expired_keys = [
+                k for k, v in self._throttle_cache.items() 
+                if v < cutoff_time
+            ]
+            for k in expired_keys:
+                self._throttle_cache.pop(k, None)
+            
+            # Enforce LRU limit (remove oldest if over limit)
+            while len(self._throttle_cache) > self._max_throttle_cache_size:
+                self._throttle_cache.popitem(last=False)  # Remove oldest
 
             # Check in-memory throttle
             last_update_time = self._throttle_cache.get(key_id, 0)
@@ -511,7 +520,9 @@ class APIKeyService:
                 # Already updated within throttle interval, skip
                 return
 
-            # Set in-memory throttle
+            # Set in-memory throttle (move to end for LRU)
+            if key_id in self._throttle_cache:
+                self._throttle_cache.move_to_end(key_id)
             self._throttle_cache[key_id] = current_time
 
         # Update database

@@ -559,7 +559,16 @@
     "magicLinkSent": "Ti abbiamo inviato un magic link a",
     "magicLinkDescription": "Clicca sul link nella tua email per accedere. Il link scadrà tra 1 ora.",
     "magicLinkExplanation": "Ti invieremo un link sicuro per accedere. Nessuna password necessaria.",
-    "byContinuingYouAgree": "Continuando, accetti la nostra <privacyPolicy>Informativa sulla Privacy</privacyPolicy> e i nostri <termsOfService>Termini di Servizio</termsOfService>"
+    "magicLinkExpired": "Questo link è scaduto",
+    "magicLinkExpiredDescription": "Il magic link su cui hai cliccato è scaduto. I magic link scadono dopo 1 ora per motivi di sicurezza.",
+    "resendMagicLink": "Invia di nuovo il magic link",
+    "resending": "Invio in corso...",
+    "byContinuingYouAgree": "Continuando, accetti la nostra <privacyPolicy>Informativa sulla Privacy</privacyPolicy> e i nostri <termsOfService>Termini di Servizio</termsOfService>",
+    "openProvider": "Apri {provider}",
+    "didntReceiveEmail": "Non hai ricevuto l'email?",
+    "resend": "Reinvia",
+    "alreadySignedIn": "Sei già connesso. Nessuna azione richiesta.",
+    "goToDashboard": "Vai alla Dashboard"
   },
   "onboarding": {
     "welcome": "Benvenuto",

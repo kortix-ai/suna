@@ -206,16 +206,16 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
       setError(null);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      // Use RevenueCat purchase if package available
+        // Use RevenueCat purchase if package available
       if (useRevenueCat && selectedPlanOption.package) {
         await purchasePackage(selectedPlanOption.package, user?.email, user?.id);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        queryClient.invalidateQueries({ queryKey: billingKeys.all });
-        invalidateCreditsAfterPurchase(queryClient);
-        await refetchSubscription();
-        onPurchaseComplete?.();
-        onClose?.();
-        return;
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          queryClient.invalidateQueries({ queryKey: billingKeys.all });
+          invalidateCreditsAfterPurchase(queryClient);
+          await refetchSubscription();
+          onPurchaseComplete?.();
+          onClose?.();
+          return;
       }
 
       // Fallback to unified checkout

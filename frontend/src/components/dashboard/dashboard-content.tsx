@@ -68,6 +68,7 @@ export function DashboardContent() {
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const tBilling = useTranslations('billing');
+  const tAuth = useTranslations('auth');
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
@@ -236,6 +237,22 @@ export function DashboardContent() {
       }, 100);
     }
   }, [searchParams, queryClient, router, setSidebarOpen]);
+
+  // Handle expired link notification for logged-in users
+  React.useEffect(() => {
+    const linkExpired = searchParams.get('linkExpired');
+    if (linkExpired === 'true') {
+      toast.info(tAuth('magicLinkExpired'), {
+        description: tAuth('magicLinkExpiredDescription'),
+        duration: 5000,
+      });
+      
+      // Clean up URL param
+      const url = new URL(window.location.href);
+      url.searchParams.delete('linkExpired');
+      router.replace(url.pathname + url.search, { scroll: false });
+    }
+  }, [searchParams, router, tAuth]);
 
   const handleSubmit = async (
     message: string,

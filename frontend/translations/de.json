@@ -470,7 +470,16 @@
     "magicLinkSent": "Wir haben einen Magic Link gesendet an",
     "magicLinkDescription": "Klicke auf den Link in deiner E-Mail, um dich anzumelden. Der Link läuft in 1 Stunde ab.",
     "magicLinkExplanation": "Wir senden dir einen sicheren Link zum Anmelden. Kein Passwort erforderlich.",
-    "byContinuingYouAgree": "Durch Fortfahren stimmst du unserer <privacyPolicy>Datenschutzerklärung</privacyPolicy> und unseren <termsOfService>Nutzungsbedingungen</termsOfService> zu"
+    "magicLinkExpired": "Dieser Link ist abgelaufen",
+    "magicLinkExpiredDescription": "Der Magic Link, den du angeklickt hast, ist abgelaufen. Magic Links laufen aus Sicherheitsgründen nach 1 Stunde ab.",
+    "resendMagicLink": "Magic Link erneut senden",
+    "resending": "Wird erneut gesendet...",
+    "byContinuingYouAgree": "Durch Fortfahren stimmst du unserer <privacyPolicy>Datenschutzerklärung</privacyPolicy> und unseren <termsOfService>Nutzungsbedingungen</termsOfService> zu",
+    "openProvider": "{provider} öffnen",
+    "didntReceiveEmail": "Keine E-Mail erhalten?",
+    "resend": "Erneut senden",
+    "alreadySignedIn": "Du bist bereits angemeldet. Keine Aktion erforderlich.",
+    "goToDashboard": "Zum Dashboard"
   },
   "onboarding": {
     "welcome": "Willkommen",

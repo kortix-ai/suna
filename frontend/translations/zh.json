@@ -528,7 +528,16 @@
     "magicLinkSent": "我们已向以下地址发送魔法链接",
     "magicLinkDescription": "点击邮件中的链接以登录。链接将在1小时后过期。",
     "magicLinkExplanation": "我们将向您发送一个安全的登录链接。无需密码。",
-    "byContinuingYouAgree": "继续即表示您同意我们的<privacyPolicy>隐私政策</privacyPolicy>和<termsOfService>服务条款</termsOfService>"
+    "magicLinkExpired": "此链接已过期",
+    "magicLinkExpiredDescription": "您点击的魔法链接已过期。出于安全原因，魔法链接会在1小时后过期。",
+    "resendMagicLink": "重新发送魔法链接",
+    "resending": "重新发送中...",
+    "byContinuingYouAgree": "继续即表示您同意我们的<privacyPolicy>隐私政策</privacyPolicy>和<termsOfService>服务条款</termsOfService>",
+    "openProvider": "打开 {provider}",
+    "didntReceiveEmail": "没有收到邮件？",
+    "resend": "重新发送",
+    "alreadySignedIn": "您已登录，无需任何操作。",
+    "goToDashboard": "前往控制台"
   },
   "onboarding": {
     "welcome": "欢迎",

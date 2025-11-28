@@ -528,7 +528,16 @@
     "magicLinkSent": "Enviamos um magic link para",
     "magicLinkDescription": "Clica no link no teu email para entrar. O link expirará em 1 hora.",
     "magicLinkExplanation": "Vamos te enviar um link seguro para entrar. Não precisa de senha.",
-    "byContinuingYouAgree": "Ao continuar, concordas com a nossa <privacyPolicy>Política de Privacidade</privacyPolicy> e os nossos <termsOfService>Termos de Serviço</termsOfService>"
+    "magicLinkExpired": "Este link expirou",
+    "magicLinkExpiredDescription": "O magic link em que clicaste expirou. Os magic links expiram após 1 hora por razões de segurança.",
+    "resendMagicLink": "Reenviar magic link",
+    "resending": "A reenviar...",
+    "byContinuingYouAgree": "Ao continuar, concordas com a nossa <privacyPolicy>Política de Privacidade</privacyPolicy> e os nossos <termsOfService>Termos de Serviço</termsOfService>",
+    "openProvider": "Abrir {provider}",
+    "didntReceiveEmail": "Não recebeste o e-mail?",
+    "resend": "Reenviar",
+    "alreadySignedIn": "Já tens sessão iniciada. Nenhuma ação necessária.",
+    "goToDashboard": "Ir para o Painel"
   },
   "onboarding": {
     "welcome": "Bem-vindo",

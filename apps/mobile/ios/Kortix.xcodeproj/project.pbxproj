@@ -30,7 +30,8 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
 		FFC61AFB649B01E3268F4C99 /* Pods-Kortix.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.release.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.release.xcconfig"; sourceTree = "<group>"; };
-/* End PBXFileReference section */
+		2BC4A27D4E4E472B975348CB /* Kortix.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Kortix.storekit; sourceTree = "<group>"; };
+	/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
@@ -101,7 +102,8 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				327786837DA848C5C74BAA60 /* Pods */,
 				6D0864F1AA810B9C64BE3FFC /* ExpoModulesProviders */,
-			);
+				2BC4A27D4E4E472B975348CB /* Kortix.storekit */,
+		);
 			indentWidth = 2;
 			sourceTree = "<group>";
 			tabWidth = 2;

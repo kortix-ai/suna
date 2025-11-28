@@ -338,10 +338,10 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string, exp
         console.log('✅ RevenueCat session fixed, new user ID:', rcUserId);
         
         // Check if this Apple ID already has an active subscription
-        const hasActiveSubscription = 
-          Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
-          currentCustomerInfo.activeSubscriptions.length > 0;
-        
+    const hasActiveSubscription = 
+      Object.keys(currentCustomerInfo.entitlements.active).length > 0 ||
+      currentCustomerInfo.activeSubscriptions.length > 0;
+
         if (hasActiveSubscription) {
           console.log('⚠️ This Apple ID already has an active subscription on another account');
           const error: any = new Error('You are already subscribed with a different account.');
@@ -357,9 +357,9 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string, exp
         console.error('❌ Failed to fix RevenueCat session:', loginError);
         const error: any = new Error('Unable to link your account. Please restart the app and try again.');
         error.code = 'SESSION_FIX_FAILED';
-        error.userCancelled = false;
-        throw error;
-      }
+      error.userCancelled = false;
+      throw error;
+    }
     }
     
     if (email) {

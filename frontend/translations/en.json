@@ -566,7 +566,16 @@
     "magicLinkSent": "We sent a magic link to",
     "magicLinkDescription": "Click the link in your email to sign in. The link will expire in 1 hour.",
     "magicLinkExplanation": "We'll send you a secure link to sign in. No password needed.",
-    "byContinuingYouAgree": "By continuing, you agree to our <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>"
+    "magicLinkExpired": "This link has expired",
+    "magicLinkExpiredDescription": "The magic link you clicked has expired. Magic links expire after 1 hour for security reasons.",
+    "resendMagicLink": "Resend magic link",
+    "resending": "Resending...",
+    "byContinuingYouAgree": "By continuing, you agree to our <privacyPolicy>Privacy Policy</privacyPolicy> and <termsOfService>Terms of Service</termsOfService>",
+    "openProvider": "Open {provider}",
+    "didntReceiveEmail": "Didn't receive the email?",
+    "resend": "Resend",
+    "alreadySignedIn": "You're already signed in. No action needed.",
+    "goToDashboard": "Go to Dashboard"
   },
   "onboarding": {
     "welcome": "Welcome",

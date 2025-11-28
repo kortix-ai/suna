@@ -528,7 +528,16 @@
     "magicLinkSent": "マジックリンクを送信しました",
     "magicLinkDescription": "メール内のリンクをクリックしてログインしてください。リンクは1時間で期限切れになります。",
     "magicLinkExplanation": "安全なリンクをメールでお送りします。パスワードは不要です。",
-    "byContinuingYouAgree": "続行することで、<privacyPolicy>プライバシーポリシー</privacyPolicy>および<termsOfService>利用規約</termsOfService>に同意したものとみなされます"
+    "magicLinkExpired": "このリンクは期限切れです",
+    "magicLinkExpiredDescription": "クリックしたマジックリンクは期限切れです。セキュリティ上の理由により、マジックリンクは1時間後に期限切れになります。",
+    "resendMagicLink": "マジックリンクを再送信",
+    "resending": "再送信中...",
+    "byContinuingYouAgree": "続行することで、<privacyPolicy>プライバシーポリシー</privacyPolicy>および<termsOfService>利用規約</termsOfService>に同意したものとみなされます",
+    "openProvider": "{provider}を開く",
+    "didntReceiveEmail": "メールが届きませんでしたか？",
+    "resend": "再送信",
+    "alreadySignedIn": "すでにログインしています。操作は不要です。",
+    "goToDashboard": "ダッシュボードへ"
   },
   "onboarding": {
     "welcome": "ようこそ",

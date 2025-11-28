@@ -22,13 +22,40 @@ export async function GET(request: NextRequest) {
   const requestOrigin = request.nextUrl.origin
   const baseUrl = requestOrigin || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'
   const error = searchParams.get('error')
+  const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
 
-  // Handle errors
+  // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
-    console.error('❌ Auth callback error:', error, errorDescription)
+    console.error('❌ Auth callback error:', error, errorCode, errorDescription)
+    
+    // Check if the error is due to expired/invalid link
+    const isExpiredOrInvalid = 
+      errorCode === 'otp_expired' ||
+      errorCode === 'expired_token' ||
+      errorCode === 'token_expired' ||
+      error?.toLowerCase().includes('expired') ||
+      error?.toLowerCase().includes('invalid') ||
+      errorDescription?.toLowerCase().includes('expired') ||
+      errorDescription?.toLowerCase().includes('invalid')
+    
+    if (isExpiredOrInvalid) {
+      // Redirect to auth page with expired state to show resend form
+      const email = searchParams.get('email') || ''
+      const expiredUrl = new URL(`${baseUrl}/auth`)
+      expiredUrl.searchParams.set('expired', 'true')
+      if (email) expiredUrl.searchParams.set('email', email)
+      if (next) expiredUrl.searchParams.set('returnUrl', next)
+      
+      console.log('🔄 Redirecting to auth page with expired state')
+      return NextResponse.redirect(expiredUrl)
+    }
+    
+    // For other errors, redirect to auth page with error
     return NextResponse.redirect(`${baseUrl}/auth?error=${encodeURIComponent(error)}`)
   }
+
+  const supabase = await createClient()
 
   // Handle token-based verification (email confirmation, etc.)
   // Supabase sends these to the redirect URL for processing
@@ -44,13 +71,34 @@ export async function GET(request: NextRequest) {
 
   // Handle code exchange (OAuth, magic link)
   if (code) {
-    const supabase = await createClient()
-    
     try {
       const { data, error } = await supabase.auth.exchangeCodeForSession(code)
       
       if (error) {
         console.error('❌ Error exchanging code for session:', error)
+        
+        // Check if the error is due to expired/invalid link
+        const isExpired = 
+          error.message?.toLowerCase().includes('expired') ||
+          error.message?.toLowerCase().includes('invalid') ||
+          error.status === 400 ||
+          error.code === 'expired_token' ||
+          error.code === 'token_expired' ||
+          error.code === 'otp_expired'
+        
+        if (isExpired) {
+          // Redirect to auth page with expired state to show resend form
+          const email = searchParams.get('email') || ''
+          const expiredUrl = new URL(`${baseUrl}/auth`)
+          expiredUrl.searchParams.set('expired', 'true')
+          if (email) expiredUrl.searchParams.set('email', email)
+          if (next) expiredUrl.searchParams.set('returnUrl', next)
+          
+          console.log('🔄 Redirecting to auth page with expired state')
+          return NextResponse.redirect(expiredUrl)
+        }
+        
+        // For other errors, redirect to auth page
         return NextResponse.redirect(`${baseUrl}/auth?error=${encodeURIComponent(error.message)}`)
       }
 
