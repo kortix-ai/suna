@@ -277,6 +277,8 @@ class NotificationService:
             
             email = None
             name = None
+            phone = None
+            avatar = None
             user_metadata = {}
             
             try:
@@ -292,6 +294,9 @@ class NotificationService:
                         (email.split('@')[0] if email else None)
                     )
                     
+                    phone = user_metadata.get('phone') or user_metadata.get('phone_number')
+                    avatar = user_metadata.get('avatar_url') or user_metadata.get('picture')
+                    
             except Exception as e:
                 logger.error(f"Error getting user {str(e)}")
             
@@ -299,13 +304,14 @@ class NotificationService:
                 logger.warning(f"[WELCOME_EMAIL] No email found for user {account_id}")
                 return {"success": False, "error": "No email found for user"}
             
-            logger.info(f"[WELCOME_EMAIL] Triggering for {account_id}: email={email}, name={name}")
+            logger.info(f"[WELCOME_EMAIL] Triggering for {account_id}: email={email}, name={name}, phone={phone}, avatar={avatar}")
 
             result = await self.novu.trigger_workflow(
                 workflow_id="welcome-email",
                 subscriber_id=account_id,
                 subscriber_email=email,
-                subscriber_name=name
+                subscriber_name=name,
+                avatar=avatar
             )
             
             if not result:
