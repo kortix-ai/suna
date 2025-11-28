@@ -32,6 +32,7 @@
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
+		792C2EA660B14D6DB0355FE8 /* SplashScreen.storyboard */ = {isa = PBXFileReference; name = "SplashScreen.storyboard"; path = "kortix/SplashScreen.storyboard"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; includeInIndex = 0; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +95,7 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				ABA0B58D5252D79A0A24B3ED /* Pods */,
 				8B4CB465F4CDA11BCA000E0C /* ExpoModulesProviders */,
+				792C2EA660B14D6DB0355FE8 /* SplashScreen.storyboard */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -200,6 +202,7 @@
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
 				AD9D6AC0B89C0BB09E41AD26 /* PrivacyInfo.xcprivacy in Resources */,
 				C5AF5C2A2ED6F52C0065ECE9 /* Kortix.storekit in Resources */,
+				197E048028D44DFD96D5DC7E /* SplashScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -428,7 +431,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
 				PRODUCT_BUNDLE_IDENTIFIER = com.kortix.app;
-				PRODUCT_NAME = Kortix;
+				PRODUCT_NAME = "Kortix";
 				SWIFT_OBJC_BRIDGING_HEADER = "Kortix/Kortix-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -460,7 +463,7 @@
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
 				PRODUCT_BUNDLE_IDENTIFIER = com.kortix.app;
-				PRODUCT_NAME = Kortix;
+				PRODUCT_NAME = "Kortix";
 				SWIFT_OBJC_BRIDGING_HEADER = "Kortix/Kortix-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
