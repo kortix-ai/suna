@@ -60,6 +60,22 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
         
         db = DBConnection()
         await db.initialize()
+
+        user_name = None
+        if user_record and email:
+            user_name = _extract_user_name(user_record, email)
+        
+
+        from core.notifications.notification_service import notification_service
+
+        logger.info(f"[SETUP] Sending welcome email to {email} with name {user_name}")
+        try:
+            await notification_service.send_welcome_email(account_id)
+            
+        except Exception as ex:
+            logger.error(f"[SETUP] Error sending welcome notification: {ex}")
+            if email and user_name:
+                _send_welcome_email_async(email, user_name)
         
         result = await free_tier_service.auto_subscribe_to_free_tier(account_id, email)
         
@@ -79,22 +95,7 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
         suna_service = SunaDefaultAgentService(db)
         agent_id = await suna_service.install_suna_agent_for_user(account_id)
         
-        if user_record and email:
-            user_name = _extract_user_name(user_record, email)
-            
-            from core.notifications.notification_service import notification_service
-            
-            logger.info(f"[SETUP] Sending welcome email to {email} with name {user_name}")
-            try:
-                await notification_service.send_welcome_email(
-                    account_id=account_id,
-                    account_name=user_name,
-                    account_email=email
-                )
-            except Exception as ex:
-                logger.error(f"[SETUP] Error sending welcome notification: {ex}")
-                _send_welcome_email_async(email, user_name)
-        
+
         if not agent_id:
             logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}, but continuing")
         
