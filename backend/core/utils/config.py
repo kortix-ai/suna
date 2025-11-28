@@ -426,7 +426,7 @@ class Configuration:
     # Agent limits per billing tier
     # Note: These limits are bypassed in local mode (ENV_MODE=local) where unlimited agents are allowed
     AGENT_LIMITS = {
-        'free': 2,
+        'free': 0,
         'tier_2_20': 5,
         'tier_6_50': 20,
         'tier_12_100': 20,

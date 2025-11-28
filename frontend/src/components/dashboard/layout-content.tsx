@@ -1,12 +1,16 @@
 'use client';
 
-import { useEffect, Suspense, lazy } from 'react';
+import { useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { Suspense, lazy } from 'react';
 import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useRouter } from 'next/navigation';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { useAdminRole } from '@/hooks/admin';
+import { usePresence } from '@/hooks/use-presence';
+
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { AppProviders } from '@/components/layout/app-providers';
@@ -24,8 +28,16 @@ const StatusOverlay = lazy(() =>
 const PresentationViewerWrapper = lazy(() => 
   import('@/stores/presentation-viewer-store').then(mod => ({ default: mod.PresentationViewerWrapper }))
 );
+
 const OnboardingProvider = lazy(() => 
   import('@/components/onboarding/onboarding-provider').then(mod => ({ default: mod.OnboardingProvider }))
+);
+const WelcomeBonusBanner = lazy(() => 
+  import('@/components/billing/welcome-bonus-banner').then(mod => ({ default: mod.WelcomeBonusBanner }))
+);
+
+const PresenceDebug = lazy(() => 
+  import('@/components/debug/presence-debug').then(mod => ({ default: mod.PresenceDebug }))
 );
 
 // Skeleton shell that renders immediately for FCP
@@ -64,6 +76,11 @@ export default function DashboardLayoutContent({
   children,
 }: DashboardLayoutContentProps) {
   const { user, isLoading } = useAuth();
+  const params = useParams();
+  const threadId = params?.threadId as string | undefined;
+  
+  usePresence(threadId);
+  
   const { data: accounts } = useAccounts({ enabled: !!user });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const router = useRouter();
@@ -144,15 +161,22 @@ export default function DashboardLayoutContent({
         </Suspense>
       }
     >
-      <Suspense fallback={null}>
-        <OnboardingProvider>
-          {mantenanceBanner}
-          <div className="bg-background">{children}</div>
-        </OnboardingProvider>
-      </Suspense>
-      <Suspense fallback={null}>
-        <PresentationViewerWrapper />
-      </Suspense>
+      <div className="relative h-full">
+        {/* Site-wide welcome bonus banner for free tier users */}
+        <Suspense fallback={null}>
+          <WelcomeBonusBanner />
+        </Suspense>
+        
+        <Suspense fallback={null}>
+          <OnboardingProvider>
+            {mantenanceBanner}
+            <div className="bg-background">{children}</div>
+          </OnboardingProvider>
+        </Suspense>
+        <Suspense fallback={null}>
+          <PresentationViewerWrapper />
+        </Suspense>
+      </div>
     </AppProviders>
   );
 }

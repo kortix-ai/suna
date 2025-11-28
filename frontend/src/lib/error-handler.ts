@@ -293,4 +293,34 @@ export const handleApiInfo = (message: string, description?: string): void => {
     description,
     duration: 3000,
   });
+};
+
+/**
+ * Check if an error is a billing/limit error that should open the pricing modal
+ */
+export const isBillingError = (error: any): boolean => {
+  return (
+    error instanceof BillingError ||
+    error instanceof AgentRunLimitError ||
+    error instanceof ProjectLimitError ||
+    error instanceof ThreadLimitError ||
+    error instanceof AgentCountLimitError ||
+    error instanceof TriggerLimitError ||
+    error instanceof ModelAccessDeniedError ||
+    error instanceof CustomWorkerLimitError
+  );
+};
+
+/**
+ * Handle billing errors by opening the pricing modal with appropriate message.
+ * Returns true if error was handled, false otherwise.
+ * Use this in mutation onError callbacks.
+ */
+export const handleBillingError = (error: any): boolean => {
+  if (!isBillingError(error)) {
+    return false;
+  }
+  
+  handleApiError(error);
+  return true;
 }; 

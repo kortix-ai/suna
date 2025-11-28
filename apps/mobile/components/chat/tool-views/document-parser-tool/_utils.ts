@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface DocumentParserData {
   filePath: string | null;
@@ -19,18 +19,18 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractDocumentParserData(toolData: ParsedToolData): DocumentParserData {
-  const { arguments: args, result } = toolData;
+export function extractDocumentParserData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DocumentParserData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let filePath = args?.file_path || args?.filepath || args?.path || null;
   let fileName = filePath?.split('/').pop() || null;
   let content: string | null = null;
   let pageCount: number | null = null;
   
-  if (result.output) {
-    const parsed = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const parsed = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (parsed && typeof parsed === 'object') {
       content = parsed.content || parsed.text || null;
@@ -46,7 +46,7 @@ export function extractDocumentParserData(toolData: ParsedToolData): DocumentPar
     fileName,
     content,
     pageCount,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

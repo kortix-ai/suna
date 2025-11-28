@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface Citation {
   paper_id: string;
@@ -27,17 +27,17 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractPaperCitationsData(toolData: ParsedToolData): PaperCitationsData {
-  const { arguments: args, result } = toolData;
+export function extractPaperCitationsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): PaperCitationsData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let paper_title = args?.paper_title || null;
   let citations: Citation[] = [];
   let total_citations = 0;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       paper_title = paper_title || output.paper_title || null;
@@ -60,7 +60,7 @@ export function extractPaperCitationsData(toolData: ParsedToolData): PaperCitati
     paper_title,
     total_citations,
     citations,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

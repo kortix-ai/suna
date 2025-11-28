@@ -61,11 +61,8 @@
          </BuildableReference>
       </BuildableProductRunnable>
       <StoreKitConfigurationFileReference
-         identifier = "../Kortix/Kortix.storekit">
+         identifier = "../Kortix.storekit">
       </StoreKitConfigurationFileReference>
-      <StoreKitTestCertificateFileReference
-         identifier = "../../StoreKitTestCertificate.cer">
-      </StoreKitTestCertificateFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -83,12 +80,6 @@
             ReferencedContainer = "container:Kortix.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <StoreKitConfigurationFileReference
-         identifier = "../Kortix/Kortix.storekit">
-      </StoreKitConfigurationFileReference>
-      <StoreKitTestCertificateFileReference
-         identifier = "../../StoreKitTestCertificate.cer">
-      </StoreKitTestCertificateFileReference>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

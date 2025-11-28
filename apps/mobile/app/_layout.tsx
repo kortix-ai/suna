@@ -3,7 +3,9 @@ import '@/global.css';
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
+import { usePresence } from '@/hooks/usePresence';
 import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
+import { PresenceProvider } from '@/contexts/PresenceContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
@@ -36,7 +38,7 @@ export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const [i18nInitialized, setI18nInitialized] = useState(false);
   const router = useRouter();
-  
+
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
@@ -46,7 +48,7 @@ export default function RootLayout() {
       },
     },
   }));
-  
+
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
   useEffect(() => {
@@ -87,19 +89,19 @@ export default function RootLayout() {
       isHandlingDeepLink = true;
 
       console.log('🔗 Deep link received:', event.url);
-      
+
       const url = event.url;
       const parsedUrl = Linking.parse(url);
-      
-      console.log('🔍 Parsed URL:', { 
-        hostname: parsedUrl.hostname, 
+
+      console.log('🔍 Parsed URL:', {
+        hostname: parsedUrl.hostname,
         path: parsedUrl.path,
         queryParams: parsedUrl.queryParams,
       });
-      
+
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
         console.log('📧 Auth callback received, processing...');
-        
+
         try {
           // Extract hash fragment first to check for errors
           const hashIndex = url.indexOf('#');
@@ -115,23 +117,23 @@ export default function RootLayout() {
               const error = hashParams.get('error');
               const errorCode = hashParams.get('error_code');
               const errorDescription = hashParams.get('error_description');
-              
+
               if (error) {
                 console.log('⚠️ Auth callback error detected:', { error, errorCode, errorDescription });
-                
+
                 // Handle expired OTP/link
                 if (errorCode === 'otp_expired' || error === 'access_denied') {
-                  const errorMessage = errorDescription 
+                  const errorMessage = errorDescription
                     ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
                     : 'This email link has expired. Please request a new one.';
-                  
+
                   // Navigate to auth screen - user can try again there
                   console.log('⚠️ Link expired, redirecting to auth');
                   router.replace('/auth');
                   isHandlingDeepLink = false;
                   return;
                 }
-                
+
                 // Other errors - just redirect to auth
                 console.error('❌ Auth callback error:', error);
                 isHandlingDeepLink = false;
@@ -157,28 +159,28 @@ export default function RootLayout() {
           // Default to index (splash) screen - it will route based on user state
           // Only use explicit returnUrl if provided (e.g., from web redirect)
           const returnUrl = parsedUrl.queryParams?.returnUrl as string || '/';
-          
+
           // Extract tokens - check query params first (from smart redirect), then hash fragment (legacy)
           let access_token: string | null = null;
           let refresh_token: string | null = null;
-          
+
           // Method 1: Query params (from smart redirect page)
           if (parsedUrl.queryParams?.access_token && parsedUrl.queryParams?.refresh_token) {
             access_token = parsedUrl.queryParams.access_token as string;
             refresh_token = parsedUrl.queryParams.refresh_token as string;
             console.log('🔑 Tokens found in query params');
           }
-          
+
           // Method 2: Hash fragment (legacy Supabase direct redirect)
           if (!access_token || !refresh_token) {
             if (hashFragment) {
               console.log('🔍 Checking hash fragment for tokens...');
-            
+
               try {
                 const hashParams = new URLSearchParams(hashFragment);
                 access_token = access_token || hashParams.get('access_token');
                 refresh_token = refresh_token || hashParams.get('refresh_token');
-                
+
                 // Also try parsing as JSON (some formats)
                 if (!access_token && hashFragment.startsWith('{')) {
                   const hashData = JSON.parse(decodeURIComponent(hashFragment));
@@ -195,30 +197,30 @@ export default function RootLayout() {
               }
             }
           }
-          
-          console.log('🔑 Token extraction result:', { 
-              hasAccessToken: !!access_token, 
+
+          console.log('🔑 Token extraction result:', {
+            hasAccessToken: !!access_token,
             hasRefreshToken: !!refresh_token,
             termsAccepted,
             returnUrl,
+          });
+
+          if (access_token && refresh_token) {
+            console.log('✅ Setting session with tokens...');
+
+            const { data, error } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
             });
-            
-                  if (access_token && refresh_token) {
-                    console.log('✅ Setting session with tokens...');
 
-                    const { data, error } = await supabase.auth.setSession({
-                      access_token,
-                      refresh_token,
-                    });
-
-                    if (error) {
-                      console.error('❌ Failed to set session:', error);
-                      isHandlingDeepLink = false;
+            if (error) {
+              console.error('❌ Failed to set session:', error);
+              isHandlingDeepLink = false;
               router.replace('/auth');
               return;
             }
 
-                      console.log('✅ Session set! User logged in:', data.user?.email);
+            console.log('✅ Session set! User logged in:', data.user?.email);
 
             // Save terms acceptance date if terms were accepted and not already saved
             if (termsAccepted && data.user) {
@@ -245,7 +247,7 @@ export default function RootLayout() {
             // This ensures smooth transition with loader while checking account state
             console.log('🚀 Navigating to splash screen to determine next step...');
             router.replace('/');
-            
+
             setTimeout(() => {
               isHandlingDeepLink = false;
             }, 1000);
@@ -274,7 +276,7 @@ export default function RootLayout() {
         console.log('🔗 Initial URL found:', url);
         // Small delay to ensure app is ready
         setTimeout(() => {
-        handleDeepLink({ url });
+          handleDeepLink({ url });
         }, 500);
       }
     });
@@ -303,40 +305,42 @@ export default function RootLayout() {
               <BillingProvider>
                 <AgentProvider>
                   <AdvancedFeaturesProvider>
-                    <ToastProvider>
-                      <BottomSheetModalProvider>
-                        <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                          <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                          <AuthProtection>
-                            <Stack 
-                              screenOptions={{ 
-                                headerShown: false,
-                                animation: 'fade',
-                              }}
-                            >
-                              <Stack.Screen name="index" options={{ animation: 'none' }} />
-                              <Stack.Screen name="setting-up" />
-                              <Stack.Screen name="onboarding" />
-                              <Stack.Screen 
-                                name="home" 
-                                options={{ 
-                                  gestureEnabled: false,
-                                }} 
-                              />
-                              <Stack.Screen 
-                                name="auth" 
-                                options={{ 
-                                  gestureEnabled: false,
+                    <PresenceProvider>
+                      <ToastProvider>
+                        <BottomSheetModalProvider>
+                          <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                            <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+                            <AuthProtection>
+                              <Stack
+                                screenOptions={{
+                                  headerShown: false,
                                   animation: 'fade',
-                                }} 
-                              />
-                              <Stack.Screen name="trigger-detail" />
-                            </Stack>
-                          </AuthProtection>
-                          <PortalHost />
-                        </ThemeProvider>
-                      </BottomSheetModalProvider>
-                    </ToastProvider>
+                                }}
+                              >
+                                <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                <Stack.Screen name="setting-up" />
+                                <Stack.Screen name="onboarding" />
+                                <Stack.Screen
+                                  name="home"
+                                  options={{
+                                    gestureEnabled: false,
+                                  }}
+                                />
+                                <Stack.Screen
+                                  name="auth"
+                                  options={{
+                                    gestureEnabled: false,
+                                    animation: 'fade',
+                                  }}
+                                />
+                                <Stack.Screen name="trigger-detail" />
+                              </Stack>
+                            </AuthProtection>
+                            <PortalHost />
+                          </ThemeProvider>
+                        </BottomSheetModalProvider>
+                      </ToastProvider>
+                    </PresenceProvider>
                   </AdvancedFeaturesProvider>
                 </AgentProvider>
               </BillingProvider>
@@ -354,10 +358,14 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
+  const segmentsArray = segments as string[];
+  const threadId = (segmentsArray.length > 3 && segmentsArray[2] === 'thread') ? segmentsArray[3] : undefined;
+  usePresence(threadId);
+
   useEffect(() => {
     // Don't do anything while auth is loading
     if (authLoading) return;
-    
+
     // Wait for segments
     if (!segments || segments.length < 1) return;
 

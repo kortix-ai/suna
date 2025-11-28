@@ -73,9 +73,17 @@ class ErrorProcessor:
         error_message = ErrorProcessor.safe_error_to_string(error)
         
         if isinstance(error, ContextWindowExceededError):
+            # Clean up the error message - remove fallback details for user-facing message
+            clean_message = error_message
+            if "Received Model Group=" in error_message:
+                # Extract just the core error before fallback attempts
+                parts = error_message.split(". Received Model Group=")
+                if parts:
+                    clean_message = parts[0]
+            
             return ProcessedError(
                 error_type="context_window_exceeded",
-                message=f"Context window exceeded: The conversation is too long for this model. {error_message}",
+                message=f"Context window exceeded: The conversation is too long for this model. Please try starting a new conversation or use a model with a larger context window. {clean_message}",
                 original_error=error,
                 context=context
             )

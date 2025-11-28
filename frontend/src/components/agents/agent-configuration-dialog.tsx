@@ -42,11 +42,16 @@ import {
   ChevronDown,
   Search,
   Info,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useAccountState } from '@/hooks/billing';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { isLocalMode } from '@/lib/config';
 
 import { useAgentVersionData } from '@/hooks/agents';
 import { useUpdateAgent, useAgents } from '@/hooks/agents/use-agents';
@@ -92,6 +97,14 @@ export function AgentConfigurationDialog({
   const updateAgentMutation = useUpdateAgent();
   const updateAgentMCPsMutation = useUpdateAgentMCPs();
   const exportMutation = useExportAgent();
+  
+  const { data: accountState } = useAccountState();
+  const { openPricingModal } = usePricingModalStore();
+  
+  const isFreeTier = accountState && (
+    accountState.subscription?.tier_key === 'free' ||
+    accountState.tier?.name === 'free'
+  ) && !isLocalMode();
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -674,7 +687,7 @@ export function AgentConfigurationDialog({
                   </div>
                 </TabsContent>
                 <TabsContent value="integrations" className="p-6 mt-0 flex flex-col h-full">
-                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full relative">
                     <AgentMCPConfiguration
                       configuredMCPs={formData.configured_mcps}
                       customMCPs={formData.custom_mcps}
@@ -689,18 +702,111 @@ export function AgentConfigurationDialog({
                       saveMode="callback"
                       isLoading={updateAgentMCPsMutation.isPending}
                     />
+                    {isFreeTier && (
+                      <div className="absolute inset-0 z-10">
+                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
+                        <div className="relative h-full flex flex-col items-center justify-center px-8">
+                          <div 
+                            className="max-w-md w-full rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-background to-background p-8 cursor-pointer hover:border-primary/50 transition-all group shadow-lg"
+                            onClick={() => openPricingModal()}
+                          >
+                            <div className="flex flex-col items-center text-center gap-4">
+                              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/15 border border-primary/20 group-hover:bg-primary/20 transition-colors">
+                                <Server className="h-7 w-7 text-primary" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-semibold text-foreground mb-2">Unlock Integrations</h3>
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                  Connect Google Drive, Slack, Notion, and 100+ apps to supercharge your AI Workers
+                                </p>
+                              </div>
+                              <Button 
+                                variant="default"
+                                className="mt-2 gap-2"
+                                onClick={(e) => { e.stopPropagation(); openPricingModal(); }}
+                              >
+                                <Sparkles className="h-4 w-4" />
+                                Upgrade to Unlock
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="knowledge" className="p-6 mt-0 flex flex-col h-full">
-                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full relative">
                     <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Agent'} />
+                    {isFreeTier && (
+                      <div className="absolute inset-0 z-10">
+                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
+                        <div className="relative h-full flex flex-col items-center justify-center px-8">
+                          <div 
+                            className="max-w-md w-full rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-background to-background p-8 cursor-pointer hover:border-primary/50 transition-all group shadow-lg"
+                            onClick={() => openPricingModal()}
+                          >
+                            <div className="flex flex-col items-center text-center gap-4">
+                              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/15 border border-primary/20 group-hover:bg-primary/20 transition-colors">
+                                <Brain className="h-7 w-7 text-primary" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-semibold text-foreground mb-2">Unlock Knowledge Base</h3>
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                  Upload documents, PDFs, and files to give your AI Workers custom knowledge and context
+                                </p>
+                              </div>
+                              <Button 
+                                variant="default"
+                                className="mt-2 gap-2"
+                                onClick={(e) => { e.stopPropagation(); openPricingModal(); }}
+                              >
+                                <Sparkles className="h-4 w-4" />
+                                Upgrade to Unlock
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 
                 <TabsContent value="triggers" className="p-6 mt-0 flex flex-col h-full">
-                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full relative">
                     <AgentTriggersConfiguration agentId={agentId} />
+                    {isFreeTier && (
+                      <div className="absolute inset-0 z-10">
+                        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" />
+                        <div className="relative h-full flex flex-col items-center justify-center px-8">
+                          <div 
+                            className="max-w-md w-full rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-background to-background p-8 cursor-pointer hover:border-primary/50 transition-all group shadow-lg"
+                            onClick={() => openPricingModal()}
+                          >
+                            <div className="flex flex-col items-center text-center gap-4">
+                              <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/15 border border-primary/20 group-hover:bg-primary/20 transition-colors">
+                                <Zap className="h-7 w-7 text-primary" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-semibold text-foreground mb-2">Unlock Automation Triggers</h3>
+                                <p className="text-sm text-muted-foreground leading-relaxed">
+                                  Set up scheduled tasks and event-based triggers to automate your AI Workers 24/7
+                                </p>
+                              </div>
+                              <Button 
+                                variant="default"
+                                className="mt-2 gap-2"
+                                onClick={(e) => { e.stopPropagation(); openPricingModal(); }}
+                              >
+                                <Sparkles className="h-4 w-4" />
+                                Upgrade to Unlock
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
               </div>

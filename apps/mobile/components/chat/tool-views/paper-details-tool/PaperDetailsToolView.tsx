@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractPaperDetailsData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function PaperDetailsToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { paper, success } = extractPaperDetailsData(toolData);
+export function PaperDetailsToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { paper, success } = extractPaperDetailsData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -62,17 +62,15 @@ export function PaperDetailsToolView({ toolData, isStreaming = false }: ToolView
               Research Paper
             </Text>
           </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
+          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${success ? 'bg-primary/10' : 'bg-destructive/10'
             }`}>
+            <Icon
+              as={success ? CheckCircle2 : AlertCircle}
+              size={12}
+              className={success ? 'text-primary' : 'text-destructive'}
+            />
+            <Text className={`text-xs font-roobert-medium ${success ? 'text-primary' : 'text-destructive'
+              }`}>
               {success ? 'Success' : 'Failed'}
             </Text>
           </View>
@@ -99,7 +97,7 @@ export function PaperDetailsToolView({ toolData, isStreaming = false }: ToolView
                   </Text>
                 </View>
               )}
-              
+
               {paper.is_open_access && (
                 <View className="bg-emerald-500/10 px-2 py-1 rounded">
                   <Text className="text-xs font-roobert-medium text-emerald-600 dark:text-emerald-400">
@@ -107,7 +105,7 @@ export function PaperDetailsToolView({ toolData, isStreaming = false }: ToolView
                   </Text>
                 </View>
               )}
-              
+
               {paper.citation_count !== undefined && (
                 <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                   <Icon as={Award} size={12} className="text-muted-foreground" />

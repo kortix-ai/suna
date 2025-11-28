@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface SheetsData {
   filePath: string | null;
@@ -20,17 +20,17 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractSheetsData(toolData: ParsedToolData): SheetsData {
-  const { result, toolName } = toolData;
+export function extractSheetsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): SheetsData {
+  const toolName = toolCall.function?.name || '';
   
   let filePath: string | null = null;
   let headers: string[] = [];
   let rows: any[][] = [];
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       filePath = output.created || output.updated || output.file_path || output.formatted || output.chart_saved || null;
@@ -54,7 +54,7 @@ export function extractSheetsData(toolData: ParsedToolData): SheetsData {
     action,
     headers,
     rows,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

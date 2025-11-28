@@ -348,6 +348,13 @@ async def _create_agent_run_record(
         await invalidate_running_runs_cache(actual_user_id)
     except Exception as cache_error:
         logger.warning(f"Failed to invalidate running runs cache: {cache_error}")
+    
+    # Invalidate account-state cache to refresh concurrent runs limit
+    try:
+        from core.billing.shared.cache_utils import invalidate_account_state_cache
+        await invalidate_account_state_cache(actual_user_id)
+    except Exception as cache_error:
+        logger.warning(f"Failed to invalidate account-state cache: {cache_error}")
 
     # Register run in Redis
     instance_key = f"active_run:{utils.instance_id}:{agent_run_id}"

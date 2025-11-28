@@ -68,7 +68,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
                     "num_results": {
                         "type": "integer",
                         "description": "The number of search results to return per query. Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode.",
-                        "default": 10
+                        "default": 5
                     }
                 },
                 "required": ["query"]
@@ -78,7 +78,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
     async def web_search(
         self, 
         query: str | list[str],
-        num_results: int = 20
+        num_results: int = 5
     ) -> ToolResult:
         """
         Search the web using the Tavily API to find relevant and up-to-date information.

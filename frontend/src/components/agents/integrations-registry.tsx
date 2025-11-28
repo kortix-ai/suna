@@ -8,6 +8,8 @@ interface IntegrationsRegistryProps {
   onToolsSelected?: (profileId: string, selectedTools: string[], appName: string, appSlug: string) => void;
   onClose?: () => void;
   initialSelectedApp?: string | null;
+  isBlocked?: boolean;
+  onBlockedClick?: () => void;
 }
 
 export const IntegrationsRegistry: React.FC<IntegrationsRegistryProps> = ({
@@ -17,6 +19,8 @@ export const IntegrationsRegistry: React.FC<IntegrationsRegistryProps> = ({
   onToolsSelected,
   onClose,
   initialSelectedApp,
+  isBlocked,
+  onBlockedClick,
 }) => {
   return (
     <ComposioRegistry
@@ -26,6 +30,8 @@ export const IntegrationsRegistry: React.FC<IntegrationsRegistryProps> = ({
       onToolsSelected={onToolsSelected}
       onClose={onClose}
       initialSelectedApp={initialSelectedApp}
+      isBlocked={isBlocked}
+      onBlockedClick={onBlockedClick}
     />
   );
 }; 

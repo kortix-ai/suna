@@ -24,6 +24,9 @@ export function ReactQueryProvider({ children }: { children: React.ReactNode }) 
           queries: {
             staleTime: 20 * 1000,
             gcTime: 2 * 60 * 1000,
+            // Enable request deduplication - React Query will batch simultaneous requests
+            structuralSharing: true,
+            // Deduplicate requests within 1000ms window (default)
             retry: (failureCount, error: any) => {
               if (error?.status >= 400 && error?.status < 500) return false;
               if (error?.status === 404) return false;

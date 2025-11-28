@@ -7,21 +7,22 @@ import type { ToolViewProps } from '../types';
 import { extractBrowserData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function BrowserToolView({ 
-  toolData, 
-  assistantMessage, 
-  toolMessage, 
+export function BrowserToolView({
+  toolCall,
+  toolResult,
+  assistantMessage,
+  toolMessage,
   isStreaming,
-  project 
+  project
 }: ToolViewProps) {
-  const browserData = extractBrowserData(toolData, toolMessage, assistantMessage);
+  const browserData = extractBrowserData({ toolCall, toolResult }, toolMessage || {} as any, assistantMessage || null);
   const { url, operation, screenshotUrl, screenshotBase64, parameters, result } = browserData;
-  
+
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [showContext, setShowContext] = useState(false);
 
-  const isSuccess = toolData.result.success ?? true;
+  const isSuccess = toolResult?.success ?? true;
   const isLoading = isStreaming;
 
   useEffect(() => {
@@ -40,14 +41,14 @@ export function BrowserToolView({
     const imageSource = screenshotUrl
       ? { uri: screenshotUrl }
       : screenshotBase64
-      ? { uri: `data:image/png;base64,${screenshotBase64}` }
-      : null;
+        ? { uri: `data:image/png;base64,${screenshotBase64}` }
+        : null;
 
     if (!imageSource) return null;
 
     return (
       <View className="gap-3">
-        <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ aspectRatio: 16/10 }}>
+        <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ aspectRatio: 16 / 10 }}>
           {imageLoading && (
             <View className="absolute inset-0 items-center justify-center bg-muted/30">
               <ActivityIndicator size="large" color="#0066FF" />
@@ -177,52 +178,8 @@ export function BrowserToolView({
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={MonitorPlay} size={24} className="text-primary" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Browser
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
-              {operation}
-            </Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            {!isStreaming && (
-              <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-                isSuccess ? 'bg-primary/10' : 'bg-destructive/10'
-              }`}>
-                <Icon 
-                  as={isSuccess ? CheckCircle2 : AlertCircle} 
-                  size={12} 
-                  className={isSuccess ? 'text-primary' : 'text-destructive'} 
-                />
-                <Text className={`text-xs font-roobert-medium ${
-                  isSuccess ? 'text-primary' : 'text-destructive'
-                }`}>
-                  {isSuccess ? 'Done' : 'Failed'}
-                </Text>
-              </View>
-            )}
-            {(result || parameters) && (
-              <Pressable
-                onPress={toggleContext}
-                className="bg-muted/30 rounded-xl p-2"
-              >
-                <Icon 
-                  as={showContext ? ImageIcon : Code2} 
-                  size={16} 
-                  className="text-foreground/60" 
-                />
-              </Pressable>
-            )}
-          </View>
-        </View>
-
-        {showContext ? renderContext() : renderScreenshot()}
+      <View className="px-6 gap-6">
+        {renderScreenshot()}
       </View>
     </ScrollView>
   );

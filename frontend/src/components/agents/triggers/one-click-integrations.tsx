@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, AlertCircle, Clock, PlugZap } from 'lucide-react';
+import { Loader2, AlertCircle, Clock, PlugZap, Lock, Zap } from 'lucide-react';
 import { SimplifiedScheduleConfig } from './providers/simplified-schedule-config';
 import { TriggerProvider, ScheduleTriggerConfig } from './types';
 
@@ -18,7 +18,15 @@ import {
 } from '@/hooks/triggers';
 import { toast } from 'sonner';
 import { EventBasedTriggerDialog } from './event-based-trigger-dialog';
-import { config, EnvMode } from '@/lib/config';
+import { config, EnvMode, isLocalMode } from '@/lib/config';
+import { useAccountState } from '@/hooks/billing';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface OneClickIntegrationsProps {
   agentId: string;
@@ -39,6 +47,13 @@ export const OneClickIntegrations: React.FC<OneClickIntegrationsProps> = ({
 }) => {
   const [configuringSchedule, setConfiguringSchedule] = useState(false);
   const [showEventDialog, setShowEventDialog] = useState(false);
+  const { data: accountState } = useAccountState();
+  const { openPricingModal } = usePricingModalStore();
+  
+  const isFreeTier = accountState && (
+    accountState.subscription?.tier_key === 'free' ||
+    accountState.tier?.name === 'free'
+  ) && !isLocalMode();
   
   // Schedule trigger form state
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleTriggerConfig>({
@@ -158,71 +173,139 @@ export const OneClickIntegrations: React.FC<OneClickIntegrationsProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap gap-3">
+    <TooltipProvider>
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-3">
 
-        {Object.entries(OAUTH_PROVIDERS).map(([providerId, config]) => {
-          const provider = providerId as ProviderKey;
-          const isInstalled = isProviderInstalled(provider);
-          const isLoading = installMutation.isPending || uninstallMutation.isPending ||
-            (provider === 'schedule' && (createTriggerMutation.isPending || deleteTriggerMutation.isPending));
-          const triggerId = getTriggerId(provider);
+          {Object.entries(OAUTH_PROVIDERS).map(([providerId, config]) => {
+            const provider = providerId as ProviderKey;
+            const isInstalled = isProviderInstalled(provider);
+            const isLoading = installMutation.isPending || uninstallMutation.isPending ||
+              (provider === 'schedule' && (createTriggerMutation.isPending || deleteTriggerMutation.isPending));
+            const triggerId = getTriggerId(provider);
 
-          const buttonText = provider === 'schedule'
-            ? config.name
-            : (isInstalled ? `Disconnect ${config.name}` : `Connect ${config.name}`);
+            const buttonText = provider === 'schedule'
+              ? config.name
+              : (isInstalled ? `Disconnect ${config.name}` : `Connect ${config.name}`);
 
-          return (
+            if (isFreeTier && provider === 'schedule') {
+              return (
+                <Tooltip key={providerId}>
+                  <TooltipTrigger asChild>
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        size='sm'
+                        disabled={true}
+                        className="flex items-center opacity-50 cursor-not-allowed"
+                      >
+                        <Lock className="h-4 w-4 mr-2" />
+                        {buttonText}
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">UPGRADE for time-based automation</p>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+
+            return (
+              <Button
+                key={providerId}
+                variant="outline"
+                size='sm'
+                onClick={() => {
+                  if (provider === 'schedule') {
+                    handleInstall(provider);
+                  } else {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+                    isInstalled ? handleUninstall(provider, triggerId) : handleInstall(provider);
+                  }
+                }}
+                disabled={isLoading}
+                className="flex items-center"
+              >
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  config.icon
+                )}
+                {buttonText}
+              </Button>
+            );
+          })}
+          {isFreeTier ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="relative">
+                  <Button
+                    variant="default"
+                    size='sm'
+                    disabled={true}
+                    className="flex items-center gap-2 opacity-50 cursor-not-allowed"
+                  >
+                    <Lock className="h-4 w-4" />
+                    App-based Trigger
+                  </Button>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">UPGRADE for event-based automation (email, CRM, etc.)</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
             <Button
-              key={providerId}
-              variant="outline"
+              variant="default"
               size='sm'
-              onClick={() => {
-                if (provider === 'schedule') {
-                  handleInstall(provider);
-                } else {
-                  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-                  isInstalled ? handleUninstall(provider, triggerId) : handleInstall(provider);
-                }
-              }}
-              disabled={isLoading}
-              className="flex items-center"
+              onClick={() => setShowEventDialog(true)}
+              className="flex items-center gap-2"
             >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                config.icon
-              )}
-              {buttonText}
+              <PlugZap className="h-4 w-4" /> App-based Trigger
             </Button>
-          );
-        })}
-        <Button
-          variant="default"
-          size='sm'
-          onClick={() => setShowEventDialog(true)}
-          className="flex items-center gap-2"
-        >
-          <PlugZap className="h-4 w-4" /> App-based Trigger
-        </Button>
+          )}
+        </div>
+        {isFreeTier && (
+          <div 
+            className="relative overflow-hidden rounded-xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 cursor-pointer hover:border-primary/50 hover:from-primary/15 transition-all group"
+            onClick={() => openPricingModal()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex-shrink-0 group-hover:bg-primary/20 transition-colors">
+                <Zap className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-foreground mb-1">Unlock Automation</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">Run your AI Workers on autopilot with scheduled tasks and app-based triggers</p>
+              </div>
+              <Button
+                size="sm"
+                className="text-xs h-8 flex-shrink-0"
+              >
+                Upgrade
+              </Button>
+            </div>
+          </div>
+        )}
+        <EventBasedTriggerDialog open={showEventDialog} onOpenChange={setShowEventDialog} agentId={agentId} />
+        <SimplifiedScheduleConfig
+          provider={scheduleProvider}
+          config={scheduleConfig}
+          onChange={handleScheduleConfigChange}
+          errors={{}}
+          agentId={agentId}
+          name={scheduleName}
+          description={scheduleDescription}
+          onNameChange={setScheduleName}
+          onDescriptionChange={setScheduleDescription}
+          isActive={scheduleIsActive}
+          onActiveChange={setScheduleIsActive}
+          open={configuringSchedule}
+          onOpenChange={setConfiguringSchedule}
+          onSave={handleScheduleSave}
+        />
       </div>
-      <EventBasedTriggerDialog open={showEventDialog} onOpenChange={setShowEventDialog} agentId={agentId} />
-      <SimplifiedScheduleConfig
-        provider={scheduleProvider}
-        config={scheduleConfig}
-        onChange={handleScheduleConfigChange}
-        errors={{}}
-        agentId={agentId}
-        name={scheduleName}
-        description={scheduleDescription}
-        onNameChange={setScheduleName}
-        onDescriptionChange={setScheduleDescription}
-        isActive={scheduleIsActive}
-        onActiveChange={setScheduleIsActive}
-        open={configuringSchedule}
-        onOpenChange={setConfiguringSchedule}
-        onSave={handleScheduleSave}
-      />
-    </div>
+    </TooltipProvider>
   );
 };

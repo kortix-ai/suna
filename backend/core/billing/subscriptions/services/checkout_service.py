@@ -90,18 +90,13 @@ class CheckoutService:
         tier_info = None,
         tier_display_name: str = None
     ) -> Dict:
-        from core.utils.config import config
-        
-        frontend_url = config.FRONTEND_URL
-        client_secret = getattr(session, 'client_secret', None)
-        checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
-        fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
-        
+        """
+        Build checkout response with Stripe's hosted checkout URL.
+        Returns session.url directly for hosted checkout mode.
+        """
         response = {
-            'checkout_url': fe_checkout_url,
-            'fe_checkout_url': fe_checkout_url,
+            'checkout_url': session.url,  # Stripe's hosted checkout URL
             'session_id': session.id,
-            'client_secret': client_secret,
         }
         
         if flow_type == 'trial_conversion' and tier_info:

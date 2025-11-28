@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { X, Crown } from 'lucide-react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isLocalMode } from '@/lib/config';
 import { Button } from '@/components/ui/button';
+import { TierBadge } from '@/components/billing/tier-badge';
 
 export interface UpgradePreviewProps {
     subscriptionData?: any;
@@ -30,34 +31,30 @@ export const UpgradePreview: React.FC<UpgradePreviewProps> = ({
 
     return (
         <div className="flex items-center gap-3">
-            {/* Icon */}
-            <div className="flex-shrink-0">
-                <motion.div
-                    className={cn(
-                        "w-10 h-10 rounded-2xl flex items-center justify-center",
-                        "bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 border border-yellow-200 dark:border-yellow-800"
-                    )}
-                >
-                    <Crown className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-                </motion.div>
+            {/* Stacked Tier Badges - vertical stack with Ultra on top */}
+            <div className="flex-shrink-0 flex flex-col items-center justify-center">
+            <div className="mb-[-6px] z-30">
+        <TierBadge planName="Ultra" size="xxs" />
+    </div>
+    <div className="mb-[-6px] z-20">
+        <TierBadge planName="Plus" size="xxs" />
+    </div>
+    <div className=" z-10">
+        <TierBadge planName="Pro" size="xxs" />
+    </div>
             </div>
 
             {/* Content */}
             <div className="flex-1 min-w-0">
-                <motion.div className="flex items-center gap-2 mb-1">
+                <motion.div className="flex items-center gap-2 mb-0.5">
                     <h4 className="text-sm font-medium text-foreground truncate">
-                        Upgrade now to get the full Kortix experience
+                        Unlock the full Kortix experience
                     </h4>
                 </motion.div>
 
-                <motion.div className="flex items-center gap-2">
-                    <div className={cn(
-                        "w-2 h-2 rounded-full bg-yellow-500"
-                    )} />
-                    <span className="text-xs text-muted-foreground truncate">
-                        Unlock premium models & higher limits
-                    </span>
-                </motion.div>
+                <span className="text-xs text-muted-foreground truncate block">
+                    Kortix Power mode, 100+ Integrations, Triggers, Custom AI Workers & more
+                </span>
             </div>
 
             {/* Apple-style notification indicators - only for multiple notification types */}

@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractDesignerData } from './_utils';
 import { FileAttachmentRenderer } from '@/components/chat/FileAttachmentRenderer';
 
-export function DesignerToolView({ toolData, isStreaming = false, assistantMessage, project }: ToolViewProps) {
-  const extractedData = extractDesignerData(toolData);
+export function DesignerToolView({ toolCall, toolResult, isStreaming = false, assistantMessage, project }: ToolViewProps) {
+  const extractedData = extractDesignerData({ toolCall, toolResult });
   const { mode, prompt, generatedImagePath, designUrl, width, height, error, success, sandboxId: extractedSandboxId } = extractedData;
 
   const sandboxId = extractedSandboxId || project?.sandbox_id || assistantMessage?.sandbox_id;
@@ -18,8 +18,8 @@ export function DesignerToolView({ toolData, isStreaming = false, assistantMessa
     sandboxId,
     extractedSandboxId,
     designUrl,
-    args: toolData.arguments,
-    output: toolData.result.output
+    args: toolCall.arguments,
+    output: toolResult?.output
   });
 
   if (isStreaming) {
@@ -45,18 +45,7 @@ export function DesignerToolView({ toolData, isStreaming = false, assistantMessa
   if (error) {
     return (
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-4 gap-6">
-          <View className="flex-row items-center gap-3">
-            <View className="bg-red-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-              <Icon as={AlertCircle} size={24} className="text-red-500" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xl font-roobert-semibold text-foreground">
-                Design Failed
-              </Text>
-            </View>
-          </View>
-
+        <View className="px-6 gap-6">
           <View className="bg-red-500/10 rounded-xl p-4 border border-red-500/20">
             <Text className="text-sm font-roobert text-red-600 dark:text-red-400">
               {error}
@@ -69,21 +58,7 @@ export function DesignerToolView({ toolData, isStreaming = false, assistantMessa
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Palette} size={24} className="text-purple-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Professional Design
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {mode === 'create' ? 'Created' : 'Edited'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {prompt && (
           <View className="gap-2">
             <Text className="text-sm font-roobert-medium text-foreground/70">

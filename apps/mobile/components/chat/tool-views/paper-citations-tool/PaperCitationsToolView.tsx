@@ -7,8 +7,8 @@ import type { ToolViewProps } from '../types';
 import { extractPaperCitationsData } from './_utils';
 import * as Haptics from 'expo-haptics';
 
-export function PaperCitationsToolView({ toolData, isStreaming = false }: ToolViewProps) {
-  const { paper_title, total_citations, citations, success } = extractPaperCitationsData(toolData);
+export function PaperCitationsToolView({ toolCall, toolResult, isStreaming = false }: ToolViewProps) {
+  const { paper_title, total_citations, citations, success } = extractPaperCitationsData({ toolCall, toolResult });
 
   const handleOpenUrl = (url: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -55,35 +55,7 @@ export function PaperCitationsToolView({ toolData, isStreaming = false }: ToolVi
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-purple-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={Quote} size={24} className="text-purple-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Citations
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {total_citations} {total_citations === 1 ? 'Citation' : 'Citations'}
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-primary/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-primary' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-primary' : 'text-destructive'
-            }`}>
-              {success ? 'Found' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {paper_title && (
           <View className="bg-muted/30 rounded-xl p-4 border border-border">
             <Text className="text-xs font-roobert-medium text-muted-foreground mb-2">
@@ -111,7 +83,7 @@ export function PaperCitationsToolView({ toolData, isStreaming = false }: ToolVi
                     <Text className="text-base font-roobert-semibold text-foreground" numberOfLines={3}>
                       {citation.title}
                     </Text>
-                    
+
                     {authorNames && (
                       <View className="flex-row items-center gap-1.5">
                         <Icon as={Users} size={12} className="text-muted-foreground" />
@@ -130,7 +102,7 @@ export function PaperCitationsToolView({ toolData, isStreaming = false }: ToolVi
                           </Text>
                         </View>
                       )}
-                      
+
                       {citation.citation_count !== undefined && (
                         <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
                           <Icon as={Award} size={12} className="text-muted-foreground" />

@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useAdminRole } from '@/hooks/admin';
-import { useSubscription } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing';
 
 // Lazy load heavy components
 const PricingSection = lazy(() => import('@/components/billing/pricing').then(mod => ({ default: mod.PricingSection })));
@@ -42,7 +42,8 @@ export default function SubscriptionRequiredPage() {
   const router = useRouter();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
   const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
-  const { data: subscriptionData, isLoading: isLoadingSubscription, refetch: refetchSubscription } = useSubscription({ enabled: true });
+  const { data: accountState, isLoading: isLoadingSubscription, refetch: refetchSubscription } = useAccountState({ enabled: true });
+  const subscriptionData = accountState;
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
   useEffect(() => {
@@ -51,10 +52,10 @@ export default function SubscriptionRequiredPage() {
         subscriptionData.subscription.status === 'active' &&
         !(subscriptionData.subscription as any).cancel_at_period_end;
 
-      const hasActiveTrial = (subscriptionData as any).trial_status === 'active';
+      const hasActiveTrial = subscriptionData.subscription?.is_trial === true;
       
       // ✅ Use tier_key for consistency
-      const tierKey = subscriptionData.tier_key || subscriptionData.tier?.name;
+      const tierKey = subscriptionData.subscription?.tier_key || subscriptionData.tier?.name;
       const hasValidTier = tierKey && tierKey !== 'none';
       const isFreeTier = tierKey === 'free';
 

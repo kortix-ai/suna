@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface CheckCommandOutputData {
   sessionName: string | null;
@@ -18,17 +18,17 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractCheckCommandOutputData(toolData: ParsedToolData): CheckCommandOutputData {
-  const { arguments: args, result } = toolData;
+export function extractCheckCommandOutputData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CheckCommandOutputData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let sessionName = args?.session_name || null;
   let output: string | null = null;
   let status: string | null = null;
   
-  if (result.output) {
-    const parsed = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const parsed = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (parsed && typeof parsed === 'object') {
       output = parsed.output || null;
@@ -43,7 +43,7 @@ export function extractCheckCommandOutputData(toolData: ParsedToolData): CheckCo
     sessionName,
     output,
     status,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

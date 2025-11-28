@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface DataProviderData {
   provider: string | null;
@@ -20,8 +20,18 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractDataProviderData(toolData: ParsedToolData): DataProviderData {
-  const { arguments: args, result } = toolData;
+export function extractDataProviderData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DataProviderData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
   
   let provider = args?.provider || args?.data_provider || null;
   let endpoint = args?.endpoint || args?.endpoint_name || null;
@@ -29,10 +39,10 @@ export function extractDataProviderData(toolData: ParsedToolData): DataProviderD
   let response: any = null;
   let endpoints: any[] = [];
   
-  if (result.output) {
-    const parsed = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const parsed = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (Array.isArray(parsed)) {
       endpoints = parsed;
@@ -58,7 +68,87 @@ export function extractDataProviderData(toolData: ParsedToolData): DataProviderD
     method,
     response,
     endpoints,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
+  };
+}
+
+export interface DataProviderEndpointsData {
+  serviceName: string | null;
+  endpoints: any;
+  success: boolean;
+}
+
+export function extractDataProviderEndpointsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DataProviderEndpointsData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+  
+  let output: any = {};
+  if (toolResult?.output) {
+    if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = toolResult.output;
+    } else if (typeof toolResult.output === 'string') {
+      try {
+        output = JSON.parse(toolResult.output);
+      } catch (e) {
+        // Not JSON, ignore
+      }
+    }
+  }
+
+  return {
+    serviceName: args.service_name || args.serviceName || null,
+    endpoints: output.endpoints || null,
+    success: toolResult?.success ?? true
+  };
+}
+
+export interface DataProviderCallData {
+  serviceName: string | null;
+  route: string | null;
+  payload: any;
+  output: string | null;
+  success: boolean;
+}
+
+export function extractDataProviderCallData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DataProviderCallData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
+  
+  let output: any = null;
+  if (toolResult?.output) {
+    if (typeof toolResult.output === 'object' && toolResult.output !== null) {
+      output = typeof toolResult.output.output === 'string' 
+        ? toolResult.output.output 
+        : JSON.stringify(toolResult.output, null, 2);
+    } else if (typeof toolResult.output === 'string') {
+      output = toolResult.output;
+    }
+  }
+
+  return {
+    serviceName: args.service_name || args.serviceName || null,
+    route: args.route || null,
+    payload: args.payload || null,
+    output,
+    success: toolResult?.success ?? true
   };
 }
 

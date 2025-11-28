@@ -6,3 +6,4 @@ export * from './scheduled-downgrade-card';
 export { CreditsDisplay } from './credits-display';
 export { TierBadge } from './tier-badge';
 export { getPlanName, getPlanIcon } from './plan-utils';
+export { UpgradeCelebration } from './upgrade-celebration';

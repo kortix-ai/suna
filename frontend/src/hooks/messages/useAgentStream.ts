@@ -17,6 +17,7 @@ import { composioKeys } from '@/hooks/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { accountStateKeys } from '@/hooks/billing';
 
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
@@ -255,8 +256,9 @@ export function useAgentStream(
         queryKey: ['active-agent-runs'],
       });
 
+      // Invalidate account state after agent run completes (credits may have been deducted)
       queryClient.invalidateQueries({ 
-        queryKey: ['billing'],
+        queryKey: accountStateKeys.all,
       });
 
       if (agentId) {

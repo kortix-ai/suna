@@ -1,18 +1,18 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface WaitData {
   seconds: number;
   success: boolean;
 }
 
-export function extractWaitData(toolData: ParsedToolData): WaitData {
-  const { arguments: args, result } = toolData;
+export function extractWaitData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WaitData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   const seconds = args?.seconds || 0;
   
   return {
     seconds,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

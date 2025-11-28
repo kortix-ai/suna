@@ -16,6 +16,12 @@ export interface ToolViewProps {
   /** Structured tool result data from metadata */
   toolResult?: ToolResultData;
   
+  /** Assistant message (optional, for some views that need full message context) */
+  assistantMessage?: UnifiedMessage | null;
+  
+  /** Tool message (optional, for some views that need full message context) */
+  toolMessage?: UnifiedMessage;
+  
   /** Assistant message timestamp */
   assistantTimestamp?: string;
   

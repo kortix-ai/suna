@@ -23,11 +23,18 @@ import {
     Info,
     FileText,
     Plug,
+    Bell,
+    Mail,
+    Smartphone,
+    AppWindow,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode } from '@/lib/config';
+import { backendApi } from '@/lib/api-client';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Switch } from '@/components/ui/switch';
 import { LocalEnvManager } from '@/components/env-manager/local-env-manager';
 import { useIsMobile } from '@/hooks/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
@@ -38,20 +45,18 @@ import {
     useCancelAccountDeletion,
     useDeleteAccountImmediately
 } from '@/hooks/account/use-account-deletion';
-import { SubscriptionInfo } from '@/lib/api/billing';
+import { AccountState } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { PlanSelectionModal, PricingSection } from '@/components/billing/pricing';
 import { CreditBalanceDisplay, CreditPurchaseModal } from '@/components/billing/credit-purchase';
 import { ScheduledDowngradeCard } from '@/components/billing/scheduled-downgrade-card';
 import { 
-    useSubscription, 
-    useSubscriptionCommitment, 
+    useAccountState,
+    accountStateSelectors,
     useCreatePortalSession,
     useCancelSubscription,
     useReactivateSubscription,
-    useCreditBalance,
-    useScheduledChanges,
-    billingKeys
+    invalidateAccountState,
 } from '@/hooks/billing';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -66,10 +71,14 @@ import {
     Clock,
     Infinity,
     ShoppingCart,
-    Lightbulb
+    Lightbulb,
+    CalendarClock,
+    ArrowRight
 } from 'lucide-react';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
+import { TierBadge } from '../billing/tier-badge';
+import { siteConfig } from '@/lib/home';
 import ThreadUsage from '@/components/billing/thread-usage';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { LanguageSwitcher } from './language-switcher';
@@ -222,8 +231,15 @@ export function UserSettingsModal({
     );
 }
 
+interface NotificationSettings {
+    email_enabled: boolean;
+    push_enabled: boolean;
+    in_app_enabled: boolean;
+}
+
 function GeneralTab({ onClose }: { onClose: () => void }) {
     const t = useTranslations('settings.general');
+    const tNotifications = useTranslations('notifications');
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
@@ -234,11 +250,55 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
     const supabase = createClient();
+    const queryClient = useQueryClient();
+    const [localSettings, setLocalSettings] = useState<NotificationSettings | null>(null);
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
     const cancelDeletion = useCancelAccountDeletion();
     const deleteImmediately = useDeleteAccountImmediately();
+
+    const { data: notificationSettings } = useQuery({
+        queryKey: ['notification-settings'],
+        queryFn: async () => {
+            const response = await backendApi.get<{ settings: NotificationSettings }>('/notifications/settings');
+            if (!response.success || !response.data) {
+                throw new Error('Failed to fetch notification settings');
+            }
+            return response.data.settings;
+        },
+    });
+
+    useEffect(() => {
+        if (notificationSettings) {
+            setLocalSettings(notificationSettings);
+        }
+    }, [notificationSettings]);
+
+    const updateNotificationsMutation = useMutation({
+        mutationFn: async (updates: Partial<NotificationSettings>) => {
+            const response = await backendApi.put('/notifications/settings', updates);
+            if (!response.success) {
+                throw new Error('Failed to update notification settings');
+            }
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notification-settings'] });
+            toast.success(tNotifications('settingsUpdated'));
+        },
+        onError: () => {
+            toast.error(tNotifications('settingsFailed'));
+            if (notificationSettings) {
+                setLocalSettings(notificationSettings);
+            }
+        },
+    });
+
+    const handleNotificationToggle = (key: keyof NotificationSettings, value: boolean) => {
+        setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
+        updateNotificationsMutation.mutate({ [key]: value });
+    };
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -351,6 +411,44 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     <LanguageSwitcher />
                 </div>
             </div>
+
+            {localSettings && (
+                <div className="space-y-4 pt-6 border-t">
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Bell className="h-4 w-4 text-muted-foreground" />
+                            <h4 className="text-sm font-medium">{tNotifications('title')}</h4>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-4">
+                            {tNotifications('description')}
+                        </p>
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <NotificationToggle
+                            icon={Mail}
+                            label={tNotifications('emailNotifications')}
+                            description={tNotifications('emailDescription')}
+                            enabled={localSettings.email_enabled}
+                            onToggle={(value) => handleNotificationToggle('email_enabled', value)}
+                        />
+                        <NotificationToggle
+                            icon={Smartphone}
+                            label={tNotifications('pushNotifications')}
+                            description={tNotifications('pushDescription')}
+                            enabled={localSettings.push_enabled}
+                            onToggle={(value) => handleNotificationToggle('push_enabled', value)}
+                        />
+                        <NotificationToggle
+                            icon={AppWindow}
+                            label={tNotifications('inAppNotifications')}
+                            description={tNotifications('inAppDescription')}
+                            enabled={localSettings.in_app_enabled}
+                            onToggle={(value) => handleNotificationToggle('in_app_enabled', value)}
+                        />
+                    </div>
+                </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-4">
                 <Button
@@ -558,6 +656,37 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     );
 }
 
+interface NotificationToggleProps {
+    icon: React.ElementType;
+    label: string;
+    description: string;
+    enabled: boolean;
+    onToggle: (value: boolean) => void;
+}
+
+function NotificationToggle({ icon: Icon, label, description, enabled, onToggle }: NotificationToggleProps) {
+    return (
+        <div className="flex items-start justify-between gap-4 py-3 border-b last:border-0">
+            <div className="flex items-start gap-3 flex-1">
+                <Icon className="w-4 h-4 text-muted-foreground mt-0.5" />
+                <div className="space-y-0.5 flex-1">
+                    <Label htmlFor={label} className="text-sm font-medium cursor-pointer">
+                        {label}
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                        {description}
+                    </p>
+                </div>
+            </div>
+            <Switch
+                id={label}
+                checked={enabled}
+                onCheckedChange={onToggle}
+            />
+        </div>
+    );
+}
+
 // Billing Tab Component - Usage, credits, subscription management
 function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: string; onOpenPlanModal: () => void; isActive: boolean }) {
     const { session, isLoading: authLoading } = useAuth();
@@ -567,55 +696,73 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
     const isLocal = isLocalMode();
 
-    // Use React Query hooks for subscription data
+    // Use unified account state hook
     const {
-        data: subscriptionData,
+        data: accountState,
         isLoading: isLoadingSubscription,
         error: subscriptionError,
         refetch: refetchSubscription
-    } = useSubscription({
+    } = useAccountState({
         enabled: !!session && !authLoading,
     });
-
-    const {
-        data: commitmentInfo,
-        isLoading: commitmentLoading,
-        error: commitmentError,
-        refetch: refetchCommitment
-    } = useSubscriptionCommitment(subscriptionData?.subscription?.id, !!subscriptionData?.subscription?.id);
-
-    const {
-        data: creditBalance,
-        isLoading: isLoadingBalance,
-        refetch: refetchBalance
-    } = useCreditBalance(!!session && !authLoading);
-
-    const {
-        data: scheduledChangesData,
-        refetch: refetchScheduledChanges
-    } = useScheduledChanges(!!session && !authLoading);
+    
+    // Get commitment info from account state
+    const commitmentInfo = accountState?.subscription.commitment;
 
     const createPortalSessionMutation = useCreatePortalSession();
     const cancelSubscriptionMutation = useCancelSubscription();
     const reactivateSubscriptionMutation = useReactivateSubscription();
 
-    const planName = getPlanName(subscriptionData, isLocal);
+    const planName = accountStateSelectors.planName(accountState);
     const planIcon = getPlanIcon(planName, isLocal);
-
-    // Calculate days until refresh
-    const getDaysUntilRefresh = () => {
-        if (!creditBalance?.next_credit_grant) return null;
-        const nextGrant = new Date(creditBalance.next_credit_grant);
-        const now = new Date();
-        const diffTime = nextGrant.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays > 0 ? diffDays : null;
+    
+    // Get scheduled change from account state
+    const hasScheduledChange = accountState?.subscription.has_scheduled_change && accountState?.subscription.scheduled_change;
+    const scheduledChange = accountState?.subscription.scheduled_change;
+    
+    const getFrontendTierName = (tierKey: string) => {
+        const tier = siteConfig.cloudPricingItems.find(p => p.tierKey === tierKey);
+        return tier?.name || tierKey || 'Basic';
     };
 
-    const daysUntilRefresh = getDaysUntilRefresh();
-    const expiringCredits = creditBalance?.expiring_credits || 0;
-    const nonExpiringCredits = creditBalance?.non_expiring_credits || 0;
-    const totalCredits = creditBalance?.balance || 0;
+    // Calculate hours until daily refresh
+    const getHoursUntilDailyRefresh = () => {
+        const dailyInfo = accountState?.credits.daily_refresh;
+        if (!dailyInfo?.enabled) return null;
+        
+        if (dailyInfo.seconds_until_refresh) {
+            const hours = Math.ceil(dailyInfo.seconds_until_refresh / 3600);
+            return hours > 0 ? hours : null;
+        }
+        
+        if (dailyInfo.next_refresh_at) {
+            const nextRefresh = new Date(dailyInfo.next_refresh_at);
+            const now = new Date();
+            const diffMs = nextRefresh.getTime() - now.getTime();
+            const hours = Math.ceil(diffMs / (1000 * 60 * 60));
+            return hours > 0 ? hours : null;
+        }
+        
+        return null;
+    };
+
+    const hoursUntilDailyRefresh = getHoursUntilDailyRefresh();
+    const dailyCreditsInfo = accountState?.credits.daily_refresh;
+    
+    // Use the clean credits breakdown from API
+    const dailyCredits = accountState?.credits.daily ?? 0;
+    const monthlyCredits = accountState?.credits.monthly ?? 0;
+    const nonExpiringCredits = accountState?.credits.extra ?? 0;
+    const totalCredits = accountState?.credits.total ?? 0;
+    
+    console.log('[BillingTab] Credit breakdown:', { 
+        accountState: accountState?.credits,
+        dailyCreditsInfo, 
+        dailyCredits, 
+        monthlyCredits, 
+        nonExpiringCredits, 
+        totalCredits
+    });
 
     // Refetch billing info whenever the billing tab becomes active (only once per activation)
     const prevIsActiveRef = useRef(false);
@@ -623,9 +770,8 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         // Only refetch if tab just became active (not on every render)
         if (isActive && !prevIsActiveRef.current && session && !authLoading) {
             console.log('🔄 Billing tab activated, refetching billing info...');
-            // Use queryClient to invalidate instead of individual refetches to avoid cascading
-            // This will trigger refetches but React Query will dedupe concurrent requests
-            queryClient.invalidateQueries({ queryKey: billingKeys.all });
+            // Use centralized invalidation which includes deduplication
+            invalidateAccountState(queryClient, true);
         }
         prevIsActiveRef.current = isActive;
         // Only depend on isActive, session, and authLoading - not the refetch functions
@@ -670,15 +816,11 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
     };
 
     const getEffectiveCancellationDate = () => {
-        if (subscriptionData?.subscription?.cancel_at) {
-            const cancelAt = subscriptionData.subscription.cancel_at;
-            if (typeof cancelAt === 'number') {
-                return formatDateFromTimestamp(cancelAt);
-            }
-            return formatDate(cancelAt);
+        if (accountState?.subscription.cancellation_effective_date) {
+            return formatDate(accountState.subscription.cancellation_effective_date);
         }
-        if (subscriptionData?.subscription?.current_period_end) {
-            return formatDateFlexible(subscriptionData.subscription.current_period_end);
+        if (accountState?.subscription.current_period_end) {
+            return formatDateFlexible(accountState.subscription.current_period_end);
         }
         return 'N/A';
     };
@@ -697,7 +839,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         reactivateSubscriptionMutation.mutate();
     };
 
-    const isLoading = isLoadingSubscription || isLoadingBalance || authLoading;
+    const isLoading = isLoadingSubscription || authLoading;
     const error = subscriptionError ? (subscriptionError instanceof Error ? subscriptionError.message : 'Failed to load subscription data') : null;
 
     if (isLoading) {
@@ -739,11 +881,11 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         );
     }
 
-    const isSubscribed = subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing';
-    const isFreeTier = subscriptionData?.tier?.name === 'free';
-    const subscription = subscriptionData?.subscription;
-    const isCancelled = subscription?.cancel_at_period_end || subscription?.cancel_at || subscription?.canceled_at;
-    const canPurchaseCredits = subscriptionData?.credits?.can_purchase_credits || false;
+    const subStatus = accountState?.subscription.status;
+    const isSubscribed = subStatus === 'active' || subStatus === 'trialing';
+    const isFreeTier = accountState?.subscription.tier_key === 'free' || accountState?.subscription.tier_key === 'none';
+    const isCancelled = accountState?.subscription.is_cancelled || accountState?.subscription.cancel_at_period_end;
+    const canPurchaseCredits = accountState?.subscription.can_purchase_credits || false;
 
     return (
         <div className="p-6 space-y-8">
@@ -756,9 +898,9 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
 
                 {/* Plan Badge with Renewal Info - Right aligned */}
                 {!isFreeTier && planName && (
-                    <div className="flex items-center gap-2 text-right">
-                        {planIcon && (
-                            <>
+                    <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-2">
+                            {planIcon && (
                                 <div className="rounded-full py-0.5 flex items-center justify-center">
                                     <img 
                                         src={planIcon} 
@@ -767,62 +909,101 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                                         style={{ height: '24px', width: 'auto' }}
                                     />
                                 </div>
-                            </>
-                        )}
-                        {subscription?.current_period_end && (
-                            <span className="text-xs text-muted-foreground">
-                                Renews {formatDateFlexible(subscription.current_period_end)}
-                            </span>
+                            )}
+                            {accountState?.subscription.current_period_end && !hasScheduledChange && (
+                                <span className="text-xs text-muted-foreground">
+                                    Renews {formatDateFlexible(accountState.subscription.current_period_end)}
+                                </span>
+                            )}
+                        </div>
+                        {/* Scheduled Downgrade Info - inline below plan */}
+                        {hasScheduledChange && scheduledChange && (
+                            <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                                <CalendarClock className="h-3 w-3" />
+                                <span>
+                                    Changing to {getFrontendTierName(scheduledChange.target_tier.name)} on{' '}
+                                    {new Date(scheduledChange.effective_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                </span>
+                            </div>
                         )}
                     </div>
                 )}
             </div>
 
-            {/* Credit Breakdown - 3 Boxes Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Credit Breakdown - Grid adapts based on tier */}
+            <div className={cn(
+                "grid gap-4",
+                dailyCreditsInfo?.enabled 
+                    ? "grid-cols-2 md:grid-cols-4" 
+                    : "grid-cols-1 md:grid-cols-3"
+            )}>
                 {/* Total Available Credits */}
-                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
-                    <div className="flex flex-col gap-3">
+                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-5">
+                    <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-2">
-                            <CreditCard className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm text-muted-foreground">Total Available Credits</span>
+                            <Zap className="h-4 w-4 text-primary" />
+                            <span className="text-xs text-muted-foreground">Total Available</span>
                         </div>
                         <div>
-                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(totalCredits)}</div>
-                            <p className="text-xs text-muted-foreground">All credits</p>
+                            <div className="text-xl leading-none font-semibold">{formatCredits(totalCredits)}</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Monthly Credits */}
-                <div className="relative overflow-hidden rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-6">
-                    <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-orange-500" />
-                            <span className="text-sm text-muted-foreground">Monthly Credits</span>
-                        </div>
-                        <div>
-                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(expiringCredits)}</div>
-                            <p className="text-xs text-muted-foreground">
-                                {daysUntilRefresh !== null 
-                                    ? `Renewal in ${daysUntilRefresh} ${daysUntilRefresh === 1 ? 'day' : 'days'}`
-                                    : 'No renewal scheduled'
-                                }
-                            </p>
+                {/* Daily Credits - Only for free tier */}
+                {dailyCreditsInfo?.enabled && (
+                    <div className="relative overflow-hidden rounded-[18px] border border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-transparent p-5">
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                                <RotateCcw className="h-4 w-4 text-blue-500" />
+                                <span className="text-xs text-muted-foreground">Daily</span>
+                            </div>
+                            <div>
+                                <div className="text-xl leading-none font-semibold">{formatCredits(dailyCredits)}</div>
+                                <p className="text-[11px] text-blue-500/80 mt-1.5">
+                                    {hoursUntilDailyRefresh !== null 
+                                        ? `Refresh in ${hoursUntilDailyRefresh}h`
+                                        : 'Refreshes daily'
+                                    }
+                                </p>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
+
+                {/* Monthly Credits - For paid tiers OR expiring credits display */}
+                {(!dailyCreditsInfo?.enabled || monthlyCredits > 0) && (
+                    <div className="relative overflow-hidden rounded-[18px] border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-transparent p-5">
+                        <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-orange-500" />
+                                <span className="text-xs text-muted-foreground">Monthly</span>
+                            </div>
+                            <div>
+                                <div className="text-xl leading-none font-semibold">
+                                    {formatCredits(dailyCreditsInfo?.enabled ? monthlyCredits : (accountState?.credits.monthly || 0))}
+                                </div>
+                                <p className="text-[11px] text-orange-500/80 mt-1.5">
+                                    {hoursUntilDailyRefresh !== null 
+                                        ? `Refresh in ${hoursUntilDailyRefresh} ${hoursUntilDailyRefresh === 1 ? 'hour' : 'hours'}`
+                                        : 'No renewal scheduled'
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Extra Credits */}
-                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-6">
-                    <div className="flex flex-col gap-3">
+                <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-5">
+                    <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-2">
                             <Infinity className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm text-muted-foreground">Extra Credits</span>
+                            <span className="text-xs text-muted-foreground">Extra</span>
                         </div>
                         <div>
-                            <div className="text-2xl leading-none font-medium mb-1">{formatCredits(nonExpiringCredits)}</div>
-                            <p className="text-xs text-muted-foreground">Non-expiring</p>
+                            <div className="text-xl leading-none font-semibold">{formatCredits(nonExpiringCredits)}</div>
+                            <p className="text-[11px] text-muted-foreground mt-1.5">Non-expiring</p>
                         </div>
                     </div>
                 </div>
@@ -847,14 +1028,25 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                         Get Additional Credits
                     </Button>
                 )}
-                {!isFreeTier && planName && (
-                    <Button
-                        onClick={onOpenPlanModal}
-                        variant="outline"
-                        className="h-10"
-                    >
-                        Change Plan
-                    </Button>
+                {planName && (
+                    hasScheduledChange ? (
+                        <Button
+                            variant="outline"
+                            className="h-10 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                            disabled
+                        >
+                            <CalendarClock className="h-4 w-4 mr-2" />
+                            Downgrade Scheduled
+                        </Button>
+                    ) : (
+                        <Button
+                            onClick={onOpenPlanModal}
+                            variant="outline"
+                            className="h-10"
+                        >
+                            Change Plan
+                        </Button>
+                    )
                 )}
             </div>
 
@@ -871,12 +1063,11 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                 </Alert>
             )}
 
-            {scheduledChangesData?.has_scheduled_change && scheduledChangesData.scheduled_change && (
+            {hasScheduledChange && scheduledChange && (
                 <ScheduledDowngradeCard
-                    scheduledChange={scheduledChangesData.scheduled_change}
+                    scheduledChange={scheduledChange}
                     onCancel={() => {
                         refetchSubscription();
-                        refetchScheduledChanges();
                     }}
                 />
             )}
@@ -947,7 +1138,7 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                     <div className="space-y-4">
                         <p className="text-sm text-muted-foreground">
                             Are you sure you want to cancel your subscription? You'll continue to have access until{' '}
-                            {subscription?.current_period_end && formatDateFlexible(subscription.current_period_end)}.
+                            {accountState?.subscription.current_period_end && formatDateFlexible(accountState.subscription.current_period_end)}.
                         </p>
                         <div className="flex gap-2 justify-end">
                             <Button variant="outline" onClick={() => setShowCancelDialog(false)}>
@@ -971,7 +1162,6 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                 canPurchase={canPurchaseCredits}
                 onPurchaseComplete={() => {
                     refetchSubscription();
-                    refetchBalance();
                 }}
             />
         </div>

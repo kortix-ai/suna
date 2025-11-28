@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Zap, Server, Store, Settings } from 'lucide-react'
+import { Zap, Server, Store, Settings, Lock } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MCPConfigurationProps, MCPConfiguration as MCPConfigurationType } from './types';
 import { ConfiguredMcpList } from './configured-mcp-list';
@@ -10,6 +10,9 @@ import { ComposioToolsManager } from '../composio/composio-tools-manager';
 import { ToolsManager } from './tools-manager';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAccountState } from '@/hooks/billing';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { isLocalMode } from '@/lib/config';
 
 export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
   configuredMCPs,
@@ -28,6 +31,14 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
   const [selectedMCPForTools, setSelectedMCPForTools] = useState<MCPConfigurationType | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(agentId);
   const queryClient = useQueryClient();
+  
+  const { data: accountState } = useAccountState();
+  const { openPricingModal } = usePricingModalStore();
+  
+  const isFreeTier = accountState && (
+    accountState.subscription?.tier_key === 'free' ||
+    accountState.tier?.name === 'free'
+  ) && !isLocalMode();
 
   const handleAgentChange = (newAgentId: string | undefined) => {
     setSelectedAgentId(newAgentId);
@@ -103,8 +114,14 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
-          <Button onClick={() => setShowRegistryDialog(true)} size="sm" variant="default" className="gap-2" type="button">
-            <Store className="h-4 w-4" />
+          <Button 
+            onClick={() => setShowRegistryDialog(true)} 
+            size="sm" 
+            variant={isFreeTier ? "outline" : "default"} 
+            className={isFreeTier ? "gap-2 border-primary text-primary hover:bg-primary hover:text-primary-foreground" : "gap-2"} 
+            type="button"
+          >
+            {isFreeTier ? <Lock className="h-4 w-4" /> : <Store className="h-4 w-4" />}
             Browse Apps
           </Button>
           <Button onClick={() => setShowCustomDialog(true)} size="sm" variant="outline" className="gap-2" type="button">
@@ -155,6 +172,8 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
                 queryClient.invalidateQueries({ queryKey: ['agents', 'detail', selectedAgentId] });
               }
             }}
+            isBlocked={isFreeTier}
+            onBlockedClick={() => openPricingModal()}
           />
         </DialogContent>
       </Dialog>

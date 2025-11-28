@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface KbData {
   files?: any[];
@@ -20,15 +20,19 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractKbData(toolData: ParsedToolData): KbData {
-  const { result, arguments: args } = toolData;
+export function extractKbData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): KbData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => { try { return JSON.parse(toolCall.arguments); } catch { return {}; } })()
+      : {};
   
   let data: any = {};
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       data = output;
@@ -43,7 +47,7 @@ export function extractKbData(toolData: ParsedToolData): KbData {
     items: data.items,
     message: data.message || data.status,
     path: args?.path || data.path,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

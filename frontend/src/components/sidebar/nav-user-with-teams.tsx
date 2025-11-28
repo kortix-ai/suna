@@ -30,7 +30,7 @@ import {
   TrendingDown,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
-import { useSubscription } from '@/hooks/billing';
+import { useAccountState } from '@/hooks/billing';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -87,7 +87,7 @@ export function NavUserWithTeams({
   const router = useRouter();
   const { isMobile } = useSidebar();
   const { data: accounts } = useAccounts();
-  const { data: subscriptionData } = useSubscription({ enabled: true });
+  const { data: accountState } = useAccountState({ enabled: true });
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showPlanModal, setShowPlanModal] = React.useState(false);
@@ -95,10 +95,9 @@ export function NavUserWithTeams({
   const { theme, setTheme } = useTheme();
 
   // Check if user is on free tier
-  const isFreeTier = subscriptionData?.tier_key === 'free' ||
-    subscriptionData?.tier?.name === 'free' ||
-    subscriptionData?.plan_name === 'free' ||
-    !subscriptionData?.tier_key;
+  const isFreeTier = accountState?.subscription?.tier_key === 'free' ||
+    accountState?.tier?.name === 'free' ||
+    !accountState?.subscription?.tier_key;
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(

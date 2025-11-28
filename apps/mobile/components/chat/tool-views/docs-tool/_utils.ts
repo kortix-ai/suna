@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface DocMetadata {
   description?: string;
@@ -39,21 +39,21 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractDocsData(toolData: ParsedToolData): DocsToolData {
-  const { result } = toolData;
+export function extractDocsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DocsToolData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let data: any = null;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     data = output;
-    data.success = result.success ?? true;
+    data.success = toolResult.success ?? true;
   } else {
     data = {
-      success: result.success ?? false,
+      success: toolResult?.success ?? false,
       error: 'No output data'
     };
   }

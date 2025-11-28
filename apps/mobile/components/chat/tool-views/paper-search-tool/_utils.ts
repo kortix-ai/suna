@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface PaperSearchResult {
   id: string;
@@ -32,17 +32,17 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractPaperSearchData(toolData: ParsedToolData): PaperSearchData {
-  const { arguments: args, result } = toolData;
+export function extractPaperSearchData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): PaperSearchData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
   
   let query = args?.query || null;
   let results: PaperSearchResult[] = [];
   let total_results = 0;
   
-  if (result.output) {
-    const output = typeof result.output === 'string' 
-      ? parseContent(result.output) 
-      : result.output;
+  if (toolResult?.output) {
+    const output = typeof toolResult.output === 'string' 
+      ? parseContent(toolResult.output) 
+      : toolResult.output;
     
     if (output && typeof output === 'object') {
       query = query || output.query || null;
@@ -70,6 +70,6 @@ export function extractPaperSearchData(toolData: ParsedToolData): PaperSearchDat
     query,
     total_results,
     results,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }

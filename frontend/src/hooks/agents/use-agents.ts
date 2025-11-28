@@ -4,9 +4,6 @@ import { agentKeys } from './keys';
 import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, getThreadAgent, updateAgent, ThreadAgentResponse } from './utils';
 import { useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { AgentCountLimitError, CustomWorkerLimitError } from '@/lib/api/errors';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { useTranslations } from 'next-intl';
 
 // Default params for agent queries - standardize to avoid duplicate fetches
 const DEFAULT_AGENT_PARAMS: AgentsParams = {
@@ -141,9 +138,10 @@ export const useCreateAgent = () => {
       toast.success('Worker created successfully');
     },
     onError: async (error) => {
-      const { AgentCountLimitError } = await import('@/lib/api/errors');
-      if (error instanceof AgentCountLimitError) {
-        return;
+      // Use centralized handler for billing errors
+      const { handleBillingError } = await import('@/lib/error-handler');
+      if (handleBillingError(error)) {
+        return; // Billing error was handled (pricing modal opened)
       }
       console.error('Error creating agent:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to create agent');
@@ -152,10 +150,7 @@ export const useCreateAgent = () => {
 };
 
 export const useCreateNewAgent = () => {
-  const router = useRouter();
   const createAgentMutation = useCreateAgent();
-  const pricingModalStore = usePricingModalStore();
-  const tBilling = useTranslations('billing');
 
   return useMutation({
     mutationFn: async (_: void) => {
@@ -172,13 +167,10 @@ export const useCreateNewAgent = () => {
       const newAgent = await createAgentMutation.mutateAsync(defaultAgentData);
       return newAgent;
     },
-    onError: (error) => {
-      if (error instanceof AgentCountLimitError || error instanceof CustomWorkerLimitError) {
-        pricingModalStore.openPricingModal({ 
-          isAlert: true,
-          alertTitle: `${tBilling('reachedLimit')} ${tBilling('workerLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-        });
-      }
+    onError: async (error) => {
+      // Use centralized handler for billing errors
+      const { handleBillingError } = await import('@/lib/error-handler');
+      handleBillingError(error);
     },
   });
 };

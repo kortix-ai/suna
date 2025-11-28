@@ -218,6 +218,10 @@ class CheckoutHandler:
                         'status': 'converted'
                     }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
+                    # Invalidate account-state cache to refresh subscription and limits
+                    from core.billing.shared.cache_utils import invalidate_account_state_cache
+                    await invalidate_account_state_cache(account_id)
+                    
                     return
 
         logger.info(f"[WEBHOOK CHECKOUT] Checking converting_from_trial metadata: {session.get('metadata', {}).get('converting_from_trial')}")
@@ -315,6 +319,20 @@ class CheckoutHandler:
                     session.get('customer'), subscription['id'], account_id
                 )
                 
+                # Cancel old subscription if this was a trial conversion via checkout
+                cancel_after_checkout = subscription.get('metadata', {}).get('cancel_after_checkout')
+                if cancel_after_checkout:
+                    logger.info(f"[TRIAL CONVERSION] Cancelling old subscription {cancel_after_checkout} after checkout completion")
+                    try:
+                        await StripeAPIWrapper.cancel_subscription(cancel_after_checkout, cancel_immediately=True)
+                        logger.info(f"[TRIAL CONVERSION] ✅ Successfully cancelled old subscription {cancel_after_checkout}")
+                    except Exception as e:
+                        logger.warning(f"[TRIAL CONVERSION] Could not cancel old subscription {cancel_after_checkout}: {e}")
+                
+                # Invalidate account-state cache to refresh subscription and limits
+                from core.billing.shared.cache_utils import invalidate_account_state_cache
+                await invalidate_account_state_cache(account_id)
+                
                 logger.info(f"[TRIAL CONVERSION] ✅ Completed trial conversion for {account_id}")
             finally:
                 await lock.release()
@@ -384,6 +402,20 @@ class CheckoutHandler:
                         'status': 'active'
                     }, on_conflict='account_id').execute()
                     
+                    # Cancel old subscription if any was marked for cancellation
+                    cancel_after_checkout = subscription.get('metadata', {}).get('cancel_after_checkout')
+                    if cancel_after_checkout:
+                        logger.info(f"[WEBHOOK] Cancelling old subscription {cancel_after_checkout} after trial start")
+                        try:
+                            await StripeAPIWrapper.cancel_subscription(cancel_after_checkout, cancel_immediately=True)
+                            logger.info(f"[WEBHOOK] ✅ Successfully cancelled old subscription {cancel_after_checkout}")
+                        except Exception as e:
+                            logger.warning(f"[WEBHOOK] Could not cancel old subscription {cancel_after_checkout}: {e}")
+                    
+                    # Invalidate account-state cache
+                    from core.billing.shared.cache_utils import invalidate_account_state_cache
+                    await invalidate_account_state_cache(account_id)
+                    
                     logger.info(f"[WEBHOOK] ✅ Trial activated for account {account_id} via checkout.session.completed - granted ${TRIAL_CREDITS} credits")
                 finally:
                     await lock.release()
@@ -425,7 +457,14 @@ class CheckoutHandler:
             
             if credit_account.data:
                 current = credit_account.data[0]
-                if current.get('stripe_subscription_id') == subscription_id and current.get('tier') == tier_info.name:
+                current_subscription_id = current.get('stripe_subscription_id')
+                
+                # Check if this is an upgrade via checkout (old subscription was cancelled, new one created)
+                upgrade_from_subscription = session.get('metadata', {}).get('upgrade_from_subscription')
+                if upgrade_from_subscription and current_subscription_id == upgrade_from_subscription:
+                    logger.info(f"[WEBHOOK DEFAULT] Processing upgrade via checkout: {upgrade_from_subscription} -> {subscription_id}")
+                    # This is an upgrade - proceed with processing
+                elif current_subscription_id == subscription_id and current.get('tier') == tier_info.name:
                     logger.info(f"[WEBHOOK] Subscription already set up for {account_id}, skipping")
                     return
                 
@@ -511,11 +550,26 @@ class CheckoutHandler:
                 
                 await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
                 
+                # Invalidate account-state cache to refresh subscription and limits
+                from core.billing.shared.cache_utils import invalidate_account_state_cache
+                await invalidate_account_state_cache(account_id)
+                
                 if subscription.get('metadata', {}).get('requires_cleanup') == 'true':
                     logger.info(f"[WEBHOOK] Cleanup required for account {account_id}, removing duplicate subscriptions")
                     await CheckoutHandler._cleanup_duplicate_subscriptions(
                         session.get('customer'), subscription_id, account_id
                     )
+                
+                # Cancel old subscription if this was a trial/free tier conversion
+                cancel_after_checkout = subscription.get('metadata', {}).get('cancel_after_checkout')
+                if cancel_after_checkout:
+                    logger.info(f"[WEBHOOK DEFAULT] Cancelling old subscription {cancel_after_checkout} after checkout completion")
+                    try:
+                        from core.billing.external.stripe import StripeAPIWrapper
+                        await StripeAPIWrapper.cancel_subscription(cancel_after_checkout, cancel_immediately=True)
+                        logger.info(f"[WEBHOOK DEFAULT] ✅ Successfully cancelled old subscription {cancel_after_checkout}")
+                    except Exception as e:
+                        logger.warning(f"[WEBHOOK DEFAULT] Could not cancel old subscription {cancel_after_checkout}: {e}")
             finally:
                 await lock.release()
 

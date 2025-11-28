@@ -4,4 +4,5 @@ export { AgentProvider, useAgent } from './AgentContext';
 export { BillingProvider, useBillingContext, useHasCredits, useSubscriptionTier } from './BillingContext';
 export { AdvancedFeaturesProvider, useAdvancedFeatures } from './AdvancedFeaturesContext';
 export { TrackingProvider, useTracking } from './TrackingContext';
+export { PresenceProvider, usePresenceContext } from './PresenceContext';
 

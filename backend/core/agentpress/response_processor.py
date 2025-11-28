@@ -1907,19 +1907,18 @@ class ResponseProcessor:
                 logger.debug(f"Storing tool_call_id {tool_call_id} in tool result metadata for matching")
             # ---
             
-            # Check if this is a native function call vs XML tool call
-            # Use the "source" field which is set during tool call creation
-            # Native tool calls: source == "native" 
-            # XML tool calls: source == "xml"
-            # If source is missing, it's likely a legacy call - treat as native for safety
-            source = tool_call.get("source")
-            if source is None:
-                logger.warning(f"Tool call missing 'source' field - tool_call_id: {tool_call.get('id')}, function: {tool_call.get('function_name')}")
-                # Try to infer from structure - if it has the native OpenAI format, it's native
-                source = "native" if isinstance(tool_call.get("function"), dict) else "xml"
-                logger.warning(f"Inferred source as: {source}")
+            # Determine tool call format DETERMINISTICALLY from global config
+            # The config settings are the single source of truth - no inference needed
+            # AGENT_NATIVE_TOOL_CALLING=True means ALL tool calls are native format
+            # AGENT_XML_TOOL_CALLING=True means ALL tool calls are XML format
+            is_native = bool(global_config.AGENT_NATIVE_TOOL_CALLING)
             
-            is_native = (source == "native")
+            # Log for debugging - the tool_call's source field should match config
+            tool_call_source = tool_call.get("source")
+            if tool_call_source and tool_call_source != ("native" if is_native else "xml"):
+                logger.warning(f"Tool call source '{tool_call_source}' doesn't match config (native={is_native}). Using config setting.")
+            
+            logger.debug(f"🔍 _add_tool_result: Using {'native' if is_native else 'xml'} format based on config (AGENT_NATIVE_TOOL_CALLING={global_config.AGENT_NATIVE_TOOL_CALLING})")
             if is_native:
                 # Format as a proper tool message according to OpenAI spec
                 # Extract function_name from either format

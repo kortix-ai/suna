@@ -1,4 +1,4 @@
-import type { ParsedToolData } from '@/lib/utils/tool-parser';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface CompleteToolData {
   text: string | null;
@@ -18,8 +18,18 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractCompleteData(toolData: ParsedToolData): CompleteToolData {
-  const { arguments: args, result } = toolData;
+export function extractCompleteData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CompleteToolData {
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
   
   let text = args?.text || args?.summary || null;
   let attachments: string[] = [];
@@ -37,15 +47,15 @@ export function extractCompleteData(toolData: ParsedToolData): CompleteToolData 
     follow_up_prompts = args.follow_up_prompts.filter((p: string) => p && p.trim().length > 0);
   }
   
-  if (result.output && typeof result.output === 'string') {
-    text = text || result.output;
+  if (toolResult?.output && typeof toolResult.output === 'string') {
+    text = text || toolResult.output;
   }
   
   return {
     text,
     attachments,
     follow_up_prompts,
-    success: result.success ?? true
+    success: toolResult?.success ?? true
   };
 }
 

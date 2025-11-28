@@ -757,5 +757,33 @@
     "saveChanges": "Save Changes",
     "nameUpdated": "Your name has been updated successfully",
     "failedToUpdate": "Failed to update name. Please try again."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "description": "Manage how you receive notifications",
+    "preferences": "Notification Preferences",
+    "channels": "Notification Channels",
+    "emailNotifications": "Email Notifications",
+    "emailDescription": "Receive notifications via email",
+    "pushNotifications": "Push Notifications",
+    "pushDescription": "Get notified about agent runs, task completions, and important updates",
+    "inAppNotifications": "In-App Notifications",
+    "inAppDescription": "See notifications within the app",
+    "deviceTokens": "Registered Devices",
+    "noDevices": "No devices registered",
+    "deviceRegistered": "This device is registered for push notifications",
+    "registerDevice": "Register This Device",
+    "unregisterDevice": "Unregister Device",
+    "settingsUpdated": "Notification preferences updated",
+    "settingsFailed": "Failed to update preferences",
+    "deviceRegisteredSuccess": "Device registered successfully",
+    "deviceRegistrationFailed": "Failed to register device",
+    "deviceUnregisteredSuccess": "Device unregistered successfully",
+    "deviceUnregistrationFailed": "Failed to unregister device",
+    "permissionRequired": "Enable Notifications",
+    "permissionMessage": "To receive notifications about your agent runs, task completions, and important updates, please enable notifications in your device settings.",
+    "openSettings": "Open Settings",
+    "enableAll": "Enable All",
+    "disableAll": "Disable All"
   }
 }

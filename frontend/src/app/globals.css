@@ -1012,3 +1012,25 @@
 .dark .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
   background: oklch(0.7 0 0 / 0.3);
 }
+
+.novu-inbox-popover {
+  max-width: 420px;
+}
+
+@media (max-width: 768px) {
+  .novu-inbox-popover {
+    max-width: 380px;
+  }
+}
+
+@media (max-width: 480px) {
+  .novu-inbox-popover {
+    max-width: 320px;
+  }
+}
+
+@media (max-width: 320px) {
+  .novu-inbox-popover {
+    max-width: 280px;
+  }
+}

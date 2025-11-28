@@ -8,8 +8,8 @@ import { extractCompleteData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './TaskCompletedFeedback';
 
-export function CompleteToolView({ toolData, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
-  const { text, attachments, follow_up_prompts, success } = extractCompleteData(toolData);
+export function CompleteToolView({ toolCall, toolResult, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
+  const { text, attachments, follow_up_prompts, success } = extractCompleteData({ toolCall, toolResult });
   const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
 
   if (isStreaming) {
@@ -30,35 +30,7 @@ export function CompleteToolView({ toolData, isStreaming = false, project, assis
 
   return (
     <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 py-4 gap-6">
-        <View className="flex-row items-center gap-3">
-          <View className="bg-emerald-500/10 rounded-2xl items-center justify-center" style={{ width: 48, height: 48 }}>
-            <Icon as={CheckCircle2} size={24} className="text-emerald-500" />
-          </View>
-          <View className="flex-1">
-            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-              Task Complete
-            </Text>
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              Completed
-            </Text>
-          </View>
-          <View className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full ${
-            success ? 'bg-emerald-500/10' : 'bg-destructive/10'
-          }`}>
-            <Icon 
-              as={success ? CheckCircle2 : AlertCircle} 
-              size={12} 
-              className={success ? 'text-emerald-500' : 'text-destructive'} 
-            />
-            <Text className={`text-xs font-roobert-medium ${
-              success ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'
-            }`}>
-              {success ? 'Success' : 'Failed'}
-            </Text>
-          </View>
-        </View>
-
+      <View className="px-6 gap-6">
         {!text && attachments.length === 0 && success && (
           <View className="py-8 items-center">
             <View className="relative">
@@ -106,7 +78,7 @@ export function CompleteToolView({ toolData, isStreaming = false, project, assis
         {/* Task Completed Feedback */}
         {success && (
           <TaskCompletedFeedback
-            taskSummary={text}
+            taskSummary={text || undefined}
             followUpPrompts={follow_up_prompts.length > 0 ? follow_up_prompts : undefined}
             threadId={assistantMessage?.thread_id}
             messageId={assistantMessage?.message_id}

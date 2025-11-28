@@ -92,7 +92,12 @@ export const useImportAgentFromJson = () => {
         toast.success('Agent imported successfully!');
       }
     },
-    onError: (error) => {
+    onError: async (error) => {
+      // Use centralized handler for billing errors
+      const { handleBillingError } = await import('@/lib/error-handler');
+      if (handleBillingError(error)) {
+        return; // Billing error was handled (pricing modal opened)
+      }
       toast.error(error.message);
     },
   });

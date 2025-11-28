@@ -15,6 +15,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { AgentProvider } from '@/contexts/AgentContext';
 import { AdvancedFeaturesProvider } from '@/contexts/AdvancedFeaturesContext';
+import { PresenceProvider } from '@/contexts/PresenceContext';
 
 interface AppProvidersProps {
   children: React.ReactNode;
@@ -35,13 +36,15 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <AgentProvider>
-          <LanguageProvider>
-            <AdvancedFeaturesProvider>
-              {children}
-            </AdvancedFeaturesProvider>
-          </LanguageProvider>
-        </AgentProvider>
+        <PresenceProvider>
+          <AgentProvider>
+            <LanguageProvider>
+              <AdvancedFeaturesProvider>
+                {children}
+              </AdvancedFeaturesProvider>
+            </LanguageProvider>
+          </AgentProvider>
+        </PresenceProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

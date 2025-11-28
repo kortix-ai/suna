@@ -6,6 +6,7 @@ from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
 from ..shared.config import is_model_allowed
+from ..shared.cache_utils import invalidate_account_state_cache
 
 class BillingIntegration:
     @staticmethod
@@ -139,6 +140,8 @@ class BillingIntegration:
         
         if result.get('success'):
             logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', result.get('new_balance', 0)):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
+            # Invalidate account state cache after successful deduction
+            await invalidate_account_state_cache(account_id)
         else:
             logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {result.get('error')}")
         
@@ -163,12 +166,15 @@ class BillingIntegration:
         is_expiring: bool = True,
         **kwargs
     ) -> Dict:
-        return await credit_manager.add_credits(
+        result = await credit_manager.add_credits(
             account_id=account_id,
             amount=amount,
             description=description,
             is_expiring=is_expiring,
             **kwargs
         )
+        # Invalidate account state cache after adding credits
+        await invalidate_account_state_cache(account_id)
+        return result
 
 billing_integration = BillingIntegration()

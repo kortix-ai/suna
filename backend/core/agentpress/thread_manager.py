@@ -217,8 +217,15 @@ class ThreadManager:
                 if isinstance(metadata, dict) and metadata.get('compressed'):
                     compressed_content = metadata.get('compressed_content')
                     if compressed_content:
-                        content = compressed_content
-                        is_compressed = True
+                        # New format: compressed_content is a full message dict
+                        if isinstance(compressed_content, dict):
+                            compressed_content['message_id'] = item['message_id']
+                            messages.append(compressed_content)
+                            continue  # Skip regular parsing below
+                        else:
+                            # Legacy format: compressed_content is a plain string
+                            content = compressed_content
+                            is_compressed = True
                         # logger.debug(f"Using compressed content for message {item['message_id']}")
                 
                 # Parse content and add message_id
@@ -236,15 +243,16 @@ class ThreadManager:
                         
                         messages.append(parsed_item)
                     except json.JSONDecodeError:
-                        # If compressed, content is a plain string (not JSON) - this is expected
+                        # If compressed (legacy string format), assume user role (not ideal but backwards compat)
                         if is_compressed:
+                            logger.warning(f"Using legacy compressed format for message {item['message_id']} - assuming user role")
                             messages.append({
                                 'role': 'user',
                                 'content': content,
                                 'message_id': item['message_id']
                             })
                         else:
-                            logger.error(f"Failed to parse message: {content[:100]}")
+                            logger.error(f"Failed to parse message: {content[:100] if content else 'empty'}")
                 elif isinstance(content, dict):
                     # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
@@ -388,18 +396,11 @@ class ThreadManager:
                         usage = llm_end_content.get('usage', {})
                         stored_model = llm_end_content.get('model', '')
                         
-                        # Normalize model names for comparison (strip any provider prefix like anthropic/, openai/, google/, etc.)
-                        def normalize_model_name(model: str) -> str:
-                            """Strip provider prefix (e.g., 'anthropic/claude-3' -> 'claude-3')"""
-                            return model.split('/')[-1] if '/' in model else model
+                        logger.debug(f"Fast check data - stored model: {stored_model}, current model: {llm_model}")
                         
-                        normalized_stored = normalize_model_name(stored_model)
-                        normalized_current = normalize_model_name(llm_model)
-                        
-                        logger.debug(f"Fast check data - stored: {stored_model}, current: {llm_model}, match: {normalized_stored == normalized_current}")
-                        
-                        # Only use fast path if model matches and we have stored tokens
-                        if usage and normalized_stored == normalized_current:
+                        # Use fast path if we have usage data
+                        # Token counts are similar enough for compression decisions even if model changed
+                        if usage:
                             # Use total_tokens (includes prev completion) for better accuracy
                             last_total_tokens = int(usage.get('total_tokens', 0))
                             
@@ -470,7 +471,7 @@ class ThreadManager:
                                 need_compression = True
                                 # Will fetch and compress below
                         else:
-                            logger.debug(f"Fast check skipped - usage: {bool(usage)}, model_match: {normalized_stored == normalized_current}")
+                            logger.debug(f"Fast check skipped - no usage data available")
                     else:
                         logger.debug(f"Fast check skipped - no last llm_response_end message found")
                 except Exception as e:
@@ -584,6 +585,34 @@ class ThreadManager:
             # Note: We don't log token count here because cached blocks give inaccurate counts
             # The LLM's usage.prompt_tokens (reported after the call) is the accurate source of truth
             import time
+            
+            # CRITICAL: Validate tool call pairing before sending to LLM
+            # This catches any orphaned tool results that would cause Bedrock errors
+            validation_start = time.time()
+            
+            # Ensure we have a ContextManager instance for validation (may not exist if compression was skipped)
+            if 'context_manager' not in locals():
+                context_manager = ContextManager()
+            
+            is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
+            if not is_valid:
+                logger.warning(f"⚠️ PRE-SEND VALIDATION: Found pairing issues - attempting repair")
+                logger.warning(f"⚠️ Orphaned tool_results: {orphaned_ids}")
+                logger.warning(f"⚠️ Unanswered tool_calls: {unanswered_ids}")
+                
+                # Attempt to repair by fixing both directions
+                prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+                
+                # Re-validate after repair
+                is_valid_after, orphans_after, unanswered_after = context_manager.validate_tool_call_pairing(prepared_messages)
+                if not is_valid_after:
+                    logger.error(f"🚨 CRITICAL: Could not repair message structure. Orphaned: {len(orphans_after)}, Unanswered: {len(unanswered_after)}")
+                else:
+                    logger.info(f"✅ Message structure repaired successfully")
+            else:
+                logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
+            logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
+            
             llm_call_start = time.time()
             logger.info(f"📤 Sending {len(prepared_messages)} prepared messages to LLM")
 

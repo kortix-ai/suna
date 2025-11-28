@@ -405,7 +405,7 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
         }
 
 
-async def check_custom_worker_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
     try:
         logger.debug(f"Checking custom worker limit for account {account_id}")
         

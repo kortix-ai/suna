@@ -23,6 +23,8 @@ import { TerminateCommandToolView } from './terminate-command-tool/TerminateComm
 import { AskToolView } from './ask-tool/AskToolView';
 import { CompleteToolView } from './complete-tool/CompleteToolView';
 import { DataProviderToolView } from './data-provider-tool/DataProviderToolView';
+import { DataProviderEndpointsToolView } from './data-provider-tool/DataProviderEndpointsToolView';
+import { ExecuteDataProviderCallToolView } from './data-provider-tool/ExecuteDataProviderCallToolView';
 import { DocumentParserToolView } from './document-parser-tool/DocumentParserToolView';
 import { DocsToolView } from './docs-tool/DocsToolView';
 import { PeopleSearchToolView } from './people-search-tool/PeopleSearchToolView';
@@ -47,7 +49,10 @@ import { UploadFileToolView } from './upload-file-tool/UploadFileToolView';
 import { ExpandMessageToolView } from './expand-message-tool/ExpandMessageToolView';
 import { DesignerToolView } from './designer-tool/DesignerToolView';
 import { ImageEditToolView } from './image-edit-tool/ImageEditToolView';
+import { LoadImageToolView } from './load-image-tool/LoadImageToolView';
 import { PresentationToolView } from './presentation-tool/PresentationToolView';
+import { ListPresentationsToolView } from './list-presentations-tool/ListPresentationsToolView';
+import { ExportToolView } from './export-tool/ExportToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -86,6 +91,8 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'scrape-webpage': WebScrapeToolView,
   
   // Browser operations
+  'browser-act': BrowserToolView,
+  'browser_act': BrowserToolView,
   'browser-navigate-to': BrowserToolView,
   'browser-click-element': BrowserToolView,
   'browser-input-text': BrowserToolView,
@@ -113,8 +120,8 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'complete': CompleteToolView,
   
   // Data provider tools
-  'execute-data-provider-call': DataProviderToolView,
-  'get-data-provider-endpoints': DataProviderToolView,
+  'execute-data-provider-call': ExecuteDataProviderCallToolView,
+  'get-data-provider-endpoints': DataProviderEndpointsToolView,
   
   // Research tools
   'people-search': PeopleSearchToolView,
@@ -200,16 +207,24 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'designer-create-or-edit': DesignerToolView,
   'designer_create_or_edit': DesignerToolView,
   'image-edit-or-generate': ImageEditToolView,
+  'image_edit_or_generate': ImageEditToolView,
+  'load-image': LoadImageToolView,
+  'load_image': LoadImageToolView,
   
   // Presentation tools
   'create-presentation-outline': PresentationToolView,
   'list-presentation-templates': PresentationToolView,
   'create-slide': PresentationToolView,
   'list-slides': PresentationToolView,
-  'list-presentations': PresentationToolView,
+  'list-presentations': ListPresentationsToolView,
+  'list_presentations': ListPresentationsToolView,
   'delete-slide': PresentationToolView,
   'delete-presentation': PresentationToolView,
   'validate-slide': PresentationToolView,
+  'export-to-pdf': ExportToolView,
+  'export_to_pdf': ExportToolView,
+  'export-to-pptx': ExportToolView,
+  'export_to_pptx': ExportToolView,
   
   // Document tools
   'parse-document': DocumentParserToolView,
