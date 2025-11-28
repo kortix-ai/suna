@@ -17,71 +17,36 @@ import { GenericToolView } from '../GenericToolView';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useImageContent } from '@/hooks/files';
 
-function SafeImage({ src, alt, filePath, className }: { src: string; alt: string; filePath: string; className?: string }) {
-  const [imgSrc, setImgSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [attempts, setAttempts] = useState(0);
+function SafeImage({ src, alt, filePath, className, sandboxId, project }: { 
+  src: string; 
+  alt: string; 
+  filePath: string; 
+  className?: string;
+  sandboxId?: string;
+  project?: ToolViewProps['project'];
+}) {
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const { session } = useAuth();
-
-  useEffect(() => {
-    const setupAuthenticatedImage = async () => {
-      if (src.includes('/sandboxes/') && src.includes('/files/content')) {
-        try {
-          const response = await fetch(src, {
-            headers: {
-              'Authorization': `Bearer ${session?.access_token}`
-            }
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to load image: ${response.status} ${response.statusText}`);
-          }
-
-          const blob = await response.blob();
-          const url = URL.createObjectURL(blob);
-          setImgSrc(url);
-        } catch (err) {
-          console.error('Error loading authenticated image:', err);
-          setError(true);
-        }
-      } else {
-        setImgSrc(src);
-      }
-    };
-
-    setupAuthenticatedImage();
-    setError(false);
-    setAttempts(0);
-
-    return () => {
-      if (imgSrc && imgSrc.startsWith('blob:')) {
-        URL.revokeObjectURL(imgSrc);
-      }
-    };
-  }, [src, session?.access_token]);
-
-  const handleError = () => {
-    if (attempts < 3) {
-      setAttempts(attempts + 1);
-      if (attempts === 0) {
-        setImgSrc(filePath);
-      } else if (attempts === 1) {
-        if (!filePath.startsWith('/')) {
-          setImgSrc(`/${filePath}`);
-        } else {
-          setError(true);
-        }
-      } else {
-        setError(true);
-      }
-    } else {
-      setError(true);
+  
+  // Use our robust retry hook instead of custom fetch
+  const {
+    data: imageUrl,
+    isLoading,
+    error,
+    failureCount,
+  } = useImageContent(
+    sandboxId,
+    filePath,
+    {
+      enabled: !!sandboxId && !!filePath,
     }
-  };
-
+  );
+  
+  // Fallback to direct URL if no sandbox ID
+  const finalImageUrl = imageUrl || src;
+  
   const handleZoomToggle = () => {
     setIsZoomed(!isZoomed);
     setZoomLevel(1);
@@ -100,17 +65,33 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
 
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!imgSrc) return;
+    if (!finalImageUrl) return;
 
     const link = document.createElement('a');
-    link.href = imgSrc;
+    link.href = finalImageUrl;
     link.download = filePath.split('/').pop() || 'image';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  if (error) {
+  // Show loading state with retry counter
+  if (isLoading) {
+    return (
+      <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+        <p className="text-xs text-muted-foreground">Loading image...</p>
+        {failureCount > 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Retrying... (attempt {failureCount + 1})
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Only show error after retries exhausted (15 attempts)
+  if (error && !isLoading && failureCount >= 15) {
     return (
       <div className="flex flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-rose-50 to-rose-100 dark:from-rose-950/30 dark:to-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 shadow-inner">
         <div className="bg-white dark:bg-black/30 p-3 rounded-full shadow-md mb-3">
@@ -124,21 +105,9 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
     );
   }
 
-  if (!imgSrc) {
-    return (
-      <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
-        <div className="space-y-2 w-full max-w-md py-8">
-          <Skeleton className="h-8 w-8 rounded-full mx-auto" />
-          <Skeleton className="h-4 w-48 mx-auto" />
-          <Skeleton className="h-64 w-full rounded-lg mt-4" />
-          <div className="flex justify-center gap-2 mt-4">
-            <Skeleton className="h-8 w-8 rounded-full" />
-            <Skeleton className="h-8 w-8 rounded-full" />
-            <Skeleton className="h-8 w-8 rounded-full" />
-          </div>
-        </div>
-      </div>
-    );
+  // Don't render if no image URL yet
+  if (!finalImageUrl) {
+    return null;
   }
 
   return (
@@ -149,7 +118,7 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
       )}>
         <div className="relative flex items-center justify-center">
           <img
-            src={imgSrc}
+            src={finalImageUrl}
             alt={alt}
             onClick={handleZoomToggle}
             className={cn(
@@ -162,7 +131,6 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
             style={{
               transform: isZoomed ? `scale(${zoomLevel})` : 'none',
             }}
-            onError={handleError}
           />
         </div>
       </div>
@@ -393,6 +361,8 @@ export function SeeImageToolView({
                 src={imageUrl}
                 alt={description || filename}
                 filePath={filePath}
+                sandboxId={project?.sandbox?.id}
+                project={project}
                 className="max-w-full max-h-[500px] object-contain"
               />
             </div>
