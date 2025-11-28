@@ -24,7 +24,14 @@ async def revenuecat_webhook(request: Request) -> Dict:
 @router.post("/revenuecat/sync")
 async def sync_revenuecat_customer(request: Request) -> Dict:
     try:
-        result = await revenuecat_service.sync_customer_subscription(request)
+        from ..external.revenuecat.services import SyncService
+        from core.auth import get_user_id_from_request
+        
+        body = await request.json()
+        account_id = await get_user_id_from_request(request)
+        customer_info = body.get('customer_info', {})
+        
+        result = await SyncService.sync_customer_info(account_id, customer_info)
         return result
     except Exception as e:
         logger.error(f"[REVENUECAT] Error syncing customer: {e}")
