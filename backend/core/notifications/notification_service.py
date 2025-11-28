@@ -277,30 +277,27 @@ class NotificationService:
             
             email = None
             name = None
+            user_metadata = {}
             
             try:
-                metadata_result = await client.rpc('get_user_metadata', {'user_id': account_id}).execute()
-                if metadata_result.data:
-                    metadata = metadata_result.data
-                    if isinstance(metadata, dict):
-                        email = metadata.get('email')
-                    elif isinstance(metadata, (list, tuple)) and len(metadata) > 0:
-                        metadata = metadata[0]
-                        if isinstance(metadata, dict):
-                            email = metadata.get('email')
+                user = await client.auth.admin.get_user_by_id(account_id)
+                if user and user.user:
+                    email = user.user.email
+                    user_metadata = user.user.user_metadata or {}
+                    
+                    name = (
+                        user_metadata.get('full_name') or
+                        user_metadata.get('name') or
+                        user_metadata.get('display_name') or
+                        (email.split('@')[0] if email else None)
+                    )
+                    
             except Exception as e:
-                logger.error(f"Error getting user metadata via RPC: {str(e)}")
+                logger.error(f"Error getting user {str(e)}")
             
-            if isinstance(email, (list, tuple)):
-                email = email[0] if len(email) > 0 else None
-            email = str(email) if email else None
-            
-            if not name and email:
-                name = email.split('@')[0]
-            
-            if isinstance(name, (list, tuple)):
-                name = name[0] if len(name) > 0 else None
-            name = str(name) if name else None
+            if not email:
+                logger.warning(f"[WELCOME_EMAIL] No email found for user {account_id}")
+                return {"success": False, "error": "No email found for user"}
             
             logger.info(f"[WELCOME_EMAIL] Triggering for {account_id}: email={email}, name={name}")
 
@@ -490,17 +487,23 @@ class NotificationService:
                 user = user_response.user
                 email = user.email
                 metadata = user.user_metadata or {}
-                name = metadata.get('full_name') or metadata.get('name') or (email.split('@')[0] if email else None)
+                name = (
+                    metadata.get('full_name') or
+                    metadata.get('name') or
+                    metadata.get('display_name') or
+                    (email.split('@')[0] if email else None)
+                )
                 
                 return {
                     "email": email,
                     "name": name
                 }
             
+            logger.warning(f"No user found for account_id: {account_id}")
             return {}
             
         except Exception as e:
-            logger.error(f"Error getting account info: {str(e)}")
+            logger.error(f"Error getting account info for account_id: {account_id}: {str(e)}")
             return {}
     
 
