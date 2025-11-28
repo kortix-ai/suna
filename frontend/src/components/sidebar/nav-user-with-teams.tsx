@@ -28,6 +28,7 @@ import {
   BarChart3,
   FileText,
   TrendingDown,
+  MessageSquare,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
 import { useAccountState } from '@/hooks/billing';
@@ -388,6 +389,14 @@ export function NavUserWithTeams({
                         <Link href="/admin/billing" className="gap-2 p-2">
                           <Shield className="h-4 w-4" />
                           <span>Admin Panel</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/feedback" className="gap-2 p-2">
+                          <MessageSquare className="h-4 w-4" />
+                          <span>User Feedback</span>
                         </Link>
                       </DropdownMenuItem>
                     )}
