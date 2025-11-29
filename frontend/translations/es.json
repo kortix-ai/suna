@@ -38,6 +38,7 @@
       "plan": "Plan",
       "billing": "Facturación",
       "usage": "Uso",
+      "referrals": "Referidos",
       "knowledgeBase": "Base de Conocimientos",
       "integrations": "Integraciones",
       "envManager": "Administrador de Entorno"
@@ -83,6 +84,33 @@
         "cancelDeletionDescription": "¿Estás seguro de que quieres cancelar la eliminación de tu cuenta? Tu cuenta y todos los datos serán preservados.",
         "cancelDeletion": "Cancelar Eliminación"
       }
+    },
+    "referrals": {
+      "title": "Programa de Referidos",
+      "description": "Comparte tu enlace de referido con amigos. Cuando se registren y creen una cuenta, ganarás",
+      "creditsPerReferral": "100 créditos permanentes",
+      "maxEarnable": "Máximo obtenible mediante referidos:",
+      "maxCredits": "$100 en créditos",
+      "yourReferralCode": "Tu Código de Referido",
+      "referralLink": "Enlace de Referido",
+      "refresh": "Actualizar",
+      "copyCode": "Copiar código",
+      "copyLink": "Copiar enlace",
+      "share": "Compartir",
+      "stats": {
+        "totalReferrals": "Total de Referidos",
+        "successful": "Exitosos",
+        "creditsEarned": "Créditos Ganados"
+      },
+      "recentReferrals": "Referidos Recientes",
+      "signupComplete": "Registro Completo",
+      "pending": "Pendiente",
+      "noReferrals": "Aún no hay referidos. ¡Comparte tu enlace de referido para comenzar!",
+      "copied": "¡Copiado!",
+      "codeCopied": "Código de referido copiado al portapapeles",
+      "linkCopied": "Enlace de referido copiado al portapapeles",
+      "codeRefreshed": "Código de referido actualizado exitosamente",
+      "refreshFailed": "Error al actualizar el código de referido"
     },
     "billing": {
       "title": "Facturación y Suscripción",
@@ -156,6 +184,9 @@
     "monthlyOn1st": "Mensualmente el día 1"
   },
   "sidebar": {
+    "referAndEarn": "Referir y Ganar",
+    "new": "Nuevo",
+    "upgrade": "Mejorar",
     "chats": "Chats",
     "agents": "Agentes",
     "workers": "Workers",
@@ -492,6 +523,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "¿Tienes un código de referido?",
+    "referralCode": "Código de Referido",
+    "enterCode": "Ingresar código",
     "logIntoAccount": "Inicia sesión en tu cuenta",
     "createAccount": "Crear cuenta",
     "signInOrCreateAccount": "Inicia sesión o crea tu cuenta de Kortix",

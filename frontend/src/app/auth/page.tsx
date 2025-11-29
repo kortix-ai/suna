@@ -30,9 +30,12 @@ function LoginContent() {
   const message = searchParams.get('message');
   const isExpired = searchParams.get('expired') === 'true';
   const expiredEmail = searchParams.get('email') || '';
+  const referralCodeParam = searchParams.get('ref') || '';
   const t = useTranslations('auth');
 
   const isSignUp = mode !== 'signin';
+  const [referralCode, setReferralCode] = useState(referralCodeParam);
+  const [showReferralInput, setShowReferralInput] = useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [mounted, setMounted] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false); // GDPR requires explicit opt-in
@@ -347,7 +350,6 @@ function LoginContent() {
               <button
                 onClick={() => {
                   setRegistrationSuccess(false);
-                  // Keep email in URL for resending
                   const params = new URLSearchParams(window.location.search);
                   params.set('mode', 'signin');
                   const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
@@ -381,10 +383,10 @@ function LoginContent() {
             </div>
             <div className="space-y-3 mb-4">
               <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
-                <GoogleSignIn returnUrl={returnUrl || undefined} />
+                <GoogleSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
               </Suspense>
               <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
-                <GitHubSignIn returnUrl={returnUrl || undefined} />
+                <GitHubSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
               </Suspense>
             </div>
             <div className="relative my-4">
@@ -406,7 +408,44 @@ function LoginContent() {
                 required
               />
 
-              {/* Subtle GDPR-compliant checkbox */}
+              {referralCodeParam ? (
+                <div className="bg-card border rounded-xl p-3">
+                  <p className="text-xs text-muted-foreground mb-1">{t('referralCode')}</p>
+                  <p className="text-sm font-semibold">{referralCode}</p>
+                </div>
+              ) : (
+                <div className='mb-4'>
+                  {!showReferralInput ? (
+                    <div className='flex justify-center'>
+                      <Button
+                        variant="link"
+                        onClick={() => setShowReferralInput(true)}
+                        className="text-sm underline text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {t('haveReferralCode')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label htmlFor="referralCode" className="text-xs text-muted-foreground block">
+                        {t('referralCode')}
+                      </label>
+                      <Input
+                        id="referralCode"
+                        name="referralCode"
+                        type="text"
+                        placeholder={t('enterCode')}
+                        value={referralCode}
+                        onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                        maxLength={8}
+                        autoFocus
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!referralCodeParam && <input type="hidden" name="referralCode" value={referralCode} />}
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="gdprConsent"

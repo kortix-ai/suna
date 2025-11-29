@@ -38,6 +38,7 @@
       "plan": "Plan",
       "billing": "Facturation",
       "usage": "Utilisation",
+      "referrals": "Parrainages",
       "knowledgeBase": "Base de Connaissances",
       "integrations": "Intégrations",
       "envManager": "Gestionnaire d'Environnement"
@@ -83,6 +84,33 @@
         "cancelDeletionDescription": "Veux-tu vraiment annuler la suppression de ton compte ? Ton compte et toutes les données seront préservés.",
         "cancelDeletion": "Annuler la Suppression"
       }
+    },
+    "referrals": {
+      "title": "Programme de Parrainage",
+      "description": "Partage ton lien de parrainage avec tes amis. Lorsqu'ils s'inscrivent et créent un compte, tu gagnes",
+      "creditsPerReferral": "100 crédits non-expirables",
+      "maxEarnable": "Maximum gagnable par parrainages:",
+      "maxCredits": "$100 en crédits",
+      "yourReferralCode": "Ton Code de Parrainage",
+      "referralLink": "Lien de Parrainage",
+      "refresh": "Actualiser",
+      "copyCode": "Copier le code",
+      "copyLink": "Copier le lien",
+      "share": "Partager",
+      "stats": {
+        "totalReferrals": "Total de Parrainages",
+        "successful": "Réussis",
+        "creditsEarned": "Crédits Gagnés"
+      },
+      "recentReferrals": "Parrainages Récents",
+      "signupComplete": "Inscription Terminée",
+      "pending": "En Attente",
+      "noReferrals": "Aucun parrainage pour le moment. Partage ton lien de parrainage pour commencer!",
+      "copied": "Copié!",
+      "codeCopied": "Code de parrainage copié dans le presse-papiers",
+      "linkCopied": "Lien de parrainage copié dans le presse-papiers",
+      "codeRefreshed": "Code de parrainage actualisé avec succès",
+      "refreshFailed": "Échec de l'actualisation du code de parrainage"
     },
     "billing": {
       "title": "Facturation et Abonnement",
@@ -156,6 +184,9 @@
     "monthlyOn1st": "Mensuel le 1er"
   },
   "sidebar": {
+    "referAndEarn": "Parrainer et Gagner",
+    "new": "Nouveau",
+    "upgrade": "Améliorer",
     "chats": "Chats",
     "agents": "Agents",
     "workers": "Workers",
@@ -492,6 +523,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "Tu as un code de parrainage?",
+    "referralCode": "Code de Parrainage",
+    "enterCode": "Entrer le code",
     "logIntoAccount": "Connecte-toi à ton compte",
     "createAccount": "Créer un compte",
     "signInOrCreateAccount": "Connecte-toi ou crée ton compte Kortix",

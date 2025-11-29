@@ -38,6 +38,7 @@
       "plan": "Plano",
       "billing": "Cobrança",
       "usage": "Uso",
+      "referrals": "Indicações",
       "knowledgeBase": "Base de Conhecimento",
       "integrations": "Integrações",
       "envManager": "Gerenciador de Ambiente"
@@ -83,6 +84,33 @@
         "cancelDeletionDescription": "Tens certeza que queres cancelar a exclusão da tua conta? Tua conta e todos os dados serão preservados.",
         "cancelDeletion": "Cancelar Exclusão"
       }
+    },
+    "referrals": {
+      "title": "Programa de Indicações",
+      "description": "Compartilhe seu link de indicação com amigos. Quando eles se cadastrarem e criarem uma conta, você ganhará",
+      "creditsPerReferral": "100 créditos permanentes",
+      "maxEarnable": "Máximo que pode ganhar através de indicações:",
+      "maxCredits": "$100 em créditos",
+      "yourReferralCode": "Seu Código de Indicação",
+      "referralLink": "Link de Indicação",
+      "refresh": "Atualizar",
+      "copyCode": "Copiar código",
+      "copyLink": "Copiar link",
+      "share": "Compartilhar",
+      "stats": {
+        "totalReferrals": "Total de Indicações",
+        "successful": "Bem-sucedidas",
+        "creditsEarned": "Créditos Ganhos"
+      },
+      "recentReferrals": "Indicações Recentes",
+      "signupComplete": "Cadastro Completo",
+      "pending": "Pendente",
+      "noReferrals": "Nenhuma indicação ainda. Compartilhe seu link de indicação para começar!",
+      "copied": "Copiado!",
+      "codeCopied": "Código de indicação copiado para a área de transferência",
+      "linkCopied": "Link de indicação copiado para a área de transferência",
+      "codeRefreshed": "Código de indicação atualizado com sucesso",
+      "refreshFailed": "Falha ao atualizar o código de indicação"
     },
     "billing": {
       "title": "Cobrança e Assinatura",
@@ -156,6 +184,9 @@
     "monthlyOn1st": "Mensalmente no dia 1"
   },
   "sidebar": {
+    "referAndEarn": "Indicar e Ganhar",
+    "new": "Novo",
+    "upgrade": "Melhorar",
     "chats": "Chats",
     "agents": "Agentes",
     "workers": "Workers",
@@ -492,6 +523,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "Tens um código de indicação?",
+    "referralCode": "Código de Indicação",
+    "enterCode": "Inserir código",
     "logIntoAccount": "Entra na tua conta",
     "createAccount": "Criar conta",
     "signInOrCreateAccount": "Entra ou cria a tua conta Kortix",

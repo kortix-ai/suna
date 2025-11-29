@@ -38,6 +38,7 @@
       "plan": "Plan",
       "billing": "Abrechnung",
       "usage": "Nutzung",
+      "referrals": "Empfehlungen",
       "knowledgeBase": "Wissensdatenbank",
       "integrations": "Integrationen",
       "envManager": "Umgebungs-Manager"
@@ -83,6 +84,33 @@
         "cancelDeletionDescription": "Möchtest du die Löschung deines Kontos stornieren? Dein Konto und alle Daten bleiben erhalten.",
         "cancelDeletion": "Löschung stornieren"
       }
+    },
+    "referrals": {
+      "title": "Empfehlungsprogramm",
+      "description": "Teile deinen Empfehlungslink mit Freunden. Wenn sie sich anmelden und ein Konto erstellen, verdienst du",
+      "creditsPerReferral": "100 nicht ablaufende Credits",
+      "maxEarnable": "Maximal verdienbar durch Empfehlungen:",
+      "maxCredits": "$100 in Credits",
+      "yourReferralCode": "Dein Empfehlungscode",
+      "referralLink": "Empfehlungslink",
+      "refresh": "Aktualisieren",
+      "copyCode": "Code kopieren",
+      "copyLink": "Link kopieren",
+      "share": "Teilen",
+      "stats": {
+        "totalReferrals": "Gesamt-Empfehlungen",
+        "successful": "Erfolgreich",
+        "creditsEarned": "Verdiente Credits"
+      },
+      "recentReferrals": "Neueste Empfehlungen",
+      "signupComplete": "Anmeldung abgeschlossen",
+      "pending": "Ausstehend",
+      "noReferrals": "Noch keine Empfehlungen. Teile deinen Empfehlungslink, um zu starten!",
+      "copied": "Kopiert!",
+      "codeCopied": "Empfehlungscode in Zwischenablage kopiert",
+      "linkCopied": "Empfehlungslink in Zwischenablage kopiert",
+      "codeRefreshed": "Empfehlungscode erfolgreich aktualisiert",
+      "refreshFailed": "Aktualisierung des Empfehlungscodes fehlgeschlagen"
     },
     "billing": {
       "title": "Abrechnungsstatus",
@@ -184,6 +212,9 @@
     "monthlyOn1st": "Monatlich am 1."
   },
   "sidebar": {
+    "referAndEarn": "Empfehlen & Verdienen",
+    "new": "Neu",
+    "upgrade": "Upgrade",
     "chats": "Chats",
     "agents": "Agenten",
     "workers": "Worker",
@@ -434,6 +465,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "Hast du einen Empfehlungscode?",
+    "referralCode": "Empfehlungscode",
+    "enterCode": "Code eingeben",
     "logIntoAccount": "In dein Konto einloggen",
     "createAccount": "Konto erstellen",
     "signInOrCreateAccount": "Melde dich an oder erstelle dein Kortix-Konto",
