@@ -393,6 +393,14 @@ export function NavUserWithTeams({
                     )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
+                        <Link href="/admin/notifications" className="gap-2 p-2">
+                          <Bell className="h-4 w-4" />
+                          <span>Notifications</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
                         <Link href="/settings/api-keys" className="gap-2 p-2">
                           <Key className="h-4 w-4" />
                           <span>API Keys</span>

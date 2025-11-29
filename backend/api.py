@@ -27,7 +27,7 @@ from core.billing.api import router as billing_router
 from core.setup import router as setup_router, webhook_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
-from core.admin.master_password_api import router as master_password_router
+from core.admin.notification_admin_api import router as notification_admin_router
 from core.services import transcription as transcription_api
 import sys
 from core.triggers import api as triggers_api
@@ -203,7 +203,7 @@ api_router.include_router(webhook_router)  # Webhooks at /api/webhooks/*
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
-api_router.include_router(master_password_router)
+api_router.include_router(notification_admin_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api

@@ -345,7 +345,98 @@ class NovuService:
         except Exception as e:
             logger.error(f"❌ Error registering push token: {str(e)}")
             return False
+    
+    async def trigger_broadcast(
+        self,
+        workflow_id: str,
+        payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        if not self.enabled:
+            logger.warning(f"Broadcast skipped (Novu disabled in {config.ENV_MODE.value} mode): {workflow_id}")
+            return {"success": False, "error": "Novu notifications only enabled in staging and production modes"}
+        
+        if not self.api_key:
+            logger.error("Cannot send broadcast: NOVU_SECRET_KEY not configured")
+            return {"success": False, "error": "Novu not configured"}
+        
+        try:
+            import requests
+            url = f"{self.backend_url}/v1/events/trigger/broadcast"
+            headers = {
+                "Authorization": f"ApiKey {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            
+            data = {
+                "name": workflow_id,
+                "payload": payload
+            }
+            
+            response = requests.post(url, json=data, headers=headers)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            logger.info(f"Novu broadcast triggered: {workflow_id} to all subscribers")
+            
+            return {
+                "success": True,
+                "data": result.get("data", {}),
+                "response": result
+            }
+            
+        except Exception as e:
+            logger.error(f"Error triggering Novu broadcast: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    async def list_workflows(self) -> Dict[str, Any]:
+        if not self.enabled:
+            logger.warning(f"Workflows list skipped (Novu disabled in {config.ENV_MODE.value} mode)")
+            return {"success": False, "error": "Novu notifications only enabled in staging and production modes"}
+        
+        if not self.api_key:
+            logger.error("Cannot list workflows: NOVU_SECRET_KEY not configured")
+            return {"success": False, "error": "Novu not configured"}
+        
+        try:
+            import requests
+            url = f"{self.backend_url}/v2/workflows"
+            headers = {
+                "Authorization": f"ApiKey {self.api_key}",
+                "Accept": "application/json",
+            }
+            
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            workflows = result.get("data", {}).get("workflows", [])
+            
+            formatted_workflows = [
+                {
+                    "workflow_id": w.get("workflowId"),
+                    "name": w.get("name"),
+                    "description": w.get("description"),
+                    "active": w.get("active", True),
+                    "tags": w.get("tags", [])
+                }
+                for w in workflows
+                if w.get("workflowId")
+            ]
+            
+            logger.info(f"Retrieved {len(formatted_workflows)} workflows from Novu")
+            
+            return {
+                "success": True,
+                "workflows": formatted_workflows,
+                "total": len(formatted_workflows)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error listing Novu workflows: {str(e)}")
+            return {"success": False, "error": str(e)}
 
 
 novu_service = NovuService()
-
