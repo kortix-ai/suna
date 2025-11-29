@@ -136,7 +136,8 @@ class InvoiceHandler:
                                 existing_tier = get_tier_by_name(existing_tier_name)
                                 
                                 if existing_tier and tier_info.name != existing_tier.name and float(tier_info.monthly_credits) > float(existing_tier.monthly_credits):
-                                    if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
+                                    # Only skip credit grant if monthly_refill is explicitly disabled
+                                    if not tier_info.monthly_refill_enabled:
                                         logger.info(f"[RENEWAL] Skipping upgrade credits for tier {tier_info.name} - monthly_refill_enabled=False")
                                     else:
                                         await credit_manager.add_credits(
@@ -288,8 +289,9 @@ class InvoiceHandler:
                 
                 if is_true_renewal:
                     tier_config = get_tier_by_name(tier)
-                    if tier_config and (not tier_config.monthly_refill_enabled or (tier_config.daily_credit_config and tier_config.daily_credit_config.get('enabled'))):
-                        logger.info(f"[RENEWAL SKIP] Skipping monthly credit grant for {account_id} - tier {tier} has monthly_refill_enabled=False (using daily credits instead)")
+                    # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+                    if tier_config and not tier_config.monthly_refill_enabled:
+                        logger.info(f"[RENEWAL SKIP] Skipping monthly credit grant for {account_id} - tier {tier} has monthly_refill_enabled=False")
                         await client.from_('credit_accounts').update({
                             'last_processed_invoice_id': invoice_id,
                             'stripe_subscription_id': subscription_id
@@ -352,8 +354,9 @@ class InvoiceHandler:
                         return
                     
                     tier_config = get_tier_by_name(tier)
-                    if tier_config and (not tier_config.monthly_refill_enabled or (tier_config.daily_credit_config and tier_config.daily_credit_config.get('enabled'))):
-                        logger.info(f"[INITIAL GRANT SKIP] Skipping initial credit grant for {account_id} - tier {tier} has monthly_refill_enabled=False (using daily credits instead)")
+                    # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+                    if tier_config and not tier_config.monthly_refill_enabled:
+                        logger.info(f"[INITIAL GRANT SKIP] Skipping initial credit grant for {account_id} - tier {tier} has monthly_refill_enabled=False")
                     else:
                         logger.info(f"[INITIAL GRANT] Granting ${monthly_credits} credits for {account_id} (billing_reason={billing_reason}, NOT a renewal - will not block future renewals)")
                         add_result = await credit_manager.add_credits(

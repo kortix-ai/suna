@@ -15,7 +15,8 @@ import { useRevenueCatPricing } from '@/lib/billing';
 import { startUnifiedPlanCheckout } from '@/lib/billing/unified-checkout';
 import { useSubscription, useSubscriptionCommitment, billingKeys, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
-import { purchasePackage } from '@/lib/billing/revenuecat';
+import { purchasePackage, type SyncResponse } from '@/lib/billing/revenuecat';
+import { invalidateAccountState, accountStateKeys } from '@/lib/billing/hooks';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
 import { useQueryClient } from '@tanstack/react-query';
@@ -208,14 +209,37 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
 
         // Use RevenueCat purchase if package available
       if (useRevenueCat && selectedPlanOption.package) {
-        await purchasePackage(selectedPlanOption.package, user?.email, user?.id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          queryClient.invalidateQueries({ queryKey: billingKeys.all });
-          invalidateCreditsAfterPurchase(queryClient);
-          await refetchSubscription();
-          onPurchaseComplete?.();
-          onClose?.();
-          return;
+        const syncResponseRef = { value: null as SyncResponse | null };
+        
+        await purchasePackage(
+          selectedPlanOption.package, 
+          user?.email, 
+          user?.id,
+          async (response) => {
+            syncResponseRef.value = response;
+            // Immediately invalidate cache to trigger refetch
+            invalidateAccountState(queryClient);
+            await refetchSubscription();
+          }
+        );
+        
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        
+        // If webhook is pending, schedule a single refetch after webhook processes
+        // Backend invalidates cache when webhook processes, but we schedule a refetch
+        // as a safety net since mobile doesn't get push notifications
+        const syncResponse: SyncResponse | null = syncResponseRef.value;
+        if (syncResponse?.status === 'pending_webhook') {
+          console.log('⏳ Webhook processing - will refetch in 15 seconds');
+          setTimeout(async () => {
+            invalidateAccountState(queryClient);
+            await refetchSubscription();
+          }, 15000); // Webhook typically processes within 10-30 seconds
+        }
+        
+        onPurchaseComplete?.();
+        onClose?.();
+        return;
       }
 
       // Fallback to unified checkout
@@ -227,7 +251,21 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
           onPurchaseComplete?.();
           onClose?.();
         },
-        () => {}
+        () => {},
+        async (response) => {
+          // Handle sync response - invalidate cache immediately
+          invalidateAccountState(queryClient);
+          await refetchSubscription();
+          
+          // If pending webhook, schedule a single refetch after webhook processes
+          if (response.status === 'pending_webhook') {
+            console.log('⏳ Webhook processing - will refetch in 15 seconds');
+            setTimeout(async () => {
+              invalidateAccountState(queryClient);
+              await refetchSubscription();
+            }, 15000);
+          }
+        }
       );
     } catch (err: any) {
       // Check if this is an "already subscribed with different account" error

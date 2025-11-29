@@ -502,7 +502,8 @@ class CheckoutHandler:
                                   current_tier != tier_info.name)
                 
                 if is_tier_upgrade:
-                    if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
+                    # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+                    if not tier_info.monthly_refill_enabled:
                         logger.info(f"[WEBHOOK DEFAULT] Skipping upgrade credits for tier {tier_info.name} - monthly_refill_enabled=False")
                     else:
                         logger.info(f"[WEBHOOK DEFAULT] Tier upgrade detected: {current_tier} -> {tier_info.name}")
@@ -518,8 +519,9 @@ class CheckoutHandler:
                             stripe_event_id=unique_id
                         )
                 else:
-                    if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
-                        logger.info(f"[WEBHOOK DEFAULT] Skipping initial credits for tier {tier_info.name} - monthly_refill_enabled=False (using daily credits)")
+                    # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+                    if not tier_info.monthly_refill_enabled:
+                        logger.info(f"[WEBHOOK DEFAULT] Skipping initial credits for tier {tier_info.name} - monthly_refill_enabled=False")
                     else:
                         logger.info(f"[WEBHOOK DEFAULT] Granting ${tier_info.monthly_credits} credits for new {plan_type} subscription")
                         

@@ -1,5 +1,5 @@
 import { shouldUseRevenueCat } from './provider';
-import { purchasePackage, presentPaywall, getOfferings, getOfferingById } from './revenuecat';
+import { purchasePackage, presentPaywall, getOfferings, getOfferingById, type SyncResponse } from './revenuecat';
 import { findPackageForTier, logAvailableProducts } from './revenuecat-utils';
 import { supabase } from '@/api/supabase';
 import { PRICING_TIERS } from './pricing';
@@ -12,7 +12,8 @@ export async function startUnifiedPlanCheckout(
   tierKey: string,
   commitmentType: 'monthly' | 'yearly' | 'yearly_commitment' = 'monthly',
   onSuccess?: () => void,
-  onCancel?: () => void
+  onCancel?: () => void,
+  onSyncComplete?: (response: SyncResponse) => void | Promise<void>
 ): Promise<void> {
   console.log(`💳 Starting checkout for tier: ${tierKey}, period: ${commitmentType}`);
 
@@ -80,7 +81,7 @@ export async function startUnifiedPlanCheckout(
     console.log(`✅ Found RevenueCat package: ${pkg.identifier} (Product: ${pkg.product.identifier})`);
     console.log(`💰 Price: ${pkg.product.priceString}`);
     
-    await purchasePackage(pkg, user?.email, user?.id);
+    await purchasePackage(pkg, user?.email, user?.id, onSyncComplete);
     onSuccess?.();
   } catch (error: any) {
     console.error('❌ RevenueCat checkout error:', error);

@@ -22,10 +22,12 @@ class CreditService:
         from ....shared.config import get_tier_by_name
         
         tier_config = get_tier_by_name(tier_name)
-        if tier_config and (not tier_config.monthly_refill_enabled or (tier_config.daily_credit_config and tier_config.daily_credit_config.get('enabled'))):
+        # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+        # Note: daily_credit_config is ADDITIONAL, not a replacement for monthly credits
+        if tier_config and not tier_config.monthly_refill_enabled:
             logger.info(
                 f"[REVENUECAT RENEWAL SKIP] Skipping renewal credits for {app_user_id} - "
-                f"tier {tier_name} has monthly_refill_enabled=False (using daily credits instead)"
+                f"tier {tier_name} has monthly_refill_enabled=False"
             )
             db = DBConnection()
             client = await db.client
@@ -52,6 +54,14 @@ class CreditService:
         
         if result_data and result_data.get('success'):
             await SubscriptionRepository.update_tier_only(client, app_user_id, tier_name)
+            
+            # Invalidate account state cache to ensure UI reflects updated credits immediately
+            try:
+                from core.billing.shared.cache_utils import invalidate_account_state_cache
+                await invalidate_account_state_cache(app_user_id)
+                logger.info(f"[REVENUECAT RENEWAL] Cache invalidated for {app_user_id}")
+            except Exception as cache_error:
+                logger.warning(f"[REVENUECAT RENEWAL] Cache invalidation failed: {cache_error}")
     
     @staticmethod
     async def add_one_time_credits(

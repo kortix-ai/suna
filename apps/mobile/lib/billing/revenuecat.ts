@@ -313,7 +313,12 @@ export async function getOfferingById(offeringId: string, forceRefresh: boolean 
   }
 }
 
-export async function purchasePackage(pkg: PurchasesPackage, email?: string, expectedUserId?: string): Promise<CustomerInfo> {
+export async function purchasePackage(
+  pkg: PurchasesPackage, 
+  email?: string, 
+  expectedUserId?: string,
+  onSyncComplete?: (response: SyncResponse) => void | Promise<void>
+): Promise<CustomerInfo> {
   try {
     console.log('💳 Purchasing package:', pkg.identifier);
     
@@ -404,7 +409,7 @@ export async function purchasePackage(pkg: PurchasesPackage, email?: string, exp
     console.log('✅ Purchase successful');
     console.log('📊 Customer Info - Original App User ID:', customerInfo.originalAppUserId);
     
-    await notifyBackendOfPurchase(customerInfo);
+    await notifyBackendOfPurchase(customerInfo, onSyncComplete);
     
     return customerInfo;
   } catch (error: any) {
@@ -454,7 +459,18 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
   };
 }
 
-async function notifyBackendOfPurchase(customerInfo: CustomerInfo): Promise<void> {
+export interface SyncResponse {
+  status: 'pending_webhook' | 'synced' | 'already_synced' | 'no_active_subscription' | 'unknown_product' | 'processing';
+  message?: string;
+  product_id?: string;
+  tier?: string;
+  credits_granted?: number;
+}
+
+async function notifyBackendOfPurchase(
+  customerInfo: CustomerInfo,
+  onSyncComplete?: (response: SyncResponse) => void | Promise<void>
+): Promise<SyncResponse | null> {
   try {
     console.log('📤 Notifying backend of purchase...');
     
@@ -476,17 +492,40 @@ async function notifyBackendOfPurchase(customerInfo: CustomerInfo): Promise<void
       }),
     });
 
-    if (response.status === 403) {
-      console.log('ℹ️ Sync rejected - waiting for webhook validation');
-      console.log('📡 New subscriptions are processed via webhooks for security');
-      console.log('⏳ Your subscription will be activated within 30 seconds once validated');
-    } else if (!response.ok) {
-      console.warn('⚠️ Backend notification failed:', response.status);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn(`⚠️ Backend notification failed: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const result = await response.json() as SyncResponse;
+    console.log('📊 Sync response:', JSON.stringify(result, null, 2));
+
+    if (result.status === 'pending_webhook') {
+      console.log('ℹ️ New subscription detected - processing via webhook');
+      console.log('📡 Subscription will be activated within 30 seconds once validated');
+      console.log(`📦 Product: ${result.product_id}, Tier: ${result.tier}`);
+    } else if (result.status === 'synced') {
+      console.log('✅ Subscription synced successfully');
+      console.log(`📦 Tier: ${result.tier}, Product: ${result.product_id}`);
+    } else if (result.status === 'already_synced') {
+      console.log('✅ Subscription already synced');
+      console.log(`📦 Tier: ${result.tier}, Product: ${result.product_id}`);
+    } else if (result.status === 'no_active_subscription') {
+      console.log('ℹ️ No active subscription found in customer info');
     } else {
       console.log('✅ Backend notified successfully');
     }
+
+    // Call callback if provided (for cache invalidation, polling, etc.)
+    if (onSyncComplete) {
+      await onSyncComplete(result);
+    }
+
+    return result;
   } catch (error) {
     console.error('❌ Error notifying backend:', error);
+    return null;
   }
 }
 
