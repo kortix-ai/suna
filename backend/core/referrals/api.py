@@ -5,9 +5,11 @@ from decimal import Decimal
 from datetime import datetime
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config
 from core.services.supabase import DBConnection
 from .service import ReferralService
 from .config import MAX_EARNABLE_CREDITS_FROM_REFERRAL
+from core.utils.config import config
 
 router = APIRouter(prefix="/referrals", tags=["referrals"])
 
@@ -69,8 +71,8 @@ async def refresh_referral_code(
             raise HTTPException(status_code=400, detail=result.get('message', 'Failed to refresh code'))
         
         new_code = result.get('new_code')
-        frontend_url = "https://kortix.ai"
-        referral_url = f"{frontend_url}/signup?ref={new_code}"
+        frontend_url = config.FRONTEND_URL
+        referral_url = f"{frontend_url}/auth?ref={new_code}"
         
         return ReferralCodeResponse(
             referral_code=new_code,
@@ -91,7 +93,7 @@ async def get_referral_code(
     try:
         referral_code = await service.get_or_create_referral_code(user_id)
         
-        frontend_url = "https://kortix.com"
+        frontend_url = config.FRONTEND_URL
         referral_url = f"{frontend_url}/auth?ref={referral_code}"
         
         return ReferralCodeResponse(
