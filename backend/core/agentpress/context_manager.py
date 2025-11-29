@@ -18,6 +18,36 @@ from core.agentpress.prompt_caching import apply_anthropic_caching_strategy
 
 DEFAULT_TOKEN_THRESHOLD = 120000
 
+# Module-level singleton clients for memory efficiency
+# These are lazily initialized once and reused across all ContextManager instances
+_anthropic_client = None
+_bedrock_client = None
+_clients_initialized = False
+
+
+def _get_anthropic_client_singleton():
+    """Module-level lazy initialization of Anthropic client (singleton)."""
+    global _anthropic_client, _clients_initialized
+    if _anthropic_client is None and not _clients_initialized:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if api_key:
+            _anthropic_client = Anthropic(api_key=api_key)
+        _clients_initialized = True
+    return _anthropic_client
+
+
+def _get_bedrock_client_singleton():
+    """Module-level lazy initialization of Bedrock client (singleton)."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        try:
+            import boto3
+            _bedrock_client = boto3.client('bedrock-runtime', region_name='us-west-2')
+        except Exception as e:
+            logger.debug(f"Could not initialize Bedrock client: {e}")
+    return _bedrock_client
+
+
 class ContextManager:
     """Manages thread context including token counting and summarization."""
     
@@ -35,27 +65,14 @@ class ContextManager:
         self.compression_target_ratio = 0.6  # Compress to 60% of max tokens (hysteresis)
         self.keep_recent_user_messages = 10  # Number of recent user messages to keep uncompressed
         self.keep_recent_assistant_messages = 10  # Number of recent assistant messages to keep uncompressed
-        # Initialize Anthropic client for accurate token counting
-        self._anthropic_client = None
-        self._bedrock_client = None
 
     def _get_anthropic_client(self):
-        """Lazy initialization of Anthropic client."""
-        if self._anthropic_client is None:
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
-            if api_key:
-                self._anthropic_client = Anthropic(api_key=api_key)
-        return self._anthropic_client
+        """Get the singleton Anthropic client."""
+        return _get_anthropic_client_singleton()
     
     def _get_bedrock_client(self):
-        """Lazy initialization of Bedrock client."""
-        if self._bedrock_client is None:
-            try:
-                import boto3
-                self._bedrock_client = boto3.client('bedrock-runtime', region_name='us-west-2')
-            except Exception as e:
-                logger.debug(f"Could not initialize Bedrock client: {e}")
-        return self._bedrock_client
+        """Get the singleton Bedrock client."""
+        return _get_bedrock_client_singleton()
 
     async def count_tokens(self, model: str, messages: List[Dict[str, Any]], system_prompt: Optional[Dict[str, Any]] = None, apply_caching: bool = True) -> int:
         """Count tokens using the correct tokenizer for the model.

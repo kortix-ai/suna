@@ -5,7 +5,6 @@
  */
 
 // Composite components
-export { PlanSelectionModal } from './PlanSelectionModal';
 export { ScheduledDowngradeCard } from './ScheduledDowngradeCard';
 
 // Atomic components

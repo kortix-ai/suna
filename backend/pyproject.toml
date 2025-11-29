@@ -89,6 +89,7 @@ dependencies = [
   "freestyle>=0.0.17",
   "anthropic>=0.69.0",
   "novu-py>=3.11.0",
+  "psutil>=5.9.0",
 ]
 
 [project.urls]

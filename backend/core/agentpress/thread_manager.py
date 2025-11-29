@@ -817,3 +817,32 @@ class ThreadManager:
     async def _create_single_error_generator(self, error_dict: Dict[str, Any]):
         """Create an async generator that yields a single error message."""
         yield error_dict
+    
+    async def cleanup(self):
+        """Explicitly release tool references for garbage collection."""
+        if hasattr(self, 'tool_registry') and self.tool_registry:
+            # First, call cleanup on any tool instances that support it (e.g., MCPToolWrapper)
+            seen_instances = set()
+            for tool_info in self.tool_registry.tools.values():
+                tool_instance = tool_info.get('instance')
+                if tool_instance and id(tool_instance) not in seen_instances:
+                    seen_instances.add(id(tool_instance))
+                    if hasattr(tool_instance, 'cleanup'):
+                        try:
+                            result = tool_instance.cleanup()
+                            # Handle both sync and async cleanup methods
+                            if hasattr(result, '__await__'):
+                                await result
+                        except Exception as e:
+                            logger.debug(f"Tool cleanup error (non-fatal): {e}")
+            
+            # Clear tool registry to release references to tool instances
+            self.tool_registry.tools.clear()
+            self.tool_registry = None
+        
+        # Clear other references that might hold memory
+        if hasattr(self, 'response_processor'):
+            self.response_processor = None
+        
+        # Note: We don't clear self.db as it's a singleton and may be used elsewhere
+        # The DBConnection singleton manages its own lifecycle

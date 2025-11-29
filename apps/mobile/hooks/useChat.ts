@@ -29,7 +29,6 @@ import { useAgentStream } from './useAgentStream';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
-import { usePricingModalStore } from '@/stores/billing-modal-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -653,10 +652,9 @@ export function useChat(): UseChatReturn {
             hasActiveSubscription,
           });
           
-          usePricingModalStore.getState().openPricingModal({
-            alertTitle: hasActiveSubscription 
-              ? 'No models are currently available. Please try again later or contact support.'
-              : 'Upgrade to access AI models'
+          router.push({
+            pathname: '/plans',
+            params: { creditsExhausted: 'false' },
           });
           return;
         }
@@ -693,9 +691,9 @@ export function useChat(): UseChatReturn {
           const errorMessage = agentStartError?.message || '';
           if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
             console.log('💳 Project limit exceeded - opening billing modal');
-            usePricingModalStore.getState().openPricingModal({
-              alertTitle: 'Project limit exceeded',
-              creditsExhausted: true
+            router.push({
+              pathname: '/plans',
+              params: { creditsExhausted: 'true' },
             });
             return;
           }
@@ -790,10 +788,9 @@ export function useChat(): UseChatReturn {
             hasActiveSubscription,
           });
           
-          usePricingModalStore.getState().openPricingModal({
-            alertTitle: hasActiveSubscription 
-              ? 'No models are currently available. Please try again later or contact support.'
-              : 'Upgrade to access AI models'
+          router.push({
+            pathname: '/plans',
+            params: { creditsExhausted: 'false' },
           });
           return;
         }
@@ -825,9 +822,9 @@ export function useChat(): UseChatReturn {
           const errorMessage = sendMessageError?.message || '';
           if (errorMessage.includes('402') && errorMessage.includes('PROJECT_LIMIT_EXCEEDED')) {
             console.log('💳 Project limit exceeded - opening billing modal');
-            usePricingModalStore.getState().openPricingModal({
-              alertTitle: 'Project limit exceeded',
-              creditsExhausted: true
+            router.push({
+              pathname: '/plans',
+              params: { creditsExhausted: 'true' },
             });
             return;
           }
