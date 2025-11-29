@@ -38,6 +38,7 @@
       "plan": "Piano",
       "billing": "Fatturazione",
       "usage": "Utilizzo",
+      "referrals": "Referral",
       "knowledgeBase": "Base di conoscenza",
       "integrations": "Integrazioni",
       "envManager": "Gestore ambiente"
@@ -83,6 +84,33 @@
         "cancelDeletionDescription": "Vuoi annullare l'eliminazione del tuo account? Il tuo account e tutti i dati saranno preservati.",
         "cancelDeletion": "Annulla Eliminazione"
       }
+    },
+    "referrals": {
+      "title": "Programma Referral",
+      "description": "Condividi il tuo link di referral con gli amici. Quando si registrano e creano un account, guadagnerai",
+      "creditsPerReferral": "100 crediti permanenti",
+      "maxEarnable": "Massimo guadagnabile tramite referral:",
+      "maxCredits": "$100 in crediti",
+      "yourReferralCode": "Il Tuo Codice Referral",
+      "referralLink": "Link di Referral",
+      "refresh": "Aggiorna",
+      "copyCode": "Copia codice",
+      "copyLink": "Copia link",
+      "share": "Condividi",
+      "stats": {
+        "totalReferrals": "Referral Totali",
+        "successful": "Riusciti",
+        "creditsEarned": "Crediti Guadagnati"
+      },
+      "recentReferrals": "Referral Recenti",
+      "signupComplete": "Registrazione Completata",
+      "pending": "In Attesa",
+      "noReferrals": "Nessun referral ancora. Condividi il tuo link di referral per iniziare!",
+      "copied": "Copiato!",
+      "codeCopied": "Codice referral copiato negli appunti",
+      "linkCopied": "Link di referral copiato negli appunti",
+      "codeRefreshed": "Codice referral aggiornato con successo",
+      "refreshFailed": "Aggiornamento del codice referral fallito"
     },
     "billing": {
       "title": "Fatturazione & Abbonamento",
@@ -184,6 +212,9 @@
     "monthlyOn1st": "Mensilmente il 1°"
   },
   "sidebar": {
+    "referAndEarn": "Invita e Guadagna",
+    "new": "Nuovo",
+    "upgrade": "Aggiorna",
     "chats": "Chat",
     "agents": "Agenti",
     "workers": "Worker",
@@ -523,6 +554,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "Hai un codice referral?",
+    "referralCode": "Codice Referral",
+    "enterCode": "Inserisci codice",
     "logIntoAccount": "Accedi al tuo account",
     "createAccount": "Crea account",
     "signInOrCreateAccount": "Accedi o crea il tuo account Kortix",

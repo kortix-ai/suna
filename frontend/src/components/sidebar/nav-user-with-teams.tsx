@@ -70,6 +70,9 @@ import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { TierBadge } from '@/components/billing/tier-badge';
 import { useTranslations } from 'next-intl';
+import { useReferralDialog } from '@/stores/referral-dialog';
+import { ReferralDialog } from '@/components/referrals/referral-dialog';
+import { Badge } from '@/components/ui/badge';
 
 export function NavUserWithTeams({
   user,
@@ -92,6 +95,7 @@ export function NavUserWithTeams({
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showPlanModal, setShowPlanModal] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<'general' | 'billing' | 'usage' | 'env-manager'>('general');
+  const { isOpen: isReferralDialogOpen, openDialog: openReferralDialog, closeDialog: closeReferralDialog } = useReferralDialog();
   const { theme, setTheme } = useTheme();
 
   // Check if user is on free tier
@@ -430,20 +434,30 @@ export function NavUserWithTeams({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {/* Upgrade Button - Only for Free Tier */}
-          {isFreeTier && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50">
+          <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50 space-y-2">
+            <Button
+              onClick={openReferralDialog}
+              variant="outline"
+              size="lg"
+              className="w-full items relative justify-center"
+            >
+              <Users className="h-4 w-4" />
+              <span>{t('referAndEarn')}</span>
+              <Badge className="ml-auto text-[10px] px-1.5 py-0 bg-gradient-to-r from-purple-500 to-pink-500 text-white border-0">
+                {t('new')}
+              </Badge>
+            </Button>
+            {isFreeTier && (
               <Button
                 onClick={() => setShowPlanModal(true)}
                 variant="default"
                 size="lg"
-                className="w-full relative z-50"
+                className="w-full relative"
               >
-                Upgrade
+                {t('upgrade')}
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </SidebarMenuItem>
       </SidebarMenu>
 
@@ -472,6 +486,12 @@ export function NavUserWithTeams({
         open={showPlanModal}
         onOpenChange={setShowPlanModal}
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
+      />
+      
+      {/* Referral Dialog */}
+      <ReferralDialog
+        open={isReferralDialogOpen}
+        onOpenChange={closeReferralDialog}
       />
     </Dialog>
   );

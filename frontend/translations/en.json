@@ -38,6 +38,7 @@
       "plan": "Plan",
       "billing": "Billing",
       "usage": "Usage",
+      "referrals": "Referrals",
       "knowledgeBase": "Knowledge Base",
       "integrations": "Integrations",
       "envManager": "Env Manager"
@@ -90,6 +91,33 @@
         "cancelDeletionDescription": "Are you sure you want to cancel the deletion of your account? Your account and all data will be preserved.",
         "cancelDeletion": "Cancel Deletion"
       }
+    },
+    "referrals": {
+      "title": "Referral Program",
+      "description": "Share your referral link with friends. When they sign up and create an account, you'll earn",
+      "creditsPerReferral": "100 non-expiring credits",
+      "maxEarnable": "Maximum earnable through referrals:",
+      "maxCredits": "$100 in credits",
+      "yourReferralCode": "Your Referral Code",
+      "referralLink": "Referral Link",
+      "refresh": "Refresh",
+      "copyCode": "Copy code",
+      "copyLink": "Copy link",
+      "share": "Share",
+      "stats": {
+        "totalReferrals": "Total Referrals",
+        "successful": "Successful",
+        "creditsEarned": "Credits Earned"
+      },
+      "recentReferrals": "Recent Referrals",
+      "signupComplete": "Signup Complete",
+      "pending": "Pending",
+      "noReferrals": "No referrals yet. Share your referral link to get started!",
+      "copied": "Copied!",
+      "codeCopied": "Referral code copied to clipboard",
+      "linkCopied": "Referral link copied to clipboard",
+      "codeRefreshed": "Referral code refreshed successfully",
+      "refreshFailed": "Failed to refresh referral code"
     },
     "billing": {
       "title": "Billing & Subscription",
@@ -191,6 +219,9 @@
     "monthlyOn1st": "Monthly on 1st"
   },
   "sidebar": {
+    "referAndEarn": "Refer & Earn",
+    "new": "New",
+    "upgrade": "Upgrade",
     "chats": "Chats",
     "agents": "Agents",
     "workers": "Workers",
@@ -530,6 +561,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "Have a referral code?",
+    "referralCode": "Referral Code",
+    "enterCode": "Enter code",
     "logIntoAccount": "Log into your account",
     "createAccount": "Create account",
     "signInOrCreateAccount": "Sign in or create your Kortix account",

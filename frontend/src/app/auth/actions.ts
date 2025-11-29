@@ -47,6 +47,7 @@ export async function signUp(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const returnUrl = formData.get('returnUrl') as string | undefined;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
+  const referralCode = formData.get('referralCode') as string | undefined;
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -67,7 +68,10 @@ export async function signUp(prevState: any, formData: FormData) {
     email: email.trim().toLowerCase(),
     options: {
       emailRedirectTo,
-      shouldCreateUser: true, // Auto-create account if doesn't exist
+      shouldCreateUser: true,
+      data: referralCode ? {
+        referral_code: referralCode.trim().toUpperCase(),
+      } : undefined,
     },
   });
 

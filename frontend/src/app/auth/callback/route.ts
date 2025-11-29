@@ -98,15 +98,28 @@ export async function GET(request: NextRequest) {
           return NextResponse.redirect(expiredUrl)
         }
         
-        // For other errors, redirect to auth page
         return NextResponse.redirect(`${baseUrl}/auth?error=${encodeURIComponent(error.message)}`)
       }
 
-      // Determine the final destination
       let finalDestination = next
+      let shouldClearReferralCookie = false
 
       if (data.user) {
-        // Save terms acceptance date if not already saved
+        const pendingReferralCode = request.cookies.get('pending-referral-code')?.value
+        if (pendingReferralCode) {
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                referral_code: pendingReferralCode
+              }
+            })
+            console.log('✅ Added referral code to OAuth user:', pendingReferralCode)
+            shouldClearReferralCookie = true
+          } catch (error) {
+            console.error('Failed to add referral code to OAuth user:', error)
+          }
+        }
+
         if (termsAccepted) {
           const currentMetadata = data.user.user_metadata || {};
           if (!currentMetadata.terms_accepted_at) {
@@ -124,9 +137,6 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Check if user needs to complete setup (fallback case)
-        // Account initialization now happens automatically via webhook on signup.
-        // Only redirect to setting-up if webhook failed or user signed up before this change.
         const { data: accountData } = await supabase
           .schema('basejump')
           .from('accounts')
@@ -153,7 +163,14 @@ export async function GET(request: NextRequest) {
       }
 
       // Web redirect
-      return NextResponse.redirect(`${baseUrl}${finalDestination}`)
+      const response = NextResponse.redirect(`${baseUrl}${finalDestination}`)
+      
+      // Clear referral cookie if it was processed
+      if (shouldClearReferralCookie) {
+        response.cookies.set('pending-referral-code', '', { maxAge: 0, path: '/' })
+      }
+      
+      return response
     } catch (error) {
       console.error('❌ Unexpected error in auth callback:', error)
       return NextResponse.redirect(`${baseUrl}/auth?error=unexpected_error`)

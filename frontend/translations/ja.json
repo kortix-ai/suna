@@ -38,6 +38,7 @@
       "plan": "プラン",
       "billing": "請求",
       "usage": "使用状況",
+      "referrals": "紹介",
       "knowledgeBase": "ナレッジベース",
       "integrations": "統合",
       "envManager": "環境マネージャー"
@@ -83,6 +84,33 @@
         "cancelDeletionDescription": "アカウントの削除をキャンセルしますか？アカウントとすべてのデータが保持されます。",
         "cancelDeletion": "削除をキャンセル"
       }
+    },
+    "referrals": {
+      "title": "紹介プログラム",
+      "description": "友達に紹介リンクを共有してください。サインアップしてアカウントを作成すると、獲得できます",
+      "creditsPerReferral": "100個の無期限クレジット",
+      "maxEarnable": "紹介で獲得できる最大額:",
+      "maxCredits": "$100相当のクレジット",
+      "yourReferralCode": "あなたの紹介コード",
+      "referralLink": "紹介リンク",
+      "refresh": "更新",
+      "copyCode": "コードをコピー",
+      "copyLink": "リンクをコピー",
+      "share": "共有",
+      "stats": {
+        "totalReferrals": "総紹介数",
+        "successful": "成功",
+        "creditsEarned": "獲得クレジット"
+      },
+      "recentReferrals": "最近の紹介",
+      "signupComplete": "サインアップ完了",
+      "pending": "保留中",
+      "noReferrals": "まだ紹介がありません。紹介リンクを共有して始めましょう！",
+      "copied": "コピーしました！",
+      "codeCopied": "紹介コードをクリップボードにコピーしました",
+      "linkCopied": "紹介リンクをクリップボードにコピーしました",
+      "codeRefreshed": "紹介コードを更新しました",
+      "refreshFailed": "紹介コードの更新に失敗しました"
     },
     "billing": {
       "title": "請求とサブスクリプション",
@@ -156,6 +184,9 @@
     "monthlyOn1st": "毎月1日"
   },
   "sidebar": {
+    "referAndEarn": "紹介して獲得",
+    "new": "新規",
+    "upgrade": "アップグレード",
     "chats": "チャット",
     "agents": "エージェント",
     "workers": "ワーカー",
@@ -492,6 +523,9 @@
     }
   },
   "auth": {
+    "haveReferralCode": "紹介コードをお持ちですか？",
+    "referralCode": "紹介コード",
+    "enterCode": "コードを入力",
     "logIntoAccount": "アカウントにログイン",
     "createAccount": "アカウントを作成",
     "signInOrCreateAccount": "Kortixアカウントにログインまたは作成",
