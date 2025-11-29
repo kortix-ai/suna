@@ -83,8 +83,8 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
               onPress={handleOpenUrl}
               className="flex-1 bg-primary active:opacity-80 rounded-2xl py-4 flex-row items-center justify-center gap-2"
             >
-              <Icon as={ExternalLink} size={18} className="text-white" />
-              <Text className="text-white text-base font-roobert-semibold">
+              <Icon as={ExternalLink} size={18} className="text-primary-foreground" />
+              <Text className="text-primary-foreground text-base font-roobert-semibold">
                 Open URL
               </Text>
             </Pressable>
