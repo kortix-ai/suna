@@ -116,9 +116,7 @@ class SubscriptionUpgradeService:
         target_tier = get_tier_by_price_id(target_price_id)
         
         current_price_cents = current_subscription['items']['data'][0]['price']['unit_amount']
-        target_price_obj = await StripeAPIWrapper.safe_stripe_call(
-            StripeAPIWrapper.stripe.Price.retrieve_async, target_price_id
-        )
+        target_price_obj = await StripeAPIWrapper.retrieve_price(target_price_id)
         target_price_cents = target_price_obj.unit_amount
         
         if target_price_cents <= current_price_cents:

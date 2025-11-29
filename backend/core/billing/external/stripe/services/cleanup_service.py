@@ -49,7 +49,7 @@ class CleanupService:
     ) -> List[str]:
         try:
             logger.info(f"[SUBSCRIPTION CLEANUP] Fetching all active subscriptions for customer {customer_id}")
-            customer_subs = await stripe.Subscription.list_async(
+            customer_subs = await StripeAPIWrapper.list_subscriptions(
                 customer=customer_id,
                 status='active',
                 limit=10
@@ -98,7 +98,7 @@ class CleanupService:
     
     async def check_for_other_active_subscriptions(self, customer_id: str, exclude_subscription_id: str) -> List[Dict]:
         try:
-            active_subs = await stripe.Subscription.list_async(
+            active_subs = await StripeAPIWrapper.list_subscriptions(
                 customer=customer_id,
                 status='all',
                 limit=10
