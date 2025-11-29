@@ -31,8 +31,8 @@ export function AuthorDetailsToolView({ toolCall, toolResult, isStreaming = fals
   if (!author) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
-          <Icon as={GraduationCap} size={40} className="text-muted-foreground" />
+        <View className="bg-background rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
+          <Icon as={GraduationCap} size={40} className="text-foreground/30" />
         </View>
         <Text className="text-lg font-roobert-semibold text-foreground mb-2">
           No Author Found
@@ -58,8 +58,8 @@ export function AuthorDetailsToolView({ toolCall, toolResult, isStreaming = fals
               </Text>
 
               {author.affiliations && author.affiliations.length > 0 && (
-                <View className="flex-row items-start gap-2 bg-muted/20 p-3 rounded-xl">
-                  <Icon as={Building} size={14} className="text-muted-foreground flex-shrink-0 mt-0.5" />
+                <View className="flex-row items-start gap-2 bg-background border border-border p-3 rounded-xl">
+                  <Icon as={Building} size={14} className="text-foreground/60 flex-shrink-0 mt-0.5" />
                   <Text className="text-sm font-roobert text-foreground flex-1">
                     {author.affiliations.join(', ')}
                   </Text>
@@ -67,30 +67,30 @@ export function AuthorDetailsToolView({ toolCall, toolResult, isStreaming = fals
               )}
 
               <View className="flex-row flex-wrap gap-2">
-                <View className="bg-muted/30 rounded-xl p-3 flex-1">
+                <View className="bg-background border border-border rounded-xl p-3 flex-1">
                   <View className="flex-row items-center gap-2 mb-1">
-                    <Icon as={BookOpen} size={14} className="text-muted-foreground" />
-                    <Text className="text-xs font-roobert-medium text-muted-foreground">Papers</Text>
+                    <Icon as={BookOpen} size={14} className="text-foreground/60" />
+                    <Text className="text-xs font-roobert-medium text-foreground/50">Papers</Text>
                   </View>
                   <Text className="text-lg font-roobert-semibold text-foreground">
                     {author.paper_count}
                   </Text>
                 </View>
 
-                <View className="bg-muted/30 rounded-xl p-3 flex-1">
+                <View className="bg-background border border-border rounded-xl p-3 flex-1">
                   <View className="flex-row items-center gap-2 mb-1">
-                    <Icon as={Award} size={14} className="text-muted-foreground" />
-                    <Text className="text-xs font-roobert-medium text-muted-foreground">Citations</Text>
+                    <Icon as={Award} size={14} className="text-foreground/60" />
+                    <Text className="text-xs font-roobert-medium text-foreground/50">Citations</Text>
                   </View>
                   <Text className="text-lg font-roobert-semibold text-foreground">
                     {author.citation_count}
                   </Text>
                 </View>
 
-                <View className="bg-muted/30 rounded-xl p-3 flex-1">
+                <View className="bg-background border border-border rounded-xl p-3 flex-1">
                   <View className="flex-row items-center gap-2 mb-1">
-                    <Icon as={Hash} size={14} className="text-muted-foreground" />
-                    <Text className="text-xs font-roobert-medium text-muted-foreground">h-index</Text>
+                    <Icon as={Hash} size={14} className="text-foreground/60" />
+                    <Text className="text-xs font-roobert-medium text-foreground/50">h-index</Text>
                   </View>
                   <Text className="text-lg font-roobert-semibold text-foreground">
                     {author.h_index}
@@ -104,21 +104,21 @@ export function AuthorDetailsToolView({ toolCall, toolResult, isStreaming = fals
                     e.stopPropagation();
                     handleOpenUrl(author.homepage!);
                   }}
-                  className="bg-blue-500/10 rounded-xl p-3 flex-row items-center justify-center gap-2"
+                  className="bg-card border border-border rounded-xl p-3 flex-row items-center justify-center gap-2"
                 >
-                  <Icon as={ExternalLink} size={16} className="text-blue-600 dark:text-blue-400" />
-                  <Text className="text-sm font-roobert-medium text-blue-600 dark:text-blue-400">
+                  <Icon as={ExternalLink} size={16} className="text-primary" />
+                  <Text className="text-sm font-roobert-medium text-primary">
                     Visit Homepage
                   </Text>
                 </Pressable>
               )}
 
               {author.aliases && author.aliases.length > 0 && (
-                <View className="bg-muted/20 p-3 rounded-xl gap-2">
-                  <Text className="text-xs font-roobert-medium text-muted-foreground">Also known as:</Text>
+                <View className="bg-background border border-border p-3 rounded-xl gap-2">
+                  <Text className="text-xs font-roobert-medium text-foreground/50">Also known as:</Text>
                   <View className="flex-row flex-wrap gap-1.5">
                     {author.aliases.map((alias, idx) => (
-                      <View key={idx} className="bg-muted/50 px-2 py-1 rounded">
+                      <View key={idx} className="bg-card border border-border px-3 py-1 rounded-full">
                         <Text className="text-xs font-roobert text-foreground">
                           {alias}
                         </Text>

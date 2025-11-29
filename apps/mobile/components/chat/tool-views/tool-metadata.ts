@@ -29,7 +29,8 @@ import {
   Presentation,
   Settings,
   type LucideIcon,
-  ImageIcon
+  ImageIcon,
+  ListTodo
 } from 'lucide-react-native';
 
 export interface ToolMetadata {
@@ -246,16 +247,23 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
   // Command Tools
   'execute-command': {
     icon: Terminal,
-    iconColor: 'text-foreground',
-    iconBgColor: 'bg-muted',
+    iconColor: 'text-primary',
+    iconBgColor: 'bg-primary/10',
     subtitle: 'Execute Command',
     defaultTitle: 'Command Output',
     getTitle: (args) => args?.command || 'Command Output',
   },
+  'list-commands': {
+    icon: Terminal,
+    iconColor: 'text-primary',
+    iconBgColor: 'bg-primary/10',
+    subtitle: 'List Commands',
+    defaultTitle: 'Running Commands',
+  },
   'check-command-output': {
     icon: Terminal,
-    iconColor: 'text-foreground',
-    iconBgColor: 'bg-muted',
+    iconColor: 'text-primary',
+    iconBgColor: 'bg-primary/10',
     subtitle: 'Check Output',
     defaultTitle: 'Command Status',
   },
@@ -269,35 +277,35 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
 
   // Task Management
   'create-tasks': {
-    icon: CheckSquare,
+    icon: ListTodo,
     iconColor: 'text-green-600',
     iconBgColor: 'bg-green-50',
     subtitle: 'Task Management',
     defaultTitle: 'Tasks Created',
   },
   'update-tasks': {
-    icon: CheckSquare,
+    icon: ListTodo,
     iconColor: 'text-blue-600',
     iconBgColor: 'bg-blue-50',
     subtitle: 'Task Management',
     defaultTitle: 'Tasks Updated',
   },
   'view-tasks': {
-    icon: CheckSquare,
-    iconColor: 'text-foreground',
-    iconBgColor: 'bg-muted',
+    icon: ListTodo,
+    iconColor: 'text-primary',
+    iconBgColor: 'bg-primary/10',
     subtitle: 'Task Management',
     defaultTitle: 'Task List',
   },
   'delete-tasks': {
-    icon: CheckSquare,
+    icon: ListTodo,
     iconColor: 'text-red-600',
     iconBgColor: 'bg-red-50',
     subtitle: 'Task Management',
     defaultTitle: 'Tasks Deleted',
   },
   'clear-all': {
-    icon: CheckSquare,
+    icon: ListTodo,
     iconColor: 'text-red-600',
     iconBgColor: 'bg-red-50',
     subtitle: 'Task Management',
@@ -537,8 +545,8 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
   },
   'list-calls': {
     icon: Phone,
-    iconColor: 'text-foreground',
-    iconBgColor: 'bg-muted',
+    iconColor: 'text-primary',
+    iconBgColor: 'bg-primary/10',
     subtitle: 'Phone Call',
     defaultTitle: 'Call History',
   },
@@ -728,8 +736,8 @@ export function getToolMetadata(toolName: string, args?: any): ToolMetadata & { 
     // Generic fallback
     return {
       icon: FileText,
-      iconColor: 'text-foreground',
-      iconBgColor: 'bg-muted',
+      iconColor: 'text-primary',
+      iconBgColor: 'bg-primary/10',
       subtitle: 'Tool',
       defaultTitle: toolName,
       title: toolName,

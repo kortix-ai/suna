@@ -61,8 +61,8 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="px-6 gap-6">
           <View className="py-8 items-center">
-            <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
-              <Icon as={BookOpen} size={40} className="text-muted-foreground" />
+            <View className="bg-background rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
+              <Icon as={BookOpen} size={40} className="text-foreground/30" />
             </View>
             <Text className="text-lg font-roobert-semibold text-foreground mb-2">
               No Papers Found
@@ -101,8 +101,8 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
                 <View className="flex-row items-start justify-between gap-3">
                   <View className="flex-1 gap-2">
                     <View className="flex-row items-center gap-2 flex-wrap">
-                      <View className="bg-muted/50 px-2 py-1 rounded">
-                        <Text className="text-xs font-roobert-mono text-muted-foreground">
+                      <View className="bg-background border border-border px-3 py-1 rounded-full">
+                        <Text className="text-xs font-roobert-mono text-foreground/60">
                           {sourceName}
                         </Text>
                       </View>
@@ -110,8 +110,8 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
                         #{idx + 1}
                       </Text>
                       {result.is_open_access && (
-                        <View className="bg-emerald-500/10 px-2 py-1 rounded">
-                          <Text className="text-xs font-roobert-medium text-emerald-600 dark:text-emerald-400">
+                        <View className="bg-card border border-border px-3 py-1 rounded-full">
+                          <Text className="text-xs font-roobert-medium text-primary">
                             Open Access
                           </Text>
                         </View>
@@ -134,27 +134,27 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
 
                 <View className="flex-row flex-wrap gap-2">
                   {result.year && (
-                    <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
-                      <Icon as={Calendar} size={12} className="text-muted-foreground" />
-                      <Text className="text-xs font-roobert text-muted-foreground">
+                    <View className="flex-row items-center gap-1.5 bg-background border border-border px-3 py-1 rounded-full">
+                      <Icon as={Calendar} size={12} className="text-foreground/60" />
+                      <Text className="text-xs font-roobert text-foreground/60">
                         {result.year}
                       </Text>
                     </View>
                   )}
 
                   {authorNames && (
-                    <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded flex-1">
-                      <Icon as={Users} size={12} className="text-muted-foreground" />
-                      <Text className="text-xs font-roobert text-muted-foreground flex-1" numberOfLines={1}>
+                    <View className="flex-row items-center gap-1.5 bg-background border border-border px-3 py-1 rounded-full flex-1">
+                      <Icon as={Users} size={12} className="text-foreground/60" />
+                      <Text className="text-xs font-roobert text-foreground/60 flex-1" numberOfLines={1}>
                         {authorNames}{hasMoreAuthors ? '...' : ''}
                       </Text>
                     </View>
                   )}
 
                   {result.citation_count !== undefined && result.citation_count > 0 && (
-                    <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
-                      <Icon as={Award} size={12} className="text-muted-foreground" />
-                      <Text className="text-xs font-roobert text-muted-foreground">
+                    <View className="flex-row items-center gap-1.5 bg-background border border-border px-3 py-1 rounded-full">
+                      <Icon as={Award} size={12} className="text-foreground/60" />
+                      <Text className="text-xs font-roobert text-foreground/60">
                         {result.citation_count}
                       </Text>
                     </View>
@@ -173,8 +173,8 @@ export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false 
                 {result.fields_of_study && result.fields_of_study.length > 0 && (
                   <View className="flex-row flex-wrap gap-1.5">
                     {result.fields_of_study.slice(0, 3).map((field, fieldIdx) => (
-                      <View key={fieldIdx} className="bg-blue-500/10 px-2 py-0.5 rounded">
-                        <Text className="text-xs font-roobert text-blue-600 dark:text-blue-400">
+                      <View key={fieldIdx} className="bg-card border border-border px-3 py-1 rounded-full">
+                        <Text className="text-xs font-roobert text-primary">
                           {field}
                         </Text>
                       </View>

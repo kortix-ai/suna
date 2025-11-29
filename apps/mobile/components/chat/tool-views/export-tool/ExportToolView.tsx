@@ -57,7 +57,7 @@ export function ExportToolView({
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
             <View className="px-6 gap-6">
                 {/* Success/Error Status */}
-                <View className="py-8 items-center">
+                <View className="pt-3 items-center">
                     <View className={`${success ? 'bg-blue-500/10' : 'bg-red-500/10'} rounded-2xl items-center justify-center mb-4`} style={{ width: 64, height: 64 }}>
                         <Icon
                             as={success ? CheckCircle2 : AlertCircle}
@@ -134,56 +134,20 @@ export function ExportToolView({
                     </View>
                 )}
 
-                {/* Message */}
-                {message && (
-                    <View className="bg-muted/50 rounded-xl p-4 border border-border">
-                        <View className="flex-row items-start gap-2">
-                            <Icon as={Info} size={16} className="text-muted-foreground mt-0.5" />
-                            <Text className="text-sm font-roobert text-foreground flex-1">
-                                {message}
-                            </Text>
-                        </View>
-                    </View>
-                )}
-
-                {/* Note */}
-                {note && (
-                    <View className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
-                        <View className="flex-row items-start gap-2">
-                            <Icon as={Info} size={16} className="text-blue-600 dark:text-blue-400 mt-0.5" />
-                            <Text className="text-sm font-roobert text-blue-800 dark:text-blue-200 flex-1">
-                                {note}
-                            </Text>
-                        </View>
-                    </View>
-                )}
-
                 {/* Download Note for Mobile */}
                 {success && storedLocally && (
-                    <View className="bg-muted/30 rounded-xl p-4 border border-border">
-                        <View className="flex-row items-start gap-2">
-                            <Icon as={Download} size={16} className="text-muted-foreground mt-0.5" />
-                            <Text className="text-xs font-roobert text-muted-foreground flex-1">
+                    <View className="bg-card border border-border rounded-2xl p-4">
+                        <View className="flex-row items-start gap-3">
+                            <View className="bg-primary/10 rounded-full p-2">
+                                <Icon as={Download} size={16} className="text-primary" />
+                            </View>
+                            <Text className="text-sm font-roobert text-foreground/80 flex-1">
                                 The {formatLabel} file is stored in the workspace and can be accessed via the web interface for download.
                             </Text>
                         </View>
                     </View>
                 )}
 
-                {/* File Path */}
-                {filePath && (
-                    <View className="bg-card border border-border rounded-xl p-4 gap-2">
-                        <View className="flex-row items-center gap-2">
-                            <Icon as={FileText} size={14} className="text-muted-foreground" />
-                            <Text className="text-xs font-roobert-medium text-muted-foreground">
-                                File Path
-                            </Text>
-                        </View>
-                        <Text className="text-xs font-roobert-mono text-foreground/60" selectable>
-                            {filePath}
-                        </Text>
-                    </View>
-                )}
             </View>
         </ScrollView>
     );

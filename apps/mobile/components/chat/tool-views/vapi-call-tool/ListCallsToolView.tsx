@@ -12,8 +12,8 @@ export function ListCallsToolView({ toolCall, toolResult, isStreaming = false }:
   if (isStreaming) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-blue-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={Phone} size={40} className="text-blue-500 animate-pulse" />
+        <View className="bg-background border-border border rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <Icon as={Phone} size={40} className="text-muted-foreground" />
         </View>
         <Text className="text-xl font-roobert-semibold text-foreground mb-2">
           Fetching Calls
@@ -25,7 +25,7 @@ export function ListCallsToolView({ toolCall, toolResult, isStreaming = false }:
   if (data.calls.length === 0) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
+        <View className="bg-background border-border border rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
           <Icon as={Phone} size={40} className="text-muted-foreground" />
         </View>
         <Text className="text-lg font-roobert-semibold text-foreground mb-2">
