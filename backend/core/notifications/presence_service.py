@@ -37,7 +37,7 @@ class PresenceService:
             'client_timestamp': client_timestamp or now,
             'updated_at': now
         }
-        result = await client.table('user_presence_sessions').upsert(payload).select('*').execute()
+        result = await client.table('user_presence_sessions').upsert(payload).execute()
         return result, now
 
     async def _delete_session(self, session_id: str):
@@ -133,7 +133,7 @@ class PresenceService:
             else:
                 logger.debug("Cleaning up all stale sessions")
             
-            result = await query.select('*').execute()
+            result = await query.execute()
             count = len(result.data) if result.data else 0
             
             if count > 0:
