@@ -520,6 +520,29 @@
       "integrations": "100+ integrações",
       "premiumAIModels": "Modelos de IA Premium",
       "prioritySupport": "Suporte Prioritário"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "Confirmar mudança de plano",
+      "confirmSubtitle": "Lamentamos ver você partir",
+      "confirmDescription": "Você está prestes a mudar para o plano {planName}. Esta alteração entrará em vigor no final do seu período de faturamento atual. Você manterá seus benefícios atuais até lá.",
+      "continue": "Continuar",
+      "keepCurrentPlan": "Manter meu plano atual",
+      "feedbackTitle": "Ajude-nos a melhorar",
+      "feedbackSubtitle": "Seu feedback molda o futuro do Kortix",
+      "whatWouldMakeYouStay": "O que faria você ficar?",
+      "feedbackPlaceholder": "Se houvesse uma coisa que pudéssemos mudar ou adicionar para tornar o Kortix valioso para você, qual seria?",
+      "feedbackFooter": "Nossa equipe lê cada resposta. Suas palavras influenciam diretamente o que construímos a seguir.",
+      "confirmDowngrade": "Confirmar downgrade",
+      "processing": "Processando...",
+      "pleaseSelectReason": "Por favor, selecione um motivo",
+      "reasons": {
+        "tooExpensive": "É muito caro para minhas necessidades",
+        "notUsingOften": "Não estou usando o Kortix o suficiente",
+        "foundAlternative": "Encontrei outra solução",
+        "technicalIssues": "Tive problemas técnicos",
+        "resultsNotGood": "Os resultados não atenderam às minhas expectativas",
+        "other": "Outro motivo"
+      }
     }
   },
   "auth": {

@@ -520,6 +520,29 @@
       "integrations": "100+ 集成",
       "premiumAIModels": "高级 AI 模型",
       "prioritySupport": "优先支持"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "确认计划变更",
+      "confirmSubtitle": "很遗憾看到您离开",
+      "confirmDescription": "您即将切换到{planName}计划。此更改将在您当前计费周期结束时生效。届时您将保留当前的权益。",
+      "continue": "继续",
+      "keepCurrentPlan": "保留我的当前计划",
+      "feedbackTitle": "帮助我们改进",
+      "feedbackSubtitle": "您的反馈塑造Kortix的未来",
+      "whatWouldMakeYouStay": "什么会让您留下来？",
+      "feedbackPlaceholder": "如果我们可以改变或添加一件事来让Kortix对您有价值，那会是什么？",
+      "feedbackFooter": "我们的团队会阅读每一条回复。您的反馈直接影响我们接下来构建什么。",
+      "confirmDowngrade": "确认降级",
+      "processing": "处理中...",
+      "pleaseSelectReason": "请选择一个原因",
+      "reasons": {
+        "tooExpensive": "对我的需求来说太贵了",
+        "notUsingOften": "我使用Kortix不够频繁",
+        "foundAlternative": "我找到了其他解决方案",
+        "technicalIssues": "我遇到了技术问题",
+        "resultsNotGood": "结果没有达到我的期望",
+        "other": "其他原因"
+      }
     }
   },
   "auth": {

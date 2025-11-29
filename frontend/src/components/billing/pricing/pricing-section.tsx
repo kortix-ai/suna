@@ -31,16 +31,7 @@ import { CreditPurchaseModal } from '@/components/billing/credit-purchase';
 import { BorderBeam } from '@/components/ui/border-beam';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { DowngradeConfirmationDialog } from '@/components/billing/downgrade-confirmation-dialog';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -848,32 +839,18 @@ function PricingTier({
       </div>
 
       {/* Downgrade Confirmation Dialog */}
-      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('confirmDowngradeTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('confirmDowngradeDescription', { planName: tier.name })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setShowConfirmDialog(false);
-              setPendingTierKey(null);
-            }}>
-              {tCommon('cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmedDowngrade}
-              className="bg-destructive hover:bg-destructive/90"
-            >
-              {t('confirmDowngrade')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DowngradeConfirmationDialog
+        open={showConfirmDialog}
+        onOpenChange={(open) => {
+          setShowConfirmDialog(open);
+          if (!open) {
+            setPendingTierKey(null);
+          }
+        }}
+        onConfirm={handleConfirmedDowngrade}
+        targetPlanName={tier.name}
+        isPending={scheduleDowngradeMutation.isPending}
+      />
 
       {/* BorderBeam for Ultra plan only - dual tracers in sync */}
       {isUltraPlan && (

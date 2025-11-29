@@ -520,6 +520,29 @@
       "integrations": "100+ 統合",
       "premiumAIModels": "プレミアムAIモデル",
       "prioritySupport": "優先サポート"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "プラン変更の確認",
+      "confirmSubtitle": "ご利用いただきありがとうございました",
+      "confirmDescription": "{planName}プランに変更しようとしています。この変更は現在の請求期間の終了時に適用されます。それまで現在の特典をご利用いただけます。",
+      "continue": "続ける",
+      "keepCurrentPlan": "現在のプランを維持",
+      "feedbackTitle": "改善にご協力ください",
+      "feedbackSubtitle": "あなたのフィードバックがKortixの未来を形作ります",
+      "whatWouldMakeYouStay": "何があれば続けていただけますか？",
+      "feedbackPlaceholder": "Kortixをあなたにとって価値あるものにするために、私たちが変更または追加できることが1つあるとしたら、それは何ですか？",
+      "feedbackFooter": "私たちのチームはすべての回答を読んでいます。あなたの言葉が次に何を構築するかに直接影響します。",
+      "confirmDowngrade": "ダウングレードを確認",
+      "processing": "処理中...",
+      "pleaseSelectReason": "理由を選択してください",
+      "reasons": {
+        "tooExpensive": "私のニーズには高すぎる",
+        "notUsingOften": "Kortixを十分に使用していない",
+        "foundAlternative": "別のソリューションを見つけた",
+        "technicalIssues": "技術的な問題が発生した",
+        "resultsNotGood": "結果が期待に沿わなかった",
+        "other": "その他の理由"
+      }
     }
   },
   "auth": {
