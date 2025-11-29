@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Send, Users, User, ChevronDown } from "lucide-react";
+import { Loader2, Send, Users, User, ChevronDown, Sparkles } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 
 export default function NotificationManagementPage() {
   const [workflowId, setWorkflowId] = useState("");
@@ -88,55 +89,88 @@ export default function NotificationManagementPage() {
   };
 
   return (
-    <div className="container mx-auto py-8 max-w-6xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Notification Management</h1>
-        <p className="text-muted-foreground">
-          Send notifications to users via email, in-app, or push using Novu workflows
-        </p>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Send Mode</CardTitle>
-                  <CardDescription>Choose who receives this notification</CardDescription>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Single User</span>
-                  </div>
-                  <Switch
-                    checked={broadcast}
-                    onCheckedChange={setBroadcast}
-                    className="data-[state=checked]:bg-primary"
-                  />
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Broadcast All</span>
-                  </div>
-                </div>
+    <div className="flex flex-col h-screen">
+      <div className="flex-none backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="max-w-6xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-semibold tracking-tight">Notification Management</h1>
+                <Badge variant="outline" className="text-xs">
+                  {broadcast ? (
+                    <><Users className="w-3 h-3 mr-1" />Broadcast</>
+                  ) : (
+                    <><User className="w-3 h-3 mr-1" />Single User</>
+                  )}
+                </Badge>
               </div>
-            </CardHeader>
-          </Card>
+              <p className="text-sm text-muted-foreground">
+                Send notifications via Novu workflows
+              </p>
+            </div>
+            <Button
+              onClick={handleTrigger}
+              disabled={
+                triggerWorkflowMutation.isPending ||
+                !workflowId ||
+                (!broadcast && !useEmail && !subscriberId) ||
+                (!broadcast && useEmail && !subscriberEmail)
+              }
+              size="default"
+              className="gap-2 min-w-[120px]"
+            >
+              {triggerWorkflowMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  {broadcast ? "Broadcast" : "Send"}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <div className="max-w-6xl mx-auto px-6 h-full flex gap-6 py-6">
+          <div className="flex-1 overflow-y-auto space-y-4 pr-4">
+            <div className="flex items-center gap-3 p-4 border rounded-lg bg-card">
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Single User</span>
+              </div>
+              <Switch
+                checked={broadcast}
+                onCheckedChange={setBroadcast}
+                className="data-[state=checked]:bg-primary"
+              />
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Broadcast All</span>
+              </div>
+            </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Workflow Configuration</CardTitle>
-              <CardDescription>
-                Step 1: Select the workflow you want to trigger
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="workflow-id">Workflow</Label>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-medium">
+                    1
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Select Workflow</CardTitle>
+                    <CardDescription className="text-xs">
+                      Choose from your Novu workflows
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
                 <Select value={workflowId} onValueChange={setWorkflowId}>
-                  <SelectTrigger id="workflow-id">
-                    <SelectValue placeholder={loadingWorkflows ? "Loading workflows..." : "Select a workflow"} />
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingWorkflows ? "Loading..." : "Select a workflow"} />
                   </SelectTrigger>
                   <SelectContent>
                     {loadingWorkflows ? (
@@ -153,46 +187,56 @@ export default function NotificationManagementPage() {
                     ) : (
                       workflows.map((workflow) => (
                         <SelectItem key={workflow.workflow_id} value={workflow.workflow_id}>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{workflow.name}</span>
-                            {workflow.description && (
-                              <span className="text-xs text-muted-foreground">{workflow.description}</span>
-                            )}
-                          </div>
+                          {workflow.name}
                         </SelectItem>
                       ))
                     )}
                   </SelectContent>
                 </Select>
-                {selectedWorkflow && selectedWorkflow.description && (
-                  <p className="text-xs text-muted-foreground">{selectedWorkflow.description}</p>
-                )}
-                {selectedWorkflow && selectedWorkflow.tags.length > 0 && (
-                  <div className="flex gap-1 flex-wrap">
-                    {selectedWorkflow.tags.map((tag, i) => (
-                      <span key={i} className="text-xs px-2 py-0.5 bg-muted rounded-full">
-                        {tag}
-                      </span>
-                    ))}
+                {selectedWorkflow && (
+                  <div className="space-y-2">
+                    {selectedWorkflow.description && (
+                      <p className="text-xs text-muted-foreground">{selectedWorkflow.description}</p>
+                    )}
+                    {selectedWorkflow.tags.length > 0 && (
+                      <div className="flex gap-1 flex-wrap">
+                        {selectedWorkflow.tags.map((tag, i) => (
+                          <Badge key={i} variant="secondary" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </CardContent>
+            </Card>
 
-              {!broadcast && (
-                <>
+            {!broadcast && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-medium">
+                      2
+                    </div>
+                    <div>
+                      <CardTitle className="text-base">Target Recipient</CardTitle>
+                      <CardDescription className="text-xs">
+                        Who should receive this notification
+                      </CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
                     <span className="text-sm font-medium">Target by:</span>
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">User ID</span>
-                      </div>
+                      <span className="text-sm text-muted-foreground">User ID</span>
                       <Switch
                         checked={useEmail}
                         onCheckedChange={setUseEmail}
                       />
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm">Email</span>
-                      </div>
+                      <span className="text-sm text-muted-foreground">Email</span>
                     </div>
                   </div>
 
@@ -207,7 +251,8 @@ export default function NotificationManagementPage() {
                         onChange={(e) => setSubscriberEmail(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Will create/update subscriber if doesn't exist. Name will be extracted from email.
+                        <Sparkles className="w-3 h-3 inline mr-1" />
+                        Auto-creates subscriber if doesn't exist
                       </p>
                     </div>
                   ) : (
@@ -224,159 +269,127 @@ export default function NotificationManagementPage() {
                       </p>
                     </div>
                   )}
-                </>
-              )}
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Payload Data (Optional)</CardTitle>
-              <CardDescription>
-                Step 2: Define the data to send with this notification
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="payload">JSON Payload</Label>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-medium">
+                    {broadcast ? "2" : "3"}
+                  </div>
+                  <div>
+                    <CardTitle className="text-base">Payload Data (Optional)</CardTitle>
+                    <CardDescription className="text-xs">
+                      Custom data to send with the notification
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
                 <Textarea
                   id="payload"
                   placeholder={
                     broadcast
                       ? '{"announcement": "New feature!", "action_url": "/features"}'
-                      : '{"first_name": "{{first_name}}", "message": "Hello {{name}}!"}'
+                      : '{"message": "Hello {{name}}!"}'
                   }
                   value={payload}
                   onChange={(e) => setPayload(e.target.value)}
-                  rows={10}
-                  className="font-mono text-sm"
+                  rows={12}
+                  className="font-mono text-xs"
                 />
                 <p className="text-xs text-muted-foreground">
                   {broadcast
-                    ? "This payload is sent to all subscribers. Use Novu template variables for personalization."
-                    : "Template variables like {{name}} will be replaced with actual user data."}
+                    ? "Use subscriber.* variables in your Novu template for personalization"
+                    : "Template variables like {{name}} will be replaced with actual user data"}
                 </p>
-              </div>
+              </CardContent>
+            </Card>
+          </div>
 
-              <Button
-                onClick={handleTrigger}
-                disabled={
-                  triggerWorkflowMutation.isPending ||
-                  !workflowId ||
-                  (!broadcast && !useEmail && !subscriberId) ||
-                  (!broadcast && useEmail && !subscriberEmail)
-                }
-                size="lg"
-                className="w-full"
-              >
-                {triggerWorkflowMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Sending...
-                  </>
+          <div className="w-[380px] flex-none overflow-y-auto space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">
+                  {broadcast ? "Broadcast Variables" : "Template Variables"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!broadcast ? (
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{email}}"}</code>
+                      <p className="text-xs text-muted-foreground pl-2">User's email</p>
+                    </div>
+                    <div className="space-y-1">
+                      <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{name}}"}</code>
+                      <p className="text-xs text-muted-foreground pl-2">Full name</p>
+                    </div>
+                    <div className="space-y-1">
+                      <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{first_name}}"}</code>
+                      <p className="text-xs text-muted-foreground pl-2">First name</p>
+                    </div>
+                    <div className="space-y-1">
+                      <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{phone}}"}</code>
+                      <p className="text-xs text-muted-foreground pl-2">Phone</p>
+                    </div>
+                  </div>
                 ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    {broadcast ? "Send to All Subscribers" : "Send Notification"}
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-
-        </div>
-
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Template Variables</CardTitle>
-              <CardDescription className="text-xs">
-                {broadcast 
-                  ? "Use in Novu workflow templates"
-                  : "Use in payload (replaced with real data)"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {!broadcast ? (
-                <div className="space-y-3">
                   <div className="space-y-2">
-                    <code className="text-xs px-2 py-1 bg-muted rounded">{"{{email}}"}</code>
-                    <p className="text-xs text-muted-foreground">User's email</p>
-                  </div>
-                  <div className="space-y-2">
-                    <code className="text-xs px-2 py-1 bg-muted rounded">{"{{name}}"}</code>
-                    <p className="text-xs text-muted-foreground">Full name</p>
-                  </div>
-                  <div className="space-y-2">
-                    <code className="text-xs px-2 py-1 bg-muted rounded">{"{{first_name}}"}</code>
-                    <p className="text-xs text-muted-foreground">First name</p>
-                  </div>
-                  <div className="space-y-2">
-                    <code className="text-xs px-2 py-1 bg-muted rounded">{"{{phone}}"}</code>
-                    <p className="text-xs text-muted-foreground">Phone number</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Novu automatically personalizes using subscriber data:
-                  </p>
-                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Use in Novu template:
+                    </p>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.firstName}}"}</code>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.lastName}}"}</code>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.email}}"}</code>
                     <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{subscriber.phone}}"}</code>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Payload data:
+                    </p>
+                    <code className="text-xs px-2 py-1 bg-muted rounded block">{"{{payload.yourKey}}"}</code>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    Use these in your Novu email/SMS template, not in the payload.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                )}
+              </CardContent>
+            </Card>
 
-          {broadcast && (
-            <Collapsible>
-              <Card>
-                <CardHeader>
+            {broadcast && (
+              <Collapsible>
+                <Card>
                   <CollapsibleTrigger className="w-full">
-                    <div className="flex items-center justify-between">
-                      <div className="text-left">
-                        <CardTitle className="text-base">Broadcast Example</CardTitle>
-                        <CardDescription className="text-xs">
-                          See how personalization works
-                        </CardDescription>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm text-left">Example</CardTitle>
+                        <ChevronDown className="h-4 w-4 transition-transform" />
                       </div>
-                      <ChevronDown className="h-4 w-4 transition-transform shrink-0" />
-                    </div>
+                    </CardHeader>
                   </CollapsibleTrigger>
-                </CardHeader>
-                <CollapsibleContent>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium">Novu Template:</p>
-                      <pre className="p-2 bg-muted rounded text-[10px] overflow-x-auto">
+                  <CollapsibleContent>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium">Novu Template:</p>
+                        <pre className="p-2 bg-muted rounded text-[10px] overflow-x-auto">
 {`Hello {{subscriber.firstName}},
 
 {{payload.message}}
 
 {{payload.action_url}}`}
-                      </pre>
-                    </div>
+                        </pre>
+                      </div>
 
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium">Your Payload:</p>
-                      <pre className="p-2 bg-muted rounded text-[10px]">
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium">Your Payload:</p>
+                        <pre className="p-2 bg-muted rounded text-[10px]">
 {`{
   "message": "New feature!",
   "action_url": "/features"
 }`}
-                      </pre>
-                    </div>
+                        </pre>
+                      </div>
 
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium">Result:</p>
                       <div className="space-y-2">
+                        <p className="text-xs font-medium">Result:</p>
                         <div className="p-2 bg-muted rounded text-[10px]">
                           <p className="font-medium">John receives:</p>
                           <pre className="text-muted-foreground mt-1">Hello John,
@@ -385,49 +398,37 @@ New feature!
 
 /features</pre>
                         </div>
-                        <div className="p-2 bg-muted rounded text-[10px]">
-                          <p className="font-medium">Jane receives:</p>
-                          <pre className="text-muted-foreground mt-1">Hello Jane,
-
-New feature!
-
-/features</pre>
-                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
-          )}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Quick Tips</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-xs text-muted-foreground">
-              <div className="flex gap-2">
-                <span className="text-primary">•</span>
-                <span>Workflows must be created in Novu dashboard first</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-primary">•</span>
-                <span>Payload must be valid JSON format</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-primary">•</span>
-                <span>Use email to auto-create subscribers (name extracted from email)</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-primary">•</span>
-                <span>Broadcasts send to all active subscribers</span>
-              </div>
-              <div className="flex gap-2">
-                <span className="text-primary">•</span>
-                <span>Single user mode accepts ID or email address</span>
-              </div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Quick Tips</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs text-muted-foreground">
+                <div className="flex gap-2">
+                  <span className="text-primary">•</span>
+                  <span>Create workflows in Novu dashboard first</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-primary">•</span>
+                  <span>Payload must be valid JSON</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-primary">•</span>
+                  <span>Email mode auto-creates subscribers</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-primary">•</span>
+                  <span>Broadcasts send to all active subscribers</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
