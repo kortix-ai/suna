@@ -103,12 +103,24 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
     const { data: accountState } = useAccountState();
     const { openPricingModal } = usePricingModalStore();
+    const [isMobile, setIsMobile] = useState(false);
     
     const tierKey = accountStateSelectors.tierKey(accountState);
     const isFreeTier = tierKey && (
       tierKey === 'free' ||
       tierKey === 'none'
     ) && !isLocalMode();
+
+    // Detect mobile view
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+        
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     // Debounce search query
     useEffect(() => {
@@ -282,142 +294,269 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     <span className="text-xs font-medium text-muted-foreground">Agents</span>
                                 </div>
                             </div>
-                            <div className="px-2">
-                                <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                                    <DropdownMenuSub>
-                                        <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
-                                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
-                                            </div>
-                                            <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Suna'}</span>
-                                        </DropdownMenuSubTrigger>
-                                        <DropdownMenuPortal>
-                                            <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>
-                                                <div className="mb-3 px-3">
-                                                    <div className="relative">
-                                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
-                                                        <input
-                                                            ref={searchInputRef}
-                                                            type="text"
-                                                            placeholder="Search workers..."
-                                                            value={searchQuery}
-                                                            onChange={(e) => setSearchQuery(e.target.value)}
-                                                            onKeyDown={handleSearchInputKeyDown}
-                                                            className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                                        />
-                                                    </div>
+                            {isMobile ? (
+                                // Mobile: Show agents inline
+                                <div className="px-0">
+                                    <div className="mb-3 px-3">
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
+                                            <input
+                                                ref={searchInputRef}
+                                                type="text"
+                                                placeholder="Search workers..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                onKeyDown={handleSearchInputKeyDown}
+                                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center justify-between mb-3 px-3">
+                                        <span className="text-xs font-medium text-muted-foreground">My Workers</span>
+                                    </div>
+                                    {isLoading && orderedAgents.length === 0 ? (
+                                        <div className="space-y-2 px-2">
+                                            {Array.from({ length: 3 }).map((_, i) => (
+                                                <div key={i} className="flex items-center gap-3 p-3 rounded-2xl">
+                                                    <div className="h-8 w-8 bg-muted/60 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                                    <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
                                                 </div>
-                                                <div className="flex items-center justify-between mb-3 px-3">
-                                                    <span className="text-xs font-medium text-muted-foreground">My Workers</span>
-                                                </div>
-                                                {isLoading && orderedAgents.length === 0 ? (
-                                                    <div className="space-y-2 px-2">
-                                                        {Array.from({ length: 3 }).map((_, i) => (
-                                                            <div key={i} className="flex items-center gap-3 p-3 rounded-2xl">
-                                                                <div className="h-8 w-8 bg-muted/60 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
-                                                                <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : orderedAgents.length === 0 ? (
-                                                    <div className="p-6 text-center text-sm text-muted-foreground">
-                                                        {debouncedSearchQuery ? 'No agents found' : 'No agents yet'}
-                                                    </div>
-                                                ) : (
-                                                    <>
-                                                        <div className="max-h-[340px] overflow-y-auto space-y-0.5 px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-                                                            {orderedAgents.map((agent) => {
-                                                                const isActive = selectedAgentId === agent.agent_id;
-                                                                return (
-                                                                    <SpotlightCard
-                                                                        key={agent.agent_id}
-                                                                        className="transition-colors cursor-pointer bg-transparent"
-                                                                    >
-                                                                        <div
-                                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
-                                                                            onClick={() => handleAgentClick(agent.agent_id)}
-                                                                        >
-                                                                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                                                {renderAgentIcon(agent)}
-                                                                            </div>
-                                                                            <span className="flex-1 truncate font-medium">{agent.name}</span>
-                                                                            {isActive && (
-                                                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                                                            )}
-                                                                        </div>
-                                                                    </SpotlightCard>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                        {canLoadMore && (
-                                                            <div className="pt-2 px-2">
-                                                                <Button
-                                                                    size="sm"
-                                                                    variant="ghost"
-                                                                    className="w-full h-8 text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60"
-                                                                    onClick={handleLoadMore}
-                                                                    disabled={isFetching}
-                                                                >
-                                                                    {isFetching ? (
-                                                                        <>
-                                                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                                                            Loading...
-                                                                        </>
-                                                                    ) : (
-                                                                        `Load more`
-                                                                    )}
-                                                                </Button>
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {/* Create AI Worker button - always visible */}
-                                                <div className="px-2 pt-2 pb-1 border-t border-border/50 mt-2">
-                                                    <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                                                        <div
-                                                            className="flex items-center gap-3 text-sm px-1 py-1.5"
-                                                            onClick={() => {
-                                                                setIsOpen(false);
-                                                                if (isFreeTier) {
-                                                                    openPricingModal();
-                                                                } else {
-                                                                    setShowNewAgentDialog(true);
-                                                                }
-                                                            }}
+                                            ))}
+                                        </div>
+                                    ) : orderedAgents.length === 0 ? (
+                                        <div className="p-6 text-center text-sm text-muted-foreground">
+                                            {debouncedSearchQuery ? 'No agents found' : 'No agents yet'}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="max-h-[340px] overflow-y-auto space-y-0.5 px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                                                {orderedAgents.map((agent) => {
+                                                    const isActive = selectedAgentId === agent.agent_id;
+                                                    return (
+                                                        <SpotlightCard
+                                                            key={agent.agent_id}
+                                                            className="transition-colors cursor-pointer bg-transparent"
                                                         >
-                                                            <div className={cn(
-                                                                "flex items-center justify-center w-8 h-8 border-[1.5px] flex-shrink-0 transition-colors",
-                                                                isFreeTier 
-                                                                    ? "bg-primary/10 border-primary/30" 
-                                                                    : "bg-card border-border"
-                                                            )} style={{ borderRadius: '10.4px' }}>
-                                                                {isFreeTier ? (
-                                                                    <Sparkles className="h-4 w-4 text-primary" />
-                                                                ) : (
-                                                                    <Plus className="h-4 w-4 text-muted-foreground" />
+                                                            <div
+                                                                className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                                                                onClick={() => handleAgentClick(agent.agent_id)}
+                                                            >
+                                                                <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                                    {renderAgentIcon(agent)}
+                                                                </div>
+                                                                <span className="flex-1 truncate font-medium">{agent.name}</span>
+                                                                {isActive && (
+                                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
                                                                 )}
                                                             </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <span className={cn(
-                                                                    "font-medium",
-                                                                    isFreeTier ? "text-primary" : "text-foreground"
-                                                                )}>
-                                                                    Create AI Worker
-                                                                </span>
-                                                                {isFreeTier && (
-                                                                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
-                                                                        Unlock the full Kortix experience
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </SpotlightCard>
+                                                        </SpotlightCard>
+                                                    );
+                                                })}
+                                            </div>
+                                            {canLoadMore && (
+                                                <div className="pt-2 px-2">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="w-full h-8 text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60"
+                                                        onClick={handleLoadMore}
+                                                        disabled={isFetching}
+                                                    >
+                                                        {isFetching ? (
+                                                            <>
+                                                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                                Loading...
+                                                            </>
+                                                        ) : (
+                                                            `Load more`
+                                                        )}
+                                                    </Button>
                                                 </div>
-                                            </DropdownMenuSubContent>
-                                        </DropdownMenuPortal>
-                                    </DropdownMenuSub>
-                                </SpotlightCard>
-                            </div>
+                                            )}
+                                        </>
+                                    )}
+                                    {/* Create AI Worker button - always visible */}
+                                    <div className="px-2 pt-2 pb-1 border-t border-border/50 mt-2">
+                                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                            <div
+                                                className="flex items-center gap-3 text-sm px-1 py-1.5"
+                                                onClick={() => {
+                                                    setIsOpen(false);
+                                                    if (isFreeTier) {
+                                                        openPricingModal();
+                                                    } else {
+                                                        setShowNewAgentDialog(true);
+                                                    }
+                                                }}
+                                            >
+                                                <div className={cn(
+                                                    "flex items-center justify-center w-8 h-8 border-[1.5px] flex-shrink-0 transition-colors",
+                                                    isFreeTier 
+                                                        ? "bg-primary/10 border-primary/30" 
+                                                        : "bg-card border-border"
+                                                )} style={{ borderRadius: '10.4px' }}>
+                                                    {isFreeTier ? (
+                                                        <Sparkles className="h-4 w-4 text-primary" />
+                                                    ) : (
+                                                        <Plus className="h-4 w-4 text-muted-foreground" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <span className={cn(
+                                                        "font-medium",
+                                                        isFreeTier ? "text-primary" : "text-foreground"
+                                                    )}>
+                                                        Create AI Worker
+                                                    </span>
+                                                    {isFreeTier && (
+                                                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                                                            Unlock the full Kortix experience
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </SpotlightCard>
+                                    </div>
+                                </div>
+                            ) : (
+                                // Desktop: Show agents in submenu
+                                <div className="px-2">
+                                    <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                        <DropdownMenuSub>
+                                            <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
+                                                <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
+                                                </div>
+                                                <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Suna'}</span>
+                                            </DropdownMenuSubTrigger>
+                                            <DropdownMenuPortal>
+                                                <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>
+                                                    <div className="mb-3 px-3">
+                                                        <div className="relative">
+                                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
+                                                            <input
+                                                                ref={searchInputRef}
+                                                                type="text"
+                                                                placeholder="Search workers..."
+                                                                value={searchQuery}
+                                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                                onKeyDown={handleSearchInputKeyDown}
+                                                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center justify-between mb-3 px-3">
+                                                        <span className="text-xs font-medium text-muted-foreground">My Workers</span>
+                                                    </div>
+                                                    {isLoading && orderedAgents.length === 0 ? (
+                                                        <div className="space-y-2 px-2">
+                                                            {Array.from({ length: 3 }).map((_, i) => (
+                                                                <div key={i} className="flex items-center gap-3 p-3 rounded-2xl">
+                                                                    <div className="h-8 w-8 bg-muted/60 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                                                    <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : orderedAgents.length === 0 ? (
+                                                        <div className="p-6 text-center text-sm text-muted-foreground">
+                                                            {debouncedSearchQuery ? 'No agents found' : 'No agents yet'}
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <div className="max-h-[340px] overflow-y-auto space-y-0.5 px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                                                                {orderedAgents.map((agent) => {
+                                                                    const isActive = selectedAgentId === agent.agent_id;
+                                                                    return (
+                                                                        <SpotlightCard
+                                                                            key={agent.agent_id}
+                                                                            className="transition-colors cursor-pointer bg-transparent"
+                                                                        >
+                                                                            <div
+                                                                                className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                                                                                onClick={() => handleAgentClick(agent.agent_id)}
+                                                                            >
+                                                                                <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                                                    {renderAgentIcon(agent)}
+                                                                                </div>
+                                                                                <span className="flex-1 truncate font-medium">{agent.name}</span>
+                                                                                {isActive && (
+                                                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                                                )}
+                                                                            </div>
+                                                                        </SpotlightCard>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                            {canLoadMore && (
+                                                                <div className="pt-2 px-2">
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        className="w-full h-8 text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60"
+                                                                        onClick={handleLoadMore}
+                                                                        disabled={isFetching}
+                                                                    >
+                                                                        {isFetching ? (
+                                                                            <>
+                                                                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                                                Loading...
+                                                                            </>
+                                                                        ) : (
+                                                                            `Load more`
+                                                                        )}
+                                                                    </Button>
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                    {/* Create AI Worker button - always visible */}
+                                                    <div className="px-2 pt-2 pb-1 border-t border-border/50 mt-2">
+                                                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                                            <div
+                                                                className="flex items-center gap-3 text-sm px-1 py-1.5"
+                                                                onClick={() => {
+                                                                    setIsOpen(false);
+                                                                    if (isFreeTier) {
+                                                                        openPricingModal();
+                                                                    } else {
+                                                                        setShowNewAgentDialog(true);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <div className={cn(
+                                                                    "flex items-center justify-center w-8 h-8 border-[1.5px] flex-shrink-0 transition-colors",
+                                                                    isFreeTier 
+                                                                        ? "bg-primary/10 border-primary/30" 
+                                                                        : "bg-card border-border"
+                                                                )} style={{ borderRadius: '10.4px' }}>
+                                                                    {isFreeTier ? (
+                                                                        <Sparkles className="h-4 w-4 text-primary" />
+                                                                    ) : (
+                                                                        <Plus className="h-4 w-4 text-muted-foreground" />
+                                                                    )}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <span className={cn(
+                                                                        "font-medium",
+                                                                        isFreeTier ? "text-primary" : "text-foreground"
+                                                                    )}>
+                                                                        Create AI Worker
+                                                                    </span>
+                                                                    {isFreeTier && (
+                                                                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                                                                            Unlock the full Kortix experience
+                                                                        </p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </SpotlightCard>
+                                                    </div>
+                                                </DropdownMenuSubContent>
+                                            </DropdownMenuPortal>
+                                        </DropdownMenuSub>
+                                    </SpotlightCard>
+                                </div>
+                            )}
                             <div className="h-px bg-border/50 -mx-3 my-3" />
                         </>
                     )}
@@ -428,84 +567,151 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             <span className="text-xs font-medium text-muted-foreground">Modes</span>
                         </div>
                     </div>
-                    <div className="px-2">
-                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
-                            <DropdownMenuSub>
-                                <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
-                                    <span className="flex-1 truncate text-left">
-                                        <ModelLabel label={modelOptions.find(m => m.id === selectedModel)?.label || 'Select Model'} />
-                                    </span>
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuPortal>
-                                    <DropdownMenuSubContent className="w-[320px] p-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-y-auto" sideOffset={8}>
-                                        <div className="mb-3">
-                                            <span className="text-xs font-medium text-muted-foreground pl-1">Available Modes</span>
-                                        </div>
-                                        <div className="space-y-0.5">
-                                            {modelOptions.map((model) => {
-                                                const isActive = selectedModel === model.id;
-                                                const canAccess = canAccessModel(model.id);
-                                                const isPowerModel = model.id === 'kortix/power';
-                                                const modelItem = (
-                                                    <SpotlightCard
-                                                        key={model.id}
-                                                        className={cn(
-                                                            "transition-colors bg-transparent",
-                                                            canAccess ? "cursor-pointer" : "cursor-not-allowed",
-                                                            !canAccess && "opacity-60"
-                                                        )}
-                                                    >
-                                                        <div
-                                                            className="flex items-center gap-3 text-sm px-1 py-1.5 relative"
-                                                            onClick={() => {
-                                                                if (canAccess) {
-                                                                    onModelChange(model.id);
-                                                                    setIsOpen(false);
-                                                                } else {
-                                                                    setIsOpen(false);
-                                                                    usePricingModalStore.getState().openPricingModal({ 
-                                                                        isAlert: true, 
-                                                                        alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'
-                                                                    });
-                                                                }
-                                                            }}
+                    {isMobile ? (
+                        // Mobile: Show modes inline
+                        <div className="px-2">
+                            <div className="space-y-0.5">
+                                {modelOptions.map((model) => {
+                                    const isActive = selectedModel === model.id;
+                                    const canAccess = canAccessModel(model.id);
+                                    const isPowerModel = model.id === 'kortix/power';
+                                    const modelItem = (
+                                        <SpotlightCard
+                                            key={model.id}
+                                            className={cn(
+                                                "transition-colors bg-transparent",
+                                                canAccess ? "cursor-pointer" : "cursor-not-allowed",
+                                                !canAccess && "opacity-60"
+                                            )}
+                                        >
+                                            <div
+                                                className="flex items-center gap-3 text-sm px-1 py-1.5 relative"
+                                                onClick={() => {
+                                                    if (canAccess) {
+                                                        onModelChange(model.id);
+                                                        setIsOpen(false);
+                                                    } else {
+                                                        setIsOpen(false);
+                                                        usePricingModalStore.getState().openPricingModal({ 
+                                                            isAlert: true, 
+                                                            alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                <span className={cn("flex-1", !canAccess && "text-muted-foreground")}>
+                                                    <ModelLabel label={model.label} className={!canAccess ? "opacity-60" : ""} />
+                                                </span>
+                                                {!canAccess && (
+                                                    <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                                )}
+                                                {isActive && canAccess && (
+                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                )}
+                                            </div>
+                                        </SpotlightCard>
+                                    );
+
+                                    if (!canAccess) {
+                                        return (
+                                            <TooltipProvider key={model.id}>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        {modelItem}
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="left" className="text-xs">
+                                                        <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                        );
+                                    }
+
+                                    return modelItem;
+                                })}
+                            </div>
+                        </div>
+                    ) : (
+                        // Desktop: Show modes in submenu
+                        <div className="px-2">
+                            <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                <DropdownMenuSub>
+                                    <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
+                                        <span className="flex-1 truncate text-left">
+                                            <ModelLabel label={modelOptions.find(m => m.id === selectedModel)?.label || 'Select Model'} />
+                                        </span>
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuPortal>
+                                        <DropdownMenuSubContent className="w-[320px] p-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-y-auto" sideOffset={8}>
+                                            <div className="mb-3">
+                                                <span className="text-xs font-medium text-muted-foreground pl-1">Available Modes</span>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                {modelOptions.map((model) => {
+                                                    const isActive = selectedModel === model.id;
+                                                    const canAccess = canAccessModel(model.id);
+                                                    const isPowerModel = model.id === 'kortix/power';
+                                                    const modelItem = (
+                                                        <SpotlightCard
+                                                            key={model.id}
+                                                            className={cn(
+                                                                "transition-colors bg-transparent",
+                                                                canAccess ? "cursor-pointer" : "cursor-not-allowed",
+                                                                !canAccess && "opacity-60"
+                                                            )}
                                                         >
-                                                            <span className={cn("flex-1", !canAccess && "text-muted-foreground")}>
-                                                                <ModelLabel label={model.label} className={!canAccess ? "opacity-60" : ""} />
-                                                            </span>
-                                                            {!canAccess && (
-                                                                <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                                                            )}
-                                                            {isActive && canAccess && (
-                                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                                            )}
-                                                        </div>
-                                                    </SpotlightCard>
-                                                );
-
-                                                if (!canAccess) {
-                                                    return (
-                                                        <TooltipProvider key={model.id}>
-                                                            <Tooltip>
-                                                                <TooltipTrigger asChild>
-                                                                    {modelItem}
-                                                                </TooltipTrigger>
-                                                                <TooltipContent side="left" className="text-xs">
-                                                                    <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
-                                                                </TooltipContent>
-                                                            </Tooltip>
-                                                        </TooltipProvider>
+                                                            <div
+                                                                className="flex items-center gap-3 text-sm px-1 py-1.5 relative"
+                                                                onClick={() => {
+                                                                    if (canAccess) {
+                                                                        onModelChange(model.id);
+                                                                        setIsOpen(false);
+                                                                    } else {
+                                                                        setIsOpen(false);
+                                                                        usePricingModalStore.getState().openPricingModal({ 
+                                                                            isAlert: true, 
+                                                                            alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'
+                                                                        });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <span className={cn("flex-1", !canAccess && "text-muted-foreground")}>
+                                                                    <ModelLabel label={model.label} className={!canAccess ? "opacity-60" : ""} />
+                                                                </span>
+                                                                {!canAccess && (
+                                                                    <Lock className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                                                                )}
+                                                                {isActive && canAccess && (
+                                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                                )}
+                                                            </div>
+                                                        </SpotlightCard>
                                                     );
-                                                }
 
-                                                return modelItem;
-                                            })}
-                                        </div>
-                                    </DropdownMenuSubContent>
-                                </DropdownMenuPortal>
-                            </DropdownMenuSub>
-                        </SpotlightCard>
-                    </div>
+                                                    if (!canAccess) {
+                                                        return (
+                                                            <TooltipProvider key={model.id}>
+                                                                <Tooltip>
+                                                                    <TooltipTrigger asChild>
+                                                                        {modelItem}
+                                                                    </TooltipTrigger>
+                                                                    <TooltipContent side="left" className="text-xs">
+                                                                        <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
+                                                                    </TooltipContent>
+                                                                </Tooltip>
+                                                            </TooltipProvider>
+                                                        );
+                                                    }
+
+                                                    return modelItem;
+                                                })}
+                                            </div>
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuPortal>
+                                </DropdownMenuSub>
+                            </SpotlightCard>
+                        </div>
+                    )}
                     <div className="h-px bg-border/50 -mx-3 my-3" />
                     {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
                         <div className="px-3">
