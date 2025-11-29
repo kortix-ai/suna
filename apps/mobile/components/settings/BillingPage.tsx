@@ -23,6 +23,7 @@ import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -58,6 +59,8 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const isAuthenticated = !!user;
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const {
     data: accountState,
@@ -182,51 +185,77 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const getDailyRefreshTime = (): string | null => {
     if (!dailyRefreshInfo?.enabled) return null;
     
-    if (dailyRefreshInfo.seconds_until_refresh) {
-      const hours = Math.ceil(dailyRefreshInfo.seconds_until_refresh / 3600);
-      if (hours === 1) {
-        return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
-      }
-      return t('billing.refreshInHours', { defaultValue: 'Refresh in {hours}h', hours });
-    }
+    let hours: number;
+    let seconds: number | undefined;
     
-    if (dailyRefreshInfo.next_refresh_at) {
+    if (dailyRefreshInfo.seconds_until_refresh) {
+      seconds = dailyRefreshInfo.seconds_until_refresh;
+      hours = Math.ceil(seconds / 3600);
+    } else if (dailyRefreshInfo.next_refresh_at) {
       const nextRefresh = new Date(dailyRefreshInfo.next_refresh_at);
       const now = new Date();
-      const diffHours = Math.ceil((nextRefresh.getTime() - now.getTime()) / (1000 * 60 * 60));
-      if (diffHours <= 24) {
-        if (diffHours === 1) {
-          return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
-        }
-        return t('billing.refreshInHours', { defaultValue: 'Refresh in {hours}h', hours: diffHours });
-      }
-      return t('billing.refreshIn24Hours', 'Refresh in 24 hours');
+      const diffMs = nextRefresh.getTime() - now.getTime();
+      seconds = Math.floor(diffMs / 1000);
+      hours = Math.ceil(diffMs / (1000 * 60 * 60));
+    } else {
+      console.log('⚠️ No refresh info available:', dailyRefreshInfo);
+      return null; // No refresh info available
     }
     
-    return t('billing.refreshIn24Hours', 'Refresh in 24 hours');
-  };
-
-  // Calculate refresh time for monthly credits (same as daily if daily refresh enabled)
-  const getMonthlyRefreshTime = (): string | null => {
-    if (dailyRefreshInfo?.enabled) {
-      // If daily refresh is enabled, monthly also refreshes with daily
-      return getDailyRefreshTime();
+    // Debug logging
+    console.log('🕐 Daily refresh calculation:', {
+      seconds_until_refresh: dailyRefreshInfo.seconds_until_refresh,
+      next_refresh_at: dailyRefreshInfo.next_refresh_at,
+      calculatedSeconds: seconds,
+      calculatedHours: hours,
+    });
+    
+    // Handle edge cases
+    if (hours <= 0 || isNaN(hours)) {
+      console.log('⚠️ Invalid hours:', hours);
+      return null; // Invalid or past refresh time
     }
-    // Otherwise show next billing date
-    return nextBillingDate ? t('billing.renews', { defaultValue: 'Renews {date}', date: nextBillingDate }) : null;
+    
+    if (hours === 1) {
+      return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
+    }
+    
+    // Show actual hours
+    return `Refresh in ${hours}h`;
   };
 
-  // Calculate next billing date
+  // Calculate refresh time for monthly credits
+  const getMonthlyRefreshTime = (): string | null => {
+    // Monthly credits always show next billing date, NOT refresh time
+    // Even if daily refresh is enabled, monthly credits renew on billing cycle
+    if (nextBillingDate) {
+      return `Renews ${nextBillingDate}`;
+    }
+    return null;
+  };
+
+  // Calculate next billing date - matches frontend formatDateFlexible
   const getNextBillingDate = (): string | null => {
     if (!accountState?.subscription?.current_period_end) return null;
-    const periodEnd = typeof accountState.subscription.current_period_end === 'number'
-      ? accountState.subscription.current_period_end * 1000
-      : new Date(accountState.subscription.current_period_end).getTime();
-    return new Date(periodEnd).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    
+    const formatDateFlexible = (dateValue: string | number): string => {
+      if (typeof dateValue === 'number') {
+        // Unix timestamp in seconds - convert to milliseconds
+        return new Date(dateValue * 1000).toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+      }
+      // ISO string
+      return new Date(dateValue).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    };
+    
+    return formatDateFlexible(accountState.subscription.current_period_end);
   };
 
   const nextBillingDate = getNextBillingDate();
@@ -347,13 +376,9 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                   <Text className="text-2xl font-roobert-semibold text-foreground mb-1">
                     {formatCredits(monthlyCredits)}
                   </Text>
-                  {monthlyRefreshTime ? (
+                  {monthlyRefreshTime && (
                     <Text className="text-xs font-roobert-medium text-orange-500">
                       {monthlyRefreshTime}
-                    </Text>
-                  ) : (
-                    <Text className="text-xs font-roobert-medium text-muted-foreground">
-                      {t('billing.noRenewal', 'No renewal')}
                     </Text>
                   )}
                 </View>
@@ -430,6 +455,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     </Text>
                   </View>
                 )}
+
 
                 {/* Cancelled Status */}
                 {subscription.is_cancelled && subscription.cancellation_effective_date && (

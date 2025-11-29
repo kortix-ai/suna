@@ -896,12 +896,11 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
                                 <div className="text-xl leading-none font-semibold">
                                     {formatCredits(dailyCreditsInfo?.enabled ? monthlyCredits : (accountState?.credits.monthly || 0))}
                                 </div>
-                                <p className="text-[11px] text-orange-500/80 mt-1.5">
-                                    {hoursUntilDailyRefresh !== null 
-                                        ? `Refresh in ${hoursUntilDailyRefresh} ${hoursUntilDailyRefresh === 1 ? 'hour' : 'hours'}`
-                                        : 'No renewal scheduled'
-                                    }
-                                </p>
+                                {accountState?.subscription.current_period_end && (
+                                    <p className="text-[11px] text-orange-500/80 mt-1.5">
+                                        Renews {formatDateFlexible(accountState.subscription.current_period_end)}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>

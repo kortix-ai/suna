@@ -7,15 +7,16 @@
  * Features rich information density with credits, features, and savings
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, ScrollView, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { X, AlertCircle, Check } from 'lucide-react-native';
+import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
 import { PRICING_TIERS, type BillingPeriod, type PricingTier } from '@/lib/billing';
 import { useRevenueCatPricing } from '@/lib/billing';
 import { startUnifiedPlanCheckout } from '@/lib/billing/unified-checkout';
-import { useSubscription, useSubscriptionCommitment, billingKeys, invalidateCreditsAfterPurchase } from '@/lib/billing';
+import { useSubscription, useSubscriptionCommitment, useScheduledChanges, useAccountState, billingKeys, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
 import { purchasePackage, type SyncResponse } from '@/lib/billing/revenuecat';
 import { invalidateAccountState, accountStateKeys } from '@/lib/billing/hooks';
@@ -96,6 +97,10 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
 
   const { data: subscriptionData, isLoading: isFetchingPlan, refetch: refetchSubscription } = useSubscription({ enabled: isUserAuthenticated });
   const subCommitmentQuery = useSubscriptionCommitment(subscriptionData?.subscription?.id, {
+    enabled: isUserAuthenticated
+  });
+  const { data: accountState } = useAccountState({ enabled: isUserAuthenticated });
+  const { data: scheduledChangesData } = useScheduledChanges({
     enabled: isUserAuthenticated
   });
 
@@ -256,7 +261,7 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
           }
         );
         
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         
         // If webhook is pending, schedule a single refetch after webhook processes
         // Backend invalidates cache when webhook processes, but we schedule a refetch
@@ -266,14 +271,14 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
           console.log('⏳ Webhook processing - will refetch in 15 seconds');
           setTimeout(async () => {
             invalidateAccountState(queryClient);
-            await refetchSubscription();
+          await refetchSubscription();
           }, 15000); // Webhook typically processes within 10-30 seconds
         }
         
         // Let onPurchaseComplete handle navigation - don't call onClose here
         // This prevents double navigation and auth issues
-        onPurchaseComplete?.();
-        return;
+          onPurchaseComplete?.();
+          return;
       }
 
       // Fallback to unified checkout
@@ -348,6 +353,37 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
              : (currentBillingPeriod === 'yearly_commitment' || currentBillingPeriod === 'yearly'));
   };
 
+  // Get scheduled change info - check both scheduledChangesData and accountState (like BillingPage does)
+  const scheduledChange = scheduledChangesData?.scheduled_change || accountState?.subscription?.scheduled_change;
+  const hasScheduledChange = scheduledChangesData?.has_scheduled_change ?? accountState?.subscription?.has_scheduled_change ?? false;
+  
+  // Debug logging
+  useEffect(() => {
+    if (hasScheduledChange) {
+      console.log('📅 Scheduled change detected:', {
+        scheduledChange,
+        targetTierName: scheduledChange?.target_tier?.name,
+        targetTierDisplayName: scheduledChange?.target_tier?.display_name,
+        hasScheduledChange,
+        accountStateHasScheduled: accountState?.subscription?.has_scheduled_change,
+        scheduledChangesDataHasScheduled: scheduledChangesData?.has_scheduled_change,
+      });
+    }
+  }, [hasScheduledChange, scheduledChange, accountState, scheduledChangesData]);
+  
+  // Check if a plan option is the scheduled target plan
+  const isScheduledTargetPlan = (option: PlanOption): boolean => {
+    if (!hasScheduledChange || !scheduledChange) return false;
+    const targetTierName = scheduledChange.target_tier.name;
+    const optionTierId = option.tier.id;
+    const matches = targetTierName === optionTierId;
+    if (matches) {
+      console.log('✅ Scheduled target plan match:', { targetTierName, optionTierId });
+    }
+    return matches;
+  };
+  
+
   const getCurrentProvider = (): 'stripe' | 'revenuecat' | null => {
     if (!isAuthenticated || !subscriptionData) return null;
     return subscriptionData.provider as 'stripe' | 'revenuecat' | null;
@@ -363,11 +399,11 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
   return (
     <View className="flex-1 bg-background">
       {/* Header with Title and Toggle */}
-      <AnimatedView 
-        entering={FadeIn.duration(400)}
+        <AnimatedView 
+          entering={FadeIn.duration(400)}
         className="px-6 bg-background border-b border-border/30"
         style={{ paddingTop: insets.top + 12, paddingBottom: 16 }}
-      >
+        >
         {/* Title row with close button on right */}
         <View className="flex-row items-center justify-between">
           <Text className="text-xl font-roobert-semibold text-foreground">
@@ -380,12 +416,12 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                 onClose();
               }}
               className="h-10 w-10 items-center justify-center -mr-2"
-            >
+          >
               <Icon as={X} size={20} className="text-muted-foreground" strokeWidth={2} />
             </Pressable>
           )}
         </View>
-      </AnimatedView>
+        </AnimatedView>
 
       <AnimatedScrollView 
         className="flex-1"
@@ -395,6 +431,19 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
           paddingBottom: 16
         }}
       >
+        {/* Scheduled Change Alert - compact variant like frontend */}
+        {hasScheduledChange && scheduledChange && (
+        <AnimatedView 
+            entering={FadeIn.duration(400).delay(150)}
+          className="px-6 mb-4"
+        >
+            <ScheduledDowngradeCard
+              scheduledChange={scheduledChange}
+              variant="compact"
+              onCancel={handleSubscriptionUpdate}
+            />
+        </AnimatedView>
+        )}
 
         {/* Plan Cards - Each tier with its own billing toggle */}
         {/* Hide plans if user has Stripe subscription */}
@@ -423,6 +472,7 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                 const isSelected = selectedPlanOption?.tier.id === option.tier.id && 
                                   selectedPlanOption?.commitmentType === option.commitmentType;
                 const isCurrent = isCurrentPlan(option);
+                const isScheduledTarget = isScheduledTargetPlan(option);
                 const credits = parseCreditsFromFeatures(option.tier.features);
                 const keyFeatures = getKeyFeatures(option.tier.features, 4, isFree);
                 const dailyCredits = isFree ? 200 : null;
@@ -431,31 +481,40 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                   <Pressable
                     key={tierId}
                     onPress={() => {
-                      if (!isCurrent) {
+                    if (!isCurrent && !isScheduledTarget) {
                         handlePlanSelect(option);
                       }
                     }}
                     className={`mb-4 rounded-[18px] overflow-hidden border-2 ${
                       isSelected 
                         ? 'bg-primary/10 border-primary' 
-                        : isFree 
-                          ? 'bg-muted/30 border-border/30' 
-                          : 'bg-card border-border/30'
+                        : isScheduledTarget
+                          ? 'bg-yellow-500/5 border-yellow-500/30'
+                          : isFree 
+                            ? 'bg-muted/30 border-border/30' 
+                            : 'bg-card border-border/30'
                     } ${!option.isAvailable ? 'opacity-60' : ''}`}
                   >
                     {/* Header Section */}
                     <View className="p-4 pb-3">
                       <View className="flex-row items-start justify-between">
                         {/* Left: Name + Badges */}
-                        <View className="flex-1">
+                      <View className="flex-1">
                           <View className="flex-row items-center gap-2 flex-wrap mb-1">
                             <Text className="text-lg font-roobert-semibold text-foreground">
                               {tier.name}
-                            </Text>
+                          </Text>
                             {isCurrent && (
                               <View className="bg-primary/10 rounded-full px-2 py-0.5">
                                 <Text className="text-[10px] font-roobert-medium text-primary">
-                                  Current
+                                  {t('billing.current', 'Current')}
+                                </Text>
+                              </View>
+                            )}
+                            {isScheduledTarget && (
+                              <View className="bg-yellow-500/10 rounded-full px-2 py-0.5">
+                                <Text className="text-[10px] font-roobert-medium" style={{ color: isDark ? '#fbbf24' : '#d97706' }}>
+                                  {t('billing.scheduledBadge', 'Scheduled')}
                                 </Text>
                               </View>
                             )}
@@ -494,7 +553,7 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                                     selectedBilling === 'yearly' ? 'ml-auto' : ''
                                   }`}
                                 />
-                              </View>
+                            </View>
                               {/* Toggle Label - Right */}
                               <Text className={`text-xs font-roobert-medium ${
                                 selectedBilling === 'yearly' ? 'text-foreground' : 'text-muted-foreground'
@@ -503,7 +562,7 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                               </Text>
                             </Pressable>
                           )}
-                        </View>
+                      </View>
 
                         {/* Right: Price */}
                         <View className="items-end">
@@ -615,7 +674,7 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                         <View className="bg-primary/10 rounded-lg px-3 py-2">
                           <Text className="text-xs font-roobert-medium text-primary text-center">
                             🎉 {option.package.product.introPrice.priceString} for first {option.package.product.introPrice.period}
-                          </Text>
+                        </Text>
                         </View>
                       </View>
                     )}
@@ -644,11 +703,11 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
                 </View>
                 <View className="flex-1">
                   <Text className="text-base font-roobert-semibold text-foreground mb-1">
-                    {t('billing.webSubscriptionActive', 'Web Subscription Active')}
-                  </Text>
+                  {t('billing.webSubscriptionActive', 'Web Subscription Active')}
+                </Text>
                   <Text className="text-sm text-muted-foreground leading-relaxed">
-                    {t('billing.stripeSubscriberMessage', 'You have a web subscription. Please manage your plan on the web platform where you upgraded.')}
-                  </Text>
+                  {t('billing.stripeSubscriberMessage', 'You have a web subscription. Please manage your plan on the web platform where you upgraded.')}
+                </Text>
                 </View>
               </View>
             </View>
@@ -661,62 +720,66 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
       {!isStripeSubscriber && (() => {
         const selectedPlan = selectedPlanOption;
         const isCurrent = selectedPlan ? isCurrentPlan(selectedPlan) : false;
+        const isScheduledTarget = selectedPlan ? isScheduledTargetPlan(selectedPlan) : false;
+        const isDisabled = isPurchasing || isCurrent || isScheduledTarget;
         
         return (
-          <AnimatedView 
-            entering={FadeIn.duration(600).delay(500)} 
+        <AnimatedView 
+          entering={FadeIn.duration(600).delay(500)} 
             className="px-6 py-4 bg-background border-t border-border/50"
             style={{ paddingBottom: insets.bottom + 8 }}
-          >
+        >
             {selectedPlan ? (
               <AnimatedView
                 style={[
                   purchaseButtonStyle,
                   {
-                    opacity: isPurchasing || isCurrent ? 0.5 : 1,
+                    opacity: isDisabled ? 0.5 : 1,
                   }
                 ]}
               >
                 <Pressable
-                  onPress={handlePurchase}
-                  disabled={isPurchasing || isCurrent}
-                  onPressIn={() => {
-                    if (!isPurchasing && !isCurrent) {
-                      purchaseButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
-                    }
-                  }}
-                  onPressOut={() => {
-                    purchaseButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
+              onPress={handlePurchase}
+                  disabled={isDisabled}
+              onPressIn={() => {
+                    if (!isPurchasing && !isDisabled) {
+                  purchaseButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                }
+              }}
+              onPressOut={() => {
+                purchaseButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
                   className={`w-full h-12 rounded-xl items-center justify-center ${
-                    isPurchasing || isCurrent
+                    isDisabled
                       ? 'bg-primary/5' 
                       : 'bg-primary'
-                  }`}
-                >
-                  {isPurchasing ? (
+              }`}
+            >
+              {isPurchasing ? (
                     <ActivityIndicator color={isDark ? '#fff' : '#000'} />
-                  ) : (
+              ) : (
                     <Text className={`text-sm font-roobert-medium ${
-                      isCurrent ? 'text-primary' : 'text-primary-foreground'
-                    }`}>
+                      isDisabled ? 'text-primary' : 'text-primary-foreground'
+                }`}>
                       {isCurrent 
-                        ? t('billing.currentPlan', 'Current Plan') 
-                        : selectedPlan.tier.id === 'free'
-                          ? t('billing.selectPlan', 'Select Plan')
-                          : t('billing.upgrade', 'Upgrade')
+                        ? t('billing.currentPlan', 'Current Plan')
+                        : isScheduledTarget
+                          ? t('billing.scheduled', 'Scheduled')
+                          : selectedPlan.tier.id === 'free'
+                            ? t('billing.selectPlan', 'Select Plan')
+                            : t('billing.upgrade', 'Upgrade')
                       }
-                    </Text>
-                  )}
+                </Text>
+              )}
                 </Pressable>
               </AnimatedView>
-            ) : (
+          ) : (
               <View className="w-full h-12 rounded-xl items-center justify-center bg-muted">
                 <Text className="text-sm font-roobert-medium text-muted-foreground">
-                  {t('billing.selectPlan', 'Select a plan')}
-                </Text>
-              </View>
-            )}
+                {t('billing.selectPlan', 'Select a plan')}
+              </Text>
+            </View>
+          )}
 
             {error && (
               <View className="mt-3 bg-destructive/10 rounded-lg px-4 py-2">
@@ -729,16 +792,16 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
             <View className="flex-row justify-center mt-4 gap-4">
               <Pressable onPress={() => WebBrowser.openBrowserAsync('https://kortix.ai/privacy')}>
                 <Text className="text-xs text-muted-foreground font-roobert-medium">
-                  {t('billing.privacyPolicy', 'Privacy Policy')}
-                </Text>
-              </Pressable>
+                {t('billing.privacyPolicy', 'Privacy Policy')}
+              </Text>
+            </Pressable>
               <Pressable onPress={() => WebBrowser.openBrowserAsync('https://kortix.ai/terms')}>
                 <Text className="text-xs text-muted-foreground font-roobert-medium">
-                  {t('billing.termsOfService', 'Terms of Service')}
-                </Text>
-              </Pressable>
-            </View>
-          </AnimatedView>
+                {t('billing.termsOfService', 'Terms of Service')}
+              </Text>
+            </Pressable>
+          </View>
+        </AnimatedView>
         );
       })()}
 

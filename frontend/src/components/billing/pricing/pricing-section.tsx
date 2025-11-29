@@ -360,7 +360,7 @@ function PricingTier({
       ringClass = '';
     }
     else if (isRevenueCatSubscription && !isCurrentPlan) {
-      buttonText = 'Manage in App';
+      buttonText = 'Manage in Mobile App';
       buttonDisabled = true;
       buttonVariant = 'outline';
       buttonClassName = 'opacity-70 cursor-not-allowed bg-muted text-muted-foreground';

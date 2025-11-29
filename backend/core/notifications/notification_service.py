@@ -4,11 +4,16 @@ from core.utils.logger import logger
 from core.utils.config import config
 from .novu_service import novu_service
 from .presence_service import presence_service
+from .models import UserNotificationSettings
 
 class NotificationService:
     def __init__(self):
         self.db = DBConnection()
         self.novu = novu_service
+        # In-memory storage for device tokens (consider moving to database for production)
+        self._device_tokens: Dict[str, Dict[str, Any]] = {}
+        # In-memory storage for notification settings
+        self._notification_settings: Dict[str, UserNotificationSettings] = {}
     
     async def send_task_completion_notification(
         self,
@@ -472,5 +477,114 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Error getting account info for account_id: {account_id}: {str(e)}")
             return {}
+    
+    async def register_device_token(
+        self,
+        account_id: str,
+        device_token: str,
+        device_type: str = "mobile",
+        provider: str = "fcm"
+    ) -> bool:
+        """Register a device token for push notifications."""
+        try:
+            if account_id not in self._device_tokens:
+                self._device_tokens[account_id] = {}
+            
+            self._device_tokens[account_id][device_token] = {
+                "device_type": device_type,
+                "provider": provider,
+                "registered_at": None  # Could add timestamp if needed
+            }
+            
+            logger.info(f"Device token registered for account {account_id}: {device_token[:20]}...")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error registering device token: {str(e)}")
+            return False
+    
+    async def unregister_device_token(
+        self,
+        account_id: str,
+        device_token: str
+    ) -> bool:
+        """Unregister a device token for push notifications."""
+        try:
+            if account_id in self._device_tokens:
+                if device_token in self._device_tokens[account_id]:
+                    del self._device_tokens[account_id][device_token]
+                    logger.info(f"Device token unregistered for account {account_id}")
+                    return True
+            
+            logger.warning(f"Device token not found for account {account_id}")
+            return True  # Return True even if not found (idempotent)
+            
+        except Exception as e:
+            logger.error(f"Error unregistering device token: {str(e)}")
+            return False
+    
+    async def get_account_notification_settings(
+        self,
+        account_id: str
+    ) -> Optional[UserNotificationSettings]:
+        """Get notification settings for an account."""
+        try:
+            return self._notification_settings.get(account_id)
+        except Exception as e:
+            logger.error(f"Error getting notification settings: {str(e)}")
+            return None
+    
+    async def create_default_settings(
+        self,
+        account_id: str
+    ) -> UserNotificationSettings:
+        """Create default notification settings for an account."""
+        try:
+            settings = UserNotificationSettings(
+                account_id=account_id,
+                email_enabled=True,
+                push_enabled=False,
+                in_app_enabled=True
+            )
+            self._notification_settings[account_id] = settings
+            logger.info(f"Created default notification settings for account {account_id}")
+            return settings
+        except Exception as e:
+            logger.error(f"Error creating default settings: {str(e)}")
+            # Return a default settings object even on error
+            return UserNotificationSettings(
+                account_id=account_id,
+                email_enabled=True,
+                push_enabled=False,
+                in_app_enabled=True
+            )
+    
+    async def update_account_notification_settings(
+        self,
+        account_id: str,
+        settings: Dict[str, Any]
+    ) -> bool:
+        """Update notification settings for an account."""
+        try:
+            current_settings = self._notification_settings.get(account_id)
+            
+            if not current_settings:
+                current_settings = await self.create_default_settings(account_id)
+            
+            # Update only the provided fields
+            if "email_enabled" in settings:
+                current_settings.email_enabled = settings["email_enabled"]
+            if "push_enabled" in settings:
+                current_settings.push_enabled = settings["push_enabled"]
+            if "in_app_enabled" in settings:
+                current_settings.in_app_enabled = settings["in_app_enabled"]
+            
+            self._notification_settings[account_id] = current_settings
+            logger.info(f"Updated notification settings for account {account_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating notification settings: {str(e)}")
+            return False
     
 notification_service = NotificationService()

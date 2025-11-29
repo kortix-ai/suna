@@ -163,6 +163,8 @@ async def _build_account_state(account_id: str, client) -> Dict:
     # Cancellation status
     is_cancelled = False
     cancellation_effective_date = None
+    
+    # Check Stripe cancellation
     if subscription_data:
         cancel_at_period_end = subscription_data.get('cancel_at_period_end', False)
         canceled_at = subscription_data.get('canceled_at')
@@ -177,6 +179,16 @@ async def _build_account_state(account_id: str, client) -> Dict:
                     ).isoformat()
                 except Exception:
                     pass
+    
+    # Check RevenueCat cancellation
+    if provider == 'revenuecat':
+        revenuecat_cancelled_at = credit_account.get('revenuecat_cancelled_at')
+        revenuecat_cancel_at_period_end = credit_account.get('revenuecat_cancel_at_period_end')
+        
+        if revenuecat_cancelled_at or revenuecat_cancel_at_period_end:
+            is_cancelled = True
+            if revenuecat_cancel_at_period_end:
+                cancellation_effective_date = revenuecat_cancel_at_period_end
     
     # Get scheduled changes
     try:

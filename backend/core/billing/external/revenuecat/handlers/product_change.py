@@ -57,3 +57,11 @@ class ProductChangeHandler:
             app_user_id, old_product_id, new_product_id, event, change_type
         )
 
+        # Invalidate cache to reflect scheduled change immediately
+        try:
+            from core.billing.shared.cache_utils import invalidate_account_state_cache
+            await invalidate_account_state_cache(app_user_id)
+            logger.info(f"[REVENUECAT PRODUCT_CHANGE] Cache invalidated for {app_user_id}")
+        except Exception as cache_error:
+            logger.warning(f"[REVENUECAT PRODUCT_CHANGE] Cache invalidation failed: {cache_error}")
+
