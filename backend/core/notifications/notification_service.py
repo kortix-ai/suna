@@ -227,6 +227,170 @@ class NotificationService:
             logger.error(f"Error triggering promotional notification: {str(e)}")
             return {"success": False, "error": str(e)}
     
+    async def trigger_workflow_admin(
+        self,
+        workflow_id: str,
+        payload_template: Dict[str, Any],
+        subscriber_id: Optional[str] = None,
+        subscriber_email: Optional[str] = None,
+        broadcast: bool = False
+    ) -> Dict[str, Any]:
+        try:
+            if broadcast:
+                return await self._broadcast_workflow(workflow_id, payload_template)
+            elif subscriber_email:
+                return await self._trigger_workflow_by_email(workflow_id, payload_template, subscriber_email)
+            elif subscriber_id:
+                return await self._trigger_workflow_for_user(workflow_id, payload_template, subscriber_id)
+            else:
+                raise ValueError("Either subscriber_id, subscriber_email, or broadcast=True must be provided")
+        except Exception as e:
+            logger.error(f"Error triggering admin workflow: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    async def _trigger_workflow_for_user(
+        self,
+        workflow_id: str,
+        payload_template: Dict[str, Any],
+        subscriber_id: str
+    ) -> Dict[str, Any]:
+        account_info = await self._get_account_info(subscriber_id)
+        
+        if not account_info or not account_info.get("email"):
+            return {"success": False, "error": f"No email found for subscriber {subscriber_id}"}
+        
+        await self.novu.upsert_subscriber(
+            user_id=subscriber_id,
+            email=account_info.get("email"),
+            name=account_info.get("name"),
+            phone=account_info.get("phone"),
+            avatar=account_info.get("avatar")
+        )
+        
+        payload = self._replace_template_variables(payload_template, account_info)
+        
+        result = await self.novu.trigger_workflow(
+            workflow_id=workflow_id,
+            subscriber_id=subscriber_id,
+            payload=payload,
+            subscriber_email=account_info.get("email"),
+            subscriber_name=account_info.get("name"),
+            avatar=account_info.get("avatar")
+        )
+        
+        return {"success": True, "result": result, "subscriber_id": subscriber_id}
+    
+    async def _trigger_workflow_by_email(
+        self,
+        workflow_id: str,
+        payload_template: Dict[str, Any],
+        email: str
+    ) -> Dict[str, Any]:
+        email = email.strip().lower()
+        
+        client = await self.db.client
+        
+        try:
+            user_response = await client.rpc('get_user_account_by_email', {'email_input': email}).execute()
+            
+            if user_response and user_response.data:
+                subscriber_id = user_response.data.get('primary_owner_user_id')
+                if subscriber_id:
+                    return await self._trigger_workflow_for_user(workflow_id, payload_template, subscriber_id)
+        except Exception as e:
+            logger.warning(f"Could not find existing user for email {email}: {str(e)}")
+        
+        subscriber_id = f"email_{email.replace('@', '_at_').replace('.', '_')}"
+        
+        name = self._extract_name_from_email(email)
+        
+        await self.novu.upsert_subscriber(
+            user_id=subscriber_id,
+            email=email,
+            name=name
+        )
+        
+        account_info = {
+            "email": email,
+            "name": name,
+            "first_name": name.split()[0] if name else "User",
+            "phone": None,
+            "avatar": None
+        }
+        
+        payload = self._replace_template_variables(payload_template, account_info)
+        
+        result = await self.novu.trigger_workflow(
+            workflow_id=workflow_id,
+            subscriber_id=subscriber_id,
+            payload=payload,
+            subscriber_email=email,
+            subscriber_name=name
+        )
+        
+        return {"success": True, "result": result, "subscriber_id": subscriber_id, "email": email}
+    
+    def _extract_name_from_email(self, email: str) -> str:
+        username = email.split('@')[0]
+        
+        username = username.replace('.', ' ').replace('_', ' ').replace('-', ' ')
+        
+        parts = username.split()
+        
+        formatted_name = ' '.join(word.capitalize() for word in parts if word)
+        
+        return formatted_name if formatted_name else "User"
+    
+    async def _broadcast_workflow(
+        self,
+        workflow_id: str,
+        payload_template: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        try:
+            result = await self.novu.trigger_broadcast(
+                workflow_id=workflow_id,
+                payload=payload_template
+            )
+            
+            if not result.get("success"):
+                return result
+            
+            response_data = result.get("data", {})
+            
+            return {
+                "success": True,
+                "message": "Broadcast triggered successfully",
+                "broadcast": True,
+                "response": response_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting workflow: {str(e)}")
+            return {"success": False, "error": str(e)}
+    
+    def _replace_template_variables(
+        self,
+        payload_template: Dict[str, Any],
+        account_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        import re
+        import json
+        
+        template_str = json.dumps(payload_template)
+        
+        replacements = {
+            "{{email}}": account_info.get("email", ""),
+            "{{name}}": account_info.get("name", ""),
+            "{{first_name}}": account_info.get("first_name", ""),
+            "{{phone}}": account_info.get("phone", ""),
+            "{{avatar}}": account_info.get("avatar", ""),
+        }
+        
+        for variable, value in replacements.items():
+            template_str = template_str.replace(variable, str(value) if value else "")
+        
+        return json.loads(template_str)
+    
     async def send_welcome_email(self, account_id: str) -> Dict[str, Any]:
         try:
             logger.info(f"[WELCOME_EMAIL] ENV_MODE={config.ENV_MODE.value if config.ENV_MODE else 'None'}, Novu enabled={self.novu.enabled}, API key configured={bool(self.novu.api_key)}")
