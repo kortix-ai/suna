@@ -79,6 +79,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             set -a && source .env && set +a
+            docker compose down
             docker compose build
             docker compose up -d
 
@@ -93,6 +94,7 @@ jobs:
             cd /home/suna/backend
             git fetch origin main
             git reset --hard origin/main
+            docker compose down
             docker compose build
             docker compose up -d
 
