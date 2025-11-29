@@ -339,7 +339,7 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_navigate_to",
-            "description": "Navigate to a specific url",
+            "description": "Navigate to any URL to browse websites. The browser operates in a sandboxed environment.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -361,7 +361,7 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_act",
-            "description": "Perform any browser action using natural language description. CRITICAL: This tool automatically provides a screenshot with every action. For data entry actions (filling forms, entering text, selecting options), you MUST review the provided screenshot to verify that displayed values exactly match what was intended. Report mismatches immediately. CRITICAL FILE UPLOAD RULE: ANY action that involves clicking, interacting with, or locating upload buttons, file inputs, resume upload sections, or any element that might trigger a choose file dialog MUST include the filePath parameter with filePath. This includes actions like 'click upload button', 'locate resume section', 'find file input' etc. Always err on the side of caution - if there's any possibility the action might lead to a file dialog, include filePath. This prevents accidental file dialog triggers without proper file handling.",
+            "description": "Perform ANY browser action using natural language: click buttons/links, fill forms with text/numbers/emails, select dropdown options, scroll, press keyboard keys (Enter/Escape/Tab), navigate history (go back/forward), wait for content, handle iframes, and upload files. CRITICAL VALIDATION: This tool automatically provides a screenshot with every action. For data entry actions (filling forms, entering text, selecting options), you MUST review the provided screenshot to verify that displayed values exactly match what was intended. Only report success when visual confirmation shows the exact intended values are present. Your response should include: 'Verified: [field] shows [actual value]' or 'Error: Expected [intended] but field shows [actual]'. Report mismatches immediately - never assume form submissions worked without reviewing the screenshot. Use variables parameter for secure data entry (not shared with LLM providers). CRITICAL FILE UPLOAD RULE: ANY action that involves clicking, interacting with, or locating upload buttons, file inputs, resume upload sections, or any element that might trigger a choose file dialog MUST include the filePath parameter. This includes actions like 'click upload button', 'locate resume section', 'find file input' etc. Always err on the side of caution - if there's any possibility the action might lead to a file dialog, include filePath. This prevents accidental file dialog triggers without proper file handling.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -401,7 +401,7 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_extract_content",
-            "description": "Extract structured content from the current page using Stagehand",
+            "description": "Extract structured content from web pages using natural language instructions. Handles dynamic content and JavaScript-heavy sites. Can work with iframes. Examples: 'extract all product prices', 'get apartment listings with address and price', 'extract all email addresses from this page'.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -429,7 +429,7 @@ class BrowserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "browser_screenshot",
-            "description": "Take a screenshot of the current page",
+            "description": "Take a screenshot of the current page at any point. Note: browser_act automatically provides screenshots with every action for verification.",
             "parameters": {
                 "type": "object",
                 "properties": {
