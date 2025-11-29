@@ -93,12 +93,6 @@ export type { RevenueCatProduct } from './revenuecat';
 // =============================================================================
 export { getPlanName, getPlanIcon } from './plan-utils';
 
-// =============================================================================
-// CHECKOUT MODE
-// =============================================================================
-// Checkout mode deprecated - web checkout disabled, always 'native'
-export { useCheckoutMode, getCheckoutMode, setCheckoutMode } from './checkout-mode';
-export type { CheckoutMode } from './checkout-mode';
 export { logAvailableProducts, findPackageForTier } from './revenuecat-utils';
 export { debugRevenueCat } from './debug-revenuecat';
 export { 

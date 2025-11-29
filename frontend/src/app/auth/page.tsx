@@ -407,41 +407,45 @@ function LoginContent() {
               />
 
               {/* Subtle GDPR-compliant checkbox */}
-              <div className="flex items-start gap-2 py-1">
+              <div className="flex items-center gap-2">
                 <Checkbox
                   id="gdprConsent"
                   checked={acceptedTerms}
                   onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
                   required
-                  className="mt-0.5 h-3.5 w-3.5"
+                  className="h-5 w-5"
                 />
                 <label 
                   htmlFor="gdprConsent" 
                   className="text-xs text-muted-foreground leading-relaxed cursor-pointer select-none flex-1"
                 >
                   {t.rich('acceptPrivacyTerms', {
-                    privacyPolicy: (chunks) => (
-                      <a 
-                        href="https://www.kortix.com/legal?tab=privacy" 
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline underline-offset-2 text-primary"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {chunks}
-                      </a>
-                    ),
-                    termsOfService: (chunks) => (
-                      <a 
-                        href="https://www.kortix.com/legal?tab=terms"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline underline-offset-2 text-primary"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {chunks}
-                      </a>
-                    )
+                    privacyPolicy: (chunks) => {
+                      return (
+                        <a 
+                          href="https://www.kortix.com/legal?tab=privacy" 
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline underline-offset-2 text-primary"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {chunks}
+                        </a>
+                      );
+                    },
+                    termsOfService: (chunks) => {
+                      return (
+                        <a 
+                          href="https://www.kortix.com/legal?tab=terms"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline underline-offset-2 text-primary"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {chunks}
+                        </a>
+                      );
+                    }
                   })}
                 </label>
               </div>

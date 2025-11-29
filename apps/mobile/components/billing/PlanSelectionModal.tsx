@@ -1,11 +1,10 @@
 import React from 'react';
-import { View, Modal } from 'react-native';
-import { PricingSection } from './PricingSection';
+import { Modal } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/lib/billing';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import { UnifiedPricingSection } from './UnifiedPricingSection';
+import { PlanPage } from '@/components/settings/PlanPage';
 
 interface PlanSelectionModalProps {
   open: boolean;
@@ -44,17 +43,12 @@ export function PlanSelectionModal({
       presentationStyle="fullScreen"
       onRequestClose={handleClose}
     >
-      <View className="flex-1 bg-background">
-        <UnifiedPricingSection
-          returnUrl={returnUrl}
-          showTitleAndTabs={true}
-          insideDialog={true}
-          noPadding={true}
-          customTitle={creditsExhausted ? t('billing.ranOutOfCredits') : undefined}
-          onSubscriptionUpdate={handleSubscriptionUpdate}
-          onClose={handleClose}
-        />
-      </View>
+      <PlanPage
+        visible={true}
+        onClose={handleClose}
+        onPurchaseComplete={handleSubscriptionUpdate}
+        customTitle={creditsExhausted ? t('billing.ranOutOfCredits') : undefined}
+      />
     </Modal>
   );
 }

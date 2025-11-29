@@ -539,7 +539,7 @@
     "forgotPassword": "Password dimenticata?",
     "dontHaveAccount": "Non hai un account?",
     "alreadyHaveAccount": "Hai già un account?",
-    "acceptPrivacyTerms": "Accetto l'<privacyPolicy>Informativa sulla Privacy</privacyPolicy> e i <termsOfService>Termini di Servizio</termsOfService>",
+    "acceptPrivacyTerms": "Accetto l' <privacyPolicy>Informativa sulla Privacy</privacyPolicy> e i <termsOfService>Termini di Servizio</termsOfService>",
     "privacyPolicy": "Informativa sulla Privacy",
     "termsOfService": "Termini di Servizio",
     "checkYourEmail": "Controlla la tua email",

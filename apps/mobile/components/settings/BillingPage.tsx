@@ -5,7 +5,8 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { View, ScrollView, Pressable, Linking } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SettingsHeader } from './SettingsHeader';
@@ -96,9 +97,19 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   }, [refetchSubscription, refetchCommitment, refetchScheduledChanges, queryClient]);
 
 
-  const handleCreditsExplained = useCallback(() => {
+  const handleCreditsExplained = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Linking.openURL('https://kortix.com/help/credits-explained');
+    try {
+      // Use kortix.com for production, staging.suna.so for staging
+      const baseUrl = process.env.EXPO_PUBLIC_ENV === 'staging' 
+        ? 'https://staging.suna.so' 
+        : 'https://kortix.com';
+      await WebBrowser.openBrowserAsync(`${baseUrl}/credits-explained`, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      });
+    } catch (error) {
+      console.error('Error opening credits explained page:', error);
+    }
   }, []);
 
   const creditsButtonScale = useSharedValue(1);
@@ -176,7 +187,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       if (hours === 1) {
         return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
       }
-      return t('billing.refreshInHours', 'Refresh in {hours}h', { hours });
+      return t('billing.refreshInHours', { defaultValue: 'Refresh in {hours}h', hours });
     }
     
     if (dailyRefreshInfo.next_refresh_at) {
@@ -187,7 +198,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
         if (diffHours === 1) {
           return t('billing.refreshIn1Hour', 'Refresh in 1 hour');
         }
-        return t('billing.refreshInHours', 'Refresh in {hours}h', { hours: diffHours });
+        return t('billing.refreshInHours', { defaultValue: 'Refresh in {hours}h', hours: diffHours });
       }
       return t('billing.refreshIn24Hours', 'Refresh in 24 hours');
     }
@@ -202,7 +213,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       return getDailyRefreshTime();
     }
     // Otherwise show next billing date
-    return nextBillingDate ? t('billing.renews', 'Renews {date}', { date: nextBillingDate }) : null;
+    return nextBillingDate ? t('billing.renews', { defaultValue: 'Renews {date}', date: nextBillingDate }) : null;
   };
 
   // Calculate next billing date
@@ -386,7 +397,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                   </Text>
                   <PricingTierBadge 
                     planName={accountState?.subscription?.tier_display_name || accountState?.subscription?.tier_key || 'Basic'} 
-                    size="md" 
+                    size="lg" 
                   />
                 </View>
 
@@ -415,7 +426,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                       </Text>
                     </View>
                     <Text className="text-sm font-roobert-medium text-foreground">
-                      {t('billing.activeUntil', 'Active until {date}', { date: commitmentEndDate })}
+                      {t('billing.activeUntil', { defaultValue: 'Active until {date}', date: commitmentEndDate })}
                     </Text>
                   </View>
                 )}
@@ -430,7 +441,8 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                           {t('billing.subscriptionCancelled', 'Subscription Cancelled')}
                         </Text>
                         <Text className="text-xs text-destructive/80">
-                          {t('billing.subscriptionCancelledOn', 'Your subscription will be cancelled on {date}', {
+                          {t('billing.subscriptionCancelledOn', {
+                            defaultValue: 'Your subscription will be cancelled on {date}',
                             date: new Date(subscription.cancellation_effective_date).toLocaleDateString('en-US', {
                               month: 'short',
                               day: 'numeric',

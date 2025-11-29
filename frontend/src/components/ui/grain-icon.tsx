@@ -21,7 +21,7 @@ export const GrainIcon: React.FC<GrainIconProps> = ({
 }) => {
     return (
         <div
-            className={cn("w-10 h-10 relative rounded-xl overflow-hidden", className)}
+            className={cn("w-10 h-10 relative rounded-2xl overflow-hidden", className)}
             style={{
                 backgroundColor,
                 outline: `1.50px solid ${borderColor}`,
@@ -39,7 +39,7 @@ export const GrainIcon: React.FC<GrainIconProps> = ({
 
             {/* Grain overlay */}
             <div
-                className="absolute inset-0 pointer-events-none select-none rounded-xl"
+                className="absolute inset-0 pointer-events-none select-none rounded-2xl"
                 style={{
                     backgroundImage: `url(/grain-texture.png)`,
                     backgroundSize: '60px 60px',

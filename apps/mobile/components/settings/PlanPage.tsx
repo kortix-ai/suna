@@ -1,8 +1,8 @@
 /**
  * Plan Page Component
  * 
- * Matches RevenueCatPricingSection style exactly
- * Selection-based with purchase button
+ * Selection-based pricing page with purchase button
+ * Uses RevenueCat for native checkout on iOS/Android
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';

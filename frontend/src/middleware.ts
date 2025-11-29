@@ -31,6 +31,8 @@ const PUBLIC_ROUTES = [
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
   '/suna', // Suna rebrand page should be public for SEO
+  '/help', // Help center and documentation should be public
+  '/credits-explained', // Credits explained page should be public
   // Add locale routes for marketing pages
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
