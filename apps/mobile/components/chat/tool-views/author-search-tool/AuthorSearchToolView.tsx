@@ -40,8 +40,8 @@ export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="px-6 gap-6">
           <View className="py-8 items-center">
-            <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
-              <Icon as={GraduationCap} size={40} className="text-muted-foreground" />
+            <View className="bg-background rounded-2xl items-center justify-center mb-4" style={{ width: 80, height: 80 }}>
+              <Icon as={GraduationCap} size={40} className="text-foreground/30" />
             </View>
             <Text className="text-lg font-roobert-semibold text-foreground mb-2">
               No Authors Found
@@ -92,23 +92,23 @@ export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false
               </View>
 
               <View className="flex-row flex-wrap gap-2">
-                <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
-                  <Icon as={BookOpen} size={12} className="text-muted-foreground" />
-                  <Text className="text-xs font-roobert text-muted-foreground">
+                <View className="flex-row items-center gap-1.5 bg-background border border-border px-3 py-1 rounded-full">
+                  <Icon as={BookOpen} size={12} className="text-foreground/60" />
+                  <Text className="text-xs font-roobert text-foreground/60">
                     {result.paper_count} papers
                   </Text>
                 </View>
 
-                <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
-                  <Icon as={Award} size={12} className="text-muted-foreground" />
-                  <Text className="text-xs font-roobert text-muted-foreground">
+                <View className="flex-row items-center gap-1.5 bg-background border border-border px-3 py-1 rounded-full">
+                  <Icon as={Award} size={12} className="text-foreground/60" />
+                  <Text className="text-xs font-roobert text-foreground/60">
                     {result.citation_count} citations
                   </Text>
                 </View>
 
-                <View className="flex-row items-center gap-1.5 bg-muted/30 px-2 py-1 rounded">
-                  <Icon as={Hash} size={12} className="text-muted-foreground" />
-                  <Text className="text-xs font-roobert text-muted-foreground">
+                <View className="flex-row items-center gap-1.5 bg-background border border-border px-3 py-1 rounded-full">
+                  <Icon as={Hash} size={12} className="text-foreground/60" />
+                  <Text className="text-xs font-roobert text-foreground/60">
                     h-index: {result.h_index}
                   </Text>
                 </View>
@@ -120,10 +120,10 @@ export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false
                     e.stopPropagation();
                     handleOpenUrl(result.homepage!);
                   }}
-                  className="bg-blue-500/10 rounded-lg p-2 flex-row items-center justify-center gap-2"
+                  className="bg-card border border-border rounded-2xl p-3 flex-row items-center justify-center gap-2"
                 >
-                  <Icon as={ExternalLink} size={14} className="text-blue-600 dark:text-blue-400" />
-                  <Text className="text-xs font-roobert-medium text-blue-600 dark:text-blue-400">
+                  <Icon as={ExternalLink} size={14} className="text-primary" />
+                  <Text className="text-xs font-roobert-medium text-primary">
                     Homepage
                   </Text>
                 </Pressable>

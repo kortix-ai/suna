@@ -19,8 +19,8 @@ export function UploadFileToolView({ toolCall, toolResult, isStreaming = false }
   if (isStreaming) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-blue-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={Upload} size={40} className="text-blue-500 animate-pulse" />
+        <View className="bg-background rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <Icon as={Upload} size={40} className="text-primary animate-pulse" />
         </View>
         <Text className="text-xl font-roobert-semibold text-foreground mb-2">
           Uploading File
@@ -37,45 +37,46 @@ export function UploadFileToolView({ toolCall, toolResult, isStreaming = false }
   }
 
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 gap-6">
-        {filePath && (
-          <View className="bg-card border border-border rounded-xl p-4 gap-3">
-            <View className="flex-row items-center gap-2">
-              <Icon as={FileText} size={16} className="text-muted-foreground" />
-              <Text className="text-sm font-roobert-medium text-muted-foreground">
-                File Path
-              </Text>
-            </View>
+    <View className="px-6 gap-6">
+      {filePath && (
+        <View className="gap-2">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            File Path
+          </Text>
+          <View className="bg-card border border-border rounded-2xl p-4">
             <Text className="text-sm font-roobert-mono text-foreground" selectable>
               {filePath}
             </Text>
           </View>
-        )}
+        </View>
+      )}
 
-        {fileSize && (
-          <View className="bg-muted/30 rounded-xl p-3 border border-border">
-            <View className="flex-row items-center gap-2 mb-1">
-              <Icon as={HardDrive} size={14} className="text-muted-foreground" />
-              <Text className="text-xs font-roobert-medium text-muted-foreground">
-                File Size
-              </Text>
-            </View>
+      {fileSize && (
+        <View className="gap-2">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            File Size
+          </Text>
+          <View className="bg-card border border-border rounded-2xl p-4">
             <Text className="text-lg font-roobert-semibold text-foreground">
               {formatFileSize(fileSize)}
             </Text>
           </View>
-        )}
+        </View>
+      )}
 
-        {message && (
-          <View className="bg-muted/50 rounded-xl p-4 border border-border">
-            <Text className="text-sm font-roobert text-foreground">
+      {message && (
+        <View className="gap-2">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            Message
+          </Text>
+          <View className="bg-card border border-border rounded-2xl p-4">
+            <Text className="text-sm font-roobert text-foreground" selectable>
               {message}
             </Text>
           </View>
-        )}
-      </View>
-    </ScrollView>
+        </View>
+      )}
+    </View>
   );
 }
 

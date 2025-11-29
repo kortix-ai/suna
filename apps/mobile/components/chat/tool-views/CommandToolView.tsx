@@ -102,16 +102,9 @@ export function CommandToolView({
       {formattedOutput && (
         <View className="gap-2">
           <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2">
-              <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
-                Output
-              </Text>
-              {!completed && (
-                <View className="bg-primary/10 border border-primary/20 rounded-full px-2.5 py-0.5">
-                  <Text className="text-xs font-roobert-medium text-primary">Running...</Text>
-                </View>
-              )}
-            </View>
+            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+              Output
+            </Text>
             <View className="flex-row items-center gap-2">
               {hasLongOutput && (
                 <Pressable
@@ -149,8 +142,8 @@ export function CommandToolView({
           </View>
 
           <View className={`rounded-2xl p-4 border ${isError
-              ? 'bg-destructive/5 border-destructive/20'
-              : 'bg-card border-border'
+            ? 'bg-destructive/5 border-destructive/20'
+            : 'bg-card border-border'
             }`} style={{ maxHeight: expanded ? 400 : 160 }}>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text className="text-sm font-roobert text-foreground/80 leading-5" selectable>
@@ -167,8 +160,8 @@ export function CommandToolView({
             </View>
             {exitCode !== undefined && exitCode !== null && (
               <View className={`rounded-full px-3 py-1 border ${exitCode === 0
-                  ? 'bg-primary/10 border-primary/20'
-                  : 'bg-destructive/10 border-destructive/20'
+                ? 'bg-primary/10 border-primary/20'
+                : 'bg-destructive/10 border-destructive/20'
                 }`}>
                 <Text className={`text-xs font-roobert-medium ${exitCode === 0 ? 'text-primary' : 'text-destructive'
                   }`}>
@@ -186,8 +179,8 @@ export function CommandToolView({
           Status
         </Text>
         <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${isError
-            ? 'bg-destructive/5 border-destructive/20'
-            : 'bg-primary/5 border-primary/20'
+          ? 'bg-destructive/5 border-destructive/20'
+          : 'bg-primary/5 border-primary/20'
           }`}>
           <Icon
             as={isError ? AlertCircle : CheckCircle2}
