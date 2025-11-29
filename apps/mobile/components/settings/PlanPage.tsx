@@ -270,8 +270,9 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
           }, 15000); // Webhook typically processes within 10-30 seconds
         }
         
+        // Let onPurchaseComplete handle navigation - don't call onClose here
+        // This prevents double navigation and auth issues
         onPurchaseComplete?.();
-        onClose?.();
         return;
       }
 
@@ -281,8 +282,8 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
         selectedPlanOption.commitmentType,
         () => {
           handleSubscriptionUpdate();
+          // Let onPurchaseComplete handle navigation - don't call onClose here
           onPurchaseComplete?.();
-          onClose?.();
         },
         () => {},
         async (response) => {

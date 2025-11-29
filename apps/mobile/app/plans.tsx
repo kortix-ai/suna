@@ -14,14 +14,25 @@ export default function PlansScreen() {
   const { creditsExhausted } = useLocalSearchParams<{ creditsExhausted?: string }>();
 
   const handleClose = () => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // If no previous screen, navigate to home
+      router.replace('/home');
+    }
   };
 
   const handleSubscriptionUpdate = () => {
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
+    // Wait longer to ensure subscription state is fully updated before navigating
+    // This prevents auth/logout issues during navigation
     setTimeout(() => {
-      router.back();
-    }, 500);
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/home');
+      }
+    }, 1500); // Increased from 500ms to 1500ms to allow state to settle
   };
 
   return (
