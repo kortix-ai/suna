@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { ReferralCodeSection } from './referral-code-section';
 import { ReferralStatsCards } from './referral-stats-cards';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { ReferralEmailInvitation } from './referral-email-invitation';
 
 export function ReferralsTab() {
   const t = useTranslations('settings.referrals');
@@ -49,6 +50,10 @@ export function ReferralsTab() {
       <div>
         <h3 className="text-sm font-medium mb-3">{t('shareYourLink')}</h3>
         <ReferralCodeSection referralCode={referralCode} isLoading={codeLoading} />
+      </div>
+
+      <div>
+        <ReferralEmailInvitation />
       </div>
 
       {/* Stats Section */}
