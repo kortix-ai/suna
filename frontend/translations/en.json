@@ -123,7 +123,18 @@
       "codeCopied": "Referral code copied to clipboard",
       "linkCopied": "Referral link copied to clipboard",
       "codeRefreshed": "Referral code refreshed successfully",
-      "refreshFailed": "Failed to refresh referral code"
+      "refreshFailed": "Failed to refresh referral code",
+      "inviteByEmail": "Invite by Email",
+      "inviteByEmailDescription": "Add up to 3 email addresses (press Enter, Space, or Comma to add)",
+      "emailAddress": "Email address",
+      "emailPlaceholder": "Enter email addresses (press Enter, Space, or Comma)",
+      "emailsAdded": "emails",
+      "sent": "sent",
+      "send": "Send",
+      "sending": "Sending...",
+      "sendAllInvites": "Send All Invites",
+      "allSent": "All Sent",
+      "emailSent": "Referral invitation sent successfully"
     },
     "billing": {
       "title": "Billing & Subscription",

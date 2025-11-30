@@ -123,7 +123,18 @@
       "codeCopied": "Code kopiert",
       "linkCopied": "Link kopiert",
       "codeRefreshed": "Empfehlungscode erfolgreich aktualisiert",
-      "refreshFailed": "Aktualisierung des Empfehlungscodes fehlgeschlagen"
+      "refreshFailed": "Aktualisierung des Empfehlungscodes fehlgeschlagen",
+      "inviteByEmail": "Per E-Mail einladen",
+      "inviteByEmailDescription": "Füge bis zu 3 E-Mail-Adressen hinzu (Eingabetaste, Leertaste oder Komma drücken)",
+      "emailAddress": "E-Mail-Adresse",
+      "emailPlaceholder": "E-Mail-Adressen eingeben (Eingabe, Leertaste oder Komma drücken)",
+      "emailsAdded": "E-Mails",
+      "sent": "gesendet",
+      "send": "Senden",
+      "sending": "Wird gesendet...",
+      "sendAllInvites": "Alle Einladungen senden",
+      "allSent": "Alle gesendet",
+      "emailSent": "Empfehlungseinladung erfolgreich gesendet"
     },
     "billing": {
       "title": "Abrechnungsstatus",

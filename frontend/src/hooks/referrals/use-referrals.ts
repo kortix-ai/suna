@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { referralsApi, ReferralCodeResponse, ReferralStats, ReferralListResponse, ValidateReferralCodeResponse } from '@/lib/api/referrals';
+import { referralsApi, ReferralCodeResponse, ReferralStats, ReferralListResponse, ValidateReferralCodeResponse, ReferralEmailResponse } from '@/lib/api/referrals';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 
@@ -79,5 +79,29 @@ export function useCopyReferralLink() {
   };
 
   return { copyToClipboard, referralUrl: referralData?.referral_url };
+}
+
+export function useSendReferralEmails() {
+  const t = useTranslations('settings.referrals');
+  
+  return useMutation({
+    mutationFn: (emails: string[]) => referralsApi.sendReferralEmails(emails),
+    onSuccess: (data) => {
+      if (data.success_count && data.total_count) {
+        if (data.success_count === data.total_count) {
+          toast.success(`Successfully sent ${data.success_count} ${data.success_count === 1 ? 'invitation' : 'invitations'}!`);
+        } else {
+          toast.warning(`Sent ${data.success_count} out of ${data.total_count} invitations`);
+        }
+      } else {
+        toast.success(t('emailSent'));
+      }
+    },
+    onError: (error: any) => {
+      const errorMessage = error?.message || 'Failed to send referral emails';
+      toast.error(errorMessage);
+      console.error('Referral email error:', error);
+    },
+  });
 }
 

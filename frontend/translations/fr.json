@@ -116,7 +116,18 @@
       "codeCopied": "Code de parrainage copié dans le presse-papiers",
       "linkCopied": "Lien de parrainage copié dans le presse-papiers",
       "codeRefreshed": "Code de parrainage actualisé avec succès",
-      "refreshFailed": "Échec de l'actualisation du code de parrainage"
+      "refreshFailed": "Échec de l'actualisation du code de parrainage",
+      "inviteByEmail": "Inviter par Email",
+      "inviteByEmailDescription": "Ajoute jusqu'à 3 adresses email (appuie sur Entrée, Espace ou Virgule)",
+      "emailAddress": "Adresse email",
+      "emailPlaceholder": "Entre les adresses email (appuie sur Entrée, Espace ou Virgule)",
+      "emailsAdded": "emails",
+      "sent": "envoyé",
+      "send": "Envoyer",
+      "sending": "Envoi...",
+      "sendAllInvites": "Envoyer Toutes les Invitations",
+      "allSent": "Tout Envoyé",
+      "emailSent": "Invitation de parrainage envoyée avec succès"
     },
     "billing": {
       "title": "Facturation et Abonnement",

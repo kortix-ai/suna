@@ -6,10 +6,13 @@ from core.billing.shared.config import CREDITS_PER_DOLLAR
 from .config import REFERRAL_CREDITS, MAX_EARNABLE_CREDITS_FROM_REFERRAL
 import json
 import re
+from core.notifications.notification_service import NotificationService
+from core.utils.config import config
 
 class ReferralService:
     def __init__(self, db: DBConnection):
         self.db = db
+        self.notification_service = NotificationService()
     
     async def _get_client(self):
         return await self.db.client
@@ -224,3 +227,107 @@ class ReferralService:
             logger.error(f"Error getting user referrals: {e}", user_id=user_id)
             raise
 
+    async def send_referral_email(self, user_id: str, email: str) -> Dict:
+        try:
+            referral_code = await self.get_or_create_referral_code(user_id)
+            
+            from core.utils.config import config
+            frontend_url = config.FRONTEND_URL
+            referral_url = f"{frontend_url}/auth?ref={referral_code}"
+
+            result = await self.notification_service.send_referral_code_notification(
+                recipient_email=email,
+                referral_url=referral_url,
+                inviter_id=user_id
+            )
+            
+            if result.get('success'):
+                logger.info(
+                    "Referral email sent successfully",
+                    user_id=user_id,
+                    recipient_email=email,
+                    referral_code=referral_code
+                )
+                return {
+                    'success': True,
+                    'message': 'Referral email sent successfully'
+                }
+            else:
+                logger.error(
+                    "Failed to send referral email",
+                    user_id=user_id,
+                    recipient_email=email,
+                    error=result.get('error')
+                )
+                return {
+                    'success': False,
+                    'message': result.get('error', 'Failed to send email')
+                }
+        except Exception as e:
+            logger.error(f"Error sending referral email: {e}", user_id=user_id, recipient_email=email)
+            return {
+                'success': False,
+                'message': str(e)
+            }
+    
+    async def send_referral_emails(self, user_id: str, emails: List[str]) -> Dict:
+        try:
+            referral_code = await self.get_or_create_referral_code(user_id)
+            
+            from core.utils.config import config
+            frontend_url = config.FRONTEND_URL
+            referral_url = f"{frontend_url}/auth?ref={referral_code}"
+
+            results = []
+            success_count = 0
+            
+            for email in emails:
+                email_clean = email.strip().lower()
+                
+                result = await self.notification_service.send_referral_code_notification(
+                    recipient_email=email_clean,
+                    referral_url=referral_url,
+                    inviter_id=user_id
+                )
+                
+                email_result = {
+                    'email': email_clean,
+                    'success': result.get('success', False),
+                    'message': result.get('error') if not result.get('success') else 'Email sent successfully'
+                }
+                
+                results.append(email_result)
+                
+                if result.get('success'):
+                    success_count += 1
+                    logger.info(
+                        "Referral email sent successfully",
+                        user_id=user_id,
+                        recipient_email=email_clean,
+                        referral_code=referral_code
+                    )
+                else:
+                    logger.error(
+                        "Failed to send referral email",
+                        user_id=user_id,
+                        recipient_email=email_clean,
+                        error=result.get('error')
+                    )
+            
+            total_count = len(emails)
+            
+            return {
+                'success': success_count > 0,
+                'message': f'Successfully sent {success_count} out of {total_count} emails',
+                'results': results,
+                'success_count': success_count,
+                'total_count': total_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error sending referral emails: {e}", user_id=user_id)
+            return {
+                'success': False,
+                'message': str(e),
+                'results': []
+            }

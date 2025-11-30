@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from datetime import datetime
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
@@ -18,7 +18,6 @@ class ReferralCodeResponse(BaseModel):
     referral_code: str
     referral_url: str
 
-
 class ReferralStats(BaseModel):
     referral_code: str
     total_referrals: int
@@ -29,7 +28,6 @@ class ReferralStats(BaseModel):
     max_earnable_credits: Decimal
     has_reached_limit: bool
 
-
 class Referral(BaseModel):
     id: str
     referred_account_id: str
@@ -38,21 +36,25 @@ class Referral(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
 
-
 class ReferralListResponse(BaseModel):
     referrals: List[Referral]
     total_count: int
 
-
 class ValidateReferralCodeRequest(BaseModel):
     referral_code: str
-
 
 class ValidateReferralCodeResponse(BaseModel):
     valid: bool
     referrer_id: Optional[str] = None
     message: Optional[str] = None
 
+class ReferralEmailRequest(BaseModel):
+    emails: List[str]
+
+class ReferralEmailResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    results: Optional[List[Dict[str, Any]]] = None
 
 def get_referral_service() -> ReferralService:
     db = DBConnection()
@@ -188,3 +190,24 @@ async def get_user_referrals(
     except Exception as e:
         logger.error(f"Failed to get user referrals: {e}", user_id=user_id)
         raise HTTPException(status_code=500, detail="Failed to get user referrals")
+
+@router.post("/email", response_model=ReferralEmailResponse)
+async def send_referral_email(
+    request: ReferralEmailRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    service: ReferralService = Depends(get_referral_service)
+):
+    try:
+        result = await service.send_referral_emails(user_id, request.emails)
+        
+        return ReferralEmailResponse(
+            success=result.get('success', False),
+            message=result.get('message'),
+            results=result.get('results', [])
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to send referral emails: {e}", user_id=user_id)
+        raise HTTPException(status_code=500, detail="Failed to send referral emails")

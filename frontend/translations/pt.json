@@ -116,7 +116,18 @@
       "codeCopied": "Código de indicação copiado para a área de transferência",
       "linkCopied": "Link de indicação copiado para a área de transferência",
       "codeRefreshed": "Código de indicação atualizado com sucesso",
-      "refreshFailed": "Falha ao atualizar o código de indicação"
+      "refreshFailed": "Falha ao atualizar o código de indicação",
+      "inviteByEmail": "Convidar por Email",
+      "inviteByEmailDescription": "Adiciona até 3 endereços de email (pressiona Enter, Espaço ou Vírgula)",
+      "emailAddress": "Endereço de email",
+      "emailPlaceholder": "Digite endereços de email (pressiona Enter, Espaço ou Vírgula)",
+      "emailsAdded": "emails",
+      "sent": "enviado",
+      "send": "Enviar",
+      "sending": "Enviando...",
+      "sendAllInvites": "Enviar Todos os Convites",
+      "allSent": "Tudo Enviado",
+      "emailSent": "Convite de indicação enviado com sucesso"
     },
     "billing": {
       "title": "Cobrança e Assinatura",
