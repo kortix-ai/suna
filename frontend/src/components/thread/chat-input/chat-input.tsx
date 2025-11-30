@@ -534,9 +534,17 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
     }, [autoFocus]);
 
-    // Clear input when agent starts running (stream connected)
+    // Track previous isAgentRunning value to detect actual transitions
+    const prevIsAgentRunning = useRef(isAgentRunning);
+    
+    // Clear input only when agent STARTS running (transitions from false to true)
+    // This prevents clearing when agent stops or when component re-renders
     useEffect(() => {
-      if (isAgentRunning) {
+      const wasRunning = prevIsAgentRunning.current;
+      prevIsAgentRunning.current = isAgentRunning;
+      
+      // Only clear when agent actually starts (false → true transition)
+      if (isAgentRunning && !wasRunning) {
         setLocalValue('');
         setHasSubmitted(false);
         

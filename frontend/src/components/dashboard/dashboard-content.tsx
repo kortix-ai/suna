@@ -371,7 +371,7 @@ export function DashboardContent() {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
       }
-      setInputValue('');
+      // Keep the input value on error so user doesn't lose their message
       chatInputRef.current?.clearPendingFiles();
       setIsSubmitting(false);
       setIsRedirecting(false);
