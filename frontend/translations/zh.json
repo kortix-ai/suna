@@ -116,7 +116,18 @@
       "codeCopied": "推荐码已复制到剪贴板",
       "linkCopied": "推荐链接已复制到剪贴板",
       "codeRefreshed": "推荐码刷新成功",
-      "refreshFailed": "刷新推荐码失败"
+      "refreshFailed": "刷新推荐码失败",
+      "inviteByEmail": "通过邮箱邀请",
+      "inviteByEmailDescription": "添加最多3个邮箱地址（按回车、空格或逗号）",
+      "emailAddress": "邮箱地址",
+      "emailPlaceholder": "输入邮箱地址（按回车、空格或逗号）",
+      "emailsAdded": "邮箱",
+      "sent": "已发送",
+      "send": "发送",
+      "sending": "发送中...",
+      "sendAllInvites": "发送所有邀请",
+      "allSent": "全部已发送",
+      "emailSent": "推荐邀请发送成功"
     },
     "billing": {
       "title": "账单和订阅",

@@ -278,7 +278,8 @@ class NovuService:
         payload: Optional[Dict[str, Any]] = None,
         subscriber_email: Optional[str] = None,
         subscriber_name: Optional[str] = None,
-        avatar: Optional[str] = None
+        avatar: Optional[str] = None,
+        overrides: Optional[Dict[str, Any]] = None,
     ) -> Any:
         if not self.enabled:
             logger.error(f"❌ Workflow skipped (Novu disabled in {config.ENV_MODE.value} mode): {workflow_id} - Set ENV_MODE to 'staging' or 'production' to enable")
@@ -302,7 +303,8 @@ class NovuService:
                             "name": subscriber_name,
                             "avatar": avatar
                         },
-                        payload=payload
+                        payload=payload,
+                        overrides=overrides
                     )
                 )
 

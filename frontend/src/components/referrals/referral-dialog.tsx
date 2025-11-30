@@ -11,6 +11,7 @@ import { useTranslations } from 'next-intl';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralCodeSection } from './referral-code-section';
 import { ReferralStatsCards } from './referral-stats-cards';
+import { ReferralEmailInvitation } from './referral-email-invitation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 interface ReferralDialogProps {
@@ -29,7 +30,7 @@ export function ReferralDialog({ open: controlledOpen, onOpenChange: controlledO
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] sm:max-h-[85vh]">
+      <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden max-h-[90vh] sm:max-h-[85vh]">
         <div className="p-4 sm:p-6 overflow-y-auto max-h-[85vh] sm:max-h-none">
           {/* Logo & Header */}
           <div className="flex flex-col items-center text-center mb-3 sm:mb-5">
@@ -58,13 +59,14 @@ export function ReferralDialog({ open: controlledOpen, onOpenChange: controlledO
               </div>
             </div>
           </div>
-
-          {/* Referral Code Section */}
-          <div className="mb-3 sm:mb-5">
+          <div className="mb-3 sm:mb-4">
             <ReferralCodeSection referralCode={referralCode} isLoading={codeLoading} />
           </div>
-
-          {/* Stats */}
+          
+          <div className="mb-3 sm:mb-4">
+            <ReferralEmailInvitation />
+          </div>
+          
           <ReferralStatsCards stats={stats} isLoading={statsLoading} compact />
         </div>
       </DialogContent>

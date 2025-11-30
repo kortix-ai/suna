@@ -116,7 +116,18 @@
       "codeCopied": "Código de referido copiado al portapapeles",
       "linkCopied": "Enlace de referido copiado al portapapeles",
       "codeRefreshed": "Código de referido actualizado exitosamente",
-      "refreshFailed": "Error al actualizar el código de referido"
+      "refreshFailed": "Error al actualizar el código de referido",
+      "inviteByEmail": "Invitar por Correo",
+      "inviteByEmailDescription": "Añade hasta 3 direcciones de correo (presiona Enter, Espacio o Coma)",
+      "emailAddress": "Dirección de correo",
+      "emailPlaceholder": "Ingresa direcciones de correo (presiona Enter, Espacio o Coma)",
+      "emailsAdded": "correos",
+      "sent": "enviado",
+      "send": "Enviar",
+      "sending": "Enviando...",
+      "sendAllInvites": "Enviar Todas las Invitaciones",
+      "allSent": "Todo Enviado",
+      "emailSent": "Invitación de referido enviada exitosamente"
     },
     "billing": {
       "title": "Facturación y Suscripción",

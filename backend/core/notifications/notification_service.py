@@ -5,16 +5,53 @@ from core.utils.config import config
 from .novu_service import novu_service
 from .presence_service import presence_service
 from .models import UserNotificationSettings
+from core.services.email import email_service
+
+KORTIX_HELLO_EMAIL = 'hello@kortix.com'
 
 class NotificationService:
     def __init__(self):
         self.db = DBConnection()
         self.novu = novu_service
-        # In-memory storage for device tokens (consider moving to database for production)
         self._device_tokens: Dict[str, Dict[str, Any]] = {}
-        # In-memory storage for notification settings
         self._notification_settings: Dict[str, UserNotificationSettings] = {}
-    
+
+    async def send_referral_code_notification(
+        self,
+        recipient_email: str,
+        referral_url: str,
+        inviter_id: str,
+    ) -> Dict[str, Any]:
+        try:
+            inviter_info = await self._get_account_info(inviter_id)
+            
+            if not inviter_info or not inviter_info.get("email"):
+                logger.error(f"No account found for inviter id: {inviter_id}")
+                return {"success": False, "error": "Inviter not found"}
+
+            inviter_name = inviter_info.get("name", "A friend")
+            
+            recipient_email_clean = recipient_email.strip().lower()
+            recipient_name = self._extract_name_from_email(recipient_email_clean)
+            
+            success = email_service.send_referral_email(
+                recipient_email=recipient_email_clean,
+                recipient_name=recipient_name,
+                sender_name=inviter_name,
+                referral_url=referral_url
+            )
+
+            if success:
+                logger.info(f"Referral code email sent to {recipient_email_clean} from {inviter_name}")
+                return {"success": True}
+            else:
+                logger.error(f"Failed to send referral email to {recipient_email_clean}")
+                return {"success": False, "error": "Failed to send email"}
+        
+        except Exception as e:
+            logger.error(f"Error sending referral code notification: {str(e)}")
+            return {"success": False, "error": str(e)}
+
     async def send_task_completion_notification(
         self,
         account_id: str,

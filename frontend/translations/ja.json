@@ -116,7 +116,18 @@
       "codeCopied": "紹介コードをクリップボードにコピーしました",
       "linkCopied": "紹介リンクをクリップボードにコピーしました",
       "codeRefreshed": "紹介コードを更新しました",
-      "refreshFailed": "紹介コードの更新に失敗しました"
+      "refreshFailed": "紹介コードの更新に失敗しました",
+      "inviteByEmail": "メールで招待",
+      "inviteByEmailDescription": "最大3つのメールアドレスを追加（Enter、Space、またはCommaを押す）",
+      "emailAddress": "メールアドレス",
+      "emailPlaceholder": "メールアドレスを入力（Enter、Space、またはCommaを押す）",
+      "emailsAdded": "メール",
+      "sent": "送信済み",
+      "send": "送信",
+      "sending": "送信中...",
+      "sendAllInvites": "すべての招待を送信",
+      "allSent": "すべて送信済み",
+      "emailSent": "紹介招待を送信しました"
     },
     "billing": {
       "title": "請求とサブスクリプション",
