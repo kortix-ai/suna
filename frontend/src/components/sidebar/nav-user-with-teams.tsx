@@ -337,7 +337,9 @@ export function NavUserWithTeams({
                   <div className="text-muted-foreground font-medium">Add team</div>
                 </DropdownMenuItem>
               </DialogTrigger> */}
-              <DropdownMenuSeparator className="my-1" />
+              {(personalAccount || (teamAccounts && teamAccounts.length > 0)) && (
+                <DropdownMenuSeparator className="my-1" />
+              )}
 
               {/* General Section */}
               <DropdownMenuLabel className="text-muted-foreground text-xs px-2 py-1.5">

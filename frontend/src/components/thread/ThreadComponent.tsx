@@ -163,6 +163,13 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
 
+  // Memoized callback for closing side panel to prevent unnecessary re-renders
+  const handleSidePanelClose = useCallback(() => {
+    setIsSidePanelOpen(false);
+    userClosedPanelRef.current = true;
+    setAutoOpenedPanel(true);
+  }, [setIsSidePanelOpen, setAutoOpenedPanel]);
+
   // Billing hooks - always call unconditionally, but disable for unauthenticated/shared
   const billingModal = useBillingModal();
   const threadBilling = useThreadBilling(
@@ -956,11 +963,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         agentStatus={agentStatus}
         currentToolIndex={currentToolIndex}
         onSidePanelNavigate={handleSidePanelNavigate}
-        onSidePanelClose={() => {
-          setIsSidePanelOpen(false);
-          userClosedPanelRef.current = true;
-          setAutoOpenedPanel(true);
-        }}
+        onSidePanelClose={handleSidePanelClose}
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
         isLoading={!initialLoadCompleted || isLoading}
@@ -996,11 +999,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           agentStatus={agentStatus}
           currentToolIndex={currentToolIndex}
           onSidePanelNavigate={handleSidePanelNavigate}
-          onSidePanelClose={() => {
-            setIsSidePanelOpen(false);
-            userClosedPanelRef.current = true;
-            setAutoOpenedPanel(true);
-          }}
+          onSidePanelClose={handleSidePanelClose}
           renderAssistantMessage={toolViewAssistant}
           renderToolResult={toolViewResult}
           isLoading={!initialLoadCompleted || isLoading}
@@ -1176,11 +1175,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         agentStatus={agentStatus}
         currentToolIndex={currentToolIndex}
         onSidePanelNavigate={handleSidePanelNavigate}
-        onSidePanelClose={() => {
-          setIsSidePanelOpen(false);
-          userClosedPanelRef.current = true;
-          setAutoOpenedPanel(true);
-        }}
+        onSidePanelClose={handleSidePanelClose}
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
         isLoading={!initialLoadCompleted || isLoading}

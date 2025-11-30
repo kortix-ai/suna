@@ -422,6 +422,7 @@
     "credits": "Crédits",
     "popular": "Populaire",
     "creditsExplained": "Crédits expliqués",
+    "creditsExhausted": "+200 Crédits dans {time}. Mettez à niveau pour utiliser maintenant.",
     "creditsExhaustedRefreshIn": "Vous avez épuisé vos crédits. Ils seront renouvelés dans {time}",
     "trialActive": "Essai Actif",
     "trialBadge": "Essai de 7 Jours",

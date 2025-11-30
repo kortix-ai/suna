@@ -511,7 +511,7 @@ LoadingState.displayName = 'LoadingState';
 // Main Component
 // ============================================================================
 
-export function ToolCallSidePanel({
+export const ToolCallSidePanel = memo(function ToolCallSidePanel({
   isOpen,
   onClose,
   toolCalls,
@@ -1194,4 +1194,4 @@ export function ToolCallSidePanel({
           )}
         </motion.div>
   );
-}
+});
