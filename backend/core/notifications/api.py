@@ -27,7 +27,7 @@ class NotificationSettingsUpdate(BaseModel):
 class DeviceTokenRequest(BaseModel):
     device_token: str
     device_type: str = "mobile"
-    provider: str = "fcm"
+    provider: str = "expo"
 
 
 class TestNotificationRequest(BaseModel):
@@ -130,6 +130,7 @@ async def register_device_token(
 @router.delete("/device-token/{device_token}")
 async def unregister_device_token(
     device_token: str,
+    provider: str = "expo",
     current_user: dict = Depends(get_current_user)
 ):
     check_notifications_enabled()
@@ -138,7 +139,8 @@ async def unregister_device_token(
         
         success = await notification_service.unregister_device_token(
             account_id=account_id,
-            device_token=device_token
+            device_token=device_token,
+            provider=provider
         )
         
         if not success:
