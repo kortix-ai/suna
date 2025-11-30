@@ -682,6 +682,15 @@ class ThreadManager:
             logger.error(f"Invalid config type in auto-continue: {type(config)}, creating new one")
             config = ProcessorConfig()
         
+        # Get account_id once for billing checks
+        account_id = None
+        try:
+            client = await self.db.client
+            thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
+            account_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
+        except Exception as e:
+            logger.warning(f"Failed to get account_id for thread {thread_id}: {e}")
+        
         while auto_continue_state['active'] and auto_continue_state['count'] < native_max_auto_continues:
             auto_continue_state['active'] = False  # Reset for this iteration
             
@@ -690,6 +699,23 @@ class ThreadManager:
                 if cancellation_event and cancellation_event.is_set():
                     logger.info(f"Cancellation signal received in auto-continue generator for thread {thread_id}")
                     break
+                
+                # Check credits before each auto-continue iteration (skip cache to get fresh balance)
+                if account_id:
+                    try:
+                        from core.billing.credits.integration import billing_integration
+                        can_run, message, _ = await billing_integration.check_and_reserve_credits(account_id)
+                        if not can_run:
+                            logger.warning(f"Stopping auto-continue - insufficient credits: {message}")
+                            yield {
+                                "type": "status",
+                                "status": "stopped",
+                                "message": f"Insufficient credits: {message}"
+                            }
+                            break
+                    except Exception as e:
+                        logger.error(f"Error checking credits in auto-continue: {e}")
+                        # Continue execution if credit check fails (don't block on billing errors)
                 
                 response_gen = await self._execute_run(
                     thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
