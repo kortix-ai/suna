@@ -1,11 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useReferralCode, useReferralStats } from '@/hooks/referrals/use-referrals';
 import { useTranslations } from 'next-intl';
 import { ReferralCodeSection } from './referral-code-section';
 import { ReferralStatsCards } from './referral-stats-cards';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export function ReferralsTab() {
   const t = useTranslations('settings.referrals');
@@ -13,25 +13,49 @@ export function ReferralsTab() {
   const { data: stats, isLoading: statsLoading } = useReferralStats();
 
   return (
-    <div className="p-6 space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {t('description')} <span className="font-semibold text-foreground">{t('creditsPerReferral')}</span>!
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t('maxEarnable')} <span className="font-semibold text-foreground">{t('maxCredits')}</span>
-          </p>
+    <div className="p-4 sm:p-6 space-y-6 min-w-0 max-w-full overflow-x-hidden">
+      {/* Header */}
+      <div className="flex flex-col items-center text-center mb-4 sm:mb-6">
+        <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
+          <KortixLogo size={24} variant="symbol" className="sm:hidden" />
+          <KortixLogo size={32} variant="symbol" className="hidden sm:block" />
+        </div>
+        <h2 className="text-lg sm:text-xl font-semibold text-foreground">
+          {t('title')}
+        </h2>
+        <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2">
+          {t('description')} <span className="font-semibold text-foreground">{t('creditsPerReferral')}</span>
+        </p>
+      </div>
 
-          <ReferralCodeSection referralCode={referralCode} isLoading={codeLoading} />
-        </CardContent>
-      </Card>
+      {/* Credit Info */}
+      <div className="bg-muted/30 rounded-lg sm:rounded-xl p-3 sm:p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">{t('youEarn')}</p>
+            <p className="text-xl font-semibold">{t('creditsPerReferral')}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground mb-1">{t('friendGets')}</p>
+            <p className="text-xl font-semibold">{t('creditsPerReferral')}</p>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
+          {t('maxEarnable')} <span className="font-semibold text-foreground">{t('maxCredits')}</span>
+        </p>
+      </div>
 
-      <ReferralStatsCards stats={stats} isLoading={statsLoading} />
+      {/* Share Section */}
+      <div>
+        <h3 className="text-sm font-medium mb-3">{t('shareYourLink')}</h3>
+        <ReferralCodeSection referralCode={referralCode} isLoading={codeLoading} />
+      </div>
+
+      {/* Stats Section */}
+      <div>
+        <h3 className="text-sm font-medium mb-3">{t('yourStats')}</h3>
+        <ReferralStatsCards stats={stats} isLoading={statsLoading} />
+      </div>
     </div>
   );
 }
-

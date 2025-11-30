@@ -665,7 +665,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onPaste={handlePaste}
           placeholder={animatedPlaceholder}
           className={cn(
-            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
+            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
             isDraggingOver ? 'opacity-40' : '',
           )}
           disabled={disabled && !isAgentRunning}
@@ -675,8 +675,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     ), [value, handleChange, handleKeyDown, handlePaste, animatedPlaceholder, isDraggingOver, loading, disabled, isAgentRunning, hasSubmitted]);
 
     const renderControls = useMemo(() => (
-      <div className="flex items-center justify-between mt-0 mb-1 px-2">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink overflow-visible">
           {!hideAttachments && (
             <FileUploadHandler
               ref={fileInputRef}
@@ -710,7 +710,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                           <Plug className="h-4 w-4" />
                         </Button>
                         {isFreeTier && !isLocalMode() && (
-                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center">
+                          <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
                             <Lock className="h-2.5 w-2.5 text-primary-foreground" strokeWidth={2.5} />
                           </div>
                         )}
@@ -907,19 +907,19 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 }
               }}
               className={cn(
-                "h-8 px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-pointer transition-all duration-200",
+                "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
                 !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
                 isModeDismissing && "animate-out fade-out-0 zoom-out-95"
               )}
             >
               {selectedMode && getModeIcon(selectedMode)}
-              <span className="text-sm">{selectedMode?.charAt(0).toUpperCase()}{selectedMode?.slice(1)}</span>
-              <X className="w-4 h-4" />
+              <span className="hidden sm:inline text-sm">{selectedMode?.charAt(0).toUpperCase()}{selectedMode?.slice(1)}</span>
+              <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </Button>
           )}
         </div>
 
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-2 flex-shrink-0'>
           {renderConfigDropdown}
           <PlanSelectionModal
             open={planModalOpen}

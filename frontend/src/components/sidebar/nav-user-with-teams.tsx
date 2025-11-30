@@ -64,7 +64,7 @@ import {
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
-import { isLocalMode } from '@/lib/config';
+import { isLocalMode, isProductionMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { PlanSelectionModal } from '@/components/billing/pricing';
@@ -203,6 +203,33 @@ export function NavUserWithTeams({
     <Dialog open={showNewTeamDialog} onOpenChange={setShowNewTeamDialog}>
       <SidebarMenu>
         <SidebarMenuItem className="relative">
+          {/* Buttons Container - Above user card */}
+          <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50 flex flex-col gap-2">
+            {/* Referral Button - Above Upgrade */}
+            {!isProductionMode() && (
+              <Button
+                onClick={openReferralDialog}
+                variant="outline"
+                size="lg"
+                className="w-full items-center gap-2 px-3 hover:bg-muted/50 transition-colors"
+              >
+                <Users className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm flex-1 text-left">{t('referAndEarn')}</span>
+                <span className="text-xs font-semibold text-primary flex-shrink-0">+400</span>
+              </Button>
+            )}
+            {/* Upgrade Button - Closest to user card */}
+            {isFreeTier && (
+              <Button
+                onClick={() => setShowPlanModal(true)}
+                variant="default"
+                size="lg"
+                className="w-full"
+              >
+                {t('upgrade')}
+              </Button>
+            )}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
@@ -434,30 +461,6 @@ export function NavUserWithTeams({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <div className="absolute bottom-full left-0 right-0 mb-2 px-0 group-data-[collapsible=icon]:hidden z-50 space-y-2">
-            <Button
-              onClick={openReferralDialog}
-              variant="outline"
-              size="lg"
-              className="w-full items relative justify-center"
-            >
-              <Users className="h-4 w-4" />
-              <span>{t('referAndEarn')}</span>
-              <Badge className="ml-auto text-[10px] px-1.5 py-0 bg-gradient-to-r from-purple-500 to-pink-500 text-white border-0">
-                {t('new')}
-              </Badge>
-            </Button>
-            {isFreeTier && (
-              <Button
-                onClick={() => setShowPlanModal(true)}
-                variant="default"
-                size="lg"
-                className="w-full relative"
-              >
-                {t('upgrade')}
-              </Button>
-            )}
-          </div>
         </SidebarMenuItem>
       </SidebarMenu>
 

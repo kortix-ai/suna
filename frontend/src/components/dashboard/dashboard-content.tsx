@@ -443,14 +443,14 @@ export function DashboardContent() {
             )} */}
             
 
-            <div className="flex-1 flex items-start justify-center pt-[30vh]">
+            <div className="flex-1 flex items-start justify-center pt-[25vh] sm:pt-[30vh]">
               {viewMode === 'super-worker' && (
                 <div className="w-full animate-in fade-in-0 duration-300">
-                  <div className="px-4 py-8">
-                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-6 md:space-y-8">
+                  <div className="px-4 py-6 sm:py-8">
+                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-5 sm:space-y-6 md:space-y-8">
                       <div className="flex flex-col items-center text-center w-full">
                         <p
-                          className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
+                          className="tracking-tight text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90"
                         >
                           {t('whatWouldYouLike')}
                         </p>
@@ -534,7 +534,7 @@ export function DashboardContent() {
 
                   {/* Modes Panel - Below chat input, doesn't affect its position */}
                   {isSunaAgent && (
-                    <div className="px-4 pb-8">
+                    <div className="px-4 pb-6 sm:pb-8">
                       <div className="max-w-3xl mx-auto">
                         <Suspense fallback={<div className="h-24 bg-muted/10 rounded-lg animate-pulse" />}>
                           <SunaModesPanel

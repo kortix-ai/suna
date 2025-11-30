@@ -1242,15 +1242,15 @@ export function SunaModesPanel({
     <div className="w-full space-y-4">
       {/* Mode Tabs - Only show when no mode is selected */}
       {!selectedMode && (
-        <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300">
-          <div className="inline-flex gap-2">
+        <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300 px-2 sm:px-0">
+          <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
             {modes.map((mode) => (
               <Button
                 key={mode.id}
                 variant="outline"
                 size="sm"
                 onClick={() => onModeSelect(mode.id)}
-                className="flex items-center gap-2 shrink-0 transition-all duration-200 bg-background hover:bg-accent rounded-xl text-muted-foreground hover:text-foreground border-border cursor-pointer"
+                className="flex items-center justify-center sm:justify-start gap-2 shrink-0 transition-all duration-200 bg-background hover:bg-accent rounded-xl text-muted-foreground hover:text-foreground border-border cursor-pointer"
               >
                 {mode.icon}
                 <span>{mode.label}</span>

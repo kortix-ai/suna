@@ -15,6 +15,7 @@ import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog';
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -36,6 +37,7 @@ function LoginContent() {
   const isSignUp = mode !== 'signin';
   const [referralCode, setReferralCode] = useState(referralCodeParam);
   const [showReferralInput, setShowReferralInput] = useState(false);
+  const [showReferralDialog, setShowReferralDialog] = useState(false);
   const isMobile = useMediaQuery('(max-width: 768px)');
   const [mounted, setMounted] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false); // GDPR requires explicit opt-in
@@ -408,40 +410,10 @@ function LoginContent() {
                 required
               />
 
-              {referralCodeParam ? (
+              {referralCodeParam && (
                 <div className="bg-card border rounded-xl p-3">
                   <p className="text-xs text-muted-foreground mb-1">{t('referralCode')}</p>
                   <p className="text-sm font-semibold">{referralCode}</p>
-                </div>
-              ) : (
-                <div className='mb-4'>
-                  {!showReferralInput ? (
-                    <div className='flex justify-center'>
-                      <Button
-                        variant="link"
-                        onClick={() => setShowReferralInput(true)}
-                        className="text-sm underline text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {t('haveReferralCode')}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <label htmlFor="referralCode" className="text-xs text-muted-foreground block">
-                        {t('referralCode')}
-                      </label>
-                      <Input
-                        id="referralCode"
-                        name="referralCode"
-                        type="text"
-                        placeholder={t('enterCode')}
-                        value={referralCode}
-                        onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                        maxLength={8}
-                        autoFocus
-                      />
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -509,7 +481,29 @@ function LoginContent() {
               <p className="text-xs text-muted-foreground text-center">
                 {t('magicLinkExplanation')}
               </p>
+              
+              {/* Minimal Referral Link */}
+              {!referralCodeParam && (
+                <button
+                  type="button"
+                  onClick={() => setShowReferralDialog(true)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-center mt-1"
+                >
+                  Have a referral code?
+                </button>
+              )}
             </form>
+            
+            {/* Referral Code Dialog */}
+            <ReferralCodeDialog
+              open={showReferralDialog}
+              onOpenChange={setShowReferralDialog}
+              referralCode={referralCode}
+              onCodeChange={(code) => {
+                setReferralCode(code);
+                setShowReferralDialog(false);
+              }}
+            />
           </div>
         </div>
         <div className="hidden lg:flex flex-1 items-center justify-center relative overflow-hidden">

@@ -104,101 +104,103 @@ export function DowngradeConfirmationDialog({
       if (!open) resetAndClose();
       else onOpenChange(open);
     }}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] sm:max-h-[85vh]">
         {step === 1 ? (
-          <div className="p-8">
-            {/* Logo & Header */}
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="mb-4 p-3 rounded-2xl bg-muted/50">
-                <KortixLogo size={32} variant="symbol" />
+          <div className="p-4 sm:p-8">
+            {/* Logo & Header - compact on mobile */}
+            <div className="flex flex-col items-center text-center mb-4 sm:mb-6">
+              <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
+                <KortixLogo size={24} variant="symbol" className="sm:hidden" />
+                <KortixLogo size={32} variant="symbol" className="hidden sm:block" />
               </div>
-              <DialogTitle className="text-xl font-semibold text-foreground">
+              <DialogTitle className="text-lg sm:text-xl font-semibold text-foreground">
                 {t('confirmTitle')}
               </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2">
                 {t('confirmSubtitle')}
               </p>
             </div>
 
             {/* Content */}
-            <div className="bg-muted/30 rounded-xl p-4 mb-6">
-              <p className="text-sm text-muted-foreground">
+            <div className="bg-muted/30 rounded-lg sm:rounded-xl p-3 sm:p-4 mb-4 sm:mb-6">
+              <p className="text-xs sm:text-sm text-muted-foreground">
                 {t('confirmDescription', { planName: targetPlanName })}
               </p>
             </div>
 
             {/* Actions */}
-            <div className="flex flex-col gap-3">
-              <Button onClick={handleNext} className="w-full">
+            <div className="flex flex-col gap-2 sm:gap-3">
+              <Button onClick={handleNext} className="w-full h-9 sm:h-10 text-sm">
                 {t('continue')}
               </Button>
-              <Button variant="ghost" onClick={resetAndClose} className="w-full text-muted-foreground">
+              <Button variant="ghost" onClick={resetAndClose} className="w-full h-9 sm:h-10 text-sm text-muted-foreground">
                 {t('keepCurrentPlan')}
               </Button>
             </div>
           </div>
         ) : (
-          <div className="p-8">
-            {/* Logo & Header */}
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="mb-4 p-3 rounded-2xl bg-muted/50">
-                <KortixLogo size={32} variant="symbol" />
+          <div className="p-4 sm:p-8 overflow-y-auto max-h-[85vh] sm:max-h-none">
+            {/* Logo & Header - compact on mobile */}
+            <div className="flex flex-col items-center text-center mb-3 sm:mb-6">
+              <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
+                <KortixLogo size={24} variant="symbol" className="sm:hidden" />
+                <KortixLogo size={32} variant="symbol" className="hidden sm:block" />
               </div>
-              <DialogTitle className="text-xl font-semibold text-foreground">
+              <DialogTitle className="text-lg sm:text-xl font-semibold text-foreground">
                 {t('feedbackTitle')}
               </DialogTitle>
-              <p className="text-sm text-muted-foreground mt-2">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1 sm:mt-2">
                 {t('feedbackSubtitle')}
               </p>
             </div>
 
-            {/* Feedback Options */}
-            <div className="mb-6">
+            {/* Feedback Options - compact on mobile */}
+            <div className="mb-3 sm:mb-6">
               <RadioGroup
                 value={selectedReason || ''}
                 onValueChange={(value) => setSelectedReason(value as DowngradeReason)}
-                className="space-y-2"
+                className="space-y-1.5 sm:space-y-2"
               >
                 {DOWNGRADE_REASON_KEYS.map((reasonKey) => (
                   <label
                     key={reasonKey}
                     htmlFor={reasonKey}
-                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                    className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg sm:rounded-xl border cursor-pointer transition-colors ${
                       selectedReason === reasonKey 
                         ? 'border-primary bg-primary/5' 
                         : 'border-border hover:border-muted-foreground/30 hover:bg-muted/30'
                     }`}
                   >
-                    <RadioGroupItem value={reasonKey} id={reasonKey} />
-                    <span className="text-sm">{t(`reasons.${reasonKey}`)}</span>
+                    <RadioGroupItem value={reasonKey} id={reasonKey} className="size-4" />
+                    <span className="text-xs sm:text-sm">{t(`reasons.${reasonKey}`)}</span>
                   </label>
                 ))}
               </RadioGroup>
             </div>
 
-            {/* Optional Textarea with psychological nudge */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-foreground mb-2">
+            {/* Optional Textarea with psychological nudge - compact on mobile */}
+            <div className="mb-3 sm:mb-6">
+              <label className="block text-xs sm:text-sm font-medium text-foreground mb-1.5 sm:mb-2">
                 {t('whatWouldMakeYouStay')}
               </label>
               <Textarea
                 placeholder={t('feedbackPlaceholder')}
                 value={additionalFeedback}
                 onChange={(e) => setAdditionalFeedback(e.target.value)}
-                className="min-h-[100px] resize-none"
-                rows={4}
+                className="min-h-[60px] sm:min-h-[100px] resize-none text-sm"
+                rows={2}
               />
-              <p className="text-xs text-muted-foreground mt-2">
+              <p className="text-[10px] sm:text-xs text-muted-foreground mt-1.5 sm:mt-2">
                 {t('feedbackFooter')}
               </p>
             </div>
 
             {/* Actions */}
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2 sm:gap-3">
               <Button
                 onClick={handleSubmit}
                 disabled={!selectedReason || isSubmitting || isPending}
-                className="w-full"
+                className="w-full h-9 sm:h-10 text-sm"
               >
                 {isSubmitting ? t('processing') : t('confirmDowngrade')}
               </Button>
@@ -206,7 +208,7 @@ export function DowngradeConfirmationDialog({
                 variant="ghost" 
                 onClick={resetAndClose} 
                 disabled={isSubmitting}
-                className="w-full text-muted-foreground"
+                className="w-full h-9 sm:h-10 text-sm text-muted-foreground"
               >
                 {t('keepCurrentPlan')}
               </Button>
