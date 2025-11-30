@@ -361,8 +361,8 @@ export function PresentationViewer({
 
   // Create a unique key for this tool call to track scroll state
   const toolCallKey = useMemo(() => {
-    return `${toolCall?.id || ''}-${currentSlideNumber || ''}-${extractedPresentationName || ''}`;
-  }, [toolCall?.id, currentSlideNumber, extractedPresentationName]);
+    return `${toolCall?.tool_call_id || ''}-${currentSlideNumber || ''}-${extractedPresentationName || ''}`;
+  }, [toolCall?.tool_call_id, currentSlideNumber, extractedPresentationName]);
 
   // Reset scroll state when tool call changes (new tool call opened)
   useEffect(() => {
