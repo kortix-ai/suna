@@ -21,6 +21,13 @@ import psutil
 from pydantic import BaseModel
 import uuid
 
+from core.utils.rate_limiter import (
+    auth_rate_limiter,
+    api_key_rate_limiter,
+    admin_rate_limiter,
+    get_client_identifier,
+)
+
 from core import api as core_api
 
 from core.sandbox import api as sandbox_api
@@ -139,6 +146,41 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 @app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting to sensitive endpoints."""
+    path = request.url.path
+    
+    # Skip rate limiting for health checks and OPTIONS requests
+    if path in ["/api/health", "/api/health-docker"] or request.method == "OPTIONS":
+        return await call_next(request)
+    
+    # Get client identifier
+    client_id = get_client_identifier(request)
+    
+    # Apply appropriate rate limiter based on path
+    rate_limiter = None
+    
+    if "/api/api-keys" in path:
+        rate_limiter = api_key_rate_limiter
+    elif "/api/admin" in path:
+        rate_limiter = admin_rate_limiter
+    elif any(sensitive in path for sensitive in ["/api/setup/initialize", "/api/billing/webhook"]):
+        rate_limiter = auth_rate_limiter
+    
+    if rate_limiter:
+        is_limited, retry_after = rate_limiter.is_rate_limited(client_id)
+        if is_limited:
+            logger.warning(f"Rate limited: {path} from {client_id[:8]}...")
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please try again later."},
+                headers={"Retry-After": str(retry_after)}
+            )
+    
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def log_requests_middleware(request: Request, call_next):
     structlog.contextvars.clear_contextvars()
 
@@ -189,11 +231,6 @@ if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("http://localhost:3000")
     # Allow Vercel preview deployments for both legacy and new project names
     allow_origin_regex = r"https://(suna|kortixcom)-.*-prjcts\.vercel\.app"
-
-# Add localhost for production mode local testing (for master password login)
-if config.ENV_MODE == EnvMode.PRODUCTION:
-    allowed_origins.append("http://localhost:3000")
-    allowed_origins.append("http://127.0.0.1:3000")
 
 app.add_middleware(
     CORSMiddleware,

@@ -5,8 +5,9 @@ interface PricingModalState {
   customTitle?: string;
   isAlert?: boolean;
   alertTitle?: string;
+  alertSubtitle?: string;
   returnUrl?: string;
-  openPricingModal: (options?: { title?: string; returnUrl?: string, isAlert?: boolean, alertTitle?: string }) => void;
+  openPricingModal: (options?: { title?: string; returnUrl?: string, isAlert?: boolean, alertTitle?: string, alertSubtitle?: string }) => void;
   closePricingModal: () => void;
 }
 
@@ -14,6 +15,7 @@ export const usePricingModalStore = create<PricingModalState>((set) => ({
   isOpen: false,
   isAlert: false,
   customTitle: undefined,
+  alertSubtitle: undefined,
   returnUrl: undefined,
   openPricingModal: (options) =>
     set({
@@ -21,6 +23,7 @@ export const usePricingModalStore = create<PricingModalState>((set) => ({
       customTitle: options?.title,
       isAlert: options?.isAlert || false,
       alertTitle: options?.alertTitle,
+      alertSubtitle: options?.alertSubtitle,
       returnUrl: options?.returnUrl,
     }),
   closePricingModal: () =>
@@ -29,6 +32,7 @@ export const usePricingModalStore = create<PricingModalState>((set) => ({
       customTitle: undefined,
       isAlert: false,
       alertTitle: undefined,
+      alertSubtitle: undefined,
       returnUrl: undefined,
     }),
 }));

@@ -936,6 +936,7 @@ interface PricingSectionProps {
   customTitle?: string;
   isAlert?: boolean;
   alertTitle?: string;
+  alertSubtitle?: string;
 }
 
 export function PricingSection({
@@ -947,7 +948,8 @@ export function PricingSection({
   onSubscriptionUpdate,
   customTitle,
   isAlert = false,
-  alertTitle
+  alertTitle,
+  alertSubtitle
 }: PricingSectionProps) {
   const t = useTranslations('billing');
   const { user } = useAuth();
@@ -1110,9 +1112,16 @@ export function PricingSection({
           <div className="flex items-center justify-between gap-2 mb-2 sm:mb-4">
             <div className="flex-shrink-0">
               {isAlert ? (
-                <h2 className="text-lg sm:text-2xl lg:text-3xl font-medium tracking-tight text-foreground">
-                  {alertTitle || t('pickPlan')}
-                </h2>
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-lg sm:text-2xl lg:text-3xl font-medium tracking-tight text-foreground">
+                    {alertTitle || t('pickPlan')}
+                  </h2>
+                  {alertSubtitle && (
+                    <p className="text-sm sm:text-base text-muted-foreground">
+                      {alertSubtitle}
+                    </p>
+                  )}
+                </div>
               ) : showTitleAndTabs ? (
                 <h2 className="text-lg sm:text-2xl lg:text-3xl font-medium tracking-tight">
                   {customTitle || t('pickPlan')}

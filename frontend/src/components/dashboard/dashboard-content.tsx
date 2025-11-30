@@ -333,6 +333,7 @@ export function DashboardContent() {
         });
       } else if (error instanceof BillingError) {
         const message = error.detail?.message?.toLowerCase() || '';
+        const originalMessage = error.detail?.message || '';
         const isCreditsExhausted = 
           message.includes('credit') ||
           message.includes('balance') ||
@@ -340,9 +341,24 @@ export function DashboardContent() {
           message.includes('out of credits') ||
           message.includes('no credits');
         
+        // Extract balance from message if present
+        const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
+        const balance = balanceMatch ? balanceMatch[1] : null;
+        
+        const alertTitle = isCreditsExhausted 
+          ? 'You ran out of credits'
+          : 'Pick the plan that works for you';
+        
+        const alertSubtitle = balance 
+          ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+          : isCreditsExhausted 
+            ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+            : undefined;
+        
         pricingModalStore.openPricingModal({ 
           isAlert: true,
-          alertTitle: isCreditsExhausted ? 'You ran out of credits. Upgrade now.' : 'Pick the plan that works for you.'
+          alertTitle,
+          alertSubtitle
         });
       } else if (error instanceof AgentRunLimitError) {
         const { running_thread_ids, running_count } = error.detail;

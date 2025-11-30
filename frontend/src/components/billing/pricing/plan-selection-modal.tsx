@@ -31,7 +31,7 @@ export function PlanSelectionModal({
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/dashboard?subscription=success` : '/';
     
-    const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle } = usePricingModalStore();
+    const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle, alertSubtitle: storeAlertSubtitle } = usePricingModalStore();
     
     const isOpen = controlledOpen !== undefined ? controlledOpen : storeIsOpen;
     const onOpenChange = controlledOnOpenChange || ((open: boolean) => !open && closePricingModal());
@@ -93,6 +93,7 @@ export function PlanSelectionModal({
                             customTitle={displayReason || (creditsExhausted ? "You ran out of credits. Upgrade now." : undefined)}
                             isAlert={storeIsAlert}
                             alertTitle={storeAlertTitle}
+                            alertSubtitle={storeAlertSubtitle}
                             onSubscriptionUpdate={handleSubscriptionUpdate}
                         />
                     </div>

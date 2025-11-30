@@ -1,3 +1,4 @@
+import hmac
 from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Optional
@@ -38,13 +39,14 @@ class SupabaseWebhookPayload(BaseModel):
 # ============================================================================
 
 def verify_webhook_secret(x_webhook_secret: str = Header(...)):
-    """Verify the webhook secret from Supabase"""
+    """Verify the webhook secret from Supabase using constant-time comparison."""
     expected_secret = os.getenv('SUPABASE_WEBHOOK_SECRET')
     if not expected_secret:
         logger.error("SUPABASE_WEBHOOK_SECRET not configured")
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
     
-    if x_webhook_secret != expected_secret:
+    # Use constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(x_webhook_secret.encode('utf-8'), expected_secret.encode('utf-8')):
         logger.warning("Invalid webhook secret received")
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
     

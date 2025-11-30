@@ -1,3 +1,4 @@
+import hmac
 import sentry
 from fastapi import HTTPException, Request, Header
 from typing import Optional
@@ -8,6 +9,12 @@ from core.utils.config import config
 from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.logger import logger, structlog
+
+
+def _constant_time_compare(a: str, b: str) -> bool:
+    """Constant-time string comparison to prevent timing attacks."""
+    return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
+
 
 async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
     if not config.KORTIX_ADMIN_API_KEY:
@@ -22,7 +29,8 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
             detail="Admin API key required. Include X-Admin-Api-Key header."
         )
     
-    if x_admin_api_key != config.KORTIX_ADMIN_API_KEY:
+    # Use constant-time comparison to prevent timing attacks
+    if not _constant_time_compare(x_admin_api_key, config.KORTIX_ADMIN_API_KEY):
         raise HTTPException(
             status_code=403,
             detail="Invalid admin API key"
@@ -30,16 +38,56 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
     
     return True
 
-def _decode_jwt_safely(token: str) -> dict:
-    return jwt.decode(
-        token, 
-        options={
-            "verify_signature": False,
-            "verify_exp": True,
-            "verify_aud": False,
-            "verify_iss": False
-        }
-    )
+
+def _decode_jwt_with_verification(token: str) -> dict:
+    """
+    Decode and verify JWT token using Supabase JWT secret.
+    
+    This function properly validates the JWT signature to prevent token forgery.
+    """
+    jwt_secret = config.SUPABASE_JWT_SECRET
+    
+    if not jwt_secret:
+        logger.error("SUPABASE_JWT_SECRET is not configured - JWT verification disabled!")
+        raise HTTPException(
+            status_code=500,
+            detail="Server authentication configuration error"
+        )
+    
+    try:
+        # Verify signature with the Supabase JWT secret
+        # Supabase uses HS256 algorithm by default
+        return jwt.decode(
+            token,
+            jwt_secret,
+            algorithms=["HS256"],
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_aud": False,  # Supabase doesn't always set audience
+                "verify_iss": False,  # Issuer varies by project
+            }
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=401,
+            detail="Token has expired",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    except jwt.InvalidSignatureError:
+        logger.warning("JWT signature verification failed - possible token forgery attempt")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token signature",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    except PyJWTError as e:
+        logger.warning(f"JWT decode error: {str(e)}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
 async def get_account_id_from_thread(thread_id: str, db: "DBConnection") -> str:
     """
@@ -135,15 +183,19 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
                     )
                     return user_id
                 else:
+                    # Log detailed error for debugging but return generic message
+                    logger.warning(f"API key valid but account not found: {public_key[:8]}...")
                     raise HTTPException(
                         status_code=401,
-                        detail="API key account not found",
+                        detail="Invalid API key",
                         headers={"WWW-Authenticate": "Bearer"}
                     )
             else:
+                # Log detailed error for debugging but return generic message to prevent enumeration
+                logger.debug(f"API key validation failed: {validation_result.error_message}")
                 raise HTTPException(
                     status_code=401,
-                    detail=f"Invalid API key: {validation_result.error_message}",
+                    detail="Invalid API key",
                     headers={"WWW-Authenticate": "Bearer"}
                 )
         except HTTPException:
@@ -168,13 +220,13 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
     token = auth_header.split(' ')[1]
     
     try:
-        payload = _decode_jwt_safely(token)
+        payload = _decode_jwt_with_verification(token)
         user_id = payload.get('sub')
         
         if not user_id:
             raise HTTPException(
                 status_code=401,
-                detail="Invalid token payload",
+                detail="Invalid token",
                 headers={"WWW-Authenticate": "Bearer"}
             )
 
@@ -185,7 +237,11 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
         )
         return user_id
         
-    except PyJWTError:
+    except HTTPException:
+        # Re-raise HTTPExceptions from _decode_jwt_with_verification
+        raise
+    except Exception as e:
+        logger.warning(f"Unexpected JWT error: {str(e)}")
         raise HTTPException(
             status_code=401,
             detail="Invalid token",
@@ -222,7 +278,7 @@ async def get_user_id_from_stream_auth(
         # Try token query param (for SSE/EventSource which can't set headers)
         if token:
             try:
-                payload = _decode_jwt_safely(token)
+                payload = _decode_jwt_with_verification(token)
                 user_id = payload.get('sub')
                 if user_id:
                     sentry.sentry.set_user({ "id": user_id })
@@ -232,6 +288,8 @@ async def get_user_id_from_stream_auth(
                     )
                     logger.debug(f"✅ Authenticated via token param: {user_id[:8]}...")
                     return user_id
+            except HTTPException:
+                logger.debug("❌ Token param auth failed: invalid token")
             except Exception as e:
                 logger.debug(f"❌ Token param auth failed: {str(e)}")
         
@@ -257,7 +315,7 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     token = auth_header.split(' ')[1]
     
     try:
-        payload = _decode_jwt_safely(token)
+        payload = _decode_jwt_with_verification(token)
         
         user_id = payload.get('sub')
         if user_id:
@@ -267,7 +325,9 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
             )
         
         return user_id
-    except PyJWTError:
+    except HTTPException:
+        return None
+    except Exception:
         return None
 
 get_optional_current_user_id_from_jwt = get_optional_user_id

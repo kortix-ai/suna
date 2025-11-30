@@ -16,8 +16,27 @@ from core.utils.suna_default_agent_service import SunaDefaultAgentService
 from core.utils.config import config, EnvMode
 from dotenv import load_dotenv, set_key, find_dotenv, dotenv_values
 import os
+import re
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def escape_like_pattern(value: str) -> str:
+    """
+    Escape special characters in LIKE/ILIKE patterns to prevent SQL injection.
+    
+    Special characters in LIKE patterns:
+    - % matches any sequence of characters
+    - _ matches any single character
+    - \\ is the escape character
+    
+    This ensures user input is treated as literal text, not pattern matching.
+    """
+    if not value:
+        return value
+    # Escape backslashes first, then % and _
+    escaped = value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return escaped
 
 # ============================================================================
 # MODELS
@@ -66,9 +85,11 @@ async def list_users(
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
         if search_email:
+            # Escape special LIKE characters to prevent SQL injection
+            safe_email = escape_like_pattern(search_email)
             email_result = await client.schema('basejump').from_('billing_customers').select(
                 'account_id'
-            ).ilike('email', f'%{search_email}%').limit(1000).execute()
+            ).ilike('email', f'%{safe_email}%').limit(1000).execute()
             
             matching_account_ids = [item['account_id'] for item in email_result.data or []]
             

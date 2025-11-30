@@ -377,13 +377,24 @@ export function useAgentStream(
               messageLower.includes('no credits') ||
               messageLower.includes('balance');
             
+            // Extract balance from message if present
+            const balanceMatch = errorMessage.match(/balance is (-?\d+)\s*credits/i);
+            const balance = balanceMatch ? balanceMatch[1] : null;
+            
             const alertTitle = isCreditsExhausted 
-              ? 'You ran out of credits. Upgrade now.'
-              : 'Billing check failed. Please upgrade to continue.';
+              ? 'You ran out of credits'
+              : 'Billing check failed';
+            
+            const alertSubtitle = balance 
+              ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+              : isCreditsExhausted 
+                ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+                : 'Please upgrade to continue.';
             
             usePricingModalStore.getState().openPricingModal({ 
               isAlert: true, 
-              alertTitle 
+              alertTitle,
+              alertSubtitle
             });
             return;
           }
@@ -398,6 +409,7 @@ export function useAgentStream(
         // Check for stopped status with billing error message
         if (jsonData.status === 'stopped' && jsonData.message) {
           const message = jsonData.message.toLowerCase();
+          const originalMessage = jsonData.message;
           const isBillingError = 
             message.includes('insufficient credits') ||
             message.includes('credit') ||
@@ -422,13 +434,24 @@ export function useAgentStream(
               message.includes('no credits') ||
               message.includes('balance');
             
+            // Extract balance from message if present
+            const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
+            const balance = balanceMatch ? balanceMatch[1] : null;
+            
             const alertTitle = isCreditsExhausted 
-              ? 'You ran out of credits. Upgrade now.'
-              : 'Billing check failed. Please upgrade to continue.';
+              ? 'You ran out of credits'
+              : 'Billing check failed';
+            
+            const alertSubtitle = balance 
+              ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+              : isCreditsExhausted 
+                ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+                : 'Please upgrade to continue.';
             
             usePricingModalStore.getState().openPricingModal({ 
               isAlert: true, 
-              alertTitle 
+              alertTitle,
+              alertSubtitle
             });
             
             finalizeStream('stopped', currentRunIdRef.current);
@@ -650,13 +673,24 @@ export function useAgentStream(
               lower.includes('no credits') ||
               lower.includes('balance');
             
+            // Extract balance from message if present
+            const balanceMatch = errorMessage.match(/balance is (-?\d+)\s*credits/i);
+            const balance = balanceMatch ? balanceMatch[1] : null;
+            
             const alertTitle = isCreditsExhausted 
-              ? 'You ran out of credits. Upgrade now.'
-              : 'Billing check failed. Please upgrade to continue.';
+              ? 'You ran out of credits'
+              : 'Billing check failed';
+            
+            const alertSubtitle = balance 
+              ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+              : isCreditsExhausted 
+                ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+                : 'Please upgrade to continue.';
             
             usePricingModalStore.getState().openPricingModal({ 
               isAlert: true, 
-              alertTitle 
+              alertTitle,
+              alertSubtitle
             });
           }
           
