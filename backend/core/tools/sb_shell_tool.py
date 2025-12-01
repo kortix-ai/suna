@@ -446,12 +446,15 @@ class SandboxShellTool(SandboxToolsBase):
 
     async def cleanup(self):
         """Clean up all sessions."""
+        # Only cleanup if we actually have a sandbox - don't create one during cleanup
+        if self._sandbox is None:
+            return
+        
         for session_name in list(self._sessions.keys()):
             await self._cleanup_session(session_name)
         
         # Also clean up any tmux sessions
         try:
-            await self._ensure_sandbox()
             await self._execute_raw_command("tmux kill-server 2>/dev/null || true")
         except:
             pass
