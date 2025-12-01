@@ -50,6 +50,11 @@ UTILITY_TOOLS = [
     ('vapi_voice_tool', 'core.tools.vapi_voice_tool', 'VapiVoiceTool'),
 ]
 
+# Generation tools - Content and page generation
+GENERATION_TOOLS = [
+    ('explorer_page_generator_tool', 'core.tools.explorer_page_generator_tool', 'ExplorerPageGeneratorTool'),
+]
+
 # Agent builder tools
 AGENT_BUILDER_TOOLS = [
     ('agent_config_tool', 'core.tools.agent_builder_tools.agent_config_tool', 'AgentConfigTool'),
@@ -60,7 +65,7 @@ AGENT_BUILDER_TOOLS = [
 ]
 
 # Combined registry of all tools
-ALL_TOOLS = CORE_TOOLS + SANDBOX_TOOLS + SEARCH_TOOLS + UTILITY_TOOLS + AGENT_BUILDER_TOOLS
+ALL_TOOLS = CORE_TOOLS + SANDBOX_TOOLS + SEARCH_TOOLS + UTILITY_TOOLS + GENERATION_TOOLS + AGENT_BUILDER_TOOLS
 
 
 def get_tool_class(module_path: str, class_name: str) -> Type[Tool]:
@@ -128,6 +133,7 @@ def get_tools_by_category() -> Dict[str, List[Tuple[str, str, str]]]:
         'sandbox': SANDBOX_TOOLS,
         'search': SEARCH_TOOLS,
         'utility': UTILITY_TOOLS,
+        'generation': GENERATION_TOOLS,
         'agent_builder': AGENT_BUILDER_TOOLS,
     }
 

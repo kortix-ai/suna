@@ -99,6 +99,11 @@ class ToolManager:
         self._register_browser_tool(disabled_tools)
         timings['browser_tool'] = (time.time() - t) * 1000
         
+        # Generation tools (page generator, etc.)
+        t = time.time()
+        self._register_generation_tools(disabled_tools)
+        timings['generation_tools'] = (time.time() - t) * 1000
+        
         # Suna-specific tools (agent creation)
         if self.account_id:
             t = time.time()
@@ -251,6 +256,23 @@ class ToolManager:
                 thread_id=self.thread_id, 
                 thread_manager=self.thread_manager
             )
+    
+    def _register_generation_tools(self, disabled_tools: List[str]):
+        """Register generation tools (page generator, etc.)."""
+        from core.tools.tool_registry import GENERATION_TOOLS, get_tool_class
+        
+        for tool_name, module_path, class_name in GENERATION_TOOLS:
+            if tool_name not in disabled_tools:
+                try:
+                    tool_class = get_tool_class(module_path, class_name)
+                    enabled_methods = self._get_enabled_methods_for_tool(tool_name)
+                    self.thread_manager.add_tool(
+                        tool_class,
+                        function_names=enabled_methods,
+                        thread_manager=self.thread_manager
+                    )
+                except (ImportError, AttributeError) as e:
+                    logger.warning(f"❌ Failed to load generation tool {tool_name}: {e}")
     
     def _get_migrated_tools_config(self) -> dict:
         """Migrate tool config once and cache it. This is expensive so we only do it once."""
