@@ -1013,8 +1013,8 @@ export function PricingSection({
     }
 
     // Default to monthly if period is short or can't determine
-    console.log(`[BILLING-PERIOD-DEBUG] Defaulting to monthly`);
-    return 'monthly';
+    console.log(`[BILLING-PERIOD-DEBUG] Defaulting to yearly`);
+    return 'yearly';
   };
 
   const currentBillingPeriod = getCurrentBillingPeriod();
