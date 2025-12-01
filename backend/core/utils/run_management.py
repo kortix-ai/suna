@@ -7,35 +7,6 @@ from ..utils.logger import logger
 from run_agent_background import update_agent_run_status, _cleanup_redis_response_list
 
 
-async def cleanup_instance_runs(instance_id: str):
-    """Clean up all running agents for a specific instance."""
-    logger.debug(f"Starting cleanup of agent runs for instance {instance_id}")
-
-    try:
-        if not instance_id:
-            logger.warning("Instance ID not set, cannot clean up instance-specific agent runs.")
-            return
-
-        running_keys = await redis.keys(f"active_run:{instance_id}:*")
-        logger.debug(f"Found {len(running_keys)} running agent runs for instance {instance_id} to clean up")
-
-        for key in running_keys:
-            # Key format: active_run:{instance_id}:{agent_run_id}
-            parts = key.split(":")
-            if len(parts) == 3:
-                agent_run_id = parts[2]
-                await stop_agent_run_with_helpers(
-                    agent_run_id, 
-                    error_message=f"Instance {instance_id} shutting down",
-                    stop_source="instance_shutdown"
-                )
-            else:
-                logger.warning(f"Unexpected key format found: {key}")
-
-    except Exception as e:
-        logger.error(f"Failed to clean up running agent runs for instance {instance_id}: {str(e)}")
-
-
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):
     """
     Stop an agent run and clean up all associated resources.

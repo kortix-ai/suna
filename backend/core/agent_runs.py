@@ -359,13 +359,6 @@ async def _create_agent_run_record(
     except Exception as cache_error:
         logger.warning(f"Failed to invalidate account-state cache: {cache_error}")
 
-    # Register run in Redis
-    instance_key = f"active_run:{utils.instance_id}:{agent_run_id}"
-    try:
-        await redis.set(instance_key, "running", ex=redis.REDIS_KEY_TTL)
-    except Exception as e:
-        logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
-
     return agent_run_id
 
 
