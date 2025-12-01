@@ -645,7 +645,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           refetchType: 'active',
         });
       }
-      
+
       setFileToView(filePath || null);
       setFilePathList(filePathList);
       setFileViewerOpen(true);
@@ -889,7 +889,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       const isScrolledUp = scrollTop < -threshold;
       const hasScrollableContent = scrollHeight > clientHeight;
       const shouldShow = isScrolledUp && hasScrollableContent;
-      
+
       setShowScrollToBottom(shouldShow);
     };
 
@@ -1009,6 +1009,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           agentName={agent && agent.name}
           disableInitialAnimation={!initialLoadCompleted && toolCalls.length > 0}
           compact={true}
+          streamingTextContent={isShared ? '' : streamingTextContent}
+          streamingToolCall={isShared ? undefined : streamingToolCall}
         >
           {/* Thread Content - Scrollable */}
           <div
@@ -1187,6 +1189,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         variant={isShared ? 'shared' : 'default'}
         chatInput={chatInputElement}
         leftSidebarState={leftSidebarState}
+        streamingTextContent={isShared ? '' : streamingTextContent}
+        streamingToolCall={isShared ? undefined : streamingToolCall}
       >
         <ThreadContent
           messages={isShared ? playback.playbackState.visibleMessages : messages}
