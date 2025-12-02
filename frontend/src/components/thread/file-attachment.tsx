@@ -498,6 +498,29 @@ export function FileAttachment({
             );
         }
 
+        // Check if we're waiting for sandboxId to load (race condition)
+        const isSandboxFile = !filepath.startsWith('http://') && !filepath.startsWith('https://') && !localPreviewUrl;
+        const waitingForSandboxId = isSandboxFile && !sandboxId;
+        
+        if (waitingForSandboxId) {
+            return (
+                <div
+                    className={cn(
+                        "relative rounded-2xl",
+                        "border border-border/50",
+                        "bg-muted/20",
+                        "flex items-center justify-center",
+                        isGridLayout ? "w-full aspect-[4/3] min-h-[200px]" : "h-[54px] w-[54px]",
+                        className
+                    )}
+                    style={customStyle}
+                    title="Loading sandbox..."
+                >
+                    <Loader2 className="h-6 w-6 text-muted-foreground animate-spin" />
+                </div>
+            );
+        }
+
         return (
             <button
                 onClick={handleClick}
