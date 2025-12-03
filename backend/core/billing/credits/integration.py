@@ -11,46 +11,53 @@ from ..shared.cache_utils import invalidate_account_state_cache
 class BillingIntegration:
     @staticmethod
     async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
+        # Always allow unlimited credits for local/self-hosted setup
+        return True, "Unlimited credits (local/self-hosted)", None
+
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
-        
+
         try:
             from core.credits import credit_service
             await credit_service.check_and_refresh_daily_credits(account_id)
         except Exception as e:
             logger.warning(f"[DAILY_CREDITS] Failed to check/refresh daily credits for {account_id}: {e}")
-        
+
         balance_info = await credit_manager.get_balance(account_id)
-        
+
         if isinstance(balance_info, dict):
             balance = Decimal(str(balance_info.get('total', 0)))
         else:
             balance = Decimal(str(balance_info or 0))
-        
+
         if balance < 0:
             return False, f"Insufficient credits. Your balance is {int(balance * 100)} credits. Please add credits to continue.", None
-        
+
         return True, f"Credits available: {int(balance * 100)} credits", None
     
     @staticmethod
     async def check_model_and_billing_access(
-        account_id: str, 
-        model_name: Optional[str], 
+        account_id: str,
+        model_name: Optional[str],
         client=None
     ) -> Tuple[bool, str, Dict]:
+        # Always allow unlimited access for local/self-hosted setup
+        logger.debug("Running in local/self-hosted mode - skipping all billing and model access checks")
+        return True, "Unlimited access (local/self-hosted)", {"local_mode": True}
+
         if config.ENV_MODE == EnvMode.LOCAL:
             logger.debug("Running in local development mode - skipping all billing and model access checks")
             return True, "Local development mode", {"local_mode": True}
-        
+
         try:
             if not model_name:
                 return False, "No model specified", {"error_type": "no_model"}
 
             from ..subscriptions import subscription_service
-            
+
             tier_info = await subscription_service.get_user_subscription_tier(account_id)
             tier_name = tier_info.get('name', 'none')
-            
+
             if not is_model_allowed(tier_name, model_name):
                 available_models = tier_info.get('models', [])
                 return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", {
@@ -60,20 +67,20 @@ class BillingIntegration:
                     "error_type": "model_access_denied",
                     "error_code": "MODEL_ACCESS_DENIED"
                 }
-            
+
             can_run, message, reservation_id = await BillingIntegration.check_and_reserve_credits(account_id)
             if not can_run:
                 return False, f"Billing check failed: {message}", {
                     "tier_info": tier_info,
                     "error_type": "insufficient_credits"
                 }
-            
+
             # All checks passed
             return True, "Access granted", {
                 "tier_info": tier_info,
                 "reservation_id": reservation_id
             }
-            
+
         except Exception as e:
             logger.error(f"Error in unified billing check for user {account_id}: {e}")
             return False, f"Error checking access: {str(e)}", {"error_type": "system_error"}

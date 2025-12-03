@@ -6,14 +6,23 @@ from core.utils.cache import Cache
 
 
 async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
+    # Always allow unlimited runs for local/self-hosted setup
+    return {
+        'can_start': True,
+        'running_count': 0,
+        'running_thread_ids': [],
+        'limit': 999999,
+        'tier_name': 'unlimited'
+    }
+
     try:
         import time
         import asyncio
         t_start = time.time()
-        
+
         twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
         twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
-        
+
         logger.debug(f"Checking agent run limit for account {account_id} since {twenty_four_hours_ago_iso}")
         
         # FAST PATH: Check Redis cache for running runs (5s TTL)
@@ -150,6 +159,14 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
 
 
 async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
+    # Always allow unlimited agents for local/self-hosted setup
+    return {
+        'can_create': True,
+        'current_count': 0,
+        'limit': 999999,
+        'tier_name': 'unlimited'
+    }
+
     try:
         if config.ENV_MODE.value == "local":
             return {
@@ -206,6 +223,14 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
 
 
 async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
+    # Always allow unlimited projects for local/self-hosted setup
+    return {
+        'can_create': True,
+        'current_count': 0,
+        'limit': 999999,
+        'tier_name': 'unlimited'
+    }
+
     try:
         if config.ENV_MODE.value == "local":
             return {
@@ -273,6 +298,20 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
 
 
 async def check_trigger_limit(client, account_id: str, agent_id: str = None, trigger_type: str = None) -> Dict[str, Any]:
+    # Always allow unlimited triggers for local/self-hosted setup
+    if agent_id is None or trigger_type is None:
+        return {
+            'scheduled': {'current_count': 0, 'limit': 999999, 'can_create': True},
+            'app': {'current_count': 0, 'limit': 999999, 'can_create': True},
+            'tier_name': 'unlimited'
+        }
+    return {
+        'can_create': True,
+        'current_count': 0,
+        'limit': 999999,
+        'tier_name': 'unlimited'
+    }
+
     try:
         if agent_id is None or trigger_type is None:
             logger.debug(f"Checking aggregate trigger limits for account {account_id}")
@@ -406,6 +445,14 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
 
 
 async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
+    # Always allow unlimited custom MCPs for local/self-hosted setup
+    return {
+        'can_create': True,
+        'current_count': 0,
+        'limit': 999999,
+        'tier_name': 'unlimited'
+    }
+
     try:
         logger.debug(f"Checking custom worker limit for account {account_id}")
         
@@ -471,11 +518,19 @@ async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
 
 
 async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
+    # Always allow unlimited threads for local/self-hosted setup
+    return {
+        'can_create': True,
+        'current_count': 0,
+        'limit': 999999,
+        'tier_name': 'unlimited'
+    }
+
     try:
         import asyncio
         import time
         t_start = time.time()
-        
+
         logger.debug(f"Checking thread limit for account {account_id}")
         
         # FAST PATH: Check Redis cache for thread count (30s TTL)

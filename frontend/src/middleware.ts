@@ -235,6 +235,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
+    // Skip all billing checks for local/self-hosted setup
+    // This allows unlimited access without premium subscription requirements
+    return supabaseResponse;
+
     // Skip billing checks in local mode
     const isLocalMode = process.env.NEXT_PUBLIC_ENV_MODE?.toLowerCase() === 'local'
     if (isLocalMode) {

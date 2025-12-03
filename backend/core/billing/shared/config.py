@@ -279,19 +279,22 @@ def can_purchase_credits(tier_name: str) -> bool:
     return tier.can_purchase_credits if tier else False
 
 def is_model_allowed(tier_name: str, model: str) -> bool:
+    # Always allow all models for local/self-hosted setup
+    return True
+
     tier = TIERS.get(tier_name, TIERS['none'])
-    
+
     # Tier has access to all models
     if 'all' in tier.models:
         return True
-    
+
     from core.ai_models import model_manager
     resolved_model_id = model_manager.resolve_model_id(model)
     model_obj = model_manager.get_model(resolved_model_id) if resolved_model_id else None
-    
+
     if not model_obj:
         return False
-    
+
     # Check the model's tier_availability from the registry
     # This is the PRIMARY source of truth for model access - if set, it's definitive
     if model_obj.tier_availability:
@@ -301,7 +304,7 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
         else:
             # Paid tiers can access models with "paid" in tier_availability
             return 'paid' in model_obj.tier_availability
-    
+
     # Fallback: only use pattern matching if tier_availability is not set (legacy models)
     for allowed_pattern in tier.models:
         if allowed_pattern.lower() in model_obj.name.lower():
@@ -311,7 +314,7 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
         for alias in model_obj.aliases:
             if allowed_pattern.lower() in alias.lower():
                 return True
-    
+
     return False
 
 def get_project_limit(tier_name: str) -> int:
