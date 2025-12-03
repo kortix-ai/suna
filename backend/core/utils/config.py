@@ -526,7 +526,6 @@ class Configuration:
             return 'https://kortix.com'
         elif self.ENV_MODE == EnvMode.STAGING:
             return 'http://localhost:3000'
-            # return 'https://staging.suna.so'
         else:
             return 'http://localhost:3000'
     
