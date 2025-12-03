@@ -74,7 +74,84 @@ class SandboxDesignerTool(SandboxToolsBase):
             "type": "function",
             "function": {
                 "name": "designer_create_or_edit",
-                "description": "Professional design tool for creating or editing high-quality graphics optimized for social media, advertising, and professional use. Automatically applies professional design principles for text placement, visual hierarchy, and composition.",
+                "description": """Professional design tool for creating or editing high-quality graphics optimized for social media, advertising, and professional use. Automatically applies professional design principles for text placement, visual hierarchy, and composition.
+
+CRITICAL USAGE RULES:
+- ALWAYS use this tool for professional design requests (posters, ads, social media graphics, banners, etc.)
+- Platform presets are MANDATORY - never skip the platform_preset parameter
+- Design style enhances results - always include when appropriate
+- Quality options: "low", "medium", "high", "auto" - defaults to "auto" which lets the model choose optimal quality
+
+PLATFORM PRESETS (MUST CHOOSE ONE):
+- Social Media: instagram_square, instagram_portrait, instagram_story, instagram_landscape, facebook_post, facebook_cover, facebook_story, twitter_post, twitter_header, linkedin_post, linkedin_banner, youtube_thumbnail, pinterest_pin, tiktok_video
+- Advertising: google_ads_square, google_ads_medium, google_ads_banner, facebook_ads_feed, display_ad_billboard, display_ad_vertical
+- Professional: presentation_16_9, business_card, email_header, blog_header, flyer_a4, poster_a3
+- Custom: Use "custom" with width/height for specific dimensions
+
+DESIGN STYLES (ENHANCE YOUR DESIGNS):
+modern, minimalist, material, glassmorphism, neomorphism, flat, luxury, tech, vintage, bold, professional, playful, geometric, abstract, organic
+
+PROFESSIONAL DESIGN PRINCIPLES AUTOMATICALLY APPLIED:
+- Rule of thirds and golden ratio for composition
+- Proper text hierarchy with WCAG contrast standards
+- Safe zones for text (10% margins from edges)
+- Professional typography with proper kerning/leading
+- 8px grid system for consistent spacing
+- Visual flow and focal points
+- Platform-specific optimizations (safe zones, overlays, etc.)
+
+CREATE MODE (New Designs):
+Example for Nike poster:
+<function_calls>
+<invoke name="designer_create_or_edit">
+<parameter name="mode">create</parameter>
+<parameter name="prompt">Funky modern Nike shoe advertisement featuring Air Max sneaker floating dynamically with neon color splashes, urban street art background, bold "JUST DO IT" typography, energetic motion blur effects, vibrant gradient from electric blue to hot pink, product photography style with dramatic lighting</parameter>
+<parameter name="platform_preset">poster_a3</parameter>
+<parameter name="design_style">bold</parameter>
+<parameter name="quality">auto</parameter>
+</invoke>
+</function_calls>
+
+EDIT MODE (Modify Existing Designs):
+<function_calls>
+<invoke name="designer_create_or_edit">
+<parameter name="mode">edit</parameter>
+<parameter name="prompt">Add more vibrant colors, increase contrast, make the shoe larger and more prominent</parameter>
+<parameter name="platform_preset">poster_a3</parameter>
+<parameter name="image_path">designs/nike_poster_v1.png</parameter>
+<parameter name="design_style">bold</parameter>
+</invoke>
+</function_calls>
+
+DESIGNER TOOL VS IMAGE GENERATOR:
+- Use designer_create_or_edit for: Marketing materials, social media posts, advertisements, banners, professional graphics, UI mockups, presentations, business cards, posters, flyers
+- Use image_edit_or_generate for: Artistic images, illustrations, photos, general images not requiring professional design principles
+
+CRITICAL SUCCESS FACTORS:
+- Be EXTREMELY detailed in prompts - mention colors, composition, text, style, mood, lighting
+- Always specify platform_preset - this is MANDATORY
+- Include design_style for better results
+- Mention specific text/copy if needed in the design
+- Describe brand elements clearly (logos, colors, fonts)
+- Request professional photography style for product shots
+- Use action words like "dynamic", "floating", "energetic" for movement
+- Specify background styles clearly (gradient, pattern, solid, textured)
+
+COMMON DESIGN REQUESTS AND OPTIMAL PROMPTS:
+- Product Advertisement: Include product details, brand messaging, call-to-action, color scheme, photography style
+- Social Media Post: Mention engagement elements, hashtags, brand consistency, mobile optimization
+- Event Poster: Include event details, date/time prominently, venue, ticket info, compelling visuals
+- Business Card: Professional layout, contact details, logo placement, clean typography, brand colors
+- YouTube Thumbnail: High contrast, large readable text, compelling imagery, click-worthy elements
+
+WORKFLOW FOR PERFECT RESULTS:
+1. Understand the exact design need and target audience
+2. Choose the appropriate platform_preset
+3. Select a matching design_style
+4. Write a detailed, professional prompt with all design elements
+5. Quality defaults to "auto" for optimal results (or specify "high" for maximum quality)
+6. Save designs in organized folders for easy access
+7. Use edit mode for iterations based on feedback""",
                 "parameters": {
                     "type": "object",
                     "properties": {

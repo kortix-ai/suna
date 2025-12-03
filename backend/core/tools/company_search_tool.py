@@ -81,7 +81,46 @@ class CompanySearchTool(Tool):
         "type": "function",
         "function": {
             "name": "company_search",
-            "description": "Search for companies using natural language queries and enrich with company profiles. IMPORTANT: This search costs 54 credits per search (10 results).",
+            "description": """Search for companies using natural language queries and enrich with company profiles.
+
+🔴 CRITICAL: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL 🔴
+
+This tool is PAID and costs $0.54 per search (returns 10 results), so you MUST always get explicit user confirmation before executing.
+
+MANDATORY CLARIFICATION & CONFIRMATION WORKFLOW - NO EXCEPTIONS:
+
+STEP 1: ASK DETAILED CLARIFYING QUESTIONS (ALWAYS REQUIRED)
+Before confirming the search, you MUST ask clarifying questions to make the query as specific and targeted as possible. Each search costs $0.54, so precision is critical.
+
+Required Clarification Areas:
+- Industry/Sector: What specific industry? (e.g., "tech" vs "B2B SaaS" vs "AI/ML infrastructure")
+- Location: Geographic focus? (city, region, country, remote-first)
+- Company Stage: Startup, growth stage, enterprise? Funding stage (seed, Series A-D, public)?
+- Company Size: Employee count range? Revenue range?
+- Technology/Focus: What technology stack or business focus?
+- Other Criteria: Founded when? Specific markets? B2B vs B2C?
+
+STEP 2: REFINE THE QUERY
+After getting clarification, construct a detailed, specific search query that incorporates all the details. Show the user the refined query you plan to use.
+
+STEP 3: CONFIRM WITH COST
+Only after clarifying and refining, ask for confirmation with cost clearly stated.
+
+COMPLETE WORKFLOW:
+1. CLARIFY: Ask 3-5 specific questions to understand exactly what they're looking for
+2. REFINE: Build a detailed, targeted search query based on their answers
+3. CONFIRM: Show them the refined query and ask for confirmation with cost explanation
+4. WAIT: Wait for explicit "yes" or confirmation from the user
+5. EXECUTE: Only then execute company_search
+
+WHY CLARIFICATION IS CRITICAL:
+- Each search costs $0.54 - precision saves money
+- Vague queries return irrelevant results, wasting the user's money
+- Specific queries yield better, more actionable results
+- You only get 10 results per search, so make them count
+- Better to spend 2 minutes clarifying than waste money on a bad search
+
+REMEMBER: This is a PAID tool - treat it with the same care as spending the user's money.""",
             "parameters": {
                 "type": "object",
                 "properties": {

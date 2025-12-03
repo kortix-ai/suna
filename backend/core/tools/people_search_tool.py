@@ -81,7 +81,47 @@ class PeopleSearchTool(Tool):
         "type": "function",
         "function": {
             "name": "people_search",
-            "description": "Search for people using natural language queries and enrich with LinkedIn profiles. IMPORTANT: This search costs 54 credits per search (10 results).",
+            "description": """Search for people using natural language queries and enrich with LinkedIn profiles.
+
+🔴 CRITICAL: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL 🔴
+
+This tool is PAID and costs $0.54 per search (returns 10 results), so you MUST always get explicit user confirmation before executing.
+
+MANDATORY CLARIFICATION & CONFIRMATION WORKFLOW - NO EXCEPTIONS:
+
+STEP 1: ASK DETAILED CLARIFYING QUESTIONS (ALWAYS REQUIRED)
+Before confirming the search, you MUST ask clarifying questions to make the query as specific and targeted as possible. Each search costs $0.54, so precision is critical.
+
+Required Clarification Areas:
+- Job Title/Role: What specific role or title? (e.g., "engineer" vs "Senior Machine Learning Engineer")
+- Industry/Company Type: What industry or type of company? (e.g., "tech companies" vs "Series B SaaS startups")
+- Location: What geographic area? (e.g., "Bay Area" vs "San Francisco downtown" vs "remote")
+- Experience Level: Junior, mid-level, senior, executive?
+- Specific Companies: Any target companies or company sizes?
+- Skills/Technologies: Any specific technical skills, tools, or expertise?
+- Additional Criteria: Recent job changes, specific backgrounds, education, etc.
+
+STEP 2: REFINE THE QUERY
+After getting clarification, construct a detailed, specific search query that incorporates all the details. Show the user the refined query you plan to use.
+
+STEP 3: CONFIRM WITH COST
+Only after clarifying and refining, ask for confirmation with cost clearly stated.
+
+COMPLETE WORKFLOW:
+1. CLARIFY: Ask 3-5 specific questions to understand exactly what they're looking for
+2. REFINE: Build a detailed, targeted search query based on their answers
+3. CONFIRM: Show them the refined query and ask for confirmation with cost explanation
+4. WAIT: Wait for explicit "yes" or confirmation from the user
+5. EXECUTE: Only then execute people_search
+
+WHY CLARIFICATION IS CRITICAL:
+- Each search costs $0.54 - precision saves money
+- Vague queries return irrelevant results, wasting the user's money
+- Specific queries yield better, more actionable results
+- You only get 10 results per search, so make them count
+- Better to spend 2 minutes clarifying than waste money on a bad search
+
+REMEMBER: This is a PAID tool - treat it with the same care as spending the user's money.""",
             "parameters": {
                 "type": "object",
                 "properties": {
