@@ -557,11 +557,9 @@ async def get_trigger_executions(
         await verify_and_authorize_trigger_agent_access(trigger.agent_id, user_id)
         
         client = await db.client
-        
-        # Get agent runs that were triggered by this trigger
-        # Agent runs store trigger_id in metadata
+
         runs_result = await client.table('agent_runs').select(
-            'agent_run_id, thread_id, agent_id, status, created_at, completed_at, error, metadata'
+            'id, thread_id, agent_id, status, created_at, completed_at, error, metadata'
         ).eq(
             'metadata->>trigger_id', trigger_id
         ).order(
@@ -571,7 +569,7 @@ async def get_trigger_executions(
         executions = []
         for run in runs_result.data or []:
             executions.append(TriggerExecution(
-                execution_id=run['agent_run_id'],
+                execution_id=run['id'],
                 thread_id=run['thread_id'],
                 trigger_id=trigger_id,
                 agent_id=run['agent_id'],
