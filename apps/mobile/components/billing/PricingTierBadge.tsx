@@ -15,8 +15,8 @@ import BasicSvg from '@/assets/brand/tiers/basic.svg';
 interface PricingTierBadgeProps {
   /** Plan name (e.g., 'Basic', 'Plus', 'Pro', 'Ultra') */
   planName: string;
-  /** Size variant - matches frontend: xxs, xs, sm, md, lg */
-  size?: 'xxs' | 'xs' | 'sm' | 'md' | 'lg';
+  /** Size variant - matches frontend: xxs, xs, sm, md, lg, xl */
+  size?: 'xxs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 }
 
 const sizeConfig = {
@@ -25,6 +25,7 @@ const sizeConfig = {
   sm: { height: 16 },
   md: { height: 20 },
   lg: { height: 24 }, // Matches frontend lg size
+  xl: { height: 32 }, // Larger size for billing status page
 };
 
 /**
@@ -59,9 +60,14 @@ export function PricingTierBadge({
 
   // Frontend uses height for both width and height, maintaining aspect ratio
   // SVGs have different widths (50, 55, 59, 63) but same height (24)
+  // For React Native, we need to calculate width based on aspect ratio
+  // Typical SVG aspect ratio is ~2.5:1 (width:height), so we'll use a multiplier
+  const aspectRatio = 2.5; // Approximate aspect ratio for tier badges
+  const calculatedWidth = config.height * aspectRatio;
+  
   return (
-    <View style={{ height: config.height, width: 'auto' }}>
-      <TierIcon width={config.height} height={config.height} />
+    <View style={{ height: config.height, width: calculatedWidth }}>
+      <TierIcon width={calculatedWidth} height={config.height} />
     </View>
   );
 }

@@ -259,24 +259,31 @@ export function usePlaybackController({
                 // Stream assistant messages
                 if (currentMessage.type === 'assistant') {
                     try {
-                        let content = currentMessage.content;
-
                         let textToStream = '';
 
-                        // Handle different content formats
-                        if (typeof content === 'string') {
-                            try {
-                                const parsed = JSON.parse(content);
-                                if (parsed.content) {
-                                    textToStream = parsed.content;
-                                } else {
+                        // Parse metadata to get text_content
+                        try {
+                            const metadata = typeof currentMessage.metadata === 'string' 
+                                ? JSON.parse(currentMessage.metadata) 
+                                : currentMessage.metadata;
+                            textToStream = metadata?.text_content || '';
+                        } catch (e) {
+                            // Fallback to parsing content for legacy messages
+                            let content = currentMessage.content;
+                            if (typeof content === 'string') {
+                                try {
+                                    const parsed = JSON.parse(content);
+                                    if (parsed.content) {
+                                        textToStream = parsed.content;
+                                    } else {
+                                        textToStream = content;
+                                    }
+                                } catch (e) {
                                     textToStream = content;
                                 }
-                            } catch (e) {
-                                textToStream = content;
+                            } else if (typeof content === 'object' && content !== null) {
+                                textToStream = (content as any).content || '';
                             }
-                        } else if (typeof content === 'object' && content !== null) {
-                            textToStream = (content as any).content || '';
                         }
 
                         // Stream the text

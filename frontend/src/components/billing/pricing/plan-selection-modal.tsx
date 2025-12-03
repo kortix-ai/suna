@@ -31,7 +31,7 @@ export function PlanSelectionModal({
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/dashboard?subscription=success` : '/';
     
-    const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle } = usePricingModalStore();
+    const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle, alertSubtitle: storeAlertSubtitle } = usePricingModalStore();
     
     const isOpen = controlledOpen !== undefined ? controlledOpen : storeIsOpen;
     const onOpenChange = controlledOnOpenChange || ((open: boolean) => !open && closePricingModal());
@@ -64,7 +64,7 @@ export function PlanSelectionModal({
                 <DialogDescription className="sr-only">
                     {displayReason || (creditsExhausted ? 'Choose a plan to continue using Kortix' : 'Choose the plan that best fits your needs')}
                 </DialogDescription>
-                <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 pointer-events-none bg-transparent">
+                <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-5 pointer-events-none bg-background/80 backdrop-blur-md lg:bg-transparent lg:backdrop-blur-none">
                     <div className="flex-1" />
                     
                     <div className="absolute -translate-y-1/2 top-1/2 left-1/2 -translate-x-1/2 pointer-events-none">
@@ -83,8 +83,8 @@ export function PlanSelectionModal({
                         </Button>
                     </div>
                 </div>
-                <div className="w-full h-full flex items-center justify-center overflow-hidden bg-background pt-[67px]">
-                    <div className="xl:scale-90 2xl:scale-100 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-center">
+                <div className="w-full h-full overflow-y-auto lg:overflow-hidden overflow-x-hidden bg-background pt-[67px] lg:flex lg:items-center lg:justify-center">
+                    <div className="xl:scale-90 2xl:scale-100 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 lg:pt-0 pb-8 lg:pb-0 min-h-full lg:min-h-0 flex items-center justify-center">
                         <PricingSection
                             returnUrl={returnUrl || defaultReturnUrl}
                             showTitleAndTabs={true}
@@ -93,6 +93,7 @@ export function PlanSelectionModal({
                             customTitle={displayReason || (creditsExhausted ? "You ran out of credits. Upgrade now." : undefined)}
                             isAlert={storeIsAlert}
                             alertTitle={storeAlertTitle}
+                            alertSubtitle={storeAlertSubtitle}
                             onSubscriptionUpdate={handleSubscriptionUpdate}
                         />
                     </div>

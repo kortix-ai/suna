@@ -181,6 +181,9 @@ export function ThreadActionsDrawer({
     []
   );
 
+  // Don't render BottomSheet when not visible to avoid navigation context issues
+  if (!visible) return null;
+
   return (
     <BottomSheet
       ref={bottomSheetRef}

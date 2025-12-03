@@ -38,6 +38,7 @@
       "plan": "Plan",
       "billing": "Facturation",
       "usage": "Utilisation",
+      "referrals": "Parrainages",
       "knowledgeBase": "Base de Connaissances",
       "integrations": "Intégrations",
       "envManager": "Gestionnaire d'Environnement"
@@ -83,6 +84,50 @@
         "cancelDeletionDescription": "Veux-tu vraiment annuler la suppression de ton compte ? Ton compte et toutes les données seront préservés.",
         "cancelDeletion": "Annuler la Suppression"
       }
+    },
+    "referrals": {
+      "title": "Programme de Parrainage",
+      "description": "Partage ton lien de parrainage avec tes amis. Lorsqu'ils s'inscrivent et créent un compte, tu gagnes",
+      "creditsPerReferral": "100 crédits non-expirables",
+      "youEarn": "Tu gagnes",
+      "friendGets": "Ton ami obtient",
+      "maxEarnable": "Maximum gagnable par parrainages:",
+      "maxCredits": "$100 en crédits",
+      "yourReferralCode": "Ton Code de Parrainage",
+      "referralLink": "Lien de Parrainage",
+      "shareYourLink": "Partage ton lien de parrainage",
+      "yourStats": "Tes statistiques",
+      "enterCodeDescription": "Entre un code de parrainage pour gagner des crédits",
+      "enterCode": "Entrer le code",
+      "refresh": "Actualiser",
+      "copyCode": "Copier le code",
+      "copyLink": "Copier le lien",
+      "share": "Partager",
+      "stats": {
+        "totalReferrals": "Total de Parrainages",
+        "successful": "Réussis",
+        "creditsEarned": "Crédits Gagnés"
+      },
+      "recentReferrals": "Parrainages Récents",
+      "signupComplete": "Inscription Terminée",
+      "pending": "En Attente",
+      "noReferrals": "Aucun parrainage pour le moment. Partage ton lien de parrainage pour commencer!",
+      "copied": "Copié!",
+      "codeCopied": "Code de parrainage copié dans le presse-papiers",
+      "linkCopied": "Lien de parrainage copié dans le presse-papiers",
+      "codeRefreshed": "Code de parrainage actualisé avec succès",
+      "refreshFailed": "Échec de l'actualisation du code de parrainage",
+      "inviteByEmail": "Inviter par Email",
+      "inviteByEmailDescription": "Ajoute jusqu'à 3 adresses email (appuie sur Entrée, Espace ou Virgule)",
+      "emailAddress": "Adresse email",
+      "emailPlaceholder": "Entre les adresses email (appuie sur Entrée, Espace ou Virgule)",
+      "emailsAdded": "emails",
+      "sent": "envoyé",
+      "send": "Envoyer",
+      "sending": "Envoi...",
+      "sendAllInvites": "Envoyer Toutes les Invitations",
+      "allSent": "Tout Envoyé",
+      "emailSent": "Invitation de parrainage envoyée avec succès"
     },
     "billing": {
       "title": "Facturation et Abonnement",
@@ -156,6 +201,9 @@
     "monthlyOn1st": "Mensuel le 1er"
   },
   "sidebar": {
+    "referAndEarn": "Parrainer et Gagner",
+    "new": "Nouveau",
+    "upgrade": "Améliorer",
     "chats": "Chats",
     "agents": "Agents",
     "workers": "Workers",
@@ -374,6 +422,7 @@
     "credits": "Crédits",
     "popular": "Populaire",
     "creditsExplained": "Crédits expliqués",
+    "creditsExhausted": "+200 Crédits dans {time}. Mettez à niveau pour utiliser maintenant.",
     "creditsExhaustedRefreshIn": "Vous avez épuisé vos crédits. Ils seront renouvelés dans {time}",
     "trialActive": "Essai Actif",
     "trialBadge": "Essai de 7 Jours",
@@ -489,9 +538,35 @@
       "integrations": "100+ intégrations",
       "premiumAIModels": "Modèles IA Premium",
       "prioritySupport": "Support Prioritaire"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "Confirmer le changement de plan",
+      "confirmSubtitle": "Nous sommes désolés de vous voir partir",
+      "confirmDescription": "Vous êtes sur le point de passer au plan {planName}. Ce changement prendra effet à la fin de votre période de facturation actuelle. Vous conserverez vos avantages actuels jusque-là.",
+      "continue": "Continuer",
+      "keepCurrentPlan": "Garder mon plan actuel",
+      "feedbackTitle": "Aidez-nous à nous améliorer",
+      "feedbackSubtitle": "Vos retours façonnent l'avenir de Kortix",
+      "whatWouldMakeYouStay": "Qu'est-ce qui vous ferait rester?",
+      "feedbackPlaceholder": "S'il y avait une chose que nous pouvions changer ou ajouter pour que Kortix en vaille la peine pour vous, quelle serait-elle?",
+      "feedbackFooter": "Notre équipe lit chaque réponse. Vos mots influencent directement ce que nous construisons ensuite.",
+      "confirmDowngrade": "Confirmer le changement",
+      "processing": "Traitement...",
+      "pleaseSelectReason": "Veuillez sélectionner une raison",
+      "reasons": {
+        "tooExpensive": "C'est trop cher pour mes besoins",
+        "notUsingOften": "Je n'utilise pas assez Kortix",
+        "foundAlternative": "J'ai trouvé une autre solution",
+        "technicalIssues": "J'ai rencontré des problèmes techniques",
+        "resultsNotGood": "Les résultats n'ont pas répondu à mes attentes",
+        "other": "Autre raison"
+      }
     }
   },
   "auth": {
+    "haveReferralCode": "Tu as un code de parrainage?",
+    "referralCode": "Code de Parrainage",
+    "enterCode": "Entrer le code",
     "logIntoAccount": "Connecte-toi à ton compte",
     "createAccount": "Créer un compte",
     "signInOrCreateAccount": "Connecte-toi ou crée ton compte Kortix",
@@ -528,7 +603,16 @@
     "magicLinkSent": "On t'a envoyé un magic link à",
     "magicLinkDescription": "Clique sur le lien dans ton email pour te connecter. Le lien expirera dans 1 heure.",
     "magicLinkExplanation": "On t'enverra un lien sécurisé pour te connecter. Pas besoin de mot de passe.",
-    "byContinuingYouAgree": "En continuant, tu acceptes notre <privacyPolicy>Politique de Confidentialité</privacyPolicy> et nos <termsOfService>Conditions d'Utilisation</termsOfService>"
+    "magicLinkExpired": "Ce lien a expiré",
+    "magicLinkExpiredDescription": "Le magic link sur lequel tu as cliqué a expiré. Les magic links expirent après 1 heure pour des raisons de sécurité.",
+    "resendMagicLink": "Renvoyer le magic link",
+    "resending": "Renvoi en cours...",
+    "byContinuingYouAgree": "En continuant, tu acceptes notre <privacyPolicy>Politique de Confidentialité</privacyPolicy> et nos <termsOfService>Conditions d'Utilisation</termsOfService>",
+    "openProvider": "Ouvrir {provider}",
+    "didntReceiveEmail": "Tu n'as pas reçu l'e-mail ?",
+    "resend": "Renvoyer",
+    "alreadySignedIn": "Tu es déjà connecté. Aucune action requise.",
+    "goToDashboard": "Aller au Tableau de bord"
   },
   "onboarding": {
     "welcome": "Bienvenue",

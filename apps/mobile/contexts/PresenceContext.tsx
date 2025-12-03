@@ -32,6 +32,9 @@ const PresenceContext = createContext<PresenceContextValue | undefined>(undefine
 const HEARTBEAT_INTERVAL = 60000;
 const SESSION_STORAGE_KEY = 'presence_session_id';
 
+// Check if presence is disabled via environment variable
+const DISABLE_PRESENCE = process.env.EXPO_PUBLIC_DISABLE_PRESENCE === 'true';
+
 function generateSessionId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
 }
@@ -75,7 +78,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
   const sendPresenceUpdate = useCallback(
     async (threadId: string | null) => {
-      if (!isAuthenticated || !user || !sessionId) {
+      if (DISABLE_PRESENCE || !isAuthenticated || !user || !sessionId) {
         return;
       }
       const timestamp = new Date().toISOString();
@@ -178,7 +181,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectChannel = useCallback(() => {
-    if (!isAuthenticated || !user || channelRef.current) {
+    if (DISABLE_PRESENCE || !isAuthenticated || !user || channelRef.current) {
       return;
     }
 
@@ -215,7 +218,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, user, handlePresenceChange, handlePresenceDelete]);
 
   const clearPresence = useCallback(async () => {
-    if (!sessionId || !API_URL) {
+    if (DISABLE_PRESENCE || !sessionId || !API_URL) {
       return;
     }
     
@@ -242,7 +245,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     const normalized = threadId || null;
     latestThreadRef.current = normalized;
     setActiveThreadState(normalized);
-    if (!isAuthenticated || !user) {
+    if (DISABLE_PRESENCE || !isAuthenticated || !user) {
       return;
     }
     sendPresenceUpdate(normalized);
@@ -250,7 +253,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [sendPresenceUpdate, startHeartbeat, isAuthenticated, user]);
 
   useEffect(() => {
-    if (!isAuthenticated || !user || !sessionId) {
+    if (DISABLE_PRESENCE || !isAuthenticated || !user || !sessionId) {
       stopHeartbeat();
       disconnectChannel();
       setConnectionState('idle');
@@ -271,7 +274,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [connectChannel, disconnectChannel, sendPresenceUpdate, startHeartbeat, stopHeartbeat, isAuthenticated, user, sessionId]);
 
   useEffect(() => {
-    if (!isAuthenticated || !user) return;
+    if (DISABLE_PRESENCE || !isAuthenticated || !user) return;
 
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       const currentThread = latestThreadRef.current;

@@ -56,7 +56,7 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
         <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
           Local Port
         </Text>
-        <View className="bg-primary/10 border border-primary/20 rounded-2xl p-6 items-center">
+        <View className="bg-card border border-border rounded-2xl p-6 items-center">
           <Text className="text-4xl font-roobert-bold text-primary" selectable>
             {port}
           </Text>
@@ -71,7 +71,7 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
           </Text>
 
           {/* URL Display */}
-          <View className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
+          <View className="bg-card border border-border rounded-2xl p-4">
             <Text className="text-sm font-roobert text-primary leading-5" selectable>
               {publicUrl}
             </Text>
@@ -83,15 +83,15 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
               onPress={handleOpenUrl}
               className="flex-1 bg-primary active:opacity-80 rounded-2xl py-4 flex-row items-center justify-center gap-2"
             >
-              <Icon as={ExternalLink} size={18} className="text-white" />
-              <Text className="text-white text-base font-roobert-semibold">
+              <Icon as={ExternalLink} size={18} className="text-primary-foreground" />
+              <Text className="text-primary-foreground text-base font-roobert-semibold">
                 Open URL
               </Text>
             </Pressable>
 
             <Pressable
               onPress={handleCopy}
-              className="bg-primary/10 border border-primary/20 active:bg-primary/20 rounded-2xl px-6 py-4 flex-row items-center justify-center gap-2"
+              className="bg-card border border-border active:bg-background rounded-2xl px-6 py-4 flex-row items-center justify-center gap-2"
             >
               <Icon
                 as={copied ? Check : Copy}
@@ -122,8 +122,8 @@ export function ExposePortToolView({ toolCall, toolResult }: ToolViewProps) {
           Status
         </Text>
         <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${isError
-            ? 'bg-destructive/5 border-destructive/20'
-            : 'bg-primary/5 border-primary/20'
+          ? 'bg-destructive/5 border-destructive/20'
+          : 'bg-primary/5 border-primary/20'
           }`}>
           <Icon
             as={isError ? AlertCircle : CheckCircle2}

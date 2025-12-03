@@ -274,15 +274,15 @@ export function HeroSection() {
                     } : undefined}
                 />
 
-                <div className="relative z-10 pt-16 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center">
+                <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
 
-                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-20 max-w-4xl mx-auto pb-7">
-                        <h2 className="text-2xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center px-2">
+                    <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-12 sm:pt-20 max-w-4xl mx-auto pb-6 sm:pb-7">
+                        <h2 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center px-4 sm:px-2">
                             {t('whatWouldYouLike')}
                         </h2>
                     </div>
 
-                    <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-2 sm:px-0">
+                    <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0">
                         <div className="w-full relative">
                             <div className="relative z-10">
                                 <ChatInput
@@ -310,7 +310,7 @@ export function HeroSection() {
 
                     {/* Modes Panel - Below chat input, visible for Suna agent */}
                     {isSunaAgent && (
-                        <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
+                        <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0">
                             <Suspense fallback={<div className="h-24 animate-pulse bg-muted/10 rounded-lg" />}>
                                 <SunaModesPanel
                                     selectedMode={selectedMode}

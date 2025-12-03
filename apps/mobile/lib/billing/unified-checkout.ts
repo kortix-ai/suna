@@ -1,65 +1,99 @@
 import { shouldUseRevenueCat } from './provider';
-import { startPlanCheckout as startStripePlanCheckout, startCreditPurchase as startStripeCreditPurchase } from './checkout';
-import { getOfferings, getOfferingById, purchasePackage, presentPaywall } from './revenuecat';
+import { purchasePackage, presentPaywall, getOfferings, getOfferingById, type SyncResponse } from './revenuecat';
+import { findPackageForTier, logAvailableProducts } from './revenuecat-utils';
 import { supabase } from '@/api/supabase';
+import { PRICING_TIERS } from './pricing';
 
+/**
+ * Start unified plan checkout
+ * ONLY supports RevenueCat (native) checkout - web checkout is disabled
+ */
 export async function startUnifiedPlanCheckout(
   tierKey: string,
   commitmentType: 'monthly' | 'yearly' | 'yearly_commitment' = 'monthly',
   onSuccess?: () => void,
-  onCancel?: () => void
+  onCancel?: () => void,
+  onSyncComplete?: (response: SyncResponse) => void | Promise<void>
 ): Promise<void> {
-  if (shouldUseRevenueCat()) {
-    try {
-      console.log('💳 Using RevenueCat for plan checkout...');
-      
-      const offerings = await getOfferings(true);
-      
-      if (!offerings) {
-        throw new Error('No offerings available');
+  console.log(`💳 Starting checkout for tier: ${tierKey}, period: ${commitmentType}`);
+
+  // Check if RevenueCat is available
+  if (!shouldUseRevenueCat()) {
+    const error = new Error('Native checkout is not available on this platform. Please use the web app for subscription management.');
+    console.error('❌ RevenueCat not available:', error.message);
+    onCancel?.();
+    throw error;
+  }
+
+  // Free tier - not supported via RevenueCat
+  if (tierKey === 'free') {
+    const error = new Error('Free tier cannot be purchased. Please select a paid plan.');
+    console.error('❌ Free tier checkout:', error.message);
+    onCancel?.();
+    throw error;
+  }
+
+  // Verify tier exists
+  const tier = PRICING_TIERS.find(t => t.id === tierKey);
+  if (!tier) {
+    throw new Error(`Invalid tier key: ${tierKey}`);
+  }
+
+  // Only proceed with RevenueCat native checkout
+  try {
+    console.log('💳 Using RevenueCat for plan checkout...');
+    
+    // Ensure RevenueCat is initialized before fetching offerings
+    const { initializeRevenueCat } = await import('./revenuecat');
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (user) {
+      try {
+        await initializeRevenueCat(user.id, user.email, true);
+      } catch (initError) {
+        console.warn('⚠️ RevenueCat initialization warning (may already be initialized):', initError);
       }
+    }
 
-      // Map tier backend keys to RevenueCat product identifiers
-      const tierToRevenueCatId: Record<string, string> = {
-        'tier_2_20': 'kortix_plus',
-        'tier_6_50': 'kortix_pro',
-        'tier_12_100': 'kortix_business',
-        'tier_25_200': 'kortix_ultra',
-      };
+    // Find the package for this tier using improved matching
+    const packageResult = await findPackageForTier(tierKey, commitmentType);
+    
+    if (!packageResult) {
+      // If package not found, log available products for debugging
+      console.warn('⚠️ RevenueCat package not found for tier:', tierKey);
+      await logAvailableProducts();
       
-      const revenueCatId = tierToRevenueCatId[tierKey];
-      if (!revenueCatId) {
-        throw new Error(`No RevenueCat mapping for tier: ${tierKey}`);
-      }
-
-      // Build product identifier: kortix_plus_monthly or kortix_plus_yearly
-      const suffix = commitmentType === 'yearly_commitment' ? 'yearly' : 'monthly';
-      const productIdentifier = `${revenueCatId}_${suffix}`;
-
-      // Find package by product identifier
-      const pkg = offerings.availablePackages.find(p => 
-        p.product.identifier === productIdentifier
-      );
-
-      if (!pkg) {
-        console.warn('⚠️ Package not found, showing paywall instead');
+      // Try showing paywall as fallback
+      console.log('🔄 Attempting to show paywall as fallback...');
+      try {
         await presentPaywall();
         onSuccess?.();
         return;
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
-      await purchasePackage(pkg, user?.email);
-      onSuccess?.();
-    } catch (error: any) {
-      if (error.userCancelled) {
+      } catch (paywallError) {
+        console.error('❌ Paywall failed:', paywallError);
+        const error = new Error(`Plan not available. Please check App Store/Play Store for available plans.`);
         onCancel?.();
-      } else {
         throw error;
       }
     }
-  } else {
-    await startStripePlanCheckout(tierKey, commitmentType, onSuccess, onCancel);
+
+    const { package: pkg } = packageResult;
+    console.log(`✅ Found RevenueCat package: ${pkg.identifier} (Product: ${pkg.product.identifier})`);
+    console.log(`💰 Price: ${pkg.product.priceString}`);
+    
+    await purchasePackage(pkg, user?.email, user?.id, onSyncComplete);
+    onSuccess?.();
+  } catch (error: any) {
+    console.error('❌ RevenueCat checkout error:', error);
+    
+    if (error.userCancelled) {
+      console.log('ℹ️ User cancelled purchase');
+      onCancel?.();
+      return;
+    }
+    
+    // No fallback to web checkout - throw error
+    throw error;
   }
 }
 
@@ -81,52 +115,58 @@ export async function startUnifiedCreditPurchase(
     onSuccess = packageIdOrCallback;
     onCancel = onSuccessOrCancel as (() => void) | undefined;
   }
-  if (shouldUseRevenueCat()) {
-    try {
-      console.log('💰 Using RevenueCat for credit purchase...');
-      
-      let offerings = await getOfferingById('topups', true);
-      
+
+  // Check if RevenueCat is available
+  if (!shouldUseRevenueCat()) {
+    const error = new Error('Native checkout is not available on this platform. Please use the web app for credit purchases.');
+    console.error('❌ RevenueCat not available:', error.message);
+    onCancel?.();
+    throw error;
+  }
+
+  // Only proceed with RevenueCat native checkout
+  try {
+    console.log('💰 Using RevenueCat for credit purchase...');
+    
+    let offerings = await getOfferingById('topups', true);
+    
+    if (!offerings) {
+      console.warn('⚠️ No topups offering found, trying default offering');
+      offerings = await getOfferings(true);
       if (!offerings) {
-        console.warn('⚠️ No topups offering found, trying default offering');
-        offerings = await getOfferings(true);
-        if (!offerings) {
-          throw new Error('No credit offerings available');
-        }
-      }
-
-      let packageIdentifier = packageId;
-      
-      if (!packageIdentifier) {
-        const creditPackageMap: Record<number, string> = {
-          10: 'kortix_topup_starter',
-          25: 'kortix_topup_plus',
-          50: 'kortix_topup_popular',
-          100: 'kortix_topup_pro',
-          250: 'kortix_topup_business',
-          500: 'kortix_topup_enterprise',
-        };
-        packageIdentifier = creditPackageMap[amount];
-      }
-
-      const pkg = offerings.availablePackages.find(p => p.identifier === packageIdentifier);
-
-      if (!pkg) {
-        throw new Error(`Credit package not found for amount: ${amount}. Available packages: ${offerings.availablePackages.map(p => p.identifier).join(', ')}`);
-      }
-
-      const { data: { user } } = await supabase.auth.getUser();
-      await purchasePackage(pkg, user?.email);
-      onSuccess?.();
-    } catch (error: any) {
-      if (error.userCancelled) {
-        onCancel?.();
-      } else {
-        throw error;
+        throw new Error('No credit offerings available');
       }
     }
-  } else {
-    await startStripeCreditPurchase(amount, onSuccess, onCancel);
+
+    let packageIdentifier = packageId;
+    
+    if (!packageIdentifier) {
+      const creditPackageMap: Record<number, string> = {
+        10: 'kortix_topup_starter',
+        25: 'kortix_topup_plus',
+        50: 'kortix_topup_popular',
+        100: 'kortix_topup_pro',
+        250: 'kortix_topup_business',
+        500: 'kortix_topup_enterprise',
+      };
+      packageIdentifier = creditPackageMap[amount];
+    }
+
+    const pkg = offerings.availablePackages.find(p => p.identifier === packageIdentifier);
+
+    if (!pkg) {
+      throw new Error(`Credit package not found for amount: ${amount}. Available packages: ${offerings.availablePackages.map(p => p.identifier).join(', ')}`);
+    }
+
+    const { data: { user } } = await supabase.auth.getUser();
+    await purchasePackage(pkg, user?.email, user?.id);
+    onSuccess?.();
+  } catch (error: any) {
+    if (error.userCancelled) {
+      onCancel?.();
+    } else {
+      throw error;
+    }
   }
 }
 

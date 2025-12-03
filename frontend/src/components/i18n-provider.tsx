@@ -216,7 +216,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       locale={locale} 
       messages={safeMessages} 
       timeZone="UTC"
-      key={locale}
     >
       {children}
     </NextIntlClientProvider>

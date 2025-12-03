@@ -261,7 +261,7 @@ export function useToolView(toolName: string): ToolViewComponent {
 export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   // Extract tool name from function_name (handle undefined case)
   const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'default';
-  
+
   // Get file path directly from tool call arguments (from metadata)
   const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file;
 

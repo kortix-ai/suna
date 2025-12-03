@@ -48,7 +48,7 @@ export function ToolHeader({
                         <Icon
                             as={isSuccess ? Check : X}
                             size={10}
-                            className="text-white"
+                            className="text-primary-foreground"
                         />
                     </View>
                 )}

@@ -171,6 +171,12 @@ class SubscriptionLifecycleHandler:
         
         logger.debug(f"[SUBSCRIPTION] Account: {account_id}, Price: {price_id}, Billing anchor: {billing_anchor}")
         
+        if subscription.get('status') == 'past_due':
+            logger.info(f"[GRACE PERIOD] Subscription {subscription.get('id')} is past_due - updating metadata only, NO CREDITS granted (credits only granted on invoice.payment_succeeded)")
+            await self._update_subscription_metadata_only(account_id, subscription, price_id)
+            await self.lifecycle_service.invalidate_caches(account_id)
+            return
+        
         if await self._is_already_processed(account_id, period_start):
             return
         

@@ -1,3 +1,4 @@
+import hmac
 from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Optional
@@ -38,13 +39,14 @@ class SupabaseWebhookPayload(BaseModel):
 # ============================================================================
 
 def verify_webhook_secret(x_webhook_secret: str = Header(...)):
-    """Verify the webhook secret from Supabase"""
+    """Verify the webhook secret from Supabase using constant-time comparison."""
     expected_secret = os.getenv('SUPABASE_WEBHOOK_SECRET')
     if not expected_secret:
         logger.error("SUPABASE_WEBHOOK_SECRET not configured")
         raise HTTPException(status_code=500, detail="Webhook secret not configured")
     
-    if x_webhook_secret != expected_secret:
+    # Use constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(x_webhook_secret.encode('utf-8'), expected_secret.encode('utf-8')):
         logger.warning("Invalid webhook secret received")
         raise HTTPException(status_code=401, detail="Invalid webhook secret")
     
@@ -60,6 +62,22 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
         
         db = DBConnection()
         await db.initialize()
+
+        user_name = None
+        if user_record and email:
+            user_name = _extract_user_name(user_record, email)
+        
+
+        from core.notifications.notification_service import notification_service
+
+        logger.info(f"[SETUP] Sending welcome email to {email} with name {user_name}")
+        try:
+            await notification_service.send_welcome_email(account_id)
+            
+        except Exception as ex:
+            logger.error(f"[SETUP] Error sending welcome notification: {ex}")
+            if email and user_name:
+                _send_welcome_email_async(email, user_name)
         
         result = await free_tier_service.auto_subscribe_to_free_tier(account_id, email)
         
@@ -79,24 +97,51 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
         suna_service = SunaDefaultAgentService(db)
         agent_id = await suna_service.install_suna_agent_for_user(account_id)
         
-        if user_record and email:
-            user_name = _extract_user_name(user_record, email)
-            
-            from core.notifications.notification_service import notification_service
-            
-            logger.info(f"[SETUP] Sending welcome email to {email} with name {user_name}")
-            try:
-                await notification_service.send_welcome_email(
-                    account_id=account_id,
-                    account_name=user_name,
-                    account_email=email
-                )
-            except Exception as ex:
-                logger.error(f"[SETUP] Error sending welcome notification: {ex}")
-                _send_welcome_email_async(email, user_name)
-        
+
         if not agent_id:
             logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}, but continuing")
+        
+        if user_record:
+            raw_user_metadata = user_record.get('raw_user_meta_data', {})
+            referral_code = raw_user_metadata.get('referral_code')
+            
+            logger.info(f"[SETUP] User metadata: {raw_user_metadata}")
+            logger.info(f"[SETUP] Referral code from metadata: {referral_code}")
+            
+            if referral_code:
+                logger.info(f"[SETUP] Processing referral code for {account_id}: {referral_code}")
+                try:
+                    from core.referrals.service import ReferralService
+                    
+                    referral_service = ReferralService(db)
+                    referrer_id = await referral_service.validate_referral_code(referral_code)
+                    logger.info(f"[SETUP] Validated referral code {referral_code} -> referrer_id: {referrer_id}")
+                    
+                    if referrer_id and referrer_id != account_id:
+                        referral_result = await referral_service.process_referral(
+                            referrer_id=referrer_id,
+                            referred_account_id=account_id,
+                            referral_code=referral_code
+                        )
+                        
+                        logger.info(f"[SETUP] Referral processing result: {referral_result}")
+                        
+                        if referral_result.get('success'):
+                            logger.info(
+                                f"[SETUP] ✅ Referral processed: {referrer_id} referred {account_id}, "
+                                f"awarded {referral_result.get('credits_awarded')} credits"
+                            )
+                        else:
+                            logger.warning(
+                                f"[SETUP] Failed to process referral: {referral_result.get('message')}"
+                            )
+                    else:
+                        logger.warning(
+                            f"[SETUP] Invalid referral code or self-referral: {referral_code}, "
+                            f"referrer_id={referrer_id}, new_user_id={account_id}"
+                        )
+                except Exception as ref_error:
+                    logger.error(f"[SETUP] Error processing referral: {ref_error}", exc_info=True)
         
         logger.info(f"[SETUP] ✅ Account initialization complete for {account_id}")
         
@@ -143,11 +188,27 @@ def _send_welcome_email_async(email: str, user_name: str):
 async def initialize_account(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """
-    API endpoint for account initialization (fallback/retry).
-    Most users will be initialized automatically via webhook on signup.
-    """
-    result = await initialize_user_account(account_id)
+    db = DBConnection()
+    await db.initialize()
+    client = await db.client
+    
+    email = None
+    user_record = None
+    
+    try:
+        user_response = await client.auth.admin.get_user_by_id(account_id)
+        if user_response and hasattr(user_response, 'user') and user_response.user:
+            user = user_response.user
+            email = user.email
+            user_record = {
+                'id': user.id,
+                'email': user.email,
+                'raw_user_meta_data': user.user_metadata or {}
+            }
+    except Exception as e:
+        logger.warning(f"[SETUP] Could not fetch user for initialization: {e}")
+    
+    result = await initialize_user_account(account_id, email, user_record)
     
     if not result.get('success'):
         raise HTTPException(status_code=500, detail=result.get('message', 'Failed to initialize account'))

@@ -41,13 +41,14 @@ export type { ThreadUsageResponse, ThreadUsageRecord } from './use-thread-usage'
 export { useCreditUsage } from './use-credit-usage';
 export type { UsageRecord, UsageResponse } from './use-credit-usage';
 export { usageApi } from './usage-api';
+export { useRevenueCatPricing } from '../../hooks/billing/useRevenueCatPricing';
 
 // =============================================================================
 // CHECKOUT & PAYMENTS
 // =============================================================================
+// Web checkout functions removed - only native checkout supported
+// openBillingPortal and openExternalUrl still available for redirecting Stripe subscribers to web app
 export {
-  startPlanCheckout,
-  startCreditPurchase,
   openBillingPortal,
   openExternalUrl,
 } from './checkout';
@@ -59,7 +60,7 @@ export {
 // =============================================================================
 // PRICING & TIERS
 // =============================================================================
-export { PRICING_TIERS, getDisplayPrice } from './pricing';
+export { PRICING_TIERS, getDisplayPrice, getYearlySavings } from './pricing';
 export type { PricingTier, BillingPeriod } from './pricing';
 
 // =============================================================================
@@ -81,7 +82,6 @@ export {
   getOfferings,
   getOfferingById,
   purchasePackage,
-  restorePurchases,
   getCustomerInfo,
   checkSubscriptionStatus,
   presentPaywall,
@@ -92,4 +92,14 @@ export type { RevenueCatProduct } from './revenuecat';
 // PLAN UTILITIES
 // =============================================================================
 export { getPlanName, getPlanIcon } from './plan-utils';
+
+export { logAvailableProducts, findPackageForTier } from './revenuecat-utils';
+export { debugRevenueCat } from './debug-revenuecat';
+export { 
+  getRevenueCatPricing, 
+  getRevenueCatDisplayPrice, 
+  getRevenueCatPackageForCheckout,
+  getRevenueCatYearlySavings,
+  type RevenueCatPricingData 
+} from './revenuecat-pricing';
 

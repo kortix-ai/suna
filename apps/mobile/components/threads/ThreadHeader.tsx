@@ -63,7 +63,6 @@ export function ThreadHeader({
   };
 
   const handleTitlePress = () => {
-    if (isGuestMode) return;
     console.log('🎯 Thread title tapped');
     setIsEditingTitle(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

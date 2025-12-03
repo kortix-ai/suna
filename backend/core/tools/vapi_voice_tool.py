@@ -729,7 +729,7 @@ class VapiVoiceTool(Tool):
 
 **Status**: {status}
 **Duration**: {duration} seconds
-**Credits Used**: ${credits_deducted:.4f}
+**Credits Used**: {int(credits_deducted * 100)} credits
 **Call ID**: `{call_id[:8]}...`
 
 The voice call has ended. You can continue with any follow-up actions."""

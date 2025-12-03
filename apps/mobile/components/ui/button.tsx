@@ -18,23 +18,23 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: cn(
-          'bg-primary active:bg-primary/90 shadow-sm shadow-black/5',
+          'bg-primary active:bg-primary/90',
           Platform.select({ web: 'hover:bg-primary/90' })
         ),
         destructive: cn(
-          'bg-destructive active:bg-destructive/90 dark:bg-destructive/60 shadow-sm shadow-black/5',
+          'bg-destructive active:bg-destructive/90 dark:bg-destructive/60',
           Platform.select({
             web: 'hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
           })
         ),
         outline: cn(
-          'border-[1px] border-border bg-card active:bg-accent dark:bg-card dark:border-border dark:active:bg-input/50 shadow-sm shadow-black/5',
+          'border-[1px] border-border bg-card active:bg-accent dark:bg-card dark:border-border dark:active:bg-input/50',
           Platform.select({
             web: 'hover:bg-accent dark:hover:bg-input/50',
           })
         ),
         secondary: cn(
-          'bg-secondary active:bg-secondary/80 shadow-sm shadow-black/5',
+          'bg-secondary active:bg-secondary/80',
           Platform.select({ web: 'hover:bg-secondary/80' })
         ),
         ghost: cn(
@@ -101,12 +101,12 @@ type ButtonProps = React.ComponentProps<typeof Pressable> &
 function Button({ className, variant, size, onPressIn, onPressOut, ...props }: ButtonProps) {
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
-  
+
   // Initialize opacity based on disabled state
   React.useEffect(() => {
     opacity.value = props.disabled ? 0.5 : 1;
   }, [props.disabled, opacity]);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
     opacity: opacity.value,

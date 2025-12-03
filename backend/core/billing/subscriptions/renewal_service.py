@@ -63,8 +63,10 @@ class RenewalService:
         if not tier:
             raise ValueError(f"Invalid tier: {tier_name}")
         
-        if not tier.monthly_refill_enabled or (tier.daily_credit_config and tier.daily_credit_config.get('enabled')):
-            logger.info(f"[RENEWAL] Skipping monthly credit grant for {account_id} - tier {tier_name} has monthly_refill_enabled=False (using daily credits instead)")
+        # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+        # Note: daily_credit_config is ADDITIONAL, not a replacement for monthly credits
+        if not tier.monthly_refill_enabled:
+            logger.info(f"[RENEWAL] Skipping monthly credit grant for {account_id} - tier {tier_name} has monthly_refill_enabled=False")
             return {
                 'success': True,
                 'account_id': account_id,

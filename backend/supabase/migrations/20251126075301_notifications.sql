@@ -18,8 +18,19 @@ CREATE TABLE IF NOT EXISTS device_tokens (
     UNIQUE(user_id, device_token)
 );
 
+-- Create indexes only if user_id column exists (table might already have account_id from later migration)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'device_tokens' 
+        AND column_name = 'user_id'
+    ) THEN
 CREATE INDEX IF NOT EXISTS idx_device_tokens_user_id ON device_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_device_tokens_active ON device_tokens(user_id, is_active) WHERE is_active = true;
+    END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
@@ -42,12 +53,34 @@ CREATE TRIGGER device_tokens_updated_at
 ALTER TABLE notification_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE device_tokens ENABLE ROW LEVEL SECURITY;
 
+-- Create RLS policy for notification_settings only if user_id column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'notification_settings' 
+        AND column_name = 'user_id'
+    ) THEN
 DROP POLICY IF EXISTS "Users can manage own notification settings" ON notification_settings;
 CREATE POLICY "Users can manage own notification settings"
     ON notification_settings FOR ALL
     USING (auth.uid() = user_id);
+    END IF;
+END $$;
 
+-- Create RLS policy for device_tokens only if user_id column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'device_tokens' 
+        AND column_name = 'user_id'
+    ) THEN
 DROP POLICY IF EXISTS "Users can manage own device tokens" ON device_tokens;
 CREATE POLICY "Users can manage own device tokens"
     ON device_tokens FOR ALL
     USING (auth.uid() = user_id);
+    END IF;
+END $$;

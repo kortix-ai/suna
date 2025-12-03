@@ -1022,6 +1022,13 @@ class AgentRunner:
             if generation:
                 generation.end()
 
+        # Cleanup ThreadManager resources to help with memory management
+        try:
+            if hasattr(self, 'thread_manager') and self.thread_manager:
+                await self.thread_manager.cleanup()
+        except Exception as e:
+            logger.warning(f"Failed to cleanup ThreadManager: {e}")
+
         try:
             asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
         except Exception as e:
@@ -1041,15 +1048,6 @@ async def run_agent(
     account_id: Optional[str] = None  # If provided, skips thread query in setup()
 ):
     effective_model = model_name
-
-    # is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
-    # if is_tier_default and agent_config and agent_config.get('model'):
-    #     effective_model = agent_config['model']
-    #     logger.debug(f"Using model from agent config: {effective_model} (tier default was {model_name})")
-    # elif not is_tier_default:
-    #     logger.debug(f"Using user-selected model: {effective_model}")
-    # else:
-    #     logger.debug(f"Using tier default model: {effective_model}")
     
     config = AgentConfig(
         thread_id=thread_id,

@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Pressable, View, Switch, ScrollView } from 'react-native';
+import { Pressable, View, Switch, ScrollView, Linking } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Layers, Sparkles, Zap, AlertCircle } from 'lucide-react-native';
+import { Layers, Globe, ExternalLink, AlertCircle } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 
@@ -31,6 +31,11 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
     await toggleAdvancedFeatures();
   }, [toggleAdvancedFeatures]);
 
+  const handleVisitWeb = React.useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL('https://kortix.com');
+  }, []);
+
   if (!visible) return null;
 
   return (
@@ -51,35 +56,57 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
             onClose={handleClose}
           />
 
-          <View className="px-6 pb-8">
-            <View className="mb-8 items-center pt-4">
-              <View className="mb-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                <Icon as={Sparkles} size={28} className="text-primary" strokeWidth={2} />
-              </View>
-              <Text className="mb-1 text-2xl font-roobert-semibold text-foreground tracking-tight">
-                {t('beta.experimentalFeatures')}
-              </Text>
-              <Text className="text-sm font-roobert text-muted-foreground text-center">
-                {t('beta.earlyAccess')}
-              </Text>
+          <View className="px-6 pb-8 pt-2">
+            {/* Web Support - Prominent */}
+            <View className="mb-6">
+              <Pressable
+                onPress={handleVisitWeb}
+                className="bg-primary/10 border border-primary/30 rounded-3xl p-5 active:opacity-80"
+              >
+                <View className="flex-row items-center gap-4 mb-3">
+                  <View className="h-12 w-12 rounded-2xl bg-primary/20 items-center justify-center">
+                    <Icon as={Globe} size={22} className="text-primary" strokeWidth={2.5} />
+                  </View>
+                  <View className="flex-1">
+                    <Text className="text-base font-roobert-semibold text-foreground mb-1">
+                      {t('beta.webSupportTitle')}
+                    </Text>
+                    <Text className="text-sm font-roobert text-muted-foreground leading-5">
+                      {t('beta.webSupportDescription')}
+                    </Text>
+                  </View>
+                  <Icon as={ExternalLink} size={18} className="text-primary" strokeWidth={2.5} />
+                </View>
+              </Pressable>
             </View>
 
-            <View className="mb-6">
-              <View className="bg-card border border-border/40 rounded-2xl p-5">
-                <View className="flex-row items-center justify-between mb-4">
-                  <View className="flex-row items-center gap-3 flex-1">
-                    <View className={`h-11 w-11 rounded-full items-center justify-center ${advancedFeaturesEnabled ? 'bg-primary' : 'bg-primary/10'
-                      }`}>
+            {/* Mobile Beta Toggle */}
+            <View className="mb-5">
+              <View className={`bg-card border rounded-3xl p-5 ${
+                advancedFeaturesEnabled ? 'border-border/50' : 'border-border/30'
+              }`}>
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-4 flex-1">
+                    <View className={`h-12 w-12 rounded-2xl items-center justify-center ${
+                      advancedFeaturesEnabled 
+                        ? 'bg-primary' 
+                        : 'bg-muted/50 border border-border/50'
+                    }`}>
                       <Icon
                         as={Layers}
-                        size={20}
-                        className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-primary'}
+                        size={22}
+                        className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-foreground/50'}
                         strokeWidth={2.5}
                       />
                     </View>
                     <View className="flex-1">
-                      <Text className="text-base font-roobert-semibold text-foreground mb-0.5">
+                      <Text className={`text-base font-roobert-semibold mb-1 ${
+                        advancedFeaturesEnabled ? 'text-foreground' : 'text-foreground/70'
+                      }`}>
                         {t('beta.advancedFeatures')}
+                      </Text>
+                      <Text className="text-xs font-roobert text-muted-foreground">
+                        {t('beta.mobileBeta')}
                       </Text>
                     </View>
                   </View>
@@ -95,80 +122,22 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                     ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
                   />
                 </View>
-
-                <View className="pt-3 border-t border-border/40">
-                  <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                    {t('beta.advancedDescription')}
-                  </Text>
-                </View>
               </View>
             </View>
 
-            {advancedFeaturesEnabled && (
-              <View className="mb-6">
-                <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                  {t('beta.whatsIncluded')}
+            {/* Warning - Subtle */}
+            <View className="bg-muted/30 border border-border/30 rounded-2xl p-4">
+              <View className="flex-row items-start gap-3">
+                <Icon as={AlertCircle} size={16} className="text-muted-foreground mt-0.5" strokeWidth={2} />
+                <Text className="text-xs font-roobert text-muted-foreground leading-5 flex-1">
+                  {t('beta.mobileWarning')}
                 </Text>
-                <View className="gap-3">
-                  <FeatureCard
-                    icon={Zap}
-                    title={t('beta.experimentalTools')}
-                    description={t('beta.experimentalToolsDescription')}
-                  />
-                  <FeatureCard
-                    icon={Layers}
-                    title={t('beta.advancedSettings')}
-                    description={t('beta.advancedSettingsDescription')}
-                  />
-                </View>
-              </View>
-            )}
-
-            <View className="bg-destructive/5 border border-destructive/20 rounded-2xl p-5">
-              <View className="flex-col items-start gap-3 mb-3">
-                <View className="h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
-                  <Icon as={AlertCircle} size={18} className="text-destructive" strokeWidth={2.5} />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-sm font-roobert-semibold text-foreground mb-1">
-                    {t('beta.pleaseNote')}
-                  </Text>
-                  <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                    {t('beta.betaWarning')}
-                  </Text>
-                </View>
               </View>
             </View>
           </View>
 
           <View className="h-20" />
         </ScrollView>
-      </View>
-    </View>
-  );
-}
-
-interface FeatureCardProps {
-  icon: any;
-  title: string;
-  description: string;
-}
-
-function FeatureCard({ icon: IconComponent, title, description }: FeatureCardProps) {
-  return (
-    <View className="bg-primary/5 rounded-2xl p-4">
-      <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 rounded-full bg-primary/10 items-center justify-center">
-          <Icon as={IconComponent} size={18} className="text-primary" strokeWidth={2.5} />
-        </View>
-        <View className="flex-1">
-          <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
-            {title}
-          </Text>
-          <Text className="text-xs font-roobert text-muted-foreground">
-            {description}
-          </Text>
-        </View>
       </View>
     </View>
   );

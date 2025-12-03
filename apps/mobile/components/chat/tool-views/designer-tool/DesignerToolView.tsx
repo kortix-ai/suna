@@ -25,8 +25,8 @@ export function DesignerToolView({ toolCall, toolResult, isStreaming = false, as
   if (isStreaming) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-purple-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={Palette} size={40} className="text-purple-500 animate-pulse" />
+        <View className="bg-background border-border border rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <Icon as={Palette} size={40} className="text-muted-foreground" />
         </View>
         <Text className="text-xl font-roobert-semibold text-foreground mb-2">
           {mode === 'create' ? 'Creating Design' : 'Editing Design'}
@@ -107,8 +107,8 @@ export function DesignerToolView({ toolCall, toolResult, isStreaming = false, as
           </View>
         ) : (
           <View className="py-8 items-center">
-            <View className="bg-muted/30 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
-              <Icon as={Palette} size={32} className="text-muted-foreground" />
+            <View className="bg-background border-border border rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+              <Icon as={Palette} size={40} className="text-muted-foreground" />
             </View>
             <Text className="text-base font-roobert-medium text-foreground mb-1">
               No Design Generated

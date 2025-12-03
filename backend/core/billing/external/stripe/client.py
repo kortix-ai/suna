@@ -237,5 +237,13 @@ class StripeAPIWrapper:
     @classmethod 
     async def list_invoices(cls, **kwargs) -> stripe.ListObject:
         return await cls.safe_stripe_call(stripe.Invoice.list_async, **kwargs)
+    
+    @classmethod
+    async def retrieve_price(cls, price_id: str) -> stripe.Price:
+        return await cls.safe_stripe_call(stripe.Price.retrieve_async, price_id)
+    
+    @classmethod
+    async def list_subscriptions(cls, **kwargs) -> stripe.ListObject:
+        return await cls.safe_stripe_call(stripe.Subscription.list_async, **kwargs)
 
 stripe_circuit_breaker = StripeCircuitBreaker()

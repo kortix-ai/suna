@@ -36,6 +36,7 @@ export interface ToolViewProps {
   totalCalls?: number;
   onFileClick?: (filePath: string) => void;
   viewToggle?: React.ReactNode;
+  streamingText?: string; // Live streaming content from assistant message
 }
 
 export interface BrowserToolViewProps extends ToolViewProps {

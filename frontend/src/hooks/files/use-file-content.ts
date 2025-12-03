@@ -13,9 +13,15 @@ export function useFileContent(
     staleTime?: number;
   } = {}
 ) {
-  return useFileContentQuery(sandboxId, filePath, {
+  const result = useFileContentQuery(sandboxId, filePath, {
     // Auto-detect content type for consistency across all hooks
     enabled: options.enabled,
     staleTime: options.staleTime,
   });
+  
+  return {
+    ...result,
+    // Ensure failureCount is exposed
+    failureCount: result.failureCount || 0,
+  };
 } 

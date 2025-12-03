@@ -52,7 +52,7 @@ export function CreditsDisplay() {
       <button
         onClick={handleClick}
         className={cn(
-          "group flex items-center gap-2.5 border-[1.5px] rounded-full pl-3.5 pr-1 py-2 h-[41px]",
+          "group flex items-center gap-2.5 border-[1.5px] rounded-full pl-2 pr-1 py-2 h-[41px]",
           "bg-background dark:bg-background",
           "border-border/60 dark:border-border",
           "hover:bg-accent/30 dark:hover:bg-accent/20 hover:border-border dark:hover:border-border/80",

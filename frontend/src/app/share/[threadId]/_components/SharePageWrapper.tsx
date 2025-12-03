@@ -1,8 +1,13 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { AppProviders } from '@/components/layout/app-providers';
+
+// Lazy load presentation modal (only needed when presentations are opened)
+const PresentationViewerWrapper = lazy(() =>
+  import('@/stores/presentation-viewer-store').then(mod => ({ default: mod.PresentationViewerWrapper }))
+);
 
 export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
@@ -33,11 +38,21 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     if (isLoggedIn) {
         return (
             <AppProviders showSidebar={true}>
-                            {children}
+                {children}
+                <Suspense fallback={null}>
+                    <PresentationViewerWrapper />
+                </Suspense>
             </AppProviders>
         );
     }
 
     // Anon user: render children without sidebar or subscription sync (no auth required)
-    return <div className="flex-1">{children}</div>;
+    return (
+        <div className="flex-1">
+            {children}
+            <Suspense fallback={null}>
+                <PresentationViewerWrapper />
+            </Suspense>
+        </div>
+    );
 }

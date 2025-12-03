@@ -523,3 +523,8 @@ export function useAccountStateWithStreaming(isStreaming: boolean = false) {
     refetchIntervalInBackground: false,
   });
 }
+
+// =============================================================================
+// REVENUECAT PRICING HOOK
+// =============================================================================
+export { useRevenueCatPricing } from '../../hooks/billing/useRevenueCatPricing';

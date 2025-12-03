@@ -56,8 +56,10 @@ class SubscriptionService:
         
         logger.info(f"[REVENUECAT] Step 1: Updating credits to ${credits_amount}...")
         
-        if not tier_info.monthly_refill_enabled or (tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')):
-            logger.info(f"[REVENUECAT] Skipping initial credit grant for tier {tier_name} - monthly_refill_enabled=False (using daily credits)")
+        # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+        # Note: daily_credit_config is ADDITIONAL, not a replacement for monthly credits
+        if not tier_info.monthly_refill_enabled:
+            logger.info(f"[REVENUECAT] Skipping initial credit grant for tier {tier_name} - monthly_refill_enabled=False")
         else:
             try:
                 if existing_account:

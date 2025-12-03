@@ -82,6 +82,10 @@ export function PresentationViewer({
   const hasLoadedRef = useRef(false);
   const sandboxCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isEnsuringSandboxRef = useRef(false);
+  
+  // Cache metadata by presentation name to avoid re-loading when switching between tool calls
+  const metadataCacheRef = useRef<Map<string, PresentationMetadata>>(new Map());
+  const lastPresentationNameRef = useRef<string | null>(null);
 
   const [visibleSlide, setVisibleSlide] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -177,26 +181,36 @@ export function PresentationViewer({
   }, [project?.id, project?.sandbox?.id]);
 
   // Load metadata.json for the presentation with retry logic
-  const loadMetadata = useCallback(async (retryCount = 0, maxRetries = Infinity) => {
-    // Don't load if we already successfully loaded metadata
-    if (hasLoadedRef.current) {
-      return;
-    }
-    
+  const loadMetadata = useCallback(async (retryCount = 0, maxRetries = Infinity, forceRefresh = false) => {
     // If sandbox URL isn't available yet, wait and don't set loading state
     if (!extractedPresentationName || !project?.sandbox?.sandbox_url) {
       setIsLoadingMetadata(false);
       return;
     }
+
+    const sanitizedPresentationName = sanitizeFilename(extractedPresentationName);
     
-    setIsLoadingMetadata(true);
+    // Check if we have cached metadata for this presentation
+    const cachedMetadata = metadataCacheRef.current.get(sanitizedPresentationName);
+    
+    // If we have cached data and this is not a force refresh, use it immediately
+    if (cachedMetadata && !forceRefresh) {
+      setMetadata(cachedMetadata);
+      setIsLoadingMetadata(false);
+      hasLoadedRef.current = true;
+      // Still refresh in background to get latest data
+      loadMetadata(0, maxRetries, true);
+      return;
+    }
+    
+    // Only show loading if we don't have any cached data
+    if (!cachedMetadata) {
+      setIsLoadingMetadata(true);
+    }
     setError(null);
     setRetryAttempt(retryCount);
     
     try {
-      // Sanitize the presentation name to match backend directory creation
-      const sanitizedPresentationName = sanitizeFilename(extractedPresentationName);
-      
       const metadataUrl = constructHtmlPreviewUrl(
         project.sandbox.sandbox_url, 
         `presentations/${sanitizedPresentationName}/metadata.json`
@@ -214,8 +228,12 @@ export function PresentationViewer({
       
       if (response.ok) {
         const data = await response.json();
+        
+        // Cache the metadata
+        metadataCacheRef.current.set(sanitizedPresentationName, data);
+        
         setMetadata(data);
-        hasLoadedRef.current = true; // Mark as successfully loaded
+        hasLoadedRef.current = true;
         setIsLoadingMetadata(false);
         
         // Clear any pending retry timeout on success
@@ -240,18 +258,22 @@ export function PresentationViewer({
         ensureSandboxActive();
       }
       
+      // If we have cached data, don't show loading state during retries
+      if (cachedMetadata) {
+        setIsLoadingMetadata(false);
+      }
+      
       // Calculate delay with exponential backoff, capped at 10 seconds
-      // For early attempts, use shorter delays. After 5 attempts, use consistent 5 second intervals
       const delay = retryCount < 5 
-        ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
-        : 5000; // Consistent 5 second intervals after that
+        ? Math.min(1000 * Math.pow(2, retryCount), 10000)
+        : 5000;
       
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
-        loadMetadata(retryCount + 1, maxRetries);
+        loadMetadata(retryCount + 1, maxRetries, forceRefresh);
       }, delay);
       
-      return; // Keep loading state, don't set error
+      return;
     }
   }, [extractedPresentationName, project?.sandbox?.sandbox_url, ensureSandboxActive]);
 
@@ -293,8 +315,15 @@ export function PresentationViewer({
   }, [project?.id, project?.sandbox?.id, project?.sandbox?.sandbox_url, extractedPresentationName, ensureSandboxActive]);
 
   useEffect(() => {
-    // Reset loaded flag when presentation name or sandbox URL changes
-    hasLoadedRef.current = false;
+    // Check if presentation changed
+    const sanitizedName = extractedPresentationName ? sanitizeFilename(extractedPresentationName) : null;
+    const presentationChanged = sanitizedName !== lastPresentationNameRef.current;
+    
+    // Only reset loaded flag if presentation actually changed
+    if (presentationChanged) {
+      hasLoadedRef.current = false;
+      lastPresentationNameRef.current = sanitizedName;
+    }
     
     // Clear any existing retry timeout when dependencies change
     if (retryTimeoutRef.current) {
@@ -306,8 +335,12 @@ export function PresentationViewer({
     if (extractedPresentationName && project?.sandbox?.sandbox_url) {
       loadMetadata();
     } else if (extractedPresentationName && project?.sandbox?.id && !project?.sandbox?.sandbox_url) {
-      // Sandbox exists but URL not available yet - show loading state
-      setIsLoadingMetadata(true);
+      // Sandbox exists but URL not available yet
+      // Only show loading if we don't have cached data for this presentation
+      const hasCachedData = sanitizedName && metadataCacheRef.current.has(sanitizedName);
+      if (!hasCachedData) {
+        setIsLoadingMetadata(true);
+      }
     } else {
       setIsLoadingMetadata(false);
     }
@@ -326,36 +359,32 @@ export function PresentationViewer({
     };
   }, []);
 
-  // Reset scroll state when tool content changes (new tool call)
+  // Create a unique key for this tool call to track scroll state
+  const toolCallKey = useMemo(() => {
+    return `${toolCall?.tool_call_id || ''}-${currentSlideNumber || ''}-${extractedPresentationName || ''}`;
+  }, [toolCall?.tool_call_id, currentSlideNumber, extractedPresentationName]);
+
+  // Reset scroll state when tool call changes (new tool call opened)
   useEffect(() => {
     setHasScrolledToCurrentSlide(false);
-  }, [toolResult?.output, currentSlideNumber]);
-
-  // Scroll to current slide when metadata loads or when tool content changes
-  useEffect(() => {
-    if (metadata && currentSlideNumber && !hasScrolledToCurrentSlide) {
-      // Wait longer for memoized components to render
-      scrollToCurrentSlide(800);
-      setHasScrolledToCurrentSlide(true);
-    }
-  }, [metadata, currentSlideNumber, hasScrolledToCurrentSlide]);
+  }, [toolCallKey]);
 
   const slides = metadata ? Object.entries(metadata.slides)
       .map(([num, slide]) => ({ number: parseInt(num), ...slide }))
     .sort((a, b) => a.number - b.number) : [];
 
-  // Additional effect to scroll when slides are actually rendered
+  // Scroll to current slide when metadata loads or when tool content changes
   useEffect(() => {
-    if (slides.length > 0 && currentSlideNumber && metadata && !hasScrolledToCurrentSlide) {
-      // Extra delay to ensure DOM is fully rendered
+    if (metadata && currentSlideNumber && !hasScrolledToCurrentSlide && slides.length > 0) {
+      // Wait for DOM to be ready, then scroll
       const timer = setTimeout(() => {
         scrollToCurrentSlide(100);
         setHasScrolledToCurrentSlide(true);
-      }, 1000);
+      }, 300);
 
       return () => clearTimeout(timer);
     }
-  }, [slides.length, currentSlideNumber, metadata, hasScrolledToCurrentSlide]);
+  }, [metadata, currentSlideNumber, hasScrolledToCurrentSlide, slides.length]);
 
   // Scroll-based slide detection with proper edge handling
   useEffect(() => {
@@ -635,18 +664,19 @@ export function PresentationViewer({
           <ScrollArea className="h-full">
             <div className="space-y-4 p-4">
               {slides.map((slide) => (
-                <PresentationSlideCard
-                  key={slide.number} 
-                  slide={slide}
-                  project={project}
-                  onFullScreenClick={(slideNumber) => {
-                    if (openPresentation && project?.sandbox?.sandbox_url && extractedPresentationName) {
-                      openPresentation(extractedPresentationName, project.sandbox.sandbox_url, slideNumber);
-                    }
-                  }}
-                  className={currentSlideNumber === slide.number ? 'ring-2 ring-blue-500/20 shadow-md' : ''}
-                  refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
-                />
+                <div key={slide.number} id={`slide-${slide.number}`}>
+                  <PresentationSlideCard
+                    slide={slide}
+                    project={project}
+                    onFullScreenClick={(slideNumber) => {
+                      if (openPresentation && project?.sandbox?.sandbox_url && extractedPresentationName) {
+                        openPresentation(extractedPresentationName, project.sandbox.sandbox_url, slideNumber);
+                      }
+                    }}
+                    className={currentSlideNumber === slide.number ? 'ring-2 ring-blue-500/20 shadow-md' : ''}
+                    refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
+                  />
+                </div>
               ))}
             </div>
           </ScrollArea>

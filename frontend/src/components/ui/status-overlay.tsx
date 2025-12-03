@@ -8,7 +8,7 @@ export function StatusOverlay() {
   if (state.operation === 'none' || !state.isDeleting) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-background/90 backdrop-blur p-3 rounded-lg shadow-lg border border-border">
+    <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-background/90 backdrop-blur p-3 rounded-2xl shadow-lg border border-border">
       {state.operation === 'pending' && (
         <>
           <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />

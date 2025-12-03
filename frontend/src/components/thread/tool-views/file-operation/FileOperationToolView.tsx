@@ -65,6 +65,8 @@ export function FileOperationToolView({
   isStreaming = false,
   project,
   onFileClick,
+  messages,
+  streamingText,
 }: ToolViewProps) {
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
@@ -76,6 +78,174 @@ export function FileOperationToolView({
 
   // Add copy functionality state
   const [isCopyingContent, setIsCopyingContent] = useState(false);
+
+  const operation = getOperationType(name, args);
+  const configs = getOperationConfigs();
+  const config = configs[operation];
+  const Icon = config.icon;
+
+  let filePath: string | null = null;
+  let fileContent: string | null = null;
+
+  // Extract file path from arguments (from metadata)
+  filePath = args.file_path || args.target_file || args.path || null;
+
+  // STREAMING: Extract content from live streaming JSON arguments
+  if (isStreaming && streamingText) {
+    try {
+      // Try parsing as complete JSON first
+      const parsed = JSON.parse(streamingText);
+
+      // Extract based on operation type
+      if (operation === 'create' || operation === 'rewrite') {
+        if (parsed.file_contents) {
+          fileContent = parsed.file_contents;
+        }
+      } else if (operation === 'edit') {
+        if (parsed.code_edit) {
+          fileContent = parsed.code_edit;
+        }
+      }
+
+      // Extract file_path if not already set
+      if (!filePath && parsed.file_path) {
+        filePath = parsed.file_path;
+      }
+    } catch (e) {
+      // JSON incomplete - extract partial content
+      if (operation === 'create' || operation === 'rewrite') {
+        // Find the start of file_contents value
+        const startMatch = streamingText.match(/"file_contents"\s*:\s*"/);
+        if (startMatch) {
+          const startIndex = startMatch.index! + startMatch[0].length;
+          // Extract everything after "file_contents": " until we hit the end or a closing quote
+          let rawContent = streamingText.substring(startIndex);
+
+          // Try to find the end quote (but it might not exist yet during streaming)
+          const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+          if (endQuoteMatch) {
+            rawContent = rawContent.substring(0, endQuoteMatch.index);
+          }
+
+          // Unescape JSON sequences like \n, \t, \\, \"
+          try {
+            fileContent = JSON.parse('"' + rawContent + '"');
+          } catch {
+            // If unescaping fails, replace common escapes manually
+            fileContent = rawContent
+              .replace(/\\n/g, '\n')
+              .replace(/\\t/g, '\t')
+              .replace(/\\r/g, '\r')
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, '\\');
+          }
+        }
+      } else if (operation === 'edit') {
+        const startMatch = streamingText.match(/"code_edit"\s*:\s*"/);
+        if (startMatch) {
+          const startIndex = startMatch.index! + startMatch[0].length;
+          let rawContent = streamingText.substring(startIndex);
+
+          const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+          if (endQuoteMatch) {
+            rawContent = rawContent.substring(0, endQuoteMatch.index);
+          }
+
+          try {
+            fileContent = JSON.parse('"' + rawContent + '"');
+          } catch {
+            fileContent = rawContent
+              .replace(/\\n/g, '\n')
+              .replace(/\\t/g, '\t')
+              .replace(/\\r/g, '\r')
+              .replace(/\\"/g, '"')
+              .replace(/\\\\/g, '\\');
+          }
+        }
+      }
+
+      // Extract file_path from partial JSON
+      if (!filePath) {
+        const pathMatch = streamingText.match(/"file_path"\s*:\s*"([^"]+)"/);
+        if (pathMatch) {
+          filePath = pathMatch[1];
+        }
+      }
+    }
+  }  // Fallback: Extract content from args (for completed operations)
+  if (!fileContent) {
+    fileContent = args.file_contents || args.code_edit || args.updated_content || null;
+  }
+
+  // Override with output if available
+  if (output) {
+    if (typeof output === 'object' && output !== null) {
+      fileContent = output.file_content || output.content || output.updated_content || fileContent;
+      if (!filePath && output.file_path) {
+        filePath = output.file_path;
+      }
+    } else if (typeof output === 'string' && operation !== 'delete' && operation !== 'create') {
+      fileContent = output;
+    }
+  }
+
+  const toolTitle = getToolTitle(name || `file-${operation}`);
+  const processedFilePath = processFilePath(filePath);
+  const fileName = getFileName(processedFilePath);
+  const fileExtension = getFileExtension(fileName);
+
+  const isMarkdown = isFileType.markdown(fileExtension);
+  const isHtml = isFileType.html(fileExtension);
+  const isCsv = isFileType.csv(fileExtension);
+  const isXlsx = isFileType.xlsx(fileExtension);
+
+  const language = getLanguageFromFileName(fileName);
+  const hasHighlighting = hasLanguageHighlighting(language);
+  const contentLines = React.useMemo(() => splitContentIntoLines(fileContent), [fileContent]);
+
+  const htmlPreviewUrl =
+    isHtml && project?.sandbox?.sandbox_url && processedFilePath
+      ? constructHtmlPreviewUrl(project.sandbox.sandbox_url, processedFilePath)
+      : undefined;
+
+  const FileIcon = getFileIcon(fileName);
+
+  // Auto-scroll refs for streaming
+  const sourceScrollRef = React.useRef<HTMLDivElement>(null);
+  const previewScrollRef = React.useRef<HTMLDivElement>(null);
+
+  // Auto-scroll for source code view during streaming (with smooth animation)
+  React.useEffect(() => {
+    if (isStreaming && fileContent && sourceScrollRef.current) {
+      const viewport = sourceScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+      if (viewport) {
+        // Use requestAnimationFrame for smoother scrolling
+        requestAnimationFrame(() => {
+          // Get the actual content height (number of lines * line height)
+          const lineCount = contentLines.length;
+          const lineHeight = 24; // Approximate line height in pixels
+          const targetScroll = lineCount * lineHeight;
+
+          // Smooth scroll with CSS transition
+          viewport.style.scrollBehavior = 'smooth';
+          viewport.scrollTop = targetScroll;
+        });
+      }
+    }
+  }, [isStreaming, fileContent, contentLines.length]);
+
+  // Auto-scroll for preview tab during streaming (with smooth animation)
+  React.useEffect(() => {
+    if (isStreaming && fileContent && previewScrollRef.current) {
+      const viewport = previewScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+      if (viewport) {
+        requestAnimationFrame(() => {
+          viewport.style.scrollBehavior = 'smooth';
+          viewport.scrollTop = viewport.scrollHeight;
+        });
+      }
+    }
+  }, [isStreaming, fileContent]);
 
   // Copy functions
   const copyToClipboard = async (text: string) => {
@@ -101,78 +271,8 @@ export function FileOperationToolView({
     setTimeout(() => setIsCopyingContent(false), 500);
   };
 
-  const operation = getOperationType(name, args);
-  const configs = getOperationConfigs();
-  const config = configs[operation];
-  const Icon = config.icon;
-
-  let filePath: string | null = null;
-  let fileContent: string | null = null;
-
-  // Extract file path from arguments (from metadata)
-  filePath = args.file_path || args.target_file || args.path || null;
-
-  // For create operations, prioritize content from arguments
-  if (operation === 'create' && args.file_contents) {
-    fileContent = args.file_contents;
-  }
-
-  // Extract file content from output (from metadata)
-  if (output && !fileContent) {
-    if (typeof output === 'object' && output !== null) {
-      // Handle structured output
-      fileContent = output.file_content || output.content || output.updated_content || null;
-      // If file_path is in output, use it
-      if (!filePath && output.file_path) {
-        filePath = output.file_path;
-    }
-    } else if (typeof output === 'string') {
-      // For delete operations, output might be a message
-      // For create operations, output is usually just a success message, not content
-      if (operation !== 'delete' && operation !== 'create') {
-        fileContent = output;
-      }
-    }
-  }
-
-  // For edit operations, prefer updated_content
-  if (operation === 'edit' && output && typeof output === 'object') {
-    fileContent = output.updated_content || output.file_content || output.content || null;
-  }
-
-  const toolTitle = getToolTitle(name || `file-${operation}`);
-  const processedFilePath = processFilePath(filePath);
-  const fileName = getFileName(processedFilePath);
-  const fileExtension = getFileExtension(fileName);
-
-  const isMarkdown = isFileType.markdown(fileExtension);
-  const isHtml = isFileType.html(fileExtension);
-  const isCsv = isFileType.csv(fileExtension);
-  const isXlsx = isFileType.xlsx(fileExtension);
-
-  const language = getLanguageFromFileName(fileName);
-  const hasHighlighting = hasLanguageHighlighting(language);
-  const contentLines = splitContentIntoLines(fileContent);
-
-  const htmlPreviewUrl =
-    isHtml && project?.sandbox?.sandbox_url && processedFilePath
-      ? constructHtmlPreviewUrl(project.sandbox.sandbox_url, processedFilePath)
-      : undefined;
-
-  const FileIcon = getFileIcon(fileName);
-
-  if (!isStreaming && !processedFilePath && !fileContent) {
-    return (
-      <GenericToolView
-        toolCall={toolCall}
-        toolResult={toolResult}
-        assistantTimestamp={assistantTimestamp}
-        toolTimestamp={toolTimestamp}
-        isSuccess={isSuccess}
-        isStreaming={isStreaming}
-      />
-    );
-  }
+  // Always show FileOperationToolView for file operations, even during streaming
+  // Don't fallback to GenericToolView
 
   const renderFilePreview = () => {
     if (!fileContent) {
@@ -225,7 +325,7 @@ export function FileOperationToolView({
       return (
         <div className="p-6 flex flex-col">
           <div className="flex-1 min-h-[400px] w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
-            <XlsxRenderer 
+            <XlsxRenderer
               content={fileContent}
               filePath={processedFilePath}
               fileName={fileName}
@@ -282,7 +382,7 @@ export function FileOperationToolView({
     // Add empty lines to fill viewport
     const emptyLines = generateEmptyLines(50); // Add 50 empty lines for natural scrolling
     const allLines = [...contentLines, ...emptyLines];
-    
+
     return (
       <div className="min-w-full table">
         {allLines.map((line, idx) => (
@@ -372,8 +472,8 @@ export function FileOperationToolView({
 
         <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative">
           <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden">
-            <ScrollArea className="h-full w-full min-h-0">
-              {isStreaming && !fileContent ? (
+            <ScrollArea ref={sourceScrollRef} className="h-full w-full min-h-0">
+              {!fileContent && !isStreaming ? (
                 <LoadingState
                   icon={Icon}
                   iconColor={config.color}
@@ -383,6 +483,13 @@ export function FileOperationToolView({
                   subtitle="Please wait while the file is being processed"
                   showProgress={false}
                 />
+              ) : !fileContent && isStreaming ? (
+                <div className="flex items-center justify-center h-full p-12">
+                  <div className="text-center">
+                    <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
+                  </div>
+                </div>
               ) : operation === 'delete' ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 px-6">
                   <div className={cn("w-20 h-20 rounded-full flex items-center justify-center mb-6", config.bgColor)}>
@@ -408,19 +515,11 @@ export function FileOperationToolView({
               // For HTML files, render iframe directly without ScrollArea for full viewport
               <div className="w-full h-full relative">
                 {renderFilePreview()}
-                {isStreaming && fileContent && (
-                  <div className="absolute bottom-4 right-4 z-10">
-                    <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
-                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                      Streaming...
-                    </Badge>
-                  </div>
-                )}
               </div>
             ) : (
-              // For non-HTML files, use ScrollArea as before
-              <ScrollArea className="h-full w-full min-h-0">
-                {isStreaming && !fileContent ? (
+              // For non-HTML files, use ScrollArea with smooth auto-scroll
+              <ScrollArea ref={previewScrollRef} className="h-full w-full min-h-0">
+                {!fileContent && !isStreaming ? (
                   <LoadingState
                     icon={Icon}
                     iconColor={config.color}
@@ -430,18 +529,17 @@ export function FileOperationToolView({
                     subtitle="Please wait while the file is being processed"
                     showProgress={false}
                   />
+                ) : !fileContent && isStreaming ? (
+                  <div className="flex items-center justify-center h-full p-12">
+                    <div className="text-center">
+                      <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
+                    </div>
+                  </div>
                 ) : operation === 'delete' ? (
                   renderDeleteOperation()
                 ) : (
                   renderFilePreview()
-                )}
-                {isStreaming && fileContent && (
-                  <div className="sticky bottom-4 right-4 float-right mr-4 mb-4">
-                    <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
-                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                      Streaming...
-                    </Badge>
-                  </div>
                 )}
               </ScrollArea>
             )}

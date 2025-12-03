@@ -30,6 +30,9 @@ const PresenceContext = createContext<PresenceContextValue | undefined>(undefine
 
 const HEARTBEAT_INTERVAL = 60000;
 
+// Check if presence is disabled via environment variable
+const DISABLE_PRESENCE = process.env.NEXT_PUBLIC_DISABLE_PRESENCE === 'true';
+
 function generateSessionId(): string {
   return crypto.randomUUID();
 }
@@ -63,7 +66,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
   const sendPresenceUpdate = useCallback(
     async (threadId: string | null) => {
-      if (!user || !sessionId) {
+      if (DISABLE_PRESENCE || !user || !sessionId) {
         return;
       }
       const timestamp = new Date().toISOString();
@@ -163,7 +166,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectChannel = useCallback(() => {
-    if (!user) {
+    if (DISABLE_PRESENCE || !user) {
       return;
     }
     
@@ -205,7 +208,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [user, handlePresenceChange, handlePresenceDelete]);
 
   const sendBeaconClear = useCallback(() => {
-    if (typeof navigator === 'undefined' || !sessionId) {
+    if (DISABLE_PRESENCE || typeof navigator === 'undefined' || !sessionId) {
       return;
     }
     const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -228,7 +231,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     const normalized = threadId || null;
     latestThreadRef.current = normalized;
     setActiveThreadState(normalized);
-    if (!user) {
+    if (DISABLE_PRESENCE || !user) {
       return;
     }
     sendPresenceUpdate(normalized);
@@ -236,7 +239,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [sendPresenceUpdate, startHeartbeat, user]);
 
   useEffect(() => {
-    if (!user) {
+    if (DISABLE_PRESENCE || !user) {
       stopHeartbeat();
       disconnectChannel();
       setConnectionState('idle');
@@ -257,7 +260,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [connectChannel, disconnectChannel, sendPresenceUpdate, startHeartbeat, stopHeartbeat, user]);
 
   useEffect(() => {
-    if (typeof document === 'undefined') {
+    if (DISABLE_PRESENCE || typeof document === 'undefined') {
       return;
     }
     const handleVisibilityChange = () => {

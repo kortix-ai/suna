@@ -83,105 +83,52 @@ export function DataProviderEndpointsToolView({ toolCall, toolResult, isStreamin
     }
 
     return (
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-            <View className="px-6 gap-6">
-                {/* Provider Info Card */}
-                <View className={`rounded-xl p-4 border border-border ${providerConfig.bgColor}`}>
-                    <View className="flex-row items-center gap-3 mb-3">
-                        <View className={`rounded-lg p-2 ${providerConfig.bgColor}`}>
-                            <Icon as={ProviderIcon} size={24} className={providerConfig.color} />
-                        </View>
-                        <View className="flex-1">
-                            <Text className="text-lg font-roobert-semibold text-foreground">
-                                {providerConfig.name}
-                            </Text>
-                            <Text className="text-sm font-roobert text-muted-foreground">
-                                Data Provider
-                            </Text>
-                        </View>
-                        {success ? (
-                            <View className="bg-green-500/10 rounded-full p-1.5">
-                                <Icon as={CheckCircle2} size={16} className="text-green-600" />
-                            </View>
-                        ) : (
-                            <View className="bg-red-500/10 rounded-full p-1.5">
-                                <Icon as={AlertCircle} size={16} className="text-red-600" />
-                            </View>
-                        )}
-                    </View>
-
-                    {endpointCount > 0 && (
-                        <Text className="text-sm font-roobert text-foreground/60">
-                            {endpointCount} endpoint{endpointCount !== 1 ? 's' : ''} loaded and ready
-                        </Text>
-                    )}
-                </View>
-
-                {/* Status Cards */}
-                <View className="gap-3">
-                    <Text className="text-sm font-roobert-medium text-foreground/70">
-                        Provider Status
+        <View className="px-6 gap-6">
+            {/* Provider Name */}
+            <View className="gap-2">
+                <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+                    Provider
+                </Text>
+                <View className="bg-card border border-border rounded-2xl p-4">
+                    <Text className="text-base font-roobert-semibold text-foreground">
+                        {providerConfig.name}
                     </Text>
+                </View>
+            </View>
 
-                    {/* Connection Status */}
-                    <View className="bg-card border border-border rounded-xl p-3 flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3">
-                            <View className={`w-2 h-2 rounded-full ${success ? 'bg-green-500' : 'bg-red-500'}`} />
-                            <Text className="text-sm font-roobert text-foreground">
-                                Connection Status
-                            </Text>
-                        </View>
-                        <View className={`px-2 py-1 rounded ${success ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                            <Text className={`text-xs font-roobert-medium ${success ? 'text-green-600' : 'text-red-600'}`}>
-                                {success ? 'Active' : 'Inactive'}
-                            </Text>
-                        </View>
-                    </View>
-
-                    {/* Endpoints Available */}
-                    <View className="bg-card border border-border rounded-xl p-3 flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3">
-                            <View className="w-2 h-2 rounded-full bg-blue-500" />
-                            <Text className="text-sm font-roobert text-foreground">
-                                Endpoints Available
-                            </Text>
-                        </View>
-                        <View className="px-2 py-1 rounded bg-muted">
-                            <Text className="text-xs font-roobert-medium text-foreground">
-                                {endpointCount > 0 ? `${endpointCount} endpoints` : 'Ready'}
-                            </Text>
-                        </View>
-                    </View>
-
-                    {/* Service Name */}
-                    <View className="bg-card border border-border rounded-xl p-3 flex-row items-center justify-between">
-                        <View className="flex-row items-center gap-3">
-                            <View className="w-2 h-2 rounded-full bg-purple-500" />
-                            <Text className="text-sm font-roobert text-foreground">
-                                Data Provider
-                            </Text>
-                        </View>
-                        <Text className="text-sm font-roobert-mono text-muted-foreground">
-                            {serviceName || 'linkedin'}
+            {/* Endpoints Count */}
+            {endpointCount > 0 && (
+                <View className="gap-2">
+                    <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+                        Endpoints
+                    </Text>
+                    <View className="bg-card border border-border rounded-2xl p-4">
+                        <Text className="text-sm font-roobert text-foreground">
+                            {endpointCount} endpoint{endpointCount !== 1 ? 's' : ''} loaded
                         </Text>
                     </View>
                 </View>
+            )}
 
-                {/* Success Message */}
-                {success && (
-                    <View className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
-                        <View className="flex-row items-center gap-2 mb-2">
-                            <Icon as={CheckCircle2} size={16} className="text-green-600" />
-                            <Text className="text-sm font-roobert-semibold text-green-600">
-                                Provider Ready
-                            </Text>
-                        </View>
-                        <Text className="text-xs font-roobert text-green-600/80">
-                            Data provider endpoints have been loaded successfully and are ready to process requests.
-                        </Text>
-                    </View>
-                )}
+            {/* Status */}
+            <View className="gap-2">
+                <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+                    Status
+                </Text>
+                <View className={`flex-row items-center gap-2 rounded-2xl p-4 border ${success
+                    ? 'bg-primary/5 border-primary/20'
+                    : 'bg-destructive/5 border-destructive/20'
+                    }`}>
+                    <Icon
+                        as={success ? CheckCircle2 : AlertCircle}
+                        size={18}
+                        className={success ? 'text-primary' : 'text-destructive'}
+                    />
+                    <Text className={`text-sm font-roobert-medium ${success ? 'text-primary' : 'text-destructive'}`}>
+                        {success ? 'Provider Ready' : 'Provider Failed'}
+                    </Text>
+                </View>
             </View>
-        </ScrollView>
+        </View>
     );
 }

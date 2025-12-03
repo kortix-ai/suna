@@ -79,22 +79,24 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             set -a && source .env && set +a
+            docker compose down
             docker compose build
             docker compose up -d
 
-      - name: Deploy to staging [legacy]
-        if: steps.get_tag_name.outputs.environment == 'staging'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USERNAME }}
-          key: ${{ secrets.STAGING_KEY }}
-          script: |
-            cd /home/suna/backend
-            git fetch origin main
-            git reset --hard origin/main
-            docker compose build
-            docker compose up -d
+      # - name: Deploy to staging [legacy]
+      #   if: steps.get_tag_name.outputs.environment == 'staging'
+      #   uses: appleboy/ssh-action@v1
+      #   with:
+      #     host: ${{ secrets.STAGING_HOST }}
+      #     username: ${{ secrets.STAGING_USERNAME }}
+      #     key: ${{ secrets.STAGING_KEY }}
+      #     script: |
+      #       cd /home/suna/backend
+      #       git fetch origin main
+      #       git reset --hard origin/main
+      #       docker compose down
+      #       docker compose build
+      #       docker compose up -d
 
       - name: Configure AWS credentials
         if: steps.get_tag_name.outputs.environment == 'prod'
@@ -139,14 +141,14 @@ jobs:
               --no-cli-pager
           fi
 
-      - name: Deploy to prod [legacy]
-        if: steps.get_tag_name.outputs.environment == 'prod'
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.PROD_HOST }}
-          username: ${{ secrets.PROD_USERNAME }}
-          key: ${{ secrets.PROD_KEY }}
-          script: |
-            cd /mnt/gluster-shared/data/infra/suna
-            set -a; source .env; set +a
-            docker stack deploy -c docker-compose.yml suna
+      # - name: Deploy to prod [legacy]
+      #   if: steps.get_tag_name.outputs.environment == 'prod'
+      #   uses: appleboy/ssh-action@v1
+      #   with:
+      #     host: ${{ secrets.PROD_HOST }}
+      #     username: ${{ secrets.PROD_USERNAME }}
+      #     key: ${{ secrets.PROD_KEY }}
+      #     script: |
+      #       cd /mnt/gluster-shared/data/infra/suna
+      #       set -a; source .env; set +a
+      #       docker stack deploy -c docker-compose.yml suna

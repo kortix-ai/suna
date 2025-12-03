@@ -1,6 +1,8 @@
 from decimal import Decimal
 from typing import Dict, List, Optional
 from dataclasses import dataclass
+
+from click.decorators import R
 from core.utils.config import config
 
 TRIAL_ENABLED = False
@@ -76,7 +78,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID
         ],
         monthly_credits=Decimal('40.00'),
-        display_name='Starter',
+        display_name='Plus',
         can_purchase_credits=False,
         models=['all'],
         project_limit=100,
@@ -100,7 +102,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID
         ],
         monthly_credits=Decimal('100.00'),
-        display_name='Professional',
+        display_name='Pro',
         can_purchase_credits=False,
         models=['all'],
         project_limit=500,
@@ -124,7 +126,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
         ],
         monthly_credits=Decimal('400.00'),
-        display_name='Business',
+        display_name='Ultra',
         can_purchase_credits=True,
         models=['all'],
         project_limit=2500,

@@ -12,7 +12,6 @@ from .utils.limits_checker import (
     check_project_count_limit
 )
 from .utils.run_management import (
-    cleanup_instance_runs,
     stop_agent_run_with_helpers,
     check_for_active_project_agent_run
 )
@@ -29,17 +28,8 @@ async def _get_version_service():
     return await get_version_service()
 
 async def cleanup():
-    """Clean up resources and stop running agents on shutdown."""
+    """Clean up resources on shutdown."""
     logger.debug("Starting cleanup of agent API resources")
-
-    # Clean up instance-specific agent runs
-    try:
-        if instance_id:
-            await cleanup_instance_runs(instance_id)
-        else:
-            logger.warning("Instance ID not set, cannot clean up instance-specific agent runs.")
-    except Exception as e:
-        logger.error(f"Failed to clean up running agent runs: {str(e)}")
 
     # Close Redis connection
     await redis.close()

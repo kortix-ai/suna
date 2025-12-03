@@ -1209,6 +1209,41 @@ class ResponseProcessor:
             elif llm_response_end_saved:
                 logger.debug(f"✅ Billing already handled for call #{auto_continue_count + 1} (llm_response_end was saved earlier)")
             
+            # Cleanup orphaned tool calls if run was cancelled
+            if cancellation_event and cancellation_event.is_set() and last_assistant_message_object:
+                try:
+                    # Check if the last assistant message has tool_calls
+                    message_content = last_assistant_message_object.get('content', {})
+                    tool_calls = message_content.get('tool_calls', []) if isinstance(message_content, dict) else []
+                    
+                    if tool_calls:
+                        # Check if tool results were saved for these tool calls
+                        tool_call_ids = [tc.get('id') for tc in tool_calls if isinstance(tc, dict) and tc.get('id')]
+                        
+                        # Tool results are in tool_results_map (if not yet saved) or already saved to DB
+                        # If we're in cancellation, tool results likely weren't saved yet
+                        # Check if tool_results_map exists in local scope
+                        results_saved = 'tool_results_map' in locals() and bool(tool_results_map)
+                        
+                        if tool_call_ids and not results_saved:
+                            logger.warning(f"🧹 Cancellation detected with {len(tool_call_ids)} unanswered tool_calls - cleaning up message {last_assistant_message_object.get('message_id')}")
+                            
+                            # Remove tool_calls from the message
+                            updated_content = message_content.copy() if isinstance(message_content, dict) else {}
+                            updated_content.pop('tool_calls', None)
+                            
+                            # Update in database
+                            from core.services.supabase import DBConnection
+                            db = DBConnection()
+                            client = await db.client
+                            await client.table('messages').update({
+                                'content': updated_content
+                            }).eq('message_id', last_assistant_message_object['message_id']).execute()
+                            
+                            logger.info(f"✅ Removed {len(tool_call_ids)} orphaned tool_calls from message {last_assistant_message_object['message_id']}: {tool_call_ids}")
+                except Exception as cleanup_e:
+                    logger.error(f"Error cleaning up orphaned tool calls in finally block: {str(cleanup_e)}", exc_info=True)
+            
             if should_auto_continue:
                 continuous_state['accumulated_content'] = accumulated_content
                 continuous_state['sequence'] = __sequence

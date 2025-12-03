@@ -14,8 +14,8 @@ export function CallStatusToolView({ toolCall, toolResult, isStreaming = false }
   if (isStreaming) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-blue-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={Phone} size={40} className="text-blue-500 animate-pulse" />
+        <View className="bg-background border-border border rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <Icon as={Phone} size={40} className="text-muted-foreground" />
         </View>
         <Text className="text-xl font-roobert-semibold text-foreground mb-2">
           Fetching Call Status
@@ -63,8 +63,8 @@ export function CallStatusToolView({ toolCall, toolResult, isStreaming = false }
                 <View
                   key={idx}
                   className={`rounded-xl p-3 ${msg.role === 'assistant'
-                      ? 'bg-primary/10 ml-4'
-                      : 'bg-muted/50 mr-4'
+                    ? 'bg-primary/10 ml-4'
+                    : 'bg-muted/50 mr-4'
                     }`}
                 >
                   <View className="flex-row items-center gap-2 mb-1">

@@ -79,11 +79,13 @@ export function BrowserToolView({
         </View>
 
         {url && (
-          <View className="flex-row items-center gap-2 px-3 py-2 bg-muted/30 rounded-xl">
-            <Icon as={Globe} size={14} className="text-muted-foreground" />
-            <Text className="text-xs font-roobert text-muted-foreground flex-1" numberOfLines={1}>
-              {url}
-            </Text>
+          <View className="bg-card border border-border rounded-2xl px-4 py-3 w-full">
+            <View className="flex-row items-center gap-2">
+              <Icon as={Globe} size={14} className="text-muted-foreground" />
+              <Text className="text-sm font-roobert text-foreground/60 flex-1" numberOfLines={1}>
+                {url}
+              </Text>
+            </View>
           </View>
         )}
       </View>
@@ -153,7 +155,7 @@ export function BrowserToolView({
   if (!screenshotUrl && !screenshotBase64 && !showContext) {
     return (
       <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-muted/30 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+        <View className="bg-background border-border border rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
           <Icon as={MonitorPlay} size={40} className="text-muted-foreground" />
         </View>
         <Text className="text-xl font-roobert-semibold text-foreground mb-2">

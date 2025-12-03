@@ -141,7 +141,7 @@
       "example": "为我的初创公司创建推介材料"
     },
     "research": {
-      "title": "深度研究",
+      "title": "Deep Research",
       "description": "全面的网络研究，提供即时洞察、摘要和分析。",
       "example": "研究医疗保健中的AI趋势"
     },
@@ -160,6 +160,11 @@
       "description": "设置触发器来自动化工作流程。安排任务并监控事件。",
       "example": "每天上午9点发送报告"
     },
+    "final": {
+      "title": "一切就绪！",
+      "description": "为复杂任务而构建，为一切而设计。你想完成什么？",
+      "example": "描述你想让你的Worker完成的任务..."
+    },
     "superworker": {
       "title": "您的AI超级工作者",
       "description": "结合所有功能，为您需要的任何任务构建自定义AI工作者。",
@@ -169,7 +174,9 @@
   "settings": {
     "title": "设置",
     "name": "姓名",
+    "plan": "套餐",
     "billing": "账单",
+    "usage": "使用情况",
     "integrations": "集成",
     "theme": "主题和图标",
     "language": "语言",
@@ -183,6 +190,7 @@
   "chat": {
     "newChat": "新对话",
     "placeholder": "给 Kortix 一个任务...",
+    "inputPlaceholder": "向 Kortix 提问任何问题...",
     "recording": "录音中...",
     "cancelRecording": "取消录音",
     "stopRecording": "停止录音",
@@ -230,11 +238,11 @@
   },
   "quickActions": {
     "image": "图片",
-    "slides": "Slides",
+    "slides": "幻灯片",
     "data": "数据",
     "docs": "文档",
     "people": "人物",
-    "research": "Research",
+    "research": "研究",
     "chooseStyle": "选择 {{action}} 风格",
     "imageStyles": {
       "abstract": "抽象",
@@ -302,6 +310,61 @@
       "articles": "文章",
       "papers": "论文",
       "database": "数据库"
+    },
+    "examplePrompts": "示例提示",
+    "chooseTemplate": "选择模板",
+    "selected": "已选择",
+    "starterPrompts": {
+      "image": [
+        "一只雄伟的金雕在日出时分翱翔于薄雾笼罩的山峰之间",
+        "时尚模特的近距离肖像，带有前卫妆容和工作室灯光",
+        "舒适的斯堪的纳维亚客厅，配有天然木制家具和室内植物",
+        "夜晚的未来主义赛博朋克街头市场，带有霓虹灯标志和全息显示屏",
+        "大理石表面上的奢华香水瓶优雅产品摄影",
+        "由绳索桥连接的异想天开的浮岛，在柔和的天空中",
+        "充满活力的花瓣上晨露的微距特写",
+        "现代工作台设置，从上方看有笔记本电脑、咖啡和多肉植物"
+      ],
+      "slides": [
+        "创建一个A轮融资路演PPT，包含市场规模、牵引力和财务预测",
+        "构建Q4业务回顾，展示KPI、胜利和战略举措",
+        "设计产品发布演示，包含演示视频和客户推荐",
+        "开发销售赋能PPT，解释我们的价值主张和竞争优势",
+        "创建投资者更新，突出关键指标和即将到来的里程碑",
+        "构建客户案例研究演示，显示投资回报率和成功指标"
+      ],
+      "data": [
+        "构建财务模型，预测不同定价场景下的ARR增长",
+        "创建交互式销售仪表板，按地区和季度跟踪指标",
+        "分析客户评论并可视化随时间的情感趋势",
+        "设计内容日历，跟踪带有投资回报率和参与度图表的广告活动",
+        "构建队列分析，显示用户保留和流失模式",
+        "创建营销归因模型，比较渠道表现"
+      ],
+      "docs": [
+        "为AI驱动的推荐引擎编写全面的PRD",
+        "为可扩展的微服务平台起草技术架构文档",
+        "为我们的Q2产品发布创建市场进入策略文档",
+        "为工程经理开发90天入职手册",
+        "编写API文档指南，包含示例和最佳实践",
+        "创建涵盖文化、政策和福利的公司手册"
+      ],
+      "people": [
+        "在旧金山的B轮以上AI/ML初创公司中寻找工程副总裁候选人",
+        "构建最近完成A/B轮融资的B2B SaaS公司CMO潜在客户列表",
+        "研究具有Solidity经验的高级区块链工程师",
+        "生成企业AI领域种子-A轮初创公司技术创始人的潜在客户列表",
+        "识别具有FAANG经验的金融科技公司高级产品经理",
+        "寻找计划进行云迁移的中型医疗IT公司的CIO"
+      ],
+      "research": [
+        "分析量子计算的新兴趋势和潜在商业应用",
+        "研究AI驱动的CRM领域的十大竞争对手，并进行功能比较",
+        "调查在欧盟推出金融科技应用的监管要求",
+        "汇编主要市场电动汽车采用率的市场分析",
+        "研究远程工作对商业房地产需求的影响",
+        "研究财富500强公司中的Web3采用模式"
+      ]
     }
   },
   "menu": {
@@ -409,7 +472,27 @@
     "plus": "加上",
     "addCredits": "添加积分",
     "needMoreCredits": "需要更多积分？",
-    "purchaseAdditional": "随时购买额外积分"
+    "purchaseAdditional": "随时购买额外积分",
+    "pickPlan": "选择适合你的套餐",
+    "billingStatus": "账单状态",
+    "manageCredits": "管理你的积分和订阅",
+    "checkoutMode": "支付方式",
+    "nativeCheckout": "原生",
+    "webCheckout": "网页",
+    "nativeCheckoutDescription": "通过App Store/Play Store支付",
+    "webCheckoutDescription": "通过网页浏览器支付",
+    "monthlyCredits": "月度积分",
+    "extraCredits": "额外积分",
+    "renews": "{date}续费",
+    "allCredits": "所有积分",
+    "creditTransactions": "积分交易",
+    "loadingTransactionHistory": "加载交易历史...",
+    "noTransactions": "未找到交易",
+    "transactionHistoryAppearHere": "你的交易历史将显示在这里",
+    "balanceAfter": "交易后余额",
+    "noDescription": "无描述",
+    "popular": "热门",
+    "subscription": "订阅"
   },
   "theme": {
     "title": "外观",
@@ -430,17 +513,13 @@
   },
   "beta": {
     "title": "测试功能",
-    "experimentalFeatures": "实验性功能",
-    "earlyAccess": "提前体验新功能",
+    "webSupportTitle": "网页版完全支持",
+    "webSupportDescription": "可在 Kortix.com 使用。即将登陆移动端—移动端仍在开发中。",
+    "visitKortix": "访问 Kortix.com",
     "advancedFeatures": "高级功能",
-    "advancedDescription": "在正式发布给所有人之前，提前体验实验性功能和高级工具",
-    "whatsIncluded": "包含内容",
-    "experimentalTools": "实验性工具",
-    "experimentalToolsDescription": "在正式发布前试用新功能",
-    "advancedSettings": "高级设置",
-    "advancedSettingsDescription": "使用高级用户选项个性化体验",
+    "mobileBeta": "移动端测试版",
     "pleaseNote": "注意事项",
-    "betaWarning": "测试功能可能不稳定，并可能在不通知的情况下发生变化。请谨慎使用。"
+    "mobileWarning": "移动端仍在开发中，可能存在问题。为了获得最佳体验，请使用 Kortix.com。"
   },
   "accountDeletion": {
     "title": "删除账户",

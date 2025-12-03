@@ -19,7 +19,10 @@
     "back": "Back",
     "new": "New",
     "create": "Create",
-    "continue": "Continue"
+    "continue": "Continue",
+    "loadMore": "Load More",
+    "previous": "Previous",
+    "next": "Next"
   },
   "auth": {
     "signIn": "Sign in",
@@ -178,10 +181,10 @@
       "description": "Set up triggers to automate workflows. Schedule tasks and monitor events.",
       "example": "Send daily reports at 9 AM"
     },
-    "superworker": {
-      "title": "Your AI Superworker",
-      "description": "Combine all features to build custom AI workers for any task you need.",
-      "example": "Create a customer support agent"
+    "final": {
+      "title": "You're All Set!",
+      "description": "Built for complex tasks, designed for everything. What do you want to get done?",
+      "example": "Describe the task you want your Worker to complete..."
     }
   },
   "settings": {
@@ -193,7 +196,9 @@
     "namePlaceholder": "Your name",
     "nameRequired": "Name is required",
     "nameUpdated": "Name updated successfully",
+    "plan": "Plan",
     "billing": "Billing",
+    "usage": "Usage",
     "integrations": "Integrations",
     "theme": "Theme & Icon",
     "themeTitle": "Theme",
@@ -214,7 +219,7 @@
   "chat": {
     "newChat": "New Chat",
     "placeholder": "Give Kortix a task...",
-    "inputPlaceholder": "Ask Kortix to do anything...",
+    "inputPlaceholder": "Ask Kortix anything...",
     "recording": "Recording...",
     "cancelRecording": "Cancel recording",
     "stopRecording": "Stop recording",
@@ -343,6 +348,61 @@
       "articles": "Articles",
       "papers": "Papers",
       "database": "Database"
+    },
+    "examplePrompts": "Example Prompts",
+    "chooseTemplate": "Choose template",
+    "selected": "Selected",
+    "starterPrompts": {
+      "image": [
+        "A majestic golden eagle soaring through misty mountain peaks at sunrise",
+        "Close-up portrait of a fashion model with avant-garde makeup and studio lighting",
+        "Cozy Scandinavian living room with natural wood furniture and indoor plants",
+        "Futuristic cyberpunk street market at night with neon signs and holographic displays",
+        "Elegant product photography of luxury perfume bottle on marble surface",
+        "Whimsical floating islands connected by rope bridges in a pastel sky",
+        "Macro close-up of morning dew drops on vibrant flower petals",
+        "Modern workspace desk setup with laptop, coffee, and succulent plants from above"
+      ],
+      "slides": [
+        "Create a Series A pitch deck with market size, traction, and financial projections",
+        "Build a Q4 business review showcasing KPIs, wins, and strategic initiatives",
+        "Design a product launch presentation with demo videos and customer testimonials",
+        "Develop a sales enablement deck explaining our value prop and competitive advantages",
+        "Create an investor update highlighting key metrics and upcoming milestones",
+        "Build a customer case study presentation showing ROI and success metrics"
+      ],
+      "data": [
+        "Build a financial model projecting ARR growth with different pricing scenarios",
+        "Create an interactive sales dashboard tracking metrics by region and quarter",
+        "Analyze customer reviews and visualize sentiment trends over time",
+        "Design a content calendar tracking campaigns with ROI and engagement charts",
+        "Build a cohort analysis showing user retention and churn patterns",
+        "Create a marketing attribution model comparing channel performance"
+      ],
+      "docs": [
+        "Write a comprehensive PRD for an AI-powered recommendation engine",
+        "Draft a technical architecture document for a scalable microservices platform",
+        "Create a go-to-market strategy document for our Q2 product launch",
+        "Develop a 90-day onboarding playbook for engineering managers",
+        "Write an API documentation guide with examples and best practices",
+        "Create a company handbook covering culture, policies, and benefits"
+      ],
+      "people": [
+        "Find VP of Engineering candidates at Series B+ AI/ML startups in San Francisco",
+        "Build lead list of CMOs at B2B SaaS companies who recently raised Series A/B",
+        "Research Senior Blockchain Engineers with Solidity experience",
+        "Generate prospect list of technical founders at Seed-Series A startups in Enterprise AI",
+        "Identify Senior Product Managers at fintech companies with FAANG experience",
+        "Find CIOs at mid-market healthcare IT companies planning cloud migration"
+      ],
+      "research": [
+        "Analyze emerging trends in quantum computing and potential business applications",
+        "Research top 10 competitors in the AI-powered CRM space with feature comparison",
+        "Investigate regulatory requirements for launching a fintech app in the EU",
+        "Compile market analysis on electric vehicle adoption rates across major markets",
+        "Study the impact of remote work on commercial real estate demand",
+        "Research Web3 adoption patterns among Fortune 500 companies"
+      ]
     }
   },
   "menu": {
@@ -517,7 +577,11 @@
     "creditBreakdown": "Credit Breakdown",
     "renewsInDays": "Renews in {{days}}d",
     "noRenewal": "No renewal",
+    "daily": "Daily",
     "extra": "Extra",
+    "refreshIn1Hour": "Refresh in 1 hour",
+    "refreshInHours": "Refresh in {hours}h",
+    "refreshIn24Hours": "Refresh in 24 hours",
     "nextBilling": "Next Billing",
     "changePlan": "Change Plan",
     "upgradeOrDowngrade": "Upgrade or downgrade",
@@ -553,7 +617,52 @@
     "plus": "plus",
     "addCredits": "Add Credits",
     "needMoreCredits": "Need more credits?",
-    "purchaseAdditional": "Purchase additional credits anytime"
+    "purchaseAdditional": "Purchase additional credits anytime",
+    "pickPlan": "Pick the plan that works for you",
+    "billingStatus": "Billing Status",
+    "manageCredits": "Manage your credits and subscription",
+    "checkoutMode": "Checkout Method",
+    "nativeCheckout": "Native",
+    "webCheckout": "Web",
+    "nativeCheckoutDescription": "Checkout through App Store/Play Store",
+    "webCheckoutDescription": "Checkout through web browser",
+    "webSubscription": "WEB",
+    "nativeSubscription": "NATIVE",
+    "stripeSubscriberMessage": "You have a web subscription. Please manage your plan on the web platform where you upgraded.",
+    "revenuecatSubscriberMessage": "You have a native subscription. Please manage your plan through App Store/Play Store.",
+    "stripeSubscriberCheckoutDisabled": "Native checkout disabled - manage your subscription on web",
+    "revenuecatSubscriberCheckoutDisabled": "Web checkout disabled - manage your subscription in App Store/Play Store",
+    "nativeCheckoutOnly": "Checkout through App Store/Play Store only",
+    "webCheckoutDisabled": "Web checkout is disabled. All subscriptions are managed through App Store/Play Store.",
+    "webSubscriptionActive": "Web Subscription Active",
+    "monthlyCredits": "Monthly Credits",
+    "extraCredits": "Extra Credits",
+    "nextBilling": "Next Billing",
+    "renews": "Renews {date}",
+    "allCredits": "All credits",
+    "creditTransactions": "Credit Transactions",
+    "loadingTransactionHistory": "Loading transaction history...",
+    "noTransactions": "No transactions found",
+    "transactionHistoryAppearHere": "Your transaction history will appear here",
+    "balanceAfter": "Balance after",
+    "noDescription": "No description",
+    "popular": "Popular",
+    "subscription": "Subscription",
+    "current": "Current",
+    "whatsIncluded": "What's included:",
+    "accessAllAgents": "Access to all AI agents",
+    "premiumSupport": "Premium support",
+    "cancelAnytime": "Cancel anytime",
+    "privacyPolicy": "Privacy Policy",
+    "termsOfService": "Terms of Service",
+    "subscriptionExists": "Already Subscribed",
+    "subscriptionExistsMessage": "You are already subscribed with a different account on this {platform}.",
+    "subscriptionExistsHelp": "Please log into your original account to access your subscription.",
+    "gotIt": "Got it",
+    "scheduled": "Scheduled",
+    "scheduledBadge": "Scheduled",
+    "changeScheduled": "Change Scheduled",
+    "subscriptionChangeScheduled": "Subscription change scheduled"
   },
   "theme": {
     "title": "Appearance",
@@ -574,17 +683,13 @@
   },
   "beta": {
     "title": "Beta Features",
-    "experimentalFeatures": "Experimental Features",
-    "earlyAccess": "Get early access to new capabilities",
+    "webSupportTitle": "Fully Supported on Web",
+    "webSupportDescription": "Available on Kortix.com. Coming to mobile soon—still work-in-progress here.",
+    "visitKortix": "Visit Kortix.com",
     "advancedFeatures": "Advanced Features",
-    "advancedDescription": "Access experimental features and advanced tools before they're released to everyone",
-    "whatsIncluded": "What's Included",
-    "experimentalTools": "Experimental Tools",
-    "experimentalToolsDescription": "Try out new capabilities before official release",
-    "advancedSettings": "Advanced Settings",
-    "advancedSettingsDescription": "Fine-tune your experience with power user options",
+    "mobileBeta": "Mobile Beta",
     "pleaseNote": "Please Note",
-    "betaWarning": "Beta features may be unstable and could change without notice. Use at your own discretion."
+    "mobileWarning": "Work-in-progress on mobile and may have issues. For the best experience, use Kortix.com."
   },
   "accountDeletion": {
     "title": "Delete Account",
@@ -743,7 +848,31 @@
     "topUpDescription": "Top up your account with additional credits",
     "upgrade": "Upgrade",
     "upgradeToUltra": "Upgrade to Ultra",
-    "upgradeToUltraDescription": "Get the highest tier for maximum credits"
+    "upgradeToUltraDescription": "Get the highest tier for maximum credits",
+    "totalUsage": "Total Usage",
+    "selectedPeriod": "Selected period",
+    "creditsConsumed": "Credits consumed",
+    "usage": "Usage",
+    "creditConsumptionPerConversation": "Credit consumption per conversation",
+    "selectPeriod": "Select period",
+    "noThreadUsageFound": "No thread usage found between {from} and {to}.",
+    "noThreadUsageFoundSimple": "No thread usage found.",
+    "thread": "Thread",
+    "lastUsed": "Last Used",
+    "creditsUsed": "Credits Used",
+    "showingThreads": "Showing {from}-{to} of {total} threads",
+    "usageHistory": "Usage History",
+    "detailedBreakdown": "Detailed breakdown of credit consumption",
+    "creditsUsedInPeriod": "Credits used in the last {days} days",
+    "date": "Date",
+    "type": "Type",
+    "description": "Description",
+    "creditsAfter": "Credits After",
+    "showingRecords": "Showing {from}-{to} of {total} records",
+    "noUsageFound": "No usage found in the last {days} days.",
+    "noDescription": "No description",
+    "previous": "Previous",
+    "next": "Next"
   },
   "nameEdit": {
     "title": "Edit Profile",

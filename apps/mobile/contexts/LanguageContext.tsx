@@ -22,16 +22,38 @@ const LanguageContext = React.createContext<LanguageContextValue | undefined>(un
  * 
  * Provides language context to the entire app.
  * Wraps i18next functionality with React context for easier access.
+ * Listens to i18n language changes for immediate UI updates.
  */
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const { t, i18n } = useTranslation();
-  const [currentLanguage, setCurrentLanguage] = React.useState(getCurrentLanguage());
+  const { t, i18n: i18nInstance } = useTranslation();
+  // Use i18n.language directly and listen to changes for immediate updates
+  const [currentLanguage, setCurrentLanguage] = React.useState(i18nInstance.language || getCurrentLanguage());
+
+  // Listen to i18n language changes for immediate UI updates
+  React.useEffect(() => {
+    const handleLanguageChanged = (lng: string) => {
+      console.log('🌍 LanguageContext: Language changed event received:', lng);
+      setCurrentLanguage(lng);
+    };
+
+    // Subscribe to language change events
+    i18nInstance.on('languageChanged', handleLanguageChanged);
+
+    // Also update immediately if language is already set
+    if (i18nInstance.language && i18nInstance.language !== currentLanguage) {
+      setCurrentLanguage(i18nInstance.language);
+    }
+
+    return () => {
+      i18nInstance.off('languageChanged', handleLanguageChanged);
+    };
+  }, [i18nInstance, currentLanguage]);
 
   const handleSetLanguage = React.useCallback(async (languageCode: string) => {
     console.log('🌍 LanguageContext: Setting language to', languageCode);
     await changeLanguage(languageCode);
-    setCurrentLanguage(languageCode);
-    console.log('✅ LanguageContext: Language set to', languageCode);
+    // The languageChanged event will update currentLanguage automatically
+    console.log('✅ LanguageContext: Language change initiated:', languageCode);
   }, []);
 
   const value = React.useMemo(

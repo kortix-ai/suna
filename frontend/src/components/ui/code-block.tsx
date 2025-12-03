@@ -72,7 +72,7 @@ function CodeBlockCode({
     highlight();
   }, [code, language, theme, mermaidFailed]);
 
-  const classNames = cn('[&_pre]:!bg-background/95 [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:!overflow-x-auto [&_pre]:!w-px [&_pre]:!flex-grow [&_pre]:!min-w-0 [&_pre]:!box-border [&_.shiki]:!overflow-x-auto [&_.shiki]:!w-px [&_.shiki]:!flex-grow [&_.shiki]:!min-w-0 [&_code]:!min-w-0 [&_code]:!whitespace-pre', 'w-px flex-grow min-w-0 overflow-hidden flex w-full', className);
+  const classNames = cn('[&_pre]:!bg-background/95 [&_pre]:rounded-2xl [&_pre]:p-4 [&_pre]:!overflow-x-auto [&_pre]:!w-px [&_pre]:!flex-grow [&_pre]:!min-w-0 [&_pre]:!box-border [&_.shiki]:!overflow-x-auto [&_.shiki]:!w-px [&_.shiki]:!flex-grow [&_.shiki]:!min-w-0 [&_code]:!min-w-0 [&_code]:!whitespace-pre', 'w-px flex-grow min-w-0 overflow-hidden flex w-full', className);
 
   // Handle Mermaid rendering
   if (language === 'mermaid' && !mermaidFailed) {

@@ -38,6 +38,7 @@
       "plan": "プラン",
       "billing": "請求",
       "usage": "使用状況",
+      "referrals": "紹介",
       "knowledgeBase": "ナレッジベース",
       "integrations": "統合",
       "envManager": "環境マネージャー"
@@ -83,6 +84,50 @@
         "cancelDeletionDescription": "アカウントの削除をキャンセルしますか？アカウントとすべてのデータが保持されます。",
         "cancelDeletion": "削除をキャンセル"
       }
+    },
+    "referrals": {
+      "title": "紹介プログラム",
+      "description": "友達に紹介リンクを共有してください。サインアップしてアカウントを作成すると、獲得できます",
+      "creditsPerReferral": "100個の無期限クレジット",
+      "youEarn": "あなたが獲得",
+      "friendGets": "友達が獲得",
+      "maxEarnable": "紹介で獲得できる最大額:",
+      "maxCredits": "$100相当のクレジット",
+      "yourReferralCode": "あなたの紹介コード",
+      "referralLink": "紹介リンク",
+      "shareYourLink": "紹介リンクを共有",
+      "yourStats": "あなたの統計",
+      "enterCodeDescription": "紹介コードを入力してクレジットを獲得",
+      "enterCode": "コードを入力",
+      "refresh": "更新",
+      "copyCode": "コードをコピー",
+      "copyLink": "リンクをコピー",
+      "share": "共有",
+      "stats": {
+        "totalReferrals": "総紹介数",
+        "successful": "成功",
+        "creditsEarned": "獲得クレジット"
+      },
+      "recentReferrals": "最近の紹介",
+      "signupComplete": "サインアップ完了",
+      "pending": "保留中",
+      "noReferrals": "まだ紹介がありません。紹介リンクを共有して始めましょう！",
+      "copied": "コピーしました！",
+      "codeCopied": "紹介コードをクリップボードにコピーしました",
+      "linkCopied": "紹介リンクをクリップボードにコピーしました",
+      "codeRefreshed": "紹介コードを更新しました",
+      "refreshFailed": "紹介コードの更新に失敗しました",
+      "inviteByEmail": "メールで招待",
+      "inviteByEmailDescription": "最大3つのメールアドレスを追加（Enter、Space、またはCommaを押す）",
+      "emailAddress": "メールアドレス",
+      "emailPlaceholder": "メールアドレスを入力（Enter、Space、またはCommaを押す）",
+      "emailsAdded": "メール",
+      "sent": "送信済み",
+      "send": "送信",
+      "sending": "送信中...",
+      "sendAllInvites": "すべての招待を送信",
+      "allSent": "すべて送信済み",
+      "emailSent": "紹介招待を送信しました"
     },
     "billing": {
       "title": "請求とサブスクリプション",
@@ -156,6 +201,9 @@
     "monthlyOn1st": "毎月1日"
   },
   "sidebar": {
+    "referAndEarn": "紹介して獲得",
+    "new": "新規",
+    "upgrade": "アップグレード",
     "chats": "チャット",
     "agents": "エージェント",
     "workers": "ワーカー",
@@ -374,6 +422,7 @@
     "credits": "クレジット",
     "popular": "人気",
     "creditsExplained": "クレジットの説明",
+    "creditsExhausted": "+200クレジットが{time}後に追加されます。今すぐアップグレードして使用してください。",
     "creditsExhaustedRefreshIn": "クレジットを使い果たしました。{time}後に更新されます",
     "trialActive": "トライアル有効",
     "trialBadge": "7日間トライアル",
@@ -489,9 +538,35 @@
       "integrations": "100+ 統合",
       "premiumAIModels": "プレミアムAIモデル",
       "prioritySupport": "優先サポート"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "プラン変更の確認",
+      "confirmSubtitle": "ご利用いただきありがとうございました",
+      "confirmDescription": "{planName}プランに変更しようとしています。この変更は現在の請求期間の終了時に適用されます。それまで現在の特典をご利用いただけます。",
+      "continue": "続ける",
+      "keepCurrentPlan": "現在のプランを維持",
+      "feedbackTitle": "改善にご協力ください",
+      "feedbackSubtitle": "あなたのフィードバックがKortixの未来を形作ります",
+      "whatWouldMakeYouStay": "何があれば続けていただけますか？",
+      "feedbackPlaceholder": "Kortixをあなたにとって価値あるものにするために、私たちが変更または追加できることが1つあるとしたら、それは何ですか？",
+      "feedbackFooter": "私たちのチームはすべての回答を読んでいます。あなたの言葉が次に何を構築するかに直接影響します。",
+      "confirmDowngrade": "ダウングレードを確認",
+      "processing": "処理中...",
+      "pleaseSelectReason": "理由を選択してください",
+      "reasons": {
+        "tooExpensive": "私のニーズには高すぎる",
+        "notUsingOften": "Kortixを十分に使用していない",
+        "foundAlternative": "別のソリューションを見つけた",
+        "technicalIssues": "技術的な問題が発生した",
+        "resultsNotGood": "結果が期待に沿わなかった",
+        "other": "その他の理由"
+      }
     }
   },
   "auth": {
+    "haveReferralCode": "紹介コードをお持ちですか？",
+    "referralCode": "紹介コード",
+    "enterCode": "コードを入力",
     "logIntoAccount": "アカウントにログイン",
     "createAccount": "アカウントを作成",
     "signInOrCreateAccount": "Kortixアカウントにログインまたは作成",
@@ -528,7 +603,16 @@
     "magicLinkSent": "マジックリンクを送信しました",
     "magicLinkDescription": "メール内のリンクをクリックしてログインしてください。リンクは1時間で期限切れになります。",
     "magicLinkExplanation": "安全なリンクをメールでお送りします。パスワードは不要です。",
-    "byContinuingYouAgree": "続行することで、<privacyPolicy>プライバシーポリシー</privacyPolicy>および<termsOfService>利用規約</termsOfService>に同意したものとみなされます"
+    "magicLinkExpired": "このリンクは期限切れです",
+    "magicLinkExpiredDescription": "クリックしたマジックリンクは期限切れです。セキュリティ上の理由により、マジックリンクは1時間後に期限切れになります。",
+    "resendMagicLink": "マジックリンクを再送信",
+    "resending": "再送信中...",
+    "byContinuingYouAgree": "続行することで、<privacyPolicy>プライバシーポリシー</privacyPolicy>および<termsOfService>利用規約</termsOfService>に同意したものとみなされます",
+    "openProvider": "{provider}を開く",
+    "didntReceiveEmail": "メールが届きませんでしたか？",
+    "resend": "再送信",
+    "alreadySignedIn": "すでにログインしています。操作は不要です。",
+    "goToDashboard": "ダッシュボードへ"
   },
   "onboarding": {
     "welcome": "ようこそ",

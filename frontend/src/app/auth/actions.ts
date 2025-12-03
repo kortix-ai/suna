@@ -47,6 +47,7 @@ export async function signUp(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const returnUrl = formData.get('returnUrl') as string | undefined;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
+  const referralCode = formData.get('referralCode') as string | undefined;
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -67,7 +68,10 @@ export async function signUp(prevState: any, formData: FormData) {
     email: email.trim().toLowerCase(),
     options: {
       emailRedirectTo,
-      shouldCreateUser: true, // Auto-create account if doesn't exist
+      shouldCreateUser: true,
+      data: referralCode ? {
+        referral_code: referralCode.trim().toUpperCase(),
+      } : undefined,
     },
   });
 
@@ -132,6 +136,43 @@ export async function resetPassword(prevState: any, formData: FormData) {
   return {
     success: true,
     message: 'Password updated successfully',
+  };
+}
+
+export async function resendMagicLink(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const origin = formData.get('origin') as string;
+  const acceptedTerms = formData.get('acceptedTerms') === 'true';
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  const supabase = await createClient();
+
+  // Use magic link (passwordless) authentication
+  // Pass terms acceptance as query parameter so callback can save it
+  const termsParam = acceptedTerms ? `&terms_accepted=true` : '';
+  const emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${termsParam}`;
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email: email.trim().toLowerCase(),
+    options: {
+      emailRedirectTo,
+      shouldCreateUser: true, // Auto-create account if doesn't exist
+    },
+  });
+
+  if (error) {
+    return { message: error.message || 'Could not send magic link' };
+  }
+
+  // Return success message - user needs to check email
+  return { 
+    success: true, 
+    message: 'Check your email for a magic link to sign in',
+    email: email.trim().toLowerCase(),
   };
 }
 

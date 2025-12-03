@@ -370,8 +370,10 @@ class SchedulingHandler:
         db = DBConnection()
         client = await db.client
         
+        # Include RevenueCat pending change columns
         credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, tier, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id'
+            'stripe_subscription_id, tier, provider, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id, '
+            'revenuecat_pending_change_product, revenuecat_pending_change_date, revenuecat_pending_change_type'
         ).eq('account_id', account_id).execute()
         
         if not credit_result.data:
@@ -381,9 +383,20 @@ class SchedulingHandler:
             }
         
         data = credit_result.data[0]
+        current_tier_name = data.get('tier')
+        provider = data.get('provider', 'stripe')
+        
+        # Check RevenueCat pending changes first (if provider is revenuecat)
+        if provider == 'revenuecat':
+            revenuecat_result = await SchedulingHandler._check_revenuecat_pending_changes(
+                data, current_tier_name, client, account_id
+            )
+            if revenuecat_result.get('has_scheduled_change'):
+                return revenuecat_result
+        
+        # Check Stripe/database scheduled changes
         scheduled_tier = data.get('scheduled_tier_change')
         scheduled_date = data.get('scheduled_tier_change_date')
-        current_tier_name = data.get('tier')
         
         if scheduled_tier and current_tier_name == scheduled_tier:
             logger.info(f"[SCHEDULED_CHANGES] Scheduled tier {scheduled_tier} matches current tier - downgrade already completed, clearing fields")
@@ -421,6 +434,66 @@ class SchedulingHandler:
                     'monthly_credits': float(target_tier.monthly_credits) if target_tier else 0
                 },
                 'effective_date': scheduled_date
+            }
+        }
+
+    @staticmethod
+    async def _check_revenuecat_pending_changes(data: Dict, current_tier_name: str, client, account_id: str) -> Dict:
+        """Check for RevenueCat pending plan changes."""
+        pending_product = data.get('revenuecat_pending_change_product')
+        pending_date = data.get('revenuecat_pending_change_date')
+        pending_type = data.get('revenuecat_pending_change_type', 'change')
+        
+        if not pending_product or not pending_date:
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
+        
+        # Map RevenueCat product ID to tier
+        from core.billing.external.revenuecat.utils import ProductMapper
+        target_tier_name, target_tier_info = ProductMapper.get_tier_info(pending_product)
+        
+        if not target_tier_info:
+            logger.warning(f"[SCHEDULED_CHANGES] Unknown RevenueCat product: {pending_product}")
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
+        
+        # Check if change already applied
+        if current_tier_name == target_tier_name:
+            logger.info(
+                f"[SCHEDULED_CHANGES] RevenueCat pending change to {target_tier_name} already applied, clearing"
+            )
+            await client.from_('credit_accounts').update({
+                'revenuecat_pending_change_product': None,
+                'revenuecat_pending_change_date': None,
+                'revenuecat_pending_change_type': None
+            }).eq('account_id', account_id).execute()
+            
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
+        
+        current_tier = get_tier_by_name(current_tier_name)
+        
+        return {
+            'has_scheduled_change': True,
+            'scheduled_change': {
+                'type': pending_type,  # 'upgrade', 'downgrade', or 'change'
+                'current_tier': {
+                    'name': current_tier.name if current_tier else current_tier_name,
+                    'display_name': current_tier.display_name if current_tier else current_tier_name,
+                    'monthly_credits': float(current_tier.monthly_credits) if current_tier else 0
+                },
+                'target_tier': {
+                    'name': target_tier_name,
+                    'display_name': target_tier_info.display_name,
+                    'monthly_credits': float(target_tier_info.monthly_credits)
+                },
+                'effective_date': pending_date
             }
         }
 
@@ -475,9 +548,10 @@ class SchedulingHandler:
         db = DBConnection()
         client = await db.client
         
-        # First check if there's a scheduled change
+        # First check if there's a scheduled change (include RevenueCat columns)
         credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id'
+            'stripe_subscription_id, provider, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id, '
+            'revenuecat_pending_change_product, revenuecat_pending_change_date, revenuecat_pending_change_type'
         ).eq('account_id', account_id).execute()
         
         if not credit_result.data:
@@ -489,6 +563,25 @@ class SchedulingHandler:
         data = credit_result.data[0]
         scheduled_tier = data.get('scheduled_tier_change')
         subscription_id = data.get('stripe_subscription_id')
+        provider = data.get('provider', 'stripe')
+        
+        # Check for RevenueCat pending changes
+        revenuecat_pending = data.get('revenuecat_pending_change_product')
+        
+        # Handle RevenueCat scheduled changes
+        if provider == 'revenuecat' and revenuecat_pending:
+            logger.info(f"[CANCEL_SCHEDULE] Clearing RevenueCat pending change for {account_id}")
+            await client.from_('credit_accounts').update({
+                'revenuecat_pending_change_product': None,
+                'revenuecat_pending_change_date': None,
+                'revenuecat_pending_change_type': None
+            }).eq('account_id', account_id).execute()
+            
+            logger.info(f"[CANCEL_SCHEDULE] Successfully cancelled RevenueCat scheduled change for {account_id}")
+            return {
+                'success': True,
+                'message': 'Scheduled change cancelled successfully'
+            }
         
         if not scheduled_tier:
             # Check Stripe metadata as fallback

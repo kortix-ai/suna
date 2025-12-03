@@ -492,10 +492,24 @@ class MCPToolWrapper(Tool):
         return validation_result
     
     async def cleanup(self):
+        """Clean up MCP connections and release memory."""
         if self._initialized:
             try:
                 await self.mcp_manager.disconnect_all()
             except Exception as e:
                 logger.error(f"Error during MCP cleanup: {str(e)}")
             finally:
-                self._initialized = False 
+                self._initialized = False
+        
+        # Clear local caches to help garbage collection
+        self._schemas.clear()
+        self._dynamic_tools.clear()
+        self._custom_tools.clear()
+        
+        # Clean up connection manager
+        if hasattr(self, 'connection_manager'):
+            self.connection_manager.cleanup()
+        
+        # Clean up custom handler
+        if hasattr(self, 'custom_handler') and hasattr(self.custom_handler, 'custom_tools'):
+            self.custom_handler.custom_tools.clear() 

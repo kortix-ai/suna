@@ -242,7 +242,10 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
                 "error_code": "MODEL_ACCESS_DENIED"
             })
         elif context.get("error_type") == "insufficient_credits":
-            raise HTTPException(status_code=402, detail={"message": error_message})
+            raise HTTPException(status_code=402, detail={
+                "message": error_message,
+                "error_code": "INSUFFICIENT_CREDITS"
+            })
         else:
             raise HTTPException(status_code=500, detail={"message": error_message})
     
@@ -355,13 +358,6 @@ async def _create_agent_run_record(
         await invalidate_account_state_cache(actual_user_id)
     except Exception as cache_error:
         logger.warning(f"Failed to invalidate account-state cache: {cache_error}")
-
-    # Register run in Redis
-    instance_key = f"active_run:{utils.instance_id}:{agent_run_id}"
-    try:
-        await redis.set(instance_key, "running", ex=redis.REDIS_KEY_TTL)
-    except Exception as e:
-        logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
 
     return agent_run_id
 

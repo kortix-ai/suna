@@ -31,81 +31,80 @@ export function KbToolView({ toolCall, toolResult, isStreaming = false }: ToolVi
   const totalItems = (data.files?.length || 0) + (data.folders?.length || 0) + (data.items?.length || 0);
 
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 gap-6">
-        {data.message && (
-          <View className="bg-muted/50 rounded-xl p-4 border border-border">
-            <Text className="text-sm font-roobert text-foreground">
+    <View className="px-6 gap-6">
+      {data.message && (
+        <View className="gap-2">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            Message
+          </Text>
+          <View className="bg-card border border-border rounded-2xl p-4">
+            <Text className="text-sm font-roobert text-foreground" selectable>
               {data.message}
             </Text>
           </View>
-        )}
+        </View>
+      )}
 
-        {data.path && (
-          <View className="bg-card border border-border rounded-xl p-3">
-            <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
-              Path
-            </Text>
-            <Text className="text-sm font-roobert-mono text-foreground" selectable>
+      {data.path && (
+        <View className="gap-2">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            Path
+          </Text>
+          <View className="bg-card border border-border rounded-2xl p-4">
+            <Text className="text-sm font-roobert text-foreground" selectable>
               {data.path}
             </Text>
           </View>
-        )}
+        </View>
+      )}
 
-        {totalItems > 0 && (
-          <View className="gap-3">
-            <Text className="text-sm font-roobert-medium text-foreground/70">
-              Items ({totalItems})
-            </Text>
+      {totalItems > 0 && (
+        <View className="gap-2">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            Contents ({totalItems})
+          </Text>
 
-            {data.folders && data.folders.length > 0 && (
-              <View className="gap-2">
-                {data.folders.map((folder: any, idx: number) => (
-                  <View key={idx} className="bg-card border border-border rounded-xl p-3 flex-row items-center gap-3">
-                    <View className="bg-blue-500/10 rounded-lg p-2">
-                      <Icon as={Folder} size={16} className="text-blue-500" />
-                    </View>
-                    <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={1}>
-                      {folder.name || folder}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
+          {data.folders && data.folders.length > 0 && (
+            <View className="gap-2">
+              {data.folders.map((folder: any, idx: number) => (
+                <View key={idx} className="bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3">
+                  <Icon as={Folder} size={18} className="text-primary" />
+                  <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={1}>
+                    {folder.name || folder}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
-            {data.files && data.files.length > 0 && (
-              <View className="gap-2">
-                {data.files.map((file: any, idx: number) => (
-                  <View key={idx} className="bg-card border border-border rounded-xl p-3 flex-row items-center gap-3">
-                    <View className="bg-emerald-500/10 rounded-lg p-2">
-                      <Icon as={FileText} size={16} className="text-emerald-500" />
-                    </View>
-                    <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={2}>
-                      {file.name || file.path || file}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
+          {data.files && data.files.length > 0 && (
+            <View className="gap-2">
+              {data.files.map((file: any, idx: number) => (
+                <View key={idx} className="bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3">
+                  <Icon as={FileText} size={18} className="text-primary" />
+                  <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={2}>
+                    {file.name || file.path || file}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
-            {data.items && data.items.length > 0 && (
-              <View className="gap-2">
-                {data.items.map((item: any, idx: number) => (
-                  <View key={idx} className="bg-card border border-border rounded-xl p-3 flex-row items-center gap-3">
-                    <View className="bg-muted/50 rounded-lg p-2">
-                      <Icon as={File} size={16} className="text-muted-foreground" />
-                    </View>
-                    <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={2}>
-                      {item.name || item.path || item}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-      </View>
-    </ScrollView>
+          {data.items && data.items.length > 0 && (
+            <View className="gap-2">
+              {data.items.map((item: any, idx: number) => (
+                <View key={idx} className="bg-card border border-border rounded-2xl p-4 flex-row items-center gap-3">
+                  <Icon as={File} size={18} className="text-primary" />
+                  <Text className="text-sm font-roobert text-foreground flex-1" numberOfLines={2}>
+                    {item.name || item.path || item}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
   );
 }
 

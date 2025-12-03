@@ -4,7 +4,7 @@ import { useColorScheme } from 'nativewind';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
 import { QuickActionBar } from '@/components/quick-actions';
 import { BackgroundLogo, TopNav } from '@/components/home';
-import { PlanSelectionModal } from '@/components/billing/PlanSelectionModal';
+import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
 import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
 import { useChatCommons } from '@/hooks';
@@ -26,9 +26,10 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   chat,
   isAuthenticated,
 }, ref) => {
+  const router = useRouter();
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
-  const { isOpen: isPricingModalOpen, alertTitle, creditsExhausted, closePricingModal } = usePricingModalStore();
+  const { creditsExhausted } = usePricingModalStore();
   const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
   const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
 
@@ -41,12 +42,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   }), []);
 
   const handleUpgradePress = React.useCallback(() => {
-    usePricingModalStore.getState().openPricingModal();
-  }, []);
-
-  const handleClosePricingModal = React.useCallback(() => {
-    closePricingModal();
-  }, [closePricingModal]);
+    router.push({
+      pathname: '/plans',
+      params: { creditsExhausted: creditsExhausted ? 'true' : 'false' },
+    });
+  }, [router, creditsExhausted]);
 
   const handleCreditsPress = React.useCallback(() => {
     setIsUsageDrawerOpen(true);
@@ -67,8 +67,16 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
 
   const handleUpgradeFromUsage = React.useCallback(() => {
     setIsUsageDrawerOpen(false);
-    usePricingModalStore.getState().openPricingModal();
-  }, []);
+    router.push({
+      pathname: '/plans',
+      params: { creditsExhausted: creditsExhausted ? 'true' : 'false' },
+    });
+  }, [router, creditsExhausted]);
+
+  const handleThreadPressFromUsage = React.useCallback((threadId: string, _projectId: string | null) => {
+    console.log('🎯 Loading thread from UsageDrawer:', threadId);
+    chat.loadThread(threadId);
+  }, [chat]);
 
   // Memoized handlers for ChatInputSection to prevent re-renders
   const handleSendMessage = React.useCallback((content: string, agentId: string, agentName: string) => {
@@ -147,16 +155,12 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
           onChooseImages={chat.handleChooseImages}
           onChooseFiles={chat.handleChooseFiles}
         />
-        <PlanSelectionModal
-          open={isPricingModalOpen}
-          onOpenChange={handleClosePricingModal}
-          creditsExhausted={creditsExhausted}
-        />
         <UsageDrawer
           visible={isUsageDrawerOpen}
           onClose={handleCloseUsageDrawer}
           onUpgradePress={handleUpgradeFromUsage}
           onTopUpPress={handleTopUpPress}
+          onThreadPress={handleThreadPressFromUsage}
         />
         <CreditsPurchasePage
           visible={isCreditsPurchaseOpen}

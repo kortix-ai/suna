@@ -187,7 +187,7 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
                     value={editValue}
                     onChange={(e) => setEditValue(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    className="w-full h-[70vh] rounded-xl bg-muted/30 p-6 resize-none text-sm leading-relaxed font-mono"
+                    className="w-full h-[70vh] rounded-2xl bg-muted/30 p-6 resize-none text-sm leading-relaxed font-mono"
                     style={{ minHeight: '60vh' }}
                     disabled={disabled}
                     placeholder="Write your markdown content here..."

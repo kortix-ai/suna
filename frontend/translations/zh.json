@@ -38,6 +38,7 @@
       "plan": "计划",
       "billing": "账单",
       "usage": "使用情况",
+      "referrals": "推荐",
       "knowledgeBase": "知识库",
       "integrations": "集成",
       "envManager": "环境管理器"
@@ -83,6 +84,50 @@
         "cancelDeletionDescription": "你确定要取消账户删除吗？你的账户和所有数据将被保留。",
         "cancelDeletion": "取消删除"
       }
+    },
+    "referrals": {
+      "title": "推荐计划",
+      "description": "与朋友分享您的推荐链接。当他们注册并创建账户时，您将获得",
+      "creditsPerReferral": "100个永久积分",
+      "youEarn": "您获得",
+      "friendGets": "您的朋友获得",
+      "maxEarnable": "通过推荐最多可获得：",
+      "maxCredits": "$100积分",
+      "yourReferralCode": "您的推荐码",
+      "referralLink": "推荐链接",
+      "shareYourLink": "分享您的推荐链接",
+      "yourStats": "您的统计",
+      "enterCodeDescription": "输入推荐码以赚取积分",
+      "enterCode": "输入代码",
+      "refresh": "刷新",
+      "copyCode": "复制代码",
+      "copyLink": "复制链接",
+      "share": "分享",
+      "stats": {
+        "totalReferrals": "总推荐数",
+        "successful": "成功",
+        "creditsEarned": "已获积分"
+      },
+      "recentReferrals": "最近推荐",
+      "signupComplete": "注册完成",
+      "pending": "待处理",
+      "noReferrals": "暂无推荐。分享您的推荐链接开始吧！",
+      "copied": "已复制！",
+      "codeCopied": "推荐码已复制到剪贴板",
+      "linkCopied": "推荐链接已复制到剪贴板",
+      "codeRefreshed": "推荐码刷新成功",
+      "refreshFailed": "刷新推荐码失败",
+      "inviteByEmail": "通过邮箱邀请",
+      "inviteByEmailDescription": "添加最多3个邮箱地址（按回车、空格或逗号）",
+      "emailAddress": "邮箱地址",
+      "emailPlaceholder": "输入邮箱地址（按回车、空格或逗号）",
+      "emailsAdded": "邮箱",
+      "sent": "已发送",
+      "send": "发送",
+      "sending": "发送中...",
+      "sendAllInvites": "发送所有邀请",
+      "allSent": "全部已发送",
+      "emailSent": "推荐邀请发送成功"
     },
     "billing": {
       "title": "账单和订阅",
@@ -156,6 +201,9 @@
     "monthlyOn1st": "每月1号"
   },
   "sidebar": {
+    "referAndEarn": "推荐赚取",
+    "new": "新",
+    "upgrade": "升级",
     "chats": "聊天",
     "agents": "智能体",
     "workers": "工作器",
@@ -374,6 +422,7 @@
     "credits": "积分",
     "popular": "热门",
     "creditsExplained": "积分说明",
+    "creditsExhausted": "+200积分将在{time}后到账。立即升级即可使用。",
     "creditsExhaustedRefreshIn": "您的积分已用完。将在{time}后刷新",
     "trialActive": "试用激活",
     "trialBadge": "7天试用",
@@ -489,9 +538,35 @@
       "integrations": "100+ 集成",
       "premiumAIModels": "高级 AI 模型",
       "prioritySupport": "优先支持"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "确认计划变更",
+      "confirmSubtitle": "很遗憾看到您离开",
+      "confirmDescription": "您即将切换到{planName}计划。此更改将在您当前计费周期结束时生效。届时您将保留当前的权益。",
+      "continue": "继续",
+      "keepCurrentPlan": "保留我的当前计划",
+      "feedbackTitle": "帮助我们改进",
+      "feedbackSubtitle": "您的反馈塑造Kortix的未来",
+      "whatWouldMakeYouStay": "什么会让您留下来？",
+      "feedbackPlaceholder": "如果我们可以改变或添加一件事来让Kortix对您有价值，那会是什么？",
+      "feedbackFooter": "我们的团队会阅读每一条回复。您的反馈直接影响我们接下来构建什么。",
+      "confirmDowngrade": "确认降级",
+      "processing": "处理中...",
+      "pleaseSelectReason": "请选择一个原因",
+      "reasons": {
+        "tooExpensive": "对我的需求来说太贵了",
+        "notUsingOften": "我使用Kortix不够频繁",
+        "foundAlternative": "我找到了其他解决方案",
+        "technicalIssues": "我遇到了技术问题",
+        "resultsNotGood": "结果没有达到我的期望",
+        "other": "其他原因"
+      }
     }
   },
   "auth": {
+    "haveReferralCode": "有推荐码吗？",
+    "referralCode": "推荐码",
+    "enterCode": "输入代码",
     "logIntoAccount": "登录你的账户",
     "createAccount": "创建账号",
     "signInOrCreateAccount": "登录或创建您的Kortix账户",
@@ -528,7 +603,16 @@
     "magicLinkSent": "我们已向以下地址发送魔法链接",
     "magicLinkDescription": "点击邮件中的链接以登录。链接将在1小时后过期。",
     "magicLinkExplanation": "我们将向您发送一个安全的登录链接。无需密码。",
-    "byContinuingYouAgree": "继续即表示您同意我们的<privacyPolicy>隐私政策</privacyPolicy>和<termsOfService>服务条款</termsOfService>"
+    "magicLinkExpired": "此链接已过期",
+    "magicLinkExpiredDescription": "您点击的魔法链接已过期。出于安全原因，魔法链接会在1小时后过期。",
+    "resendMagicLink": "重新发送魔法链接",
+    "resending": "重新发送中...",
+    "byContinuingYouAgree": "继续即表示您同意我们的<privacyPolicy>隐私政策</privacyPolicy>和<termsOfService>服务条款</termsOfService>",
+    "openProvider": "打开 {provider}",
+    "didntReceiveEmail": "没有收到邮件？",
+    "resend": "重新发送",
+    "alreadySignedIn": "您已登录，无需任何操作。",
+    "goToDashboard": "前往控制台"
   },
   "onboarding": {
     "welcome": "欢迎",

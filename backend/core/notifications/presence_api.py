@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 from core.utils.logger import logger
 from core.utils.auth_utils import get_user_id_from_stream_auth
+from core.utils.config import config
 from .presence_service import presence_service
 
 router = APIRouter(tags=["presence"], prefix="/presence")
@@ -21,6 +22,9 @@ async def update_presence(
     request: Request,
     token: Optional[str] = None
 ):
+    if config.DISABLE_PRESENCE:
+        return {"success": True, "session_id": payload.session_id, "disabled": True}
+    
     try:
         account_id = await get_user_id_from_stream_auth(request, token)
         
@@ -59,6 +63,9 @@ async def clear_presence(
     session_id: Optional[str] = None,
     token: Optional[str] = None
 ):
+    if config.DISABLE_PRESENCE:
+        return {"success": True, "disabled": True}
+    
     try:
         account_id = await get_user_id_from_stream_auth(request, token)
         
@@ -87,6 +94,9 @@ async def get_thread_viewers(
     request: Request,
     token: Optional[str] = None
 ):
+    if config.DISABLE_PRESENCE:
+        return {"thread_id": thread_id, "viewers": [], "disabled": True}
+    
     try:
         await get_user_id_from_stream_auth(request, token)
         viewers = await presence_service.get_thread_viewers(thread_id)
@@ -103,6 +113,9 @@ async def get_account_active_threads(
     request: Request,
     token: Optional[str] = None
 ):
+    if config.DISABLE_PRESENCE:
+        return {"account_id": None, "active_threads": [], "disabled": True}
+    
     try:
         account_id = await get_user_id_from_stream_auth(request, token)
         threads = await presence_service.get_account_active_threads(account_id)
@@ -119,6 +132,9 @@ async def cleanup_stale_sessions(
     request: Request,
     token: Optional[str] = None
 ):
+    if config.DISABLE_PRESENCE:
+        return {"success": True, "cleaned": 0, "disabled": True}
+    
     try:
         account_id = await get_user_id_from_stream_auth(request, token)
         count = await presence_service.cleanup_stale_sessions(account_id)

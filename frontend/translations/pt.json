@@ -38,6 +38,7 @@
       "plan": "Plano",
       "billing": "Cobrança",
       "usage": "Uso",
+      "referrals": "Indicações",
       "knowledgeBase": "Base de Conhecimento",
       "integrations": "Integrações",
       "envManager": "Gerenciador de Ambiente"
@@ -83,6 +84,50 @@
         "cancelDeletionDescription": "Tens certeza que queres cancelar a exclusão da tua conta? Tua conta e todos os dados serão preservados.",
         "cancelDeletion": "Cancelar Exclusão"
       }
+    },
+    "referrals": {
+      "title": "Programa de Indicações",
+      "description": "Compartilhe seu link de indicação com amigos. Quando eles se cadastrarem e criarem uma conta, você ganhará",
+      "creditsPerReferral": "100 créditos permanentes",
+      "youEarn": "Você ganha",
+      "friendGets": "Seu amigo ganha",
+      "maxEarnable": "Máximo que pode ganhar através de indicações:",
+      "maxCredits": "$100 em créditos",
+      "yourReferralCode": "Seu Código de Indicação",
+      "referralLink": "Link de Indicação",
+      "shareYourLink": "Compartilhe seu link de indicação",
+      "yourStats": "Suas estatísticas",
+      "enterCodeDescription": "Digite um código de indicação para ganhar créditos",
+      "enterCode": "Digitar código",
+      "refresh": "Atualizar",
+      "copyCode": "Copiar código",
+      "copyLink": "Copiar link",
+      "share": "Compartilhar",
+      "stats": {
+        "totalReferrals": "Total de Indicações",
+        "successful": "Bem-sucedidas",
+        "creditsEarned": "Créditos Ganhos"
+      },
+      "recentReferrals": "Indicações Recentes",
+      "signupComplete": "Cadastro Completo",
+      "pending": "Pendente",
+      "noReferrals": "Nenhuma indicação ainda. Compartilhe seu link de indicação para começar!",
+      "copied": "Copiado!",
+      "codeCopied": "Código de indicação copiado para a área de transferência",
+      "linkCopied": "Link de indicação copiado para a área de transferência",
+      "codeRefreshed": "Código de indicação atualizado com sucesso",
+      "refreshFailed": "Falha ao atualizar o código de indicação",
+      "inviteByEmail": "Convidar por Email",
+      "inviteByEmailDescription": "Adiciona até 3 endereços de email (pressiona Enter, Espaço ou Vírgula)",
+      "emailAddress": "Endereço de email",
+      "emailPlaceholder": "Digite endereços de email (pressiona Enter, Espaço ou Vírgula)",
+      "emailsAdded": "emails",
+      "sent": "enviado",
+      "send": "Enviar",
+      "sending": "Enviando...",
+      "sendAllInvites": "Enviar Todos os Convites",
+      "allSent": "Tudo Enviado",
+      "emailSent": "Convite de indicação enviado com sucesso"
     },
     "billing": {
       "title": "Cobrança e Assinatura",
@@ -156,6 +201,9 @@
     "monthlyOn1st": "Mensalmente no dia 1"
   },
   "sidebar": {
+    "referAndEarn": "Indicar e Ganhar",
+    "new": "Novo",
+    "upgrade": "Melhorar",
     "chats": "Chats",
     "agents": "Agentes",
     "workers": "Workers",
@@ -374,6 +422,7 @@
     "credits": "Créditos",
     "popular": "Popular",
     "creditsExplained": "Créditos explicados",
+    "creditsExhausted": "+200 Créditos em {time}. Atualize para usar agora.",
     "creditsExhaustedRefreshIn": "Você esgotou seus créditos. Eles serão renovados em {time}",
     "trialActive": "Teste Ativo",
     "trialBadge": "Teste de 7 Dias",
@@ -489,9 +538,35 @@
       "integrations": "100+ integrações",
       "premiumAIModels": "Modelos de IA Premium",
       "prioritySupport": "Suporte Prioritário"
+    },
+    "downgradeDialog": {
+      "confirmTitle": "Confirmar mudança de plano",
+      "confirmSubtitle": "Lamentamos ver você partir",
+      "confirmDescription": "Você está prestes a mudar para o plano {planName}. Esta alteração entrará em vigor no final do seu período de faturamento atual. Você manterá seus benefícios atuais até lá.",
+      "continue": "Continuar",
+      "keepCurrentPlan": "Manter meu plano atual",
+      "feedbackTitle": "Ajude-nos a melhorar",
+      "feedbackSubtitle": "Seu feedback molda o futuro do Kortix",
+      "whatWouldMakeYouStay": "O que faria você ficar?",
+      "feedbackPlaceholder": "Se houvesse uma coisa que pudéssemos mudar ou adicionar para tornar o Kortix valioso para você, qual seria?",
+      "feedbackFooter": "Nossa equipe lê cada resposta. Suas palavras influenciam diretamente o que construímos a seguir.",
+      "confirmDowngrade": "Confirmar downgrade",
+      "processing": "Processando...",
+      "pleaseSelectReason": "Por favor, selecione um motivo",
+      "reasons": {
+        "tooExpensive": "É muito caro para minhas necessidades",
+        "notUsingOften": "Não estou usando o Kortix o suficiente",
+        "foundAlternative": "Encontrei outra solução",
+        "technicalIssues": "Tive problemas técnicos",
+        "resultsNotGood": "Os resultados não atenderam às minhas expectativas",
+        "other": "Outro motivo"
+      }
     }
   },
   "auth": {
+    "haveReferralCode": "Tens um código de indicação?",
+    "referralCode": "Código de Indicação",
+    "enterCode": "Inserir código",
     "logIntoAccount": "Entra na tua conta",
     "createAccount": "Criar conta",
     "signInOrCreateAccount": "Entra ou cria a tua conta Kortix",
@@ -528,7 +603,16 @@
     "magicLinkSent": "Enviamos um magic link para",
     "magicLinkDescription": "Clica no link no teu email para entrar. O link expirará em 1 hora.",
     "magicLinkExplanation": "Vamos te enviar um link seguro para entrar. Não precisa de senha.",
-    "byContinuingYouAgree": "Ao continuar, concordas com a nossa <privacyPolicy>Política de Privacidade</privacyPolicy> e os nossos <termsOfService>Termos de Serviço</termsOfService>"
+    "magicLinkExpired": "Este link expirou",
+    "magicLinkExpiredDescription": "O magic link em que clicaste expirou. Os magic links expiram após 1 hora por razões de segurança.",
+    "resendMagicLink": "Reenviar magic link",
+    "resending": "A reenviar...",
+    "byContinuingYouAgree": "Ao continuar, concordas com a nossa <privacyPolicy>Política de Privacidade</privacyPolicy> e os nossos <termsOfService>Termos de Serviço</termsOfService>",
+    "openProvider": "Abrir {provider}",
+    "didntReceiveEmail": "Não recebeste o e-mail?",
+    "resend": "Reenviar",
+    "alreadySignedIn": "Já tens sessão iniciada. Nenhuma ação necessária.",
+    "goToDashboard": "Ir para o Painel"
   },
   "onboarding": {
     "welcome": "Bem-vindo",

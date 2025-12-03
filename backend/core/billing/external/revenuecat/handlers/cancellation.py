@@ -13,7 +13,7 @@ class CancellationHandler:
         
         logger.info(
             f"[REVENUECAT CANCELLATION] User {app_user_id} cancelled "
-            f"- will switch to Stripe free tier at end of billing period"
+            f"- will switch to free tier at end of billing period"
         )
         
         db = DBConnection()
@@ -22,6 +22,14 @@ class CancellationHandler:
         await SubscriptionRepository.mark_subscription_as_cancelled(
             client, app_user_id, expiration_at_ms
         )
+        
+        # Invalidate cache to reflect cancellation immediately
+        try:
+            from core.billing.shared.cache_utils import invalidate_account_state_cache
+            await invalidate_account_state_cache(app_user_id)
+            logger.info(f"[REVENUECAT CANCELLATION] Cache invalidated for {app_user_id}")
+        except Exception as cache_error:
+            logger.warning(f"[REVENUECAT CANCELLATION] Cache invalidation failed: {cache_error}")
     
     @staticmethod
     async def handle_uncancellation(webhook_data: Dict) -> None:
@@ -37,4 +45,12 @@ class CancellationHandler:
         client = await db.client
         
         await SubscriptionRepository.clear_cancellation(client, app_user_id)
+        
+        # Invalidate cache to reflect reactivation immediately
+        try:
+            from core.billing.shared.cache_utils import invalidate_account_state_cache
+            await invalidate_account_state_cache(app_user_id)
+            logger.info(f"[REVENUECAT UNCANCELLATION] Cache invalidated for {app_user_id}")
+        except Exception as cache_error:
+            logger.warning(f"[REVENUECAT UNCANCELLATION] Cache invalidation failed: {cache_error}")
 

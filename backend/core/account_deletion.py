@@ -6,6 +6,7 @@ from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_admin_api_key
 from core.utils.logger import logger
 from core.sandbox.sandbox import delete_sandbox
+from core.billing.external.stripe import StripeAPIWrapper
 
 router = APIRouter(tags=["account-deletion"])
 
@@ -64,8 +65,8 @@ async def request_account_deletion(
         
         deletion_id = deletion_request.data[0]['id']
         
-        # Note: Individual cron jobs are no longer scheduled
-        # Deletions are processed by the daily check job (runs at 1 AM UTC)
+        await check_and_schedule_subscriptions(account_id, deletion_date, client)
+        
         logger.info(f"Account deletion requested for user {user_id}, scheduled for {deletion_date} (will be processed by daily check)")
         
         return AccountDeletionResponse(
@@ -108,6 +109,8 @@ async def cancel_account_deletion(
             'is_cancelled': True,
             'cancelled_at': datetime.now(timezone.utc).isoformat()
         }).eq('id', request_id).execute()
+        
+        await unschedule_subscription_cancellation(account_id, client)
         
         logger.info(f"Account deletion cancelled for user {user_id}")
         
@@ -189,6 +192,138 @@ async def delete_account_sandboxes_endpoint(
         logger.error(f"Error in delete_account_sandboxes_endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete sandboxes: {str(e)}")
 
+async def check_and_schedule_subscriptions(account_id: str, cancel_at: datetime, client) -> None:
+    try:
+        credit_account = await client.from_('credit_accounts').select(
+            'stripe_subscription_id, revenuecat_subscription_id, tier, provider'
+        ).eq('account_id', account_id).execute()
+        
+        if not credit_account.data or len(credit_account.data) == 0:
+            logger.info(f"[ACCOUNT_DELETION] No credit account found for {account_id}")
+            return
+        
+        account_data = credit_account.data[0]
+        stripe_sub_id = account_data.get('stripe_subscription_id')
+        revenuecat_sub_id = account_data.get('revenuecat_subscription_id')
+        tier = account_data.get('tier')
+        provider = account_data.get('provider', 'stripe')
+        
+        if revenuecat_sub_id and tier not in ['none', 'free']:
+            logger.warning(f"[ACCOUNT_DELETION] User {account_id} has active RevenueCat subscription - must cancel through app store first")
+            raise HTTPException(
+                status_code=400,
+                detail="You have an active subscription through the App Store or Google Play. Please cancel your subscription through your device's subscription settings before deleting your account. Once cancelled, wait for your subscription to expire, then you can delete your account."
+            )
+        
+        if stripe_sub_id:
+            await schedule_stripe_subscription_cancellation(account_id, stripe_sub_id, cancel_at, tier)
+        else:
+            logger.info(f"[ACCOUNT_DELETION] No Stripe subscription to schedule for account {account_id}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ACCOUNT_DELETION] Error checking subscriptions for account {account_id}: {str(e)}")
+        raise
+
+async def schedule_stripe_subscription_cancellation(account_id: str, stripe_sub_id: str, cancel_at: datetime, tier: str) -> None:
+    try:
+        cancel_at_timestamp = int(cancel_at.timestamp())
+        
+        logger.info(f"[ACCOUNT_DELETION] Scheduling Stripe subscription {stripe_sub_id} to cancel at {cancel_at.date()} for account {account_id} (tier: {tier})")
+        
+        await StripeAPIWrapper.modify_subscription(
+            stripe_sub_id,
+            cancel_at=cancel_at_timestamp
+        )
+        
+        logger.info(f"[ACCOUNT_DELETION] ✅ Successfully scheduled subscription {stripe_sub_id} to cancel in 30 days")
+        
+    except Exception as e:
+        logger.error(f"[ACCOUNT_DELETION] Error scheduling Stripe subscription cancellation for account {account_id}: {str(e)}")
+        raise
+
+async def unschedule_subscription_cancellation(account_id: str, client) -> None:
+    try:
+        credit_account = await client.from_('credit_accounts').select(
+            'stripe_subscription_id'
+        ).eq('account_id', account_id).execute()
+        
+        if not credit_account.data or len(credit_account.data) == 0:
+            logger.info(f"[ACCOUNT_DELETION] No credit account found for {account_id}")
+            return
+        
+        stripe_sub_id = credit_account.data[0].get('stripe_subscription_id')
+        
+        if not stripe_sub_id:
+            logger.info(f"[ACCOUNT_DELETION] No Stripe subscription for account {account_id}")
+            return
+        
+        logger.info(f"[ACCOUNT_DELETION] Removing scheduled cancellation for Stripe subscription {stripe_sub_id}")
+        
+        await StripeAPIWrapper.modify_subscription(
+            stripe_sub_id,
+            cancel_at=None,
+            cancel_at_period_end=False
+        )
+        
+        logger.info(f"[ACCOUNT_DELETION] ✅ Successfully removed scheduled cancellation for {stripe_sub_id}")
+        
+    except Exception as e:
+        logger.error(f"[ACCOUNT_DELETION] Error removing scheduled subscription cancellation for account {account_id}: {str(e)}")
+        raise
+
+async def cancel_account_subscriptions_immediately(account_id: str, client) -> dict:
+    result = {
+        "cancelled_stripe": False,
+        "cancelled_revenuecat": False,
+        "stripe_subscription_id": None,
+        "revenuecat_subscription_id": None
+    }
+    
+    try:
+        credit_account = await client.from_('credit_accounts').select(
+            'stripe_subscription_id, revenuecat_subscription_id, tier, provider'
+        ).eq('account_id', account_id).execute()
+        
+        if not credit_account.data or len(credit_account.data) == 0:
+            logger.info(f"[ACCOUNT_DELETION] No credit account found for {account_id}, nothing to cancel")
+            return result
+        
+        account_data = credit_account.data[0]
+        stripe_sub_id = account_data.get('stripe_subscription_id')
+        revenuecat_sub_id = account_data.get('revenuecat_subscription_id')
+        tier = account_data.get('tier')
+        provider = account_data.get('provider', 'stripe')
+        
+        if revenuecat_sub_id and tier not in ['none', 'free']:
+            logger.warning(f"[ACCOUNT_DELETION] User {account_id} has active RevenueCat subscription - cannot delete immediately")
+            raise HTTPException(
+                status_code=400,
+                detail="You have an active subscription through the App Store or Google Play. Please cancel your subscription through your device's subscription settings before deleting your account. Once cancelled, wait for your subscription to expire, then you can delete your account."
+            )
+        
+        if stripe_sub_id:
+            try:
+                logger.info(f"[ACCOUNT_DELETION] Cancelling Stripe subscription {stripe_sub_id} for account {account_id} (tier: {tier})")
+                await StripeAPIWrapper.cancel_subscription(stripe_sub_id, cancel_immediately=True)
+                result["cancelled_stripe"] = True
+                result["stripe_subscription_id"] = stripe_sub_id
+                logger.info(f"[ACCOUNT_DELETION] ✅ Successfully cancelled Stripe subscription {stripe_sub_id}")
+            except Exception as e:
+                logger.error(f"[ACCOUNT_DELETION] Failed to cancel Stripe subscription {stripe_sub_id}: {str(e)}")
+                raise
+        else:
+            logger.info(f"[ACCOUNT_DELETION] No Stripe subscription to cancel for account {account_id}")
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ACCOUNT_DELETION] Error cancelling subscriptions for account {account_id}: {str(e)}")
+        raise
+
 async def delete_account_sandboxes(account_id: str, client) -> int:
     """Delete all Daytona sandboxes associated with an account's projects."""
     deleted_count = 0
@@ -239,7 +374,9 @@ async def delete_account_immediately(
         
         account_id = personal_account_response.data[0]['id']
         
-        # Delete all Daytona sandboxes before deleting account data
+        cancel_result = await cancel_account_subscriptions_immediately(account_id, client)
+        logger.info(f"Cancelled subscriptions before account deletion: {cancel_result}")
+        
         sandbox_count = await delete_account_sandboxes(account_id, client)
         logger.info(f"Deleted {sandbox_count} sandboxes before account deletion")
         

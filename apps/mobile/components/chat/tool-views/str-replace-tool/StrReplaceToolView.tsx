@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, ScrollView, Pressable } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
@@ -60,86 +60,90 @@ export function StrReplaceToolView({ toolCall, toolResult, isStreaming }: ToolVi
   }
 
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 gap-6">
-        <View className="gap-3">
-          <View className="bg-card border border-border rounded-2xl overflow-hidden">
-            <Pressable
-              onPress={toggleExpanded}
-              className="flex-row items-center justify-between p-4 bg-muted/30 border-b border-border"
-            >
-              <View className="flex-row items-center gap-2">
-                <Icon as={File} size={16} className="text-foreground/50" />
-                <Text className="text-sm font-roobert-medium text-foreground" numberOfLines={1}>
-                  {filePath || 'Unknown file'}
-                </Text>
-              </View>
-
-              <View className="flex-row items-center gap-3">
-                <View className="flex-row items-center gap-3">
-                  <View className="flex-row items-center gap-1">
-                    <Icon as={Plus} size={14} className="text-primary" />
-                    <Text className="text-xs font-roobert-medium text-foreground/60">
-                      {stats.additions}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center gap-1">
-                    <Icon as={Minus} size={14} className="text-destructive" />
-                    <Text className="text-xs font-roobert-medium text-foreground/60">
-                      {stats.deletions}
-                    </Text>
-                  </View>
-                </View>
-
-                <Icon
-                  as={expanded ? ChevronUp : ChevronDown}
-                  size={16}
-                  className="text-foreground/60"
-                />
-              </View>
-            </Pressable>
-
-            {expanded && (
-              <ScrollView
-                className="max-h-96"
-                showsVerticalScrollIndicator={true}
-              >
-                <View className="p-2">
-                  {lineDiff.map((line, idx) => {
-                    if (line.type === 'unchanged') return null;
-
-                    return (
-                      <View
-                        key={idx}
-                        className={`flex-row items-start gap-2 px-2 py-1 ${line.type === 'added'
-                            ? 'bg-primary/5'
-                            : 'bg-destructive/5'
-                          }`}
-                      >
-                        <Icon
-                          as={line.type === 'added' ? Plus : Minus}
-                          size={14}
-                          className={line.type === 'added' ? 'text-primary mt-0.5' : 'text-destructive mt-0.5'}
-                        />
-                        <Text
-                          className={`text-xs font-roobert flex-1 ${line.type === 'added'
-                              ? 'text-primary'
-                              : 'text-destructive'
-                            }`}
-                          selectable
-                        >
-                          {line.type === 'added' ? line.newLine : line.oldLine}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            )}
+    <View className="px-6 gap-6">
+      <View className="gap-2">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center gap-2">
+            <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+              File
+            </Text>
+          </View>
+          <View className="flex-row items-center gap-3">
+            <View className="flex-row items-center gap-1">
+              <Icon as={Plus} size={14} className="text-primary" />
+              <Text className="text-xs font-roobert-medium text-foreground/60">
+                {stats.additions}
+              </Text>
+            </View>
+            <View className="flex-row items-center gap-1">
+              <Icon as={Minus} size={14} className="text-destructive" />
+              <Text className="text-xs font-roobert-medium text-foreground/60">
+                {stats.deletions}
+              </Text>
+            </View>
           </View>
         </View>
+        <View className="bg-card border border-border rounded-2xl p-4">
+          <Text className="text-sm font-roobert text-foreground" selectable>
+            {filePath || 'Unknown file'}
+          </Text>
+        </View>
       </View>
-    </ScrollView>
+
+      <View className="gap-2">
+        <View className="flex-row items-center justify-between">
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
+            Changes
+          </Text>
+          <Pressable
+            onPress={toggleExpanded}
+            className="flex-row items-center gap-1.5 bg-secondary active:bg-secondary/80 px-3 py-1.5 rounded-full"
+          >
+            <Icon
+              as={expanded ? ChevronUp : ChevronDown}
+              size={14}
+              className="text-foreground/60"
+            />
+            <Text className="text-xs font-roobert-medium text-foreground/60">
+              {expanded ? 'Collapse' : 'Expand'}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View className="bg-card border border-border rounded-2xl overflow-hidden" style={{ maxHeight: expanded ? 400 : 160 }}>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {lineDiff.map((line, idx) => {
+              if (line.type === 'unchanged') return null;
+
+              return (
+                <View
+                  key={idx}
+                  className={`flex-row items-start gap-2 px-4 py-1.5 ${line.type === 'added'
+                    ? 'bg-primary/5'
+                    : 'bg-destructive/5'
+                    }`}
+                >
+                  <Icon
+                    as={line.type === 'added' ? Plus : Minus}
+                    size={14}
+                    className={line.type === 'added' ? 'text-primary mt-0.5' : 'text-destructive mt-0.5'}
+                  />
+                  <Text
+                    className={`text-xs font-roobert flex-1 ${line.type === 'added'
+                      ? 'text-primary'
+                      : 'text-destructive'
+                      }`}
+                    selectable
+                  >
+                    {line.type === 'added' ? line.newLine : line.oldLine}
+                  </Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </View>
   );
 }
 

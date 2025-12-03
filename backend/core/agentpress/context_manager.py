@@ -18,6 +18,36 @@ from core.agentpress.prompt_caching import apply_anthropic_caching_strategy
 
 DEFAULT_TOKEN_THRESHOLD = 120000
 
+# Module-level singleton clients for memory efficiency
+# These are lazily initialized once and reused across all ContextManager instances
+_anthropic_client = None
+_bedrock_client = None
+_clients_initialized = False
+
+
+def _get_anthropic_client_singleton():
+    """Module-level lazy initialization of Anthropic client (singleton)."""
+    global _anthropic_client, _clients_initialized
+    if _anthropic_client is None and not _clients_initialized:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if api_key:
+            _anthropic_client = Anthropic(api_key=api_key)
+        _clients_initialized = True
+    return _anthropic_client
+
+
+def _get_bedrock_client_singleton():
+    """Module-level lazy initialization of Bedrock client (singleton)."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        try:
+            import boto3
+            _bedrock_client = boto3.client('bedrock-runtime', region_name='us-west-2')
+        except Exception as e:
+            logger.debug(f"Could not initialize Bedrock client: {e}")
+    return _bedrock_client
+
+
 class ContextManager:
     """Manages thread context including token counting and summarization."""
     
@@ -35,27 +65,14 @@ class ContextManager:
         self.compression_target_ratio = 0.6  # Compress to 60% of max tokens (hysteresis)
         self.keep_recent_user_messages = 10  # Number of recent user messages to keep uncompressed
         self.keep_recent_assistant_messages = 10  # Number of recent assistant messages to keep uncompressed
-        # Initialize Anthropic client for accurate token counting
-        self._anthropic_client = None
-        self._bedrock_client = None
 
     def _get_anthropic_client(self):
-        """Lazy initialization of Anthropic client."""
-        if self._anthropic_client is None:
-            api_key = os.environ.get("ANTHROPIC_API_KEY")
-            if api_key:
-                self._anthropic_client = Anthropic(api_key=api_key)
-        return self._anthropic_client
+        """Get the singleton Anthropic client."""
+        return _get_anthropic_client_singleton()
     
     def _get_bedrock_client(self):
-        """Lazy initialization of Bedrock client."""
-        if self._bedrock_client is None:
-            try:
-                import boto3
-                self._bedrock_client = boto3.client('bedrock-runtime', region_name='us-west-2')
-            except Exception as e:
-                logger.debug(f"Could not initialize Bedrock client: {e}")
-        return self._bedrock_client
+        """Get the singleton Bedrock client."""
+        return _get_bedrock_client_singleton()
 
     async def count_tokens(self, model: str, messages: List[Dict[str, Any]], system_prompt: Optional[Dict[str, Any]] = None, apply_caching: bool = True) -> int:
         """Count tokens using the correct tokenizer for the model.
@@ -645,282 +662,6 @@ class ContextManager:
         
         return result
     
-    async def _write_compressed_messages_to_db(
-        self,
-        compressed_messages: Dict[str, Dict[str, Any]],
-        operation_name: str = "compression"
-    ) -> int:
-        """Generic function to persist compressed messages to database.
-        
-        Args:
-            compressed_messages: Dict mapping message_id -> compressed message dict
-            operation_name: Name of operation for logging (e.g., "tool output compression")
-            
-        Returns:
-            Number of messages successfully updated
-        """
-        if not compressed_messages:
-            return 0
-        
-        client = await self.db.client
-        updated_count = 0
-        
-        for message_id, compressed_msg in compressed_messages.items():
-            try:
-                # Fetch current message metadata from DB
-                result = await client.table('messages').select('metadata').eq('message_id', message_id).execute()
-                if not result.data:
-                    logger.warning(f"Message {message_id} not found in database, skipping")
-                    continue
-                
-                # Parse existing metadata
-                existing_metadata = result.data[0].get('metadata', {})
-                if isinstance(existing_metadata, str):
-                    try:
-                        existing_metadata = json.loads(existing_metadata)
-                    except:
-                        existing_metadata = {}
-                
-                if not isinstance(existing_metadata, dict):
-                    existing_metadata = {}
-                
-                # Update metadata with compressed version
-                existing_metadata.update({
-                    'compressed_content': compressed_msg,
-                    'compressed': True
-                })
-                
-                # Write ONLY metadata - never touch content field (preserves original)
-                await client.table('messages').update({
-                    'metadata': existing_metadata
-                }).eq('message_id', message_id).execute()
-                
-                updated_count += 1
-                
-            except Exception as e:
-                logger.error(f"Failed to persist {operation_name} for message {message_id}: {str(e)}")
-        
-        if updated_count > 0:
-            logger.info(f"Successfully persisted {operation_name} for {updated_count} messages to database")
-        return updated_count
-    
-    async def update_old_tool_outputs_in_db(
-        self,
-        messages: List[Dict[str, Any]],
-        keep_last_n: int = 8
-    ) -> int:
-        """Permanently update old tool outputs in database with compressed summaries.
-        
-        This method updates the database so that old tool outputs stay compressed
-        across future fetches, allowing the conversation to grow naturally.
-        
-        Args:
-            messages: List of conversation messages
-            keep_last_n: Number of most recent tool outputs to preserve
-            
-        Returns:
-            Number of messages updated in the database
-        """
-        if not messages:
-            return 0
-        
-        # Identify tool result messages to compress (all except last N)
-        tool_result_messages = []
-        for msg in messages:
-            if self.is_tool_result_message(msg):
-                tool_result_messages.append(msg)
-        
-        total_tool_results = len(tool_result_messages)
-        
-        if total_tool_results <= keep_last_n:
-            logger.debug(f"Only {total_tool_results} tool outputs found, no database updates needed")
-            return 0
-        
-        # Get message IDs to compress (all except last N)
-        num_to_compress = total_tool_results - keep_last_n
-        messages_to_compress = tool_result_messages[:num_to_compress]
-        
-        logger.info(f"Updating {num_to_compress} tool outputs in database (keeping last {keep_last_n} of {total_tool_results})")
-        
-        # Prepare compressed messages mapping
-        compressed_mapping = {}
-        for msg in messages_to_compress:
-            message_id = msg.get('message_id')
-            if not message_id:
-                logger.warning(f"Tool output message missing message_id, skipping: {str(msg)[:100]}")
-                continue
-            
-            # Create compressed version with summary
-            summary_content = f"[Tool output removed for token management] message_id: \"{message_id}\". Use expand-message tool to view full output."
-            compressed_msg = msg.copy()  # Copy ALL fields (tool_call_id, etc.)
-            compressed_msg['content'] = summary_content  # Replace only content
-            compressed_msg['message_id'] = message_id  # Ensure message_id is set
-            
-            compressed_mapping[message_id] = compressed_msg
-        
-        # Use generic DB writer
-        return await self._write_compressed_messages_to_db(compressed_mapping, "tool output compression")
-    
-    async def persist_user_message_compressions_to_db(
-        self,
-        messages: List[Dict[str, Any]],
-        keep_last_n: int = 10
-    ) -> int:
-        """Permanently compress old user messages in database.
-        
-        Args:
-            messages: List of conversation messages
-            keep_last_n: Number of most recent user messages to preserve
-            
-        Returns:
-            Number of messages updated in the database
-        """
-        if not messages:
-            return 0
-        
-        # Identify user messages to compress (all except last N)
-        user_messages = []
-        for msg in messages:
-            if isinstance(msg, dict) and msg.get('role') == 'user':
-                user_messages.append(msg)
-        
-        total_user_messages = len(user_messages)
-        
-        if total_user_messages <= keep_last_n:
-            logger.debug(f"Only {total_user_messages} user messages found, no compression needed")
-            return 0
-        
-        # Get message IDs to compress (all except last N)
-        num_to_compress = total_user_messages - keep_last_n
-        messages_to_compress = user_messages[:num_to_compress]
-        
-        logger.info(f"Compressing {num_to_compress} user messages in database (keeping last {keep_last_n} of {total_user_messages})")
-        
-        # Prepare compressed messages mapping
-        compressed_mapping = {}
-        for msg in messages_to_compress:
-            message_id = msg.get('message_id')
-            if not message_id:
-                continue
-            
-            original_content = msg.get('content')
-            if not isinstance(original_content, str):
-                continue  # Skip non-string content
-            
-            # Always compress old user messages to save tokens
-            # Truncate to 1500 chars (aggressive for older messages beyond keep_last_n)
-            if len(original_content) > 1500:
-                summary_content = original_content[:1500] + "... (truncated)\n\nmessage_id \"" + message_id + "\"\nUse expand-message tool to see full content"
-            elif len(original_content) > 500:
-                # Medium messages: keep first 500 chars
-                summary_content = original_content[:500] + "... (truncated)\n\nmessage_id \"" + message_id + "\"\nUse expand-message tool to see full content"
-            else:
-                # Short messages (<500 chars): keep as is, mark as compressed for consistency
-                summary_content = original_content
-            
-            # Create compressed version preserving full message structure
-            compressed_msg = msg.copy()  # Copy ALL fields
-            compressed_msg['content'] = summary_content  # Replace only content
-            compressed_msg['message_id'] = message_id  # Ensure message_id is set
-            
-            compressed_mapping[message_id] = compressed_msg
-        
-        # Use generic DB writer
-        return await self._write_compressed_messages_to_db(compressed_mapping, "user message compression")
-    
-    async def persist_assistant_message_compressions_to_db(
-        self,
-        messages: List[Dict[str, Any]],
-        keep_last_n: int = 10
-    ) -> int:
-        """Permanently compress old assistant messages in database.
-        
-        Args:
-            messages: List of conversation messages
-            keep_last_n: Number of most recent assistant messages to preserve
-            
-        Returns:
-            Number of messages updated in the database
-        """
-        if not messages:
-            return 0
-        
-        # Identify assistant messages to compress (all except last N)
-        assistant_messages = []
-        for msg in messages:
-            if isinstance(msg, dict) and msg.get('role') == 'assistant':
-                assistant_messages.append(msg)
-        
-        total_assistant_messages = len(assistant_messages)
-        
-        if total_assistant_messages <= keep_last_n:
-            logger.debug(f"Only {total_assistant_messages} assistant messages found, no compression needed")
-            return 0
-        
-        # Get message IDs to compress (all except last N)
-        num_to_compress = total_assistant_messages - keep_last_n
-        messages_to_compress = assistant_messages[:num_to_compress]
-        
-        logger.info(f"Compressing {num_to_compress} assistant messages in database (keeping last {keep_last_n} of {total_assistant_messages})")
-        
-        # Prepare compressed messages mapping
-        compressed_mapping = {}
-        for msg in messages_to_compress:
-            message_id = msg.get('message_id')
-            if not message_id:
-                continue
-            
-            original_content = msg.get('content')
-            if not isinstance(original_content, str):
-                continue  # Skip non-string content
-            
-            # Always compress old assistant messages to save tokens
-            # Truncate to 1500 chars (aggressive for older messages beyond keep_last_n)
-            if len(original_content) > 1500:
-                summary_content = original_content[:1500] + "... (truncated)\n\nmessage_id \"" + message_id + "\"\nUse expand-message tool to see full content"
-            elif len(original_content) > 500:
-                # Medium messages: keep first 500 chars
-                summary_content = original_content[:500] + "... (truncated)\n\nmessage_id \"" + message_id + "\"\nUse expand-message tool to see full content"
-            else:
-                # Short messages (<500 chars): keep as is, mark as compressed for consistency
-                summary_content = original_content
-            
-            # Create compressed version preserving full message structure
-            compressed_msg = msg.copy()  # Copy ALL fields (tool_use, etc.)
-            compressed_msg['content'] = summary_content  # Replace only content
-            compressed_msg['message_id'] = message_id  # Ensure message_id is set
-            
-            compressed_mapping[message_id] = compressed_msg
-        
-        # Use generic DB writer
-        return await self._write_compressed_messages_to_db(compressed_mapping, "assistant message compression")
-    
-    async def persist_secondary_compression_to_db(
-        self,
-        thread_id: str,
-        messages: List[Dict[str, Any]]
-    ) -> int:
-        """Persist secondary compression (from compress_tool_result_messages, compress_user_messages, 
-        compress_assistant_messages) to database.
-        
-        These functions modify messages in-memory, so we need to save those changes to DB
-        so they're available on the next turn (avoiding repeated compression).
-        """
-        # Prepare compressed messages mapping (messages are already compressed, just need to persist)
-        compressed_mapping = {}
-        for msg in messages:
-            message_id = msg.get('message_id')
-            if not message_id:
-                continue
-            
-            # Messages are already compressed, just copy them
-            compressed_msg = msg.copy()  # Copy ALL fields (tool_use, tool_call_id, etc.)
-            compressed_msg['message_id'] = message_id  # Ensure message_id is set
-            compressed_mapping[message_id] = compressed_msg
-        
-        # Use generic DB writer
-        return await self._write_compressed_messages_to_db(compressed_mapping, "secondary compression")
-    
     def remove_old_tool_outputs(
         self, 
         messages: List[Dict[str, Any]], 
@@ -932,8 +673,7 @@ class ContextManager:
         This preserves the tool_call_id field and maintains the assistant+tool_result pairing
         required by Bedrock.
         
-        This is used for in-memory compression after database updates.
-        The database update should be called first to persist changes.
+        This is a pure in-memory operation with no side effects.
         
         Args:
             messages: List of conversation messages
@@ -1036,20 +776,13 @@ class ContextManager:
         
         logger.debug(f"Compressing {num_to_compress} user messages in-memory (keeping last {keep_last_n})")
         
-        # Compress old user messages (match DB compression logic)
+        # Compress old user messages
         result = []
         for i, msg in enumerate(messages):
             if i in positions_to_compress:
                 original_content = msg.get('content', '')
-                if isinstance(original_content, str):
-                    # Match DB compression thresholds for consistency
-                    if len(original_content) > 1500:
-                        summary = original_content[:1500] + "... (truncated)"
-                    elif len(original_content) > 500:
-                        summary = original_content[:500] + "... (truncated)"
-                    else:
-                        summary = original_content  # Keep short messages as-is
-                    
+                if isinstance(original_content, str) and len(original_content) > 3000:
+                    summary = original_content[:3000] + "... (truncated)"
                     compressed_msg = msg.copy()
                     compressed_msg['content'] = summary
                     result.append(compressed_msg)
@@ -1314,29 +1047,19 @@ class ContextManager:
         if uncompressed_total_token_count > max_tokens:
             logger.info(f"Context over limit ({uncompressed_total_token_count} > {max_tokens}), starting tiered compression...")
             
-            # Tier 1: Remove old tool outputs
-            updated_count = await self.update_old_tool_outputs_in_db(
-                result, keep_last_n=self.keep_recent_tool_outputs
-            )
-            logger.info(f"Tier 1: Permanently compressed {updated_count} tool outputs in database")
-            
-            # Also update in-memory for this request
+            # Tier 1: Compress old tool outputs in-memory
             result = self.remove_old_tool_outputs(result, keep_last_n=self.keep_recent_tool_outputs)
             
             # Recalculate WITH caching
             current_token_count = await self.count_tokens(llm_model, result, system_prompt, apply_caching=True)
             
-            logger.info(f"After tool removal: {uncompressed_total_token_count} -> {current_token_count} tokens")
+            logger.info(f"After tool compression: {uncompressed_total_token_count} -> {current_token_count} tokens")
             
             # Tier 2: Compress user messages if still above target
             if current_token_count > target_tokens:
                 logger.info(f"Still above target ({current_token_count} > {target_tokens}), compressing user messages...")
-                user_compressed = await self.persist_user_message_compressions_to_db(
-                    result, keep_last_n=self.keep_recent_user_messages
-                )
-                logger.info(f"Tier 2: Compressed {user_compressed} user messages in database")
                 
-                # Also compress in-memory for this request
+                # Compress in-memory for this request
                 result = self.compress_user_messages_in_memory(result, keep_last_n=self.keep_recent_user_messages)
                 
                 # Recalculate with in-memory compressed messages WITH caching
@@ -1346,12 +1069,8 @@ class ContextManager:
             # Tier 3: Compress assistant messages if still above target
             if current_token_count > target_tokens:
                 logger.info(f"Still above target ({current_token_count} > {target_tokens}), compressing assistant messages...")
-                assistant_compressed = await self.persist_assistant_message_compressions_to_db(
-                    result, keep_last_n=self.keep_recent_assistant_messages
-                )
-                logger.info(f"Tier 3: Compressed {assistant_compressed} assistant messages in database")
                 
-                # Also compress in-memory for this request
+                # Compress in-memory for this request
                 result = self.compress_assistant_messages_in_memory(result, keep_last_n=self.keep_recent_assistant_messages)
                 
                 # Recalculate with in-memory compressed messages WITH caching
@@ -1359,18 +1078,6 @@ class ContextManager:
                 logger.info(f"After assistant compression: {current_token_count} tokens")
             
             logger.info(f"Tiered compression complete: {uncompressed_total_token_count} -> {current_token_count} tokens (target: {target_tokens})")
-            
-            # Set flag for cache rebuild on next turn (primary compression modified DB)
-            if thread_id and updated_count > 0:
-                try:
-                    logger.info(f"✂️ Compressed {updated_count} messages - cache will rebuild on next turn")
-                    client = await self.db.client
-                    result_data = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-                    metadata = result_data.data.get('metadata', {}) if result_data.data else {}
-                    metadata['cache_needs_rebuild'] = True
-                    await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
-                except Exception as e:
-                    logger.warning(f"Failed to set cache_needs_rebuild flag: {e}")
             uncompressed_total_token_count = current_token_count
 
         # SECONDARY STRATEGY: Apply compression to remaining messages if still above target
@@ -1387,10 +1094,6 @@ class ContextManager:
             result = await self.compress_tool_result_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
             result = await self.compress_user_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
             result = await self.compress_assistant_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
-        
-        # CRITICAL: Persist secondary compression to DB so it's available on next turn!
-        # Without this, secondary compression is lost when fetching messages from DB
-        await self.persist_secondary_compression_to_db(thread_id, result)
 
         # Recalculate WITH caching (to match API reality)
         compressed_total = await self.count_tokens(llm_model, result, system_prompt, apply_caching=True)

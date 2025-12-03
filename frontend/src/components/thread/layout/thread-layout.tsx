@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { SiteHeader } from '@/components/thread/thread-site-header';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
@@ -47,9 +47,11 @@ interface ThreadLayoutProps {
   variant?: 'default' | 'shared';
   chatInput?: React.ReactNode;
   leftSidebarState?: 'collapsed' | 'expanded';
+  streamingTextContent?: string; // Live streaming content from assistant (includes text + XML)
+  streamingToolCall?: any; // Live streaming tool call with arguments
 }
 
-export function ThreadLayout({
+export const ThreadLayout = memo(function ThreadLayout({
   children,
   threadId,
   projectName,
@@ -82,16 +84,41 @@ export function ThreadLayout({
   variant = 'default',
   chatInput,
   leftSidebarState = 'collapsed',
+  streamingTextContent,
+  streamingToolCall,
 }: ThreadLayoutProps) {
   const isActuallyMobile = useIsMobile();
-  
+
   // Track when panel should be visible
   const shouldShowPanel = isSidePanelOpen && initialLoadCompleted;
-  
+
+  // Extract streaming tool arguments as JSON string (what FileOperationToolView expects)
+  const streamingToolArgsJson = React.useMemo(() => {
+    if (!streamingToolCall) return undefined;
+
+    try {
+      // metadata is a JSON string, parse it first
+      const metadata = typeof streamingToolCall.metadata === 'string'
+        ? JSON.parse(streamingToolCall.metadata)
+        : streamingToolCall.metadata;
+
+      // Get the arguments from metadata.tool_calls[0].arguments
+      const args = metadata?.tool_calls?.[0]?.arguments;
+
+      if (!args) return undefined;
+
+      // Arguments is already a JSON string (might be escaped, unescape if needed)
+      const argsStr = typeof args === 'string' ? args : JSON.stringify(args);
+      return argsStr;
+    } catch (e) {
+      return undefined;
+    }
+  }, [streamingToolCall]);
+
   // Refs for panel APIs to control sizes programmatically
   const mainPanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
-  
+
   // Update sizes when panel visibility changes with smooth animation
   useEffect(() => {
     if (shouldShowPanel) {
@@ -140,6 +167,7 @@ export function ThreadLayout({
                 agentName={agentName}
                 disableInitialAnimation={disableInitialAnimation}
                 compact={true}
+                streamingText={streamingToolArgsJson}
               />
             </div>
           )}
@@ -205,6 +233,7 @@ export function ThreadLayout({
           onFileClick={onViewFiles}
           agentName={agentName}
           disableInitialAnimation={disableInitialAnimation}
+          streamingText={streamingToolArgsJson}
         />
 
         {sandboxId && (
@@ -224,8 +253,8 @@ export function ThreadLayout({
   // Desktop layout with resizable panels
   return (
     <div className="flex h-screen">
-      <ResizablePanelGroup 
-        direction="horizontal" 
+      <ResizablePanelGroup
+        direction="horizontal"
         className="h-screen"
         style={{ transition: 'none' }}
       >
@@ -261,11 +290,11 @@ export function ThreadLayout({
         </ResizablePanel>
 
         {/* Resizable handle - always render */}
-        <ResizableHandle 
+        <ResizableHandle
           withHandle={true}
           className="z-20 w-0"
         />
-        
+
         {/* Side panel - always render but control size */}
         <ResizablePanel
           ref={sidePanelRef}
@@ -276,7 +305,7 @@ export function ThreadLayout({
           className={cn(
             "relative bg-transparent",
             // Match ChatInput horizontal spacing: px-4
-            shouldShowPanel ? "pr-4 pb-5 pt-4"  : "px-0",
+            shouldShowPanel ? "pr-4 pb-5 pt-4" : "px-0",
             !shouldShowPanel ? "hidden" : ""
           )}
         >
@@ -296,6 +325,7 @@ export function ThreadLayout({
             onFileClick={onViewFiles}
             agentName={agentName}
             disableInitialAnimation={disableInitialAnimation}
+            streamingText={streamingToolArgsJson}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -310,5 +340,5 @@ export function ThreadLayout({
       />
     </div>
   );
-}
+});
 

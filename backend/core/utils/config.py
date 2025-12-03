@@ -90,6 +90,10 @@ class Configuration:
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
     # ============================================
     
+    # ===== PRESENCE CONFIGURATION =====
+    DISABLE_PRESENCE: bool = False  # Disable presence tracking entirely
+    # ==================================
+    
     SYSTEM_ADMIN_USER_ID: Optional[str] = None  # User ID that owns shared/fallback agents
 
     # Subscription tier IDs - Production
@@ -522,7 +526,6 @@ class Configuration:
             return 'https://kortix.com'
         elif self.ENV_MODE == EnvMode.STAGING:
             return 'http://localhost:3000'
-            # return 'https://staging.suna.so'
         else:
             return 'http://localhost:3000'
     

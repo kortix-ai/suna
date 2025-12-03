@@ -13,7 +13,7 @@ export interface ChatInputSectionProps {
   value: string;
   onChangeText: (text: string) => void;
   onSendMessage: (content: string, agentId: string, agentName: string) => void;
-  onSendAudio: (uri: string) => Promise<void>;
+  onSendAudio: () => Promise<void>;
   placeholder: string;
   agent?: Agent;
   
@@ -75,8 +75,6 @@ const GRADIENT_STYLE = {
   height: 250,
 };
 
-// Empty function for onSendAudio - stable reference
-const NOOP_SEND_AUDIO = async () => {};
 
 /**
  * ChatInputSection Component
@@ -176,7 +174,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           value={value}
           onChangeText={onChangeText}
           onSendMessage={onSendMessage}
-          onSendAudio={NOOP_SEND_AUDIO}
+          onSendAudio={onSendAudio}
           onAttachPress={onAttachPress}
           onAgentPress={onAgentPress}
           onAudioRecord={onAudioRecord}

@@ -105,13 +105,12 @@ class SubscriptionHandler:
         await self.trial_service.handle_trial_conversion(account_id, subscription, tier_info)
     
     async def _route_to_lifecycle_if_needed(self, event, subscription, client):
-        if subscription.status in ['active', 'trialing']:
+        if subscription.status in ['active', 'trialing', 'past_due']:
             previous_attributes = event.data.get('previous_attributes', {}) if event.type == 'customer.subscription.updated' else None
             
             from core.billing.subscriptions import subscription_service
             await subscription_service.handle_subscription_change(subscription, previous_attributes)
         
-        # Invalidate account state cache after any subscription change
         account_id = await self.subscription_service.get_account_id(subscription)
         if account_id:
             await invalidate_account_state_cache(account_id)
@@ -148,6 +147,8 @@ class SubscriptionHandler:
         
         await self._sync_subscription_status(account_id, subscription)
         
+        await self._handle_unpaid_status(subscription, account_id)
+        
         await self._handle_trial_status_changes(event, subscription, account_id, client)
         
         await self._handle_scheduled_downgrades(subscription, account_id, client)
@@ -165,6 +166,11 @@ class SubscriptionHandler:
             logger.info(f"[SYNC] Synced status='{subscription.status}' & anchor='{billing_anchor}' for {account_id}")
         except Exception as e:
             logger.error(f"[SYNC] Error syncing subscription status: {e}")
+    
+    async def _handle_unpaid_status(self, subscription: Dict, account_id: str):
+        if subscription.status == 'unpaid':
+            logger.info(f"[GRACE PERIOD ENDED] Subscription {subscription.id} is unpaid - revoking access for {account_id}")
+            await self.cancellation_service.process_subscription_deletion(subscription, [])
     
     async def _handle_trial_status_changes(self, event, subscription: Dict, account_id: str, client):
         previous_attributes = event.data.get('previous_attributes', {})

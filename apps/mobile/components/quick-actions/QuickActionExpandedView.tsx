@@ -52,12 +52,12 @@ export function QuickActionExpandedView({
   // Load random prompts on mount and when actionId changes
   React.useEffect(() => {
     if (showPromptExamples) {
-      setPrompts(getRandomPrompts(actionId, 3));
+      setPrompts(getRandomPrompts(actionId, 3, t));
     }
-  }, [actionId, showPromptExamples]);
+  }, [actionId, showPromptExamples, t]);
   
   const refreshPrompts = () => {
-    setPrompts(getRandomPrompts(actionId, 3));
+    setPrompts(getRandomPrompts(actionId, 3, t));
   };
   
   const handlePreview = (templateId: string, templateName: string) => {

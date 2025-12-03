@@ -7,6 +7,9 @@ from io import BytesIO
 import uuid
 from litellm import aimage_generation, aimage_edit
 import base64
+import os
+import random
+from core.utils.logger import logger
 
 @tool_metadata(
     display_name="Image Editor",
@@ -61,7 +64,23 @@ class SandboxImageEditTool(SandboxToolsBase):
         """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
         try:
             await self._ensure_sandbox()
-            model="gpt-image-1"
+            
+            # Check if mock mode is enabled (for development/testing)
+            use_mock = os.getenv("MOCK_IMAGE_GENERATION", "false").lower() == "true"
+            
+            if use_mock:
+                logger.warning("🎨 Image generation running in MOCK mode - using placeholder images (MOCK_IMAGE_GENERATION=true)")
+                # Fast mock mode - just download a random placeholder image
+                image_filename = await self._download_placeholder_image()
+                if isinstance(image_filename, ToolResult):  # Error occurred
+                    return image_filename
+                    
+                return self.success_response(
+                    f"Successfully generated image using mode '{mode}' (mock). Image saved as: {image_filename}. You can use the ask tool to display the image."
+                )
+            
+            # Real API implementation
+            model = "gpt-image-1"
 
             if mode == "generate":
                 response = await aimage_generation(
@@ -162,3 +181,27 @@ class SandboxImageEditTool(SandboxToolsBase):
 
         except Exception as e:
             return self.fail_response(f"Failed to download and save image: {str(e)}")
+    
+    async def _download_placeholder_image(self) -> str | ToolResult:
+        """Fast mock - download a random placeholder image from the internet."""
+        try:
+            # Use picsum.photos for random beautiful images - fast and free
+            random_id = random.randint(1, 1000)
+            placeholder_url = f"https://picsum.photos/1024/1024?random={random_id}"
+            
+            # Download the image
+            async with httpx.AsyncClient() as client:
+                response = await client.get(placeholder_url, follow_redirects=True)
+                response.raise_for_status()
+                image_data = response.content
+            
+            # Generate random filename
+            random_filename = f"generated_image_{uuid.uuid4().hex[:8]}.png"
+            sandbox_path = f"{self.workspace_path}/{random_filename}"
+            
+            # Save to sandbox
+            await self.sandbox.fs.upload_file(image_data, sandbox_path)
+            return random_filename
+            
+        except Exception as e:
+            return self.fail_response(f"Failed to download placeholder image: {str(e)}")

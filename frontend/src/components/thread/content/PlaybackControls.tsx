@@ -408,21 +408,16 @@ export const PlaybackControls = ({
         // If it's an assistant message, stream it
         if (currentMessage.type === 'assistant') {
           try {
-            // Parse the content if it's JSON
-            let content = currentMessage.content;
-            try {
-              const parsed = JSON.parse(content);
-              if (parsed.content) {
-                content = parsed.content;
-              }
-            } catch (e) {
-              // Not JSON, use as is
-            }
+            // Extract text from metadata.text_content
+            const metadata = typeof currentMessage.metadata === 'string' 
+              ? JSON.parse(currentMessage.metadata) 
+              : currentMessage.metadata;
+            const textToStream = metadata?.text_content || '';
 
             // Stream the message content and wait for completion
             let cleanup: (() => void) | undefined;
             await new Promise<void>((resolve) => {
-              cleanup = streamText(content, () => {
+              cleanup = streamText(textToStream, () => {
                 console.log('Stream completed for message', msgIndex);
                 resolve();
               });
