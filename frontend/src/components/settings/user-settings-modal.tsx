@@ -28,6 +28,7 @@ import {
     Smartphone,
     AppWindow,
     Users,
+    Key,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -79,14 +80,14 @@ import {
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 import { getPlanName, getPlanIcon } from '../billing/plan-utils';
 import { TierBadge } from '../billing/tier-badge';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import ThreadUsage from '@/components/billing/thread-usage';
 import { formatCredits } from '@/lib/utils/credit-formatter';
 import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
 import { ReferralsTab } from '@/components/referrals/referrals-tab';
 
-type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations' | 'referrals';
+type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations' | 'api-keys' | 'referrals';
 
 interface Tab {
     id: TabId;
@@ -121,6 +122,7 @@ export function UserSettingsModal({
         ...(!isProduction ? [{ id: 'referrals' as TabId, label: 'Referrals', icon: Users }] : []),
         { id: 'knowledge-base', label: 'Knowledge Base', icon: FileText },
         { id: 'integrations', label: 'Integrations', icon: Plug },
+        { id: 'api-keys', label: 'API Keys', icon: Key },
         ...(isLocal ? [{ id: 'env-manager' as TabId, label: 'Env Manager', icon: KeyRound }] : []),
     ];
     
@@ -135,6 +137,8 @@ export function UserSettingsModal({
             window.open('/knowledge', '_blank');
         } else if (tabId === 'integrations') {
             window.open('/settings/credentials', '_blank');
+        } else if (tabId === 'api-keys') {
+            window.open('/settings/api-keys', '_blank');
         } else {
             setActiveTab(tabId);
         }
@@ -208,6 +212,7 @@ export function UserSettingsModal({
                                 {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                                 {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
                                 {activeTab === 'integrations' && <IntegrationsTab />}
+                                {activeTab === 'api-keys' && <ApiKeysTab />}
                             </div>
                         </div>
                     </div>
@@ -262,6 +267,7 @@ export function UserSettingsModal({
                             {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                             {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
                             {activeTab === 'integrations' && <IntegrationsTab />}
+                            {activeTab === 'api-keys' && <ApiKeysTab />}
                         </div>
                     </div>
                 )}
@@ -1202,3 +1208,22 @@ function IntegrationsTab() {
         </div>
     );
 }
+
+function ApiKeysTab() {
+    useEffect(() => {
+        window.open('/settings/api-keys', '_blank');
+    }, []);
+    
+    return (
+        <div className="p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
+            <div className="text-center py-8">
+                <Key className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <h3 className="text-lg font-semibold mb-2">Opening API Keys</h3>
+                <p className="text-sm text-muted-foreground">
+                    Redirecting to API Keys page...
+                </p>
+            </div>
+        </div>
+    );
+}
+

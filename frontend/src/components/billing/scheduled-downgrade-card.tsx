@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useCancelScheduledChange } from '@/hooks/billing';
 import { TierBadge } from './tier-badge';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 
 interface ScheduledDowngradeCardProps {
   scheduledChange: {

@@ -1,6 +1,6 @@
 'use client';
 
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { motion } from 'framer-motion';
 import React, { useRef, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';

@@ -2,7 +2,7 @@
 
 import { NavMenu } from '@/components/home/nav-menu';
 import { ThemeToggle } from '@/components/home/theme-toggle';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import { Menu, X, Github } from 'lucide-react';
 import { AnimatePresence, motion, useScroll } from 'framer-motion';

@@ -1,5 +1,5 @@
 'use client';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile } from '@/hooks/utils';
 import { useState, useEffect, useRef, FormEvent, lazy, Suspense } from 'react';

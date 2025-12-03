@@ -274,7 +274,7 @@ class AgentsClient:
         Initialize the Agents API client
 
         Args:
-            base_url: Base URL of the API (e.g., "https://api.suna.so/api")
+            base_url: Base URL of the API (e.g., "https://api.kortix.com/v1")
             auth_token: JWT token for authentication
             custom_headers: Additional headers to include in all requests
             timeout: Request timeout in seconds
