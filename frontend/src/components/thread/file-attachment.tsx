@@ -332,23 +332,39 @@ export function FileAttachment({
         setImageLoaded(false);
     }, [imageUrl, localPreviewUrl, filepath]);
 
-    // Parse XLSX to get sheet names when blob URL is available
+    // Parse XLSX/XLS to get sheet names when blob URL is available
     React.useEffect(() => {
         if (isXlsx && xlsxBlobUrl && shouldShowPreview) {
             const parseSheetNames = async () => {
                 try {
-                    // Import XLSX dynamically to avoid bundle size issues
-                    const XLSX = await import('xlsx');
-
-                    // Convert blob URL to binary data
+                    // Convert blob URL to array buffer to detect format
                     const response = await fetch(xlsxBlobUrl);
                     const arrayBuffer = await response.arrayBuffer();
-
-                    // Read workbook
-                    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-                    setXlsxSheetNames(workbook.SheetNames);
+                    const view = new Uint8Array(arrayBuffer);
+                    
+                    // Detect format: XLSX starts with PK (0x50 0x4B), XLS starts with D0 CF 11 E0
+                    const isXlsxFormat = view.length >= 4 && view[0] === 0x50 && view[1] === 0x4B;
+                    const isXlsFormat = view.length >= 8 && view[0] === 0xD0 && view[1] === 0xCF;
+                    
+                    if (isXlsxFormat) {
+                        // Use read-excel-file for XLSX
+                        const { readSheetNames } = await import('read-excel-file');
+                        const blob = new Blob([arrayBuffer], { 
+                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+                        });
+                        const names = await readSheetNames(blob);
+                        setXlsxSheetNames(names);
+                    } else if (isXlsFormat) {
+                        // Use xlsx library for old XLS format
+                        const XLSX = await import('xlsx');
+                        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+                        setXlsxSheetNames(workbook.SheetNames || []);
+                    } else {
+                        console.warn('Unknown Excel format');
+                        setXlsxSheetNames([]);
+                    }
                 } catch (error) {
-                    console.error('Failed to parse XLSX sheet names:', error);
+                    console.error('Failed to parse Excel sheet names:', error);
                     setXlsxSheetNames([]);
                 }
             };
