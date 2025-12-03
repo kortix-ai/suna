@@ -6,7 +6,6 @@
 
 Build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue)](./license)
 [![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/RvFhXUdZ9H)
 [![Twitter Follow](https://img.shields.io/twitter/follow/kortix)](https://x.com/korti)
 [![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/suna)](https://github.com/kortix-ai/suna)
@@ -52,7 +51,7 @@ Create your own specialized agents tailored to specific domains, workflows, or b
 - [🚀 Quick Start](#-quick-start)
 - [🏠 Self-Hosting](#-self-hosting)
 - [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
+- [📄 License](LICENSE)
 
 ## 🎯 Agent Examples & Use Cases
 
@@ -171,9 +170,6 @@ That's it! Your Kortix platform will be running with Suna ready to assist you.
 
 Just use "setup.py". Ty mate.
 
-## 📄 License
-
-Kortix is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
 
 ---
 
