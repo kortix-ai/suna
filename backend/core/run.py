@@ -377,9 +377,10 @@ class PromptManager:
                 builder_prompt = get_agent_builder_prompt()
                 system_content += f"\n\n{builder_prompt}"
         
-        # OPTIMIZED: Run KB and locale queries in parallel to reduce latency
+        # OPTIMIZED: Run KB, locale, and username queries in parallel to reduce latency
         kb_task = None
         locale_task = None
+        username_task = None
         
         # Start KB query if needed
         if agent_config and client and 'agent_id' in agent_config:
@@ -408,6 +409,29 @@ class PromptManager:
                     return None
             
             locale_task = asyncio.create_task(fetch_locale())
+            
+            # Start username query if needed
+            async def fetch_username():
+                try:
+                    user = await client.auth.admin.get_user_by_id(user_id)
+                    if user and user.user:
+                        user_metadata = user.user.user_metadata or {}
+                        email = user.user.email
+                        
+                        # Extract username/name from metadata, fallback to email prefix
+                        username = (
+                            user_metadata.get('full_name') or
+                            user_metadata.get('name') or
+                            user_metadata.get('display_name') or
+                            (email.split('@')[0] if email else None)
+                        )
+                        return username
+                    return None
+                except Exception as e:
+                    logger.warning(f"Failed to fetch username for user {user_id}: {e}")
+                    return None
+            
+            username_task = asyncio.create_task(fetch_username())
         
         # Wait for KB query to complete
         if kb_task:
@@ -577,6 +601,19 @@ Example of correct tool call format (multiple invokes in one block):
                     logger.debug(f"Added locale context ({locale}) to system prompt for user {user_id}")
             except Exception as e:
                 logger.warning(f"Failed to add locale context to system prompt: {e}")
+
+        # Process username query result (already fetched in parallel above)
+        if username_task:
+            try:
+                username = await username_task
+                if username:
+                    username_info = f"\n\n=== USER INFORMATION ===\n"
+                    username_info += f"The user's name is: {username}\n"
+                    username_info += "Use this information to personalize your responses and address the user appropriately.\n"
+                    system_content += username_info
+                    logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
+            except Exception as e:
+                logger.warning(f"Failed to add username to system prompt: {e}")
 
         system_message = {"role": "system", "content": system_content}
         return system_message
