@@ -28,8 +28,7 @@ from langfuse.client import StatefulTraceClient
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.tools.task_list_tool import TaskListTool
 from core.agentpress.tool import SchemaType
-from core.tools.people_search_tool import PeopleSearchTool
-from core.tools.company_search_tool import CompanySearchTool
+from core.tools.research_search_tool import ResearchSearchTool
 from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
 from core.tools.vapi_voice_tool import VapiVoiceTool
@@ -167,13 +166,9 @@ class ToolManager:
         
         # Register search tools if EXA API key is available
         if config.EXA_API_KEY:
-            if 'people_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('people_search_tool')
-                self.thread_manager.add_tool(PeopleSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-            
-            if 'company_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('company_search_tool')
-                self.thread_manager.add_tool(CompanySearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+            if 'research_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('research_search_tool')
+                self.thread_manager.add_tool(ResearchSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
         
         if config.ENV_MODE != EnvMode.PRODUCTION and config.VAPI_PRIVATE_KEY and 'vapi_voice_tool' not in disabled_tools:
             enabled_methods = self._get_enabled_methods_for_tool('vapi_voice_tool')
@@ -815,7 +810,7 @@ class AgentRunner:
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
             'sb_docs_tool',
-            'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
+            'data_providers_tool', 'browser_tool', 'research_search_tool', 
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
             'agent_creation_tool'
         ]

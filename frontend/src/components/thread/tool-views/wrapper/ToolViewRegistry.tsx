@@ -265,6 +265,17 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   // Get file path directly from tool call arguments (from metadata)
   const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file;
 
+  // Route research-search to appropriate view based on search_type
+  let effectiveName = name;
+  if (name === 'research-search' || name === 'research_search') {
+    const searchType = toolCall?.arguments?.search_type;
+    if (searchType === 'company') {
+      effectiveName = 'company-search';
+    } else {
+      effectiveName = 'people-search'; // default to people-search
+    }
+  }
+
   // check if the file path is a presentation slide
   const { isValid: isPresentationSlide, presentationName, slideNumber } = parsePresentationSlidePath(filePath);
 
@@ -278,10 +289,10 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     // 'presentation-styles',
   ]
 
-  const isAlreadyPresentationTool = presentationTools.includes(name);
+  const isAlreadyPresentationTool = presentationTools.includes(effectiveName);
 
   // determine the effective tool name (must be computed before hook call)
-  const effectiveToolName = (isPresentationSlide && !isAlreadyPresentationTool) ? 'create-slide' : name;
+  const effectiveToolName = (isPresentationSlide && !isAlreadyPresentationTool) ? 'create-slide' : effectiveName;
 
   // use the tool view component - hook must be called unconditionally
   const ToolViewComponent = useToolView(effectiveToolName);

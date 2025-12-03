@@ -31,7 +31,7 @@ _STATELESS_TOOL_INSTANCES: Dict[Type[Tool], Tool] = {}
 STATELESS_TOOLS = {
     'expand_msg_tool', 'message_tool', 'task_list_tool',
     'data_providers_tool', 'web_search_tool', 'image_search_tool',
-    'people_search_tool', 'company_search_tool', 'paper_search_tool',
+    'research_search_tool', 'paper_search_tool',
 }
 
 

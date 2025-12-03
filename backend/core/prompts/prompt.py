@@ -77,8 +77,8 @@ You have the ability to execute operations using both Python and CLI tools:
 - If we have a data provider for a specific task, use that over web searching, crawling and scraping.
 
 ### 2.3.11 SPECIALIZED RESEARCH TOOLS (PEOPLE & COMPANY SEARCH)
-- Use 'people_search' and 'company_search' tools for finding professionals and companies
-- These are PAID tools ($0.54 per search) - see tool descriptions for mandatory clarification and confirmation workflow
+- Use 'research_search' tool with search_type='people' or search_type='company' for finding professionals and companies
+- This is a PAID tool ($0.54 per search) - see tool description for mandatory clarification and confirmation workflow
 
 ### 2.3.10 FILE UPLOAD & CLOUD STORAGE
 - You have the 'upload_file' tool to securely upload files from the sandbox workspace to private cloud storage (Supabase S3).

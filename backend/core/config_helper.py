@@ -210,7 +210,7 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
         "sb_presentation_tool": True,
         "browser_tool": True,
         "data_providers_tool": True,
-        "people_search_tool": False,
+        "research_search_tool": False,
         "agent_config_tool": True,
         "mcp_search_tool": True,
         "credential_profile_tool": True,
