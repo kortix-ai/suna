@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Search, ArrowLeft, Info, Zap, ChevronRight, Plus, Sparkles, CheckCircle2, Link2 } from 'lucide-react';
+import { Loader2, Search, ArrowLeft, Info, Zap, ChevronRight, Plus, Sparkles, CheckCircle2, Link2, Activity } from 'lucide-react';
 import { useComposioAppsWithTriggers, useComposioAppTriggers, useCreateComposioEventTrigger, ComposioTriggerType } from '@/hooks/composio/use-composio-triggers';
 import { useUpdateTrigger } from '@/hooks/triggers';
 import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { cn, truncateString } from '@/lib/utils';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
 import { Markdown } from '@/components/ui/markdown';
+import { AgentModelSelector } from '@/components/agents/config/model-selector';
 
 interface EventBasedTriggerDialogProps {
     open: boolean;
@@ -316,6 +317,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
     const [name, setName] = useState('');
     const [prompt, setPrompt] = useState('');
     const [profileId, setProfileId] = useState('');
+    const [model, setModel] = useState('kortix/basic');
     const [executionType] = useState<'agent'>('agent');
     const [showComposioConnector, setShowComposioConnector] = useState(false);
 
@@ -362,6 +364,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
             setName('');
             setPrompt('');
             setProfileId('');
+            setModel('kortix/basic');
             setShowComposioConnector(false);
         }
     }, [open, isEditMode]);
@@ -391,8 +394,9 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
             setName(existingTrigger.name || '');
             setPrompt(triggerConfig.agent_prompt || '');
             setProfileId(triggerConfig.profile_id || '');
+            setModel(triggerConfig.model || 'kortix/basic');
 
-            const { agent_prompt, profile_id, provider_id, trigger_slug, qualified_name, ...triggerSpecificConfig } = triggerConfig;
+            const { agent_prompt, profile_id, provider_id, trigger_slug, qualified_name, model: _, ...triggerSpecificConfig } = triggerConfig;
             setConfig(triggerSpecificConfig);
             const isComposioTrigger = triggerConfig.provider_id === 'composio' || existingTrigger.provider_id === 'composio';
 
@@ -468,14 +472,14 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
         if (!agentId || !profileId || !selectedTrigger) return;
         try {
             if (isEditMode && existingTrigger) {
-                // Update existing trigger using the general update API
                 const updatedConfig = {
                     ...config,
                     profile_id: profileId,
                     trigger_slug: selectedTrigger.slug,
                     qualified_name: `composio.${selectedApp?.slug}`,
                     provider_id: 'composio',
-                    agent_prompt: prompt || 'Read this'
+                    agent_prompt: prompt || 'Read this',
+                    model: model
                 };
 
                 await updateTrigger.mutateAsync({
@@ -491,7 +495,6 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                     onTriggerUpdated(existingTrigger.trigger_id);
                 }
             } else {
-                // Create new trigger using Composio-specific API
                 const selectedProfile = profiles?.find(p => p.profile_id === profileId);
                 const base: any = {
                     agent_id: agentId,
@@ -501,6 +504,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                     name: name || `${selectedTrigger.toolkit.name} → Agent`,
                     connected_account_id: selectedProfile?.connected_account_id,
                     toolkit_slug: selectedApp?.slug,
+                    model: model,
                 };
                 const payload = executionType === 'agent'
                     ? { ...base, route: 'agent' as const, agent_prompt: (prompt || 'Read this') }
@@ -808,6 +812,17 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                                                 />
                                                                 <p className="text-xs text-muted-foreground">
                                                                     Use <code className="text-xs bg-muted px-1 rounded">{'{{variable_name}}'}</code> to add variables to the prompt
+                                                                </p>
+                                                            </div>
+
+                                                            <div className="space-y-2">
+                                                                <Label className="text-sm">Model</Label>
+                                                                <AgentModelSelector
+                                                                    value={model}
+                                                                    onChange={setModel}
+                                                                />
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    Choose which model to use when this event triggers
                                                                 </p>
                                                             </div>
                                                         </div>
