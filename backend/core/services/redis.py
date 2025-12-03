@@ -282,3 +282,15 @@ async def keys(pattern: str) -> List[str]:
 async def expire(key: str, seconds: int):
     redis_client = await get_client()
     return await redis_client.expire(key, seconds)
+
+
+async def incr(key: str):
+    """Increment the integer value of a key by one."""
+    redis_client = await get_client()
+    return await redis_client.incr(key)
+
+
+async def decr(key: str):
+    """Decrement the integer value of a key by one."""
+    redis_client = await get_client()
+    return await redis_client.decr(key)

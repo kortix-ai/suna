@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRoute
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from core.services import redis
+from core.utils.openapi_config import configure_openapi
 import sentry
 from contextlib import asynccontextmanager
 from core.agentpress.thread_manager import ThreadManager
@@ -143,7 +144,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during application startup: {e}")
         raise
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    swagger_ui_parameters={
+        "persistAuthorization": True,  # Keep auth between page refreshes
+    },
+)
+
+# Configure OpenAPI docs with API Key and Bearer token auth
+configure_openapi(app)
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
