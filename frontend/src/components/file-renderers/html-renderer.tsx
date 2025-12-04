@@ -6,13 +6,13 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Monitor, Code, ExternalLink } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
-import type { Project } from '@/lib/api/threads';
+import type { FileRendererProject } from './index';
 
 interface HtmlRendererProps {
   content: string;
   previewUrl: string;
   className?: string;
-  project?: Project;
+  project?: FileRendererProject;
 }
 
 export function HtmlRenderer({

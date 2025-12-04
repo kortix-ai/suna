@@ -8,11 +8,22 @@ import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import type { Project } from '@/lib/api/threads';
 
+// Type that accepts both Project and a more flexible project-like object
+type ProjectLike = Project | {
+    sandbox?: {
+        sandbox_url?: string;
+        id?: string;
+        vnc_preview?: string;
+        pass?: string;
+    };
+    [key: string]: any;
+};
+
 interface HtmlRendererProps {
     content: string;
     previewUrl: string;
     className?: string;
-    project?: Project;
+    project?: ProjectLike;
 }
 
 /**

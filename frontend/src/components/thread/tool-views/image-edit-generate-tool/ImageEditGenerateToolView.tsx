@@ -11,6 +11,8 @@ import {
   ImageOff,
   Image as ImageIcon,
   ArrowRight,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
@@ -20,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useImageContent } from '@/hooks/files';
 import { useDownloadRestriction } from '@/hooks/billing';
 
@@ -175,6 +178,7 @@ export function ImageEditGenerateToolView({
   project,
 }: ImageEditGenerateToolViewProps) {
   const [progress, setProgress] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     if (isStreaming) {
@@ -192,10 +196,11 @@ export function ImageEditGenerateToolView({
   const {
     mode,
     prompt,
-    inputImagePaths,
     generatedImagePaths,
     status,
     error,
+    isBatch,
+    batchResults,
     actualIsSuccess,
     actualToolTimestamp,
     actualAssistantTimestamp,
@@ -204,9 +209,12 @@ export function ImageEditGenerateToolView({
   const sandboxId = project?.sandbox?.id;
   const isGenerate = mode === 'generate';
   const isEdit = mode === 'edit';
-  const hasInputImages = inputImagePaths.length > 0;
-  const hasOutputImages = generatedImagePaths.length > 0;
   const totalImages = generatedImagePaths.length;
+  const successCount = batchResults.filter(r => r.success).length;
+  const failedCount = batchResults.filter(r => !r.success).length;
+  
+  // Current batch item
+  const currentResult = batchResults[currentIndex];
 
   // Truncate prompt for header
   const shortPrompt = prompt && prompt.length > 60 ? `${prompt.substring(0, 60)}...` : prompt;
@@ -274,8 +282,8 @@ export function ImageEditGenerateToolView({
       </CardHeader>
 
       {/* Content */}
-      <CardContent className="p-0 flex-1 overflow-auto">
-        {isStreaming ? (
+      <CardContent className="p-0 flex-1 overflow-hidden">
+        {isStreaming && batchResults.length === 0 ? (
           /* Loading State */
           <div className="flex flex-col items-center justify-center h-full min-h-[300px] p-8 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="text-center w-full max-w-xs">
@@ -299,115 +307,141 @@ export function ImageEditGenerateToolView({
               <p className="text-xs text-muted-foreground mt-2">{progress}%</p>
             </div>
           </div>
-        ) : hasOutputImages ? (
-          /* Images Display */
-          <div className="p-6 space-y-6">
-            {/* Edit Mode: Show input → output transformation */}
-            {isEdit && hasInputImages && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <Edit3 className="h-4 w-4" />
-                  Transformation
-                </div>
-                
-                {inputImagePaths.map((inputPath, index) => {
-                  const outputPath = generatedImagePaths[index];
-                  return (
-                    <div key={inputPath} className="flex items-stretch gap-4">
-                      {/* Input Image */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted-foreground mb-2">Original</p>
-                        <ImageDisplay
-                          filePath={inputPath}
-                          sandboxId={sandboxId}
-                          compact
-                        />
-                      </div>
-                      
-                      {/* Arrow */}
-                      <div className="flex items-center justify-center px-2">
-                        <ArrowRight className="h-5 w-5 text-muted-foreground" />
-                      </div>
-                      
-                      {/* Output Image */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted-foreground mb-2">Result</p>
-                        {outputPath ? (
-                          <ImageDisplay
-                            filePath={outputPath}
-                            sandboxId={sandboxId}
-                            compact
-                          />
-                        ) : (
-                          <div className="h-32 rounded-xl border border-dashed flex items-center justify-center">
-                            <p className="text-xs text-muted-foreground">Processing...</p>
-                          </div>
-                        )}
-                      </div>
+        ) : batchResults.length > 0 ? (
+          <ScrollArea className="h-full w-full">
+            <div className="p-4">
+              {/* Batch Navigation Header */}
+              {isBatch && (
+                <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Image {currentIndex + 1} of {batchResults.length}
+                      </span>
+                      {currentResult?.success ? (
+                        <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                      ) : (
+                        <AlertTriangle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <p className="text-sm font-medium text-foreground line-clamp-2">
+                      {currentResult?.prompt}
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 ml-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+                      disabled={currentIndex === 0}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => setCurrentIndex(Math.min(batchResults.length - 1, currentIndex + 1))}
+                      disabled={currentIndex === batchResults.length - 1}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
 
-            {/* Generate Mode or Edit without showing transformation */}
-            {(isGenerate || !hasInputImages) && (
-              <div className="space-y-6">
-                {generatedImagePaths.map((imgPath, index) => (
-                  <ImageDisplay
-                    key={`${imgPath}-${index}`}
-                    filePath={imgPath}
-                    sandboxId={sandboxId}
-                    label={totalImages > 1 ? `Image ${index + 1}` : undefined}
-                  />
-                ))}
-              </div>
-            )}
-            
-            {/* Prompt */}
-            {prompt && (
-              <div className="p-4 rounded-xl bg-muted/50 border">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Prompt</p>
-                <p className="text-sm text-foreground">{prompt}</p>
-              </div>
-            )}
-          </div>
+              {/* Current Result Display */}
+              {currentResult && (
+                <div className="space-y-4">
+                  {currentResult.success && currentResult.imageFilename ? (
+                    /* Success: Show Image */
+                    <div className="space-y-4">
+                      {/* Edit mode: show input → output */}
+                      {isEdit && currentResult.inputImagePath ? (
+                        <div className="flex items-stretch gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted-foreground mb-2">Original</p>
+                            <ImageDisplay
+                              filePath={currentResult.inputImagePath}
+                              sandboxId={sandboxId}
+                              compact
+                            />
+                          </div>
+                          <div className="flex items-center justify-center px-2">
+                            <ArrowRight className="h-5 w-5 text-muted-foreground" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-muted-foreground mb-2">Result</p>
+                            <ImageDisplay
+                              filePath={currentResult.imageFilename}
+                              sandboxId={sandboxId}
+                              compact
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        /* Generate mode: show just the output */
+                        <ImageDisplay
+                          filePath={currentResult.imageFilename}
+                          sandboxId={sandboxId}
+                        />
+                      )}
+                      
+                      {/* Prompt for single mode */}
+                      {!isBatch && currentResult.prompt && (
+                        <div className="p-3 rounded-lg bg-muted/50 border">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Prompt</p>
+                          <p className="text-sm text-foreground">{currentResult.prompt}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* Failure: Show Error */
+                    <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                      <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-rose-100 to-rose-50 dark:from-rose-800/40 dark:to-rose-900/60">
+                        <AlertTriangle className="h-8 w-8 text-rose-500 dark:text-rose-400" />
+                      </div>
+                      <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
+                        Processing Failed
+                      </h3>
+                      <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md mb-4">
+                        {currentResult.error || 'An error occurred during processing.'}
+                      </p>
+                      {!isBatch && currentResult.prompt && (
+                        <div className="p-3 rounded-lg bg-muted/50 border max-w-md w-full">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Prompt</p>
+                          <p className="text-sm text-foreground break-words">{currentResult.prompt}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </ScrollArea>
         ) : (
-          /* No Images / Error State */
+          /* No Results State */
           <div className="flex flex-col items-center justify-center h-full min-h-[300px] p-8 text-center">
             <div className={cn(
               "w-16 h-16 rounded-full flex items-center justify-center mb-4",
-              actualIsSuccess
-                ? isGenerate
-                  ? "bg-gradient-to-b from-purple-100 to-purple-50 dark:from-purple-800/40 dark:to-purple-900/60"
-                  : "bg-gradient-to-b from-blue-100 to-blue-50 dark:from-blue-800/40 dark:to-blue-900/60"
-                : "bg-gradient-to-b from-rose-100 to-rose-50 dark:from-rose-800/40 dark:to-rose-900/60"
+              isGenerate
+                ? "bg-gradient-to-b from-purple-100 to-purple-50 dark:from-purple-800/40 dark:to-purple-900/60"
+                : "bg-gradient-to-b from-blue-100 to-blue-50 dark:from-blue-800/40 dark:to-blue-900/60"
             )}>
-              {actualIsSuccess ? (
-                isGenerate ? (
-                  <Sparkles className="h-8 w-8 text-purple-500 dark:text-purple-400" />
-                ) : (
-                  <Edit3 className="h-8 w-8 text-blue-500 dark:text-blue-400" />
-                )
+              {isGenerate ? (
+                <Sparkles className="h-8 w-8 text-purple-500 dark:text-purple-400" />
               ) : (
-                <AlertTriangle className="h-8 w-8 text-rose-500 dark:text-rose-400" />
+                <Edit3 className="h-8 w-8 text-blue-500 dark:text-blue-400" />
               )}
             </div>
-            
             <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-              {actualIsSuccess ? 'Processing Complete' : 'Processing Failed'}
+              {isStreaming ? 'Processing...' : 'No Results'}
             </h3>
-            
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md mb-4">
-              {error || status || (actualIsSuccess ? 'Waiting for image...' : 'An error occurred during processing.')}
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-md">
+              {error || status || 'Waiting for results...'}
             </p>
-
-            {prompt && (
-              <div className="p-3 rounded-lg bg-muted/50 border max-w-md w-full">
-                <p className="text-xs font-medium text-muted-foreground mb-1">Prompt</p>
-                <p className="text-sm text-foreground break-words">{prompt}</p>
-              </div>
-            )}
           </div>
         )}
       </CardContent>
@@ -424,10 +458,20 @@ export function ImageEditGenerateToolView({
             {isGenerate ? <Sparkles className="h-3 w-3 mr-1" /> : <Edit3 className="h-3 w-3 mr-1" />}
             {isGenerate ? 'GENERATE' : 'EDIT'}
           </Badge>
-          {hasOutputImages && (
-            <span className="text-xs text-muted-foreground">
-              {totalImages} {totalImages === 1 ? 'image' : 'images'}
-            </span>
+          {!isStreaming && batchResults.length > 0 && (
+            <Badge variant="outline" className="h-6 py-0.5">
+              <ImageIcon className="h-3 w-3 mr-1" />
+              {isBatch ? (
+                <>
+                  {successCount}/{batchResults.length} successful
+                  {failedCount > 0 && (
+                    <span className="text-rose-500 ml-1">• {failedCount} failed</span>
+                  )}
+                </>
+              ) : (
+                successCount > 0 ? '1 image' : 'failed'
+              )}
+            </Badge>
           )}
         </div>
 

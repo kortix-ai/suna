@@ -1,12 +1,23 @@
 import { ToolCallData, ToolResultData } from '../types';
 
+export interface BatchImageResult {
+  prompt: string;
+  success: boolean;
+  imageFilename: string | null;
+  inputImagePath: string | null;
+  error: string | null;
+}
+
 export interface ImageEditGenerateData {
   mode: 'generate' | 'edit' | null;
   prompt: string | null;
+  prompts: string[];  // All prompts for batch
   inputImagePaths: string[];  // For edit mode - source images
   generatedImagePaths: string[];  // Output images
   status: string | null;
   error?: string | null;
+  isBatch: boolean;
+  batchResults: BatchImageResult[];
 }
 
 /**
@@ -104,6 +115,25 @@ function extractGeneratedImages(output: unknown): string[] {
   return images;
 }
 
+/**
+ * Extract error message from output string
+ */
+function extractErrorMessage(output: string): string | null {
+  // Pattern: "Failed (N): error message"
+  const failedMatch = output.match(/Failed \(\d+\):\s*(.+?)(?:\n|$)/i);
+  if (failedMatch?.[1]) {
+    return failedMatch[1].trim();
+  }
+  
+  // Pattern: "Failed: error message" (single mode)
+  const singleFailedMatch = output.match(/Failed:\s*(.+?)(?:\n|$)/i);
+  if (singleFailedMatch?.[1]) {
+    return singleFailedMatch[1].trim();
+  }
+  
+  return null;
+}
+
 export function extractImageEditGenerateData(
   toolCall: ToolCallData,
   toolResult: ToolResultData | undefined,
@@ -118,21 +148,66 @@ export function extractImageEditGenerateData(
   const args = toolCall.arguments || {};
   const output = toolResult?.output;
   
-  // Extract prompt - handle array (batch) or string (single)
+  // Extract prompts - handle array (batch) or string (single)
   const promptArg = args.prompt;
+  let prompts: string[] = [];
   let prompt: string | null = null;
+  
   if (Array.isArray(promptArg)) {
-    // For batch, show first prompt (they're usually the same or similar)
-    prompt = promptArg.length > 0 ? String(promptArg[0]) : null;
+    prompts = promptArg.filter(p => typeof p === 'string' && p.trim()).map(p => String(p));
+    prompt = prompts.length > 0 ? prompts[0] : null;
   } else if (promptArg) {
     prompt = String(promptArg);
+    prompts = [prompt];
   }
+  
+  const isBatch = prompts.length > 1;
   
   // Extract input image paths for edit mode
   const inputImagePaths = parseImagePaths(args.image_path);
   
   // Extract generated image paths from output
   const generatedImagePaths = extractGeneratedImages(output);
+  
+  // Extract error message
+  let errorMessage: string | null = null;
+  if (typeof output === 'string') {
+    errorMessage = extractErrorMessage(output);
+  }
+  
+  // Build batch results - map prompts to images/errors
+  const batchResults: BatchImageResult[] = [];
+  
+  if (isBatch) {
+    let imageIndex = 0;
+    const totalFailed = prompts.length - generatedImagePaths.length;
+    
+    for (let i = 0; i < prompts.length; i++) {
+      const hasImage = imageIndex < generatedImagePaths.length;
+      // Determine if this prompt succeeded or failed
+      // Images are returned in order for successful ones
+      // We assume first N prompts map to N images, rest are failures
+      const isSuccessful = i < generatedImagePaths.length;
+      
+      batchResults.push({
+        prompt: prompts[i],
+        success: isSuccessful,
+        imageFilename: isSuccessful ? generatedImagePaths[i] : null,
+        inputImagePath: i < inputImagePaths.length ? inputImagePaths[i] : (inputImagePaths[0] || null),
+        error: isSuccessful ? null : (errorMessage || 'Processing failed'),
+      });
+    }
+  } else if (prompts.length === 1) {
+    // Single prompt mode
+    const hasImage = generatedImagePaths.length > 0;
+    batchResults.push({
+      prompt: prompts[0],
+      success: hasImage,
+      imageFilename: hasImage ? generatedImagePaths[0] : null,
+      inputImagePath: inputImagePaths[0] || null,
+      error: hasImage ? null : errorMessage,
+    });
+  }
   
   // Determine success
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
@@ -146,10 +221,13 @@ export function extractImageEditGenerateData(
   return {
     mode: args.mode || null,
     prompt,
+    prompts,
     inputImagePaths,
     generatedImagePaths,
     status,
-    error: toolResult?.error || null,
+    error: toolResult?.error || errorMessage || null,
+    isBatch,
+    batchResults,
     actualIsSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp
