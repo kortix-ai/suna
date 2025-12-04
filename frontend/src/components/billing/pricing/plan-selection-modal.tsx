@@ -84,7 +84,7 @@ export function PlanSelectionModal({
                     </div>
                 </div>
                 <div className="w-full h-full overflow-y-auto lg:overflow-hidden overflow-x-hidden bg-background pt-[67px] lg:flex lg:items-center lg:justify-center">
-                    <div className="xl:scale-90 2xl:scale-100 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 lg:pt-0 pb-8 lg:pb-0 min-h-full lg:min-h-0 flex items-center justify-center">
+                    <div className="lg:scale-90 xl:scale-100 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 lg:pt-0 pb-8 lg:pb-0 min-h-full lg:min-h-0 flex items-center justify-center">
                         <PricingSection
                             returnUrl={returnUrl || defaultReturnUrl}
                             showTitleAndTabs={true}

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     Dialog,
     DialogContent,
@@ -109,6 +110,7 @@ export function UserSettingsModal({
     defaultTab = 'general',
     returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: UserSettingsModalProps) {
+    const router = useRouter();
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
     const [showPlanModal, setShowPlanModal] = useState(false);
@@ -134,11 +136,15 @@ export function UserSettingsModal({
         if (tabId === 'plan') {
             setShowPlanModal(true);
         } else if (tabId === 'knowledge-base') {
-            window.open('/knowledge', '_blank');
+            // Close modal first for instant feel, then navigate
+            onOpenChange(false);
+            router.push('/knowledge');
         } else if (tabId === 'integrations') {
-            window.open('/settings/credentials', '_blank');
+            onOpenChange(false);
+            router.push('/settings/credentials');
         } else if (tabId === 'api-keys') {
-            window.open('/settings/api-keys', '_blank');
+            onOpenChange(false);
+            router.push('/settings/api-keys');
         } else {
             setActiveTab(tabId);
         }
@@ -210,9 +216,6 @@ export function UserSettingsModal({
                                 {activeTab === 'usage' && <UsageTab />}
                                 {activeTab === 'referrals' && <ReferralsTab />}
                                 {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
-                                {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
-                                {activeTab === 'integrations' && <IntegrationsTab />}
-                                {activeTab === 'api-keys' && <ApiKeysTab />}
                             </div>
                         </div>
                     </div>
@@ -265,9 +268,6 @@ export function UserSettingsModal({
                             {activeTab === 'usage' && <UsageTab />}
                             {activeTab === 'referrals' && <ReferralsTab />}
                             {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
-                            {activeTab === 'knowledge-base' && <KnowledgeBaseTab />}
-                            {activeTab === 'integrations' && <IntegrationsTab />}
-                            {activeTab === 'api-keys' && <ApiKeysTab />}
                         </div>
                     </div>
                 )}
@@ -1173,57 +1173,4 @@ function EnvManagerTab() {
     );
 }
 
-function KnowledgeBaseTab() {
-    useEffect(() => {
-        window.open('/knowledge', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
-            <div className="text-center py-8">
-                <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening Knowledge Base</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to Knowledge Base page...
-                </p>
-            </div>
-        </div>
-    );
-}
-
-function IntegrationsTab() {
-    useEffect(() => {
-        window.open('/settings/credentials', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
-            <div className="text-center py-8">
-                <Plug className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening Integrations</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to Integrations page...
-                </p>
-            </div>
-        </div>
-    );
-}
-
-function ApiKeysTab() {
-    useEffect(() => {
-        window.open('/settings/api-keys', '_blank');
-    }, []);
-    
-    return (
-        <div className="p-4 sm:p-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
-            <div className="text-center py-8">
-                <Key className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Opening API Keys</h3>
-                <p className="text-sm text-muted-foreground">
-                    Redirecting to API Keys page...
-                </p>
-            </div>
-        </div>
-    );
-}
 

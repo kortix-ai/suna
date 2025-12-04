@@ -19,7 +19,7 @@ import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog'
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
-const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
+// const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
 const AnimatedBg = lazy(() => import('@/components/ui/animated-bg').then(mod => ({ default: mod.AnimatedBg })));
 
 function LoginContent() {
@@ -387,9 +387,11 @@ function LoginContent() {
               <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
                 <GoogleSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
               </Suspense>
+              {/* GitHub auth commented out
               <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
                 <GitHubSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
               </Suspense>
+              */}
             </div>
             <div className="relative my-4">
               <div className="absolute inset-0 flex items-center">
