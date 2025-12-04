@@ -205,8 +205,10 @@ async function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const headers = await getAuthHeaders();
+  const fullUrl = `${API_URL}${endpoint}`;
+  console.log('🌐 Fetching:', fullUrl);
   
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const response = await fetch(fullUrl, {
     ...options,
     headers: {
       ...headers,

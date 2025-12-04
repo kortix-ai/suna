@@ -21,6 +21,7 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Kortix/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Kortix/Info.plist; sourceTree = "<group>"; };
 		25D066911556FC53C65DDC37 /* Pods-Kortix.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.debug.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.debug.xcconfig"; sourceTree = "<group>"; };
+		2BC4A27D4E4E472B975348CB /* Kortix.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Kortix.storekit; sourceTree = "<group>"; };
 		3116AA0E5D676F7039DDAFB2 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Kortix/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		7B9568AAF7610F559D65B36A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Kortix/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A041A64B380146515870CB27 /* Pods_Kortix.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Kortix.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -30,8 +31,7 @@
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Kortix/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Kortix-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Kortix-Bridging-Header.h"; path = "Kortix/Kortix-Bridging-Header.h"; sourceTree = "<group>"; };
 		FFC61AFB649B01E3268F4C99 /* Pods-Kortix.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.release.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.release.xcconfig"; sourceTree = "<group>"; };
-		2BC4A27D4E4E472B975348CB /* Kortix.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Kortix.storekit; sourceTree = "<group>"; };
-	/* End PBXFileReference section */
+/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
@@ -103,7 +103,7 @@
 				327786837DA848C5C74BAA60 /* Pods */,
 				6D0864F1AA810B9C64BE3FFC /* ExpoModulesProviders */,
 				2BC4A27D4E4E472B975348CB /* Kortix.storekit */,
-		);
+			);
 			indentWidth = 2;
 			sourceTree = "<group>";
 			tabWidth = 2;
@@ -168,8 +168,8 @@
 				LastUpgradeCheck = 1130;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
+						DevelopmentTeam = T8G9J33433;
 						LastSwiftMigration = 1250;
-						DevelopmentTeam = "T8G9J33433";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -408,7 +408,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Kortix/Kortix.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T8G9J33433;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -434,9 +437,6 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "T8G9J33433";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Debug;
 		};
@@ -447,7 +447,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Kortix/Kortix.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T8G9J33433;
 				INFOPLIST_FILE = Kortix/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -467,9 +470,6 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
-				DEVELOPMENT_TEAM = "T8G9J33433";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
 			};
 			name = Release;
 		};

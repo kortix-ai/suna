@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Pressable, Linking } from 'react-native';
+import { View, Pressable, Linking, Text as RNText, TextInput } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
@@ -21,7 +21,7 @@ import {
 } from '@/lib/utils/streaming-utils';
 import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
+import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
 import { AgentIdentifier } from '@/components/agents';
 import {
   FileAttachmentsGrid,
@@ -156,6 +156,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`md-${lastIndex}`}>
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                rules={selectableRenderRules}
                 onLinkPress={(url) => {
                   Linking.openURL(url).catch(console.error);
                   return false;
@@ -184,6 +185,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`ask-${match?.index}-${index}`} className="space-y-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                rules={selectableRenderRules}
                 onLinkPress={(url) => {
                   Linking.openURL(url).catch(console.error);
                   return false;
@@ -219,6 +221,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`complete-${match?.index}-${index}`} className="space-y-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                rules={selectableRenderRules}
                 onLinkPress={(url) => {
                   Linking.openURL(url).catch(console.error);
                   return false;
@@ -273,6 +276,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
           <View key={`md-${lastIndex}`}>
             <Markdown
               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+              rules={selectableRenderRules}
               onLinkPress={(url) => {
                 Linking.openURL(url).catch(console.error);
                 return false;
@@ -288,6 +292,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
     return <View>{contentParts.length > 0 ? contentParts : (
       <Markdown
         style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+        rules={selectableRenderRules}
         onLinkPress={(url) => {
           Linking.openURL(url).catch(console.error);
           return false;
@@ -301,6 +306,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
   return (
     <Markdown
       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+      rules={selectableRenderRules}
       onLinkPress={(url) => {
         Linking.openURL(url).catch(console.error);
         return false;
@@ -790,6 +796,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   >
                     <Markdown
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                      rules={selectableRenderRules}
                       onLinkPress={(url) => {
                         Linking.openURL(url).catch(console.error);
                         return false;
@@ -823,12 +830,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
               <View className="gap-3">
                 {assistantMessages.map((message, msgIndex) => {
                   const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
-                  
+
                   // Parse metadata to check for tool calls and text content
                   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
                   const toolCalls = metadata.tool_calls || [];
                   const textContent = metadata.text_content || '';
-                  
+
                   // Skip if no content (no text and no tool calls)
                   if (!textContent && toolCalls.length === 0) {
                     // Fallback: try parsing content for legacy messages
@@ -846,7 +853,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   // Use metadata-based rendering (new approach)
                   const renderedContent = renderAssistantMessage({
                     message,
-                    onToolClick: handleToolClick || (() => {}),
+                    onToolClick: handleToolClick || (() => { }),
                     onFileClick: onFilePress,
                     sandboxId,
                     isLatestMessage,
@@ -920,6 +927,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                           {processedTextBeforeTag.trim() && (
                             <Markdown
                               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                              rules={selectableRenderRules}
                               onLinkPress={(url) => {
                                 Linking.openURL(url).catch(console.error);
                                 return false;
@@ -938,22 +946,22 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                 )}
 
                 {/* Render streaming native tool call (ask/complete) */}
-                {groupIndex === groupedMessages.length - 1 && 
-                  (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && 
-                  streamingToolCall && 
+                {groupIndex === groupedMessages.length - 1 &&
+                  (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
+                  streamingToolCall &&
                   (() => {
                     // Check if this is ask/complete - render as text instead of tool indicator
                     const parsedMetadata = safeJsonParse<ParsedMetadata>(streamingToolCall.metadata, {});
                     const toolCalls = parsedMetadata.tool_calls || [];
-                    
+
                     const askOrCompleteTool = findAskOrCompleteTool(toolCalls);
-                    
+
                     // For ask/complete, render the text content directly
                     if (askOrCompleteTool) {
                       // Check if the last assistant message already has completed ask/complete
                       const currentGroupAssistantMessages = group.messages.filter(m => m.type === 'assistant');
-                      const lastAssistantMessage = currentGroupAssistantMessages.length > 0 
-                        ? currentGroupAssistantMessages[currentGroupAssistantMessages.length - 1] 
+                      const lastAssistantMessage = currentGroupAssistantMessages.length > 0
+                        ? currentGroupAssistantMessages[currentGroupAssistantMessages.length - 1]
                         : null;
                       if (lastAssistantMessage) {
                         const lastMsgMetadata = safeJsonParse<ParsedMetadata>(lastAssistantMessage.metadata, {});
@@ -962,21 +970,22 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                           return null;
                         }
                       }
-                      
+
                       // Extract text from arguments
                       const toolArgs: any = askOrCompleteTool.arguments;
                       let askCompleteText = '';
                       if (toolArgs) {
                         askCompleteText = extractTextFromArguments(toolArgs);
                       }
-                      
+
                       const toolName = askOrCompleteTool.function_name?.replace(/_/g, '-').toLowerCase() || '';
                       const textToShow = askCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
-                      
+
                       return (
                         <View className="mt-3">
                           <Markdown
                             style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+                            rules={selectableRenderRules}
                             onLinkPress={(url) => {
                               Linking.openURL(url).catch(console.error);
                               return false;
@@ -987,49 +996,49 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                         </View>
                       );
                     }
-                    
+
                     // For non-ask/complete tools, check if any tool calls exist
                     const isAskOrComplete = toolCalls.some(tc => isAskOrCompleteTool(tc.function_name));
-                    
+
                     // Don't render tool call indicator for ask/complete - they're handled above
                     if (isAskOrComplete) {
                       return null;
                     }
-                    
+
                     // For other tools, render tool call indicator with spinning icon
                     // Only hide if we can confirm the completed tool call is already rendered
                     if (toolCalls.length > 0) {
                       const firstToolCall = toolCalls[0];
                       const toolName = firstToolCall.function_name?.replace(/_/g, '-') || '';
                       const toolCallId = firstToolCall.tool_call_id;
-                      
+
                       // Check if this tool call has already been completed and rendered
                       // Look for a tool message in the current group with matching tool_call_id
                       const currentGroupToolMessages = group.messages.filter(m => m.type === 'tool');
-                      
+
                       // Check if any tool message in this group matches the streaming tool call
                       const matchingCompletedTool = currentGroupToolMessages.some((toolMsg: UnifiedMessage) => {
                         const toolMetadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
                         return toolMetadata.tool_call_id === toolCallId;
                       });
-                      
+
                       // Only show streaming indicator if no matching completed tool is found
                       if (!matchingCompletedTool) {
                         return (
-                          <StreamingToolCallIndicator 
+                          <StreamingToolCallIndicator
                             toolCall={firstToolCall}
                             toolName={toolName}
                           />
                         );
                       }
-                      
+
                       // If matching completed tool exists, don't render streaming indicator
                       return null;
                     }
-                    
+
                     // Fallback if no tool calls found
                     return (
-                      <StreamingToolCallIndicator 
+                      <StreamingToolCallIndicator
                         toolCall={null}
                         toolName=""
                       />
@@ -1037,15 +1046,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   })()}
 
                 {/* Show loader when agent is running but not streaming, inside the last assistant group */}
-                {groupIndex === groupedMessages.length - 1 && 
-                  (agentStatus === 'running' || agentStatus === 'connecting') && 
-                  !streamingTextContent && 
+                {groupIndex === groupedMessages.length - 1 &&
+                  (agentStatus === 'running' || agentStatus === 'connecting') &&
+                  !streamingTextContent &&
                   !streamingToolCall &&
                   (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                  <View className="mt-3">
-                    <AgentLoader />
-                  </View>
-                )}
+                    <View className="mt-3">
+                      <AgentLoader />
+                    </View>
+                  )}
 
               </View>
             </View>
