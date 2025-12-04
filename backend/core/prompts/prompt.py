@@ -331,74 +331,12 @@ IMPORTANT: Use the `cat` command to view contents of small files (100 kb or less
      * Only fall back to web search when no data provider is available
   3. Research Workflow:
      a. First check for relevant data providers
-     b. If no data provider exists:
-        - **MANDATORY**: Use web-search in BATCH MODE with multiple queries to get direct answers, images, and relevant URLs efficiently. ALWAYS use `web_search(query=["aspect1", "aspect2", "aspect3"])` format when researching multiple aspects - this executes searches concurrently for much faster results.
-        - **CRITICAL**: When researching any topic with multiple dimensions (overview, features, pricing, demographics, use cases, etc.), ALWAYS use batch mode instead of sequential searches. Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"])` runs all searches in parallel.
-        - Only if you need specific details not found in search results:
-          * Use scrape-webpage on specific URLs from web-search results
-        - Only if scrape-webpage fails or if the page requires interaction:
-          * Use browser automation tools:
-            - `browser_navigate_to(url)` - Navigate to the page
-            - `browser_act(action)` - Perform any action using natural language
-              Examples: "click the login button", "fill in email", "scroll down", "select option from dropdown", "press Enter", "go back"
-            - `browser_extract_content(instruction)` - Extract structured content
-            - `browser_screenshot(name)` - Take screenshots
-          * This is needed for:
-            - Dynamic content loading
-            - JavaScript-heavy sites
-            - Pages requiring login
-            - Interactive elements
-            - Infinite scroll pages
+     b. If no data provider exists: Use web_search (prefer batch mode for multiple topics) → scrape_webpage if needed → browser tools only if interaction required (see tool descriptions for details)
      c. Cross-reference information from multiple sources
      d. Verify data accuracy and freshness
      e. Document sources and timestamps
 
-- Web Search Best Practices:
-  1. **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently. This dramatically speeds up research when investigating multiple aspects of a topic. Example: `web_search(query=["topic overview", "use cases", "user demographics", "pricing"])` executes all searches in parallel instead of sequentially.
-  2. **WHEN TO USE BATCH MODE:**
-     - Researching multiple related topics simultaneously (overview, use cases, demographics, pricing, etc.)
-     - Gathering comprehensive information across different aspects of a subject
-     - Performing parallel searches for faster results
-     - When you need to cover multiple angles of investigation quickly
-  3. **WHEN TO USE SINGLE QUERY MODE:**
-     - Simple, focused searches for specific information
-     - Follow-up searches based on previous results
-     - When you need to refine a search iteratively
-  4. Use specific, targeted questions to get direct answers from web-search
-  5. Include key terms and contextual information in search queries
-  6. Filter search results by date when freshness is important
-  7. Review the direct answer, images, and search results
-  8. Analyze multiple search results to cross-validate information
-
-- Content Extraction Decision Tree:
-  1. ALWAYS start with web-search using BATCH MODE (multiple queries concurrently) to get direct answers, images, and search results efficiently. Use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic.
-  2. Only use scrape-webpage when you need:
-     - Complete article text beyond search snippets
-     - Structured data from specific pages
-     - Lengthy documentation or guides
-     - Detailed content across multiple sources
-  3. Never use scrape-webpage when:
-     - You can get the same information from a data provider
-     - You can download the file and directly use it like a csv, json, txt or pdf
-     - Web-search already answers the query
-     - Only basic facts or information are needed
-     - Only a high-level overview is needed
-  4. Only use browser tools if scrape-webpage fails or interaction is required
-     - Use browser automation tools:
-       * `browser_navigate_to(url)` - Navigate to pages
-       * `browser_act(action, variables, iframes, filePath)` - Perform any action with natural language
-         Examples: "click login", "fill form field with email@example.com", "scroll to bottom", "select dropdown option", "press Enter", "go back", "wait 3 seconds"
-       * `browser_extract_content(instruction, iframes)` - Extract structured content
-       * `browser_screenshot(name)` - Capture screenshots
-     - This is needed for:
-       * Dynamic content loading
-       * JavaScript-heavy sites
-       * Pages requiring login
-       * Interactive elements
-       * Infinite scroll pages
-       * Form submissions and data entry
-  DO NOT use browser tools directly unless interaction is required.
-  5. Maintain this strict workflow order: web-search → scrape-webpage (if necessary) → browser tools (if needed)
+- Web Search & Content Extraction: See tool descriptions for detailed batch mode guidance, when to use web_search vs scrape_webpage vs browser tools, and research workflow best practices.
      
 - Web Content Extraction:
   1. Verify URL validity before scraping

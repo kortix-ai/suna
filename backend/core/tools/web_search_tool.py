@@ -45,7 +45,34 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information with direct question answering using Tavily API. IMPORTANT - BATCH SEARCHING: Execute multiple queries concurrently for faster research by providing an array of queries to search multiple topics simultaneously. Results include comprehensive search results with titles, URLs, snippets, publication dates, direct answers, and relevant images. Use this for finding recent news, articles, and information beyond training data. Discover relevant web pages before potentially scraping them for complete content.",
+            "description": """Search the web for up-to-date information with direct question answering using Tavily API. Results include comprehensive search results with titles, URLs, snippets, publication dates, direct answers, and relevant images.
+
+BATCH SEARCHING FOR EFFICIENCY:
+Execute multiple queries concurrently by providing an array of queries. This dramatically speeds up research when investigating multiple aspects of a topic. Example: web_search(query=["topic overview", "use cases", "user demographics", "pricing"]) executes all searches in parallel instead of sequentially.
+
+WHEN TO USE BATCH MODE:
+- Researching multiple related topics simultaneously (overview, use cases, demographics, pricing, etc.)
+- Gathering comprehensive information across different aspects of a subject
+- Performing parallel searches for faster results
+- When you need to cover multiple angles of investigation quickly
+
+WHEN TO USE SINGLE QUERY MODE:
+- Simple, focused searches for specific information
+- Follow-up searches based on previous results
+- When you need to refine a search iteratively
+
+RESEARCH WORKFLOW PRIORITY:
+1. ALWAYS start with web_search using BATCH MODE when researching multiple aspects
+2. Use scrape_webpage only when you need complete article text beyond search snippets
+3. Use browser tools only if scrape_webpage fails or interaction is required
+
+BEST PRACTICES:
+- Use specific, targeted questions to get direct answers
+- Include key terms and contextual information in search queries
+- Review the direct answer, images, and search results
+- Analyze multiple search results to cross-validate information
+- Use this for finding recent news, articles, and information beyond training data
+- Discover relevant web pages before potentially scraping them for complete content""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -251,7 +278,25 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Extract full text content from multiple webpages for detailed information extraction. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.",
+            "description": """Extract full text content from multiple webpages for detailed information extraction.
+
+WHEN TO USE THIS TOOL:
+- Complete article text beyond search snippets
+- Structured data from specific pages
+- Lengthy documentation or guides
+- Detailed content across multiple sources
+
+WHEN NOT TO USE THIS TOOL:
+- You can get the same information from a data provider (use data providers instead)
+- You can download the file directly (csv, json, txt, pdf - download and use directly)
+- Web-search already answers the query (no need to scrape)
+- Only basic facts or high-level overview needed (web_search is sufficient)
+
+EFFICIENCY: ALWAYS collect multiple relevant URLs from web_search results and scrape them all in a single call. This tool processes multiple pages simultaneously rather than one at a time, saving significant time.
+
+WORKFLOW: web_search (batch mode) → Collect URLs → scrape_webpage (multiple URLs) → Process results
+
+The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.""",
             "parameters": {
                 "type": "object",
                 "properties": {
