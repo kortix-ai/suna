@@ -35,6 +35,8 @@ interface ToolCallPanelProps {
       pass?: string;
     };
   };
+  /** Handler to auto-fill chat input with a prompt (closes panel and fills input) */
+  onPromptFill?: (prompt: string) => void;
 }
 
 export function ToolCallPanel({
@@ -43,6 +45,7 @@ export function ToolCallPanel({
   toolMessages,
   initialIndex = 0,
   project,
+  onPromptFill,
 }: ToolCallPanelProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
@@ -116,6 +119,14 @@ export function ToolCallPanel({
     console.log('❌ Tool Drawer Closed');
     onClose();
   }, [onClose]);
+
+  // Handler to auto-fill chat input - closes panel and fills input
+  const handlePromptFill = useCallback((prompt: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    console.log('📝 Prompt fill triggered:', prompt);
+    onClose(); // Close the panel first
+    onPromptFill?.(prompt); // Then fill the chat input
+  }, [onClose, onPromptFill]);
 
   const isDark = colorScheme === 'dark';
 
@@ -215,6 +226,7 @@ export function ToolCallPanel({
               currentIndex={currentIndex}
               totalCalls={toolMessages.length}
               project={project}
+              onPromptFill={handlePromptFill}
             />
           </View>
         )}

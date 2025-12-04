@@ -274,6 +274,7 @@ export function FileRenderer({
           content={tiptapHtmlContent || content || ''}
           previewUrl={htmlPreviewUrl || ''}
           className="w-full h-full"
+          project={project}
         />
       ) : fileType === 'code' || fileType === 'text' ? (
         <CodeRenderer

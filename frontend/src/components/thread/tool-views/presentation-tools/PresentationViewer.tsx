@@ -39,6 +39,7 @@ import { DownloadFormat } from '../utils/presentation-utils';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { backendApi } from '@/lib/api-client';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 interface SlideMetadata {
   title: string;
@@ -89,6 +90,11 @@ export function PresentationViewer({
 
   const [visibleSlide, setVisibleSlide] = useState<number | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'presentations',
+  });
   
   // Use shared modal store for full screen viewer
   const { isOpen, presentationName, sandboxUrl, initialSlide, openPresentation, closePresentation } = usePresentationViewerStore();
@@ -492,6 +498,10 @@ export function PresentationViewer({
 
 
   const handleDownload = async (setIsDownloading: (isDownloading: boolean) => void, format: DownloadFormat) => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     
     if (!project?.sandbox?.sandbox_url || !extractedPresentationName) return;
 

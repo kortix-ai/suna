@@ -35,34 +35,103 @@ export function HtmlRenderer({
         return undefined;
     }, [content, project?.sandbox?.sandbox_url]);
 
-    // Get full file path from the previewUrl
+    // Check if previewUrl is already a valid sandbox preview URL (not an API endpoint)
+    const isAlreadySandboxUrl = useMemo(() => {
+        // A valid sandbox URL looks like: https://8080-xxx.proxy.daytona.works/index.html
+        // It should NOT contain /sandboxes/ or /files/content (which are API patterns)
+        if (!previewUrl) return false;
+        const isFullUrl = previewUrl.includes('://');
+        const isApiEndpoint = previewUrl.includes('/sandboxes/') || previewUrl.includes('/files/content');
+        return isFullUrl && !isApiEndpoint;
+    }, [previewUrl]);
+
+    // Get full file path from the previewUrl (only needed if it's an API URL)
     const filePath = useMemo(() => {
+        // If previewUrl is already a sandbox URL, no need to extract path
+        if (isAlreadySandboxUrl) {
+            return '';
+        }
+
         try {
-            // If it's an API URL, extract the full path from the path parameter
-            if (previewUrl.includes('/api/sandboxes/')) {
-                const url = new URL(previewUrl);
-                const path = url.searchParams.get('path');
-                if (path) {
-                    // Remove /workspace/ prefix if present
-                    return path.replace(/^\/workspace\//, '');
+            // If it's an API URL (check for various patterns: /api/sandboxes/, /sandboxes/, /v1/sandboxes/)
+            if (previewUrl.includes('/sandboxes/') && previewUrl.includes('/files/content')) {
+                // Try regex extraction first (works for both full and relative URLs)
+                const pathMatch = previewUrl.match(/[?&]path=([^&]+)/);
+                if (pathMatch) {
+                    const decodedPath = decodeURIComponent(pathMatch[1]);
+                    const cleanPath = decodedPath.replace(/^\/workspace\//, '');
+                    if (cleanPath) {
+                        return cleanPath;
+                    }
+                }
+                
+                // Fallback: try URL parsing for full URLs
+                if (previewUrl.includes('://')) {
+                    const url = new URL(previewUrl);
+                    const path = url.searchParams.get('path');
+                    if (path) {
+                        const decodedPath = decodeURIComponent(path);
+                        const cleanPath = decodedPath.replace(/^\/workspace\//, '');
+                        if (cleanPath) {
+                            return cleanPath;
+                        }
+                    }
                 }
             }
 
-            // Otherwise use the URL as is
-            return previewUrl;
+            // If previewUrl is already a simple file path (not a full URL), use it directly
+            if (!previewUrl.includes('://') && !previewUrl.includes('/sandboxes/')) {
+                // Remove /workspace/ prefix if present
+                const cleanPath = previewUrl.replace(/^\/workspace\//, '');
+                if (cleanPath) {
+                    return cleanPath;
+                }
+            }
+
+            // If we can't extract a path, return empty string
+            return '';
         } catch (e) {
-            console.error('Error extracting file path:', e);
+            console.error('Error extracting file path from previewUrl:', e, { previewUrl });
             return '';
         }
-    }, [previewUrl]);
+    }, [previewUrl, isAlreadySandboxUrl]);
 
     // Construct HTML file preview URL using the full file path
     const htmlPreviewUrl = useMemo(() => {
-        if (project?.sandbox?.sandbox_url && filePath) {
-            return constructHtmlPreviewUrl(project.sandbox.sandbox_url, filePath);
+        // If previewUrl is already a valid sandbox URL, use it directly
+        if (isAlreadySandboxUrl) {
+            console.log('[HtmlRenderer] Using previewUrl directly (already sandbox URL):', { previewUrl });
+            return previewUrl;
         }
-        return blobHtmlUrl || previewUrl;
-    }, [project?.sandbox?.sandbox_url, filePath, blobHtmlUrl, previewUrl]);
+
+        // Only construct preview URL if we have both sandbox URL and a valid file path
+        // filePath should be a simple path like "index.html" or "/workspace/index.html", not a full URL
+        if (project?.sandbox?.sandbox_url && filePath && !filePath.includes('://') && !filePath.includes('/sandboxes/')) {
+            const constructedUrl = constructHtmlPreviewUrl(project.sandbox.sandbox_url, filePath);
+            console.log('[HtmlRenderer] Constructed preview URL:', {
+                sandboxUrl: project.sandbox.sandbox_url,
+                filePath,
+                constructedUrl,
+                originalPreviewUrl: previewUrl,
+            });
+            return constructedUrl;
+        }
+        
+        // Fall back to blob URL if available
+        // Never use the API endpoint URL (previewUrl) directly in iframe - it won't work correctly
+        if (blobHtmlUrl) {
+            console.log('[HtmlRenderer] Falling back to blob URL:', { blobHtmlUrl });
+            return blobHtmlUrl;
+        }
+
+        console.warn('[HtmlRenderer] Unable to construct preview URL:', {
+            previewUrl,
+            isAlreadySandboxUrl,
+            hasSandboxUrl: !!project?.sandbox?.sandbox_url,
+            filePath,
+        });
+        return undefined;
+    }, [project?.sandbox?.sandbox_url, filePath, blobHtmlUrl, isAlreadySandboxUrl, previewUrl]);
 
     // Clean up blob URL on unmount
     useEffect(() => {
@@ -79,13 +148,19 @@ export function HtmlRenderer({
             <div className="flex-1 min-h-0 relative">
                 {viewMode === 'preview' ? (
                     <div className="w-full h-full">
-                        <iframe
-                            src={htmlPreviewUrl}
-                            title="HTML Preview"
-                            className="w-full h-full border-0"
-                            sandbox="allow-same-origin allow-scripts"
-                            style={{ background: 'white' }}
-                        />
+                        {htmlPreviewUrl ? (
+                            <iframe
+                                src={htmlPreviewUrl}
+                                title="HTML Preview"
+                                className="w-full h-full border-0"
+                                sandbox="allow-same-origin allow-scripts"
+                                style={{ background: 'white' }}
+                            />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
+                                Unable to load HTML preview
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <ScrollArea className="w-full h-full">

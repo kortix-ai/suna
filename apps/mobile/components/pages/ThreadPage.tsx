@@ -468,6 +468,7 @@ export function ThreadPage({
               handleToolClick={handleToolClick}
               onToolPress={handleToolPress}
               onFilePress={handleFilePress}
+              onPromptFill={chat.setInputValue}
             />
           </ScrollView>
         )}
@@ -601,6 +602,7 @@ export function ThreadPage({
           name: fullThreadData.project.name,
           sandbox: fullThreadData.project.sandbox
         } : undefined}
+        onPromptFill={chat.setInputValue}
       />
 
       <Modal

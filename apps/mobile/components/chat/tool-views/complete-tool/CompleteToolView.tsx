@@ -8,7 +8,7 @@ import { extractCompleteData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './TaskCompletedFeedback';
 
-export function CompleteToolView({ toolCall, toolResult, isStreaming = false, project, assistantMessage, currentIndex, totalCalls }: ToolViewProps) {
+export function CompleteToolView({ toolCall, toolResult, isStreaming = false, project, assistantMessage, currentIndex, totalCalls, onPromptFill }: ToolViewProps) {
   const { text, attachments, follow_up_prompts, success } = extractCompleteData({ toolCall, toolResult });
   const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
 
@@ -83,8 +83,8 @@ export function CompleteToolView({ toolCall, toolResult, isStreaming = false, pr
             threadId={assistantMessage?.thread_id}
             messageId={assistantMessage?.message_id}
             onFollowUpClick={(prompt) => {
-              // TODO: Handle follow-up click - could trigger a new message
-              console.log('Follow-up clicked:', prompt);
+              console.log('📝 Follow-up clicked:', prompt);
+              onPromptFill?.(prompt);
             }}
           />
         )}

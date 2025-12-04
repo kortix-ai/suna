@@ -48,6 +48,7 @@ import {
   useFileContentQuery,
   FileCache
 } from '@/hooks/files';
+import { useDownloadRestriction } from '@/hooks/billing';
 import JSZip from 'jszip';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { cn } from '@/lib/utils';
@@ -82,6 +83,11 @@ export function FileViewerModal({
   // Auth for session token
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'files',
+  });
 
   // Use React Query directly for project data
   // Refetch when modal opens, then rely on realtime updates
@@ -253,6 +259,10 @@ export function FileViewerModal({
 
   // Function to download all files as a zip
   const handleDownloadAll = useCallback(async () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (!session?.access_token || isDownloadingAll) return;
 
     try {
@@ -388,7 +398,7 @@ export function FileViewerModal({
       setIsDownloadingAll(false);
       setDownloadProgress(null);
     }
-  }, [sandboxId, session?.access_token, isDownloadingAll, discoverAllFiles]);
+  }, [sandboxId, session?.access_token, isDownloadingAll, discoverAllFiles, isDownloadRestricted, openUpgradeModal]);
 
   // Helper function to check if a value is a Blob (type-safe version of instanceof)
   const isBlob = (value: any): value is Blob => {
@@ -894,6 +904,10 @@ export function FileViewerModal({
   // Handle PDF export for markdown files
   const handleExportPdf = useCallback(
     async (orientation: 'portrait' | 'landscape' = 'portrait') => {
+      if (isDownloadRestricted) {
+        openUpgradeModal();
+        return;
+      }
       if (
         !selectedFilePath ||
         isExportingPdf ||
@@ -1062,11 +1076,15 @@ export function FileViewerModal({
         setIsExportingPdf(false);
       }
     },
-    [selectedFilePath, isExportingPdf, isMarkdownFile],
+    [selectedFilePath, isExportingPdf, isMarkdownFile, isDownloadRestricted, openUpgradeModal],
   );
 
   // Handle file download - streamlined for performance
   const handleDownload = async () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (!selectedFilePath || isDownloading) return;
 
     try {

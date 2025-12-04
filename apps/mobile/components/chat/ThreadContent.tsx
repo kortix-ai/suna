@@ -31,6 +31,7 @@ import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-nati
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
+import { PromptExamples } from '@/components/shared';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -107,9 +108,10 @@ interface MarkdownContentProps {
   onFilePress?: (filePath: string) => void;
   sandboxId?: string;
   isLatestMessage?: boolean;
+  onPromptFill?: (prompt: string) => void;
 }
 
-const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, isLatestMessage }: MarkdownContentProps) {
+const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, isLatestMessage, onPromptFill }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
 
   const processedContent = useMemo(() => {
@@ -173,12 +175,15 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
         if (toolName === 'ask') {
           const askText = toolCall.parameters.text || '';
           const attachments = toolCall.parameters.attachments || [];
+          const followUpAnswers = toolCall.parameters.follow_up_answers || [];
 
           const attachmentArray = Array.isArray(attachments) ? attachments :
             (typeof attachments === 'string' ? attachments.split(',').map(a => a.trim()) : []);
+          const answersArray = Array.isArray(followUpAnswers) ? followUpAnswers :
+            (typeof followUpAnswers === 'string' ? followUpAnswers.split(',').map(a => a.trim()).filter(Boolean) : []);
 
           contentParts.push(
-            <View key={`ask-${match?.index}-${index}`} className="space-y-3">
+            <View key={`ask-${match?.index}-${index}`} className="gap-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules}
@@ -186,12 +191,23 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
                 {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
-              <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
+              <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
                 <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
                 <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
                   Kortix will automatically continue working once you provide your response.
                 </Text>
               </View>
+
+              {/* Follow-up Answers - Suggested responses using shared PromptExamples */}
+              {answersArray.length > 0 && (
+                <PromptExamples
+                  prompts={answersArray}
+                  onPromptClick={onPromptFill}
+                  title="Suggested responses"
+                  showTitle={true}
+                  maxPrompts={4}
+                />
+              )}
             </View>
           );
 
@@ -206,11 +222,15 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
         } else if (toolName === 'complete') {
           const completeText = toolCall.parameters.text || '';
           const attachments = toolCall.parameters.attachments || '';
+          const followUpPrompts = toolCall.parameters.follow_up_prompts || [];
 
           const attachmentArray = Array.isArray(attachments) ? attachments :
             (typeof attachments === 'string' ? attachments.split(',').map(a => a.trim()) : []);
+          const promptsArray = Array.isArray(followUpPrompts) ? followUpPrompts :
+            (typeof followUpPrompts === 'string' ? followUpPrompts.split(',').map(a => a.trim()).filter(Boolean) : []);
+
           contentParts.push(
-            <View key={`complete-${match?.index}-${index}`} className="space-y-3">
+            <View key={`complete-${match?.index}-${index}`} className="gap-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules}
@@ -220,10 +240,13 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
 
               <TaskCompletedFeedback
                 taskSummary={completeText}
+                followUpPrompts={promptsArray.length > 0 ? promptsArray : undefined}
                 threadId={threadId || ''}
                 messageId={messageId || ''}
+                samplePromptsTitle="Sample prompts"
                 onFollowUpClick={(prompt) => {
-                  // TODO: Handle follow-up click - could trigger a new message
+                  console.log('📝 Inline follow-up clicked:', prompt);
+                  onPromptFill?.(prompt);
                 }}
               />
             </View>
@@ -451,6 +474,8 @@ interface ThreadContentProps {
   streamHookStatus?: string;
   sandboxId?: string;
   agentName?: string;
+  /** Handler to auto-fill chat input with a prompt (for follow-up prompts) */
+  onPromptFill?: (prompt: string) => void;
 }
 
 interface MessageGroup {
@@ -470,6 +495,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
   streamHookStatus = "idle",
   sandboxId,
   agentName = 'Suna',
+  onPromptFill,
 }) => {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -829,8 +855,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                     onFileClick: onFilePress,
                     sandboxId,
                     isLatestMessage,
-                    threadId: undefined, // TODO: pass threadId if available
-                    onPromptFill: undefined, // TODO: add prompt fill handler if needed
+                    threadId: message.thread_id,
+                    onPromptFill,
                     isDark, // Pass color scheme from parent
                   });
 
