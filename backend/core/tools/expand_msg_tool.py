@@ -1,18 +1,17 @@
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
+from typing import List
 import json
 
 @tool_metadata(
-    display_name="Message Expander",
-    description="View the full content of truncated messages",
+    display_name="Utility Tools",
+    description="Expand messages and load tool guides",
     icon="Maximize",
     color="bg-gray-100 dark:bg-gray-800/50",
     weight=100,
     visible=False
 )
 class ExpandMessageTool(Tool):
-    """Tool for expanding a previous message to the user."""
-
     def __init__(self, thread_id: str, thread_manager: ThreadManager):
         super().__init__()
         self.thread_manager = thread_manager
@@ -67,6 +66,69 @@ class ExpandMessageTool(Tool):
             return self.success_response({"status": "Message expanded successfully.", "message": final_content})
         except Exception as e:
             return self.fail_response(f"Error expanding message: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "load_tool_guide",
+            "description": "Load the detailed usage guide for a specific tool. Use this to understand how to use a tool effectively before calling it. The guide contains comprehensive documentation, examples, and best practices.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool_names": {
+                        "oneOf": [
+                            {
+                                "type": "string",
+                                "description": "Single tool name to load guide for (e.g., 'browser_tool', 'sb_files_tool')"
+                            },
+                            {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Multiple tool names to load guides for in one call"
+                            }
+                        ],
+                        "description": "Tool name(s) to load guides for. Can be a single string or array of strings."
+                    }
+                },
+                "required": ["tool_names"]
+            }
+        }
+    })
+    async def load_tool_guide(self, tool_names: str | List[str]) -> ToolResult:
+        """Load detailed usage guides for one or more tools.
+
+        Args:
+            tool_names: Single tool name or list of tool names
+
+        Returns:
+            ToolResult with the usage guide(s)
+        """
+        from core.tools.tool_guide_registry import get_tool_guide, get_tool_guide_registry
+        
+        if isinstance(tool_names, str):
+            tool_names = [tool_names]
+        
+        registry = get_tool_guide_registry()
+        guides = []
+        not_found = []
+        
+        for tool_name in tool_names:
+            guide = get_tool_guide(tool_name)
+            if guide:
+                guides.append(guide)
+            elif registry.has_tool(tool_name):
+                info = registry.get_tool_info(tool_name)
+                guides.append(f"## {info[0]}\n\nNo detailed guide available. Basic description: {info[1]}")
+            else:
+                not_found.append(tool_name)
+        
+        if not_found:
+            available = ", ".join(registry.get_all_tool_names())
+            return self.fail_response(
+                f"Tools not found: {', '.join(not_found)}. Available tools: {available}"
+            )
+        
+        return self.success_response("\n\n---\n\n".join(guides))
 
 if __name__ == "__main__":
     import asyncio

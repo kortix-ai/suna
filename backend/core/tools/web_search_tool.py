@@ -19,7 +19,58 @@ import time
     icon="Search",
     color="bg-green-100 dark:bg-green-800/50",
     weight=30,
-    visible=True
+    visible=True,
+    usage_guide="""
+### WEB SEARCH & CONTENT EXTRACTION
+
+**WEB SEARCH CAPABILITIES:**
+- Search the web for up-to-date information with direct question answering
+- **BATCH SEARCHING:** Execute multiple queries concurrently for faster research - provide an array of queries to search multiple topics simultaneously
+- Retrieve relevant images related to search queries
+- Get comprehensive search results with titles, URLs, and snippets
+- Find recent news, articles, and information beyond training data
+- Scrape webpage content for detailed information extraction when needed
+
+**RESEARCH BEST PRACTICES:**
+1. **Multi-source approach for thorough research:**
+   - Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
+   - ALWAYS use `web_search(query=["query1", "query2", "query3"])` format when researching multiple aspects of a topic
+   - Only use scrape-webpage when you need detailed content not available in search results
+   - Only use browser tools when scrape-webpage fails or interaction is needed
+
+2. **Research Workflow:**
+   - **MANDATORY**: Use web-search in BATCH MODE with multiple queries for direct answers and URLs
+   - **CRITICAL**: When researching any topic with multiple dimensions, ALWAYS use batch mode
+   - Example: `web_search(query=["topic overview", "use cases", "pricing", "user demographics"])` runs all searches in parallel
+   - Only if you need specific details not found in search results: use scrape-webpage on specific URLs
+   - Only if scrape-webpage fails or interaction required: use browser automation tools
+
+**WEB SEARCH BEST PRACTICES:**
+- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing an array of queries to execute multiple searches concurrently
+- **WHEN TO USE BATCH MODE:** Researching multiple related topics, gathering comprehensive information, parallel searches
+- **WHEN TO USE SINGLE QUERY MODE:** Simple focused searches, follow-up searches, iterative refinement
+- Use specific, targeted questions to get direct answers
+- Include key terms and contextual information in search queries
+- Filter search results by date when freshness is important
+- Review the direct answer, images, and search results
+- Analyze multiple search results to cross-validate information
+
+**CONTENT EXTRACTION DECISION TREE:**
+1. ALWAYS start with web-search using BATCH MODE to get direct answers and search results
+2. Only use scrape-webpage when you need complete article text beyond search snippets, structured data from specific pages, or lengthy documentation
+3. Never use scrape-webpage when web-search already answers the query or only basic facts are needed
+4. Only use browser tools if scrape-webpage fails or interaction is required
+
+**DATA FRESHNESS:**
+- Always check publication dates of search results
+- Prioritize recent sources for time-sensitive information
+- Use date filters to ensure information relevance
+- Provide timestamp context when sharing web search information
+- Specify date ranges when searching for time-sensitive topics
+
+**TIME CONTEXT FOR RESEARCH:**
+- CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use the current date/time values provided at runtime as reference points
+"""
 )
 class SandboxWebSearchTool(SandboxToolsBase):
     """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""

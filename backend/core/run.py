@@ -17,6 +17,8 @@ from core.agentpress.error_processor import ErrorProcessor
 from core.tools.data_providers_tool import DataProvidersTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.prompts.prompt import get_system_prompt
+from core.prompts.core_prompt import get_dynamic_system_prompt
+from core.tools.tool_guide_registry import get_minimal_tool_index
 
 from core.utils.logger import logger
 
@@ -348,9 +350,14 @@ class PromptManager:
                                   client=None,
                                   tool_registry=None,
                                   xml_tool_calling: bool = False,
-                                  user_id: Optional[str] = None) -> dict:
+                                  user_id: Optional[str] = None,
+                                  use_dynamic_tools: bool = True) -> dict:
         
-        default_system_content = get_system_prompt()
+        if use_dynamic_tools:
+            minimal_index = get_minimal_tool_index()
+            default_system_content = get_dynamic_system_prompt(minimal_index)
+        else:
+            default_system_content = get_system_prompt()
         
         # if "anthropic" not in model_name.lower():
         #     sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')

@@ -17,7 +17,56 @@ from core.utils.logger import logger
     icon="Wand",
     color="bg-purple-100 dark:bg-purple-800/50",
     weight=50,
-    visible=True
+    visible=True,
+    usage_guide="""
+### IMAGE GENERATION & EDITING
+
+**CRITICAL: USE EDIT MODE FOR MULTI-TURN IMAGE MODIFICATIONS**
+- **When user wants to modify an existing image:** ALWAYS use mode="edit" with the image_path parameter
+- **When user wants to create a new image:** Use mode="generate" without image_path
+- **MULTI-TURN WORKFLOW:** If you've generated an image and user asks for ANY follow-up changes, ALWAYS use edit mode
+- **ASSUME FOLLOW-UPS ARE EDITS:** When user says "change this", "add that", "make it different", etc. - use edit mode
+- **Image path sources:** Can be a workspace file path (e.g., "generated_image_abc123.png") OR a full URL
+
+**GENERATE MODE (Creating new images):**
+- Set mode="generate" and provide a descriptive prompt
+- Example:
+  ```
+  image_edit_or_generate(mode="generate", prompt="A futuristic cityscape at sunset with neon lights")
+  ```
+
+**EDIT MODE (Modifying existing images):**
+- Set mode="edit", provide editing prompt, and specify the image_path
+- Use this when user asks to: modify, change, add to, remove from, or alter existing images
+- Example with workspace file:
+  ```
+  image_edit_or_generate(mode="edit", prompt="Add a red hat to the person", image_path="generated_image_abc123.png")
+  ```
+- Example with URL:
+  ```
+  image_edit_or_generate(mode="edit", prompt="Change background to mountains", image_path="https://example.com/photo.png")
+  ```
+
+**MULTI-TURN WORKFLOW EXAMPLE:**
+- Step 1 - User: "Create a logo for my company" → Use generate mode: creates "generated_image_abc123.png"
+- Step 2 - User: "Can you make it more colorful?" → Use edit mode with "generated_image_abc123.png" (AUTOMATIC)
+- Step 3 - User: "Add some text to it" → Use edit mode with the most recent image (AUTOMATIC)
+
+**MANDATORY USAGE RULES:**
+- ALWAYS use this tool for any image creation or editing tasks
+- NEVER attempt to generate or edit images by any other means
+- MUST use edit mode when user asks to edit, modify, change, or alter an existing image
+- MUST use generate mode when user asks to create a new image from scratch
+- **MULTI-TURN CONVERSATION RULE:** If you've created an image and user provides ANY follow-up feedback, AUTOMATICALLY use edit mode
+- **FOLLOW-UP DETECTION:** Phrases like "can you change...", "make it more...", "add a...", "remove the..." = EDIT MODE
+- After image generation/editing, ALWAYS display the result using the ask tool with the image attached
+- The tool automatically saves images to the workspace with unique filenames
+- **REMEMBER THE LAST IMAGE:** Always use the most recently generated image filename for follow-up edits
+
+**OPTIONAL CLOUD SHARING:**
+- Ask user if they want to upload images: "Would you like me to upload this image to secure cloud storage for sharing?"
+- **CLOUD WORKFLOW (if requested):** Generate/Edit → Save to workspace → Ask user → Upload to "file-uploads" bucket if requested → Share public URL
+"""
 )
 class SandboxImageEditTool(SandboxToolsBase):
     """Tool for generating or editing images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
