@@ -14,7 +14,6 @@ from core.services.email import email_service
 # Main setup router (prefix="/setup")
 router = APIRouter(prefix="/setup", tags=["setup"])
 
-# Webhook router (no prefix - webhooks are at /api/webhooks/*)
 webhook_router = APIRouter(tags=["webhooks"])
 
 # ============================================================================

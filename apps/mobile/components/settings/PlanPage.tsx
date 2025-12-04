@@ -789,18 +789,23 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
               </View>
             )}
 
+            {/* Legal disclaimer for subscription */}
+            <Text className="text-[10px] text-muted-foreground text-center mt-3 px-4">
+              {t('billing.subscriptionDisclaimer', 'Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24-hours before the end of the current period. Your account will be charged for renewal within 24-hours prior to the end of the current period. You can manage and cancel your subscriptions by going to your account settings on the App Store after purchase.')}
+            </Text>
+            
             <View className="flex-row justify-center mt-4 gap-4">
-              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/privacy')}>
-                <Text className="text-xs text-muted-foreground font-roobert-medium">
-                {t('billing.privacyPolicy', 'Privacy Policy')}
-              </Text>
-            </Pressable>
-              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/terms')}>
-                <Text className="text-xs text-muted-foreground font-roobert-medium">
-                {t('billing.termsOfService', 'Terms of Service')}
-              </Text>
-            </Pressable>
-          </View>
+              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=privacy')}>
+                <Text className="text-xs text-muted-foreground font-roobert-medium underline">
+                  {t('billing.privacyPolicy', 'Privacy Policy')}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=terms')}>
+                <Text className="text-xs text-muted-foreground font-roobert-medium underline">
+                  {t('billing.termsOfService', 'Terms of Service')}
+                </Text>
+              </Pressable>
+            </View>
         </AnimatedView>
         );
       })()}
