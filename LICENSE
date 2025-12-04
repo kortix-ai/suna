@@ -1,115 +1,116 @@
-# Kortix Non-Commercial License
+# Kortix Public Source License (KPSL)
 
 Version 1.0
 
 Copyright © 2025 Kortix AI Corp. All rights reserved.
 
-## Acceptance
+## 1. Acceptance
 
-By using the software, you agree to all of the terms and conditions below.
+By accessing, using, modifying, or distributing the Software, you agree to the terms of this License. If you do not agree, you may not use the Software.
 
-## License Grant
+## 2. License Grant
 
-The licensor grants you a non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable
-license to use, copy, distribute, make available, and prepare derivative works of the software, subject
-to the limitations and conditions below.
+Kortix AI Corp ("Licensor") grants you a non-exclusive, royalty-free, worldwide, non-transferable, non-sublicensable license to:
 
-## Permitted Uses
+- Use and copy the Software
+- Modify the source code for permitted purposes
+- Distribute the Software in unmodified or modified form under the same License, only where explicitly allowed below
 
-You may:
+## 3. Permitted Uses
 
-1. **Internal Business Use** — Use and modify the software for your own organization's internal business
-   purposes and operations.
+You may use the Software for:
 
-2. **Personal & Educational Use** — Use the software for personal projects, learning, research, and
-   non-commercial purposes.
+### 3.1 Internal Organizational Use
 
-3. **Consulting & Services** — Provide consulting, implementation, support, or maintenance services
-   related to the software for clients (e.g., as an agency, consultant, or system integrator), provided
-   you do not charge for access to the software itself.
+Use and modify the Software within your own company, including affiliates under common control, for operational or development purposes.
 
-4. **Self-Hosting** — Deploy and run the software on your own infrastructure for your organization's
-   internal use.
+### 3.2 Personal, Academic, and Research Use
 
-5. **Extensions & Integrations** — Build integrations, plugins, extensions, or tools that interact with
-   the software.
+Use the Software for learning, experimentation, non-commercial research, and personal projects.
 
-6. **Distribution** — Distribute the software to others free of charge for non-commercial purposes,
-   provided you include a copy of this license.
+### 3.3 Consulting & Implementation Services
 
-## Prohibited Uses
+Provide professional services (deployment, customization, integration, maintenance, support) around the Software, provided you do not charge for the Software itself, nor provide network-based access to it.
 
-Without a separate commercial license from Kortix AI Corp, you may NOT:
+### 3.4 Self-Hosting (Private Use Only)
 
-1. **Hosted Services** — Host, operate, or offer the software (or any derivative) as a service to third
-   parties, whether paid or free. This includes SaaS, PaaS, managed services, or any model where users
-   access the software's functionality over a network without obtaining their own license.
+Deploy and run the Software on your own infrastructure for your internal use only, without providing access to third-party users.
 
-2. **White-Labeling** — Rebrand, white-label, or rename the software and offer it to others as your own
-   product.
+### 3.5 Extension & Integration Development
 
-3. **Resale** — Sell, resell, license, sublicense, or otherwise commercialize the software or derivative
-   works.
+Develop connectors, integrations, extensions, plugins, or external tools that interface with the Software, without embedding or re-licensing the Software as part of those tools.
 
-4. **Commercial Distribution** — Distribute the software for a fee or as part of a paid product or service.
+### 3.6 Public Distribution (Free, Restricted, and Attributed)
 
-5. **Competing Products** — Use the software to create a product or service that competes with Kortix AI
-   Corp's offerings.
+You may redistribute the Software or derivative works free of charge, for non-commercial and non-network-accessible use, if and only if:
 
-## Notices
+- This License is included without modification
+- Attribution notices are preserved
+- A clear notice of modification is added if applicable
 
-You may not remove, alter, or obscure any licensing, copyright, trademark, or other proprietary notices
-in the software. If you modify the software, you must include a prominent notice stating that you have
-modified it.
+## 4. Prohibited Uses
 
-You must ensure that anyone who receives a copy of the software from you also receives a copy of this
-license.
+Unless you hold a separate commercial agreement from Kortix AI Corp, you may not:
 
-## Patents
+**4.1** Offer network-accessible access to the Software (SaaS, managed services, hosted/shared instances, API access, multiplayer or centralized deployments for external users, etc.)
 
-The licensor grants you a license, under any patent claims the licensor can license or becomes able to
-license, to make, have made, use, sell, offer for sale, import, and have imported the software, subject
-to the limitations in this license. This patent license does not cover claims caused by your modifications
-or additions. If you or your company assert that the software infringes any patent, your patent license
-terminates immediately.
+**4.2** Rebrand or white-label the Software and present it as an original or proprietary offering
 
-## No Warranty
+**4.3** Commercialize, sell, sublicense, or bundle the Software into any paid product, service, offering, or distribution
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
+**4.4** Use the Software to develop a competing product or commercial alternative to Kortix AI Corp services or Software
 
-## Limitation of Liability
+**4.5** Embed the Software inside any distributed extension, integration, or client project in a way that provides end-user access without direct issuance of this License
 
-IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN CONTRACT,
-TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-IN THE SOFTWARE.
+## 5. Attribution & Notices
 
-## Termination
+You must:
 
-Your license terminates automatically if you violate these terms. If the licensor notifies you of a
-violation and you cure it within 30 days, your license is reinstated. Any subsequent violation terminates
-your license permanently.
+- Preserve all copyright, trademark, and proprietary notices
+- Add a visible notice if you modify the Software: "This Software has been modified from the original version distributed by Kortix AI Corp."
+- Provide this same License to any party receiving the Software from you
 
-## Definitions
+You may not:
+
+- Remove or obscure ownership, branding, license, or rights notices
+
+## 6. Patent Rights
+
+A limited patent license is granted only to support Permitted Uses. It does not cover:
+
+- Patent claims arising from your modifications
+- Claims asserted against the Software by you or entities you control (such assertion terminates your patent rights under this License)
+
+## 7. No Warranty
+
+The Software is provided AS IS, without any guaranteed performance, support obligation, or warranty of any kind.
+
+## 8. Liability Limitation
+
+Licensor is not liable for damages, direct or consequential, arising from the Software, its use, or its inability to perform as expected.
+
+## 9. Termination
+
+- Your rights terminate automatically upon violation
+- If notified, you have 30 days to cure
+- Further violations result in permanent revocation
+
+## 10. Third-Party Components
+
+Bundled third-party dependencies retain their original licenses.
+
+## 11. Definitions
 
 - **"Licensor"** — Kortix AI Corp.
-- **"Software"** — The software made available under these terms, including all source code, documentation,
-  and associated files.
-- **"You"** — The individual or entity exercising rights under this license.
-- **"Your Organization"** — Any legal entity you work for, including parent companies, subsidiaries, and
-  affiliates under common control.
-- **"Derivative Work"** — Any work based on or derived from the software.
+- **"Software"** — The software made available under these terms, including all source code, documentation, and associated files.
+- **"You"** — The individual or entity exercising rights under this License.
+- **"Your Organization"** — Any legal entity you work for, including parent companies, subsidiaries, and affiliates under common control.
+- **"Derivative Work"** — Any work based on or derived from the Software.
 - **"Third Parties"** — Any individual or entity other than you or your organization.
 
-## Third-Party Components
+## 12. Commercial Licensing
 
-Third-party components included in the software are licensed under their original licenses as provided by
-their respective owners.
-
-## Commercial Licensing
-
-For uses not permitted under this license, contact Kortix AI Corp at **hey@kortix.com** for commercial
-licensing options.
+Commercial licensing is available through direct agreement with Kortix AI Corp via hey@kortix.com
 
 ---
 
