@@ -21,6 +21,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../../file-attachment';
 import { useAuth } from '@/components/AuthProvider';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 interface ExportToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
@@ -88,6 +89,11 @@ export function ExportToolView({
   // Auth for file downloads
   const { session } = useAuth();
   
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'exports',
+  });
+  
   // Download state
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -145,6 +151,10 @@ export function ExportToolView({
 
   // Download handlers
   const handleDownload = async (downloadFormat: DownloadFormat) => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (!project?.sandbox?.sandbox_url || !presentationName) return;
 
     setIsDownloading(true);
@@ -166,6 +176,10 @@ export function ExportToolView({
   // Handle direct file download for stored files
   // Uses backend API which auto-starts sandbox if needed
   const handleDirectDownload = async () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (!downloadUrl || !project?.sandbox?.id) return;
     
     try {

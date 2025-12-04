@@ -24,6 +24,7 @@ import {
   type FileInfo,
 } from '@/lib/api/sandbox';
 import { toast } from 'sonner';
+import { useDownloadRestriction } from '@/hooks/billing';
 import { useDraggable } from '@dnd-kit/core';
 
 // Draggable file item component
@@ -90,6 +91,11 @@ export function FileBrowser({
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<string[]>([]);
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'files',
+  });
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -174,6 +180,10 @@ export function FileBrowser({
   };
 
   const handleAddToKnowledgeBase = () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (selectedFile && fileContent) {
       // Create a blob and download the file so user can upload it to knowledge base
       const blob = new Blob([fileContent], { type: 'text/plain' });

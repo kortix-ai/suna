@@ -9,7 +9,32 @@ from litellm import aimage_generation, aimage_edit
 import base64
 import os
 import random
+import asyncio
+import time
+import json
 from core.utils.logger import logger
+
+
+def parse_image_paths(image_path: Optional[str]) -> list[str]:
+    """
+    Parse image_path which could be a single path or a JSON array string.
+    Returns a list of paths.
+    """
+    if not image_path:
+        return []
+    
+    # Try to parse as JSON array
+    trimmed = image_path.strip()
+    if trimmed.startswith('[') and trimmed.endswith(']'):
+        try:
+            parsed = json.loads(trimmed)
+            if isinstance(parsed, list):
+                return [p.strip() for p in parsed if isinstance(p, str) and p.strip()]
+        except json.JSONDecodeError:
+            pass
+    
+    # Single path
+    return [trimmed] if trimmed else []
 
 @tool_metadata(
     display_name="Image Editor",
@@ -89,21 +114,34 @@ MANDATORY USAGE RULES:
 - After image generation/editing, ALWAYS display the result using the ask tool with the image attached
 - The tool automatically saves images to the workspace with unique filenames
 - REMEMBER THE LAST IMAGE: Always use the most recently generated image filename for follow-up edits""",
+                "description": "Generate new images from prompts, or edit existing images (no mask support) using OpenAI GPT Image 1 via OpenAI SDK. Stores the results in the thread context. This tool supports both single and batch operations for efficient image generation/editing. You can process multiple prompts simultaneously by providing an array of prompts, which executes operations concurrently for faster results. Use batch mode when generating or editing multiple images at once.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "mode": {
                             "type": "string",
                             "enum": ["generate", "edit"],
-                            "description": "'generate' to create a new image from a prompt, 'edit' to edit an existing image.",
+                            "description": "'generate' to create new images from prompts, 'edit' to edit existing images.",
                         },
                         "prompt": {
-                            "type": "string",
-                            "description": "Text prompt describing the desired image or edit.",
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "description": "A single text prompt describing the desired image or edit. Be specific and include key details to improve image quality."
+                                },
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description": "Multiple text prompts to execute concurrently. Use this for batch processing when you need to generate or edit multiple images simultaneously. Each prompt will be processed in parallel for faster results. Example: [\"a sunset over mountains\", \"a cat playing piano\", \"a futuristic city\"]"
+                                }
+                            ],
+                            "description": "Either a single prompt (string) or multiple prompts (array of strings) to execute concurrently. Use batch mode (array) for faster processing when creating or editing multiple images."
                         },
                         "image_path": {
                             "type": "string",
-                            "description": "(edit mode only) Path to the image file to edit. Can be: 1) Relative path to /workspace (e.g., 'generated_image_abc123.png'), or 2) Full URL (e.g., 'https://example.com/image.png'). Required when mode='edit'.",
+                            "description": "(edit mode only) Path to the image file to edit. Can be: 1) Relative path to /workspace (e.g., 'generated_image_abc123.png'), or 2) Full URL (e.g., 'https://example.com/image.png'). Required when mode='edit'. In batch mode, the same image will be edited with all prompts.",
                         },
                     },
                     "required": ["mode", "prompt"],
@@ -114,26 +152,171 @@ MANDATORY USAGE RULES:
     async def image_edit_or_generate(
         self,
         mode: str,
-        prompt: str,
+        prompt: str | list[str],
         image_path: Optional[str] = None,
     ) -> ToolResult:
-        """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
+        """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support). Supports both single and batch operations."""
         try:
             await self._ensure_sandbox()
             
             # Check if mock mode is enabled (for development/testing)
             use_mock = os.getenv("MOCK_IMAGE_GENERATION", "false").lower() == "true"
             
+            # Determine if this is a batch operation or single operation
+            is_batch = isinstance(prompt, list)
+            
+            if is_batch:
+                # Batch mode: process multiple prompts concurrently
+                if not prompt or len(prompt) == 0:
+                    return self.fail_response("At least one prompt is required in the batch.")
+                
+                # Filter out empty prompts
+                prompts = [p.strip() for p in prompt if p and isinstance(p, str) and p.strip()]
+                if not prompts:
+                    return self.fail_response("No valid prompts provided in the batch.")
+                
+                logger.info(f"Executing batch image operation for {len(prompts)} prompts with mode '{mode}'")
+                
+                # For edit mode, parse and validate image paths
+                image_paths: list[str] = []
+                if mode == "edit":
+                    if not image_path:
+                        return self.fail_response("'image_path' is required for edit mode when using batch prompts.")
+                    
+                    # Parse image_path - could be single path or JSON array
+                    image_paths = parse_image_paths(image_path)
+                    if not image_paths:
+                        return self.fail_response("No valid image paths provided for edit mode.")
+                    
+                    logger.info(f"Parsed {len(image_paths)} image path(s) for batch edit")
+                
+                # Execute all operations concurrently
+                # For edit mode: if we have multiple images, pair each prompt with an image
+                # If we have one image, use it for all prompts
+                start_time = time.time()
+                tasks = []
+                for i, p in enumerate(prompts):
+                    if mode == "edit":
+                        # Use corresponding image or fall back to first one
+                        img_path = image_paths[i] if i < len(image_paths) else image_paths[0]
+                        tasks.append(self._execute_single_image_operation(mode, p, img_path, use_mock))
+                    else:
+                        tasks.append(self._execute_single_image_operation(mode, p, None, use_mock))
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                elapsed_time = time.time() - start_time
+                logger.info(f"Batch image operation completed in {elapsed_time:.2f}s (concurrent execution)")
+                
+                # Process results and handle exceptions
+                batch_response = {
+                    "batch_mode": True,
+                    "total_prompts": len(prompts),
+                    "mode": mode,
+                    "results": []
+                }
+                
+                all_successful = True
+                for i, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.error(f"Error processing prompt '{prompts[i]}': {str(result)}")
+                        batch_response["results"].append({
+                            "prompt": prompts[i],
+                            "success": False,
+                            "error": str(result),
+                            "image_filename": None
+                        })
+                        all_successful = False
+                    elif isinstance(result, ToolResult):
+                        # Error ToolResult
+                        batch_response["results"].append({
+                            "prompt": prompts[i],
+                            "success": False,
+                            "error": result.output,
+                            "image_filename": None
+                        })
+                        all_successful = False
+                    else:
+                        # Success - result is a filename string
+                        batch_response["results"].append({
+                            "prompt": prompts[i],
+                            "success": True,
+                            "image_filename": result
+                        })
+                
+                successful_count = len([r for r in batch_response["results"] if r.get("success")])
+                logger.info(f"Batch operation completed: {successful_count}/{len(prompts)} prompts successful")
+                
+                # Create summary message
+                image_files = [r["image_filename"] for r in batch_response["results"] if r.get("success") and r.get("image_filename")]
+                if image_files:
+                    message = f"Successfully processed {successful_count} image(s) using mode '{mode}'. Images saved as:\n"
+                    for img_file in image_files:
+                        message += f"- {img_file}\n"
+                    message += "You can use the ask tool to display the images."
+                else:
+                    message = f"Batch operation completed with {successful_count} successful and {len(prompts) - successful_count} failed operations."
+                
+                return ToolResult(
+                    success=all_successful,
+                    output=message
+                )
+            else:
+                # Single prompt mode: original behavior
+                if not prompt or not isinstance(prompt, str):
+                    return self.fail_response("A valid prompt is required.")
+                
+                prompt = prompt.strip()
+                if not prompt:
+                    return self.fail_response("A valid prompt is required.")
+                
+                logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...'")
+                
+                result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock)
+                
+                if isinstance(result, ToolResult):
+                    # Error occurred
+                    return result
+                
+                # Success - result is a filename string
+                return self.success_response(
+                    f"Successfully generated image using mode '{mode}'. Image saved as: {result}. You can use the ask tool to display the image."
+                )
+
+        except Exception as e:
+            error_message = str(e)
+            prompt_str = ", ".join(prompt) if isinstance(prompt, list) else str(prompt)
+            logger.error(f"Error performing image operation for '{prompt_str}': {error_message}")
+            return self.fail_response(
+                f"An error occurred during image generation/editing: {error_message}"
+            )
+    
+    async def _execute_single_image_operation(
+        self,
+        mode: str,
+        prompt: str,
+        image_path: Optional[str],
+        use_mock: bool
+    ) -> str | ToolResult:
+        """
+        Helper function to execute a single image generation or edit operation.
+        
+        Parameters:
+        - mode: 'generate' or 'edit'
+        - prompt: The text prompt for generation/editing
+        - image_path: Path to image (required for edit mode)
+        - use_mock: Whether to use mock mode
+        
+        Returns:
+        - str: Filename of the generated/edited image on success
+        - ToolResult: Error result on failure
+        """
+        try:
             if use_mock:
-                logger.warning("🎨 Image generation running in MOCK mode - using placeholder images (MOCK_IMAGE_GENERATION=true)")
+                logger.warning(f"🎨 Image generation running in MOCK mode for prompt: '{prompt[:50]}...'")
                 # Fast mock mode - just download a random placeholder image
                 image_filename = await self._download_placeholder_image()
                 if isinstance(image_filename, ToolResult):  # Error occurred
                     return image_filename
-                    
-                return self.success_response(
-                    f"Successfully generated image using mode '{mode}' (mock). Image saved as: {image_filename}. You can use the ask tool to display the image."
-                )
+                return image_filename
             
             # Real API implementation
             model = "gpt-image-1"
@@ -155,9 +338,7 @@ MANDATORY USAGE RULES:
 
                 # Create BytesIO object with proper filename to set MIME type
                 image_io = BytesIO(image_bytes)
-                image_io.name = (
-                    "image.png"  # Set filename to ensure proper MIME type detection
-                )
+                image_io.name = "image.png"  # Set filename to ensure proper MIME type detection
 
                 response = await aimage_edit(
                     image=[image_io],  # Type in the LiteLLM SDK is wrong
@@ -174,14 +355,12 @@ MANDATORY USAGE RULES:
             if isinstance(image_filename, ToolResult):  # Error occurred
                 return image_filename
 
-            return self.success_response(
-                f"Successfully generated image using mode '{mode}'. Image saved as: {image_filename}. You can use the ask tool to display the image."
-            )
+            return image_filename
 
         except Exception as e:
-            return self.fail_response(
-                f"An error occurred during image generation/editing: {str(e)}"
-            )
+            error_message = str(e)
+            logger.error(f"Error executing image operation for prompt '{prompt}': {error_message}")
+            return self.fail_response(f"Failed to process image: {error_message}")
 
     async def _get_image_bytes(self, image_path: str) -> bytes | ToolResult:
         """Get image bytes from URL or local file path."""

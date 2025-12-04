@@ -470,7 +470,8 @@
   },
   "models": {
     "selectModel": "Select Model",
-    "chooseModelFor": "Choose a model for {{agent}}"
+    "chooseModelFor": "Choose a model for {{agent}}",
+    "mode": "Mode"
   },
   "placeholders": {
     "default": "Give Kortix a task...",

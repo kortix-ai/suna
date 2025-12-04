@@ -39,6 +39,7 @@ import {
   LiveDocumentViewer,
   DocumentViewer
 } from './_utils';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 export function DocsToolView({
   toolCall,
@@ -56,6 +57,11 @@ export function DocsToolView({
   const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
   const [editorFilePath, setEditorFilePath] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'documents',
+  });
   
   // Check for pending Google Docs upload after OAuth callback
   useEffect(() => {
@@ -138,6 +144,10 @@ export function DocsToolView({
   }, []);
 
   const handleExport = useCallback(async (format: ExportFormat | 'google-docs') => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (format === 'google-docs') {
       if (!project?.sandbox?.sandbox_url || !data?.document?.path) {
         console.error('Missing sandbox URL or document path for Google Docs export');
@@ -164,7 +174,7 @@ export function DocsToolView({
 
       await exportDocument({ content, fileName, format });
     }
-  }, [data, streamingContent, project]);
+  }, [data, streamingContent, project, isDownloadRestricted, openUpgradeModal]);
 
   // Defensive check - ensure toolCall is defined (after all hooks)
   if (!toolCall) {

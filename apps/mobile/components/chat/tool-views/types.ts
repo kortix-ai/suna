@@ -52,6 +52,9 @@ export interface ToolViewProps {
   
   /** Optional thread ID */
   threadId?: string;
+  
+  /** Handler to auto-fill chat input with a prompt (for follow-up prompts/answers) */
+  onPromptFill?: (prompt: string) => void;
 }
 
 export interface ToolViewComponent {

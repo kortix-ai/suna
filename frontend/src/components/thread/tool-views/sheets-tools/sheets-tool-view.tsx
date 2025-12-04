@@ -12,6 +12,7 @@ import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/AuthProvider';
 import { fetchFileContent } from '@/hooks/files/use-file-queries';
+import { useDownloadRestriction } from '@/hooks/billing';
 
 function getFileUrl(sandboxId: string | undefined, path: string): string {
   if (!sandboxId) return path;
@@ -49,6 +50,11 @@ export function SheetsToolView({
 }: ToolViewProps) {
   // All hooks must be called unconditionally at the top
   const { session } = useAuth();
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'spreadsheets',
+  });
 
   // Extract name safely - use fallback if toolCall is undefined
   const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'sheets-tool';
@@ -122,6 +128,10 @@ export function SheetsToolView({
   const sandboxId = project?.sandbox?.id;
 
   const handleDownload = useCallback(async (filePath: string | null, fallbackName: string) => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     try {
       if (!filePath) return;
       if (!sandboxId || !session?.access_token) {
@@ -142,7 +152,7 @@ export function SheetsToolView({
     } catch (e) {
       console.error('Download failed:', e);
     }
-  }, [sandboxId, session?.access_token]);
+  }, [sandboxId, session?.access_token, isDownloadRestricted, openUpgradeModal]);
 
   // Defensive check - ensure toolCall is defined (after all hooks)
   if (!toolCall) {
