@@ -158,7 +158,35 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "view_tasks",
-            "description": "View all tasks and sections. Use this to see current tasks, check progress, or review completed work. IMPORTANT: This tool helps you identify the next task to execute in the sequential workflow. Always execute tasks in the exact order they appear, completing one task fully before moving to the next. Use this to determine which task is currently pending and should be tackled next.",
+            "description": """View all tasks and sections. Use this to see current tasks, check progress, or review completed work.
+
+**EXECUTION GUIDELINES:**
+1. MUST actively work through these tasks one by one, updating their status as completed
+2. Before every action, consult your Task List to determine which task to tackle next
+3. The Task List serves as your instruction set - if a task is in the list, you are responsible for completing it
+4. Update the Task List as you make progress, adding new tasks as needed and marking completed ones
+5. Never delete tasks from the Task List - instead mark them complete to maintain a record of your work
+6. Once ALL tasks in the Task List are marked complete, you MUST call either the 'complete' state or 'ask' tool to signal task completion
+7. **EDIT EXISTING FILES:** For a single task, edit existing files rather than creating multiple new files
+
+**MANDATORY EXECUTION CYCLE:**
+1. **IDENTIFY NEXT TASK:** Use view_tasks to see which task is next in sequence
+2. **EXECUTE TASK(S):** Work on task(s) until complete
+3. **⚡ BATCH UPDATE - CRITICAL:** ALWAYS batch multiple completed tasks into a single update call:
+   - Example: `update_tasks(task_ids=["task-id-1", "task-id-2", "task-id-3"], status="completed")`
+   - NEVER make separate calls for each completed task
+4. **REPEAT:** Continue until all tasks complete
+5. **SIGNAL COMPLETION:** Use 'complete' or 'ask' when all tasks are finished
+
+**CRITICAL EXECUTION ORDER RULES:**
+1. **SEQUENTIAL EXECUTION ONLY:** You MUST execute tasks in the exact order they appear in the Task List
+2. **ONE TASK AT A TIME:** Never execute multiple tasks simultaneously or in bulk, but you can update multiple tasks in a single call
+3. **COMPLETE BEFORE MOVING:** Finish the current task completely before starting the next one
+4. **NO SKIPPING:** Do not skip tasks or jump ahead - follow the list strictly in order
+5. **NO BULK OPERATIONS:** Never do multiple separate web search calls, file operations, or tool calls at once. However, use batch mode `web_search(query=["q1", "q2", "q3"])` for efficient concurrent searches within a single tool call.
+6. **ASK WHEN UNCLEAR:** If you encounter ambiguous results or unclear information during task execution, stop and ask for clarification before proceeding
+7. **DON'T ASSUME:** When tool results are unclear or don't match expectations, ask the user for guidance rather than making assumptions
+8. **VERIFICATION REQUIRED:** Only mark a task as complete when you have concrete evidence of completion""",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -183,7 +211,90 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_tasks",
-            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. IMPORTANT: Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. Break down complex operations into individual, sequential tasks to maintain the one-task-at-a-time execution principle. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.",
+            "description": """Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist.
+
+**MANDATORY TASK LIST SCENARIOS - ALWAYS CREATE TASK LISTS FOR:**
+- Research requests (web searches, data gathering)
+- Content creation (reports, documentation, analysis)
+- Multi-step processes (setup, implementation, testing)
+- Projects requiring planning and execution
+- Any request involving multiple operations or tools
+
+**WHEN TO STAY CONVERSATIONAL (NO TASK LIST NEEDED):**
+- Simple questions and clarifications
+- Quick tasks that can be completed in one response
+
+**TASK CREATION RULES:**
+1. Create sections in lifecycle order: Research & Setup → Planning → Implementation → Verification → Completion
+2. Each section contains specific, actionable subtasks based on complexity
+3. Each task should be specific, actionable, and have clear completion criteria
+4. **EXECUTION ORDER:** Tasks must be created in the exact order they will be executed
+5. **⚡ PHASE-LEVEL TASKS FOR EFFICIENCY:** For workflows like presentations, create PHASE-level tasks (e.g., "Phase 2: Theme Research", "Phase 3: Research & Images") NOT step-level tasks. This reduces task update overhead.
+6. **BATCH OPERATIONS WITHIN TASKS:** Within a single task, use batch mode for searches: `web_search(query=["q1", "q2", "q3"])`, `image_search(query=["q1", "q2"])`. One task can include multiple batch operations.
+7. **SINGLE FILE PER TASK:** Each task should work with one file, editing it as needed rather than creating multiple files
+
+**⚡ PRESENTATION TASK EXAMPLE (EFFICIENT):**
+✅ GOOD - Phase-level tasks:
+- Phase 1: Topic Confirmation
+- Phase 2: Theme Research  
+- Phase 3: Research & Image Download
+- Phase 4: Create All Slides
+- Final: Deliver Presentation
+
+❌ BAD - Step-level tasks (too granular):
+- Search for brand colors
+- Define color palette
+- Search for topic info
+- Create content outline
+- Search for image 1
+- Search for image 2
+- Download image 1
+- Download image 2
+- ...
+
+**MANDATORY LIFECYCLE ANALYSIS:**
+For ANY user request involving research, content creation, or multiple steps, ALWAYS ask yourself:
+- What research/setup is needed?
+- What planning is required? 
+- What implementation steps?
+- What testing/verification?
+- What completion steps?
+
+Then create sections accordingly, even if some sections seem obvious or simple.
+
+**MANDATORY CLARIFICATION PROTOCOL:**
+**ALWAYS ASK FOR CLARIFICATION WHEN:**
+- User requests involve ambiguous terms, names, or concepts
+- Multiple interpretations or options are possible
+- Research reveals multiple entities with the same name
+- User requirements are unclear or could be interpreted differently
+- You need to make assumptions about user preferences or needs
+
+**CRITICAL CLARIFICATION EXAMPLES:**
+- "Make a presentation on John Smith" → Ask: "I found several notable people named John Smith. Could you clarify which one you're interested in?"
+- "Research the latest trends" → Ask: "What specific industry or field are you interested in?"
+- "Create a report on AI" → Ask: "What aspect of AI would you like me to focus on - applications, ethics, technology, etc.?"
+
+**MANDATORY CLARIFICATION SCENARIOS:**
+- **Multiple entities with same name:** "I found several people named [Name]. Could you clarify which one you're interested in?"
+- **Ambiguous terms:** "When you say [term], do you mean [option A] or [option B]?"
+- **Unclear requirements:** "Could you help me understand what specific outcome you're looking for?"
+- **Research ambiguity:** "I'm finding mixed information. Could you clarify what aspect is most important to you?"
+- **Tool results unclear:** "The results I'm getting don't seem to match what you're looking for. Could you help me understand?"
+
+**CONSTRAINTS:**
+1. SCOPE CONSTRAINT: Focus on completing existing tasks before adding new ones; avoid continuously expanding scope
+2. CAPABILITY AWARENESS: Only add tasks that are achievable with your available tools and capabilities
+3. FINALITY: After marking a section complete, do not reopen it or add new tasks unless explicitly directed by the user
+4. STOPPING CONDITION: If you've made 3 consecutive updates to the Task List without completing any tasks, reassess your approach and either simplify your plan or use the 'ask' tool to seek user guidance.
+5. COMPLETION VERIFICATION: Only mark a task as complete when you have concrete evidence of completion
+6. SIMPLICITY: Keep your Task List lean and direct with clear actions, avoiding unnecessary verbosity or granularity
+
+**TECHNICAL REQUIREMENTS:**
+- You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id')
+- CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version.
+- Create tasks in the exact order they will be executed
+- Each task should represent a single, specific operation that can be completed independently""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -357,7 +468,59 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "update_tasks",
-                "description": "Update one or more tasks. EFFICIENT BATCHING: Before calling this tool, think about what tasks you have completed and batch them into a single update call. This is more efficient than making multiple consecutive update calls. Always execute tasks in the exact sequence they appear, but batch your updates when possible. Update task status to 'completed' after finishing each task, and consider batching multiple completed tasks into one call rather than updating them individually.",
+                "description": """Update one or more tasks. EFFICIENT BATCHING: Before calling this tool, think about what tasks you have completed and batch them into a single update call. This is more efficient than making multiple consecutive update calls. Always execute tasks in the exact sequence they appear, but batch your updates when possible. Update task status to 'completed' after finishing each task, and consider batching multiple completed tasks into one call rather than updating them individually.
+
+**⚡ EFFICIENT TASK UPDATES - REQUIRED:**
+✅ CORRECT - Batch multiple completed tasks in one call:
+update_tasks(task_ids=["task-id-1", "task-id-2", "task-id-3"], status="completed")
+
+❌ WRONG - Wasteful separate calls:
+update_tasks(task_ids="task-id-1", status="completed")
+update_tasks(task_ids="task-id-2", status="completed")
+update_tasks(task_ids="task-id-3", status="completed")
+
+**NOTE:** The function uses task_ids (string or array of task ID strings) and status (optional string: "pending", "completed", or "cancelled"). All tasks in a single call will receive the same status.
+
+**🔴 CRITICAL MULTI-STEP TASK EXECUTION RULES - NO INTERRUPTIONS 🔴**
+**MULTI-STEP TASKS MUST RUN TO COMPLETION WITHOUT STOPPING!**
+
+When executing a multi-step task (a planned sequence of steps):
+1. **CONTINUOUS EXECUTION:** Once a multi-step task starts, it MUST run all steps to completion
+2. **NO CONFIRMATION REQUESTS:** NEVER ask "should I proceed?" or "do you want me to continue?" during task execution
+3. **NO PERMISSION SEEKING:** Do not seek permission between steps - the user already approved by starting the task
+4. **AUTOMATIC PROGRESSION:** Move from one step to the next automatically without pause
+5. **COMPLETE ALL STEPS:** Execute every step in the sequence until fully complete
+6. **ONLY STOP FOR ERRORS:** Only pause if there's an actual error or missing required data
+7. **NO INTERMEDIATE ASKS:** Do not use the 'ask' tool between steps unless there's a critical error
+
+**TASK EXECUTION VS CLARIFICATION - KNOW THE DIFFERENCE:**
+- **During Task Execution:** NO stopping, NO asking for permission, CONTINUOUS execution
+- **During Initial Planning:** ASK clarifying questions BEFORE starting the task
+- **When Errors Occur:** ONLY ask if there's a blocking error that prevents continuation
+- **After Task Completion:** Use 'complete' or 'ask' to signal task has finished
+
+**EXAMPLES OF WHAT NOT TO DO DURING MULTI-STEP TASKS:**
+❌ "I've completed step 1. Should I proceed to step 2?"
+❌ "The first task is done. Do you want me to continue?"
+❌ "I'm about to start the next step. Is that okay?"
+❌ "Step 2 is complete. Shall I move to step 3?"
+
+**EXAMPLES OF CORRECT TASK EXECUTION:**
+✅ Execute Step 1 → Mark complete → Execute Step 2 → Mark complete → Continue until all done
+✅ Run through all steps automatically without interruption
+✅ Only stop if there's an actual error that blocks progress
+✅ Complete the entire task sequence then signal completion
+
+**HANDLING AMBIGUOUS RESULTS DURING TASK EXECUTION:**
+1. **TASK CONTEXT MATTERS:** 
+   - If executing a planned task sequence: Continue unless it's a blocking error
+   - If doing exploratory work: Ask for clarification when needed
+2. **BLOCKING ERRORS ONLY:** In multi-step tasks, only stop for errors that prevent continuation
+3. **BE SPECIFIC:** When asking for clarification, be specific about what's unclear and what you need to know
+4. **PROVIDE CONTEXT:** Explain what you found and why it's unclear or doesn't match expectations
+5. **OFFER OPTIONS:** When possible, provide specific options or alternatives for the user to choose from
+6. **NATURAL LANGUAGE:** Use natural, conversational language when asking for clarification - make it feel like a human conversation
+7. **RESUME AFTER CLARIFICATION:** Once you receive clarification, continue with the task execution""",
             "parameters": {
                 "type": "object",
                 "properties": {
