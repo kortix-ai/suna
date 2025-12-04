@@ -125,12 +125,8 @@ function renderAskToolCall(
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
           rules={selectableRenderRules}
-          onLinkPress={(url) => {
-            Linking.openURL(url).catch(console.error);
-            return false;
-          }}
         >
-          {askText}
+          {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
       )}
       {attachments.length > 0 && (
@@ -188,12 +184,8 @@ function renderCompleteToolCall(
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
           rules={selectableRenderRules}
-          onLinkPress={(url) => {
-            Linking.openURL(url).catch(console.error);
-            return false;
-          }}
         >
-          {completeText}
+          {completeText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
       )}
       {attachments.length > 0 && (
@@ -319,12 +311,8 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
         key="text-content"
         style={isDark ? markdownStylesDark : markdownStyles}
         rules={selectableRenderRules}
-        onLinkPress={(url) => {
-          Linking.openURL(url).catch(console.error);
-          return false;
-        }}
       >
-        {textContent}
+        {textContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
     );
   }

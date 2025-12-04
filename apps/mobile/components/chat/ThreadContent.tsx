@@ -157,12 +157,8 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules}
-                onLinkPress={(url) => {
-                  Linking.openURL(url).catch(console.error);
-                  return false;
-                }}
               >
-                {textBeforeBlock}
+                {textBeforeBlock.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
             </View>
           );
@@ -186,12 +182,8 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules}
-                onLinkPress={(url) => {
-                  Linking.openURL(url).catch(console.error);
-                  return false;
-                }}
               >
-                {askText}
+                {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
               <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
@@ -222,12 +214,8 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules}
-                onLinkPress={(url) => {
-                  Linking.openURL(url).catch(console.error);
-                  return false;
-                }}
               >
-                {completeText}
+                {completeText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
               <TaskCompletedFeedback
@@ -277,12 +265,8 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <Markdown
               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
               rules={selectableRenderRules}
-              onLinkPress={(url) => {
-                Linking.openURL(url).catch(console.error);
-                return false;
-              }}
             >
-              {remainingText}
+              {remainingText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
             </Markdown>
           </View>
         );
@@ -293,12 +277,8 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
       <Markdown
         style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
         rules={selectableRenderRules}
-        onLinkPress={(url) => {
-          Linking.openURL(url).catch(console.error);
-          return false;
-        }}
       >
-        {processedContent}
+        {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
     )}</View>;
   }
@@ -307,12 +287,8 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
     <Markdown
       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
       rules={selectableRenderRules}
-      onLinkPress={(url) => {
-        Linking.openURL(url).catch(console.error);
-        return false;
-      }}
     >
-      {processedContent}
+      {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
     </Markdown>
   );
 });
@@ -797,12 +773,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                     <Markdown
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                       rules={selectableRenderRules}
-                      onLinkPress={(url) => {
-                        Linking.openURL(url).catch(console.error);
-                        return false;
-                      }}
                     >
-                      {cleanContent}
+                      {cleanContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                     </Markdown>
                   </View>
                 </View>
@@ -928,12 +900,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                             <Markdown
                               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                               rules={selectableRenderRules}
-                              onLinkPress={(url) => {
-                                Linking.openURL(url).catch(console.error);
-                                return false;
-                              }}
                             >
-                              {processedTextBeforeTag}
+                              {processedTextBeforeTag.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                             </Markdown>
                           )}
                           {detectedTag && (
@@ -986,12 +954,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                           <Markdown
                             style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                             rules={selectableRenderRules}
-                            onLinkPress={(url) => {
-                              Linking.openURL(url).catch(console.error);
-                              return false;
-                            }}
                           >
-                            {textToShow}
+                            {textToShow.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                           </Markdown>
                         </View>
                       );
