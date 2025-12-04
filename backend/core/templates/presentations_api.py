@@ -4,6 +4,7 @@ API endpoints for serving presentation template static files (images, PDFs).
 import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from urllib.parse import quote
 
 from core.utils.logger import logger
 
@@ -64,10 +65,11 @@ async def get_presentation_template_pdf(template_name: str):
         
         pdf_path = os.path.join(pdf_folder, pdf_files[0])
         
+        encoded_filename = quote(f"{template_name}.pdf", safe="")
         return FileResponse(
             pdf_path,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename={template_name}.pdf"}
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{encoded_filename}"}
         )
     except HTTPException:
         raise
