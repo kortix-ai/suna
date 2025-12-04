@@ -5,88 +5,150 @@
  * Ensures perfect rendering of all markdown elements
  */
 
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, TextInput, Text } from 'react-native';
 import React from 'react';
-import { UITextView } from 'react-native-uitextview';
 
-// Custom render rules for selectable text using UITextView
+// Helper to extract text content from children (including nested React elements)
+const extractTextContent = (children: any): string => {
+  if (typeof children === 'string') {
+    return children;
+  }
+
+  if (typeof children === 'number') {
+    return String(children);
+  }
+
+  if (Array.isArray(children)) {
+    return children.map(extractTextContent).join('');
+  }
+
+  if (React.isValidElement(children)) {
+    // If it's a React element, try to extract text from its children
+    return extractTextContent((children as any).props?.children);
+  }
+
+  if (children === null || children === undefined) {
+    return '';
+  }
+
+  // Fallback for objects - should rarely happen
+  return '';
+};
+
+// Helper to render selectable text with iOS workaround
+const SelectableText = ({ children, style }: any) => {
+  if (Platform.OS === 'ios') {
+    // iOS requires TextInput for word selections with blue handles
+    const textContent = extractTextContent(children);
+
+    return (
+      <TextInput
+        value={textContent}
+        editable={false}
+        multiline
+        scrollEnabled={false}
+        style={[
+          style,
+          {
+            // Adjust for iOS TextInput internal padding
+            paddingTop: 12, // Add padding to restore height
+            paddingBottom: 12,
+            paddingLeft: 0,
+            paddingRight: 0,
+            paddingHorizontal: 0,
+            margin: 0,
+            marginTop: -8, // Counteract iOS TextInput internal padding
+            marginBottom: 0,
+            borderWidth: 0,
+            outlineStyle: 'none',
+            // Ensure text aligns properly
+            textAlignVertical: 'top',
+          }
+        ]}
+      />
+    );
+  }
+
+  // Android can do word selections just with <Text>
+  return <Text selectable style={style}>{children}</Text>;
+};
+
+// Custom render rules for selectable text
 export const selectableRenderRules: any = {
   text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <UITextView key={node.key} style={[inheritedStyles, styles.text]} selectable uiTextView>
+    <SelectableText key={node.key} style={[inheritedStyles, styles.text]}>
       {node.content}
-    </UITextView>
+    </SelectableText>
   ),
   textgroup: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.textgroup} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.textgroup}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   paragraph: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.paragraph} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.paragraph}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   strong: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <UITextView key={node.key} style={[inheritedStyles, styles.strong]} selectable uiTextView>
+    <SelectableText key={node.key} style={[inheritedStyles, styles.strong]}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   em: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <UITextView key={node.key} style={[inheritedStyles, styles.em]} selectable uiTextView>
+    <SelectableText key={node.key} style={[inheritedStyles, styles.em]}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   code_inline: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <UITextView key={node.key} style={[inheritedStyles, styles.code_inline]} selectable uiTextView>
+    <SelectableText key={node.key} style={[inheritedStyles, styles.code_inline]}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   heading1: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.heading1} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.heading1}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   heading2: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.heading2} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.heading2}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   heading3: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.heading3} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.heading3}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   heading4: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.heading4} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.heading4}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   heading5: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.heading5} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.heading5}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   heading6: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.heading6} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.heading6}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   blockquote: (node: any, children: any, parent: any, styles: any) => (
-    <UITextView key={node.key} style={styles.blockquote} selectable uiTextView>
+    <SelectableText key={node.key} style={styles.blockquote}>
       {children}
-    </UITextView>
+    </SelectableText>
   ),
   link: (node: any, children: any, parent: any, styles: any, onLinkPress: any) => {
     return (
-      <UITextView
+      <SelectableText
         key={node.key}
         style={styles.link}
         onPress={() => onLinkPress && onLinkPress(node.attributes.href)}
-        selectable
-        uiTextView
       >
         {children}
-      </UITextView>
+      </SelectableText>
     );
   },
 };
@@ -95,8 +157,8 @@ export const markdownStyles = StyleSheet.create({
   // Root body
   body: {
     color: '#18181b', // zinc-900
-    fontSize: 17,
-    lineHeight: 25,
+    fontSize: 16,
+    lineHeight: 24,
     fontFamily: 'System',
   },
 
@@ -295,7 +357,14 @@ export const markdownStyles = StyleSheet.create({
   // Paragraphs
   paragraph: {
     marginVertical: 6,
-    lineHeight: 25,
+    lineHeight: 24,
+    fontSize: 16,
+  },
+
+  // Base text
+  text: {
+    fontSize: 16,
+    lineHeight: 24,
   },
 
   // Text container CAUSES MISSCENTERIN OF TEXT
