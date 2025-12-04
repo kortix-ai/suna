@@ -9,6 +9,7 @@ from io import BytesIO
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from urllib.parse import quote
 from pydantic import BaseModel, Field
 
 try:
@@ -265,10 +266,11 @@ async def convert_document_to_docx(request: ConvertRequest):
         if request.download:
             docx_content, doc_name = await converter.convert_to_docx(store_locally=False)
             
+            encoded_filename = quote(f"{doc_name}.docx", safe="")
             return Response(
                 content=docx_content,
                 media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                headers={"Content-Disposition": f"attachment; filename=\"{doc_name}.docx\""}
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
             )
         
         # Otherwise, store locally and return JSON with download URL

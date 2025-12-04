@@ -9,6 +9,7 @@ from datetime import datetime
 import re
 import asyncio
 import httpx
+from urllib.parse import unquote
 
 @tool_metadata(
     display_name="Presentations",
@@ -1109,7 +1110,12 @@ print(json.dumps(result))
                     
                     # Extract filename from Content-Disposition if available
                     content_disposition = convert_response.headers.get("Content-Disposition", "")
-                    if "filename=" in content_disposition:
+                    if "filename*=UTF-8''" in content_disposition:
+                        # RFC5987 format: filename*=UTF-8''encoded_name
+                        encoded_name = content_disposition.split("filename*=UTF-8''")[1].split(';')[0]
+                        filename = unquote(encoded_name)
+                    elif 'filename="' in content_disposition:
+                        # Legacy format: filename="name"
                         filename = content_disposition.split('filename="')[1].split('"')[0]
                     
                     return self.success_response({
@@ -1210,7 +1216,12 @@ print(json.dumps(result))
                     
                     # Extract filename from Content-Disposition if available
                     content_disposition = convert_response.headers.get("Content-Disposition", "")
-                    if "filename=" in content_disposition:
+                    if "filename*=UTF-8''" in content_disposition:
+                        # RFC5987 format: filename*=UTF-8''encoded_name
+                        encoded_name = content_disposition.split("filename*=UTF-8''")[1].split(';')[0]
+                        filename = unquote(encoded_name)
+                    elif 'filename="' in content_disposition:
+                        # Legacy format: filename="name"
                         filename = content_disposition.split('filename="')[1].split('"')[0]
                     
                     return self.success_response({

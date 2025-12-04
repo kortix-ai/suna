@@ -13,6 +13,7 @@ import tempfile
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from urllib.parse import quote
 from pydantic import BaseModel, Field
 
 try:
@@ -288,10 +289,11 @@ async def convert_presentation_to_pdf(request: ConvertRequest):
             
             print(f"✨ Direct download conversion completed for: {presentation_name}")
             
+            encoded_filename = quote(f"{presentation_name}.pdf", safe="")
             return Response(
                 content=pdf_content,
                 media_type="application/pdf",
-                headers={"Content-Disposition": f"attachment; filename=\"{presentation_name}.pdf\""}
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
             )
         
         # Otherwise, store locally and return JSON with download URL
