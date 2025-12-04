@@ -262,7 +262,7 @@ class GoogleSlidesService:
         # OAuth configuration - these should be environment variables in production
         self.client_id = os.getenv("GOOGLE_CLIENT_ID")
         self.client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-        self.redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/google/callback")
+        self.redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/v1/google/callback")
         
         # Validate required credentials
         if not self.client_id or not self.client_secret:

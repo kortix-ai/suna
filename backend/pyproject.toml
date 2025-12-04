@@ -1,7 +1,7 @@
 [project]
-name = "suna"
+name = "kortix"
 version = "1.0"
-description = "open source generalist AI Worker"
+description = "platform to build, manage and train AI Agents"
 authors = [{ name = "marko-kraemer", email = "mail@markokraemer.com" }]
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -93,7 +93,7 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://www.suna.so/"
+homepage = "https://www.kortix.com"
 repository = "https://github.com/kortix-ai/suna"
 
 [tool.uv]

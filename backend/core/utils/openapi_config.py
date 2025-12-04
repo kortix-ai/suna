@@ -40,7 +40,7 @@ This API supports two authentication methods:
 Use the `X-API-Key` header with your API key in the format: `pk_xxx:sk_xxx`
 
 ```bash
-curl -H "X-API-Key: pk_abc123:sk_def456" https://api.kortix.com/api/threads
+curl -H "X-API-Key: pk_abc123:sk_def456" https://api.kortix.com/v1/threads
 ```
 
 **Get your API key:** [https://www.kortix.com/settings/api-keys](https://www.kortix.com/settings/api-keys)
@@ -49,7 +49,7 @@ curl -H "X-API-Key: pk_abc123:sk_def456" https://api.kortix.com/api/threads
 Use the `Authorization` header with a Supabase JWT token:
 
 ```bash
-curl -H "Authorization: Bearer eyJhbG..." https://api.kortix.com/api/threads
+curl -H "Authorization: Bearer eyJhbG..." https://api.kortix.com/v1/threads
 ```
             """,
             routes=app.routes,

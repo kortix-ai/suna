@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Agents 101 | Kortix',
     description: 'An introduction to AI Agents.',
-    url: 'https://kortix.ai/agents-101',
+    url: 'https://www.kortix.com/agents-101',
     siteName: 'Kortix',
     images: [{ url: '/banner.png', width: 1200, height: 630 }],
     type: 'website',

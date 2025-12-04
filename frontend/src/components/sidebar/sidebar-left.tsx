@@ -11,7 +11,7 @@ import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
 import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import {
   Sidebar,
   SidebarContent,

@@ -1,5 +1,5 @@
 'use client';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile } from '@/hooks/utils';
 import { useState, useEffect, useRef, FormEvent, lazy, Suspense } from 'react';
@@ -30,7 +30,7 @@ import { useTranslations } from 'next-intl';
 
 // Lazy load components only needed when dialogs are open
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
-const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
+// const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
 const PlanSelectionModal = lazy(() => 
     import('@/components/billing/pricing').then(mod => ({ default: mod.PlanSelectionModal }))
 );
@@ -359,9 +359,11 @@ export function HeroSection() {
                         <Suspense fallback={<div className="h-12 bg-muted/20 rounded-full animate-pulse" />}>
                             <GoogleSignIn returnUrl="/dashboard" />
                         </Suspense>
+                        {/* GitHub auth commented out
                         <Suspense fallback={<div className="h-12 bg-muted/20 rounded-full animate-pulse" />}>
                             <GitHubSignIn returnUrl="/dashboard" />
                         </Suspense>
+                        */}
                     </div>
 
                     {/* Divider */}

@@ -237,10 +237,10 @@ BEGIN
     -- Delete Daytona sandboxes via HTTP endpoint before deleting account data
     BEGIN
         PERFORM net.http_post(
-            url := 'https://staging-api.suna.so/api/internal/delete-account-sandboxes',
+            url := 'https://staging-api.suna.so/v1/internal/delete-account-sandboxes',
             headers := json_build_object(
                 'Content-Type', 'application/json',
-                'X-Admin-Api-Key', 'j6ocvq8qeM3g9IOelVmUFpqtVpIVAtjsHr6PuN9RhI4g1cudFV1qErVIZE4e35us'
+                'X-Admin-Api-Key', 'thisnotvaliddonteventryhah_j6ocvq8qeM3g9IOelVmUFpqtVpIVAtjsHr6PuN9RhI4g1cudFV1qErVIZE4e35us'
             )::jsonb,
             body := json_build_object('account_id', v_account_id)::text::jsonb,
             timeout_milliseconds := 30000

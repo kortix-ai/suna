@@ -591,6 +591,14 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
         structlog.get_logger().debug("Allowing access to public project sandbox", project_id=project_id)
         return project_data
     
+    # Check if user is an admin (admins have access to all sandboxes)
+    admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
+    if admin_result.data and len(admin_result.data) > 0:
+        role = admin_result.data[0].get('role')
+        if role in ('admin', 'super_admin'):
+            structlog.get_logger().debug("Admin access granted for sandbox", sandbox_id=sandbox_id, user_role=role)
+            return project_data
+    
     # Private projects: Verify the user is a member of the project's account
     account_id = project_data.get('account_id')
     if not account_id:
@@ -668,6 +676,14 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
             sandbox_id=sandbox_id
         )
         raise HTTPException(status_code=401, detail="Authentication required for this private project")
+    
+    # Check if user is an admin (admins have access to all sandboxes)
+    admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
+    if admin_result.data and len(admin_result.data) > 0:
+        role = admin_result.data[0].get('role')
+        if role in ('admin', 'super_admin'):
+            structlog.get_logger().debug("Admin access granted for sandbox", sandbox_id=sandbox_id, user_role=role)
+            return project_data
     
     # Verify the user is a member of the project's account
     account_id = project_data.get('account_id')

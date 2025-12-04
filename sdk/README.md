@@ -7,7 +7,7 @@
 > 
 > The API is subject to breaking changes, features may be incomplete, and documentation may be outdated. Use at your own risk.
 
-A Python SDK that enables you to create, manage, and interact with AI Workers on [Suna](https://suna.so).
+A Python SDK that enables you to create, manage, and interact with AI Workers on [Kortix](https://www.kortix.com).
 
 ## 📦 Installation
 
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
 ## 🔑 Environment Setup
 
-Get your API key from [https://suna.so/settings/api-keys](https://suna.so/settings/api-keys)
+Get your API key from [https://www.kortix.com/settings/api-keys](https://www.kortix.com/settings/api-keys)
 
 ## 🧪 Running Examples
 

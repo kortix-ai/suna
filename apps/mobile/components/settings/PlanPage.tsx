@@ -790,12 +790,12 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
             )}
 
             <View className="flex-row justify-center mt-4 gap-4">
-              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://kortix.ai/privacy')}>
+              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/privacy')}>
                 <Text className="text-xs text-muted-foreground font-roobert-medium">
                 {t('billing.privacyPolicy', 'Privacy Policy')}
               </Text>
             </Pressable>
-              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://kortix.ai/terms')}>
+              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/terms')}>
                 <Text className="text-xs text-muted-foreground font-roobert-medium">
                 {t('billing.termsOfService', 'Terms of Service')}
               </Text>
