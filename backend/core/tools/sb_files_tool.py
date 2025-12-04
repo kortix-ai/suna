@@ -19,7 +19,36 @@ from typing import Optional
     color="bg-blue-100 dark:bg-blue-800/50",
     is_core=True,
     weight=10,
-    visible=True
+    visible=True,
+    usage_guide="""
+### FILE OPERATIONS
+
+**CORE CAPABILITIES:**
+- Creating, reading, modifying, and deleting files
+- Organizing files into directories/folders
+- Converting between file formats
+- Searching through file contents
+- Batch processing multiple files
+- AI-powered intelligent file editing with natural language instructions using `edit_file` tool exclusively
+
+**MANDATORY FILE EDITING TOOL:**
+- **MUST use `edit_file` for ALL file modifications**
+- This is a powerful AI tool that handles everything from simple replacements to complex refactoring
+- NEVER use `echo` or `sed` to modify files - always use `edit_file`
+- Provide clear natural language instructions and the code changes
+
+**FILE MANAGEMENT BEST PRACTICES:**
+- Use file tools for reading, writing, appending, and editing
+- Actively save intermediate results
+- Create organized file structures with clear naming conventions
+- Store different types of data in appropriate formats
+
+**ONE FILE PER REQUEST RULE:**
+- For a single user request, create ONE file and edit it throughout the process
+- Treat the file as a living document that you continuously update
+- Edit existing files rather than creating multiple new files
+- Build one comprehensive file that contains all related content
+"""
 )
 class SandboxFilesTool(SandboxToolsBase):
     """Tool for executing file system operations in a Daytona sandbox. All operations are performed relative to the /workspace directory."""

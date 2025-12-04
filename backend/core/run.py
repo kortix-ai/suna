@@ -57,12 +57,13 @@ class ToolManager:
         self.agent_config = agent_config
         self.account_id = agent_config.get('account_id') if agent_config else None
     
-    def register_all_tools(self, agent_id: Optional[str] = None, disabled_tools: Optional[List[str]] = None):
-        """Register all tools with manual control and proper initialization.
+    def register_all_tools(self, agent_id: Optional[str] = None, disabled_tools: Optional[List[str]] = None, use_spark: bool = True):
+        """Register tools with SPARK (lazy loading) or legacy (all at once).
         
         Args:
             agent_id: Optional agent ID for agent builder tools
             disabled_tools: List of tool names to exclude from registration
+            use_spark: If True, only register core tools (SPARK mode). If False, register all tools (legacy).
         """
         import time
         start = time.time()
@@ -70,47 +71,58 @@ class ToolManager:
         
         disabled_tools = disabled_tools or []
         
-        # Migrate tool config ONCE at the start to avoid repeated expensive operations
         t = time.time()
         self.migrated_tools = self._get_migrated_tools_config()
         timings['migrate_config'] = (time.time() - t) * 1000
         
-        # Core tools - always enabled
-        t = time.time()
-        self._register_core_tools()
-        timings['core_tools'] = (time.time() - t) * 1000
-        
-        # Sandbox tools
-        t = time.time()
-        self._register_sandbox_tools(disabled_tools)
-        timings['sandbox_tools'] = (time.time() - t) * 1000
-        
-        # Data and utility tools
-        t = time.time()
-        self._register_utility_tools(disabled_tools)
-        timings['utility_tools'] = (time.time() - t) * 1000
-        
-        # Agent builder tools - register if agent_id provided
-        if agent_id:
+        if use_spark:
+            logger.info("⚡ [SPARK] Registering CORE TOOLS ONLY (JIT loading enabled)")
             t = time.time()
-            self._register_agent_builder_tools(agent_id, disabled_tools)
-            timings['agent_builder_tools'] = (time.time() - t) * 1000
-        
-        # Browser tool
-        t = time.time()
-        self._register_browser_tool(disabled_tools)
-        timings['browser_tool'] = (time.time() - t) * 1000
-        
-        # Suna-specific tools (agent creation)
-        if self.account_id:
+            self._register_core_tools()
+            timings['core_tools'] = (time.time() - t) * 1000
+            
+            total = (time.time() - start) * 1000
+            logger.info(f"⚡ [SPARK] Core tool registration complete in {total:.1f}ms")
+            logger.info(f"⚡ [SPARK] {len(self.thread_manager.tool_registry.tools)} core functions registered")
+            logger.info(f"⚡ [SPARK] Other tools will be activated on-demand via load_tool_guide()")
+        else:
+            logger.info("⚠️  [LEGACY] Registering ALL TOOLS at startup")
+            
             t = time.time()
-            self._register_suna_specific_tools(disabled_tools)
-            timings['suna_tools'] = (time.time() - t) * 1000
-        
-        total = (time.time() - start) * 1000
-        timing_str = " | ".join([f"{k}: {v:.1f}ms" for k, v in timings.items()])
-        logger.info(f"⏱️ [TIMING] Tool registration breakdown: {timing_str}")
-        logger.info(f"Tool registration complete. {len(self.thread_manager.tool_registry.tools)} functions in {total:.1f}ms")
+            self._register_core_tools()
+            timings['core_tools'] = (time.time() - t) * 1000
+            
+            # Sandbox tools
+            t = time.time()
+            self._register_sandbox_tools(disabled_tools)
+            timings['sandbox_tools'] = (time.time() - t) * 1000
+            
+            # Data and utility tools
+            t = time.time()
+            self._register_utility_tools(disabled_tools)
+            timings['utility_tools'] = (time.time() - t) * 1000
+            
+            # Agent builder tools - register if agent_id provided
+            if agent_id:
+                t = time.time()
+                self._register_agent_builder_tools(agent_id, disabled_tools)
+                timings['agent_builder_tools'] = (time.time() - t) * 1000
+            
+            # Browser tool
+            t = time.time()
+            self._register_browser_tool(disabled_tools)
+            timings['browser_tool'] = (time.time() - t) * 1000
+            
+            # Suna-specific tools (agent creation)
+            if self.account_id:
+                t = time.time()
+                self._register_suna_specific_tools(disabled_tools)
+                timings['suna_tools'] = (time.time() - t) * 1000
+            
+            total = (time.time() - start) * 1000
+            timing_str = " | ".join([f"{k}: {v:.1f}ms" for k, v in timings.items()])
+            logger.info(f"⏱️ [TIMING] Tool registration breakdown: {timing_str}")
+            logger.info(f"⚠️  [LEGACY] Tool registration complete. {len(self.thread_manager.tool_registry.tools)} functions in {total:.1f}ms")
     
     def _register_core_tools(self):
         """Register core tools that are always available."""
@@ -354,10 +366,14 @@ class PromptManager:
                                   use_dynamic_tools: bool = True) -> dict:
         
         if use_dynamic_tools:
+            logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
             minimal_index = get_minimal_tool_index()
             default_system_content = get_dynamic_system_prompt(minimal_index)
+            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(default_system_content):,} chars")
         else:
+            logger.info("⚠️  [LEGACY MODE] Using full embedded prompt (all tool documentation included)")
             default_system_content = get_system_prompt()
+            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(default_system_content):,} chars")
         
         # if "anthropic" not in model_name.lower():
         #     sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')
@@ -622,6 +638,14 @@ Example of correct tool call format (multiple invokes in one block):
             except Exception as e:
                 logger.warning(f"Failed to add username to system prompt: {e}")
 
+        final_prompt_size = len(system_content)
+        if use_dynamic_tools:
+            estimated_legacy_size = final_prompt_size * 3.5
+            reduction_pct = ((estimated_legacy_size - final_prompt_size) / estimated_legacy_size) * 100
+            logger.info(f"✅ [DYNAMIC TOOLS] Final system prompt: {final_prompt_size:,} chars (est. {reduction_pct:.0f}% reduction vs legacy)")
+        else:
+            logger.info(f"📝 [LEGACY MODE] Final system prompt: {final_prompt_size:,} chars")
+        
         system_message = {"role": "system", "content": system_content}
         return system_message
 
@@ -639,9 +663,21 @@ class AgentRunner:
             self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
         
         tm_start = time.time()
+
+        from core.spark.config import SPARKConfig
+        disabled_tools = self._get_disabled_tools_from_config()
+        spark_config = SPARKConfig.from_run_context(
+            agent_config=self.config.agent_config,
+            disabled_tools=disabled_tools
+        )
+        
         self.thread_manager = ThreadManager(
             trace=self.config.trace, 
-            agent_config=self.config.agent_config
+            agent_config=self.config.agent_config,
+            project_id=self.config.project_id,
+            thread_id=self.config.thread_id,
+            account_id=self.config.account_id,
+            spark_config=spark_config
         )
         logger.debug(f"⏱️ [TIMING] ThreadManager init: {(time.time() - tm_start) * 1000:.1f}ms")
         
@@ -649,11 +685,9 @@ class AgentRunner:
         self.client = await self.thread_manager.db.client
         logger.debug(f"⏱️ [TIMING] DB client acquire: {(time.time() - db_start) * 1000:.1f}ms")
         
-        # If account_id is already provided (from worker), skip thread query entirely
         if self.config.account_id:
             self.account_id = self.config.account_id
             
-            # FAST PATH: Try project metadata cache first
             q_start = time.time()
             from core.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
             
@@ -727,8 +761,9 @@ class AgentRunner:
         logger.debug(f"⏱️ [TIMING] Tool config migration: {(time.time() - migrate_start) * 1000:.1f}ms")
         
         register_start = time.time()
-        tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools)
-        logger.info(f"⏱️ [TIMING] register_all_tools(): {(time.time() - register_start) * 1000:.1f}ms")
+        use_spark = True
+        tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools, use_spark=use_spark)
+        logger.info(f"⏱️ [TIMING] register_all_tools() with SPARK={use_spark}: {(time.time() - register_start) * 1000:.1f}ms")
         
         is_suna_agent = (self.config.agent_config and self.config.agent_config.get('is_suna_default', False)) or (self.config.agent_config is None)
         logger.debug(f"Agent config check: agent_config={self.config.agent_config is not None}, is_suna_default={is_suna_agent}")
@@ -1089,7 +1124,7 @@ async def run_agent(
     agent_config: Optional[dict] = None,    
     trace: Optional[StatefulTraceClient] = None,
     cancellation_event: Optional[asyncio.Event] = None,
-    account_id: Optional[str] = None  # If provided, skips thread query in setup()
+    account_id: Optional[str] = None
 ):
     effective_model = model_name
     

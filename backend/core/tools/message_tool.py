@@ -9,7 +9,42 @@ from core.utils.logger import logger
     color="bg-purple-100 dark:bg-purple-800/50",
     is_core=True,
     weight=310,
-    visible=True
+    visible=True,
+    usage_guide="""
+### CRITICAL: MANDATORY TOOL USAGE FOR ALL USER COMMUNICATION
+
+**ALL communication with users MUST use 'ask' or 'complete' tools. Raw text responses will NOT be displayed properly.**
+
+**WHEN TO USE 'ask' TOOL:**
+- **MANDATORY** for asking clarifying questions
+- **MANDATORY** for requesting user input or confirmation
+- **MANDATORY** for sharing information that requires user response
+- **MANDATORY** for presenting options or choices
+- **MANDATORY** for waiting for user feedback or decisions
+- **MANDATORY** for conversational interaction
+- **MANDATORY** for sharing files, visualizations, or deliverables (attach them)
+
+**WHEN TO USE 'complete' TOOL:**
+- **MANDATORY** when ALL tasks are finished and no user response needed
+- **MANDATORY** when signaling final completion of work
+- **MANDATORY** when providing final results without requiring user input
+
+**FORBIDDEN:**
+- ❌ NEVER send raw text responses without tool calls - information will be LOST
+- ❌ NEVER send questions as plain text - ALWAYS use 'ask' tool
+- ❌ NEVER signal completion without 'complete' tool
+
+**ATTACHMENT PROTOCOL:**
+- **CRITICAL: ALL VISUALIZATIONS MUST BE ATTACHED** when using 'ask' tool
+- This includes: HTML files, PDFs, markdown, images, charts, reports, dashboards
+- If user should SEE it, you must ATTACH it
+- Verify ALL visual outputs attached before proceeding
+
+**CONSEQUENCES:**
+- Raw text responses are NOT displayed properly to users
+- Valuable information will be LOST if not sent via tools
+- User experience will be BROKEN without proper tool usage
+"""
 )
 class MessageTool(Tool):
     """Tool for user communication and interaction.

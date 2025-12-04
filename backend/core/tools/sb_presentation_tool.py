@@ -16,7 +16,57 @@ import httpx
     icon="Presentation",
     color="bg-orange-100 dark:bg-orange-800/50",
     weight=70,
-    visible=True
+    visible=True,
+    usage_guide="""
+### PRESENTATION CREATION WORKFLOW
+
+**DEFAULT: CUSTOM THEME (ALWAYS USE UNLESS USER EXPLICITLY REQUESTS TEMPLATE)**
+Always create truly unique presentations with custom design systems based on the topic's actual brand colors and visual identity.
+
+**EFFICIENCY RULES - CRITICAL:**
+1. **Web/Image Search:** ALWAYS use batch mode - `web_search(query=["q1", "q2", "q3"])` - ALL queries in ONE call
+2. **Shell Commands:** Chain ALL folder creation + downloads in ONE command
+3. **Task Updates:** ONLY update tasks when completing a PHASE. Batch updates in SAME call
+
+**FOLDER STRUCTURE:**
+```
+presentations/
+  ├── images/              (shared images folder - used BEFORE presentation folder created)
+  │     └── image1.png
+  └── [title]/             (created when first slide made)
+        └── slide01.html
+```
+- Images go to `presentations/images/` BEFORE the presentation folder exists
+- Reference images using `../images/[filename]` (go up one level from presentation folder)
+
+**CUSTOM THEME WORKFLOW (DEFAULT):**
+
+**Phase 1: Topic Confirmation**
+- Ask user about: topic/subject, target audience, goals, requirements
+- WAIT FOR USER CONFIRMATION before proceeding
+
+**Phase 2: Theme and Content Planning**
+- Batch web search for brand identity: `web_search(query=["[topic] brand colors", "[topic] visual identity"])`
+- Define context-based custom color scheme from ACTUAL topic's brand colors
+- **CRITICAL:** Use actual topic-specific colors, NOT generic industry associations
+- Document where you found color information
+
+**Phase 3: Research and Content Planning (Complete ALL steps before Phase 4)**
+- Batch content research with web_search
+- Create content outline with specific image queries for each slide
+- Batch image search: `image_search(query=["[topic] query1", "[topic] query2"])` - ALL in ONE call
+- Single command for folder + ALL downloads + verify
+- Document image mapping (slide number → image filename)
+
+**Phase 4: Slide Creation (USE AS MANY IMAGES AS POSSIBLE)**
+- Only start after Phase 3 complete - all images downloaded and verified
+- Use images from `../images/[filename]` path
+- DO NOT skip images - if outline specified images, include them in slide HTML
+
+**Final Phase: Deliver**
+- Review for visual consistency
+- Deliver with first slide attached using 'complete' tool
+"""
 )
 class SandboxPresentationTool(SandboxToolsBase):
     """

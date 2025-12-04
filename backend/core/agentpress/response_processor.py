@@ -105,7 +105,7 @@ class ProcessorConfig:
 class ResponseProcessor:
     """Processes LLM responses, extracting and executing tool calls."""
     
-    def __init__(self, tool_registry: ToolRegistry, add_message_callback: Callable, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None):
+    def __init__(self, tool_registry: ToolRegistry, add_message_callback: Callable, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, spark_config: Optional['SPARKConfig'] = None):
         """Initialize the ResponseProcessor.
         
         Args:
@@ -113,6 +113,7 @@ class ResponseProcessor:
             add_message_callback: Callback function to add messages to the thread.
                 MUST return the full saved message object (dict) or None.
             agent_config: Optional agent configuration with version information
+            spark_config: Optional SPARK configuration for tool activation control
         """
         self.tool_registry = tool_registry
         self.add_message = add_message_callback
@@ -122,6 +123,7 @@ class ResponseProcessor:
             self.trace = langfuse.trace(name="anonymous:response_processor")
             
         self.agent_config = agent_config
+        self.spark_config = spark_config
 
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
         """Convert a LiteLLM ModelResponse object to a JSON-serializable dictionary.
@@ -1573,10 +1575,27 @@ class ResponseProcessor:
             # Look up the function by name
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                logger.error(f"❌ Tool function '{function_name}' not found in registry")
-                # logger.error(f"❌ Available functions: {list(available_functions.keys())}")
+                logger.warning(f"⚠️  Tool function '{function_name}' not found - attempting SPARK auto-activation")
+                activation_success = await self._spark_auto_activate(function_name)
+                
+                if activation_success:
+                    # Re-fetch available functions after activation
+                    available_functions = self.tool_registry.get_available_functions()
+                    tool_fn = available_functions.get(function_name)
+                    
+                    if tool_fn:
+                        logger.info(f"✅ [SPARK AUTO] Tool '{function_name}' auto-activated successfully")
+                    else:
+                        logger.error(f"❌ [SPARK AUTO] Tool '{function_name}' activation succeeded but function still not found")
+                        span.end(status_message="tool_activation_failed", level="ERROR")
+                        return ToolResult(success=False, output=f"Tool '{function_name}' could not be activated properly.")
+                else:
+                    logger.error(f"❌ Tool function '{function_name}' not found and auto-activation failed")
                 span.end(status_message="tool_not_found", level="ERROR")
-                return ToolResult(success=False, output=f"Tool function '{function_name}' not found. Available: {list(available_functions.keys())}")
+                return ToolResult(
+                    success=False, 
+                    output=f"Tool '{function_name}' not found. Available: {list(available_functions.keys())}"
+                )
 
             logger.debug(f"✅ Found tool function for '{function_name}'")
             # logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
@@ -1658,30 +1677,59 @@ class ResponseProcessor:
             logger.error(f"❌ Full traceback:", exc_info=True)
             span.end(status_message="critical_error", output=str(e), level="ERROR")
             return ToolResult(success=False, output=f"Critical error executing tool: {str(e)}")
+    
+    async def _spark_auto_activate(self, function_name: str) -> bool:
+        from core.spark import SPARKLoader
+        from core.spark.function_map import get_tool_for_function
+        
+        tool_name = get_tool_for_function(function_name)
+        if not tool_name:
+            logger.error(f"⚡ [SPARK AUTO] Function '{function_name}' not mapped to any tool")
+            return False
+        
+        logger.info(f"⚡ [SPARK AUTO] Auto-activating '{tool_name}' for function '{function_name}'")
+        
+        if not hasattr(self, '_cached_thread_manager'):
+            thread_manager = None
+            project_id = None
+            
+            for tool_info in self.tool_registry.tools.values():
+                instance = tool_info.get('instance')
+                if instance and hasattr(instance, 'thread_manager'):
+                    thread_manager = instance.thread_manager
+                    if hasattr(thread_manager, 'project_id'):
+                        project_id = thread_manager.project_id
+                    break
+            
+            if not thread_manager:
+                logger.error(f"⚡ [SPARK AUTO] No thread_manager available for activation")
+                return False
+            
+            self._cached_thread_manager = thread_manager
+            self._cached_project_id = project_id
+        
+        success = await SPARKLoader.activate_tool(
+            tool_name, 
+            self._cached_thread_manager, 
+            self._cached_project_id,
+            spark_config=self.spark_config
+        )
+        
+        if success:
+            logger.info(f"✅ [SPARK AUTO] Tool '{tool_name}' auto-activated successfully")
+        else:
+            logger.error(f"❌ [SPARK AUTO] Failed to auto-activate '{tool_name}'")
+        
+        return success
 
     async def _execute_tools(
         self,
         tool_calls: List[Dict[str, Any]],
         execution_strategy: ToolExecutionStrategy = "sequential"
     ) -> List[Tuple[Dict[str, Any], ToolResult]]:
-        """Execute tool calls with the specified strategy.
-
-        This is the main entry point for tool execution. It dispatches to the appropriate
-        execution method based on the provided strategy.
-
-        Args:
-            tool_calls: List of tool calls to execute
-            execution_strategy: Strategy for executing tools:
-                - "sequential": Execute tools one after another, waiting for each to complete
-                - "parallel": Execute all tools simultaneously for better performance
-
-        Returns:
-            List of tuples containing the original tool call and its result
-        """
         logger.debug(f"🎯 MAIN EXECUTE_TOOLS: Executing {len(tool_calls)} tools with strategy: {execution_strategy}")
         logger.debug(f"📋 Tool calls received: {tool_calls}")
 
-        # Validate tool_calls structure
         if not isinstance(tool_calls, list):
             logger.error(f"❌ tool_calls must be a list, got {type(tool_calls)}: {tool_calls}")
             return []
@@ -1714,17 +1762,6 @@ class ResponseProcessor:
             raise
 
     async def _execute_tools_sequentially(self, tool_calls: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], ToolResult]]:
-        """Execute tool calls sequentially and return results.
-
-        This method executes tool calls one after another, waiting for each tool to complete
-        before starting the next one. This is useful when tools have dependencies on each other.
-
-        Args:
-            tool_calls: List of tool calls to execute
-
-        Returns:
-            List of tuples containing the original tool call and its result
-        """
         if not tool_calls:
             logger.debug("🚫 No tool calls to execute sequentially")
             return []
@@ -1995,8 +2032,25 @@ class ResponseProcessor:
                 metadata["result"] = structured_result
                 metadata["return_format"] = "native"
                 
+                # Check if this is an internal tool result (should not be shown to users)
+                is_internal = False
+                if isinstance(result.output, str):
+                    try:
+                        import json
+                        output_dict = json.loads(result.output)
+                        if isinstance(output_dict, dict) and output_dict.get('_internal'):
+                            is_internal = True
+                            logger.debug(f"🔒 [INTERNAL] Tool result from '{function_name}' marked as internal (hidden from UI)")
+                    except:
+                        pass
+                
+                # Mark as internal in metadata so frontend can hide it
+                if is_internal:
+                    metadata["internal"] = True
+                    metadata["hidden_from_user"] = True
+                
                 # Add as a tool message to the conversation history
-                # This makes the result visible to the LLM in the next turn
+                # This makes the result visible to the LLM in the next turn (but can be hidden from UI)
                 message_obj = await self.add_message(
                     thread_id=thread_id,
                     type="tool",  # Special type for tool responses

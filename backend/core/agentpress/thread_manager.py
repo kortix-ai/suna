@@ -24,26 +24,33 @@ import litellm
 ToolChoice = Literal["auto", "required", "none"]
 
 class ThreadManager:
-    """Manages conversation threads with LLM models and tool execution."""
-
-    def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None):
+    def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, 
+                 project_id: Optional[str] = None, thread_id: Optional[str] = None, account_id: Optional[str] = None,
+                 spark_config: Optional['SPARKConfig'] = None):
         self.db = DBConnection()
         self.tool_registry = ToolRegistry()
+        
+        self.project_id = project_id
+        self.thread_id = thread_id
+        self.account_id = account_id
         
         self.trace = trace
         if not self.trace:
             self.trace = langfuse.trace(name="anonymous:thread_manager")
             
         self.agent_config = agent_config
+        
+        self.spark_config = spark_config
+        
         self.response_processor = ResponseProcessor(
             tool_registry=self.tool_registry,
             add_message_callback=self.add_message,
             trace=self.trace,
-            agent_config=self.agent_config
+            agent_config=self.agent_config,
+            spark_config=self.spark_config
         )
 
     def add_tool(self, tool_class: Type[Tool], function_names: Optional[List[str]] = None, **kwargs):
-        """Add a tool to the ThreadManager."""
         self.tool_registry.register_tool(tool_class, function_names, **kwargs)
 
     async def create_thread(
@@ -53,8 +60,6 @@ class ThreadManager:
         is_public: bool = False,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Create a new thread in the database."""
-        # logger.debug(f"Creating new thread (account_id: {account_id}, project_id: {project_id})")
         client = await self.db.client
 
         thread_data = {'is_public': is_public, 'metadata': metadata or {}}
@@ -85,8 +90,6 @@ class ThreadManager:
         agent_id: Optional[str] = None,
         agent_version_id: Optional[str] = None
     ):
-        """Add a message to the thread in the database."""
-        # logger.debug(f"Adding message of type '{type}' to thread {thread_id}")
         client = await self.db.client
 
         data_to_insert = {
@@ -469,7 +472,7 @@ class ThreadManager:
                 except Exception as e:
                     logger.debug(f"Fast path check failed, falling back to full fetch: {e}")
             
-            # Always fetch messages (needed for LLM call)
+            # ⚡ OPTIMIZATION: Fetch messages efficiently
             # Fast path just skips compression, not fetching!
             import time
             fetch_start = time.time()

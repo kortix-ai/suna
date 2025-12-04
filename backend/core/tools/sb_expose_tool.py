@@ -10,7 +10,25 @@ import time
     icon="Share",
     color="bg-indigo-100 dark:bg-indigo-800/50",
     weight=120,
-    visible=True
+    visible=True,
+    usage_guide="""
+### PORT EXPOSURE & WEB DEVELOPMENT
+
+**CRITICAL: PORT 8080 IS ALREADY EXPOSED**
+- A web server is ALREADY running on port 8080 in the sandbox
+- DO NOT start additional web servers
+- DO NOT use this tool for port 8080
+- Simply place HTML/CSS/JS files in /workspace and they're served automatically
+
+**WHEN TO USE THIS TOOL:**
+- Exposing custom development servers on other ports
+- Getting preview URLs for applications running on non-8080 ports
+
+**URL FORMAT CRITICAL:**
+- When main file is index.html: MUST include /index.html in URL
+- Example: https://8080-xxx.proxy.daytona.works/index.html
+- DO NOT provide base URLs without file path - causes "File not found" errors
+"""
 )
 class SandboxExposeTool(SandboxToolsBase):
     """Tool for exposing and retrieving preview URLs for sandbox ports."""
