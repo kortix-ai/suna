@@ -20,6 +20,11 @@ import httpx
     usage_guide="""
 ### PRESENTATION CREATION WORKFLOW
 
+**🚨 CRITICAL: This tool provides the `create_slide()` function for presentations!**
+- **ALWAYS** use `create_slide()` when creating presentation slides
+- **NEVER** use generic `create_file()` to create presentation slides
+- This tool is specialized for presentation creation with proper formatting, validation, and navigation
+
 **DEFAULT: CUSTOM THEME (ALWAYS USE UNLESS USER EXPLICITLY REQUESTS TEMPLATE)**
 Always create truly unique presentations with custom design systems based on the topic's actual brand colors and visual identity.
 

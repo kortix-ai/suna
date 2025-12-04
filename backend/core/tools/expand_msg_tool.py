@@ -161,16 +161,20 @@ class ExpandMessageTool(Tool):
         activation_results = await asyncio.gather(*activation_tasks, return_exceptions=True)
         logger.info(f"⏱️ [SPARK FAST] Parallel activation completed in {(time.time() - activation_start) * 1000:.1f}ms")
         
+        from core.spark.result_types import ActivationSuccess, ActivationError
+        
         guides = []
         activation_failures = []
         
-        for tool_name, activated in zip(valid_tool_names, activation_results):
-            if isinstance(activated, Exception):
+        for tool_name, result in zip(valid_tool_names, activation_results):
+            if isinstance(result, Exception):
                 activation_failures.append(tool_name)
-                logger.warning(f"⚠️  [SPARK] Failed to activate '{tool_name}': {activated}")
-            elif not activated:
+                logger.warning(f"⚠️  [SPARK] Failed to activate '{tool_name}': {result}")
+            elif isinstance(result, ActivationError):
                 activation_failures.append(tool_name)
-                logger.warning(f"⚠️  [SPARK] Failed to activate '{tool_name}', but continuing...")
+                logger.warning(f"⚠️  [SPARK] {result.to_user_message()}")
+            elif isinstance(result, ActivationSuccess):
+                logger.debug(f"✅ [SPARK] {result}")
             
             guide = get_tool_guide(tool_name)
             if guide:

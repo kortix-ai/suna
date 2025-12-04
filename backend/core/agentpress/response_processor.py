@@ -1681,6 +1681,7 @@ class ResponseProcessor:
     async def _spark_auto_activate(self, function_name: str) -> bool:
         from core.spark import SPARKLoader
         from core.spark.function_map import get_tool_for_function
+        from core.spark.result_types import ActivationSuccess, ActivationError
         
         tool_name = get_tool_for_function(function_name)
         if not tool_name:
@@ -1708,19 +1709,20 @@ class ResponseProcessor:
             self._cached_thread_manager = thread_manager
             self._cached_project_id = project_id
         
-        success = await SPARKLoader.activate_tool(
+        result = await SPARKLoader.activate_tool(
             tool_name, 
             self._cached_thread_manager, 
             self._cached_project_id,
             spark_config=self.spark_config
         )
         
-        if success:
-            logger.info(f"✅ [SPARK AUTO] Tool '{tool_name}' auto-activated successfully")
+        if isinstance(result, ActivationSuccess):
+            logger.info(f"✅ [SPARK AUTO] {result}")
+            return True
         else:
-            logger.error(f"❌ [SPARK AUTO] Failed to auto-activate '{tool_name}'")
-        
-        return success
+            # result is ActivationError
+            logger.error(f"❌ [SPARK AUTO] {result.to_user_message()}")
+            return False
 
     async def _execute_tools(
         self,

@@ -22,6 +22,12 @@ from .detector import ParameterDetector
 from .registry import ToolActivationRegistry
 from .function_map import get_tool_for_function, build_function_map
 from .config import SPARKConfig
+from .result_types import (
+    ActivationResult, ActivationSuccess, ActivationError,
+    ActivationErrorType, BatchActivationResult,
+    is_success, is_error
+)
+from .bloom_filter import FunctionBloomFilter, create_function_bloom_filter
 
 __all__ = [
     'SPARKLoader',
@@ -30,5 +36,14 @@ __all__ = [
     'ToolActivationRegistry',
     'get_tool_for_function',
     'build_function_map',
-    'SPARKConfig'
+    'SPARKConfig',
+    'ActivationResult',
+    'ActivationSuccess',
+    'ActivationError',
+    'ActivationErrorType',
+    'BatchActivationResult',
+    'is_success',
+    'is_error',
+    'FunctionBloomFilter',
+    'create_function_bloom_filter',
 ]

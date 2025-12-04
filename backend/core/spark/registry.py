@@ -1,35 +1,46 @@
 from typing import Set
+from weakref import WeakKeyDictionary
 from core.utils.logger import logger
 
 
 class ToolActivationRegistry:
     _instance = None
-    _activated_tools: Set[str] = set()
+    _activation_map: WeakKeyDictionary = None
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            logger.debug("⚡ [SPARK] Activation registry initialized")
+            cls._instance._activation_map = WeakKeyDictionary()
+            logger.debug("⚡ [SPARK] Activation registry initialized with per-instance tracking")
         return cls._instance
     
-    @classmethod
-    def is_activated(cls, tool_name: str) -> bool:
-        return tool_name in cls._activated_tools
+    def is_activated(self, thread_manager, tool_name: str) -> bool:
+        if thread_manager not in self._activation_map:
+            return False
+        return tool_name in self._activation_map[thread_manager]
     
-    @classmethod
-    def mark_activated(cls, tool_name: str):
-        cls._activated_tools.add(tool_name)
-        logger.debug(f"⚡ [SPARK] Marked '{tool_name}' as activated")
+    def mark_activated(self, thread_manager, tool_name: str):
+        if thread_manager not in self._activation_map:
+            self._activation_map[thread_manager] = set()
+        self._activation_map[thread_manager].add(tool_name)
+        logger.debug(f"⚡ [SPARK] Marked '{tool_name}' as activated for thread_manager {id(thread_manager)}")
     
-    @classmethod
-    def get_activated_tools(cls) -> Set[str]:
-        return cls._activated_tools.copy()
+    def remove_activated(self, thread_manager, tool_name: str):
+        if thread_manager in self._activation_map:
+            self._activation_map[thread_manager].discard(tool_name)
+            logger.debug(f"⚡ [SPARK] Removed '{tool_name}' from activated tools")
     
-    @classmethod
-    def get_activation_count(cls) -> int:
-        return len(cls._activated_tools)
+    def get_activated_tools(self, thread_manager) -> Set[str]:
+        if thread_manager not in self._activation_map:
+            return set()
+        return self._activation_map[thread_manager].copy()
     
-    @classmethod
-    def reset(cls):
-        cls._activated_tools.clear()
-        logger.debug("⚡ [SPARK] Registry reset")
+    def get_activation_count(self, thread_manager) -> int:
+        if thread_manager not in self._activation_map:
+            return 0
+        return len(self._activation_map[thread_manager])
+    
+    def reset(self, thread_manager):
+        if thread_manager in self._activation_map:
+            del self._activation_map[thread_manager]
+            logger.debug(f"⚡ [SPARK] Registry reset for thread_manager {id(thread_manager)}")

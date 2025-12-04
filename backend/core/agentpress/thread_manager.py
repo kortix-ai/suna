@@ -472,7 +472,7 @@ class ThreadManager:
                 except Exception as e:
                     logger.debug(f"Fast path check failed, falling back to full fetch: {e}")
             
-            # ⚡ OPTIMIZATION: Fetch messages efficiently
+            # Always fetch messages (needed for LLM call)
             # Fast path just skips compression, not fetching!
             import time
             fetch_start = time.time()
@@ -533,11 +533,9 @@ class ThreadManager:
                             await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
                 except Exception as e:
                     logger.debug(f"Failed to check cache_needs_rebuild flag: {e}")
-            
-            # Apply caching
+
             cache_start = time.time()
             if ENABLE_PROMPT_CACHING and len(messages) > 2:
-                # Skip caching for first message (minimal context)
                 prepared_messages = await apply_anthropic_caching_strategy(
                     system_prompt, 
                     messages, 
