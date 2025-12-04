@@ -12,18 +12,23 @@ import random
 import asyncio
 import time
 import json
+import re
 from core.utils.logger import logger
 
 
-def parse_image_paths(image_path: Optional[str]) -> list[str]:
+def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
     """
-    Parse image_path which could be a single path or a JSON array string.
+    Parse image_path which could be a single path, a list of paths, or a JSON array string.
     Returns a list of paths.
     """
     if not image_path:
         return []
     
-    # Try to parse as JSON array
+    # Already a list
+    if isinstance(image_path, list):
+        return [p.strip() for p in image_path if isinstance(p, str) and p.strip()]
+    
+    # String - try to parse as JSON array
     trimmed = image_path.strip()
     if trimmed.startswith('[') and trimmed.endswith(']'):
         try:
@@ -140,8 +145,20 @@ MANDATORY USAGE RULES:
                             "description": "Either a single prompt (string) or multiple prompts (array of strings) to execute concurrently. Use batch mode (array) for faster processing when creating or editing multiple images."
                         },
                         "image_path": {
-                            "type": "string",
-                            "description": "(edit mode only) Path to the image file to edit. Can be: 1) Relative path to /workspace (e.g., 'generated_image_abc123.png'), or 2) Full URL (e.g., 'https://example.com/image.png'). Required when mode='edit'. In batch mode, the same image will be edited with all prompts.",
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "description": "A single image path to edit."
+                                },
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description": "Multiple image paths for batch editing. Each image will be paired with the corresponding prompt by index."
+                                }
+                            ],
+                            "description": "(edit mode only) Path(s) to image file(s) to edit. Can be relative paths (e.g., 'image.png') or URLs. For batch mode: provide an array of paths matching your prompts array - each prompt[i] edits image_path[i]. If fewer images than prompts, the first image is used for remaining prompts.",
                         },
                     },
                     "required": ["mode", "prompt"],
@@ -153,7 +170,7 @@ MANDATORY USAGE RULES:
         self,
         mode: str,
         prompt: str | list[str],
-        image_path: Optional[str] = None,
+        image_path: Optional[str | list[str]] = None,
     ) -> ToolResult:
         """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support). Supports both single and batch operations."""
         try:
@@ -206,88 +223,59 @@ MANDATORY USAGE RULES:
                 elapsed_time = time.time() - start_time
                 logger.info(f"Batch image operation completed in {elapsed_time:.2f}s (concurrent execution)")
                 
-                # Process results and handle exceptions
-                batch_response = {
-                    "batch_mode": True,
-                    "total_prompts": len(prompts),
-                    "mode": mode,
-                    "results": []
-                }
+                # Process results - collect successes and failures
+                image_files: list[str] = []
+                errors: list[str] = []
                 
-                all_successful = True
                 for i, result in enumerate(results):
                     if isinstance(result, Exception):
-                        logger.error(f"Error processing prompt '{prompts[i]}': {str(result)}")
-                        batch_response["results"].append({
-                            "prompt": prompts[i],
-                            "success": False,
-                            "error": str(result),
-                            "image_filename": None
-                        })
-                        all_successful = False
+                        friendly_error = self._extract_friendly_error(result)
+                        logger.warning(f"Image {i+1} failed: {friendly_error}")
+                        errors.append(friendly_error)
                     elif isinstance(result, ToolResult):
-                        # Error ToolResult
-                        batch_response["results"].append({
-                            "prompt": prompts[i],
-                            "success": False,
-                            "error": result.output,
-                            "image_filename": None
-                        })
-                        all_successful = False
+                        logger.warning(f"Image {i+1} failed: {result.output}")
+                        errors.append(result.output)
                     else:
-                        # Success - result is a filename string
-                        batch_response["results"].append({
-                            "prompt": prompts[i],
-                            "success": True,
-                            "image_filename": result
-                        })
+                        # Success - result is filename
+                        image_files.append(result)
                 
-                successful_count = len([r for r in batch_response["results"] if r.get("success")])
-                logger.info(f"Batch operation completed: {successful_count}/{len(prompts)} prompts successful")
+                logger.info(f"Batch completed: {len(image_files)}/{len(prompts)} successful")
                 
-                # Create summary message
-                image_files = [r["image_filename"] for r in batch_response["results"] if r.get("success") and r.get("image_filename")]
+                # Build concise output
+                lines = []
                 if image_files:
-                    message = f"Successfully processed {successful_count} image(s) using mode '{mode}'. Images saved as:\n"
-                    for img_file in image_files:
-                        message += f"- {img_file}\n"
-                    message += "You can use the ask tool to display the images."
-                else:
-                    message = f"Batch operation completed with {successful_count} successful and {len(prompts) - successful_count} failed operations."
+                    lines.append(f"Images saved ({len(image_files)}):")
+                    for f in image_files:
+                        lines.append(f"- {f}")
+                if errors:
+                    unique_errors = list(dict.fromkeys(errors))  # Dedupe preserving order
+                    lines.append(f"Failed ({len(errors)}): {unique_errors[0]}")
                 
-                return ToolResult(
-                    success=all_successful,
-                    output=message
-                )
+                return ToolResult(success=True, output="\n".join(lines))
             else:
-                # Single prompt mode: original behavior
+                # Single prompt mode
                 if not prompt or not isinstance(prompt, str):
-                    return self.fail_response("A valid prompt is required.")
+                    return ToolResult(success=True, output="Error: A valid prompt is required.")
                 
                 prompt = prompt.strip()
                 if not prompt:
-                    return self.fail_response("A valid prompt is required.")
+                    return ToolResult(success=True, output="Error: A valid prompt is required.")
                 
                 logger.info(f"Executing single image operation with mode '{mode}' for prompt: '{prompt[:50]}...'")
                 
                 result = await self._execute_single_image_operation(mode, prompt, image_path, use_mock)
                 
                 if isinstance(result, ToolResult):
-                    # Error occurred
-                    return result
+                    # Error - return gracefully with friendly message
+                    return ToolResult(success=True, output=f"Failed: {result.output}")
                 
-                # Success - result is a filename string
-                return self.success_response(
-                    f"Successfully generated image using mode '{mode}'. Image saved as: {result}. You can use the ask tool to display the image."
-                )
+                # Success - result is filename
+                return ToolResult(success=True, output=f"Image saved as: {result}")
 
         except Exception as e:
-            error_message = str(e)
-            prompt_str = ", ".join(prompt) if isinstance(prompt, list) else str(prompt)
-            logger.error(f"Error performing image operation for '{prompt_str}': {error_message}")
-            return self.fail_response(
-                f"An error occurred during image generation/editing: {error_message}"
-            )
+            friendly_error = self._extract_friendly_error(e)
+            logger.error(f"Image operation error: {friendly_error}")
+            return ToolResult(success=True, output=f"Failed: {friendly_error}")
     
     async def _execute_single_image_operation(
         self,
@@ -359,8 +347,47 @@ MANDATORY USAGE RULES:
 
         except Exception as e:
             error_message = str(e)
-            logger.error(f"Error executing image operation for prompt '{prompt}': {error_message}")
-            return self.fail_response(f"Failed to process image: {error_message}")
+            logger.error(f"Error executing image operation for prompt '{prompt[:50]}...': {error_message}")
+            
+            # Extract user-friendly error message
+            friendly_message = self._extract_friendly_error(e)
+            return self.fail_response(friendly_message)
+    
+    def _extract_friendly_error(self, error: Exception) -> str:
+        """Extract a user-friendly error message from API exceptions."""
+        error_str = str(error).lower()
+        
+        # Check for moderation/safety blocks
+        if "moderation" in error_str or "safety" in error_str or "rejected" in error_str:
+            return "Image rejected by content safety filter. Try a different prompt or image."
+        
+        # Check for rate limits
+        if "rate" in error_str and "limit" in error_str:
+            return "Rate limit reached. Please wait a moment and try again."
+        
+        # Check for invalid image format
+        if "invalid" in error_str and "image" in error_str:
+            return "Invalid image format. Please use PNG, JPEG, or WebP."
+        
+        # Check for quota/billing issues
+        if "quota" in error_str or "billing" in error_str or "insufficient" in error_str:
+            return "API quota exceeded. Please check your account."
+        
+        # Check for timeout
+        if "timeout" in error_str:
+            return "Request timed out. Please try again."
+        
+        # Default: truncate long error messages
+        error_msg = str(error)
+        if len(error_msg) > 150:
+            # Try to extract just the message part from JSON errors
+            if '"message":' in error_msg:
+                match = re.search(r'"message":\s*"([^"]+)"', error_msg)
+                if match:
+                    return match.group(1)[:150]
+            return error_msg[:150] + "..."
+        
+        return f"Failed to process image: {error_msg}"
 
     async def _get_image_bytes(self, image_path: str) -> bytes | ToolResult:
         """Get image bytes from URL or local file path."""
