@@ -30,7 +30,47 @@ class SandboxUploadFileTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "upload_file",
-            "description": "Securely upload a file from the sandbox workspace to private cloud storage (Supabase S3). Returns a secure signed URL that expires after 24 hours for access control and security.",
+            "description": """Securely upload a file from the sandbox workspace to private cloud storage (Supabase S3). Returns a secure signed URL that expires after 24 hours for access control and security.
+
+CRITICAL: WHEN TO USE THIS TOOL
+
+ONLY use upload_file when:
+- User explicitly requests file sharing or asks for permanent URLs
+- User asks for files to be accessible externally or beyond the sandbox session
+- User requests deliverables that need to be shared with others
+- User asks for permanent or persistent file access
+
+DO NOT automatically upload files unless explicitly requested by the user.
+
+MANDATORY WORKFLOW: ASK USER FIRST
+Before uploading, ALWAYS ask the user: "Would you like me to upload this file to secure cloud storage for sharing?"
+
+Example workflow:
+1. Create file → "I've created the report. Would you like me to upload it to secure cloud storage for sharing?"
+2. Wait for user response
+3. Only if user says yes → Upload the file
+4. Share the secure URL (note: expires in 24 hours)
+
+STORAGE DETAILS:
+- Files stored in secure private storage with user isolation
+- Signed URL access only (24-hour expiration)
+- Each user can only access their own files
+- Maximum file size: 50MB
+
+UPLOAD BEST PRACTICES:
+- ASK FIRST: Always ask before uploading unless user explicitly requested it
+- EXPLAIN PURPOSE: Tell users why upload might be useful ("for sharing with others", "for permanent access")
+- RESPECT USER CHOICE: If user says no, don't upload
+- DEFAULT TO LOCAL: Keep files local unless user specifically needs external access
+- EXPLAIN EXPIRATION: Always mention that URLs expire after 24 hours
+
+INTEGRATED WORKFLOW WITH OTHER TOOLS:
+- Create file → ASK USER if they want to upload → Upload only if requested → Share secure URL
+- Generate image → ASK USER if they need cloud storage → Upload only if requested
+- Scrape data → Save to file → ASK USER about uploading for sharing
+- Create report → ASK USER before uploading
+
+EXCEPTION: Browser screenshots continue normal upload behavior without asking (handled automatically)""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -40,7 +80,7 @@ class SandboxUploadFileTool(SandboxToolsBase):
                     },
                     "custom_filename": {
                         "type": "string",
-                        "description": "Optional custom filename for the uploaded file. If not provided, uses original filename with timestamp"
+                        "description": "Optional custom filename for the uploaded file. If not provided, uses original filename with timestamp. Only use when user requests a specific filename."
                     },
                 },
                 "required": ["file_path"]
