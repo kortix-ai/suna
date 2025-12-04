@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Text as RNText } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Clock } from 'lucide-react-native';
@@ -16,7 +16,7 @@ import { safeJsonParse } from '@/lib/utils/message-grouping';
 import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 import { isAskOrCompleteTool, extractTextFromArguments } from '@/lib/utils/streaming-utils';
 import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
+import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
 import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
@@ -40,7 +40,7 @@ function normalizeArrayValue(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
   }
-  
+
   if (typeof value === 'string') {
     try {
       const parsed = JSON.parse(value);
@@ -52,7 +52,7 @@ function normalizeArrayValue(value: unknown): string[] {
       return value.split(',').map(a => a.trim()).filter(a => a.length > 0);
     }
   }
-  
+
   return [];
 }
 
@@ -63,11 +63,11 @@ function normalizeAttachments(attachments: unknown): string[] {
   if (Array.isArray(attachments)) {
     return attachments;
   }
-  
+
   if (typeof attachments === 'string') {
     return attachments.split(',').map(a => a.trim()).filter(a => a.length > 0);
   }
-  
+
   return [];
 }
 
@@ -76,7 +76,7 @@ function normalizeAttachments(attachments: unknown): string[] {
  */
 function getToolCallDisplayParam(toolCall: { arguments?: Record<string, any> | string }): string {
   let args: Record<string, any> = {};
-  
+
   if (toolCall.arguments) {
     if (typeof toolCall.arguments === 'string') {
       try {
@@ -88,7 +88,7 @@ function getToolCallDisplayParam(toolCall: { arguments?: Record<string, any> | s
       args = toolCall.arguments;
     }
   }
-  
+
   return args.file_path || args.path || args.command || args.query || args.url || '';
 }
 
@@ -101,7 +101,7 @@ function renderAskToolCall(
   props: AssistantMessageRendererProps
 ): React.ReactNode {
   const { onFileClick, sandboxId, isLatestMessage, onPromptFill, isDark = false } = props;
-  
+
   let args: Record<string, any> = {};
   if (toolCall.arguments) {
     if (typeof toolCall.arguments === 'string') {
@@ -114,7 +114,7 @@ function renderAskToolCall(
       args = toolCall.arguments;
     }
   }
-  
+
   const askText = args.text || '';
   const attachments = normalizeAttachments(args.attachments);
   const followUpAnswers = normalizeArrayValue(args.follow_up_answers);
@@ -124,6 +124,7 @@ function renderAskToolCall(
       {askText && (
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
+          rules={selectableRenderRules}
           onLinkPress={(url) => {
             Linking.openURL(url).catch(console.error);
             return false;
@@ -163,7 +164,7 @@ function renderCompleteToolCall(
   props: AssistantMessageRendererProps
 ): React.ReactNode {
   const { onFileClick, sandboxId, isLatestMessage, threadId, message, onPromptFill, isDark = false } = props;
-  
+
   let args: Record<string, any> = {};
   if (toolCall.arguments) {
     if (typeof toolCall.arguments === 'string') {
@@ -176,7 +177,7 @@ function renderCompleteToolCall(
       args = toolCall.arguments;
     }
   }
-  
+
   const completeText = args.text || '';
   const attachments = normalizeAttachments(args.attachments);
   const followUpPrompts = normalizeArrayValue(args.follow_up_prompts);
@@ -186,6 +187,7 @@ function renderCompleteToolCall(
       {completeText && (
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
+          rules={selectableRenderRules}
           onLinkPress={(url) => {
             Linking.openURL(url).catch(console.error);
             return false;
@@ -258,7 +260,7 @@ function convertXmlToolCallToUnified(xmlToolCall: { functionName: string; parame
 } {
   const toolName = xmlToolCall.functionName?.replace(/-/g, '_') || '';
   const toolCallId = messageId ? `xml_tool_index${index}_${messageId}` : `xml_tool_index${index}_${Date.now()}`;
-  
+
   return {
     tool_call_id: toolCallId,
     function_name: toolName,
@@ -280,25 +282,25 @@ function convertXmlToolCallToUnified(xmlToolCall: { functionName: string; parame
 export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
   const { message, isDark = false } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-  
+
   let toolCalls = metadata.tool_calls || [];
   let textContent = metadata.text_content || '';
-  
+
   // Fallback: if no metadata, parse from content (legacy messages)
   if (toolCalls.length === 0 && !textContent) {
     const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
     const contentStr = parsedContent.content || '';
-    
+
     if (typeof contentStr === 'string' && contentStr.trim()) {
       // Try to extract XML tool calls from content
       const xmlToolCalls = parseXmlToolCalls(contentStr);
-      
+
       if (xmlToolCalls.length > 0) {
         // Convert XML tool calls to unified format
-        toolCalls = xmlToolCalls.map((xmlTc, idx) => 
+        toolCalls = xmlToolCalls.map((xmlTc, idx) =>
           convertXmlToolCallToUnified(xmlTc, idx, message.message_id || null)
         );
-        
+
         // Extract clean text content (without XML tool calls)
         textContent = preprocessTextOnlyTools(contentStr);
       } else {
@@ -307,15 +309,16 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       }
     }
   }
-  
+
   const contentParts: React.ReactNode[] = [];
-  
+
   // Render text content first (if any)
   if (textContent.trim()) {
     contentParts.push(
       <Markdown
         key="text-content"
         style={isDark ? markdownStylesDark : markdownStyles}
+        rules={selectableRenderRules}
         onLinkPress={(url) => {
           Linking.openURL(url).catch(console.error);
           return false;
@@ -325,12 +328,12 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       </Markdown>
     );
   }
-  
+
   // Render tool calls from metadata (or parsed from XML)
   // Only render ask/complete tools inline - regular tool calls are rendered via ToolCard components
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name?.replace(/_/g, '-') || '';
-    
+
     if (toolName === 'ask') {
       contentParts.push(renderAskToolCall(toolCall, index, props));
     } else if (toolName === 'complete') {
@@ -338,9 +341,9 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
     }
     // Regular tool calls are rendered via ToolCard components in ThreadContent, not here
   });
-  
+
   if (contentParts.length === 0) return null;
-  
+
   return (
     <View className="space-y-2">
       {contentParts}
