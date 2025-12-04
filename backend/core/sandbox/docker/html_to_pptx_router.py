@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
+from urllib.parse import quote
 from pydantic import BaseModel, Field
 
 try:
@@ -1524,10 +1525,11 @@ async def convert_presentation_to_pptx(request: ConvertRequest):
         if request.download:
             pptx_content, total_slides, presentation_name = await converter.convert_to_pptx(store_locally=False)
             
+            encoded_filename = quote(f"{presentation_name}.pptx", safe="")
             return Response(
                 content=pptx_content,
                 media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                headers={"Content-Disposition": f"attachment; filename=\"{presentation_name}.pptx\""}
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
             )
         
         # Otherwise, store locally and return JSON with download URL
