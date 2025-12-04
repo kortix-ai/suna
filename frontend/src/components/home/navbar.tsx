@@ -2,7 +2,7 @@
 
 import { NavMenu } from '@/components/home/nav-menu';
 import { ThemeToggle } from '@/components/home/theme-toggle';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import { Menu, X, Github } from 'lucide-react';
 import { AnimatePresence, motion, useScroll } from 'framer-motion';
@@ -33,7 +33,7 @@ const drawerVariants = {
     y: 0,
     rotate: 0,
     transition: {
-      type: 'spring',
+      type: 'spring' as const,
       damping: 15,
       stiffness: 200,
       staggerChildren: 0.03,

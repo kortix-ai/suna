@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRoute
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from core.services import redis
+from core.utils.openapi_config import configure_openapi
 import sentry
 from contextlib import asynccontextmanager
 from core.agentpress.thread_manager import ThreadManager
@@ -143,7 +144,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"Error during application startup: {e}")
         raise
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    swagger_ui_parameters={
+        "persistAuthorization": True,  # Keep auth between page refreshes
+    },
+)
+
+# Configure OpenAPI docs with API Key and Bearer token auth
+configure_openapi(app)
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
@@ -151,7 +160,7 @@ async def rate_limit_middleware(request: Request, call_next):
     path = request.url.path
     
     # Skip rate limiting for health checks and OPTIONS requests
-    if path in ["/api/health", "/api/health-docker"] or request.method == "OPTIONS":
+    if path in ["/v1/health", "/v1/health-docker"] or request.method == "OPTIONS":
         return await call_next(request)
     
     # Get client identifier
@@ -160,11 +169,11 @@ async def rate_limit_middleware(request: Request, call_next):
     # Apply appropriate rate limiter based on path
     rate_limiter = None
     
-    if "/api/api-keys" in path:
+    if "/v1/api-keys" in path:
         rate_limiter = api_key_rate_limiter
-    elif "/api/admin" in path:
+    elif "/v1/admin" in path:
         rate_limiter = admin_rate_limiter
-    elif any(sensitive in path for sensitive in ["/api/setup/initialize", "/api/billing/webhook"]):
+    elif any(sensitive in path for sensitive in ["/v1/setup/initialize", "/v1/billing/webhook"]):
         rate_limiter = auth_rate_limiter
     
     if rate_limiter:
@@ -217,7 +226,7 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.kortix.com", "https://kortix.com", "https://www.suna.so", "https://suna.so"]
+allowed_origins = ["https://www.kortix.com", "https://kortix.com"]
 allow_origin_regex = None
 
 # Add staging-specific origins
@@ -229,8 +238,8 @@ if config.ENV_MODE == EnvMode.LOCAL:
 if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("https://staging.suna.so")
     allowed_origins.append("http://localhost:3000")
-    # Allow Vercel preview deployments for both legacy and new project names
-    allow_origin_regex = r"https://(suna|kortixcom)-.*-prjcts\.vercel\.app"
+    # Allow Vercel preview deployments
+    allow_origin_regex = r"https://kortix-.*-prjcts\.vercel\.app"
 
 app.add_middleware(
     CORSMiddleware,
@@ -329,7 +338,7 @@ async def health_check_docker():
         raise HTTPException(status_code=500, detail="Health check failed")
 
 
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="/v1")
 
 
 async def _memory_watchdog():

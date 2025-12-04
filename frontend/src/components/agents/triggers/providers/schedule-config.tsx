@@ -16,6 +16,7 @@ import { Clock, Calendar as CalendarIcon, Info, Zap, Repeat, Timer, Target, Acti
 import { format, startOfDay } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { TriggerProvider, ScheduleTriggerConfig } from '../types';
+import { AgentModelSelector } from '@/components/agents/config/model-selector';
 
 interface ScheduleTriggerConfigFormProps {
   provider: TriggerProvider;
@@ -97,6 +98,27 @@ const MONTHS = [
   { value: '11', label: 'November' },
   { value: '12', label: 'December' },
 ];
+
+const isCronTooFrequent = (cronExpression: string): boolean => {
+  if (!cronExpression) return false;
+  const parts = cronExpression.trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  
+  const [minute, hour] = parts;
+  
+  if (hour === '*' && (minute === '*' || minute.startsWith('*/'))) {
+    return true;
+  }
+  
+  if (minute.startsWith('*/')) {
+    const interval = parseInt(minute.slice(2), 10);
+    if (!isNaN(interval) && interval < 60) {
+      return true;
+    }
+  }
+  
+  return false;
+};
 
 export const ScheduleTriggerConfigForm: React.FC<ScheduleTriggerConfigFormProps> = ({
   provider,
@@ -324,6 +346,20 @@ export const ScheduleTriggerConfigForm: React.FC<ScheduleTriggerConfigFormProps>
                   {errors.agent_prompt && (
                     <p className="text-xs text-destructive">{errors.agent_prompt}</p>
                   )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Model
+                </h3>
+                <div className="space-y-3">
+                  <Label className="text-sm">Choose which model to use for this scheduled task</Label>
+                  <AgentModelSelector
+                    value={config.model || 'kortix/basic'}
+                    onChange={(model) => onChange({ ...config, model })}
+                  />
                 </div>
               </div>
             </div>
@@ -614,12 +650,17 @@ export const ScheduleTriggerConfigForm: React.FC<ScheduleTriggerConfigFormProps>
                           value={config.cron_expression || ''}
                           onChange={(e) => onChange({ ...config, cron_expression: e.target.value })}
                           placeholder="0 9 * * 1-5"
-                          className={errors.cron_expression ? 'border-destructive' : ''}
+                          className={cn(errors.cron_expression || isCronTooFrequent(config.cron_expression || '') ? 'border-destructive' : '')}
                         />
+                        {isCronTooFrequent(config.cron_expression || '') && (
+                          <p className="text-xs text-destructive mt-1">
+                            Schedules that run more frequently than once per hour are not allowed. Minimum interval is 1 hour.
+                          </p>
+                        )}
                         {errors.cron_expression && (
                           <p className="text-xs text-destructive mt-1">{errors.cron_expression}</p>
                         )}
-                        {config.cron_expression && !errors.cron_expression && (
+                        {config.cron_expression && !errors.cron_expression && !isCronTooFrequent(config.cron_expression || '') && (
                           <p className="text-xs text-green-600 mt-1">
                             ✓ {getSchedulePreview()}
                           </p>
@@ -634,6 +675,9 @@ export const ScheduleTriggerConfigForm: React.FC<ScheduleTriggerConfigFormProps>
                               <div>Format: <code className="bg-muted px-1 rounded text-xs">minute hour day month weekday</code></div>
                               <div>Example: <code className="bg-muted px-1 rounded text-xs">0 9 * * 1-5</code> = Weekdays at 9 AM</div>
                               <div>Use <code className="bg-muted px-1 rounded text-xs">*</code> for any value, <code className="bg-muted px-1 rounded text-xs">*/5</code> for every 5 units</div>
+                              <div className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                                Note: Minimum interval is 1 hour. Schedules like <code className="bg-muted px-1 rounded text-xs">*/5 * * * *</code> are not allowed.
+                              </div>
                             </div>
                           </CardContent>
                         </Card>

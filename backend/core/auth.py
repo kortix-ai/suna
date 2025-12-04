@@ -4,13 +4,19 @@ from typing import Optional
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # Don't auto-error, we handle both API key and Bearer
 
-async def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Security(security)) -> dict:
+async def get_current_user(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> dict:
+    """
+    Authenticate user via either X-API-Key header or Bearer token.
+    Supports both authentication methods for all endpoints.
+    """
     from core.utils.auth_utils import verify_and_get_user_id_from_jwt
     try:
         user_id = await verify_and_get_user_id_from_jwt(request)
-        return {"user_id": user_id, "token": credentials.credentials}
+        # Get token from credentials if available (for backwards compatibility)
+        token = credentials.credentials if credentials else None
+        return {"user_id": user_id, "token": token}
     except Exception as e:
         logger.error(f"Auth failed: {e}")
         raise HTTPException(status_code=401, detail="Invalid authentication")

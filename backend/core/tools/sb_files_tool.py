@@ -79,7 +79,6 @@ class SandboxFilesTool(SandboxToolsBase):
             print(f"Error getting workspace state: {str(e)}")
             return {}
 
-
     # def _get_preview_url(self, file_path: str) -> Optional[str]:
     #     """Get the preview URL for a file if it's an HTML file."""
     #     if file_path.lower().endswith('.html') and self._sandbox_url:

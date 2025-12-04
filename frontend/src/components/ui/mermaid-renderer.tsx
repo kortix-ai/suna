@@ -264,7 +264,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         const mermaid = (await import('mermaid')).default;
         await mermaid.initialize({
           startOnLoad: false,
-          securityLevel: 'loose',
+          securityLevel: 'strict',
           theme: 'base',
           fontFamily: 'ui-sans-serif, system-ui, sans-serif',
           // Enable experimental features including gitgraph
@@ -392,7 +392,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
           const mermaid = (await import('mermaid')).default;
           await mermaid.initialize({
             startOnLoad: false,
-            securityLevel: 'loose',
+            securityLevel: 'strict',
             theme: 'base',
             fontFamily: 'ui-sans-serif, system-ui, sans-serif',
             // Enable experimental features including gitgraph

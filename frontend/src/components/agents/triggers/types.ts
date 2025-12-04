@@ -65,6 +65,7 @@ export interface ScheduleTriggerConfig {
   cron_expression: string;
   agent_prompt?: string;
   timezone?: string;
+  model?: string;
 }
 
 export interface EventTriggerConfig {
@@ -72,4 +73,5 @@ export interface EventTriggerConfig {
   agent_prompt: string;
   trigger_slug: string;
   composio_trigger_id?: string;
+  model?: string;
 } 

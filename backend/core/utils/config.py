@@ -319,7 +319,7 @@ class Configuration:
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
     OPENAI_COMPATIBLE_API_KEY: Optional[str] = None
     OPENAI_COMPATIBLE_API_BASE: Optional[str] = None
-    OR_SITE_URL: Optional[str] = "https://kortix.ai"
+    OR_SITE_URL: Optional[str] = "https://www.kortix.com"
     OR_APP_NAME: Optional[str] = "Kortix AI"
     
     # Frontend URL configuration

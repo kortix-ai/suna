@@ -74,10 +74,13 @@ class ExecutionService:
             
             from core.agent_runs import start_agent_run
             
+            model_name = trigger_result.model if hasattr(trigger_result, 'model') and trigger_result.model else None
+            
             result = await start_agent_run(
                 account_id=account_id,
                 prompt=rendered_prompt,
                 agent_id=agent_id,
+                model_name=model_name,
                 metadata={
                     "trigger_execution": True,
                     "trigger_id": trigger_event.trigger_id,

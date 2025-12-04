@@ -672,6 +672,7 @@ class CreateComposioTriggerRequest(BaseModel):
     connected_account_id: Optional[str] = None
     webhook_url: Optional[str] = None
     toolkit_slug: Optional[str] = None
+    model: Optional[str] = None
 
 
 @router.post("/triggers/create")
@@ -835,14 +836,13 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         if not composio_trigger_id:
             raise HTTPException(status_code=500, detail="Failed to get Composio trigger id from response")
 
-        # Build Suna trigger config
         suna_config: Dict[str, Any] = {
             "provider_id": "composio",
             "composio_trigger_id": composio_trigger_id,
             "trigger_slug": req.slug,
-            "qualified_name": qualified_name,  # Store the qualified_name for template export
+            "qualified_name": qualified_name,
             "profile_id": req.profile_id,
-            # Include the actual trigger configuration (interval, etc.)
+            "model": req.model or "kortix/basic",
             **coerced_config,
         }
         if req.agent_prompt:

@@ -1,7 +1,7 @@
 'use client';
 
 import type { PricingTier } from '@/lib/pricing-config';
-import { siteConfig } from '@/lib/home';
+import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import React, { useState, useEffect, useCallback } from 'react';

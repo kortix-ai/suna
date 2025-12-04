@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { ENV_MODE, EnvMode } from '@/lib/utils/env-config';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/api';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/v1';
 
 const FRONTEND_URL = process.env.EXPO_PUBLIC_FRONTEND_URL || '';
 

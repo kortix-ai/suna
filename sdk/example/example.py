@@ -33,7 +33,7 @@ async def main():
 
     kortix_client = kortix.Kortix(
         os.getenv("KORTIX_API_KEY", "pk_xxx:sk_xxx"),
-        "http://localhost:8000/api",
+        "http://localhost:8000/v1",
     )
 
     # Setup the agent

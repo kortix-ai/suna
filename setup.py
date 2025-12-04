@@ -1543,7 +1543,7 @@ class SetupWizard:
         # --- Frontend .env.local ---
         # Always use localhost for base .env files - Docker override handled separately
         frontend_supabase_url = self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"]
-        backend_url = "http://localhost:8000/api"
+        backend_url = "http://localhost:8000/v1"
         
         frontend_env = {
             "NEXT_PUBLIC_ENV_MODE": "local",  # production, staging, or local
@@ -1570,7 +1570,7 @@ class SetupWizard:
             "EXPO_PUBLIC_ENV_MODE": "local",  # production, staging, or local
             "EXPO_PUBLIC_SUPABASE_URL": self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"],
             "EXPO_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
-            "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000/api",
+            "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000/v1",
             "EXPO_PUBLIC_URL": "http://localhost:3000",
         }
 

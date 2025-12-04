@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TriggerProvider, EventTriggerConfig } from '../types';
+import { AgentModelSelector } from '@/components/agents/config/model-selector';
 
 interface EventTriggerConfigFormProps {
   provider: TriggerProvider;
@@ -167,6 +168,20 @@ export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
                   {errors.agent_prompt && (
                     <p className="text-xs text-destructive">{errors.agent_prompt}</p>
                   )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Model
+                </h3>
+                <div className="space-y-3">
+                  <Label className="text-sm">Choose which model to use for this event trigger</Label>
+                  <AgentModelSelector
+                    value={config.model || 'kortix/basic'}
+                    onChange={(model) => onChange({ ...config, model })}
+                  />
                 </div>
               </div>
             </div>

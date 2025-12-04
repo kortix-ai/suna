@@ -1,14 +1,11 @@
 <div align="center">
 
-# Kortix – Open Source Platform to Build, Manage and Train AI Agents
-
-![Kortix Screenshot](frontend/public/banner.png)
+# Kortix
 
 **The complete platform for creating autonomous AI agents that work for you**
 
-Kortix is a comprehensive open source platform that empowers you to build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf, from general-purpose assistants to specialized automation tools.
+Build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue)](./license)
 [![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/RvFhXUdZ9H)
 [![Twitter Follow](https://img.shields.io/twitter/follow/kortix)](https://x.com/korti)
 [![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/suna)](https://github.com/kortix-ai/suna)
@@ -24,7 +21,11 @@ Kortix is a comprehensive open source platform that empowers you to build, manag
 [Русский](https://www.readme-i18n.com/kortix-ai/suna?lang=ru) | 
 [中文](https://www.readme-i18n.com/kortix-ai/suna?lang=zh)
 
+![Kortix Screenshot](frontend/public/banner.png)
 </div>
+
+
+
 
 ## 🌟 What Makes Kortix Special
 
@@ -50,7 +51,7 @@ Create your own specialized agents tailored to specific domains, workflows, or b
 - [🚀 Quick Start](#-quick-start)
 - [🏠 Self-Hosting](#-self-hosting)
 - [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
+- [📄 License](LICENSE)
 
 ## 🎯 Agent Examples & Use Cases
 
@@ -169,9 +170,6 @@ That's it! Your Kortix platform will be running with Suna ready to assist you.
 
 Just use "setup.py". Ty mate.
 
-## 📄 License
-
-Kortix is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
 
 ---
 

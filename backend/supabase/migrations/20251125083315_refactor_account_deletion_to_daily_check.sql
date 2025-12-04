@@ -43,7 +43,7 @@ BEGIN
             -- Delete Daytona sandboxes via HTTP endpoint before deleting account data
             BEGIN
                 PERFORM net.http_post(
-                    url := 'https://api.kortix.com/api/internal/delete-account-sandboxes',
+                    url := 'https://api.kortix.com/v1/internal/delete-account-sandboxes',
                     headers := json_build_object(
                         'Content-Type', 'application/json',
                         'X-Admin-Api-Key', 'ACTUAL_KEY_GOES_HERE_JUST_RUN_IN_SQL_EDITOR_WITH_ACTUAL_KEY'
