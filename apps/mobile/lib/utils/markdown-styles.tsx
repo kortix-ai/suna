@@ -5,91 +5,88 @@
  * Ensures perfect rendering of all markdown elements
  */
 
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 import React from 'react';
+import { UITextView } from 'react-native-uitextview';
 
-// Selectable text wrapper component
-export const SelectableText = (props: any) => (
-  <Text {...props} selectable={true} />
-);
-
-// Custom render rules for selectable text
+// Custom render rules for selectable text using UITextView
 export const selectableRenderRules: any = {
   text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <Text key={node.key} style={[inheritedStyles, styles.text]} selectable={true}>
+    <UITextView key={node.key} style={[inheritedStyles, styles.text]} selectable uiTextView>
       {node.content}
-    </Text>
+    </UITextView>
   ),
   textgroup: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.textgroup} selectable={true}>
+    <UITextView key={node.key} style={styles.textgroup} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   paragraph: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.paragraph} selectable={true}>
+    <UITextView key={node.key} style={styles.paragraph} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   strong: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <Text key={node.key} style={[inheritedStyles, styles.strong]} selectable={true}>
+    <UITextView key={node.key} style={[inheritedStyles, styles.strong]} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   em: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <Text key={node.key} style={[inheritedStyles, styles.em]} selectable={true}>
+    <UITextView key={node.key} style={[inheritedStyles, styles.em]} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   code_inline: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
-    <Text key={node.key} style={[inheritedStyles, styles.code_inline]} selectable={true}>
+    <UITextView key={node.key} style={[inheritedStyles, styles.code_inline]} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   heading1: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.heading1} selectable={true}>
+    <UITextView key={node.key} style={styles.heading1} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   heading2: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.heading2} selectable={true}>
+    <UITextView key={node.key} style={styles.heading2} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   heading3: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.heading3} selectable={true}>
+    <UITextView key={node.key} style={styles.heading3} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   heading4: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.heading4} selectable={true}>
+    <UITextView key={node.key} style={styles.heading4} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   heading5: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.heading5} selectable={true}>
+    <UITextView key={node.key} style={styles.heading5} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   heading6: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.heading6} selectable={true}>
+    <UITextView key={node.key} style={styles.heading6} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   blockquote: (node: any, children: any, parent: any, styles: any) => (
-    <Text key={node.key} style={styles.blockquote} selectable={true}>
+    <UITextView key={node.key} style={styles.blockquote} selectable uiTextView>
       {children}
-    </Text>
+    </UITextView>
   ),
   link: (node: any, children: any, parent: any, styles: any, onLinkPress: any) => {
     return (
-      <Text
+      <UITextView
         key={node.key}
         style={styles.link}
         onPress={() => onLinkPress && onLinkPress(node.attributes.href)}
-        selectable={true}
+        selectable
+        uiTextView
       >
         {children}
-      </Text>
+      </UITextView>
     );
   },
 };

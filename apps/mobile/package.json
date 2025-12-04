@@ -95,6 +95,7 @@
     "react-native-sse": "^1.2.1",
     "react-native-svg": "15.12.1",
     "react-native-syntax-highlighter": "^2.1.0",
+    "react-native-uitextview": "^2.1.1",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-vector-icons": "^10.3.0",
     "react-native-web": "^0.21.0",
