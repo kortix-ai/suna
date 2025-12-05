@@ -464,10 +464,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
 
                                         return (
                                             <div key={group.key} className="flex justify-end">
-                                                <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
-                                                    <div className="space-y-3 min-w-0 flex-1">
+                                                <div className="flex max-w-[90%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
+                                                    <div className="space-y-2 min-w-0 flex-1">
                                                         {cleanContent && (
-                                                            <ComposioUrlDetector content={cleanContent} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                            <ComposioUrlDetector content={cleanContent} />
                                                         )}
 
                                                         {/* Use the helper function to render user attachments */}
@@ -490,7 +490,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                     </div>
 
                                                     {/* Message content - ALL messages in the group */}
-                                                    <div className="flex max-w-[90%] text-sm break-words overflow-hidden">
+                                                    <div className="flex max-w-[90%] break-words overflow-hidden">
                                                         <div className="space-y-2 min-w-0 flex-1">
                                                             {(() => {
                                                                 const toolResultsMap = new Map<string | null, UnifiedMessage[]>();
@@ -542,7 +542,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
 
                                                                         elements.push(
                                                                             <div key={msgKey} className={assistantMessageCount > 0 ? "mt-4" : ""}>
-                                                                                <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-hidden">
+                                                                                <div className="break-words overflow-hidden">
                                                                                     {renderedContent}
                                                                                 </div>
                                                                             </div>
@@ -609,7 +609,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         return (
                                                                             <>
                                                                                 {textBeforeTag && (
-                                                                                    <ComposioUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                                                    <ComposioUrlDetector content={textBeforeTag} />
                                                                                 )}
 
                                                                                 {detectedTag && isAskOrComplete ? (
@@ -620,7 +620,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         return (
                                                                                             <ComposioUrlDetector 
                                                                                                 content={extractedText} 
-                                                                                                className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
                                                                                             />
                                                                                         );
                                                                                     })()
@@ -696,7 +695,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         return (
                                                                             <>
                                                                                 {textBeforeTag && (
-                                                                                            <ComposioUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                                                            <ComposioUrlDetector content={textBeforeTag} />
                                                                                         )}
 
                                                                                         {detectedTag && isAskOrComplete ? (
@@ -707,7 +706,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                 return (
                                                                                                     <ComposioUrlDetector 
                                                                                                         content={extractedText} 
-                                                                                                        className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
                                                                                                     />
                                                                                                 );
                                                                                             })()
@@ -783,7 +781,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                             <div className="mt-2">
                                                                                 <ComposioUrlDetector 
                                                                                     content={textToShow} 
-                                                                                    className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
                                                                                 />
                                                                             </div>
                                                                         );

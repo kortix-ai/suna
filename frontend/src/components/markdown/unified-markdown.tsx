@@ -182,7 +182,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
           // PARAGRAPHS - Optimal line height for readability
           // ═══════════════════════════════════════════════════════════════
           p: ({ children }) => (
-            <p className="text-foreground leading-relaxed my-4 first:mt-0 last:mb-0 [&:has(img)]:my-0">
+            <p className="text-sm text-foreground leading-relaxed my-4 first:mt-0 last:mb-0 [&:has(img)]:my-0">
               {children}
             </p>
           ),
@@ -191,17 +191,17 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
           // LISTS - Clean bullets with proper spacing
           // ═══════════════════════════════════════════════════════════════
           ul: ({ children }) => (
-            <ul className="my-4 ml-6 list-disc marker:text-muted-foreground/60 space-y-2 first:mt-0 last:mb-0">
+            <ul className="my-4 ml-6 list-disc marker:text-muted-foreground/60 space-y-2 first:mt-0 last:mb-0 text-sm">
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="my-4 ml-6 list-decimal marker:text-muted-foreground/60 marker:font-medium space-y-2 first:mt-0 last:mb-0">
+            <ol className="my-4 ml-6 list-decimal marker:text-muted-foreground/60 marker:font-medium space-y-2 first:mt-0 last:mb-0 text-sm">
               {children}
             </ol>
           ),
           li: ({ children }) => (
-            <li className="text-foreground leading-relaxed pl-1">
+            <li className="text-sm text-foreground leading-relaxed pl-1">
               {children}
             </li>
           ),
@@ -293,7 +293,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
           // ═══════════════════════════════════════════════════════════════
           blockquote: ({ children }) => (
             <blockquote className={cn(
-              "my-5 pl-4 py-1",
+              "my-5 pl-4 py-1 text-sm",
               "border-l-2 border-border",
               "text-muted-foreground",
               "[&>p]:my-2"
