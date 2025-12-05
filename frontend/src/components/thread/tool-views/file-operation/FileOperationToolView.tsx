@@ -10,20 +10,21 @@ import {
   Copy,
   Check,
   Maximize2,
+  Presentation,
 } from 'lucide-react';
 import {
   formatTimestamp,
   getToolTitle,
 } from '../utils';
 import {
-  MarkdownRenderer,
+  CodeEditor,
   processUnicodeContent,
-} from '@/components/file-renderers/authenticated-markdown-renderer';
-import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
-import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
+  getFileTypeFromExtension,
+} from '@/components/file-editors';
+import { UnifiedMarkdown } from '@/components/markdown';
+import { CsvRenderer, XlsxRenderer } from '@/components/file-renderers';
 import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
-import { CodeBlockCode } from '@/components/ui/code-block';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
   Card,
@@ -52,9 +53,37 @@ import {
   type OperationConfig,
 } from './_utils';
 import { ToolViewProps } from '../types';
-import { GenericToolView } from '../GenericToolView';
 import { LoadingState } from '../shared/LoadingState';
 import { toast } from 'sonner';
+import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
+import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
+
+// Helper functions for presentation slide detection
+// Helper function to check if a filepath is a presentation slide file
+function isPresentationSlideFile(filepath: string): boolean {
+  // Match patterns like:
+  // - presentations/[name]/slide_01.html
+  // - /workspace/presentations/[name]/slide_01.html
+  // - ./presentations/[name]/slide_01.html
+  const presentationPattern = /presentations\/([^\/]+)\/slide_\d+\.html$/i;
+  return presentationPattern.test(filepath);
+}
+
+// Helper function to extract presentation name from filepath
+function extractPresentationName(filepath: string): string | null {
+  // Match presentations/[name]/ anywhere in the path
+  const match = filepath.match(/presentations\/([^\/]+)\//i);
+  return match ? match[1] : null;
+}
+
+// Helper function to extract slide number from filepath
+function extractSlideNumber(filepath: string): number | null {
+  const match = filepath.match(/slide_(\d+)\.html$/i);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+  return null;
+}
 
 export function FileOperationToolView({
   toolCall,
@@ -70,6 +99,9 @@ export function FileOperationToolView({
 }: ToolViewProps) {
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
+
+  // Presentation viewer store for opening fullscreen presentation
+  const { openPresentation } = usePresentationViewerStore();
 
   // Extract from structured metadata
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
@@ -89,6 +121,13 @@ export function FileOperationToolView({
 
   // Extract file path from arguments (from metadata)
   filePath = args.file_path || args.target_file || args.path || null;
+  
+  // Also try to get file path from output first (more reliable for completed operations)
+  if (output && typeof output === 'object' && output !== null) {
+    if (!filePath && (output.file_path || output.path)) {
+      filePath = output.file_path || output.path;
+    }
+  }
 
   // STREAMING: Extract content from live streaming JSON arguments
   if (isStreaming && streamingText) {
@@ -194,10 +233,24 @@ export function FileOperationToolView({
   const fileName = getFileName(processedFilePath);
   const fileExtension = getFileExtension(fileName);
 
-  const isMarkdown = isFileType.markdown(fileExtension);
   const isHtml = isFileType.html(fileExtension);
-  const isCsv = isFileType.csv(fileExtension);
-  const isXlsx = isFileType.xlsx(fileExtension);
+
+  // Check if this is a presentation slide file
+  const isPresentationSlide = processedFilePath ? isPresentationSlideFile(processedFilePath) : false;
+  const presentationName = isPresentationSlide && processedFilePath ? extractPresentationName(processedFilePath) : null;
+  const slideNumber = isPresentationSlide && processedFilePath ? extractSlideNumber(processedFilePath) : null;
+
+  // Log for debugging file operations (only when it's a presentation slide)
+  if (isPresentationSlide) {
+    console.log('[FileOperationToolView] Presentation slide detected:', {
+      operation,
+      processedFilePath,
+      presentationName,
+      slideNumber,
+      isStreaming,
+      hasSandboxUrl: !!project?.sandbox?.sandbox_url,
+    });
+  }
 
   const language = getLanguageFromFileName(fileName);
   const hasHighlighting = hasLanguageHighlighting(language);
@@ -213,38 +266,40 @@ export function FileOperationToolView({
   // Auto-scroll refs for streaming
   const sourceScrollRef = React.useRef<HTMLDivElement>(null);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
+  const lastLineCountRef = React.useRef<number>(0);
 
-  // Auto-scroll for source code view during streaming (with smooth animation)
+  // Auto-scroll for source code view during streaming - simple and stable
   React.useEffect(() => {
-    if (isStreaming && fileContent && sourceScrollRef.current) {
-      const viewport = sourceScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
-      if (viewport) {
-        // Use requestAnimationFrame for smoother scrolling
-        requestAnimationFrame(() => {
-          // Get the actual content height (number of lines * line height)
-          const lineCount = contentLines.length;
-          const lineHeight = 24; // Approximate line height in pixels
-          const targetScroll = lineCount * lineHeight;
+    if (!isStreaming || !fileContent || !sourceScrollRef.current) return;
+    
+    // Only scroll when new lines are added
+    const currentLineCount = contentLines.length;
+    if (currentLineCount <= lastLineCountRef.current) return;
+    lastLineCountRef.current = currentLineCount;
 
-          // Smooth scroll with CSS transition
-          viewport.style.scrollBehavior = 'smooth';
-          viewport.scrollTop = targetScroll;
-        });
-      }
-    }
-  }, [isStreaming, fileContent, contentLines.length]);
+    const viewport = sourceScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
 
-  // Auto-scroll for preview tab during streaming (with smooth animation)
+    // Instantly scroll to bottom without smooth behavior to prevent jitter
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [isStreaming, contentLines.length, fileContent]);
+
+  // Reset line count ref when streaming stops
   React.useEffect(() => {
-    if (isStreaming && fileContent && previewScrollRef.current) {
-      const viewport = previewScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
-      if (viewport) {
-        requestAnimationFrame(() => {
-          viewport.style.scrollBehavior = 'smooth';
-          viewport.scrollTop = viewport.scrollHeight;
-        });
-      }
+    if (!isStreaming) {
+      lastLineCountRef.current = 0;
     }
+  }, [isStreaming]);
+
+  // Auto-scroll for preview tab during streaming - simple approach
+  React.useEffect(() => {
+    if (!isStreaming || !fileContent || !previewScrollRef.current) return;
+
+    const viewport = previewScrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
+    if (!viewport) return;
+
+    // Instantly scroll to bottom
+    viewport.scrollTop = viewport.scrollHeight;
   }, [isStreaming, fileContent]);
 
   // Copy functions
@@ -275,9 +330,97 @@ export function FileOperationToolView({
   // Don't fallback to GenericToolView
 
   const renderFilePreview = () => {
+    // Handle presentation slide files specially
+    if (isPresentationSlide && presentationName) {
+      // During streaming, show a nice preview with the HTML content being written
+      if (isStreaming) {
+        return (
+          <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900">
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60">
+              <Presentation className="h-10 w-10 text-blue-500 dark:text-blue-400" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+              Updating Presentation
+            </h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center mb-4">
+              {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
+            </p>
+            <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Writing slide content...</span>
+            </div>
+          </div>
+        );
+      }
+
+      // After streaming completes, show the presentation preview if sandbox URL is available
+      if (project?.sandbox?.sandbox_url) {
+        return (
+          <div className="w-full h-full flex flex-col bg-white dark:bg-zinc-900">
+            <div className="flex-1 p-4">
+              <PresentationSlidePreview
+                key={`${presentationName}-${slideNumber}`}
+                presentationName={presentationName}
+                project={project}
+                initialSlide={slideNumber || undefined}
+                onFullScreenClick={(slideNum) => {
+                  console.log('[FileOperationToolView] Opening presentation fullscreen:', {
+                    presentationName,
+                    sandboxUrl: project.sandbox.sandbox_url,
+                    slideNumber: slideNum || slideNumber || 1
+                  });
+                  openPresentation(
+                    presentationName,
+                    project.sandbox.sandbox_url,
+                    slideNum || slideNumber || 1
+                  );
+                }}
+                className="w-full"
+              />
+            </div>
+            <div className="px-4 pb-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  openPresentation(
+                    presentationName,
+                    project.sandbox.sandbox_url,
+                    slideNumber || 1
+                  );
+                }}
+                className="w-full gap-2"
+              >
+                <Presentation className="h-4 w-4" />
+                Open Presentation Viewer
+              </Button>
+            </div>
+          </div>
+        );
+      }
+      
+      // Sandbox URL not available yet - show waiting state
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900">
+          <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60">
+            <Presentation className="h-10 w-10 text-blue-500 dark:text-blue-400" />
+          </div>
+          <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+            Presentation Updated
+          </h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
+            {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
+          </p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">
+            Waiting for sandbox to be ready...
+          </p>
+        </div>
+      );
+    }
+
     if (!fileContent) {
       return (
-        <div className="flex items-center justify-center h-full p-12">
+        <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
           <div className="text-center">
             <FileIcon className="h-12 w-12 mx-auto mb-4 text-zinc-400" />
             <p className="text-sm text-zinc-500 dark:text-zinc-400">No content to preview</p>
@@ -286,6 +429,13 @@ export function FileOperationToolView({
       );
     }
 
+    // Determine file type for rendering
+    const fileType = getFileTypeFromExtension(fileName);
+    const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+    const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
+    const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
+    
+    // For HTML files with preview URL, use iframe directly
     if (isHtml && htmlPreviewUrl) {
       return (
         <div className="w-full h-full">
@@ -299,18 +449,16 @@ export function FileOperationToolView({
       );
     }
 
+    // For markdown files
     if (isMarkdown) {
       return (
-        <div className="p-6 prose dark:prose-invert prose-zinc max-w-none prose-headings:font-semibold">
-          <MarkdownRenderer
-            content={processUnicodeContent(fileContent)}
-            project={project}
-            basePath={processedFilePath || undefined}
-          />
+        <div className="h-full overflow-auto p-4 bg-white dark:bg-zinc-900">
+          <UnifiedMarkdown content={processUnicodeContent(fileContent)} />
         </div>
       );
     }
 
+    // For CSV files
     if (isCsv) {
       return (
         <div className="p-6 flex flex-col">
@@ -321,6 +469,7 @@ export function FileOperationToolView({
       );
     }
 
+    // For XLSX files
     if (isXlsx) {
       return (
         <div className="p-6 flex flex-col">
@@ -336,19 +485,21 @@ export function FileOperationToolView({
       );
     }
 
+    // For all other files, use CodeEditor in read-only mode
     return (
-      <div className="p-6">
-        <div className='w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-6'>
-          <div className="text-[15px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words">
-            {processUnicodeContent(fileContent)}
-          </div>
-        </div>
+      <div className="h-full bg-white dark:bg-zinc-900">
+        <CodeEditor
+          content={processUnicodeContent(fileContent)}
+          fileName={fileName}
+          readOnly={true}
+          className="h-full"
+        />
       </div>
     );
   };
 
   const renderDeleteOperation = () => (
-    <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
+    <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-white dark:bg-zinc-900">
       <div className={cn("w-20 h-20 rounded-full flex items-center justify-center mb-6", config.bgColor)}>
         <Icon className={cn("h-10 w-10", config.color)} />
       </div>
@@ -369,7 +520,7 @@ export function FileOperationToolView({
   const renderSourceCode = () => {
     if (!fileContent) {
       return (
-        <div className="flex items-center justify-center h-full p-12">
+        <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
           <div className="text-center">
             <FileIcon className="h-12 w-12 mx-auto mb-4 text-zinc-400" />
             <p className="text-sm text-zinc-500 dark:text-zinc-400">No source code to display</p>
@@ -384,7 +535,7 @@ export function FileOperationToolView({
     const allLines = [...contentLines, ...emptyLines];
 
     return (
-      <div className="min-w-full table">
+      <div className="min-w-full table bg-white dark:bg-zinc-900">
         {allLines.map((line, idx) => (
           <div
             key={idx}
@@ -393,7 +544,7 @@ export function FileOperationToolView({
             <div className="table-cell text-right pr-4 pl-4 py-0.5 text-xs text-zinc-400 dark:text-zinc-600 select-none w-14 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
               {idx + 1}
             </div>
-            <div className="table-cell pl-4 py-0.5 pr-4 text-[15px] leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
+            <div className="table-cell pl-4 py-0.5 pr-4 text-[15px] leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900">
               {line ? processUnicodeContent(line, true) : ' '}
             </div>
           </div>
@@ -402,17 +553,26 @@ export function FileOperationToolView({
     );
   };
 
+  // Determine icon and colors based on whether it's a presentation slide
+  const HeaderIcon = isPresentationSlide ? Presentation : Icon;
+  const headerIconColor = isPresentationSlide ? 'text-blue-500 dark:text-blue-400' : config.color;
+  const headerGradientBg = isPresentationSlide ? 'from-blue-50 to-blue-100 dark:from-blue-800/40 dark:to-blue-900/60' : config.gradientBg;
+  const headerBorderColor = isPresentationSlide ? 'border-blue-200 dark:border-blue-700' : config.borderColor;
+  const displayTitle = isPresentationSlide && presentationName 
+    ? `${toolTitle} - ${presentationName}${slideNumber ? ` (Slide ${slideNumber})` : ''}`
+    : toolTitle;
+
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <Tabs defaultValue="preview" className="w-full h-full">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0">
           <div className="flex flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className={cn("relative p-2 rounded-lg border flex-shrink-0", config.gradientBg, config.borderColor)}>
-                <Icon className={cn("h-5 w-5", config.color)} />
+              <div className={cn("relative p-2 rounded-lg border flex-shrink-0", `bg-gradient-to-br ${headerGradientBg}`, headerBorderColor)}>
+                <HeaderIcon className={cn("h-5 w-5", headerIconColor)} />
               </div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                {toolTitle}
+                {displayTitle}
               </CardTitle>
               <TabsList className="h-8 bg-muted/50 border border-border/50 p-0.5 gap-0.5 flex-shrink-0">
                 <TabsTrigger
@@ -432,7 +592,7 @@ export function FileOperationToolView({
               </TabsList>
             </div>
             <div className='flex items-center gap-1.5 flex-shrink-0'>
-              {fileContent && !isStreaming && (
+              {fileContent && !isStreaming && !isPresentationSlide && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -448,7 +608,25 @@ export function FileOperationToolView({
                   )}
                 </Button>
               )}
-              {isHtml && htmlPreviewUrl && !isStreaming && (
+              {/* Presentation fullscreen button */}
+              {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && !isStreaming && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    openPresentation(
+                      presentationName,
+                      project.sandbox.sandbox_url,
+                      slideNumber || 1
+                    );
+                  }}
+                  className="h-8 w-8 p-0"
+                  title="Open presentation fullscreen"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              )}
+              {isHtml && htmlPreviewUrl && !isStreaming && !isPresentationSlide && (
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Open in browser" asChild>
                   <a href={htmlPreviewUrl} target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-4 w-4" />
@@ -470,8 +648,8 @@ export function FileOperationToolView({
           </div>
         </CardHeader>
 
-        <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative">
-          <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden">
+        <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative bg-white dark:bg-zinc-900">
+          <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900">
             <ScrollArea ref={sourceScrollRef} className="h-full w-full min-h-0">
               {!fileContent && !isStreaming ? (
                 <LoadingState
@@ -484,14 +662,14 @@ export function FileOperationToolView({
                   showProgress={false}
                 />
               ) : !fileContent && isStreaming ? (
-                <div className="flex items-center justify-center h-full p-12">
+                <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
                   <div className="text-center">
                     <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
                   </div>
                 </div>
               ) : operation === 'delete' ? (
-                <div className="flex flex-col items-center justify-center h-full py-12 px-6">
+                <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-white dark:bg-zinc-900">
                   <div className={cn("w-20 h-20 rounded-full flex items-center justify-center mb-6", config.bgColor)}>
                     <Icon className={cn("h-10 w-10", config.color)} />
                   </div>
@@ -510,15 +688,20 @@ export function FileOperationToolView({
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="preview" className="w-full flex-1 h-full mt-0 p-0 overflow-hidden">
-            {isHtml && htmlPreviewUrl ? (
+          <TabsContent value="preview" className="w-full flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900">
+            {/* Presentation slides have their own loading/streaming state */}
+            {isPresentationSlide && presentationName ? (
+              <div className="w-full h-full relative bg-white dark:bg-zinc-900">
+                {renderFilePreview()}
+              </div>
+            ) : isHtml && htmlPreviewUrl ? (
               // For HTML files, render iframe directly without ScrollArea for full viewport
-              <div className="w-full h-full relative">
+              <div className="w-full h-full relative bg-white dark:bg-zinc-900">
                 {renderFilePreview()}
               </div>
             ) : (
               // For non-HTML files, use ScrollArea with smooth auto-scroll
-              <ScrollArea ref={previewScrollRef} className="h-full w-full min-h-0">
+              <ScrollArea ref={previewScrollRef} className="h-full w-full min-h-0 bg-white dark:bg-zinc-900">
                 {!fileContent && !isStreaming ? (
                   <LoadingState
                     icon={Icon}
@@ -530,7 +713,7 @@ export function FileOperationToolView({
                     showProgress={false}
                   />
                 ) : !fileContent && isStreaming ? (
-                  <div className="flex items-center justify-center h-full p-12">
+                  <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
                     <div className="text-center">
                       <Loader2 className="h-8 w-8 mx-auto mb-4 text-zinc-400 animate-spin" />
                       <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>

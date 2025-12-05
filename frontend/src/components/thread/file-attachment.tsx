@@ -6,11 +6,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AttachmentGroup } from './attachment-group';
-import { HtmlRenderer } from './preview-renderers/html-renderer';
-import { MarkdownRenderer } from './preview-renderers/file-preview-markdown-renderer';
-import { CsvRenderer } from './preview-renderers/csv-renderer';
-import { XlsxRenderer } from './preview-renderers/xlsx-renderer';
-import { PdfRenderer as PdfPreviewRenderer } from './preview-renderers/pdf-renderer';
+import { HtmlRenderer, CsvRenderer, XlsxRenderer, PdfRenderer } from '@/components/file-renderers';
+import { UnifiedMarkdown } from '@/components/markdown';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -25,6 +22,7 @@ import { Project } from '@/lib/api/threads';
 import { PresentationSlidePreview } from '@/components/thread/tool-views/presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // Define basic file types
 export type FileType =
@@ -657,25 +655,12 @@ export function FileAttachment({
         );
     }
 
-    const rendererMap = {
-        'html': HtmlRenderer,
-        'htm': HtmlRenderer,
-        'md': MarkdownRenderer,
-        'markdown': MarkdownRenderer,
-        'csv': CsvRenderer,
-        'tsv': CsvRenderer,
-        'xlsx': XlsxRenderer,
-        'xls': XlsxRenderer
-    };
-
-    // HTML/MD/CSV/PDF preview when not collapsed and in grid layout
+    // HTML/MD/CSV/XLSX/PDF preview when not collapsed and in grid layout
     // Only show preview if we have actual content or it's loading
     const hasContent = fileContent || pdfBlobUrl || xlsxBlobUrl;
     const isLoadingContent = fileContentLoading || pdfLoading || xlsxLoading;
     
     if (shouldShowPreview && isGridLayout && (hasContent || isLoadingContent || hasError || isSandboxDeleted)) {
-        // Determine the renderer component
-        const Renderer = rendererMap[extension as keyof typeof rendererMap];
 
         return (
             <div
@@ -709,40 +694,53 @@ export function FileAttachment({
                     {/* Render PDF, XLSX, or text-based previews */}
                     {!hasError && !isSandboxDeleted && (
                         <>
+                            {/* PDF Preview - compact mode (first page only) */}
                             {isPdf && (() => {
                                 const pdfUrlForRender = localPreviewUrl || (sandboxId ? (pdfBlobUrl ?? null) : fileUrl);
                                 return pdfUrlForRender ? (
-                                    <PdfPreviewRenderer
+                                    <PdfRenderer
                                         url={pdfUrlForRender}
                                         className="h-full w-full"
+                                        compact={true}
                                     />
                                 ) : null;
                             })()}
+                            
+                            {/* XLSX Preview */}
                             {isXlsx && (() => {
                                 const xlsxUrlForRender = localPreviewUrl || (sandboxId ? (xlsxBlobUrl ?? null) : fileUrl);
                                 return xlsxUrlForRender ? (
                                     <XlsxRenderer
-                                        content={xlsxUrlForRender}
+                                        filePath={xlsxUrlForRender}
+                                        fileName={filename}
                                         className="h-full w-full"
-                                        activeSheetIndex={xlsxSheetIndex}
-                                        onSheetChange={(index) => setXlsxSheetIndex(index)}
+                                        project={project}
                                     />
                                 ) : null;
                             })()}
-                            {!isPdf && !isXlsx && fileContent && Renderer && (() => {
-                                const rendererPreviewUrl = isHtml && htmlPreviewUrl ? htmlPreviewUrl : fileUrl;
-                                if (isHtml) {
-                                    console.log('[FileAttachment] HTML Renderer props:', {
-                                        filepath,
-                                        htmlPreviewUrl,
-                                        fileUrl,
-                                        rendererPreviewUrl,
-                                        hasSandboxUrl: !!project?.sandbox?.sandbox_url,
-                                        sandboxUrl: project?.sandbox?.sandbox_url,
-                                    });
-                                }
+                            
+                            {/* CSV Preview - compact mode */}
+                            {isCsv && fileContent && (
+                                <CsvRenderer
+                                    content={fileContent}
+                                    className="h-full w-full"
+                                    compact={true}
+                                    containerHeight={300}
+                                />
+                            )}
+                            
+                            {/* Markdown Preview */}
+                            {(extension === 'md' || extension === 'markdown') && fileContent && (
+                                <div className="h-full w-full overflow-auto p-4">
+                                    <UnifiedMarkdown content={fileContent} />
+                                    </div>
+                            )}
+                            
+                            {/* HTML Preview */}
+                            {isHtml && fileContent && (() => {
+                                const rendererPreviewUrl = htmlPreviewUrl || fileUrl;
                                 return (
-                                    <Renderer
+                                    <HtmlRenderer
                                         content={fileContent}
                                         previewUrl={rendererPreviewUrl}
                                         className="h-full w-full"

@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { LoadingState } from '../shared/LoadingState';
 import { cn } from '@/lib/utils';
-import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { TipTapDocumentModal } from '@/components/thread/tiptap-document-modal';
 import { 
   DocumentInfo, 
@@ -36,10 +35,9 @@ export function ListDocumentsToolView({
   isSuccess = true,
   isStreaming = false,
   project,
+  onFileClick,
 }: ToolViewProps) {
   // All hooks must be called unconditionally at the top
-  const [fileViewerOpen, setFileViewerOpen] = useState(false);
-  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
   const [editorFilePath, setEditorFilePath] = useState<string | null>(null);
@@ -64,9 +62,8 @@ export function ListDocumentsToolView({
   };
   
   const handleViewDocument = (doc: DocumentInfo) => {
-    if (doc.path) {
-      setSelectedDocPath(doc.path);
-      setFileViewerOpen(true);
+    if (doc.path && onFileClick) {
+      onFileClick(doc.path);
     }
   };
   
@@ -258,16 +255,6 @@ export function ListDocumentsToolView({
         )}
       </CardContent>
     </Card>
-    
-    {(data?.sandbox_id || project?.id) && selectedDocPath && (
-      <FileViewerModal
-        open={fileViewerOpen}
-        onOpenChange={setFileViewerOpen}
-        sandboxId={data?.sandbox_id || project?.id || ''}
-        initialFilePath={selectedDocPath}
-        projectId={project?.id}
-      />
-    )}
     
     {editorFilePath && editorDocumentData && (
       <TipTapDocumentModal

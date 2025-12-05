@@ -28,6 +28,8 @@ export interface AssistantMessageRendererProps {
   onToolClick: (assistantMessageId: string | null, toolName: string) => void;
   onFileClick?: (filePath: string) => void;
   sandboxId?: string;
+  /** Sandbox URL for direct file access (used for presentations and HTML previews) */
+  sandboxUrl?: string;
   isLatestMessage?: boolean;
   threadId?: string;
   onPromptFill?: (message: string) => void;
@@ -101,7 +103,7 @@ function renderAskToolCall(
   index: number,
   props: AssistantMessageRendererProps
 ): React.ReactNode {
-  const { onFileClick, sandboxId, isLatestMessage, onPromptFill, isDark = false } = props;
+  const { onFileClick, sandboxId, sandboxUrl, isLatestMessage, onPromptFill, isDark = false } = props;
 
   let args: Record<string, any> = {};
   if (toolCall.arguments) {
@@ -134,6 +136,7 @@ function renderAskToolCall(
         <FileAttachmentsGrid
           filePaths={attachments}
           sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
           compact={false}
           showPreviews={true}
           onFilePress={onFileClick}
@@ -169,7 +172,7 @@ function renderCompleteToolCall(
   index: number,
   props: AssistantMessageRendererProps
 ): React.ReactNode {
-  const { onFileClick, sandboxId, isLatestMessage, threadId, message, onPromptFill, isDark = false } = props;
+  const { onFileClick, sandboxId, sandboxUrl, isLatestMessage, threadId, message, onPromptFill, isDark = false } = props;
 
   let args: Record<string, any> = {};
   if (toolCall.arguments) {
@@ -202,6 +205,7 @@ function renderCompleteToolCall(
         <FileAttachmentsGrid
           filePaths={attachments}
           sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
           compact={false}
           showPreviews={true}
           onFilePress={onFileClick}

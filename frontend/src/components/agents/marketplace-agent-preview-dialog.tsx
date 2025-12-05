@@ -14,7 +14,7 @@ import { useRouter } from 'next/navigation';
 import { backendApi } from '@/lib/api-client';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { useTheme } from 'next-themes';
-import { Markdown } from '@/components/ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 
 interface MarketplaceAgentPreviewDialogProps {
   agent: MarketplaceTemplate | null;
@@ -202,9 +202,10 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                     <h3 className="text-sm font-medium text-muted-foreground">System Prompt</h3>
                   </div>
                   <div className="rounded-lg">
-                    <Markdown className="text-xs [&>*]:text-xs [&>*]:opacity-50 [&>*]:leading-relaxed select-text">
-                      {agent.system_prompt}
-                    </Markdown>
+                    <UnifiedMarkdown 
+                      content={agent.system_prompt} 
+                      className="text-xs [&>*]:text-xs [&>*]:opacity-50 [&>*]:leading-relaxed select-text" 
+                    />
                   </div>
                 </div>
               </div>

@@ -6,15 +6,30 @@ import React, { memo, useMemo, useCallback, useState, useEffect, useRef } from '
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Minimize2, Globe, Wrench } from 'lucide-react';
+import { 
+  CircleDashed, 
+  X, 
+  ChevronLeft, 
+  ChevronRight, 
+  Computer, 
+  Minimize2, 
+  Globe, 
+  Zap,
+  FolderOpen,
+} from 'lucide-react';
 import { useIsMobile } from '@/hooks/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ToolView } from './tool-views/wrapper';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { ToolView } from '../tool-views/wrapper';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { HealthCheckedVncIframe } from './HealthCheckedVncIframe';
-import { BrowserHeader } from './tool-views/BrowserToolView';
+import { HealthCheckedVncIframe } from '../HealthCheckedVncIframe';
+import { BrowserHeader } from '../tool-views/BrowserToolView';
 import { useTranslations } from 'next-intl';
 import {
   Drawer,
@@ -23,12 +38,19 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
+import { 
+  useKortixComputerStore, 
+  ViewType,
+  useKortixComputerActions,
+} from '@/stores/kortix-computer-store';
+import { FileBrowserView } from './FileBrowserView';
+import { FileViewerView } from './FileViewerView';
 
 // ============================================================================
 // Types & Interfaces
 // ============================================================================
 
-import { ToolCallData, ToolResultData } from './tool-views/types';
+import { ToolCallData, ToolResultData } from '../tool-views/types';
 
 /**
  * Structured tool call input - data comes directly from metadata
@@ -42,7 +64,7 @@ export interface ToolCallInput {
   messages?: ApiMessageType[];
 }
 
-interface ToolCallSidePanelProps {
+interface KortixComputerProps {
   isOpen: boolean;
   onClose: () => void;
   toolCalls: ToolCallInput[];
@@ -65,7 +87,9 @@ interface ToolCallSidePanelProps {
   onFileClick?: (filePath: string) => void;
   disableInitialAnimation?: boolean;
   compact?: boolean;
-  streamingText?: string; // Live streaming content from assistant message
+  streamingText?: string;
+  sandboxId?: string;
+  projectId?: string;
 }
 
 interface ToolCallSnapshot {
@@ -76,14 +100,13 @@ interface ToolCallSnapshot {
 }
 
 type NavigationMode = 'live' | 'manual';
-type ViewType = 'tools' | 'browser';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const FLOATING_LAYOUT_ID = 'tool-panel-float';
-const CONTENT_LAYOUT_ID = 'tool-panel-content';
+const FLOATING_LAYOUT_ID = 'kortix-computer-float';
+const CONTENT_LAYOUT_ID = 'kortix-computer-content';
 
 // ============================================================================
 // Sub-components
@@ -92,16 +115,29 @@ const CONTENT_LAYOUT_ID = 'tool-panel-content';
 interface ViewToggleProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
+  showFilesTab?: boolean;
 }
 
-const ViewToggle = memo(function ViewToggle({ currentView, onViewChange }: ViewToggleProps) {
+const ViewToggle = memo(function ViewToggle({ currentView, onViewChange, showFilesTab = true }: ViewToggleProps) {
+  const viewOptions = showFilesTab 
+    ? ['tools', 'files', 'browser'] as const
+    : ['tools', 'browser'] as const;
+  
+  const getViewIndex = (view: ViewType) => {
+    if (!showFilesTab && view === 'files') return 0;
+    return viewOptions.indexOf(view as any);
+  };
+  
+  const tabWidth = 28; // w-7 = 28px
+  const gap = 4; // gap-1 = 4px
+  
   return (
     <div className="relative flex items-center gap-1 bg-muted rounded-3xl px-1 py-1">
       <motion.div
-        className="absolute h-7 w-7 bg-white rounded-xl shadow-sm"
+        className="absolute top-1 left-1 h-7 w-7 bg-white dark:bg-zinc-700 rounded-xl shadow-sm"
         initial={false}
         animate={{
-          x: currentView === 'tools' ? 0 : 32,
+          x: getViewIndex(currentView) * (tabWidth + gap),
         }}
         transition={{
           type: "spring",
@@ -110,29 +146,64 @@ const ViewToggle = memo(function ViewToggle({ currentView, onViewChange }: ViewT
         }}
       />
 
-      <Button
-        size="sm"
-        onClick={() => onViewChange('tools')}
-        className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${currentView === 'tools'
-          ? 'text-black'
-          : 'text-gray-500 dark:text-gray-400'
-          }`}
-        title="Switch to Tool View"
-      >
-        <Wrench className="h-3.5 w-3.5" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            onClick={() => onViewChange('tools')}
+            className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${
+              currentView === 'tools'
+                ? 'text-black dark:text-white'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            <Zap className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <p>Actions</p>
+        </TooltipContent>
+      </Tooltip>
 
-      <Button
-        size="sm"
-        onClick={() => onViewChange('browser')}
-        className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${currentView === 'browser'
-          ? 'text-black'
-          : 'text-gray-500 dark:text-gray-400'
-          }`}
-        title="Switch to Browser View"
-      >
-        <Globe className="h-3.5 w-3.5" />
-      </Button>
+      {showFilesTab && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              onClick={() => onViewChange('files')}
+              className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${
+                currentView === 'files'
+                  ? 'text-black dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p>Files</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            onClick={() => onViewChange('browser')}
+            className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${
+              currentView === 'browser'
+                ? 'text-black dark:text-white'
+                : 'text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <p>Browser</p>
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 });
@@ -148,6 +219,9 @@ interface PanelHeaderProps {
   variant?: 'drawer' | 'desktop' | 'motion';
   showMinimize?: boolean;
   layoutId?: string;
+  currentView: ViewType;
+  onViewChange: (view: ViewType) => void;
+  showFilesTab?: boolean;
 }
 
 const PanelHeader = memo(function PanelHeader({
@@ -157,25 +231,33 @@ const PanelHeader = memo(function PanelHeader({
   variant = 'desktop',
   showMinimize = false,
   layoutId,
+  currentView,
+  onViewChange,
+  showFilesTab = true,
 }: PanelHeaderProps) {
-  const title = agentName ? `${agentName}'s Computer` : "Suna's Computer";
+  const title = "Kortix Computer";
 
   if (variant === 'drawer') {
     return (
       <DrawerHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <DrawerTitle className="text-lg font-medium">
-            {title}
-          </DrawerTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="h-8 w-8"
-            title="Minimize to floating preview"
-          >
-            <Minimize2 className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <DrawerTitle className="text-lg font-medium">
+              {title}
+            </DrawerTitle>
+          </div>
+          <div className="flex items-center gap-2">
+            <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="h-8 w-8"
+              title="Minimize"
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </DrawerHeader>
     );
@@ -200,12 +282,13 @@ const PanelHeader = memo(function PanelHeader({
                 <span>Running</span>
               </div>
             )}
+            <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
             <Button
               variant="ghost"
               size="icon"
               onClick={onClose}
               className="h-8 w-8"
-              title="Minimize to floating preview"
+              title="Minimize"
             >
               <Minimize2 className="h-4 w-4" />
             </Button>
@@ -232,12 +315,13 @@ const PanelHeader = memo(function PanelHeader({
               <span>Running</span>
             </Badge>
           )}
+          <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
             className="h-8 w-8"
-            title={showMinimize ? "Minimize to floating preview" : "Close"}
+            title={showMinimize ? "Minimize" : "Close"}
           >
             {showMinimize ? <Minimize2 className="h-4 w-4" /> : <X className="h-4 w-4" />}
           </Button>
@@ -456,6 +540,8 @@ interface LoadingStateProps {
 }
 
 const LoadingState = memo(function LoadingState({ agentName, onClose, isMobile }: LoadingStateProps) {
+  const { activeView, setActiveView } = useKortixComputerStore();
+  
   if (isMobile) {
     return (
       <DrawerContent className="h-[85vh]">
@@ -463,6 +549,8 @@ const LoadingState = memo(function LoadingState({ agentName, onClose, isMobile }
           agentName={agentName}
           onClose={onClose}
           variant="drawer"
+          currentView={activeView}
+          onViewChange={setActiveView}
         />
 
         <div className="flex-1 p-4 overflow-auto">
@@ -487,6 +575,8 @@ const LoadingState = memo(function LoadingState({ agentName, onClose, isMobile }
                 agentName={agentName}
                 onClose={onClose}
                 showMinimize={true}
+                currentView={activeView}
+                onViewChange={setActiveView}
               />
               <div className="flex-1 p-4 overflow-auto">
                 <div className="space-y-4">
@@ -510,7 +600,7 @@ LoadingState.displayName = 'LoadingState';
 // Main Component
 // ============================================================================
 
-export const ToolCallSidePanel = memo(function ToolCallSidePanel({
+export const KortixComputer = memo(function KortixComputer({
   isOpen,
   onClose,
   toolCalls,
@@ -526,25 +616,35 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
   disableInitialAnimation,
   compact = false,
   streamingText,
-}: ToolCallSidePanelProps) {
+  sandboxId,
+  projectId,
+}: KortixComputerProps) {
   const t = useTranslations('thread');
   const [dots, setDots] = useState('');
   const [internalIndex, setInternalIndex] = useState(0);
   const [navigationMode, setNavigationMode] = useState<NavigationMode>('live');
   const [toolCallSnapshots, setToolCallSnapshots] = useState<ToolCallSnapshot[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [currentView, setCurrentView] = useState<ViewType>('tools');
-  const currentViewRef = useRef(currentView);
   const [vncRefreshKey, setVncRefreshKey] = useState(0);
 
   const isMobile = useIsMobile();
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
   const sandbox = project?.sandbox;
 
+  // Kortix Computer Store
+  const { 
+    activeView, 
+    filesSubView, 
+    selectedFilePath,
+    setActiveView,
+  } = useKortixComputerStore();
+
+  const currentViewRef = useRef(activeView);
+
   // Update ref when state changes
   useEffect(() => {
-    currentViewRef.current = currentView;
-  }, [currentView]);
+    currentViewRef.current = activeView;
+  }, [activeView]);
 
   const handleVncRefresh = useCallback(() => {
     setVncRefreshKey(prev => prev + 1);
@@ -582,7 +682,7 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
   useEffect(() => {
     if (!isInitialized && toolCallSnapshots.length > 0) {
       const streamingSnapshot = toolCallSnapshots.find(snapshot =>
-        snapshot.toolCall.toolResult === undefined // No result = streaming
+        snapshot.toolCall.toolResult === undefined
       );
 
       if (streamingSnapshot) {
@@ -590,55 +690,49 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
         const isStreamingBrowserTool = isBrowserTool(toolName);
 
         if (isStreamingBrowserTool) {
-          setCurrentView('browser');
+          setActiveView('browser');
         }
       } else if (agentStatus === 'running') {
-        // Check if any browser tool exists in snapshots
         const hasBrowserTool = toolCallSnapshots.some(snapshot => {
           const toolName = snapshot.toolCall.toolCall?.function_name?.replace(/_/g, '-');
           return isBrowserTool(toolName);
         });
 
         if (hasBrowserTool) {
-          setCurrentView('browser');
+          setActiveView('browser');
         }
       }
     }
-  }, [toolCallSnapshots, isInitialized, isBrowserTool, agentStatus]);
+  }, [toolCallSnapshots, isInitialized, isBrowserTool, agentStatus, setActiveView]);
 
   // Handle view toggle visibility and auto-switching logic
   useEffect(() => {
+    // Only auto-switch when viewing tools
+    if (activeView !== 'tools') return;
+    
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
     const currentSnapshot = toolCallSnapshots[safeIndex];
     const isCurrentSnapshotBrowserTool = isBrowserTool(currentSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-'));
 
     if (agentStatus === 'idle') {
-      if (!isCurrentSnapshotBrowserTool && currentViewRef.current === 'browser') {
-        setCurrentView('tools');
-      }
-      if (isCurrentSnapshotBrowserTool && currentViewRef.current === 'tools' && safeIndex === toolCallSnapshots.length - 1) {
-        setCurrentView('browser');
+      if (isCurrentSnapshotBrowserTool && safeIndex === toolCallSnapshots.length - 1) {
+        setActiveView('browser');
       }
     } else if (agentStatus === 'running') {
       const streamingSnapshot = toolCallSnapshots.find(snapshot =>
-        snapshot.toolCall.toolResult === undefined // No result = streaming
+        snapshot.toolCall.toolResult === undefined
       );
 
       if (streamingSnapshot) {
         const toolName = streamingSnapshot.toolCall.toolCall?.function_name?.replace(/_/g, '-');
         const isStreamingBrowserTool = isBrowserTool(toolName);
 
-        // Always switch to browser view when browser action is in progress
         if (isStreamingBrowserTool) {
-          setCurrentView('browser');
-        }
-
-        if (!isStreamingBrowserTool && currentViewRef.current === 'browser') {
-          setCurrentView('tools');
+          setActiveView('browser');
         }
       }
     }
-  }, [toolCallSnapshots, internalIndex, isBrowserTool, agentStatus]);
+  }, [toolCallSnapshots, internalIndex, isBrowserTool, agentStatus, activeView, setActiveView]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -658,21 +752,19 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
     const hasNewSnapshots = newSnapshots.length > toolCallSnapshots.length;
     setToolCallSnapshots(newSnapshots);
 
-    // Check if a new browser tool call started and switch to browser view
-    if (hasNewSnapshots && agentStatus === 'running') {
+    if (hasNewSnapshots && agentStatus === 'running' && activeView === 'tools') {
       const newSnapshot = newSnapshots[newSnapshots.length - 1];
       const toolName = newSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-');
       const isNewBrowserTool = isBrowserTool(toolName);
 
-      // If it's a browser tool and doesn't have a result yet (streaming), switch to browser view
       if (isNewBrowserTool && newSnapshot.toolCall.toolResult === undefined) {
-        setCurrentView('browser');
+        setActiveView('browser');
       }
     }
 
     if (!isInitialized && newSnapshots.length > 0) {
       const completedCount = newSnapshots.filter(s =>
-        s.toolCall.toolResult !== undefined // Has result = completed
+        s.toolCall.toolResult !== undefined
       ).length;
 
       if (completedCount > 0) {
@@ -697,14 +789,12 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
       const latestToolName = latestSnapshot?.toolCall.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
       const isLatestFileOp = latestToolName && ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'].includes(latestToolName);
 
-      // Auto-jump to latest if: was at latest OR new tool is a file operation
       if ((wasAtLatest || isLatestFileOp) && agentStatus === 'running') {
-        console.log('[TOOL PANEL] Auto-jumping to latest:', { wasAtLatest, isLatestFileOp, latestToolName });
         setNavigationMode('live');
         setInternalIndex(newSnapshots.length - 1);
       }
     }
-  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus, newSnapshots, isBrowserTool]);
+  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus, newSnapshots, isBrowserTool, activeView, setActiveView]);
 
   useEffect(() => {
     if ((!isInitialized || navigationMode === 'manual') && toolCallSnapshots.length > 0) {
@@ -720,7 +810,7 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
     const latest = Math.max(0, total - 1);
 
     const completed = toolCallSnapshots.filter(snapshot =>
-      snapshot.toolCall.toolResult !== undefined // Has result = completed
+      snapshot.toolCall.toolResult !== undefined
     );
     const completedCount = completed.length;
 
@@ -741,75 +831,27 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
 
   const isCurrentToolStreaming = currentToolCall?.toolResult === undefined;
 
-  // Check if current streaming tool is a file operation
   const currentToolName = currentToolCall?.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
   const isFileOperation = currentToolName && ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'].includes(currentToolName);
 
-  console.log('[TOOL PANEL] Current tool:', {
-    currentToolName,
-    isFileOperation,
-    isCurrentToolStreaming,
-    totalCompletedCalls,
-    safeInternalIndex,
-    totalCalls
-  });
-
-  // Only fallback to last completed if NOT a file operation (file ops should stream)
   if (isCurrentToolStreaming && totalCompletedCalls > 0 && !isFileOperation) {
     const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
-    // Ensure the snapshot has a valid toolCall before using it
     if (lastCompletedSnapshot?.toolCall?.toolCall) {
       displayToolCall = lastCompletedSnapshot.toolCall;
       displayIndex = completedToolCalls.length - 1;
-      console.log('[TOOL PANEL] Falling back to last completed tool');
     }
   }
 
   const isStreaming = displayToolCall?.toolResult === undefined;
 
   const getActualSuccess = (toolCall: ToolCallInput): boolean => {
-    // Check if we have a result object with success field
     if (toolCall?.toolResult?.success !== undefined) {
       return toolCall.toolResult.success;
     }
-    // Fallback to isSuccess
     return toolCall?.isSuccess ?? true;
   };
 
   const isSuccess = isStreaming ? true : getActualSuccess(displayToolCall);
-
-  const copyToClipboard = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (err) {
-      console.error('Failed to copy text: ', err);
-      return false;
-    }
-  }, []);
-
-  const handleCopyContent = useCallback(async () => {
-    const toolResult = displayToolCall?.toolResult;
-    if (!toolResult) return;
-
-    let fileContent = '';
-
-    // Extract from structured result
-    if (typeof toolResult.output === 'string') {
-      fileContent = toolResult.output;
-    } else if (toolResult.output) {
-      fileContent = JSON.stringify(toolResult.output, null, 2);
-    } else {
-      fileContent = JSON.stringify(toolResult, null, 2);
-    }
-
-    const success = await copyToClipboard(fileContent);
-    if (success) {
-      toast.success('File content copied to clipboard');
-    } else {
-      toast.error('Failed to copy file content');
-    }
-  }, [displayToolCall?.toolResult, copyToClipboard]);
 
   const internalNavigate = useCallback((newIndex: number, source: string = 'internal') => {
     if (newIndex < 0 || newIndex >= totalCalls) return;
@@ -925,19 +967,12 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
     return <LoadingState agentName={agentName} onClose={handleClose} isMobile={isMobile} />;
   }
 
-  const renderContent = () => {
+  // Back button is now handled within FileViewerView directly
+  const effectiveSandboxId = sandboxId || project?.sandbox?.id || '';
+
+  const renderToolsView = () => {
     if (!displayToolCall && toolCallSnapshots.length === 0) {
-      return (
-        <div className="flex flex-col h-full">
-          {!isMobile && (
-            <PanelHeader
-              agentName={agentName}
-              onClose={handleClose}
-            />
-          )}
-          <EmptyState t={t} />
-        </div>
-      );
+      return <EmptyState t={t} />;
     }
 
     if (!displayToolCall && toolCallSnapshots.length > 0) {
@@ -945,39 +980,20 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
       if (firstStreamingTool && totalCompletedCalls === 0) {
         const toolName = firstStreamingTool.toolCall.toolCall?.function_name?.replace(/_/g, '-') || 'Tool';
         return (
-          <div className="flex flex-col h-full">
-            {!isMobile && (
-              <PanelHeader
-                agentName={agentName}
-                onClose={handleClose}
-                isStreaming={true}
-              />
-            )}
-            {isMobile && (
-              <div className="px-4 pb-2">
-                <div className="flex items-center justify-center">
-                  <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
-                    <CircleDashed className="h-3 w-3 animate-spin" />
-                    <span>Running</span>
-                  </div>
+          <div className="flex flex-col items-center justify-center flex-1 p-8">
+            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+              <div className="relative">
+                <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
+                  <CircleDashed className="h-8 w-8 text-blue-500 dark:text-blue-400 animate-spin" />
                 </div>
               </div>
-            )}
-            <div className="flex flex-col items-center justify-center flex-1 p-8">
-              <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
-                <div className="relative">
-                  <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                    <CircleDashed className="h-8 w-8 text-blue-500 dark:text-blue-400 animate-spin" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
-                    Tool is running
-                  </h3>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                    {getUserFriendlyToolName(toolName)} is currently executing. Results will appear here when complete.
-                  </p>
-                </div>
+              <div className="space-y-2">
+                <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
+                  Tool is running
+                </h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  {getUserFriendlyToolName(toolName)} is currently executing. Results will appear here when complete.
+                </p>
               </div>
             </div>
           </div>
@@ -985,45 +1001,27 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
       }
 
       return (
-        <div className="flex flex-col h-full">
-          {!isMobile && (
-            <PanelHeader
-              agentName={agentName}
-              onClose={handleClose}
-            />
-          )}
-          <div className="flex-1 p-4 overflow-auto">
-            <div className="space-y-4">
-              <Skeleton className="h-8 w-32" />
-              <Skeleton className="h-20 w-full rounded-md" />
-            </div>
+        <div className="flex-1 p-4 overflow-auto">
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-20 w-full rounded-md" />
           </div>
         </div>
       );
     }
 
-    // Ensure displayToolCall and toolCall exist before rendering
     if (!displayToolCall || !displayToolCall.toolCall) {
       return (
-        <div className="flex flex-col h-full">
-          {!isMobile && (
-            <PanelHeader
-              agentName={agentName}
-              onClose={handleClose}
-            />
-          )}
-          <div className="flex-1 p-4 overflow-auto">
-            <div className="space-y-4">
-              <Skeleton className="h-8 w-32" />
-              <Skeleton className="h-20 w-full rounded-md" />
-            </div>
+        <div className="flex-1 p-4 overflow-auto">
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-20 w-full rounded-md" />
           </div>
         </div>
       );
     }
 
-    // Pass structured data directly from metadata - NO CONTENT PARSING
-    const toolView = (
+    return (
       <ToolView
         toolCall={displayToolCall.toolCall}
         toolResult={displayToolCall.toolResult}
@@ -1037,55 +1035,85 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
         currentIndex={displayIndex}
         totalCalls={displayTotalCalls}
         onFileClick={onFileClick}
-        viewToggle={<ViewToggle currentView={currentView} onViewChange={setCurrentView} />}
         streamingText={isStreaming ? streamingText : undefined}
       />
     );
+  };
 
+  const renderFilesView = () => {
+    if (filesSubView === 'viewer' && selectedFilePath) {
+      return (
+        <FileViewerView
+          sandboxId={effectiveSandboxId}
+          filePath={selectedFilePath}
+          project={project}
+          projectId={projectId}
+        />
+      );
+    }
+
+    return (
+      <FileBrowserView
+        sandboxId={effectiveSandboxId}
+        project={project}
+        projectId={projectId}
+      />
+    );
+  };
+
+  const renderBrowserView = () => {
+    if (persistentVncIframe) {
+      return (
+        <div className="h-full flex flex-col">
+          <BrowserHeader isConnected={true} onRefresh={handleVncRefresh} />
+          <div className="flex-1 overflow-hidden grid items-center">
+            {persistentVncIframe}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="h-full flex flex-col">
+        <BrowserHeader isConnected={false} />
+        <div className="flex-1 flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
+          <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+            <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center border-2 border-zinc-200 dark:border-zinc-700">
+              <Globe className="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Browser not available
+              </h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                No active browser session available. The browser will appear here when a sandbox is created and Browser tools are used.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderContent = () => {
     return (
       <div className="flex flex-col h-full">
         {!isMobile && (
           <PanelHeader
             agentName={agentName}
             onClose={handleClose}
-            isStreaming={isStreaming}
+            isStreaming={isStreaming && activeView === 'tools'}
             variant="motion"
+            currentView={activeView}
+            onViewChange={setActiveView}
+            showFilesTab={!!effectiveSandboxId}
           />
         )}
 
-        <div className={`flex-1 ${currentView === 'browser' ? 'overflow-hidden' : 'overflow-hidden'} scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent`}>
-          {persistentVncIframe && (
-            <div className={`${currentView === 'browser' ? 'h-full flex flex-col' : 'hidden'}`}>
-              <BrowserHeader isConnected={true} onRefresh={handleVncRefresh} viewToggle={<ViewToggle currentView={currentView} onViewChange={setCurrentView} />} />
-              <div className="flex-1 overflow-hidden grid items-center">
-                {persistentVncIframe}
-              </div>
-            </div>
-          )}
-
-          {!persistentVncIframe && currentView === 'browser' && (
-            <div className="h-full flex flex-col">
-              <BrowserHeader isConnected={false} viewToggle={<ViewToggle currentView={currentView} onViewChange={setCurrentView} />} />
-
-              <div className="flex-1 flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
-                <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
-                  <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center border-2 border-zinc-200 dark:border-zinc-700">
-                    <Globe className="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                      Browser not available
-                    </h3>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      No active browser session available. The browser will appear here when a sandbox is created and Browser tools are used.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {currentView === 'tools' && toolView}
+        <div className="flex-1 overflow-hidden">
+          {activeView === 'tools' && renderToolsView()}
+          {activeView === 'files' && renderFilesView()}
+          {activeView === 'browser' && renderBrowserView()}
         </div>
       </div>
     );
@@ -1100,13 +1128,18 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
             agentName={agentName}
             onClose={handleClose}
             variant="drawer"
+            currentView={activeView}
+            onViewChange={setActiveView}
+            showFilesTab={!!effectiveSandboxId}
           />
 
           <div className="flex-1 flex flex-col overflow-hidden">
-            {renderContent()}
+            {activeView === 'tools' && renderToolsView()}
+            {activeView === 'files' && renderFilesView()}
+            {activeView === 'browser' && renderBrowserView()}
           </div>
 
-          {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
+          {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
             <NavigationControls
               displayIndex={displayIndex}
               displayTotalCalls={displayTotalCalls}
@@ -1127,9 +1160,7 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
     );
   }
 
-  // Desktop version
-  // When compact=true, use fixed overlay positioning
-  // When compact=false, assume it's inside a ResizablePanel and fill the container
+  // Desktop compact mode
   if (compact) {
     return (
       <AnimatePresence mode="wait">
@@ -1156,7 +1187,7 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
             <div className="flex-1 flex flex-col overflow-hidden bg-card">
               {renderContent()}
             </div>
-            {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
+            {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
               <NavigationControls
                 displayIndex={displayIndex}
                 displayTotalCalls={displayTotalCalls}
@@ -1199,7 +1230,7 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
       <div className="flex-1 flex flex-col overflow-hidden">
         {renderContent()}
       </div>
-      {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
+      {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
         <NavigationControls
           displayIndex={displayIndex}
           displayTotalCalls={displayTotalCalls}
@@ -1218,3 +1249,4 @@ export const ToolCallSidePanel = memo(function ToolCallSidePanel({
     </motion.div>
   );
 });
+

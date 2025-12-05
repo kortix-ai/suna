@@ -8,7 +8,7 @@ import { CheckCircle, AlertTriangle, Download, FileSpreadsheet, Table, Grid, Tab
 import { cn } from '@/lib/utils';
 import { parseToolResult } from '../tool-result-parser';
 import { FileAttachment } from '../../file-attachment';
-import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
+import { XlsxRenderer } from '@/components/file-renderers';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/AuthProvider';
 import { fetchFileContent } from '@/hooks/files/use-file-queries';

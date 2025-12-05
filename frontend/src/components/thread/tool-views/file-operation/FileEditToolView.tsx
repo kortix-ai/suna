@@ -23,11 +23,11 @@ import {
   normalizeContentToString,
 } from '../utils';
 import {
-  MarkdownRenderer,
+  CodeEditor,
   processUnicodeContent,
-} from '@/components/file-renderers/authenticated-markdown-renderer';
-import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
-import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
+} from '@/components/file-editors';
+import { UnifiedMarkdown } from '@/components/markdown';
+import { CsvRenderer, XlsxRenderer } from '@/components/file-renderers';
 import { useTheme } from 'next-themes';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import {
@@ -264,12 +264,8 @@ export function FileEditToolView({
 
     if (isMarkdown) {
       return (
-        <div className="p-6 prose dark:prose-invert prose-zinc max-w-none prose-headings:font-semibold">
-          <MarkdownRenderer
-            content={processUnicodeContent(updatedContent)}
-            project={project}
-            basePath={processedFilePath || undefined}
-          />
+        <div className="h-full overflow-auto p-4 bg-white dark:bg-zinc-900">
+          <UnifiedMarkdown content={processUnicodeContent(updatedContent)} />
         </div>
       );
     }

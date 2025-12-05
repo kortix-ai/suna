@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, memo, useMemo } from 'react';
 import { CircleDashed, CheckCircle, AlertTriangle, Info, CheckCircle2, Clock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
@@ -83,7 +83,7 @@ export interface ThreadContentProps {
     onPromptFill?: (message: string) => void; // Handler for filling ChatInput with prompt text from samples
 }
 
-export const ThreadContent: React.FC<ThreadContentProps> = ({
+export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadContent({
     messages,
     streamingTextContent = "",
     streamingToolCall,
@@ -106,7 +106,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     scrollContainerRef,
     threadId,
     onPromptFill,
-}) => {
+}) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
@@ -124,8 +124,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     // In playback mode, we use visibleMessages instead of messages
     const displayMessages = readOnly && visibleMessages ? visibleMessages : messages;
 
-    // Helper function to get agent info robustly
-    const getAgentInfo = useCallback(() => {
+    // Memoized agent info - computed once when dependencies change
+    const agentInfo = useMemo(() => {
         // First check thread metadata for is_agent_builder flag
         if (threadMetadata?.is_agent_builder) {
             return {
@@ -482,10 +482,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                 <div className="flex flex-col gap-2">
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center relative">
-                                                            {getAgentInfo().avatar}
+                                                            {agentInfo.avatar}
                                                         </div>
                                                         <p className='ml-2 text-sm text-muted-foreground'>
-                                                            {getAgentInfo().name}
+                                                            {agentInfo.name}
                                                         </p>
                                                     </div>
 
@@ -882,10 +882,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             {/* Logo positioned above the loader */}
                                             <div className="flex items-center">
                                                 <div className="rounded-md flex items-center justify-center">
-                                                    {getAgentInfo().avatar}
+                                                    {agentInfo.avatar}
                                                 </div>
                                                 <p className='ml-2 text-sm text-muted-foreground'>
-                                                    {getAgentInfo().name}
+                                                    {agentInfo.name}
                                                 </p>
                                             </div>
 
@@ -902,10 +902,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         {/* Logo positioned above the tool call */}
                                         <div className="flex justify-start">
                                             <div className="rounded-md flex items-center justify-center">
-                                                {getAgentInfo().avatar}
+                                                {agentInfo.avatar}
                                             </div>
                                             <p className='ml-2 text-sm text-muted-foreground'>
-                                                {getAgentInfo().name}
+                                                {agentInfo.name}
                                             </p>
                                         </div>
 
@@ -929,10 +929,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         {/* Logo positioned above the streaming indicator */}
                                         <div className="flex justify-start">
                                             <div className="rounded-md flex items-center justify-center">
-                                                {getAgentInfo().avatar}
+                                                {agentInfo.avatar}
                                             </div>
                                             <p className='ml-2 text-sm text-muted-foreground'>
-                                                {getAgentInfo().name}
+                                                {agentInfo.name}
                                             </p>
                                         </div>
 
@@ -956,6 +956,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
             {/* No scroll button needed with flex-column-reverse */}
         </>
     );
-};
+});
 
 export default ThreadContent; 

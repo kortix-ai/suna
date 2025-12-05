@@ -131,9 +131,9 @@ export function AgentDrawer({
   const canAccessModel = React.useCallback((model: Model) => {
     // If model doesn't require subscription, it's accessible
     if (!model.requires_subscription) return true;
-    // Otherwise, check if user has active subscription
-    return hasActiveSubscription;
-  }, [hasActiveSubscription]);
+    // Model requires subscription - user must have PAID subscription (not free tier)
+    return hasActiveSubscription && !hasFreeTier;
+  }, [hasActiveSubscription, hasFreeTier]);
 
   // Handle model change from the toggle
   const handleModelChange = React.useCallback((modelId: string) => {

@@ -116,6 +116,34 @@ export const useAgentSelectionStore = create<AgentSelectionState>()(
   )
 );
 
+// Individual selector hooks for optimal re-render performance
+// These only cause re-renders when their specific value changes
+
+export const useSelectedAgentId = () => 
+  useAgentSelectionStore((state) => state.selectedAgentId);
+
+export const useHasInitialized = () => 
+  useAgentSelectionStore((state) => state.hasInitialized);
+
+export const useSetSelectedAgent = () => 
+  useAgentSelectionStore((state) => state.setSelectedAgent);
+
+export const useInitializeFromAgents = () => 
+  useAgentSelectionStore((state) => state.initializeFromAgents);
+
+export const useAutoSelectAgent = () => 
+  useAgentSelectionStore((state) => state.autoSelectAgent);
+
+export const useClearSelection = () => 
+  useAgentSelectionStore((state) => state.clearSelection);
+
+export const useGetCurrentAgent = () => 
+  useAgentSelectionStore((state) => state.getCurrentAgent);
+
+export const useIsSunaAgentFn = () => 
+  useAgentSelectionStore((state) => state.isSunaAgent);
+
+// Legacy hook - kept for backward compatibility but prefer individual selectors
 export const useAgentSelection = () => {
   const store = useAgentSelectionStore();
   

@@ -11,7 +11,7 @@ export function DesignerToolView({ toolCall, toolResult, isStreaming = false, as
   const extractedData = extractDesignerData({ toolCall, toolResult });
   const { mode, prompt, generatedImagePath, designUrl, width, height, error, success, sandboxId: extractedSandboxId } = extractedData;
 
-  const sandboxId = extractedSandboxId || project?.sandbox_id || assistantMessage?.sandbox_id;
+  const sandboxId = extractedSandboxId || project?.sandbox?.id || assistantMessage?.sandbox_id;
 
   console.log('🎨 [DesignerToolView] Data:', {
     generatedImagePath,

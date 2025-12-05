@@ -706,6 +706,23 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     subtitle: 'Presentation',
     defaultTitle: 'Slide Validated',
   },
+  'export_presentation': {
+    icon: Presentation,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Export',
+    defaultTitle: 'Exported Presentation',
+    getTitle: (args) => args?.presentation_name ? `Exported ${args.presentation_name}` : 'Exported Presentation',
+  },
+  'export-presentation': {
+    icon: Presentation,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Export',
+    defaultTitle: 'Exported Presentation',
+    getTitle: (args) => args?.presentation_name ? `Exported ${args.presentation_name}` : 'Exported Presentation',
+  },
+  // Legacy support for old tool names (backward compatibility)
   'export-to-pdf': {
     icon: FileText,
     iconColor: 'text-blue-600',
@@ -714,7 +731,23 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     defaultTitle: 'Exported to PDF',
     getTitle: (args) => args?.presentation_name ? `${args.presentation_name}.pdf` : 'Exported to PDF',
   },
+  'export_to_pdf': {
+    icon: FileText,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Export',
+    defaultTitle: 'Exported to PDF',
+    getTitle: (args) => args?.presentation_name ? `${args.presentation_name}.pdf` : 'Exported to PDF',
+  },
   'export-to-pptx': {
+    icon: Presentation,
+    iconColor: 'text-blue-600',
+    iconBgColor: 'bg-blue-50',
+    subtitle: 'Export',
+    defaultTitle: 'Exported to PPTX',
+    getTitle: (args) => args?.presentation_name ? `${args.presentation_name}.pptx` : 'Exported to PPTX',
+  },
+  'export_to_pptx': {
     icon: Presentation,
     iconColor: 'text-blue-600',
     iconBgColor: 'bg-blue-50',

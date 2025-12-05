@@ -11,7 +11,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 
 export function AskToolView({ toolCall, toolResult, isSuccess = true, isStreaming = false, project, onPromptFill }: ToolViewProps) {
   const { text, attachments, follow_up_answers, success } = extractAskData(toolCall, toolResult, isSuccess);
-  const sandboxId = project?.sandbox_id;
+  const sandboxId = project?.sandbox?.id;
+  const sandboxUrl = project?.sandbox?.sandbox_url;
   const { t } = useLanguage();
 
   if (isStreaming) {
@@ -52,6 +53,7 @@ export function AskToolView({ toolCall, toolResult, isSuccess = true, isStreamin
             <FileAttachmentsGrid
               filePaths={attachments}
               sandboxId={sandboxId}
+              sandboxUrl={sandboxUrl}
               compact={false}
               showPreviews={true}
             />

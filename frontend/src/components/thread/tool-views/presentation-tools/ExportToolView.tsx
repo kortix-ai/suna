@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Markdown } from '@/components/ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { FileAttachment } from '../../file-attachment';
 import { useAuth } from '@/components/AuthProvider';
 import { useDownloadRestriction } from '@/hooks/billing';
@@ -31,44 +31,20 @@ type ExportFormat = 'pptx' | 'pdf';
 
 interface FormatConfig {
   icon: LucideIcon;
-  iconColor: string;
-  badgeColor: string;
-  noteBgColor: string;
-  noteBorderColor: string;
-  noteTextColor: string;
   defaultExtension: string;
   fileProperty: string;
   downloadFormat: DownloadFormat;
 }
 
-// Shared color scheme for all export formats
-const exportColors = {
-  iconColor: 'text-blue-500 dark:text-blue-400',
-  badgeColor: 'bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300',
-  noteBgColor: 'bg-blue-50 dark:bg-blue-900/20',
-  noteBorderColor: 'border-blue-200 dark:border-blue-800',
-  noteTextColor: 'text-blue-800 dark:text-blue-200',
-};
-
 const formatConfigs: Record<ExportFormat, FormatConfig> = {
   pptx: {
     icon: Presentation,
-    iconColor: exportColors.iconColor,
-    badgeColor: exportColors.badgeColor,
-    noteBgColor: exportColors.noteBgColor,
-    noteBorderColor: exportColors.noteBorderColor,
-    noteTextColor: exportColors.noteTextColor,
     defaultExtension: '.pptx',
     fileProperty: 'pptx_file',
     downloadFormat: DownloadFormat.PPTX,
   },
   pdf: {
     icon: FileText,
-    iconColor: exportColors.iconColor,
-    badgeColor: exportColors.badgeColor,
-    noteBgColor: exportColors.noteBgColor,
-    noteBorderColor: exportColors.noteBorderColor,
-    noteTextColor: exportColors.noteTextColor,
     defaultExtension: '.pdf',
     fileProperty: 'pdf_file',
     downloadFormat: DownloadFormat.PDF,
@@ -98,19 +74,17 @@ export function ExportToolView({
   const [isDownloading, setIsDownloading] = useState(false);
 
   // Determine format from function name (handle undefined case)
-  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-to-pptx';
-  const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
-  const config = formatConfigs[format];
-
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-presentation';
+  const isUnifiedExport = name === 'export-presentation' || name === 'export_presentation';
+  
   // Extract the export data from tool result (must be before early return)
   const {
     presentationName,
-    filePath,
-    downloadUrl,
+    exports,
     totalSlides,
-    storedLocally,
     message,
-    note
+    note,
+    partialSuccess
   } = useMemo(() => {
     if (toolResult?.output) {
       try {
@@ -118,12 +92,32 @@ export function ExportToolView({
         const parsed = typeof output === 'string' 
           ? JSON.parse(output) 
           : output;
+        
+        // Handle unified export format
+        if (isUnifiedExport && parsed.exports) {
+          return {
+            presentationName: parsed.presentation_name || toolCall?.arguments?.presentation_name,
+            exports: parsed.exports, // { pptx: {...}, pdf: {...} }
+            totalSlides: parsed.total_slides,
+            message: parsed.message,
+            note: parsed.note,
+            partialSuccess: parsed.partial_success
+          };
+        }
+        
+        // Handle legacy single-format exports (backward compatibility)
+        const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
+        const config = formatConfigs[format];
         return {
           presentationName: parsed.presentation_name || toolCall?.arguments?.presentation_name,
-          filePath: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
-          downloadUrl: parsed.download_url,
+          exports: {
+            [format]: {
+              file: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
+              download_url: parsed.download_url,
+              stored_locally: parsed.stored_locally
+            }
+          },
           totalSlides: parsed.total_slides,
-          storedLocally: parsed.stored_locally,
           message: parsed.message,
           note: parsed.note
         };
@@ -139,7 +133,7 @@ export function ExportToolView({
     return {
       presentationName: toolCall?.arguments?.presentation_name,
     };
-  }, [toolResult, config.fileProperty, toolCall?.arguments]);
+  }, [toolResult, name, isUnifiedExport, toolCall?.arguments]);
 
   // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
@@ -147,7 +141,10 @@ export function ExportToolView({
     return null;
   }
 
-  const IconComponent = config.icon;
+  // Determine available exports
+  const availableExports = exports ? Object.keys(exports) as ExportFormat[] : [];
+  const hasPptx = availableExports.includes('pptx');
+  const hasPdf = availableExports.includes('pdf');
 
   // Download handlers
   const handleDownload = async (downloadFormat: DownloadFormat) => {
@@ -175,18 +172,21 @@ export function ExportToolView({
 
   // Handle direct file download for stored files
   // Uses backend API which auto-starts sandbox if needed
-  const handleDirectDownload = async () => {
+  const handleDirectDownload = async (format: ExportFormat) => {
     if (isDownloadRestricted) {
       openUpgradeModal();
       return;
     }
-    if (!downloadUrl || !project?.sandbox?.id) return;
+    
+    const exportData = exports?.[format];
+    if (!exportData?.download_url || !project?.sandbox?.id) return;
     
     try {
       setIsDownloading(true);
       
+      const config = formatConfigs[format];
       // Extract filename from downloadUrl
-      const filename = downloadUrl.split('/').pop() || `presentation${config.defaultExtension}`;
+      const filename = exportData.download_url.split('/').pop() || `presentation${config.defaultExtension}`;
       
       // Use backend file endpoint which handles sandbox startup automatically
       const headers: Record<string, string> = {};
@@ -195,7 +195,7 @@ export function ExportToolView({
       }
       
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${project.sandbox.id}/files/content?path=${encodeURIComponent(downloadUrl)}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${project.sandbox.id}/files/content?path=${encodeURIComponent(exportData.download_url)}`,
         { headers }
       );
       
@@ -219,7 +219,7 @@ export function ExportToolView({
       });
     } catch (error) {
       console.error('Error downloading file:', error);
-      toast.error(`Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to download ${format.toUpperCase()}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsDownloading(false);
     }
@@ -230,8 +230,8 @@ export function ExportToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl border bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/20">
-              <IconComponent className={`w-5 h-5 ${config.iconColor}`} />
+            <div className="relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
+              <Presentation className="w-5 h-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -245,7 +245,7 @@ export function ExportToolView({
               variant="secondary"
               className={
                 isSuccess
-                  ? config.badgeColor
+                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
                   : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
               }
             >
@@ -254,12 +254,15 @@ export function ExportToolView({
               ) : (
                 <AlertTriangle className="h-3.5 w-3.5 mr-1" />
               )}
-              {isSuccess ? 'Completed' : 'Failed'}
+              {partialSuccess ? 'Partial' : (isSuccess ? 'Success' : 'Failed')}
             </Badge>
           )}
 
           {isStreaming && (
-            <Badge className={config.badgeColor}>
+            <Badge
+              variant="secondary"
+              className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300"
+            >
               <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
               Exporting
             </Badge>
@@ -272,103 +275,120 @@ export function ExportToolView({
           <div className="p-4 space-y-4">
             {/* Export Info */}
             {(presentationName || totalSlides) && (
-              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center space-x-2 mb-3">
-                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">Export Details</h3>
-                </div>
-                <div className="space-y-2 text-sm">
+              <div className="bg-card rounded-lg p-4 border border-border">
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   {presentationName && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Presentation:</span>
-                      <span className="text-gray-900 dark:text-gray-100">{presentationName}</span>
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      <span className="font-medium text-foreground">{presentationName}</span>
                     </div>
                   )}
                   {totalSlides && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Slides:</span>
-                      <span className="text-gray-900 dark:text-gray-100">{totalSlides} slide{totalSlides !== 1 ? 's' : ''}</span>
-                    </div>
-                  )}
-                  {storedLocally !== undefined && (
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-gray-700 dark:text-gray-300">Storage:</span>
-                      <span className="text-gray-900 dark:text-gray-100">
-                        {storedLocally ? 'Stored locally for repeated downloads' : 'Direct download only'}
-                      </span>
+                    <div className="flex items-center gap-2">
+                      <Presentation className="h-4 w-4" />
+                      <span>{totalSlides} slide{totalSlides !== 1 ? 's' : ''}</span>
                     </div>
                   )}
                 </div>
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-3">
-              {storedLocally && downloadUrl ? (
-                // Direct download button for stored files
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                  onClick={handleDirectDownload}
-                  disabled={isDownloading}
-                  title={`Download stored ${format.toUpperCase()} file`}
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
+            {/* File Cards - Clean Kortix Style */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {hasPptx && exports?.pptx && (
+                <div className="bg-card rounded-lg border border-border p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Presentation className="h-5 w-5 text-muted-foreground" />
+                      <span className="font-medium text-foreground">PPTX</span>
+                    </div>
+                    <Badge variant="secondary">PowerPoint</Badge>
+                  </div>
+                  
+                  {exports.pptx.file && (
+                    <div className="mb-3">
+                      <FileAttachment
+                        filepath={exports.pptx.file}
+                        onClick={onFileClick}
+                        sandboxId={project?.sandbox_id}
+                        project={project}
+                        className="bg-muted/50 border-border"
+                      />
+                    </div>
                   )}
-                  Download {format.toUpperCase()}
-                </Button>
-              ) : (
-                // Direct download button for conversion
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                  onClick={() => handleDownload(config.downloadFormat)}
-                  disabled={isDownloading}
-                  title={`Download presentation as ${format.toUpperCase()}`}
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
+
+                  <Button 
+                    variant="default"
+                    className="w-full"
+                    onClick={() => exports.pptx.download_url ? handleDirectDownload('pptx') : handleDownload(DownloadFormat.PPTX)}
+                    disabled={isDownloading}
+                  >
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download PPTX
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+              
+              {hasPdf && exports?.pdf && (
+                <div className="bg-card rounded-lg border border-border p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-muted-foreground" />
+                      <span className="font-medium text-foreground">PDF</span>
+                    </div>
+                    <Badge variant="secondary">Document</Badge>
+                  </div>
+                  
+                  {exports.pdf.file && (
+                    <div className="mb-3">
+                      <FileAttachment
+                        filepath={exports.pdf.file}
+                        onClick={onFileClick}
+                        sandboxId={project?.sandbox_id}
+                        project={project}
+                        className="bg-muted/50 border-border"
+                      />
+                    </div>
                   )}
-                  Download {format.toUpperCase()}
-                </Button>
+
+                  <Button 
+                    variant="default"
+                    className="w-full"
+                    onClick={() => exports.pdf.download_url ? handleDirectDownload('pdf') : handleDownload(DownloadFormat.PDF)}
+                    disabled={isDownloading}
+                  >
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download PDF
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
 
             {/* Message */}
             {message && (
-              <div className="space-y-2">
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
-                    {message}
-                  </Markdown>
-                </div>
-              </div>
-            )}
-
-
-            {/* File Attachment for stored files */}
-            {filePath && storedLocally && (
-              <div className="space-y-3">
-                <div className="flex items-center space-x-2">
-                  <IconComponent className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">Exported File</h3>
-                </div>
-                <div className="grid gap-2">
-                  <FileAttachment
-                    filepath={filePath}
-                    onClick={onFileClick}
-                    sandboxId={project?.sandbox_id}
-                    project={project}
-                    className="bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
-                  />
-                </div>
+              <div className="bg-muted/50 rounded-lg p-4 border border-border">
+                <UnifiedMarkdown 
+                  content={message} 
+                  className="text-sm" 
+                />
               </div>
             )}
           </div>
@@ -378,22 +398,4 @@ export function ExportToolView({
   );
 }
 
-// Export convenience wrappers
-export function ExportToPptxToolView(props: ExportToolViewProps) {
-  // Create modified toolCall with correct function_name
-  const modifiedToolCall = props.toolCall ? {
-    ...props.toolCall,
-    function_name: 'export_to_pptx'
-  } : props.toolCall;
-  return <ExportToolView {...props} toolCall={modifiedToolCall} />;
-}
-
-export function ExportToPdfToolView(props: ExportToolViewProps) {
-  // Create modified toolCall with correct function_name
-  const modifiedToolCall = props.toolCall ? {
-    ...props.toolCall,
-    function_name: 'export_to_pdf'
-  } : props.toolCall;
-  return <ExportToolView {...props} toolCall={modifiedToolCall} />;
-}
 

@@ -23,7 +23,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { LoadingState } from '../shared/LoadingState';
 import { cn } from '@/lib/utils';
-import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { TipTapDocumentModal } from '@/components/thread/tiptap-document-modal';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
 import { createClient } from '@/lib/supabase/client';
@@ -49,10 +48,9 @@ export function DocsToolView({
   isSuccess = true,
   isStreaming = false,
   project,
+  onFileClick,
 }: ToolViewProps) {
   // All hooks must be called unconditionally at the top
-  const [fileViewerOpen, setFileViewerOpen] = useState(false);
-  const [selectedDocPath, setSelectedDocPath] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
   const [editorFilePath, setEditorFilePath] = useState<string | null>(null);
@@ -388,15 +386,6 @@ export function DocsToolView({
         )}
       </CardContent>
     </Card>
-    {(data?.sandbox_id || project?.id) && selectedDocPath && (
-      <FileViewerModal
-        open={fileViewerOpen}
-        onOpenChange={setFileViewerOpen}
-        sandboxId={data?.sandbox_id || project?.id || ''}
-        initialFilePath={selectedDocPath}
-        projectId={project?.id}
-      />
-    )}
     {editorFilePath && editorDocumentData && (
       <TipTapDocumentModal
         open={editorOpen}

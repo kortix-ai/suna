@@ -42,6 +42,7 @@ export interface ToolMessagePair {
 function renderStandaloneAttachments(
   attachments: string[],
   sandboxId?: string,
+  sandboxUrl?: string,
   onFilePress?: (filePath: string) => void,
   alignRight: boolean = false
 ) {
@@ -55,6 +56,7 @@ function renderStandaloneAttachments(
       <FileAttachmentsGrid
         filePaths={validAttachments}
         sandboxId={sandboxId}
+        sandboxUrl={sandboxUrl}
         compact={false}
         showPreviews={true}
         onFilePress={onFilePress}
@@ -108,11 +110,12 @@ interface MarkdownContentProps {
   threadId?: string;
   onFilePress?: (filePath: string) => void;
   sandboxId?: string;
+  sandboxUrl?: string;
   isLatestMessage?: boolean;
   onPromptFill?: (prompt: string) => void;
 }
 
-const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, isLatestMessage, onPromptFill }: MarkdownContentProps) {
+const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, sandboxUrl, isLatestMessage, onPromptFill }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -213,7 +216,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             </View>
           );
 
-          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, onFilePress);
+          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, sandboxUrl, onFilePress);
           if (standaloneAttachments) {
             contentParts.push(
               <View key={`ask-func-attachments-${match?.index}-${index}`}>
@@ -254,7 +257,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             </View>
           );
 
-          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, onFilePress);
+          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, sandboxUrl, onFilePress);
           if (standaloneAttachments) {
             contentParts.push(
               <View key={`complete-func-attachments-${match?.index}-${index}`}>
@@ -475,6 +478,8 @@ interface ThreadContentProps {
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
   streamHookStatus?: string;
   sandboxId?: string;
+  /** Sandbox URL for direct file access (used for presentations and HTML previews) */
+  sandboxUrl?: string;
   agentName?: string;
   /** Handler to auto-fill chat input with a prompt (for follow-up prompts) */
   onPromptFill?: (prompt: string) => void;
@@ -496,6 +501,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
   onToolPress,
   streamHookStatus = "idle",
   sandboxId,
+  sandboxUrl,
   agentName = 'Suna',
   onPromptFill,
 }) => {
@@ -788,7 +794,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
           return (
             <View key={group.key} className="mb-6">
-              {renderStandaloneAttachments(attachments as string[], sandboxId, onFilePress, true)}
+              {renderStandaloneAttachments(attachments as string[], sandboxId, sandboxUrl, onFilePress, true)}
 
               {cleanContent && (
                 <View className="flex-row justify-end">
@@ -857,6 +863,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                     onToolClick: handleToolClick || (() => { }),
                     onFileClick: onFilePress,
                     sandboxId,
+                    sandboxUrl,
                     isLatestMessage,
                     threadId: message.thread_id,
                     onPromptFill,

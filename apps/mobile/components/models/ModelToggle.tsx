@@ -11,7 +11,9 @@ import { Text } from '@/components/ui/text';
 import { Lock } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
-import KortixSymbol from '@/assets/brand/kortix-symbol.svg';
+// Import both black and white symbol variants
+import KortixSymbolBlack from '@/assets/brand/kortix-symbol.svg';
+import KortixSymbolWhite from '@/assets/brand/Symbol.svg';
 import type { Model } from '@/api/types';
 
 // Color constants for light and dark modes
@@ -152,6 +154,8 @@ export function ModelToggle({
         style={{
           gap: 6,
           backgroundColor: isPowerSelected ? colors.selectedBg : 'transparent',
+          // Reduce opacity when locked (free tier)
+          opacity: canAccessPower ? 1 : 0.6,
           ...(isPowerSelected && {
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 1 },
@@ -161,16 +165,18 @@ export function ModelToggle({
           }),
         }}
       >
-        <KortixSymbol
-          width={compact ? 10 : 14}
-          height={compact ? 10 : 14}
-          color={isPowerSelected 
-            ? colors.foreground 
-            : canAccessPower 
-              ? colors.mutedForeground
-              : colors.disabledForeground
-          }
-        />
+        {/* Use white symbol in dark mode, black in light mode */}
+        {isDark ? (
+          <KortixSymbolWhite
+            width={compact ? 10 : 14}
+            height={compact ? 10 : 14}
+          />
+        ) : (
+          <KortixSymbolBlack
+            width={compact ? 10 : 14}
+            height={compact ? 10 : 14}
+          />
+        )}
         <Text
           style={{
             fontFamily: 'Roobert-SemiBold',
@@ -179,17 +185,16 @@ export function ModelToggle({
             letterSpacing: 0.5,
             color: isPowerSelected 
               ? colors.primary 
-              : canAccessPower 
-                ? colors.mutedForeground
-                : colors.disabledForeground,
+              : colors.mutedForeground,
           }}
         >
           Power
         </Text>
+        {/* Show lock when user cannot access Power (free tier) */}
         {!canAccessPower && (
           <Lock 
             size={compact ? 12 : 14} 
-            color={colors.disabledForeground} 
+            color={isDark ? colors.mutedForeground : colors.mutedForeground} 
           />
         )}
       </Pressable>
