@@ -1,0 +1,544 @@
+from typing import Optional, Literal
+import asyncio
+import structlog
+import json
+from decimal import Decimal
+from exa_py import Exa
+from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.utils.config import config, EnvMode
+from core.utils.logger import logger
+from core.agentpress.thread_manager import ThreadManager
+from core.billing.credits.manager import CreditManager
+from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
+from core.services.supabase import DBConnection
+
+@tool_metadata(
+    display_name="Research Search",
+    description="Find and research people or companies with professional background information",
+    icon="Search",
+    color="bg-sky-100 dark:bg-sky-800/50",
+    weight=250,
+    visible=True
+)
+class ResearchSearchTool(Tool):
+    def __init__(self, thread_manager: ThreadManager):
+        super().__init__()
+        self.thread_manager = thread_manager
+        self.api_key = config.EXA_API_KEY
+        self.db = DBConnection()
+        self.credit_manager = CreditManager()
+        self.exa_client = None
+        
+        if self.api_key:
+            self.exa_client = Exa(self.api_key)
+            logger.info("Research Search Tool initialized.")
+        else:
+            logger.warning("EXA_API_KEY not configured - Research Search Tool will not be available")
+    
+    async def _get_current_thread_and_user(self) -> tuple[Optional[str], Optional[str]]:
+        try:
+            context_vars = structlog.contextvars.get_contextvars()
+            thread_id = context_vars.get('thread_id')
+            
+            if not thread_id:
+                logger.warning("No thread_id in execution context")
+                return None, None
+            
+            client = await self.db.client
+            thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
+            if thread.data:
+                return thread_id, thread.data.get('account_id')
+                
+        except Exception as e:
+            logger.error(f"Failed to get thread context: {e}")
+        return None, None
+    
+    async def _deduct_credits(self, user_id: str, num_results: int, search_type: str, thread_id: Optional[str] = None) -> bool:
+        base_cost = Decimal('0.45')
+        total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
+        
+        try:
+            result = await self.credit_manager.use_credits(
+                account_id=user_id,
+                amount=total_cost,
+                description=f"{search_type.capitalize()} search: {num_results} results",
+                thread_id=thread_id
+            )
+            
+            if result.get('success'):
+                logger.info(f"Deducted ${total_cost:.2f} for {search_type} search ({num_results} results)")
+                return True
+            else:
+                logger.warning(f"Failed to deduct credits: {result.get('error')}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error deducting credits: {e}")
+            return False
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "research_search",
+            "description": """Search for people or companies using natural language queries and enrich with professional information.
+
+🔴 CRITICAL: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL 🔴
+
+This tool is PAID and costs $0.54 per search (returns 10 results), so you MUST always get explicit user confirmation before executing.
+
+MANDATORY CLARIFICATION & CONFIRMATION WORKFLOW - NO EXCEPTIONS:
+
+STEP 1: ASK DETAILED CLARIFYING QUESTIONS (ALWAYS REQUIRED)
+Before confirming the search, you MUST ask clarifying questions to make the query as specific and targeted as possible. Each search costs $0.54, so precision is critical.
+
+Required Clarification Areas for People Search:
+- Job Title/Role: What specific role or title? (e.g., "engineer" vs "Senior Machine Learning Engineer")
+- Industry/Company Type: What industry or type of company? (e.g., "tech companies" vs "Series B SaaS startups")
+- Location: What geographic area? (e.g., "Bay Area" vs "San Francisco downtown" vs "remote")
+- Experience Level: Junior, mid-level, senior, executive?
+- Specific Companies: Any target companies or company sizes?
+- Skills/Technologies: Any specific technical skills, tools, or expertise?
+- Additional Criteria: Recent job changes, specific backgrounds, education, etc.
+
+Required Clarification Areas for Company Search:
+- Industry/Sector: What specific industry? (e.g., "tech" vs "B2B SaaS" vs "AI/ML infrastructure")
+- Location: Geographic focus? (city, region, country, remote-first)
+- Company Stage: Startup, growth stage, enterprise? Funding stage (seed, Series A-D, public)?
+- Company Size: Employee count range? Revenue range?
+- Technology/Focus: What technology stack or business focus?
+- Other Criteria: Founded when? Specific markets? B2B vs B2C?
+
+STEP 2: REFINE THE QUERY
+After getting clarification, construct a detailed, specific search query that incorporates all the details. Show the user the refined query you plan to use.
+
+STEP 3: CONFIRM WITH COST
+Only after clarifying and refining, ask for confirmation with cost clearly stated.
+
+COMPLETE WORKFLOW:
+1. CLARIFY: Ask 3-5 specific questions to understand exactly what they're looking for
+2. REFINE: Build a detailed, targeted search query based on their answers
+3. CONFIRM: Show them the refined query and ask for confirmation with cost explanation
+4. WAIT: Wait for explicit "yes" or confirmation from the user
+5. EXECUTE: Only then execute research_search
+
+WHY CLARIFICATION IS CRITICAL:
+- Each search costs $0.54 - precision saves money
+- Vague queries return irrelevant results, wasting the user's money
+- Specific queries yield better, more actionable results
+- You only get 10 results per search, so make them count
+- Better to spend 2 minutes clarifying than waste money on a bad search
+
+CONFIRMATION MESSAGE TEMPLATE:
+I can search for [description of search] using the Research Search tool.
+
+⚠️ Cost: $0.54 per search (returns 10 results)
+
+This will find [what they'll get from the search].
+
+Would you like me to proceed with this search?
+
+SEARCH QUERY BEST PRACTICES:
+
+For People Search:
+- Use descriptive, natural language queries
+- Include job titles, companies, locations, skills, or experience
+- Examples of good queries:
+  * "Senior Python developers with machine learning experience at Google"
+  * "Marketing managers at Fortune 500 companies in New York"
+  * "CTOs at AI startups in San Francisco"
+  * "Sales directors with 10+ years experience in SaaS companies"
+
+For Company Search:
+- Use natural language to describe company criteria
+- Include industry, location, size, or other relevant factors
+- Examples of good queries:
+  * "AI startups in San Francisco with Series A funding"
+  * "E-commerce companies in Austin with 50-200 employees"
+  * "Healthcare technology companies in Boston"
+
+ENRICHMENT CAPABILITIES:
+- People Search can enrich results with custom data (default: LinkedIn profile URL)
+- You can specify what additional information to find about each person
+- Example: "LinkedIn profile URL and current company website"
+- Company Search can enrich with company-specific information (default: Company website, funding information, and key details)
+
+CRITICAL RULES:
+1. ⛔ NEVER call research_search without FIRST asking clarifying questions
+2. ⛔ NEVER proceed to confirmation without gathering specific search criteria
+3. ⛔ NEVER execute without explicit user confirmation via 'ask' tool
+4. ⛔ NEVER batch multiple searches without individual clarifications and confirmations
+5. ⛔ NEVER use vague or general queries - always refine with user input first
+6. ✅ ALWAYS ask 3-5 clarifying questions before confirming
+7. ✅ ALWAYS show the refined query to the user before confirming
+8. ✅ ALWAYS explain the cost ($0.54 per search) in your confirmation request
+9. ✅ ALWAYS wait for explicit "yes" or confirmation from the user
+10. ✅ If user says no or hesitates, DO NOT proceed with the search
+11. ✅ After getting confirmation, execute the search and present results clearly
+12. ✅ If results are insufficient, ask before doing another search (with new clarifications)
+
+WRONG vs CORRECT WORKFLOW COMPARISON:
+
+User: "Find me CTOs at AI startups in San Francisco"
+
+❌ WRONG: Immediately call the tool or ask for confirmation without clarifying
+❌ WRONG: "I can search for CTOs. It costs $0.54. Should I proceed?" (no clarification first)
+
+✅ CORRECT: Follow the complete workflow below (CLARIFY → REFINE → CONFIRM → EXECUTE)
+
+EXAMPLE CONVERSATIONS:
+
+Example 1 - People Search with Clarification:
+User: "I need to find software engineers at Tesla"
+
+You (Step 1 - CLARIFY): Use 'ask' tool to gather specific details:
+"I can help you find software engineers at Tesla! To create the most targeted search, let me ask a few questions:
+
+1. What level of seniority? (junior, mid-level, senior, staff, principal)
+2. Any specific engineering domains? (backend, frontend, ML/AI, infrastructure, embedded systems, autonomous driving, battery tech)
+3. What location? (Palo Alto HQ, Austin Gigafactory, Berlin, or any location)
+4. Any specific technologies or skills you're looking for? (Python, C++, ROS, computer vision, etc.)
+5. Current employees only, or including people who recently left Tesla?
+
+These details will ensure we find exactly the right profiles."
+
+[Wait for user response]
+
+User: "Senior level, working on autonomous driving software, Python and C++, based in Palo Alto"
+
+You (Step 2 - REFINE & CONFIRM): Use 'ask' tool with refined query and cost:
+"Perfect! Here's the refined search I'll execute:
+
+🔍 **Query**: 'Senior software engineers at Tesla working on autonomous driving and self-driving technology in Palo Alto, with Python and C++ expertise'
+
+⚠️ **Cost**: $0.54 per search (returns up to 10 results with LinkedIn profiles and detailed background)
+
+This will find senior autonomous driving engineers at Tesla matching your criteria. Would you like me to proceed?"
+
+[Wait for confirmation]
+
+User: "Yes, go ahead"
+
+You: [Now execute the search with the refined query]
+
+Example 2 - Company Search with Clarification:
+User: "Find me some AI companies"
+
+You (Step 1 - CLARIFY): Use 'ask' tool:
+"I can help you find AI companies! To make this search as specific as possible, let me ask:
+
+1. What specific area of AI? (generative AI, computer vision, NLP, robotics, AI infrastructure, MLOps, etc.)
+2. What location or region? (San Francisco, NYC, Europe, or any location)
+3. Company stage? (early-stage startup, Series A-C, late-stage, public companies)
+4. Company size? (less than 50 employees, 50-200, 200+, or any size)
+5. Any specific focus? (B2B, B2C, enterprise, consumer products)
+6. Other criteria? (funding amount, founded date, specific sub-sector)
+
+These details will help me find the most relevant companies for your needs."
+
+[Wait for user response]
+
+User: "Generative AI, San Francisco, Series A or B, between 20-100 employees"
+
+You (Step 2 - REFINE & CONFIRM): Use 'ask' tool:
+"Excellent! Here's the targeted search I'll run:
+
+🔍 **Query**: 'Generative AI companies in San Francisco with Series A or Series B funding, 20-100 employees, building AI products'
+
+⚠️ **Cost**: $0.54 per search (returns up to 10 companies with enriched information including websites, funding details, and company profiles)
+
+This will find generative AI startups in San Francisco matching your specific criteria. Would you like me to proceed?"
+
+[Wait for confirmation]
+
+User: "Yes, please"
+
+You: [Now execute the search with the refined query]
+
+Example 3 - Handling Vague Requests:
+User: "Find me some marketing people"
+
+You (Step 1 - CLARIFY): Use 'ask' tool:
+"I can help you find marketing professionals! This is a broad area, so let me ask some questions to narrow it down:
+
+1. What specific marketing role? (CMO, Marketing Director, Content Marketing Manager, Growth Marketing, Product Marketing, Digital Marketing, Brand Marketing)
+2. What industry or sector? (tech/SaaS, e-commerce, healthcare, fintech, consumer goods, B2B, B2C)
+3. Company type and size? (startups, mid-size companies, enterprises, agencies)
+4. Location preference? (specific city, region, remote, or any location)
+5. Experience level? (entry-level, mid-level, senior, executive)
+6. Any specific skills or platforms? (SEO, paid ads, marketing automation, Salesforce, HubSpot, content strategy)
+
+These details will help me create a highly targeted search that finds exactly the right marketing professionals for your needs."
+
+[Wait for detailed response, then refine query, confirm with cost, and only execute after "yes"]
+
+INTEGRATION WITH RESEARCH WORKFLOW:
+- These tools complement web search and data providers
+- Use for targeted professional/company research
+- Preferred over generic web scraping for people/company data
+- Results are structured and include enriched data
+
+REMEMBER: This is a PAID tool - treat it with the same care as spending the user's money. ALWAYS:
+1. Ask 3-5 clarifying questions FIRST
+2. Refine the query based on answers
+3. Show the refined query to the user
+4. Get explicit "yes" confirmation with cost clearly stated
+5. Only then execute the search
+
+Never skip the clarification step - it's the difference between a valuable search and wasted money.""",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search_type": {
+                        "type": "string",
+                        "enum": ["people", "company"],
+                        "description": "Type of search: 'people' to find professionals/individuals, 'company' to find companies"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language search query. For people: 'CTOs at AI startups in San Francisco', 'Senior Python developers with machine learning experience at Google'. For companies: 'AI startups in San Francisco with recent funding', 'Fortune 500 companies in healthcare sector'"
+                    },
+                    "enrichment_description": {
+                        "type": "string",
+                        "description": "What specific information to find. For people: default 'LinkedIn profile URL'. For companies: default 'Company website, funding information, and key details'"
+                    }
+                },
+                "required": ["search_type", "query"]
+            }
+        }
+    })
+    async def research_search(
+        self,
+        search_type: Literal["people", "company"],
+        query: str,
+        enrichment_description: Optional[str] = None
+    ) -> ToolResult:
+        if not self.exa_client:
+            return self.fail_response(
+                f"{search_type.capitalize()} Search is not available. EXA_API_KEY is not configured. "
+                "Please contact your administrator to enable this feature."
+            )
+        
+        if not query:
+            return self.fail_response("Search query is required.")
+        
+        # Set default enrichment based on search type
+        if enrichment_description is None:
+            if search_type == "people":
+                enrichment_description = "LinkedIn profile URL"
+            else:
+                enrichment_description = "Company website, funding information, and key details"
+        
+        thread_id, user_id = await self._get_current_thread_and_user()
+        
+        if config.ENV_MODE != EnvMode.LOCAL and (not thread_id or not user_id):
+            return self.fail_response(
+                "No active session context for billing. This tool requires an active agent session."
+            )
+        
+        try:
+            logger.info(f"Creating Exa webset for {search_type} search: '{query}' with 10 results")
+            
+            enrichment_config = CreateEnrichmentParameters(
+                description=enrichment_description,
+                format="text"
+            )
+            
+            webset_params = CreateWebsetParameters(
+                search={
+                    "query": query,
+                    "count": 10
+                },
+                enrichments=[enrichment_config]
+            )
+            
+            try:
+                webset = await asyncio.to_thread(
+                    self.exa_client.websets.create,
+                    params=webset_params
+                )
+                
+                logger.info(f"Webset created with ID: {webset.id}")
+            except Exception as create_error:
+                logger.error(f"Failed to create webset - Error type: {type(create_error).__name__}")
+                try:
+                    error_str = str(create_error)
+                    logger.error(f"Failed to create webset - Error message: {error_str}")
+                except:
+                    error_str = "Unknown error"
+                    logger.error(f"Failed to create webset - Could not convert error to string")
+                
+                if "401" in error_str:
+                    return self.fail_response(
+                        "Authentication failed with Exa API. Please check your API key configuration."
+                    )
+                elif "400" in error_str:
+                    return self.fail_response(
+                        "Invalid request to Exa API. Please check your query format."
+                    )
+                else:
+                    return self.fail_response(
+                        "Failed to create webset. Please try again."
+                    )
+            
+            logger.info(f"Waiting for webset {webset.id} to complete processing...")
+            try:
+                webset = await asyncio.to_thread(
+                    self.exa_client.websets.wait_until_idle,
+                    webset.id
+                )
+                logger.info(f"Webset {webset.id} processing complete")
+            except Exception as wait_error:
+                logger.error(f"Error waiting for webset: {type(wait_error).__name__}: {repr(wait_error)}")
+                return self.fail_response("Failed while waiting for search results. Please try again.")
+
+            logger.info(f"Retrieving items from webset {webset.id}...")
+            try:
+                items = await asyncio.to_thread(
+                    self.exa_client.websets.items.list,
+                    webset_id=webset.id
+                )
+                logger.info(f"Retrieved items from webset")
+            except Exception as items_error:
+                logger.error(f"Error retrieving items: {type(items_error).__name__}: {repr(items_error)}")
+                return self.fail_response("Failed to retrieve search results. Please try again.")
+            
+            results = items.data if items else []
+            logger.info(f"Got {len(results)} results from webset")
+            
+            formatted_results = []
+            for idx, item in enumerate(results[:10], 1):
+                if hasattr(item, 'model_dump'):
+                    item_dict = item.model_dump()
+                elif isinstance(item, dict):
+                    item_dict = item
+                else:
+                    item_dict = vars(item) if hasattr(item, '__dict__') else {}
+                
+                properties = item_dict.get('properties', {})
+                
+                evaluations_text = ""
+                evaluations = item_dict.get('evaluations', [])
+                if evaluations:
+                    eval_items = []
+                    for eval_item in evaluations:
+                        if isinstance(eval_item, dict):
+                            criterion = eval_item.get('criterion', '')
+                            satisfied = eval_item.get('satisfied', '')
+                            if criterion:
+                                eval_items.append(f"{criterion}: {satisfied}")
+                    evaluations_text = " | ".join(eval_items)
+                
+                enrichment_text = ""
+                if 'enrichments' in item_dict and item_dict['enrichments']:
+                    enrichments = item_dict['enrichments']
+                    if isinstance(enrichments, list) and len(enrichments) > 0:
+                        enrichment = enrichments[0]
+                        if isinstance(enrichment, dict):
+                            enrich_result = enrichment.get('result')
+                            if enrich_result is not None:
+                                if isinstance(enrich_result, list) and enrich_result:
+                                    enrichment_text = str(enrich_result[0]) if enrich_result[0] else ""
+                                elif isinstance(enrich_result, str):
+                                    enrichment_text = enrich_result
+                                else:
+                                    enrichment_text = str(enrich_result) if enrich_result else ""
+                
+                # Format results based on search type
+                if search_type == "people":
+                    person_info = properties.get('person', {})
+                    picture_url = person_info.get('picture_url', '')
+                    if picture_url is None:
+                        picture_url = ''
+                    
+                    result_entry = {
+                        "rank": idx,
+                        "id": item_dict.get('id', ''),
+                        "webset_id": item_dict.get('webset_id', ''),
+                        "source": str(item_dict.get('source', '')),
+                        "source_id": item_dict.get('source_id', ''),
+                        "url": properties.get('url', ''),
+                        "type": properties.get('type', ''),
+                        "description": properties.get('description', ''),
+                        "person_name": person_info.get('name', ''),
+                        "person_location": person_info.get('location', ''),
+                        "person_position": person_info.get('position', ''),
+                        "person_picture_url": str(picture_url) if picture_url else '',
+                        "evaluations": evaluations_text,
+                        "enrichment_data": enrichment_text,
+                        "created_at": str(item_dict.get('created_at', '')),
+                        "updated_at": str(item_dict.get('updated_at', ''))
+                    }
+                else:  # company
+                    company_info = properties.get('company', {})
+                    logo_url = company_info.get('logo_url', '')
+                    if logo_url is None:
+                        logo_url = ''
+                    
+                    result_entry = {
+                        "rank": idx,
+                        "id": item_dict.get('id', ''),
+                        "webset_id": item_dict.get('webset_id', ''),
+                        "source": str(item_dict.get('source', '')),
+                        "source_id": item_dict.get('source_id', ''),
+                        "url": properties.get('url', ''),
+                        "type": properties.get('type', ''),
+                        "description": properties.get('description', ''),
+                        "company_name": company_info.get('name', ''),
+                        "company_location": company_info.get('location', ''),
+                        "company_industry": company_info.get('industry', ''),
+                        "company_logo_url": str(logo_url) if logo_url else '',
+                        "evaluations": evaluations_text,
+                        "enrichment_data": enrichment_text,
+                        "created_at": str(item_dict.get('created_at', '')),
+                        "updated_at": str(item_dict.get('updated_at', ''))
+                    }
+                
+                formatted_results.append(result_entry)
+            
+            base_cost = Decimal('0.45')
+            total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
+            
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.info(f"Running in LOCAL mode - skipping billing for {search_type} search")
+                cost_deducted_str = f"{int(total_cost * 100)} credits (LOCAL - not charged)"
+            else:
+                credits_deducted = await self._deduct_credits(user_id, len(formatted_results), search_type, thread_id)
+                if not credits_deducted:
+                    return self.fail_response(
+                        f"Insufficient credits for {search_type} search. "
+                        f"This search costs {int(total_cost * 100)} credits ({len(formatted_results)} results). "
+                        "Please add credits to continue."
+                    )
+                cost_deducted_str = f"{int(total_cost * 100)} credits"
+            
+            output = {
+                "search_type": search_type,
+                "query": query,
+                "total_results": len(formatted_results),
+                "cost_deducted": cost_deducted_str,
+                "results": formatted_results,
+                "enrichment_type": enrichment_description
+            }
+            
+            logger.info(f"Successfully completed {search_type} search with {len(formatted_results)} results")
+            
+            try:
+                json_output = json.dumps(output, indent=2, default=str)
+                return self.success_response(json_output)
+            except Exception as json_error:
+                logger.error(f"Failed to serialize output: {json_error}")
+                summary = f"Found {len(formatted_results)} results for {search_type} search query: {query}"
+                if formatted_results:
+                    if search_type == "people":
+                        summary += f"\n\nTop result:\nName: {formatted_results[0].get('person_name', 'Unknown')}\nPosition: {formatted_results[0].get('person_position', 'Unknown')}\nLocation: {formatted_results[0].get('person_location', 'Unknown')}"
+                    else:
+                        summary += f"\n\nTop result:\nName: {formatted_results[0].get('company_name', 'Unknown')}\nIndustry: {formatted_results[0].get('company_industry', 'Unknown')}\nLocation: {formatted_results[0].get('company_location', 'Unknown')}"
+                return self.success_response(summary)
+                
+        except asyncio.TimeoutError:
+            return self.fail_response("Search timed out. Please try again with a simpler query.")
+        except Exception as e:
+            logger.error(f"{search_type.capitalize()} search failed: {repr(e)}", exc_info=True)
+            return self.fail_response("An error occurred during the search. Please try again.")
+

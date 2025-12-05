@@ -220,7 +220,9 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'list_presentations': ListPresentationsToolView,
   'delete-slide': PresentationToolView,
   'delete-presentation': PresentationToolView,
-  'validate-slide': PresentationToolView,
+  'export-presentation': ExportToolView,
+  'export_presentation': ExportToolView,
+  // Legacy support for old tool names
   'export-to-pdf': ExportToolView,
   'export_to_pdf': ExportToolView,
   'export-to-pptx': ExportToolView,
