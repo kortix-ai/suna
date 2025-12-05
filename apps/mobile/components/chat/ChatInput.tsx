@@ -269,12 +269,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       onCancelRecording?.();
       return;
     }
-    
+
     if (!onSendAudio) {
       console.error('❌ onSendAudio handler is not provided');
       return;
     }
-    
+
     try {
       console.log('📤 ChatInput: Calling onSendAudio handler');
       await onSendAudio();
@@ -334,7 +334,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Determine button icon
   const ButtonIcon = React.useMemo(() => {
-    if (isAgentRunning) return Square;
+    if (isAgentRunning) return StopIcon;
     if (hasContent) return CornerDownLeft;
     return AudioLines;
   }, [isAgentRunning, hasContent]);
@@ -489,7 +489,7 @@ interface NormalModeProps {
   isSendingMessage: boolean;
   isTranscribing: boolean;
   isAgentRunning: boolean;
-  ButtonIcon: typeof Square | typeof CornerDownLeft | typeof AudioLines;
+  ButtonIcon: React.ComponentType<any>;
   buttonIconSize: number;
   buttonIconClass: string;
   isAuthenticated: boolean;
@@ -585,9 +585,9 @@ const NormalMode = React.memo(({
       </View>
 
       <View className="flex-row items-center gap-2">
-        <AgentSelector 
-          onPress={onAgentPress} 
-          compact={false} 
+        <AgentSelector
+          onPress={onAgentPress}
+          compact={false}
         />
 
         <AnimatedPressable
@@ -603,7 +603,11 @@ const NormalMode = React.memo(({
               <Icon as={Loader2} size={16} className="text-primary-foreground" strokeWidth={2} />
             </AnimatedView>
           ) : (
-            <Icon as={ButtonIcon} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
+            ButtonIcon === StopIcon ? (
+              <StopIcon size={buttonIconSize} className={buttonIconClass} />
+            ) : (
+              <Icon as={ButtonIcon as any} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
+            )
           )}
         </AnimatedPressable>
       </View>

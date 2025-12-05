@@ -869,7 +869,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       )}
 
                       {linkedTools && linkedTools.length > 0 && (
-                        <View className="gap-2 mt-3">
+                        <View className="gap-1 mt-2">
                           {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => {
                             const handlePress = () => {
                               const clickedIndex = allToolMessages.findIndex(
@@ -894,7 +894,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
                 {/* Render streaming text content (XML tool calls or regular text) */}
                 {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && streamingTextContent && (
-                  <View className="mt-3">
+                  <View className="mt-2">
                     {(() => {
                       const rawContent = streamingTextContent || '';
 
@@ -976,7 +976,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       const textToShow = askCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
 
                       return (
-                        <View className="mt-3">
+                        <View className="mt-2">
                           <Markdown
                             style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                             rules={selectableRenderRules}
@@ -1041,7 +1041,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   !streamingTextContent &&
                   !streamingToolCall &&
                   (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                    <View className="mt-3">
+                    <View className="mt-2">
                       <AgentLoader />
                     </View>
                   )}

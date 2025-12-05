@@ -222,7 +222,7 @@ function ImageAttachment({
         }}
         onPress={handlePress}
         style={[animatedStyle, showPreview ? { width: '100%' } : undefined]}
-        className="rounded-2xl overflow-hidden border border-border bg-card"
+        className="rounded-3xl overflow-hidden border border-border bg-card"
       >
         <View style={{ width: showPreview ? '100%' : containerWidth, height: containerHeight }}>
           {!hasError && !shouldWaitForBlob ? (
@@ -472,9 +472,9 @@ function DocumentAttachment({
       }}
       onPress={handlePress}
       style={animatedStyle}
-      className="flex-row items-center bg-muted/30 rounded-2xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
+      className="flex-row items-center gap-2 px-4 py-2 rounded-3xl bg-card border border-border mb-2 active:bg-muted/50"
     >
-      <View className="bg-primary/10 rounded-2xl p-2 mr-3">
+      <View className="h-8 w-8 rounded-xl items-center justify-center border border-border mr-3 bg-background">
         <Icon
           as={FileText}
           size={compact ? 18 : 20}
@@ -497,12 +497,14 @@ function DocumentAttachment({
         )}
       </View>
 
-      <Icon
-        as={ExternalLink}
-        size={16}
-        className="text-muted-foreground ml-2"
-        strokeWidth={2}
-      />
+      <View className="h-8 w-8 rounded-xl items-center justify-center bg-background ml-3">
+        <Icon
+          as={ExternalLink}
+          size={16}
+          className="text-muted-foreground"
+          strokeWidth={2}
+        />
+      </View>
     </AnimatedPressable>
   );
 }
@@ -541,9 +543,9 @@ function GenericAttachment({
       }}
       onPress={handlePress}
       style={animatedStyle}
-      className="flex-row items-center bg-muted/30 rounded-2xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
+      className="flex-row items-center gap-2 px-4 py-2 rounded-3xl bg-card border border-border mb-2 active:bg-muted/50"
     >
-      <View className="bg-muted rounded-2xl p-2 mr-3">
+      <View className="h-8 w-8 rounded-xl items-center justify-center border border-border mr-3 bg-background">
         <Icon
           as={File}
           size={compact ? 18 : 20}
@@ -566,12 +568,14 @@ function GenericAttachment({
         )}
       </View>
 
-      <Icon
-        as={Download}
-        size={16}
-        className="text-muted-foreground ml-2"
-        strokeWidth={2}
-      />
+      <View className="h-8 w-8 rounded-xl items-center justify-center bg-background ml-3">
+        <Icon
+          as={Download}
+          size={16}
+          className="text-muted-foreground"
+          strokeWidth={2}
+        />
+      </View>
     </AnimatedPressable>
   );
 }
