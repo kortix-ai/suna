@@ -102,11 +102,11 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
   // Extract raw text for the TextInput value
   const textContent = extractTextContent(children);
   // Log full extracted text for debugging (trim long strings)
-  console.log('SelectableText: extractedText:', textContent.length > 300 ? textContent.substring(0, 300) + '...' : textContent);
 
   // We'll capture layout for any link-like child and store its href and layout
   const [linkLayouts, setLinkLayouts] = useState<Record<number, { x: number; y: number; width: number; height: number; url?: string }>>({});
   const linkMetaRef = useRef<Record<number, string>>({});
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
 
   // Deep check for interactive links (onPress or href)
   const hasInteractiveLinkDeep = (node: any): boolean => {
@@ -128,7 +128,6 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
   };
 
   const hasInteractiveLinks = childArray.some(hasInteractiveLinkDeep);
-  console.log('SelectableText: hasInteractiveLinks =', hasInteractiveLinks);
 
   // Build background children (not needed if we have interactive links)
   const backgroundChildren = childArray;
@@ -146,33 +145,72 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
   const containerOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Log children details with deeper inspection
-  console.log('SelectableText children details:');
   childArray.forEach((child, idx) => {
     if (React.isValidElement(child)) {
       const childProps = child.props as any;
       const childType = child.type as any;
-      console.log(`  child[${idx}]:`, {
-        type: childType?.name || child.type,
-        props: Object.keys(child.props || {}),
-        hasOnPress: !!childProps?.onPress,
-        hasHref: !!(childProps?.href || childProps?.attributes?.href),
-        href: childProps?.href || childProps?.attributes?.href,
-        children: typeof childProps?.children === 'string' ? childProps.children : 'complex',
-        allProps: child.props,
-      });
-    } else {
-      console.log(`  child[${idx}]: text =`, String(child).substring(0, 50));
     }
   });
 
-  console.log('SelectableText debug:', {
-    childCount: childArray.length,
-    backgroundChildrenCount: backgroundChildren.length,
-    linkMeta: linkMetaRef.current,
-    segmentsCount: segments.length,
-    parsedLinks: parsedLinks,
-    linkLayoutsCount: Object.keys(linkLayouts).length,
-  });
+  // Detect whether any descendant node applies bold styling so the overlay
+  // TextInput can use a bold weight to better match wrapping where needed.
+  const hasBoldDeep = (node: any): boolean => {
+    if (!node) return false;
+    if (Array.isArray(node)) return node.some(hasBoldDeep);
+    if (typeof node === 'string' || typeof node === 'number') return false;
+    if (React.isValidElement(node)) {
+      const props = (node as any).props || {};
+      // Check explicit fontWeight style
+      const style = props.style || {};
+      const fw = style.fontWeight || style.fontweight || style.font || undefined;
+      if (fw === 'bold' || fw === '700' || Number(fw) >= 700) return true;
+      // Check element type names commonly used for strong/bold in renderers
+      const t = (node as any).type;
+      if (t === 'strong' || t === 'b' || (typeof t === 'string' && String(t).toLowerCase().includes('strong'))) return true;
+      return hasBoldDeep(props.children);
+    }
+    return false;
+  };
+  const containsBold = hasBoldDeep(childArray);
+
+  // Find the maximum font size / line height used in descendants (headings,
+  // bold, custom styles). We use this to up-scale the overlay TextInput so its
+  // wrap points match the rendered text when headings or large inline styles
+  // are present.
+  const findMaxFontProps = (node: any): { fontSize?: number; lineHeight?: number } => {
+    let max: { fontSize?: number; lineHeight?: number } = {};
+    const visit = (n: any) => {
+      if (!n) return;
+      if (Array.isArray(n)) return n.forEach(visit);
+      if (typeof n === 'string' || typeof n === 'number') return;
+      if (React.isValidElement(n)) {
+        const props = (n as any).props || {};
+        const style = StyleSheet.flatten(props.style) || {};
+        if (style.fontSize && (!max.fontSize || style.fontSize > (max.fontSize || 0))) {
+          max.fontSize = style.fontSize;
+        }
+        if (style.lineHeight && (!max.lineHeight || style.lineHeight > (max.lineHeight || 0))) {
+          max.lineHeight = style.lineHeight;
+        }
+
+        // Detect markdown heading props (some renderers pass `level`)
+        const t = (n as any).type;
+        const level = props.level;
+        if (typeof level === 'number') {
+          // Map heading levels to expected font sizes from our styles
+          const map: Record<number, number> = { 1: 26, 2: 22, 3: 20, 4: 18, 5: 17, 6: 16 };
+          const fs = map[level] || undefined;
+          if (fs && (!max.fontSize || fs > (max.fontSize || 0))) max.fontSize = fs;
+        }
+
+        visit(props.children);
+      }
+    };
+    visit(node);
+    return max;
+  };
+  const maxFontProps = findMaxFontProps(childArray);
+
 
   if (Platform.OS === 'ios') {
     // If markdown renderer already made interactive links with onPress, just render them normally
@@ -181,6 +219,13 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
       return <Text style={style}>{children}</Text>;
     }
 
+    // Previously we attempted to render the renderer-produced children as a
+    // selectable `Text` which matched inline styles exactly, but that caused
+    // selection gestures to be intercepted in some cases. To keep selection
+    // reliable while reducing wrapping mismatches, we fall back to the
+    // TextInput overlay approach and attempt to detect bold spans below so
+    // the overlay can use a bold fontWeight when necessary.
+
     // After mount, measure parsedRefs to get absolute positions in window and store layouts
     useEffect(() => {
       const measureContainer = () => {
@@ -188,7 +233,6 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
         if (!handle) return;
         UIManager.measureInWindow(handle, (cx: number, cy: number, cwidth: number, cheight: number) => {
           containerOffset.current = { x: cx, y: cy };
-          console.log('SelectableText: container offset:', containerOffset.current);
         });
       };
 
@@ -206,7 +250,6 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
             // convert to container-local
             const localX = x - containerOffset.current.x;
             const localY = y - containerOffset.current.y;
-            console.log('SelectableText: measureInWindow idx=', idx, 'url=', url, 'window=', { x, y, width, height }, 'local=', { x: localX, y: localY, width, height });
             setLinkLayouts(prev => ({ ...prev, [idx]: { x: localX, y: localY, width, height, url } }));
           });
         });
@@ -220,7 +263,26 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
     }, [textContent]);
 
     return (
-      <View style={{ position: 'relative' }} pointerEvents="box-none">
+      <View style={{ position: 'relative' }} pointerEvents="box-none" ref={containerRef}>
+        {/* Hidden mirrored text to measure exact rendered height when renderer produced
+            native children. This ensures our TextInput overlay can match height
+            exactly (fixes invisible/too-short overlay for bold/headings). */}
+        {backgroundChildren.length > 0 && (
+          <View style={{ position: 'absolute', opacity: 0, left: 0, right: 0 }} pointerEvents="none">
+            <Text
+              style={style}
+              onLayout={(e) => {
+                const h = e.nativeEvent.layout.height;
+                if (h && h > 0 && measuredHeight !== h) setMeasuredHeight(h);
+              }}
+            >
+              {backgroundChildren}
+            </Text>
+          </View>
+        )}
+
+        {/* Background visible layer (non-interactive) */}
+
         {/* Background visible layer (non-interactive) */}
         <View pointerEvents="none">
           {backgroundChildren.length > 0 ? (
@@ -260,34 +322,81 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
         </View>
 
         {/* Transparent TextInput for selection */}
-        <TextInput
-          value={textContent}
-          editable={false}
-          multiline
-          style={[
-            style,
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              backgroundColor: 'transparent',
-              color: 'transparent',
-            }
-          ]}
-        />
+        {(() => {
+          // Flatten incoming style to copy font/spacing props exactly so the
+          // TextInput wraps text the same way the rendered Text does.
+          const flat = StyleSheet.flatten(style) || {};
+          const computedFontSize = maxFontProps.fontSize || flat.fontSize;
+          const computedLineHeight = maxFontProps.lineHeight || flat.lineHeight || (computedFontSize ? Math.round(computedFontSize * 1.5) : undefined);
+
+          const fontProps: any = {
+            fontFamily: flat.fontFamily,
+            fontSize: computedFontSize,
+            lineHeight: computedLineHeight,
+            // If the content contains bold spans, bias the overlay to bold so
+            // wrapping metrics are closer to the rendered text.
+            fontWeight: containsBold ? (flat.fontWeight ?? '700') : flat.fontWeight,
+            letterSpacing: flat.letterSpacing,
+            textAlign: flat.textAlign,
+          };
+
+          const paddingProps: any = {
+            paddingTop: flat.paddingTop ?? flat.padding ?? 0,
+            paddingBottom: flat.paddingBottom ?? flat.padding ?? 0,
+            paddingLeft: flat.paddingLeft ?? flat.paddingHorizontal ?? flat.padding ?? 0,
+            paddingRight: flat.paddingRight ?? flat.paddingHorizontal ?? flat.padding ?? 0,
+            marginTop: flat.marginTop ?? 0,
+            marginLeft: flat.marginLeft ?? 0,
+          };
+
+          return (
+            <TextInput
+              value={textContent}
+              editable={false}
+              multiline
+              allowFontScaling={flat.allowFontScaling ?? true}
+              // Apply the flattened font and padding props to better match
+              // the rendered Text's layout and wrapping behaviour.
+              style={[
+                style,
+                fontProps,
+                paddingProps,
+                {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  // If we measured the mirrored text height, set explicit height
+                  // to ensure the overlay covers the full rendered text.
+                  height: measuredHeight ?? undefined,
+                  backgroundColor: 'transparent',
+                  color: 'transparent',
+                  includeFontPadding: false,
+                  // Ensure vertical alignment matches the rendered text
+                  textAlignVertical: 'top',
+                  // Give a small extra bottom padding when headings/bold are present
+                  paddingBottom: computedLineHeight ? Math.max(2, Math.round(computedLineHeight * 0.15)) : 2,
+                }
+              ]}
+              // Selection visuals and behavior
+              selectionColor="#3b82f6"
+              caretHidden={true}
+              showSoftInputOnFocus={false as any}
+              // Android: improved line-breaking strategy
+              textBreakStrategy={'balanced' as any}
+            />
+          );
+        })()}
 
         {/* Overlays for any link-like children detected */}
         {Object.keys(linkLayouts).map((k) => {
           const idx = Number(k);
           const layout = linkLayouts[idx];
           if (!layout || !layout.url) return null;
-          console.log(`SelectableText: rendering overlay for idx=${idx} url=${layout.url} layout=`, layout);
           return (
             <Pressable
               key={`press-${idx}`}
               onPress={() => {
-                console.log('SelectableText: overlay pressed idx=', idx, 'url=', layout.url);
                 Linking.openURL(layout.url!).catch(err => console.error('Failed to open URL:', err));
               }}
               android_ripple={{ color: 'transparent' }}
@@ -319,10 +428,7 @@ const SelectableText = ({ children, style, disableSelection }: any) => {
               onPress={() => {
                 const url = parsedUrlMap.current[idx] || (parseMarkdownLinks(textContent).find(l => l.text === segment.text)?.url);
                 if (url) {
-                  console.log('SelectableText: parsed-seg overlay pressed idx=', idx, 'url=', url);
                   Linking.openURL(url).catch(err => console.error('Failed to open URL:', err));
-                } else {
-                  console.log('SelectableText: parsed-seg overlay pressed idx=', idx, 'but no url found');
                 }
               }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -433,15 +539,23 @@ export const markdownStyles = StyleSheet.create({
   ordered_list: {},
   list_item: {
     flexDirection: 'row',
+    // Align items to the top so bullets align with the first line of text
+    alignItems: 'flex-start',
   },
   bullet_list_icon: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
     backgroundColor: '#71717a', // zinc-500
+    // Slight top offset so the small bullet vertically centers with text
+    marginTop: 8,
+    marginRight: 10,
+    marginLeft: 0,
   },
   ordered_list_icon: {
     minWidth: 22,
+    marginTop: 6,
+    marginRight: 10,
   },
   bullet_list_content: {
     flex: 1,
@@ -513,7 +627,9 @@ export const markdownStyles = StyleSheet.create({
     fontWeight: '500', // slightly bolder
     fontSize: 16,
     lineHeight: 24,
-    marginTop: -8,
+    // Remove negative margin which caused links (esp. in lists)
+    // to appear vertically misaligned with bullets.
+    marginTop: 0,
   },      // Images
   image: {
     maxWidth: '100%',
