@@ -84,7 +84,7 @@ class ToolManager:
             total = (time.time() - start) * 1000
             logger.info(f"⚡ [SPARK] Core tool registration complete in {total:.1f}ms")
             logger.info(f"⚡ [SPARK] {len(self.thread_manager.tool_registry.tools)} core functions registered")
-            logger.info(f"⚡ [SPARK] Other tools will be activated on-demand via load_tool_guide()")
+            logger.info(f"⚡ [JIT] Other tools will be activated on-demand via initialize_tools()")
         else:
             logger.info("⚠️  [LEGACY] Registering ALL TOOLS at startup")
             
@@ -664,12 +664,23 @@ class AgentRunner:
         
         tm_start = time.time()
 
-        from core.spark.config import SPARKConfig
+        from core.jit.config import JITConfig
+        from core.jit.tool_cache import get_tool_cache
+        
         disabled_tools = self._get_disabled_tools_from_config()
-        spark_config = SPARKConfig.from_run_context(
+        jit_config = JITConfig.from_run_context(
             agent_config=self.config.agent_config,
             disabled_tools=disabled_tools
         )
+        
+        tool_cache = get_tool_cache()
+        if tool_cache.enabled:
+            allowed_tools = list(jit_config.get_allowed_tools())
+            cache_stats = tool_cache.get_stats()
+            if cache_stats.get('cached_tools', 0) < len(allowed_tools) // 2:  # Less than half cached
+                logger.info(f"🔥 [CACHE WARM] Warming cache for {len(allowed_tools)} tools...")
+                import asyncio
+                asyncio.create_task(asyncio.to_thread(tool_cache.warm_cache, allowed_tools))
         
         self.thread_manager = ThreadManager(
             trace=self.config.trace, 
@@ -677,7 +688,7 @@ class AgentRunner:
             project_id=self.config.project_id,
             thread_id=self.config.thread_id,
             account_id=self.config.account_id,
-            spark_config=spark_config
+            jit_config=jit_config
         )
         logger.debug(f"⏱️ [TIMING] ThreadManager init: {(time.time() - tm_start) * 1000:.1f}ms")
         

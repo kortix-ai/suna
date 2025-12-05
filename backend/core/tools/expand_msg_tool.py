@@ -13,11 +13,11 @@ import json
     usage_guide="""
 ### INTERNAL UTILITIES
 
-**load_tool_guide() - JIT Tool Activation:**
+**initialize_tools() - JIT Tool Activation:**
 - INTERNAL operation - completely invisible to users
 - Activates tools on-demand using SPARK algorithm
 - Loads detailed usage documentation for YOU (not the user)
-- Supports batch loading: load_tool_guide(["tool1", "tool2", "tool3"])
+- Supports batch loading: initialize_tools(["tool1", "tool2", "tool3"])
 
 **CRITICAL USAGE:**
 - Call silently at the start of every task
@@ -92,8 +92,8 @@ class ExpandMessageTool(Tool):
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "load_tool_guide",
-            "description": "Load the detailed usage guide for a specific tool. Use this to understand how to use a tool effectively before calling it. The guide contains comprehensive documentation, examples, and best practices.",
+            "name": "initialize_tools",
+            "description": "Initialize tools needed for your task. Loads the detailed usage guides and activates the tools so they're ready to use. Call this at the start with ALL tools you'll need.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -101,26 +101,26 @@ class ExpandMessageTool(Tool):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "Single tool name to load guide for (e.g., 'browser_tool', 'sb_files_tool')"
+                                "description": "Single tool name to initialize (e.g., 'browser_tool', 'sb_files_tool')"
                             },
                             {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Multiple tool names to load guides for in one call"
+                                "description": "Multiple tool names to initialize in one batch call"
                             }
                         ],
-                        "description": "Tool name(s) to load guides for. Can be a single string or array of strings."
+                        "description": "Tool name(s) to initialize. Can be a single string or array of strings."
                     }
                 },
                 "required": ["tool_names"]
             }
         }
     })
-    async def load_tool_guide(self, tool_names: str | List[str]) -> ToolResult:
+    async def initialize_tools(self, tool_names: str | List[str]) -> ToolResult:
         import asyncio
         import time
         from core.tools.tool_guide_registry import get_tool_guide, get_tool_guide_registry
-        from core.spark import SPARKLoader
+        from core.jit import JITLoader
         from core.utils.logger import logger
         
         start = time.time()
@@ -128,7 +128,7 @@ class ExpandMessageTool(Tool):
         if isinstance(tool_names, str):
             tool_names = [tool_names]
         
-        logger.info(f"🔍 [SPARK] Agent requesting guides for: {tool_names}")
+        logger.info(f"🔧 [INIT TOOLS] Initializing tools: {tool_names}")
         
         registry = get_tool_guide_registry()
         not_found = []
@@ -142,26 +142,26 @@ class ExpandMessageTool(Tool):
         
         if not_found:
             available = ", ".join(registry.get_all_tool_names())
-            logger.error(f"❌ [SPARK] Tools not found: {not_found}")
+            logger.error(f"❌ [INIT TOOLS] Tools not found: {not_found}")
             return self.fail_response(
                 f"Tools not found: {', '.join(not_found)}. Available tools: {available}"
             )
         
         project_id = getattr(self.thread_manager, 'project_id', None)
-        spark_config = getattr(self.thread_manager, 'spark_config', None)
+        jit_config = getattr(self.thread_manager, 'jit_config', None)
         
-        logger.info(f"⚡ [SPARK FAST] Parallel activation of {len(valid_tool_names)} tools")
+        logger.info(f"⚡ [INIT TOOLS] Parallel activation of {len(valid_tool_names)} tools")
         activation_start = time.time()
         
         activation_tasks = [
-            SPARKLoader.activate_tool(tool_name, self.thread_manager, project_id, spark_config=spark_config)
+            JITLoader.activate_tool(tool_name, self.thread_manager, project_id, jit_config=jit_config)
             for tool_name in valid_tool_names
         ]
         
         activation_results = await asyncio.gather(*activation_tasks, return_exceptions=True)
-        logger.info(f"⏱️ [SPARK FAST] Parallel activation completed in {(time.time() - activation_start) * 1000:.1f}ms")
+        logger.info(f"⏱️ [INIT TOOLS] Parallel activation completed in {(time.time() - activation_start) * 1000:.1f}ms")
         
-        from core.spark.result_types import ActivationSuccess, ActivationError
+        from core.jit.result_types import ActivationSuccess, ActivationError
         
         guides = []
         activation_failures = []
@@ -169,28 +169,50 @@ class ExpandMessageTool(Tool):
         for tool_name, result in zip(valid_tool_names, activation_results):
             if isinstance(result, Exception):
                 activation_failures.append(tool_name)
-                logger.warning(f"⚠️  [SPARK] Failed to activate '{tool_name}': {result}")
+                logger.warning(f"⚠️  [INIT TOOLS] Failed to activate '{tool_name}': {result}")
             elif isinstance(result, ActivationError):
                 activation_failures.append(tool_name)
-                logger.warning(f"⚠️  [SPARK] {result.to_user_message()}")
+                logger.warning(f"⚠️  [INIT TOOLS] {result.to_user_message()}")
             elif isinstance(result, ActivationSuccess):
-                logger.debug(f"✅ [SPARK] {result}")
-            
-            guide = get_tool_guide(tool_name)
-            if guide:
-                guides.append(guide)
+                logger.debug(f"✅ [INIT TOOLS] {result}")
+        
+        from core.jit.tool_cache import get_tool_cache
+        
+        tool_cache = get_tool_cache()
+        cached_guides = tool_cache.get_multiple(valid_tool_names)
+        
+        guides = []
+        guides_to_cache = {}
+        
+        for tool_name in valid_tool_names:
+            cached_guide = cached_guides.get(tool_name)
+            if cached_guide:
+                guides.append(cached_guide)
+                logger.debug(f"✅ [CACHE HIT] {tool_name}")
             else:
-                info = registry.get_tool_info(tool_name)
-                logger.warning(f"⚠️  [SPARK] Tool '{tool_name}' has no detailed guide")
-                guides.append(f"## {info[0]}\n\nNo detailed guide available. Basic description: {info[1]}")
+                guide = get_tool_guide(tool_name)
+                if guide:
+                    guides.append(guide)
+                    guides_to_cache[tool_name] = guide
+                    logger.debug(f"❌ [CACHE MISS] {tool_name}")
+                else:
+                    info = registry.get_tool_info(tool_name)
+                    logger.warning(f"⚠️  [INIT TOOLS] Tool '{tool_name}' has no detailed guide")
+                    fallback_guide = f"## {info[0]}\n\nNo detailed guide available. Basic description: {info[1]}"
+                    guides.append(fallback_guide)
+                    guides_to_cache[tool_name] = fallback_guide
+        
+        if guides_to_cache:
+            tool_cache.set_multiple(guides_to_cache)
+            logger.info(f"💾 [CACHE STORE] Cached {len(guides_to_cache)} new guides")
         
         if activation_failures:
-            logger.error(f"❌ [SPARK] Failed to activate some tools: {activation_failures}")
+            logger.error(f"❌ [INIT TOOLS] Failed to activate some tools: {activation_failures}")
         
         total_guide_size = sum(len(g) for g in guides)
         total_time = (time.time() - start) * 1000
-        logger.info(f"✅ [SPARK FAST] Returned {len(guides)} guide(s) in {total_time:.1f}ms, total size: {total_guide_size:,} chars")
-        logger.info(f"🎯 [SPARK] Tools now available for use: {[t for t in valid_tool_names if t not in activation_failures]}")
+        logger.info(f"✅ [INIT TOOLS] Returned {len(guides)} guide(s) in {total_time:.1f}ms, total size: {total_guide_size:,} chars")
+        logger.info(f"🎯 [INIT TOOLS] Tools now available for use: {[t for t in valid_tool_names if t not in activation_failures]}")
         
         result = self.success_response({
             "status": "success",

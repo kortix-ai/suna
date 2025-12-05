@@ -4,7 +4,10 @@ Simplified conversation thread management system for AgentPress.
 
 import asyncio
 import json
-from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast
+from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.jit.config import JITConfig
 from core.services.llm import make_llm_api_call, LLMError
 from core.agentpress.prompt_caching import apply_anthropic_caching_strategy, validate_cache_blocks
 from core.agentpress.tool import Tool
@@ -26,7 +29,7 @@ ToolChoice = Literal["auto", "required", "none"]
 class ThreadManager:
     def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, 
                  project_id: Optional[str] = None, thread_id: Optional[str] = None, account_id: Optional[str] = None,
-                 spark_config: Optional['SPARKConfig'] = None):
+                 jit_config: Optional['JITConfig'] = None):
         self.db = DBConnection()
         self.tool_registry = ToolRegistry()
         
@@ -40,14 +43,16 @@ class ThreadManager:
             
         self.agent_config = agent_config
         
-        self.spark_config = spark_config
+        self.jit_config = jit_config
         
         self.response_processor = ResponseProcessor(
             tool_registry=self.tool_registry,
             add_message_callback=self.add_message,
             trace=self.trace,
             agent_config=self.agent_config,
-            spark_config=self.spark_config
+            jit_config=self.jit_config,
+            thread_manager=self,
+            project_id=self.project_id
         )
 
     def add_tool(self, tool_class: Type[Tool], function_names: Optional[List[str]] = None, **kwargs):

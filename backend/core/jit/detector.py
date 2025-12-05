@@ -16,11 +16,11 @@ class ParameterDetector:
                     continue
                 params[param_name] = param.annotation if param.annotation != inspect.Parameter.empty else None
             
-            logger.debug(f"⚡ [SPARK] Detected parameters for {tool_class.__name__}: {list(params.keys())}")
+            logger.debug(f"⚡ [JIT] Detected parameters for {tool_class.__name__}: {list(params.keys())}")
             return params
             
         except Exception as e:
-            logger.warning(f"⚡ [SPARK] Could not detect parameters for {tool_class.__name__}: {e}")
+            logger.warning(f"⚡ [JIT] Could not detect parameters for {tool_class.__name__}: {e}")
             return {}
     
     @staticmethod
@@ -36,7 +36,7 @@ class ParameterDetector:
             if value is not None:
                 kwargs[param_name] = value
         
-        logger.debug(f"⚡ [SPARK] Built kwargs: {list(kwargs.keys())}")
+        logger.debug(f"⚡ [JIT] Built kwargs: {list(kwargs.keys())}")
         return kwargs
     
     @staticmethod
@@ -58,5 +58,5 @@ class ParameterDetector:
             return getattr(thread_manager, 'account_id', None)
         
         else:
-            logger.debug(f"⚡ [SPARK] Unknown parameter '{param_name}', skipping")
+            logger.debug(f"⚡ [JIT] Unknown parameter '{param_name}', skipping")
             return None

@@ -26,6 +26,8 @@ import {
   Computer,
   Phone,
   PhoneOff,
+  Hammer,
+  Presentation,
 } from 'lucide-react';
 import { StopwatchIcon } from '@radix-ui/react-icons';
 
@@ -86,6 +88,10 @@ export function safeJsonParse<T>(
 // Helper function to get an icon based on tool name
 export const getToolIcon = (toolName: string): ElementType => {
   switch (toolName?.toLowerCase()) {
+    case 'initialize-tools':
+    case 'initialize_tools':
+      return Hammer;
+
     case 'browser-navigate-to':
     case 'browser-act':
     case 'browser-extract-content':
@@ -171,6 +177,16 @@ export const getToolIcon = (toolName: string): ElementType => {
       return StopwatchIcon;
     case 'wait_for_call_completion':
       return StopwatchIcon;
+
+    case 'create-slide':
+    case 'create_slide':
+      return Presentation;
+    case 'load-template-design':
+    case 'load_template_design':
+      return Presentation;
+    case 'validate-slide':
+    case 'validate_slide':
+      return Presentation;
 
     // User interaction
     case 'ask':
@@ -343,6 +359,9 @@ export const extractPrimaryParam = (
 };
 
 const TOOL_DISPLAY_NAMES = new Map([
+  ['initialize-tools', 'Initializing Tools'],
+  ['initialize_tools', 'Initializing Tools'],
+
   ['execute-command', 'Executing Command'],
   ['check-command-output', 'Checking Command Output'],
   ['terminate-command', 'Terminating Command'],
@@ -482,6 +501,13 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['monitor_call', 'Monitoring Call'],
   ['wait-for-call-completion', 'Waiting for Completion'],
   ['wait_for_call_completion', 'Waiting for Completion'],
+
+  ['create-slide', 'Creating Slide'],
+  ['create_slide', 'Creating Slide'],
+  ['load-template-design', 'Loading Template Design'],
+  ['load_template_design', 'Loading Template Design'],
+  ['validate-slide', 'Validating Slide'],
+  ['validate_slide', 'Validating Slide'],
 ]);
 
 

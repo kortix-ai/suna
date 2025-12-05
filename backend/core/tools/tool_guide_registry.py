@@ -62,11 +62,11 @@ class ToolGuideRegistry:
         lines = [
             "# 9. AVAILABLE TOOLS",
             "",
-            "**🔴 MANDATORY:** Before using any tool, call `load_tool_guide([\"tool1\", \"tool2\", ...])` to activate and get usage instructions.",
+            "**🔴 MANDATORY:** Before using any tool, call `initialize_tools([\"tool1\", \"tool2\", ...])` to activate and get usage instructions.",
             "",
             "**Batch load ALL tools you need upfront:**",
             "- Analyze user request → Identify all needed tools → Load in ONE call",
-            "- Example: `load_tool_guide([\"web_search_tool\", \"browser_tool\", \"sb_files_tool\"])`",
+            "- Example: `initialize_tools([\"web_search_tool\", \"browser_tool\", \"sb_files_tool\"])`",
             "- This is INTERNAL (invisible to users) - don't mention it",
             "",
             "**🚨 CRITICAL - Tool Guides Give You Function Names:**",

@@ -13,7 +13,10 @@ import uuid
 import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union, Callable, Literal
+from typing import List, Dict, Any, Optional, AsyncGenerator, Tuple, Union, Callable, Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from core.jit.config import JITConfig
 from dataclasses import dataclass
 from core.utils.logger import logger
 from core.utils.config import config as global_config
@@ -105,7 +108,7 @@ class ProcessorConfig:
 class ResponseProcessor:
     """Processes LLM responses, extracting and executing tool calls."""
     
-    def __init__(self, tool_registry: ToolRegistry, add_message_callback: Callable, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, spark_config: Optional['SPARKConfig'] = None):
+    def __init__(self, tool_registry: ToolRegistry, add_message_callback: Callable, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, jit_config: Optional['JITConfig'] = None, thread_manager=None, project_id: Optional[str] = None):
         """Initialize the ResponseProcessor.
         
         Args:
@@ -113,7 +116,9 @@ class ResponseProcessor:
             add_message_callback: Callback function to add messages to the thread.
                 MUST return the full saved message object (dict) or None.
             agent_config: Optional agent configuration with version information
-            spark_config: Optional SPARK configuration for tool activation control
+            jit_config: Optional JIT configuration for tool activation control
+            thread_manager: ThreadManager instance for JIT tool activation
+            project_id: Project ID for JIT tool activation
         """
         self.tool_registry = tool_registry
         self.add_message = add_message_callback
@@ -123,7 +128,9 @@ class ResponseProcessor:
             self.trace = langfuse.trace(name="anonymous:response_processor")
             
         self.agent_config = agent_config
-        self.spark_config = spark_config
+        self.jit_config = jit_config
+        self.thread_manager = thread_manager
+        self.project_id = project_id
 
     def _serialize_model_response(self, model_response) -> Dict[str, Any]:
         """Convert a LiteLLM ModelResponse object to a JSON-serializable dictionary.
@@ -1575,56 +1582,62 @@ class ResponseProcessor:
             # Look up the function by name
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                logger.warning(f"⚠️  Tool function '{function_name}' not found - attempting SPARK auto-activation")
+                logger.warning(f"⚠️  Tool function '{function_name}' not found - attempting JIT auto-activation")
                 activation_success = await self._spark_auto_activate(function_name)
                 
                 if activation_success:
+                    # Debug: Check registry state
+                    logger.debug(f"🔍 [JIT AUTO] Registry has {len(self.tool_registry.tools)} tools registered")
+                    logger.debug(f"🔍 [JIT AUTO] Looking for '{function_name}' in registry tools: {list(self.tool_registry.tools.keys())}")
+                    
+                    # Force cache invalidation
+                    self.tool_registry.invalidate_function_cache()
+                    logger.debug(f"🔄 [JIT AUTO] Invalidated function cache after activation")
+                    
                     # Re-fetch available functions after activation
                     available_functions = self.tool_registry.get_available_functions()
+                    logger.debug(f"📊 [JIT AUTO] get_available_functions returned {len(available_functions)} functions: {list(available_functions.keys())}")
+                    
                     tool_fn = available_functions.get(function_name)
                     
                     if tool_fn:
-                        logger.info(f"✅ [SPARK AUTO] Tool '{function_name}' auto-activated successfully")
+                        logger.info(f"✅ [JIT AUTO] Tool '{function_name}' auto-activated successfully")
+                        logger.debug(f"📊 [JIT AUTO] Function cache now has {len(available_functions)} functions")
                     else:
-                        logger.error(f"❌ [SPARK AUTO] Tool '{function_name}' activation succeeded but function still not found")
+                        logger.error(f"❌ [JIT AUTO] Tool '{function_name}' activation succeeded but function still not found")
+                        logger.error(f"📊 [JIT AUTO] Available functions: {list(available_functions.keys())}")
+                        logger.error(f"🔍 [JIT AUTO] Direct registry lookup: {function_name in self.tool_registry.tools}")
                         span.end(status_message="tool_activation_failed", level="ERROR")
                         return ToolResult(success=False, output=f"Tool '{function_name}' could not be activated properly.")
                 else:
                     logger.error(f"❌ Tool function '{function_name}' not found and auto-activation failed")
-                span.end(status_message="tool_not_found", level="ERROR")
-                return ToolResult(
-                    success=False, 
-                    output=f"Tool '{function_name}' not found. Available: {list(available_functions.keys())}"
-                )
+                    span.end(status_message="tool_not_found", level="ERROR")
+                    return ToolResult(
+                        success=False, 
+                        output=f"Tool '{function_name}' not found. Available: {list(available_functions.keys())}"
+                    )
 
             logger.debug(f"✅ Found tool function for '{function_name}'")
-            # logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
 
-            # Handle arguments - ensure proper parsing
-            # If tool_call has raw_arguments, use that for better error messages
             raw_args_for_logging = tool_call.get("raw_arguments", arguments) if isinstance(tool_call.get("raw_arguments"), str) else arguments
             
             if isinstance(arguments, str):
                 logger.debug(f"🔄 Parsing string arguments for {function_name}")
                 logger.debug(f"📝 Raw arguments string: {raw_args_for_logging[:200]}...")
                 
-                # Try parsing with safe_json_parse first
                 parsed_args = None
                 try:
                     parsed_args = safe_json_parse(arguments)
                     if isinstance(parsed_args, dict):
-                        # Log argument types to verify they're preserved correctly
                         arg_types = {k: type(v).__name__ for k, v in parsed_args.items()}
                         logger.debug(f"✅ Parsed arguments as dict successfully. Types: {arg_types}")
                         logger.debug(f"📋 Parsed arguments: {parsed_args}")
                         result = await tool_fn(**parsed_args)
                     else:
                         logger.warning(f"⚠️ Parsed arguments is not a dict (type: {type(parsed_args)}), trying direct JSON parse")
-                        # Try direct JSON parse
                         try:
                             parsed_args = json.loads(arguments)
                             if isinstance(parsed_args, dict):
-                                # Log argument types to verify they're preserved correctly
                                 arg_types = {k: type(v).__name__ for k, v in parsed_args.items()}
                                 logger.debug(f"✅ Direct JSON parse succeeded. Types: {arg_types}")
                                 logger.debug(f"📋 Parsed arguments: {parsed_args}")
@@ -1679,21 +1692,22 @@ class ResponseProcessor:
             return ToolResult(success=False, output=f"Critical error executing tool: {str(e)}")
     
     async def _spark_auto_activate(self, function_name: str) -> bool:
-        from core.spark import SPARKLoader
-        from core.spark.function_map import get_tool_for_function
-        from core.spark.result_types import ActivationSuccess, ActivationError
+        from core.jit import JITLoader
+        from core.jit.function_map import get_tool_for_function
+        from core.jit.result_types import ActivationSuccess, ActivationError
         
         tool_name = get_tool_for_function(function_name)
         if not tool_name:
-            logger.error(f"⚡ [SPARK AUTO] Function '{function_name}' not mapped to any tool")
+            logger.error(f"⚡ [JIT AUTO] Function '{function_name}' not mapped to any tool")
             return False
         
-        logger.info(f"⚡ [SPARK AUTO] Auto-activating '{tool_name}' for function '{function_name}'")
+        logger.info(f"⚡ [JIT AUTO] Auto-activating '{tool_name}' for function '{function_name}'")
         
-        if not hasattr(self, '_cached_thread_manager'):
-            thread_manager = None
-            project_id = None
-            
+        thread_manager = self.thread_manager
+        project_id = self.project_id
+        
+        if not thread_manager:
+            logger.warning(f"⚡ [JIT AUTO] thread_manager not directly available, attempting fallback extraction")
             for tool_info in self.tool_registry.tools.values():
                 instance = tool_info.get('instance')
                 if instance and hasattr(instance, 'thread_manager'):
@@ -1703,25 +1717,21 @@ class ResponseProcessor:
                     break
             
             if not thread_manager:
-                logger.error(f"⚡ [SPARK AUTO] No thread_manager available for activation")
+                logger.error(f"⚡ [JIT AUTO] No thread_manager available for activation (neither direct nor from tool instances)")
                 return False
-            
-            self._cached_thread_manager = thread_manager
-            self._cached_project_id = project_id
         
-        result = await SPARKLoader.activate_tool(
+        result = await JITLoader.activate_tool(
             tool_name, 
-            self._cached_thread_manager, 
-            self._cached_project_id,
-            spark_config=self.spark_config
+            thread_manager, 
+            project_id,
+            jit_config=self.jit_config
         )
         
         if isinstance(result, ActivationSuccess):
-            logger.info(f"✅ [SPARK AUTO] {result}")
+            logger.info(f"✅ [JIT AUTO] {result}")
             return True
         else:
-            # result is ActivationError
-            logger.error(f"❌ [SPARK AUTO] {result.to_user_message()}")
+            logger.error(f"❌ [JIT AUTO] {result.to_user_message()}")
             return False
 
     async def _execute_tools(

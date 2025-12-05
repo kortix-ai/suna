@@ -30,7 +30,7 @@ class ActivationError:
             deps = self.details.get('missing_dependencies', []) if self.details else []
             return (
                 f"Tool '{self.tool_name}' requires {', '.join(deps)} to be loaded first. "
-                f"Try: load_tool_guide({deps + [self.tool_name]})"
+                f"Try: initialize_tools({deps + [self.tool_name]})"
             )
         elif self.error_type == ActivationErrorType.CYCLIC_DEPENDENCY:
             cycle = self.details.get('cycle', []) if self.details else []

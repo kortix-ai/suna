@@ -1,8 +1,8 @@
 """
-SPARK Configuration Manager
+JIT Configuration Manager
 
 Handles agent-specific tool configurations and validates tool activation requests.
-Ensures SPARK respects each agent's enabled/disabled tools.
+Ensures JIT loader respects each agent's enabled/disabled tools.
 
 Single Source of Truth: agent_config['agentpress_tools']
 """
@@ -11,27 +11,27 @@ from typing import Dict, Optional, Set
 from core.utils.logger import logger
 
 
-class SPARKConfig:
+class JITConfig:
     def __init__(self, agent_config: Optional[dict] = None, disabled_tools: Optional[list] = None):
         self.agent_config = agent_config
         self.disabled_tools = set(disabled_tools or [])
         self._enabled_tools: Optional[Set[str]] = None
         
-        logger.debug(f"⚡ [SPARK CONFIG] Initialized with agent_config={agent_config is not None}, disabled={len(self.disabled_tools)}")
+        logger.debug(f"⚡ [JIT CONFIG] Initialized with agent_config={agent_config is not None}, disabled={len(self.disabled_tools)}")
     
     def is_tool_allowed(self, tool_name: str) -> bool:
         if tool_name in self.disabled_tools:
-            logger.debug(f"⚡ [SPARK CONFIG] Tool '{tool_name}' explicitly disabled")
+            logger.debug(f"⚡ [JIT CONFIG] Tool '{tool_name}' explicitly disabled")
             return False
 
         if not self.agent_config or self.agent_config.get('is_default'):
-            logger.debug(f"⚡ [SPARK CONFIG] Default agent - tool '{tool_name}' allowed")
+            logger.debug(f"⚡ [JIT CONFIG] Default agent - tool '{tool_name}' allowed")
             return True
         
         agentpress_tools = self.agent_config.get('agentpress_tools', {})
         
         if not agentpress_tools:
-            logger.debug(f"⚡ [SPARK CONFIG] No tool config - tool '{tool_name}' allowed")
+            logger.debug(f"⚡ [JIT CONFIG] No tool config - tool '{tool_name}' allowed")
             return True
         
         tool_config = agentpress_tools.get(tool_name)
@@ -43,7 +43,7 @@ class SPARKConfig:
         else:
             result = False
         
-        logger.debug(f"⚡ [SPARK CONFIG] Tool '{tool_name}' allowed={result} for custom agent")
+        logger.debug(f"⚡ [JIT CONFIG] Tool '{tool_name}' allowed={result} for custom agent")
         return result
     
     def get_allowed_tools(self) -> Set[str]:
@@ -58,7 +58,7 @@ class SPARKConfig:
                 allowed.add(tool_name)
         
         self._enabled_tools = allowed
-        logger.info(f"⚡ [SPARK CONFIG] {len(allowed)} tools allowed for this agent")
+        logger.info(f"⚡ [JIT CONFIG] {len(allowed)} tools allowed for this agent")
         return allowed
     
     def validate_activation_request(self, tool_name: str) -> tuple[bool, Optional[str]]:
@@ -68,5 +68,5 @@ class SPARKConfig:
         return True, None
     
     @staticmethod
-    def from_run_context(agent_config: Optional[dict], disabled_tools: Optional[list]) -> 'SPARKConfig':
-        return SPARKConfig(agent_config=agent_config, disabled_tools=disabled_tools)
+    def from_run_context(agent_config: Optional[dict], disabled_tools: Optional[list]) -> 'JITConfig':
+        return JITConfig(agent_config=agent_config, disabled_tools=disabled_tools)
