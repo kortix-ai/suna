@@ -13,18 +13,30 @@ from urllib.parse import unquote
 
 @tool_metadata(
     display_name="Presentations",
-    description="Create and manage stunning presentation slides",
+    description="""Create and manage stunning presentation slides. **🔴 DEFAULT: CUSTOM THEME (ALWAYS USE UNLESS USER EXPLICITLY REQUESTS TEMPLATE) 🔴** Always create truly unique presentations with custom design systems based on the topic's actual brand colors and visual identity. Only use templates when user explicitly asks (e.g., "use a template", "show me templates").
+
+**PRESENTATION CREATION WORKFLOW:** Follow this workflow for every presentation. **Complete each phase fully before moving to the next.**
+
+**Phase 1: Topic Confirmation** 📋 - Ask the user about presentation topic/subject, target audience, presentation goals, and any specific requirements or preferences. WAIT FOR USER CONFIRMATION using the `ask` tool before proceeding.
+
+**Phase 2: Theme and Content Planning** 📝 - 1) Batch Web Search for Brand Identity: Use `web_search` in BATCH MODE to research the topic's visual identity efficiently. ALL queries in ONE call. 2) Define Context-Based Custom Color Scheme: Based on research findings, define custom color palette, font families, typography, and layout patterns. **🚨 CRITICAL REQUIREMENTS - NO GENERIC COLORS ALLOWED**: USE ACTUAL TOPIC-SPECIFIC COLORS - The color scheme MUST be based on the actual topic's brand colors, visual identity, or associated colors discovered in research, NOT generic color associations. For companies/products: Use their actual brand colors from official website, brand guidelines, or marketing materials. For people: Use research to find their actual visual identity from relevant sources. For topics: Use visual identity, brand colors, or design style associated with the topic discovered through research. Always verify first: Never use generic industry color stereotypes without checking the actual topic's brand/visual identity. Document where you found the color information (specific URLs, portfolio link, brand website, etc.).
+
+**Phase 3: Research and Content Planning** 📝 - Complete ALL steps in this phase, including ALL image downloads, before proceeding to Phase 4. 1) Batch Content Research: Use `web_search` in BATCH MODE to thoroughly research the topic efficiently. ALL queries in ONE call. Then use `web_scrape` to gather detailed information, facts, data, and insights. **IMPORTANT**: `web_search` results include relevant images - extract and save these image URLs from the search results as they are often highly relevant to the topic. 2) Create Content Outline (MANDATORY): Develop a structured outline that maps out content for each slide. Focus on one main idea per slide. For each image needed, note the specific query. **CRITICAL**: Use your research context to create intelligent, context-aware image queries that are **TOPIC-SPECIFIC**, not generic. Always include the actual topic name, brand, product, person's name, or entity in your queries. 3) Batch Image Search (CONDITIONAL): Use `image_search` in BATCH MODE ONLY for images that were NOT found in `web_search` results. If `web_search` already provided sufficient relevant images for all slides, you may skip this step. If additional images are needed, use BATCH MODE with ALL remaining topic-specific queries. ALL queries in ONE call. Set `num_results=2` to get 2-3 relevant results per query. 4) Extract and Select Topic-Specific Image URLs (MANDATORY): **COMBINE images from BOTH sources**: a) Images from `web_search` results (already collected in step 1), b) Images from `image_search` batch results (if used in step 3). Select the most contextually appropriate image for each slide based on topic specificity first, how well it matches slide content and research findings, visual quality and relevance. 5) Single Command - Folder + All Downloads + Verify (MANDATORY): Download ALL images (from both web_search and image_search) in ONE chained command. ONE COMMAND creates folder, downloads ALL images, and verifies. NEVER use multiple separate commands. Use descriptive filenames that clearly identify the image's purpose. 6) Document Image Mapping (MANDATORY): Create a clear mapping of slide number → image filename for reference in Phase 4.
+
+**Phase 4: Slide Creation** (USE AS MUCH IMAGES AS POSSIBLE) - Only start after Phase 3 checkpoint - all images must be downloaded and verified. 1) Create Slides: Use the `create_slide` tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2. 2) Use Downloaded Images: For each slide that requires images, MANDATORY: Use the images that were downloaded in Phase 3. Image Path Structure: Images are in `presentations/images/` (shared folder), and slides are in `presentations/[title]/` (presentation folder). Reference Path: Use `../images/[filename]` to reference images (go up one level from presentation folder to shared images folder). DO NOT skip images - if a slide outline specified images, they must be included in the slide HTML.
+
+**Final Phase: Deliver** 🎯 - 1) Review and Verify: Before presenting, review all slides to ensure they are visually consistent and that all content is displayed correctly. 2) Deliver the Presentation: Use the `complete` tool with the first slide (e.g., `presentations/[name]/slide_01.html`) attached to deliver the final, polished presentation to the user. IMPORTANT: Only attach the opening/first slide to keep the UI tidy - the presentation card will automatically appear and show the full presentation when any presentation slide file is attached.
+
+**🚀 EFFICIENCY RULES - CRITICAL (APPLY TO ALL PHASES):** BATCH EVERYTHING - MANDATORY: Web/Image Search ALWAYS use batch mode - ALL queries in ONE call. Shell Commands: Chain ALL folder creation + downloads in ONE command. Task Updates: ONLY update tasks when completing a PHASE. Batch completion + next task start in SAME update call.
+
+**FOLDER STRUCTURE:** Images go to `presentations/images/` BEFORE the presentation folder exists. Reference images using `../images/[filename]` (go up one level from presentation folder).""",
     icon="Presentation",
     color="bg-orange-100 dark:bg-orange-800/50",
     weight=70,
     visible=True
 )
 class SandboxPresentationTool(SandboxToolsBase):
-    """
-    Per-slide HTML presentation tool for creating presentation slides.
-    Each slide is created as a basic HTML document without predefined CSS styling.
-    Users can include their own CSS styling inline or in style tags as needed.
-    """
+    """Per-slide HTML presentation tool for creating presentation slides."""
     
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -446,7 +458,26 @@ class SandboxPresentationTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_slide",
-            "description": "Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use `full_file_rewrite` instead to rewrite existing template slide files. Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio). Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met. Use `box-sizing: border-box` on containers with padding to prevent dimension overflow. **CRITICAL**: For custom theme presentations, you MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool. All styling MUST be derived from the custom color scheme and design elements defined in Phase 2.",
+            "description": """Create or update a single slide in a presentation. **WHEN TO USE**: This tool is ONLY for custom theme presentations (when no template is selected). **WHEN TO SKIP**: Do NOT use this tool for template-based presentations - use `full_file_rewrite` instead to rewrite existing template slide files.
+
+**CRITICAL PREREQUISITES:**
+- You MUST have completed Phase 3 (research, content outline, image search, and ALL image downloads) before using this tool
+- All styling MUST be derived from the custom color scheme and design elements defined in Phase 2
+- All images must be downloaded and verified before creating slides
+
+**IMAGE USAGE REQUIREMENTS:**
+- Images are in `presentations/images/` (shared folder), and slides are in `presentations/[title]/` (presentation folder)
+- Reference Path: Use `../images/[filename]` to reference images (go up one level from presentation folder to shared images folder)
+- Example: If image is `presentations/images/slide1_intro_image.jpg` and slide is `presentations/[presentation-title]/slide_01.html`, use path: `../images/slide1_intro_image.jpg`
+- DO NOT skip images - if a slide outline specified images, they must be included in the slide HTML
+- Use the exact filenames you verified in Phase 3
+- Include images in `<img>` tags within your slide HTML content
+- Ensure images are properly sized and positioned within the slide layout
+
+**TECHNICAL SPECIFICATIONS:**
+- Each slide is saved as a standalone HTML file with 1920x1080 dimensions (16:9 aspect ratio)
+- Slides are automatically validated to ensure both width (≤1920px) and height (≤1080px) limits are met
+- Use `box-sizing: border-box` on containers with padding to prevent dimension overflow""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -938,21 +969,84 @@ async def measure_slide_height():
             () => {{
                 const body = document.body;
                 const html = document.documentElement;
+                const mainContainer = body.firstElementChild;
                 
-                // Get the actual scroll height (total content height)
+                // Store original styles
+                const originalStyles = {{
+                    bodyOverflow: body.style.overflow,
+                    htmlOverflow: html.style.overflow,
+                    bodyHeight: body.style.height,
+                    bodyMaxHeight: body.style.maxHeight,
+                    containerOverflow: mainContainer ? mainContainer.style.overflow : '',
+                    containerHeight: mainContainer ? mainContainer.style.height : '',
+                    containerMaxHeight: mainContainer ? mainContainer.style.maxHeight : ''
+                }};
+                
+                // Remove constraints using !important to override stylesheet rules
+                body.style.setProperty('overflow', 'visible', 'important');
+                html.style.setProperty('overflow', 'visible', 'important');
+                body.style.setProperty('height', 'auto', 'important');
+                body.style.setProperty('max-height', 'none', 'important');
+                if (mainContainer) {{
+                    mainContainer.style.setProperty('overflow', 'visible', 'important');
+                    mainContainer.style.setProperty('height', 'auto', 'important');
+                    mainContainer.style.setProperty('max-height', 'none', 'important');
+                }}
+                
+                // Force reflow
+                void body.offsetHeight;
+                
+                // Measure bottom-most element position
+                let maxBottom = 0;
+                const allElements = body.querySelectorAll('*');
+                allElements.forEach(el => {{
+                    const rect = el.getBoundingClientRect();
+                    if (rect.bottom > maxBottom) {{
+                        maxBottom = rect.bottom;
+                    }}
+                }});
+                
+                // Get true scrollHeight without constraints
                 const scrollHeight = Math.max(
-                    body.scrollHeight, body.offsetHeight,
-                    html.clientHeight, html.scrollHeight, html.offsetHeight
+                    body.scrollHeight,
+                    body.offsetHeight,
+                    html.scrollHeight,
+                    html.offsetHeight,
+                    mainContainer ? mainContainer.scrollHeight : 0,
+                    mainContainer ? mainContainer.offsetHeight : 0,
+                    maxBottom
                 );
+                
+                // Restore original styles
+                body.style.removeProperty('overflow');
+                html.style.removeProperty('overflow');
+                body.style.removeProperty('height');
+                body.style.removeProperty('max-height');
+                if (mainContainer) {{
+                    mainContainer.style.removeProperty('overflow');
+                    mainContainer.style.removeProperty('height');
+                    mainContainer.style.removeProperty('max-height');
+                }}
+                
+                if (originalStyles.bodyOverflow) body.style.overflow = originalStyles.bodyOverflow;
+                if (originalStyles.htmlOverflow) html.style.overflow = originalStyles.htmlOverflow;
+                if (originalStyles.bodyHeight) body.style.height = originalStyles.bodyHeight;
+                if (originalStyles.bodyMaxHeight) body.style.maxHeight = originalStyles.bodyMaxHeight;
+                if (mainContainer) {{
+                    if (originalStyles.containerOverflow) mainContainer.style.overflow = originalStyles.containerOverflow;
+                    if (originalStyles.containerHeight) mainContainer.style.height = originalStyles.containerHeight;
+                    if (originalStyles.containerMaxHeight) mainContainer.style.maxHeight = originalStyles.containerMaxHeight;
+                }}
                 
                 // Get viewport height
                 const viewportHeight = window.innerHeight;
                 
-                // Check if content overflows
+                // Check if content overflows the 1080px limit
                 const overflows = scrollHeight > 1080;
                 
                 return {{
                     scrollHeight: scrollHeight,
+                    maxBottom: maxBottom,
                     viewportHeight: viewportHeight,
                     overflows: overflows,
                     excessHeight: scrollHeight - 1080
