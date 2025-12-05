@@ -202,6 +202,7 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
     return {
         "sb_shell_tool": True,
         "sb_files_tool": True,
+        
         "sb_expose_tool": True,
         "web_search_tool": True,
         "image_search_tool": True,
@@ -210,6 +211,7 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
         "sb_presentation_tool": True,
         "browser_tool": True,
         "data_providers_tool": True,
+        "sb_git_sync": True,
         "people_search_tool": False,
         "agent_config_tool": True,
         "mcp_search_tool": True,

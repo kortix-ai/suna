@@ -1,4 +1,5 @@
 import os
+import shlex
 import urllib.parse
 import uuid
 from typing import Optional
@@ -6,7 +7,7 @@ from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
-from daytona_sdk import AsyncSandbox
+from daytona_sdk import AsyncSandbox, SessionExecuteRequest
 
 from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox
 from core.utils.logger import logger
@@ -489,4 +490,215 @@ async def create_file_in_project(
         raise
     except Exception as e:
         logger.error(f"Error uploading file to project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sandboxes/{sandbox_id}/files/content-by-hash")
+async def read_file_by_hash(
+    sandbox_id: str,
+    path: str,
+    commit: str,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """Read a file from the sandbox at a specific git commit, without changing HEAD"""
+    import shlex
+
+    original_path = path
+    path = normalize_path(path)
+
+    logger.debug(
+        f"Received file read-by-hash request for sandbox {sandbox_id}, "
+        f"path: {path}, commit: {commit}, user_id: {user_id}"
+    )
+    if original_path != path:
+        logger.debug(f"Normalized path from '{original_path}' to '{path}'")
+
+    client = await db.client
+    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+
+        # normalize to path relative to /workspace
+        rel_path = path
+        if rel_path.startswith("/workspace/"):
+            rel_path = rel_path[len("/workspace/"):]
+        rel_path = rel_path.lstrip("/")
+
+        tmp_path = f"/tmp/git_file_{uuid.uuid4().hex}"
+
+        git_cmd = (
+            f"cd /workspace && "
+            f"git show {shlex.quote(commit)}:{shlex.quote(rel_path)} > {shlex.quote(tmp_path)}"
+        )
+
+        try:
+            session_id = f"session_{uuid.uuid4().hex}"
+            await sandbox.process.create_session(session_id)
+            await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=f"bash -lc {shlex.quote(git_cmd)}",
+                    var_async=False
+                )
+            )
+        except Exception as git_err:
+            logger.error(
+                f"Error running git show for file {path} at commit {commit} "
+                f"in sandbox {sandbox_id}: {str(git_err)}"
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"File not found at commit {commit}: {str(git_err)}"
+            )
+
+        try:
+            content = await sandbox.fs.download_file(tmp_path)
+        finally:
+            try:
+                await sandbox.fs.delete_file(tmp_path)
+            except Exception as cleanup_err:
+                logger.warning(
+                    f"Failed to delete temp file {tmp_path} in sandbox {sandbox_id}: {str(cleanup_err)}"
+                )
+
+        filename = os.path.basename(path)
+        logger.debug(
+            f"Successfully read file {filename} from sandbox {sandbox_id} at commit {commit}"
+        )
+
+        import urllib.parse
+        encoded_filename = urllib.parse.quote(filename, safe='')
+        content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
+
+        return Response(
+            content=content,
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": content_disposition}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error reading file by hash in sandbox {sandbox_id}, path {path}, commit {commit}: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/sandboxes/{sandbox_id}/files/history")
+async def list_file_history(
+    sandbox_id: str,
+    path: str,
+    limit: int = 100,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """
+    List all available git versions (commits) for a specific file in the sandbox.
+    Returns commit hashes, authors, dates, and messages. Most recent first.
+    """
+    import shlex
+    import uuid
+
+    original_path = path
+    path = normalize_path(path)
+
+    logger.debug(
+        f"Received file history request for sandbox {sandbox_id}, "
+        f"path: {path}, limit: {limit}, user_id: {user_id}"
+    )
+    if original_path != path:
+        logger.debug(f"Normalized path from '{original_path}' to '{path}'")
+
+    client = await db.client
+    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+
+        # Ensure sane limit
+        try:
+            limit_int = int(limit)
+        except Exception:
+            limit_int = 100
+        limit_int = max(1, min(limit_int, 1000))
+
+        # normalize to path relative to /workspace
+        rel_path = path
+        if rel_path.startswith("/workspace/"):
+            rel_path = rel_path[len("/workspace/"):]
+        rel_path = rel_path.lstrip("/")
+
+        tmp_path = f"/tmp/git_log_{uuid.uuid4().hex}"
+
+        # Use a structured git log format with field and record separators
+        fmt = "%H%x1f%an%x1f%ae%x1f%ad%x1f%s%x1e"
+        git_cmd = (
+            f"cd /workspace && "
+            f"git log --follow --date=iso-strict "
+            f"--format={shlex.quote(fmt)} "
+            f"-n {limit_int} -- {shlex.quote(rel_path)} > {shlex.quote(tmp_path)}"
+        )
+
+        try:
+            session_id = f"session_{uuid.uuid4().hex}"
+            await sandbox.process.create_session(session_id)
+            await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=f"bash -lc {shlex.quote(git_cmd)}",
+                    var_async=False
+                )
+            )
+        except Exception as git_err:
+            logger.error(
+                f"Error running git log for file {path} in sandbox {sandbox_id}: {str(git_err)}"
+            )
+            # If git log fails because file has no history or repo not initialized,
+            # return an empty history rather than a hard error.
+            return {
+                "path": path,
+                "versions": []
+            }
+
+        try:
+            log_bytes = await sandbox.fs.download_file(tmp_path)
+        finally:
+            try:
+                await sandbox.fs.delete_file(tmp_path)
+            except Exception as cleanup_err:
+                logger.warning(
+                    f"Failed to delete temp file {tmp_path} in sandbox {sandbox_id}: {str(cleanup_err)}"
+                )
+
+        log_text = log_bytes.decode("utf-8", errors="ignore")
+        records = [r for r in log_text.split("\x1e") if r.strip()]
+
+        versions = []
+        for rec in records:
+            parts = rec.strip().split("\x1f")
+            if len(parts) < 5:
+                continue
+            commit_hash, author_name, author_email, date_str, subject = parts[:5]
+            versions.append({
+                "commit": commit_hash,
+                "author_name": author_name,
+                "author_email": author_email,
+                "date": date_str,
+                "message": subject,
+            })
+
+        logger.debug(
+            f"Found {len(versions)} versions for file {path} in sandbox {sandbox_id}"
+        )
+
+        return {
+            "path": path,
+            "versions": versions
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error listing file history in sandbox {sandbox_id}, path {path}: {str(e)}"
+        )
         raise HTTPException(status_code=500, detail=str(e))
