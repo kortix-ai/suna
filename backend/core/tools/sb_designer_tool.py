@@ -102,26 +102,10 @@ PROFESSIONAL DESIGN PRINCIPLES AUTOMATICALLY APPLIED:
 
 CREATE MODE (New Designs):
 Example for Nike poster:
-<function_calls>
-<invoke name="designer_create_or_edit">
-<parameter name="mode">create</parameter>
-<parameter name="prompt">Funky modern Nike shoe advertisement featuring Air Max sneaker floating dynamically with neon color splashes, urban street art background, bold "JUST DO IT" typography, energetic motion blur effects, vibrant gradient from electric blue to hot pink, product photography style with dramatic lighting</parameter>
-<parameter name="platform_preset">poster_a3</parameter>
-<parameter name="design_style">bold</parameter>
-<parameter name="quality">auto</parameter>
-</invoke>
-</function_calls>
+designer_create_or_edit(mode="create", prompt="Funky modern Nike shoe advertisement featuring Air Max sneaker floating dynamically with neon color splashes, urban street art background, bold \"JUST DO IT\" typography, energetic motion blur effects, vibrant gradient from electric blue to hot pink, product photography style with dramatic lighting", platform_preset="poster_a3", design_style="bold", quality="auto")
 
 EDIT MODE (Modify Existing Designs):
-<function_calls>
-<invoke name="designer_create_or_edit">
-<parameter name="mode">edit</parameter>
-<parameter name="prompt">Add more vibrant colors, increase contrast, make the shoe larger and more prominent</parameter>
-<parameter name="platform_preset">poster_a3</parameter>
-<parameter name="image_path">designs/nike_poster_v1.png</parameter>
-<parameter name="design_style">bold</parameter>
-</invoke>
-</function_calls>
+designer_create_or_edit(mode="edit", prompt="Add more vibrant colors, increase contrast, make the shoe larger and more prominent", platform_preset="poster_a3", image_path="designs/nike_poster_v1.png", design_style="bold")
 
 DESIGNER TOOL VS IMAGE GENERATOR:
 - Use designer_create_or_edit for: Marketing materials, social media posts, advertisements, banners, professional graphics, UI mockups, presentations, business cards, posters, flyers

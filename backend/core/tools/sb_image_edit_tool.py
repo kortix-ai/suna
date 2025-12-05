@@ -74,32 +74,15 @@ CRITICAL: USE EDIT MODE FOR MULTI-TURN IMAGE MODIFICATIONS
 GENERATE MODE (Creating new images):
 Set mode="generate" and provide a descriptive prompt.
 Example:
-<function_calls>
-<invoke name="image_edit_or_generate">
-<parameter name="mode">generate</parameter>
-<parameter name="prompt">A futuristic cityscape at sunset with neon lights</parameter>
-</invoke>
-</function_calls>
+image_edit_or_generate(mode="generate", prompt="A futuristic cityscape at sunset with neon lights")
 
 EDIT MODE (Modifying existing images):
 Set mode="edit", provide editing prompt, and specify the image_path.
 Use this when user asks to: modify, change, add to, remove from, or alter existing images.
 Example with workspace file:
-<function_calls>
-<invoke name="image_edit_or_generate">
-<parameter name="mode">edit</parameter>
-<parameter name="prompt">Add a red hat to the person in the image</parameter>
-<parameter name="image_path">generated_image_abc123.png</parameter>
-</invoke>
-</function_calls>
+image_edit_or_generate(mode="edit", prompt="Add a red hat to the person in the image", image_path="generated_image_abc123.png")
 Example with URL:
-<function_calls>
-<invoke name="image_edit_or_generate">
-<parameter name="mode">edit</parameter>
-<parameter name="prompt">Change the background to a mountain landscape</parameter>
-<parameter name="image_path">https://example.com/images/photo.png</parameter>
-</invoke>
-</function_calls>
+image_edit_or_generate(mode="edit", prompt="Change the background to a mountain landscape", image_path="https://example.com/images/photo.png")
 
 MULTI-TURN WORKFLOW EXAMPLE:
 - Step 1 - User: "Create a logo for my company"
