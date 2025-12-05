@@ -56,7 +56,7 @@
     <key>NSCameraUsageDescription</key>
     <string>Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Kortix needs microphone access to enable voice input for your conversations. For example, you can speak your messages instead of typing, and the app will transcribe your speech to text for your AI Worker conversations.</string>
+    <string>Kortix needs microphone access to record videos with audio. For example, you can record a video to share with the AI Worker for analysis and save it to your conversation history.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.</string>
     <key>NSUserActivityTypes</key>
