@@ -32,6 +32,7 @@ import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
+import { UITextViewTest } from '@/components/test/UITextViewTest';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -113,6 +114,7 @@ interface MarkdownContentProps {
 
 const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, isLatestMessage, onPromptFill }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const processedContent = useMemo(() => {
     let processed = preprocessTextOnlyToolsLocal(content);
@@ -158,7 +160,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`md-${lastIndex}`}>
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules}
+                rules={selectableRenderRules(isDark)}
               >
                 {textBeforeBlock.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
@@ -186,7 +188,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`ask-${match?.index}-${index}`} className="gap-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules}
+                rules={selectableRenderRules(isDark)}
               >
                 {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
@@ -233,7 +235,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`complete-${match?.index}-${index}`} className="gap-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules}
+                rules={selectableRenderRules(isDark)}
               >
                 {completeText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
@@ -287,7 +289,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
           <View key={`md-${lastIndex}`}>
             <Markdown
               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-              rules={selectableRenderRules}
+              rules={selectableRenderRules(isDark)}
             >
               {remainingText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
             </Markdown>
@@ -299,7 +301,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
     return <View>{contentParts.length > 0 ? contentParts : (
       <Markdown
         style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules}
+        rules={selectableRenderRules(isDark)}
       >
         {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
@@ -309,7 +311,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
   return (
     <Markdown
       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-      rules={selectableRenderRules}
+      rules={selectableRenderRules(isDark)}
     >
       {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
     </Markdown>
@@ -742,6 +744,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
   return (
     <View className="flex-1 pt-4">
+      <UITextViewTest />
       {groupedMessages.map((group, groupIndex) => {
         if (group.type === 'user') {
           const message = group.messages[0];
@@ -790,7 +793,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
               {cleanContent && (
                 <View className="flex-row justify-end">
                   <View
-                    className="max-w-[85%] bg-card border border-border px-4 py-0.5"
+                    className="max-w-[85%] bg-card border border-border px-4 pb-0.5 pt-0"
                     style={{
                       borderRadius: 24,
                       borderBottomRightRadius: 8,
@@ -798,7 +801,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   >
                     <Markdown
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                      rules={selectableRenderRules}
+                      rules={selectableRenderRules(isDark)}
                     >
                       {cleanContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                     </Markdown>
@@ -925,7 +928,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                           {processedTextBeforeTag.trim() && (
                             <Markdown
                               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                              rules={selectableRenderRules}
+                              rules={selectableRenderRules(isDark)}
                             >
                               {processedTextBeforeTag.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                             </Markdown>
@@ -979,7 +982,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                         <View className="mt-2">
                           <Markdown
                             style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                            rules={selectableRenderRules}
+                            rules={selectableRenderRules(isDark)}
                           >
                             {textToShow.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                           </Markdown>

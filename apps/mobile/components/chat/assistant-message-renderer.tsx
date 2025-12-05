@@ -125,7 +125,7 @@ function renderAskToolCall(
       {askText && (
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
-          rules={selectableRenderRules}
+          rules={selectableRenderRules(isDark)}
         >
           {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
@@ -193,7 +193,7 @@ function renderCompleteToolCall(
       {completeText && (
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
-          rules={selectableRenderRules}
+          rules={selectableRenderRules(isDark)}
         >
           {completeText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
@@ -321,7 +321,7 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       <Markdown
         key="text-content"
         style={isDark ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules}
+        rules={selectableRenderRules(isDark)}
       >
         {textContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
