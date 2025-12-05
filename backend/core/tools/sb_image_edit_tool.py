@@ -119,7 +119,6 @@ MANDATORY USAGE RULES:
 - After image generation/editing, ALWAYS display the result using the ask tool with the image attached
 - The tool automatically saves images to the workspace with unique filenames
 - REMEMBER THE LAST IMAGE: Always use the most recently generated image filename for follow-up edits""",
-                "description": "Generate new images from prompts, or edit existing images (no mask support) using OpenAI GPT Image 1 via OpenAI SDK. Stores the results in the thread context. This tool supports both single and batch operations for efficient image generation/editing. You can process multiple prompts simultaneously by providing an array of prompts, which executes operations concurrently for faster results. Use batch mode when generating or editing multiple images at once.",
                 "parameters": {
                     "type": "object",
                     "properties": {
