@@ -33,7 +33,7 @@ import { ListPresentationsToolView } from '../presentation-tools/ListPresentatio
 import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 // import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
-import { ExportToPptxToolView, ExportToPdfToolView } from '../presentation-tools/ExportToolView';
+import { ExportToolView } from '../presentation-tools/ExportToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
@@ -133,10 +133,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-presentations': ListPresentationsToolView,
   'delete-slide': DeleteSlideToolView,
   'delete-presentation': DeletePresentationToolView,
-  'validate-slide': PresentationViewer,
   // 'presentation-styles': PresentationStylesToolView,
-  'export-to-pptx': ExportToPptxToolView,
-  'export-to-pdf': ExportToPdfToolView,
+  'export-presentation': ExportToolView,
 
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,

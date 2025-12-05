@@ -62,8 +62,7 @@ export function getToolTitle(toolName: string): string {
     'get-current-agent-config': 'Get Current Agent Config',
     'create-presentation': 'Create Presentation',
     'export-presentation': 'Export Presentation',
-    'export_to_pptx': 'Export to PPTX',
-    'export_to_pdf': 'Export to PDF',
+    'export_presentation': 'Export Presentation',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
     

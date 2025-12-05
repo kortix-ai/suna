@@ -52,12 +52,9 @@ Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP
 
 ### **Phase 3: Slide Creation** ✨
 
-
-
-
 1.  **Create the Slide**: Create the slide using the `create_slide` tool. All styling MUST be derived from the **Template Design** loaded in Phase 1. Use the template's color palette, fonts, and layout patterns. Use relative path like `../images/[name]` to link images.
 
-2.  **Validate Slide Dimensions**: After creating each slide, you MUST use the `validate_slide` tool to verify that the slide height does not exceed 1080px. The validation is simple pass/fail:
+2.  **Validate Slide Dimensions**: After creating each slide, the slide dimensions are automatically validated. The `create_slide` tool automatically checks that the slide height does not exceed 1080px. The validation is simple pass/fail:
     *   **Pass**: Content height ≤ 1080px
     *   **Fail**: Content height > 1080px
     

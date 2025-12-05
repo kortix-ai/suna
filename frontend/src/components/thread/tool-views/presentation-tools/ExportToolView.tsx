@@ -17,6 +17,12 @@ import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../../file-attachment';
@@ -94,12 +100,23 @@ export function ExportToolView({
     featureName: 'exports',
   });
   
-  // Download state
-  const [isDownloading, setIsDownloading] = useState(false);
+  // Download state - track which format is downloading
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
 
-  // Determine format from function name (handle undefined case)
-  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-to-pptx';
-  const format: ExportFormat = name.includes('pdf') ? 'pdf' : 'pptx';
+  // Determine format from function name or arguments (handle undefined case)
+  const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'export-presentation';
+  let format: ExportFormat = 'pptx';
+  
+  // Check if it's the new unified export_presentation tool
+  if (name === 'export-presentation' || name === 'export_presentation') {
+    // Get format from tool call arguments
+    format = (toolCall?.arguments?.format as ExportFormat) || 'pptx';
+  } else {
+    // Legacy: determine from function name
+    format = name.includes('pdf') ? 'pdf' : 'pptx';
+  }
+  
   const config = formatConfigs[format];
 
   // Extract the export data from tool result (must be before early return)
@@ -120,7 +137,7 @@ export function ExportToolView({
           : output;
         return {
           presentationName: parsed.presentation_name || toolCall?.arguments?.presentation_name,
-          filePath: parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
+          filePath: parsed.file || parsed[config.fileProperty] || parsed.pptx_file || parsed.pdf_file,
           downloadUrl: parsed.download_url,
           totalSlides: parsed.total_slides,
           storedLocally: parsed.stored_locally,
@@ -149,6 +166,33 @@ export function ExportToolView({
 
   const IconComponent = config.icon;
 
+  // Sanitize presentation name the same way the backend does
+  // Backend: "".join(c for c in name if c.isalnum() or c in "-_").lower()
+  const sanitizePresentationName = (name: string): string => {
+    return name
+      .split('')
+      .filter(c => /[a-zA-Z0-9\-_]/.test(c))
+      .join('')
+      .toLowerCase();
+  };
+
+  // Extract presentation path from file path if available, otherwise construct it
+  const getPresentationPath = (): string | null => {
+    if (!presentationName) return null;
+    
+    // Try to extract from file path first (e.g., "presentations/spacex/spacex.pptx" -> "presentations/spacex")
+    if (filePath) {
+      const match = filePath.match(/^presentations\/([^\/]+)/);
+      if (match) {
+        return `/workspace/presentations/${match[1]}`;
+      }
+    }
+    
+    // Fallback: sanitize the presentation name
+    const safeName = sanitizePresentationName(presentationName);
+    return `/workspace/presentations/${safeName}`;
+  };
+
   // Download handlers
   const handleDownload = async (downloadFormat: DownloadFormat) => {
     if (isDownloadRestricted) {
@@ -157,73 +201,38 @@ export function ExportToolView({
     }
     if (!project?.sandbox?.sandbox_url || !presentationName) return;
 
-    setIsDownloading(true);
+    const presentationPath = getPresentationPath();
+    if (!presentationPath) {
+      toast.error('Unable to determine presentation path');
+      return;
+    }
+
+    // Set the appropriate downloading state
+    if (downloadFormat === DownloadFormat.PDF) {
+      setIsDownloadingPDF(true);
+    } else if (downloadFormat === DownloadFormat.PPTX) {
+      setIsDownloadingPPTX(true);
+    }
+
     try {
       await downloadPresentation(
         downloadFormat,
         project.sandbox.sandbox_url, 
-        `/workspace/presentations/${presentationName}`, 
+        presentationPath, 
         presentationName
       );
     } catch (error) {
       console.error(`Error downloading ${downloadFormat}:`, error);
       toast.error(`Failed to download ${downloadFormat}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
-      setIsDownloading(false);
+      if (downloadFormat === DownloadFormat.PDF) {
+        setIsDownloadingPDF(false);
+      } else if (downloadFormat === DownloadFormat.PPTX) {
+        setIsDownloadingPPTX(false);
+      }
     }
   };
 
-  // Handle direct file download for stored files
-  // Uses backend API which auto-starts sandbox if needed
-  const handleDirectDownload = async () => {
-    if (isDownloadRestricted) {
-      openUpgradeModal();
-      return;
-    }
-    if (!downloadUrl || !project?.sandbox?.id) return;
-    
-    try {
-      setIsDownloading(true);
-      
-      // Extract filename from downloadUrl
-      const filename = downloadUrl.split('/').pop() || `presentation${config.defaultExtension}`;
-      
-      // Use backend file endpoint which handles sandbox startup automatically
-      const headers: Record<string, string> = {};
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-      
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${project.sandbox.id}/files/content?path=${encodeURIComponent(downloadUrl)}`,
-        { headers }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      
-      toast.success(`Downloaded ${filename}`, {
-        duration: 3000,
-      });
-    } catch (error) {
-      console.error('Error downloading file:', error);
-      toast.error(`Failed to download file: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
-      setIsDownloading(false);
-    }
-  };
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -302,43 +311,52 @@ export function ExportToolView({
               </div>
             )}
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Dropdown with PDF and PPTX options */}
             <div className="flex flex-wrap gap-3">
-              {storedLocally && downloadUrl ? (
-                // Direct download button for stored files
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                  onClick={handleDirectDownload}
-                  disabled={isDownloading}
-                  title={`Download stored ${format.toUpperCase()} file`}
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Download {format.toUpperCase()}
-                </Button>
-              ) : (
-                // Direct download button for conversion
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                  onClick={() => handleDownload(config.downloadFormat)}
-                  disabled={isDownloading}
-                  title={`Download presentation as ${format.toUpperCase()}`}
-                >
-                  {isDownloading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Download {format.toUpperCase()}
-                </Button>
-              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
+                    disabled={isDownloadingPDF || isDownloadingPPTX}
+                    title="Download presentation"
+                  >
+                    {(isDownloadingPDF || isDownloadingPPTX) ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Download
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
+                  <DropdownMenuItem 
+                    onClick={() => handleDownload(DownloadFormat.PDF)}
+                    className="cursor-pointer"
+                    disabled={isDownloadingPDF || isDownloadingPPTX}
+                  >
+                    {isDownloadingPDF ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4 mr-2" />
+                    )}
+                    PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    onClick={() => handleDownload(DownloadFormat.PPTX)}
+                    className="cursor-pointer"
+                    disabled={isDownloadingPDF || isDownloadingPPTX}
+                  >
+                    {isDownloadingPPTX ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Presentation className="h-4 w-4 mr-2" />
+                    )}
+                    PPTX
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* Message */}
