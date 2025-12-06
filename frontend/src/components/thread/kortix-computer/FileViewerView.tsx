@@ -5,21 +5,26 @@ import { Button } from '@/components/ui/button';
 import {
   Download,
   Loader,
+  Loader2,
   AlertTriangle,
-  Copy,
   Check,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   Maximize2,
   FileText,
-  ArrowLeft,
+  FileType,
+  FileCode,
+  Home,
+  Save,
+  AlertCircle,
 } from 'lucide-react';
 import {
   EditableFileRenderer,
   getEditableFileType,
   isEditableFileType,
+  type MarkdownEditorControls,
 } from '@/components/file-editors';
+import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
 import { Project } from '@/lib/api/threads';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
@@ -38,7 +43,16 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useQueryClient } from '@tanstack/react-query';
+import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 
 interface FileViewerViewProps {
   sandboxId: string;
@@ -60,7 +74,15 @@ export function FileViewerView({
     currentFileIndex,
     setCurrentFileIndex,
     goBackToBrowser,
+    setUnsavedContent,
+    getUnsavedContent,
+    clearUnsavedContent,
+    setUnsavedState,
+    getUnsavedState,
   } = useKortixComputerStore();
+  
+  // React Query client for cache invalidation
+  const queryClient = useQueryClient();
   
   // Presentation viewer store for fullscreen
   const presentationViewerStore = usePresentationViewerStore();
@@ -78,8 +100,8 @@ export function FileViewerView({
 
   // Utility state
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isCopyingContent, setIsCopyingContent] = useState(false);
-  const markdownRef = useRef<HTMLDivElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [mdEditorControls, setMdEditorControls] = useState<MarkdownEditorControls | null>(null);
   const activeDownloadUrls = useRef<Set<string>>(new Set());
 
   // Use the React Query hook for the selected file
@@ -138,7 +160,17 @@ export function FileViewerView({
       return;
     }
 
-    // Handle successful content
+    // Check for unsaved content first - if it exists, use it instead of cached content
+    const unsavedContent = getUnsavedContent(filePath);
+    if (unsavedContent !== undefined && canEdit) {
+      // Use unsaved content if available
+      setTextContentForRenderer(unsavedContent);
+      setRawContent(unsavedContent);
+      setBlobUrlForRenderer(null);
+      return;
+    }
+
+    // Handle successful content from cache/server
     if (cachedFileContent !== null && !isCachedFileLoading) {
       const isImageFile = FileCache.isImageFile(filePath);
       const isPdfFile = FileCache.isPdfFile(filePath);
@@ -174,7 +206,7 @@ export function FileViewerView({
         setContentError('Unknown content type received.');
       }
     }
-  }, [filePath, cachedFileContent, isCachedFileLoading, cachedFileError, fileRetryAttempt]);
+  }, [filePath, cachedFileContent, isCachedFileLoading, cachedFileError, fileRetryAttempt, getUnsavedContent, canEdit]);
 
   // Cleanup blob URLs
   useEffect(() => {
@@ -208,28 +240,24 @@ export function FileViewerView({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [hasMultipleFiles, navigatePrevious, navigateNext]);
 
-  // Copy to clipboard
-  const copyToClipboard = useCallback(async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch (err) {
-      return false;
-    }
-  }, []);
-
-  const handleCopyContent = useCallback(async () => {
-    if (!textContentForRenderer) return;
+  // Handle markdown export
+  const handleMarkdownExport = useCallback(async (format: ExportFormat) => {
+    if (!mdEditorControls) return;
     
-    setIsCopyingContent(true);
-    const success = await copyToClipboard(textContentForRenderer);
-    if (success) {
-      toast.success('File content copied to clipboard');
-    } else {
-      toast.error('Failed to copy file content');
+    setIsExporting(true);
+    try {
+      const content = mdEditorControls.getHtml();
+      await exportDocument({
+        content,
+        fileName: fileName.replace(/\.(md|markdown)$/i, ''),
+        format,
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+    } finally {
+      setIsExporting(false);
     }
-    setTimeout(() => setIsCopyingContent(false), 500);
-  }, [textContentForRenderer, copyToClipboard]);
+  }, [mdEditorControls, fileName]);
 
   // Handle file save
   const handleSaveFile = useCallback(async (newContent: string) => {
@@ -258,13 +286,28 @@ export function FileViewerView({
         throw new Error(error || 'Failed to save file');
       }
 
-      // Invalidate cache after save
+      // Normalize path for cache operations
       const normalizedPath = filePath.startsWith('/workspace')
         ? filePath
         : `/workspace/${filePath.replace(/^\//, '')}`;
+      
+      // Clear unsaved content from store
+      clearUnsavedContent(filePath);
+
+      // Invalidate React Query cache for all content types
+      ['text', 'blob', 'json'].forEach(contentType => {
+        queryClient.invalidateQueries({
+          queryKey: fileQueryKeys.content(sandboxId, normalizedPath, contentType),
+        });
+      });
+
+      // Also invalidate legacy FileCache
       const contentType = FileCache.getContentTypeFromPath(normalizedPath);
       const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
       FileCache.delete(cacheKey);
+
+      // Refetch file to ensure fresh data
+      await refetchFile();
 
       // Update local state
       setTextContentForRenderer(newContent);
@@ -276,103 +319,7 @@ export function FileViewerView({
       toast.error(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
-  }, [filePath, sandboxId, session?.access_token]);
-
-  // Handle PDF export for markdown files
-  const handleExportPdf = useCallback(
-    async (orientation: 'portrait' | 'landscape' = 'portrait') => {
-      if (isDownloadRestricted) {
-        openUpgradeModal();
-        return;
-      }
-      if (!filePath || !isMarkdownFile) return;
-
-      try {
-        if (!markdownRef.current) {
-          throw new Error('Markdown content not found');
-        }
-
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-          throw new Error('Unable to open print window. Please check if popup blocker is enabled.');
-        }
-
-        const pdfName = fileName.replace(/\.md$/, '');
-        const markdownContent = markdownRef.current.innerHTML;
-
-        const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>${pdfName}</title>
-          <style>
-            @media print {
-              @page { 
-                size: ${orientation === 'landscape' ? 'A4 landscape' : 'A4'};
-                margin: 15mm;
-              }
-              body {
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-              }
-            }
-            body {
-              font-family: 'Helvetica', 'Arial', sans-serif;
-              font-size: 12pt;
-              color: #333;
-              line-height: 1.5;
-              padding: 20px;
-              max-width: 100%;
-              margin: 0 auto;
-              background: white;
-            }
-            h1 { font-size: 24pt; margin-top: 20pt; margin-bottom: 12pt; }
-            h2 { font-size: 20pt; margin-top: 18pt; margin-bottom: 10pt; }
-            h3 { font-size: 16pt; margin-top: 16pt; margin-bottom: 8pt; }
-            p { margin: 8pt 0; }
-            pre, code {
-              font-family: 'Courier New', monospace;
-              background-color: #f5f5f5;
-              border-radius: 3pt;
-              padding: 2pt 4pt;
-              font-size: 10pt;
-            }
-            pre { padding: 8pt; margin: 8pt 0; overflow-x: auto; white-space: pre-wrap; }
-            img { max-width: 100%; height: auto; }
-            a { color: #0066cc; text-decoration: underline; }
-            ul, ol { padding-left: 20pt; margin: 8pt 0; }
-            blockquote { margin: 8pt 0; padding-left: 12pt; border-left: 4pt solid #ddd; color: #666; }
-            table { border-collapse: collapse; width: 100%; margin: 12pt 0; }
-            th, td { border: 1pt solid #ddd; padding: 6pt; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="markdown-content">${markdownContent}</div>
-          <script>
-            window.onload = () => {
-              setTimeout(() => {
-                window.print();
-                setTimeout(() => window.close(), 500);
-              }, 300);
-            };
-          </script>
-        </body>
-        </html>
-      `;
-
-        printWindow.document.open();
-        printWindow.document.write(htmlContent);
-        printWindow.document.close();
-
-        toast.success('PDF export initiated. Check your print dialog.');
-      } catch (error) {
-        toast.error(`Failed to export PDF: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    },
-    [filePath, isMarkdownFile, fileName, isDownloadRestricted, openUpgradeModal],
-  );
+  }, [filePath, sandboxId, session?.access_token, clearUnsavedContent, queryClient, refetchFile]);
 
   // Handle file download
   const handleDownload = async () => {
@@ -484,66 +431,66 @@ export function FileViewerView({
       : '';
 
     return (
-      <div className="flex flex-col h-full">
-        {/* Header with navigation */}
-        <div className="px-4 py-2 flex items-center justify-between border-b flex-shrink-0">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <Button
-              variant="ghost"
-              size="icon"
+      <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0">
+        {/* Header */}
+        <div className="px-3 py-2 flex items-center justify-between border-b flex-shrink-0 bg-muted/30 max-w-full min-w-0">
+          {/* Left: Home + Name */}
+          <div className="flex items-center gap-1 min-w-0 flex-1 max-w-full">
+            <button
               onClick={goBackToBrowser}
-              className="h-8 w-8 flex-shrink-0"
-              title="Back to file browser"
+              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors flex-shrink-0"
+              title="Back to files"
             >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+              <Home className="h-3.5 w-3.5" />
+            </button>
             
-            <span className="text-sm font-medium truncate">{presentationName}</span>
+            <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+            
+            <span className="px-2 py-1 text-xs font-medium text-foreground bg-muted rounded truncate max-w-[200px]">
+              {presentationName}
+            </span>
           </div>
           
-          <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Right: Actions */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
             {hasMultipleFiles && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
+              <div className="flex items-center gap-1 mr-1">
+                <button
                   onClick={navigatePrevious}
                   disabled={!canNavigatePrev}
-                  className="h-8 w-8 p-0"
+                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   title="Previous file (←)"
                 >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <div className="text-xs text-muted-foreground px-2">
-                  {currentFileIndex + 1} / {filePathList?.length || 0}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </button>
+                <span className="text-[10px] text-muted-foreground tabular-nums min-w-[32px] text-center">
+                  {currentFileIndex + 1}/{filePathList?.length || 0}
+                </span>
+                <button
                   onClick={navigateNext}
                   disabled={!canNavigateNext}
-                  className="h-8 w-8 p-0"
+                  className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                   title="Next file (→)"
                 >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             )}
             
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={handleOpenPresentationFullscreen}
-              className="h-8 w-8 p-0"
+              className="h-7 w-7 p-0"
               title="Open fullscreen"
             >
-              <Maximize2 className="h-4 w-4" />
+              <Maximize2 className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
 
         {/* Presentation content - use a mock tool call for PresentationViewer */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden max-w-full min-w-0">
           <PresentationViewer
             toolCall={{
               tool_call_id: `file-viewer-${presentationName}`,
@@ -578,139 +525,156 @@ export function FileViewerView({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header with breadcrumb navigation and actions */}
-      <div className="px-4 py-2 flex items-center justify-between border-b flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <Button
-            variant="ghost"
-            size="icon"
+    <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0">
+      {/* Header */}
+      <div className="px-3 py-2 flex items-center justify-between border-b flex-shrink-0 bg-muted/30 max-w-full min-w-0">
+        {/* Left: Home + Filename */}
+        <div className="flex items-center gap-1 min-w-0 flex-1 max-w-full">
+          <button
             onClick={goBackToBrowser}
-            className="h-8 w-8 flex-shrink-0"
-            title="Back to file browser"
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors flex-shrink-0"
+            title="Back to files"
           >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
+            <Home className="h-3.5 w-3.5" />
+          </button>
           
-          <div className="flex items-center overflow-x-auto min-w-0 scrollbar-hide whitespace-nowrap">
-            <span className="text-sm font-medium truncate">{fileName}</span>
-          </div>
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          
+          <span className="px-2 py-1 text-xs font-medium text-foreground bg-muted rounded truncate max-w-[200px]">
+            {fileName}
+          </span>
         </div>
         
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Navigation arrows for file list mode */}
+        {/* Right: Actions */}
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {/* File navigation for multiple files */}
           {hasMultipleFiles && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
+            <div className="flex items-center gap-1 mr-1">
+              <button
                 onClick={navigatePrevious}
                 disabled={!canNavigatePrev}
-                className="h-8 w-8 p-0"
+                className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 title="Previous file (←)"
               >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <div className="text-xs text-muted-foreground px-2">
-                {currentFileIndex + 1} / {filePathList?.length || 0}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-[10px] text-muted-foreground tabular-nums min-w-[32px] text-center">
+                {currentFileIndex + 1}/{filePathList?.length || 0}
+              </span>
+              <button
                 onClick={navigateNext}
                 disabled={!canNavigateNext}
-                className="h-8 w-8 p-0"
+                className="p-1 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                 title="Next file (→)"
               >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
 
-          {/* Copy content button - only show for text files */}
-          {textContentForRenderer && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCopyContent}
-              disabled={isCopyingContent || isCachedFileLoading}
-              className="h-8 gap-1"
-            >
-              {isCopyingContent ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-              <span className="hidden sm:inline">Copy</span>
-            </Button>
-          )}
-
-          {/* Download button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleDownload}
-            disabled={isDownloading || isCachedFileLoading}
-            className="h-8 gap-1"
-          >
-            {isDownloading ? (
-              <Loader className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            <span className="hidden sm:inline">Download</span>
-          </Button>
-
-          {/* PDF Export for markdown */}
-          {isMarkdownFile && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isCachedFileLoading || contentError !== null}
-                  className="h-8 gap-1"
-                >
-                    <FileText className="h-4 w-4" />
-                  <span className="hidden sm:inline">PDF</span>
+          {/* For markdown files with editor: Save + Export */}
+          {isMarkdownFile && mdEditorControls && (
+            <TooltipProvider delayDuration={300}>
+            <>
+              {/* Save Button */}
+              {mdEditorControls.saveState === 'saving' ? (
+                <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span className="hidden sm:inline">Saving</span>
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExportPdf('portrait')} className="cursor-pointer">
-                  Portrait
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExportPdf('landscape')} className="cursor-pointer">
-                  Landscape
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              ) : mdEditorControls.saveState === 'saved' ? (
+                <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs text-green-600">
+                    <Check className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Saved</span>
+                </Button>
+              ) : mdEditorControls.saveState === 'error' ? (
+                <Button variant="ghost" size="sm" onClick={mdEditorControls.save} className="h-7 px-2 gap-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Retry</span>
+                </Button>
+              ) : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={mdEditorControls.save} 
+                        disabled={!mdEditorControls.hasChanges}
+                        className="h-7 px-2 gap-1.5 text-xs"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Save</span>
+                </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {mdEditorControls.hasChanges ? (
+                        <>Save changes <kbd className="ml-1.5 px-1 py-0.5 text-[10px] bg-muted rounded font-mono">⌘S</kbd></>
+                      ) : (
+                        'No changes to save'
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+              )}
+
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 gap-1.5 text-xs" disabled={isExporting}>
+                    {isExporting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                        <Download className="h-3.5 w-3.5" />
+                    )}
+                      <span className="hidden sm:inline">Export</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleMarkdownExport('pdf')}>
+                      <FileType className="h-4 w-4 text-muted-foreground" />
+                    PDF
+                  </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleMarkdownExport('docx')}>
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    Word
+                  </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleMarkdownExport('html')}>
+                      <FileCode className="h-4 w-4 text-muted-foreground" />
+                    HTML
+                  </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleMarkdownExport('markdown')}>
+                      <FileCode className="h-4 w-4 text-muted-foreground" />
+                    Markdown
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+            </TooltipProvider>
           )}
 
-          {/* Open in new tab for HTML files */}
-          {isHtmlFile && project?.sandbox?.sandbox_url && (
+          {/* Download button - for non-markdown files */}
+          {!isMarkdownFile && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              asChild
-              className="h-8 gap-1"
+              onClick={handleDownload}
+              disabled={isDownloading || isCachedFileLoading}
+              className="h-7 px-2 gap-1.5 text-xs"
             >
-              <a
-                href={`${project.sandbox.sandbox_url}${filePath.replace('/workspace', '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <ExternalLink className="h-4 w-4" />
-                <span className="hidden sm:inline">Open</span>
-              </a>
+              {isDownloading ? (
+                <Loader className="h-3 w-3 animate-spin" />
+              ) : (
+                <Download className="h-3 w-3" />
+              )}
+              Download
             </Button>
           )}
         </div>
       </div>
 
       {/* File content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden max-w-full min-w-0">
         {isCachedFileLoading ? (
-          <div className="h-full w-full flex flex-col items-center justify-center">
+          <div className="h-full w-full max-w-full flex flex-col items-center justify-center min-w-0">
             <Loader className="h-8 w-8 animate-spin text-primary mb-3" />
             <p className="text-sm text-muted-foreground">
               Loading {fileName}
@@ -750,7 +714,7 @@ export function FileViewerView({
             </div>
           </div>
         ) : (
-          <div className="h-full w-full overflow-hidden" style={{ contain: 'strict' }}>
+          <div className="h-full w-full max-w-full overflow-hidden min-w-0" style={{ contain: 'strict' }}>
             {(() => {
               const isImageFile = FileCache.isImageFile(filePath);
               const isPdfFile = FileCache.isPdfFile(filePath);
@@ -768,19 +732,50 @@ export function FileViewerView({
                 );
               }
 
+              // Get original content - must be a plain text string (not blob URL, not Blob object)
+              const originalTextContent = typeof cachedFileContent === 'string' && !cachedFileContent.startsWith('blob:') 
+                ? cachedFileContent 
+                : undefined;
+
               return (
                 <EditableFileRenderer
                   key={filePath}
                   content={isBinaryFile ? null : textContentForRenderer}
+                  originalContent={isBinaryFile ? undefined : originalTextContent}
+                  hasUnsavedChanges={getUnsavedState(filePath)}
+                  onUnsavedChange={(hasUnsaved) => {
+                    if (canEdit && filePath) {
+                      setUnsavedState(filePath, hasUnsaved);
+                    }
+                  }}
                   binaryUrl={blobUrlForRenderer}
                   fileName={fileName}
                   filePath={filePath}
-                  className="h-full w-full"
+                  className="h-full w-full max-w-full min-w-0"
                   project={project}
                   readOnly={false}
                   onSave={canEdit ? handleSaveFile : undefined}
+                  onDiscard={() => {
+                    // Clear unsaved content when user discards
+                    if (filePath) {
+                      clearUnsavedContent(filePath);
+                      // Reset to cached content
+                      if (typeof cachedFileContent === 'string') {
+                        setTextContentForRenderer(cachedFileContent);
+                        setRawContent(cachedFileContent);
+                      }
+                    }
+                  }}
                   onDownload={handleDownload}
                   isDownloading={isDownloading}
+                  hideMarkdownToolbarActions={isMarkdownFile}
+                  onMarkdownEditorReady={isMarkdownFile ? setMdEditorControls : undefined}
+                  onChange={(content) => {
+                    // Persist unsaved content to store
+                    if (canEdit && filePath) {
+                      setUnsavedContent(filePath, content);
+                    }
+                  }}
                 />
               );
             })()}

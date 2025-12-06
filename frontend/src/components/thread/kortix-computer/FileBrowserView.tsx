@@ -442,91 +442,82 @@ export function FileBrowserView({
   }, [isPresentationFolder]);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Breadcrumb Navigation */}
-      <div className="px-4 py-2 flex items-center gap-2 border-b flex-shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={navigateHome}
-          className="h-8 w-8"
-          title="Go to home directory"
-        >
-          <Home className="h-4 w-4" />
-        </Button>
-
-        <div className="flex items-center overflow-x-auto flex-1 min-w-0 scrollbar-hide whitespace-nowrap">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-sm font-medium min-w-fit flex-shrink-0"
+    <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0">
+      {/* Header with Breadcrumb Navigation */}
+      <div className="px-3 py-2 flex items-center justify-between border-b flex-shrink-0 bg-muted/30 max-w-full min-w-0">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-1 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
+          <button
             onClick={navigateHome}
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors flex-shrink-0"
+            title="Home"
           >
-            home
-          </Button>
+            <Home className="h-3.5 w-3.5" />
+          </button>
 
           {currentPath !== '/workspace' && (
             <>
-              {getBreadcrumbSegments(currentPath).map((segment) => (
+              {getBreadcrumbSegments(currentPath).map((segment, index) => (
                 <Fragment key={segment.path}>
-                  <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground flex-shrink-0" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-sm font-medium truncate max-w-[200px]"
+                  <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+                  <button
                     onClick={() => navigateToBreadcrumb(segment.path)}
+                    className={cn(
+                      "px-2 py-1 text-xs font-medium rounded transition-colors truncate max-w-[150px]",
+                      segment.isLast 
+                        ? "text-foreground bg-muted" 
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    )}
                   >
                     {segment.name}
-                  </Button>
+                  </button>
                 </Fragment>
               ))}
             </>
           )}
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Download progress display */}
+        {/* Actions */}
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          {/* Download progress */}
           {downloadProgress && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <Loader className="h-4 w-4 animate-spin" />
-                <span>
-                  {downloadProgress.total > 0
-                    ? `${downloadProgress.current}/${downloadProgress.total}`
-                    : 'Preparing...'
-                  }
-                </span>
-              </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
+              <Loader className="h-3 w-3 animate-spin" />
+              <span>
+                {downloadProgress.total > 0
+                  ? `${downloadProgress.current}/${downloadProgress.total}`
+                  : 'Preparing...'
+                }
+              </span>
             </div>
           )}
 
-          {/* Download button - available at every folder depth */}
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={handleDownloadFolder}
             disabled={isDownloadingAll || isLoadingFiles}
-            className="h-8 gap-1"
+            className="h-7 px-2 gap-1.5 text-xs"
           >
             {isDownloadingAll ? (
-              <Loader className="h-4 w-4 animate-spin" />
+              <Loader className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Archive className="h-4 w-4" />
+              <Archive className="h-3.5 w-3.5" />
             )}
             <span className="hidden sm:inline">Download</span>
           </Button>
 
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={handleUpload}
             disabled={isUploading}
-            className="h-8 gap-1"
+            className="h-7 px-2 gap-1.5 text-xs"
           >
             {isUploading ? (
-              <Loader className="h-4 w-4 animate-spin" />
+              <Loader className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Upload className="h-4 w-4" />
+              <Upload className="h-3.5 w-3.5" />
             )}
             <span className="hidden sm:inline">Upload</span>
           </Button>
@@ -542,9 +533,9 @@ export function FileBrowserView({
       </div>
 
       {/* File Explorer */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden max-w-full min-w-0">
         {isLoadingFiles ? (
-          <div className="h-full w-full flex flex-col items-center justify-center gap-2">
+          <div className="h-full w-full max-w-full flex flex-col items-center justify-center gap-2 min-w-0">
             <Loader className="h-6 w-6 animate-spin text-primary" />
             {dirRetryAttempt > 0 && (
               <p className="text-xs text-muted-foreground">
@@ -580,13 +571,13 @@ export function FileBrowserView({
             )}
           </div>
         ) : (
-          <ScrollArea className="h-full w-full p-2">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-4">
+          <ScrollArea className="h-full w-full max-w-full p-2 min-w-0">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-4 max-w-full min-w-0">
               {files.map((file) => (
                 <button
                   key={file.path}
                   className={cn(
-                    "flex flex-col items-center p-3 rounded-2xl border hover:bg-muted/50 transition-colors relative",
+                    "flex flex-col items-center p-3 rounded-2xl border hover:bg-muted/50 transition-colors relative max-w-full min-w-0",
                   )}
                   onClick={() => handleItemClick(file)}
                 >
@@ -600,10 +591,10 @@ export function FileBrowserView({
                     </Badge>
                   )}
                   
-                  <div className="w-12 h-12 flex items-center justify-center mb-1">
+                  <div className="w-12 h-12 flex items-center justify-center mb-1 flex-shrink-0">
                     {getFileIcon(file)}
                   </div>
-                  <span className="text-xs text-center font-medium truncate max-w-full">
+                  <span className="text-xs text-center font-medium truncate max-w-full w-full min-w-0">
                     {file.name}
                   </span>
                 </button>

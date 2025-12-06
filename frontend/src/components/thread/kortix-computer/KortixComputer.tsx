@@ -41,7 +41,8 @@ import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { 
   useKortixComputerStore, 
   ViewType,
-  useKortixComputerActions,
+  useKortixComputerPendingToolNavIndex,
+  useKortixComputerClearPendingToolNav,
 } from '@/stores/kortix-computer-store';
 import { FileBrowserView } from './FileBrowserView';
 import { FileViewerView } from './FileViewerView';
@@ -638,6 +639,10 @@ export const KortixComputer = memo(function KortixComputer({
     selectedFilePath,
     setActiveView,
   } = useKortixComputerStore();
+  
+  // Pending tool navigation from store (triggered by clicking tool in ThreadContent)
+  const pendingToolNavIndex = useKortixComputerPendingToolNavIndex();
+  const clearPendingToolNav = useKortixComputerClearPendingToolNav();
 
   const currentViewRef = useRef(activeView);
 
@@ -912,6 +917,21 @@ export const KortixComputer = memo(function KortixComputer({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDocumentModalOpen) return;
 
+      // Skip if user is in an editable element (editor, input, textarea)
+      const el = document.activeElement;
+      if (el) {
+        const tagName = el.tagName.toLowerCase();
+        if (
+          tagName === 'input' ||
+          tagName === 'textarea' ||
+          el.getAttribute('contenteditable') === 'true' ||
+          el.closest('.cm-editor') ||
+          el.closest('.ProseMirror')
+        ) {
+          return;
+        }
+      }
+
       if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
         event.preventDefault();
         handleClose();
@@ -941,11 +961,25 @@ export const KortixComputer = memo(function KortixComputer({
       );
   }, [isOpen, handleClose]);
 
+  // Handle external navigation from props (externalNavigateToIndex)
   useEffect(() => {
     if (externalNavigateToIndex !== undefined && externalNavigateToIndex >= 0 && externalNavigateToIndex < totalCalls) {
+      // Always switch to tools view when externally navigating to a tool call
+      setActiveView('tools');
       internalNavigate(externalNavigateToIndex, 'external_click');
     }
-  }, [externalNavigateToIndex, totalCalls, internalNavigate]);
+  }, [externalNavigateToIndex, totalCalls, internalNavigate, setActiveView]);
+  
+  // Handle pending tool navigation from store (triggered by clicking tool in ThreadContent)
+  useEffect(() => {
+    if (pendingToolNavIndex !== null && pendingToolNavIndex >= 0 && pendingToolNavIndex < totalCalls) {
+      // Switch to tools view and navigate to the tool
+      setActiveView('tools');
+      internalNavigate(pendingToolNavIndex, 'external_click');
+      // Clear the pending nav after processing
+      clearPendingToolNav();
+    }
+  }, [pendingToolNavIndex, totalCalls, internalNavigate, setActiveView, clearPendingToolNav]);
 
   useEffect(() => {
     if (!isStreaming) return;
@@ -1022,21 +1056,23 @@ export const KortixComputer = memo(function KortixComputer({
     }
 
     return (
-      <ToolView
-        toolCall={displayToolCall.toolCall}
-        toolResult={displayToolCall.toolResult}
-        assistantTimestamp={displayToolCall.assistantTimestamp}
-        toolTimestamp={displayToolCall.toolTimestamp}
-        isSuccess={isSuccess}
-        isStreaming={isStreaming}
-        project={project}
-        messages={messages}
-        agentStatus={agentStatus}
-        currentIndex={displayIndex}
-        totalCalls={displayTotalCalls}
-        onFileClick={onFileClick}
-        streamingText={isStreaming ? streamingText : undefined}
-      />
+      <div className="h-full w-full max-w-full max-h-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+        <ToolView
+          toolCall={displayToolCall.toolCall}
+          toolResult={displayToolCall.toolResult}
+          assistantTimestamp={displayToolCall.assistantTimestamp}
+          toolTimestamp={displayToolCall.toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
+          project={project}
+          messages={messages}
+          agentStatus={agentStatus}
+          currentIndex={displayIndex}
+          totalCalls={displayTotalCalls}
+          onFileClick={onFileClick}
+          streamingText={isStreaming ? streamingText : undefined}
+        />
+      </div>
     );
   };
 
@@ -1097,7 +1133,7 @@ export const KortixComputer = memo(function KortixComputer({
 
   const renderContent = () => {
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full max-h-full max-w-full overflow-hidden min-w-0" style={{ contain: 'strict' }}>
         {!isMobile && (
           <PanelHeader
             agentName={agentName}
@@ -1110,7 +1146,7 @@ export const KortixComputer = memo(function KortixComputer({
           />
         )}
 
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
           {activeView === 'tools' && renderToolsView()}
           {activeView === 'files' && renderFilesView()}
           {activeView === 'browser' && renderBrowserView()}
@@ -1123,7 +1159,7 @@ export const KortixComputer = memo(function KortixComputer({
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <DrawerContent className="h-[85vh]">
+        <DrawerContent className="h-[85vh] max-h-[85vh] overflow-hidden" style={{ contain: 'strict' }}>
           <PanelHeader
             agentName={agentName}
             onClose={handleClose}
@@ -1133,7 +1169,7 @@ export const KortixComputer = memo(function KortixComputer({
             showFilesTab={!!effectiveSandboxId}
           />
 
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
             {activeView === 'tools' && renderToolsView()}
             {activeView === 'files' && renderFilesView()}
             {activeView === 'browser' && renderBrowserView()}
@@ -1179,12 +1215,12 @@ export const KortixComputer = memo(function KortixComputer({
                 damping: 35
               }
             }}
-            className="m-4 h-[calc(100%-2rem)] w-[calc(100%-2rem)] border rounded-3xl flex flex-col z-30"
+            className="m-4 h-[calc(100%-2rem)] w-[calc(100%-2rem)] max-w-[calc(100%-2rem)] max-h-[calc(100%-2rem)] border rounded-3xl flex flex-col z-30 overflow-hidden"
             style={{
-              overflow: 'hidden',
+              contain: 'strict',
             }}
           >
-            <div className="flex-1 flex flex-col overflow-hidden bg-card">
+            <div className="flex-1 flex flex-col overflow-hidden bg-card max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
               {renderContent()}
             </div>
             {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
@@ -1225,9 +1261,10 @@ export const KortixComputer = memo(function KortixComputer({
           ease: [0.4, 0, 0.2, 1]
         }
       }}
-      className="h-full w-full flex flex-col border rounded-3xl bg-card overflow-hidden"
+      className="h-full w-full max-w-full max-h-full flex flex-col border rounded-3xl bg-card overflow-hidden min-w-0 min-h-0"
+      style={{ contain: 'strict' }}
     >
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
         {renderContent()}
       </div>
       {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (

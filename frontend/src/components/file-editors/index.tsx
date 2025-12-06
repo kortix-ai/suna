@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
-import { MarkdownEditor } from './markdown-editor';
+import { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CodeEditor } from './code-editor';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
@@ -42,6 +42,9 @@ export interface FileEditorProject {
 
 interface EditableFileRendererProps {
   content: string | null;
+  originalContent?: string; // The saved/persisted content (for tracking unsaved changes across remounts)
+  hasUnsavedChanges?: boolean; // Controlled by parent - persists across remounts
+  onUnsavedChange?: (hasUnsaved: boolean) => void; // Notify parent when unsaved state changes
   binaryUrl: string | null;
   fileName: string;
   filePath?: string;
@@ -50,14 +53,19 @@ interface EditableFileRendererProps {
   readOnly?: boolean;
   onChange?: (content: string) => void;
   onSave?: (content: string) => Promise<void>;
+  onDiscard?: () => void; // Called when user discards changes
   onDownload?: () => void;
   isDownloading?: boolean;
   onFullScreen?: () => void;
+  // Markdown editor specific
+  hideMarkdownToolbarActions?: boolean;
+  onMarkdownEditorReady?: (controls: MarkdownEditorControls | null) => void;
 }
 
 // Helper function to determine file type from extension
 export function getEditableFileType(fileName: string): EditableFileType {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';
+  const fileNameLower = fileName.toLowerCase();
 
   const markdownExtensions = ['md', 'markdown'];
   const htmlExtensions = ['html', 'htm'];
@@ -80,6 +88,19 @@ export function getEditableFileType(fileName: string): EditableFileType {
   if (htmlExtensions.includes(extension)) return 'html';
   if (codeExtensions.includes(extension)) return 'code';
   if (textExtensions.includes(extension)) return 'text';
+  
+  // Check for common plain text file patterns (e.g., .env.example, .env.local, .gitignore, etc.)
+  if (fileNameLower.includes('.env') || 
+      fileNameLower.startsWith('.env') ||
+      fileNameLower.includes('gitignore') ||
+      fileNameLower.includes('editorconfig') ||
+      fileNameLower.includes('dockerignore') ||
+      fileNameLower.includes('npmignore') ||
+      fileNameLower.includes('prettierignore') ||
+      fileNameLower.includes('eslintignore')) {
+    return 'text';
+  }
+  
   if (imageExtensions.includes(extension)) return 'image';
   if (pdfExtensions.includes(extension)) return 'pdf';
   if (csvExtensions.includes(extension)) return 'csv';
@@ -96,6 +117,9 @@ export function isEditableFileType(fileType: EditableFileType): boolean {
 
 export function EditableFileRenderer({
   content,
+  originalContent,
+  hasUnsavedChanges,
+  onUnsavedChange,
   binaryUrl,
   fileName,
   filePath,
@@ -104,9 +128,12 @@ export function EditableFileRenderer({
   readOnly = false,
   onChange,
   onSave,
+  onDiscard,
   onDownload,
   isDownloading,
   onFullScreen,
+  hideMarkdownToolbarActions = false,
+  onMarkdownEditorReady,
 }: EditableFileRendererProps) {
   const fileType = getEditableFileType(fileName);
   const isHtmlFile = fileName.toLowerCase().endsWith('.html') || fileName.toLowerCase().endsWith('.htm');
@@ -132,15 +159,35 @@ export function EditableFileRenderer({
     };
   }, [htmlPreviewUrl]);
 
+  // Check if we have text content even when fileType is 'binary'
+  // This handles cases like .env.example where the extension isn't recognized
+  // but we have text content that should be rendered
+  const shouldRenderAsText = fileType === 'binary' && content !== null && !binaryUrl;
+
   return (
-    <div className={cn('w-full h-full overflow-hidden', className)} style={{ contain: 'layout size' }}>
-      {/* Binary files - not editable */}
-      {fileType === 'binary' ? (
+    <div className={cn('w-full h-full max-w-full max-h-full overflow-hidden min-w-0', className)} style={{ contain: 'strict' }}>
+      {/* Binary files - not editable, unless we have text content */}
+      {fileType === 'binary' && !shouldRenderAsText ? (
         <BinaryRenderer 
           url={binaryUrl || ''} 
           fileName={fileName} 
           onDownload={onDownload} 
           isDownloading={isDownloading} 
+        />
+      ) : shouldRenderAsText ? (
+        // Render as plain text with CodeMirror when we have text content but fileType is binary
+        <CodeEditor
+          content={content || ''}
+          originalContent={originalContent}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onUnsavedChange={onUnsavedChange}
+          fileName={fileName}
+          language="text"
+          onChange={onChange}
+          onSave={onSave}
+          onDiscard={onDiscard}
+          readOnly={readOnly}
+          className="h-full"
         />
       ) : fileType === 'image' && binaryUrl ? (
         <ImageRenderer url={binaryUrl} />
@@ -185,19 +232,31 @@ export function EditableFileRenderer({
         ) : (
           <MarkdownEditor
             content={content || ''}
+            originalContent={originalContent}
+            hasUnsavedChanges={hasUnsavedChanges}
+            onUnsavedChange={onUnsavedChange}
             onChange={onChange}
             onSave={onSave}
+            onDiscard={onDiscard}
             readOnly={false}
             className="h-full"
+            fileName={fileName}
+            hideToolbarActions={hideMarkdownToolbarActions}
+            onEditorReady={onMarkdownEditorReady}
+            sandboxId={project?.sandbox?.id}
           />
         )
       ) : fileType === 'code' || fileType === 'text' ? (
         // Code and text files - CodeMirror editor
         <CodeEditor
           content={content || ''}
+          originalContent={originalContent}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onUnsavedChange={onUnsavedChange}
           fileName={fileName}
           onChange={onChange}
           onSave={onSave}
+          onDiscard={onDiscard}
           readOnly={readOnly}
           className="h-full"
         />
@@ -205,10 +264,14 @@ export function EditableFileRenderer({
         // Fallback - CodeMirror as plain text
         <CodeEditor
           content={content || ''}
+          originalContent={originalContent}
+          hasUnsavedChanges={hasUnsavedChanges}
+          onUnsavedChange={onUnsavedChange}
           fileName={fileName}
           language="text"
           onChange={onChange}
           onSave={onSave}
+          onDiscard={onDiscard}
           readOnly={readOnly}
           className="h-full"
         />
@@ -218,7 +281,7 @@ export function EditableFileRenderer({
 }
 
 // Re-export components
-export { MarkdownEditor } from './markdown-editor';
+export { MarkdownEditor, type MarkdownEditorControls } from './markdown-editor';
 export { CodeEditor } from './code-editor';
 export { UnifiedMarkdown } from '@/components/markdown';
 

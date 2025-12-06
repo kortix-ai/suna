@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor, type Editor as TiptapEditor } from '@tiptap/react';
+import { BubbleMenu, FloatingMenu } from '@tiptap/react/menus';
 import StarterKit from '@tiptap/starter-kit';
 import { BulletList, ListItem, OrderedList } from '@tiptap/extension-list';
 import TaskList from '@tiptap/extension-task-list';
@@ -76,29 +77,71 @@ turndownService.addRule('fencedCodeBlock', {
   },
 });
 
+export interface MarkdownEditorControls {
+  getHtml: () => string;
+  save: () => void;
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
+  hasChanges: boolean;
+}
+
 interface MarkdownEditorProps {
   content: string;
+  originalContent?: string; // The saved/persisted content (for tracking unsaved changes across remounts)
+  hasUnsavedChanges?: boolean; // Controlled by parent - persists across remounts
+  onUnsavedChange?: (hasUnsaved: boolean) => void; // Notify parent when unsaved state changes
   onChange?: (markdown: string) => void;
   onSave?: (markdown: string) => Promise<void>;
+  onDiscard?: () => void; // Called when user discards changes
   readOnly?: boolean;
   className?: string;
   placeholder?: string;
   showToolbar?: boolean;
+  fileName?: string;
+  hideToolbarActions?: boolean; // Hide Export/Save from toolbar (for when they're in header)
+  onEditorReady?: (controls: MarkdownEditorControls | null) => void;
+  sandboxId?: string; // Sandbox ID for uploading images
 }
 
 export function MarkdownEditor({
   content,
+  originalContent,
+  hasUnsavedChanges: externalHasUnsaved,
+  onUnsavedChange,
   onChange,
   onSave,
+  onDiscard,
   readOnly = false,
   className,
   placeholder = 'Start writing...',
   showToolbar = true,
+  fileName = 'document',
+  hideToolbarActions = false,
+  onEditorReady,
+  sandboxId,
 }: MarkdownEditorProps) {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [editorInstance, setEditorInstance] = useState<TiptapEditor | null>(null);
-  const lastSavedContent = useRef<string>(content);
+  // Use originalContent if provided, otherwise fall back to content (for backwards compatibility)
+  const savedContent = useRef<string>(originalContent ?? content);
   const initialHtmlRef = useRef<string | null>(null);
+  // Track changes state
+  const [hasChanges, setHasChanges] = useState(false);
+  const isInitializing = useRef<boolean>(true);
+  // Store the "normalized" content after first render (markdown→HTML→markdown)
+  const normalizedContent = useRef<string | null>(null);
+  
+  // Store callback in ref to avoid it being a dependency
+  const onUnsavedChangeRef = useRef(onUnsavedChange);
+  onUnsavedChangeRef.current = onUnsavedChange;
+  
+  // Notify parent when hasChanges state changes
+  const prevHasChanges = useRef(hasChanges);
+  useEffect(() => {
+    if (prevHasChanges.current !== hasChanges) {
+      prevHasChanges.current = hasChanges;
+      onUnsavedChangeRef.current?.(hasChanges);
+    }
+  }, [hasChanges]);
 
   // Convert markdown to HTML on initial load
   const initialHtml = useMemo(() => {
@@ -126,6 +169,13 @@ export function MarkdownEditor({
     }
   }, []);
 
+  // Update savedContent ref when originalContent prop changes (e.g., after external save)
+  useEffect(() => {
+    if (originalContent !== undefined) {
+      savedContent.current = originalContent;
+    }
+  }, [originalContent]);
+
   // Manual save function
   const handleSave = useCallback(async () => {
     if (!onSave || !editorInstance) return;
@@ -133,12 +183,14 @@ export function MarkdownEditor({
     const html = editorInstance.getHTML();
     const markdown = htmlToMarkdown(html);
 
-    if (markdown === lastSavedContent.current) return;
+    if (markdown === savedContent.current) return;
 
     try {
       setSaveState('saving');
       await onSave(markdown);
-      lastSavedContent.current = markdown;
+      savedContent.current = markdown;
+      normalizedContent.current = markdown;
+      setHasChanges(false);
       setSaveState('saved');
 
       setTimeout(() => setSaveState('idle'), 2000);
@@ -148,6 +200,25 @@ export function MarkdownEditor({
       setTimeout(() => setSaveState('idle'), 3000);
     }
   }, [onSave, editorInstance, htmlToMarkdown]);
+
+  // Discard changes function
+  const handleDiscard = useCallback(() => {
+    if (!editorInstance) return;
+    
+    const newHtml = marked.parse(savedContent.current || '', { async: false }) as string;
+    editorInstance.commands.setContent(newHtml);
+    // Update normalized content after discard
+    const discardedMarkdown = htmlToMarkdown(newHtml);
+    normalizedContent.current = discardedMarkdown;
+    setHasChanges(false);
+    
+    if (onChange) {
+      onChange(savedContent.current);
+    }
+    if (onDiscard) {
+      onDiscard();
+    }
+  }, [editorInstance, onChange, onDiscard, htmlToMarkdown]);
 
   // TipTap extensions
   const extensions = useMemo(
@@ -291,12 +362,28 @@ export function MarkdownEditor({
     immediatelyRender: false,
     onCreate({ editor }) {
       setEditorInstance(editor);
+      // Store the normalized content (after markdown→HTML→markdown conversion)
+      // This is our baseline for detecting actual user changes
+      const html = editor.getHTML();
+      const markdown = htmlToMarkdown(html);
+      normalizedContent.current = markdown;
+      isInitializing.current = false;
+      // Don't set hasChanges on initial load - only after user edits
+      setHasChanges(false);
     },
-    onUpdate({ editor }) {
+    onUpdate({ editor, transaction }) {
       setEditorInstance(editor);
 
       const html = editor.getHTML();
       const markdown = htmlToMarkdown(html);
+
+      // Check if this is a user-initiated change (not programmatic)
+      // TipTap transactions from user input don't have the 'preventUpdate' meta
+      // Only track changes after initial load
+      if (!isInitializing.current && normalizedContent.current !== null) {
+        const contentChanged = markdown !== normalizedContent.current;
+        setHasChanges(contentChanged);
+      }
 
       if (onChange) {
         onChange(markdown);
@@ -337,18 +424,17 @@ export function MarkdownEditor({
     },
   });
 
-  // Update editor content when external content changes
+  // Update editor content when external content changes (but not if we have unsaved local changes)
   useEffect(() => {
-    if (editor && content !== lastSavedContent.current) {
+    if (editor && !hasChanges) {
       const newHtml = marked.parse(content || '', { async: false }) as string;
       const currentHtml = editor.getHTML();
 
       if (newHtml !== currentHtml) {
         editor.commands.setContent(newHtml);
-        lastSavedContent.current = content;
       }
     }
-  }, [content, editor]);
+  }, [content, editor, hasChanges]);
 
   // Update editable state
   useEffect(() => {
@@ -372,6 +458,22 @@ export function MarkdownEditor({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [editor, readOnly, handleSave]);
 
+  // Expose editor controls to parent
+  useEffect(() => {
+    if (onEditorReady) {
+      if (editorInstance) {
+        onEditorReady({
+          getHtml: () => editorInstance.getHTML(),
+          save: handleSave,
+          saveState,
+          hasChanges,
+        });
+      } else {
+        onEditorReady(null);
+      }
+    }
+  }, [editorInstance, handleSave, saveState, hasChanges, onEditorReady]);
+
   // In read-only mode, use UnifiedMarkdown for consistent rendering
   if (readOnly) {
     return (
@@ -391,10 +493,62 @@ export function MarkdownEditor({
           editor={editorInstance}
           saveState={saveState}
           onSave={handleSave}
+          onDiscard={handleDiscard}
+          fileName={fileName}
+          hideActions={hideToolbarActions}
+          hasChanges={hasChanges}
+          sandboxId={sandboxId}
         />
       )}
       <div className="flex-1 overflow-auto">
         <div className="mx-auto px-6 py-4 max-w-4xl">
+          {editor && (
+            <>
+              <BubbleMenu
+                editor={editor}
+                shouldShow={({ editor, view, state, oldState, from, to }) => {
+                  // Show when text is selected
+                  const { selection } = state;
+                  return selection && !selection.empty && selection.from !== selection.to;
+                }}
+              >
+                <div className="flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1">
+                  <MarkdownToolbar
+                    editor={editor}
+                    saveState={saveState}
+                    onSave={handleSave}
+                    fileName={fileName}
+                    hideActions={true}
+                    isBubbleMenu={true}
+                    sandboxId={sandboxId}
+                  />
+                </div>
+              </BubbleMenu>
+              <FloatingMenu
+                editor={editor}
+                shouldShow={({ editor, view, state, oldState, from, to }) => {
+                  // Show when editor is empty
+                  const { selection } = state;
+                  const { $anchor } = selection;
+                  const isRootDepth = $anchor.depth === 1;
+                  const isEmpty = editor.state.doc.content.size === 0;
+                  return isEmpty && isRootDepth;
+                }}
+              >
+                <div className="flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1">
+                  <MarkdownToolbar
+                    editor={editor}
+                    saveState={saveState}
+                    onSave={handleSave}
+                    fileName={fileName}
+                    hideActions={true}
+                    isFloatingMenu={true}
+                    sandboxId={sandboxId}
+                  />
+                </div>
+              </FloatingMenu>
+            </>
+          )}
           <style dangerouslySetInnerHTML={{ __html: `
             /* ═══════════════════════════════════════════════════════════════
                KORTIX TIPTAP EDITOR STYLES
@@ -527,6 +681,104 @@ export function MarkdownEditor({
               float: left;
               height: 0;
               pointer-events: none;
+            }
+            
+            /* ═══════════════════════════════════════════════════════════════
+               TASK LIST STYLES - Checkbox and text on same line
+               ═══════════════════════════════════════════════════════════════ */
+            .tiptap-editor ul[data-type="taskList"] {
+              list-style: none;
+              padding-left: 0;
+              margin: 1rem 0;
+            }
+            .tiptap-editor ul[data-type="taskList"] li {
+              display: flex;
+              align-items: flex-start;
+              gap: 0.5rem;
+              margin: 0.25rem 0;
+            }
+            .tiptap-editor ul[data-type="taskList"] li > label {
+              flex-shrink: 0;
+              margin-top: 0.125rem;
+              user-select: none;
+            }
+            .tiptap-editor ul[data-type="taskList"] li > label input[type="checkbox"] {
+              width: 1rem;
+              height: 1rem;
+              cursor: pointer;
+              accent-color: hsl(var(--primary));
+            }
+            .tiptap-editor ul[data-type="taskList"] li > div {
+              flex: 1;
+              min-width: 0;
+            }
+            .tiptap-editor ul[data-type="taskList"] li > div > p {
+              margin: 0;
+            }
+            /* Nested task lists */
+            .tiptap-editor ul[data-type="taskList"] ul[data-type="taskList"] {
+              margin: 0.25rem 0 0.25rem 1.5rem;
+            }
+            
+            /* ═══════════════════════════════════════════════════════════════
+               TABLE STYLES - Clean, minimal table editing
+               ═══════════════════════════════════════════════════════════════ */
+            .tiptap-editor table {
+              border-collapse: collapse;
+              width: 100%;
+              margin: 1.5rem 0;
+              border-radius: 0.5rem;
+              overflow: hidden;
+              border: 1px solid hsl(var(--border));
+            }
+            .tiptap-editor th,
+            .tiptap-editor td {
+              border: 1px solid hsl(var(--border));
+              padding: 0.5rem 0.75rem;
+              text-align: left;
+              vertical-align: top;
+              position: relative;
+              min-width: 80px;
+            }
+            .tiptap-editor th {
+              background-color: hsl(var(--muted) / 0.5);
+              font-weight: 600;
+              font-size: 0.875rem;
+            }
+            .tiptap-editor td {
+              background-color: transparent;
+            }
+            /* Selected cell highlight */
+            .tiptap-editor .selectedCell {
+              background-color: hsl(var(--primary) / 0.1) !important;
+            }
+            .tiptap-editor .selectedCell::after {
+              content: "";
+              position: absolute;
+              inset: 0;
+              border: 2px solid hsl(var(--primary));
+              pointer-events: none;
+            }
+            /* Column resize handle */
+            .tiptap-editor .column-resize-handle {
+              position: absolute;
+              right: -2px;
+              top: 0;
+              bottom: 0;
+              width: 4px;
+              background-color: hsl(var(--primary));
+              cursor: col-resize;
+              opacity: 0;
+              transition: opacity 0.15s;
+            }
+            .tiptap-editor th:hover .column-resize-handle,
+            .tiptap-editor td:hover .column-resize-handle {
+              opacity: 1;
+            }
+            /* Table wrapper for horizontal scroll */
+            .tiptap-editor .tableWrapper {
+              overflow-x: auto;
+              margin: 1.5rem 0;
             }
           ` }} />
           <div className="tiptap-editor">

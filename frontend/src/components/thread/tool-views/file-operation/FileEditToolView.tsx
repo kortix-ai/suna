@@ -13,6 +13,7 @@ import {
   Minus,
   Plus,
   Maximize2,
+  Pencil,
 } from 'lucide-react';
 import {
   extractFilePath,
@@ -64,6 +65,7 @@ import { GenericToolView } from '../GenericToolView';
 import { LoadingState } from '../shared/LoadingState';
 import { toast } from 'sonner';
 import ReactDiffViewer from 'react-diff-viewer-continued';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 const UnifiedDiffView: React.FC<{ oldCode: string; newCode: string }> = ({ oldCode, newCode }) => (
   <ReactDiffViewer
@@ -147,6 +149,9 @@ export function FileEditToolView({
 }: ToolViewProps): JSX.Element {
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
+  
+  // Kortix Computer store for opening files in Files Manager
+  const { openFileInComputer } = useKortixComputerStore();
   
   // Extract from structured metadata
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
@@ -392,6 +397,19 @@ export function FileEditToolView({
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
+                </Button>
+              )}
+              {/* Edit in Files Manager button */}
+              {processedFilePath && !isStreaming && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openFileInComputer(processedFilePath)}
+                  className="h-8 gap-1.5 px-2"
+                  title="Edit in Files Manager"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="text-xs hidden sm:inline">Edit</span>
                 </Button>
               )}
               {isHtml && htmlPreviewUrl && !isStreaming && (

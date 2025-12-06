@@ -11,6 +11,7 @@ import {
   Check,
   Maximize2,
   Presentation,
+  Pencil,
 } from 'lucide-react';
 import {
   formatTimestamp,
@@ -57,6 +58,7 @@ import { LoadingState } from '../shared/LoadingState';
 import { toast } from 'sonner';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 // Helper functions for presentation slide detection
 // Helper function to check if a filepath is a presentation slide file
@@ -102,6 +104,9 @@ export function FileOperationToolView({
 
   // Presentation viewer store for opening fullscreen presentation
   const { openPresentation } = usePresentationViewerStore();
+  
+  // Kortix Computer store for opening files in Files Manager
+  const { openFileInComputer } = useKortixComputerStore();
 
   // Extract from structured metadata
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
@@ -438,11 +443,11 @@ export function FileOperationToolView({
     // For HTML files with preview URL, use iframe directly
     if (isHtml && htmlPreviewUrl) {
       return (
-        <div className="w-full h-full">
+        <div className="w-full max-w-full h-full overflow-hidden min-w-0">
           <iframe
             src={htmlPreviewUrl}
             title={`HTML Preview of ${fileName}`}
-            className="w-full h-full border-0"
+            className="w-full h-full border-0 max-w-full"
             sandbox="allow-same-origin allow-scripts"
           />
         </div>
@@ -487,12 +492,12 @@ export function FileOperationToolView({
 
     // For all other files, use CodeEditor in read-only mode
     return (
-      <div className="h-full bg-white dark:bg-zinc-900">
+      <div className="w-full max-w-full bg-white dark:bg-zinc-900 min-w-0">
         <CodeEditor
           content={processUnicodeContent(fileContent)}
           fileName={fileName}
           readOnly={true}
-          className="h-full"
+          className="w-full max-w-full"
         />
       </div>
     );
@@ -535,16 +540,16 @@ export function FileOperationToolView({
     const allLines = [...contentLines, ...emptyLines];
 
     return (
-      <div className="min-w-full table bg-white dark:bg-zinc-900">
+      <div className="w-full max-w-full table bg-white dark:bg-zinc-900 overflow-x-auto">
         {allLines.map((line, idx) => (
           <div
             key={idx}
             className={cn("table-row transition-colors", config.hoverColor)}
           >
-            <div className="table-cell text-right pr-4 pl-4 py-0.5 text-xs text-zinc-400 dark:text-zinc-600 select-none w-14 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+            <div className="table-cell text-right pr-4 pl-4 py-0.5 text-xs text-zinc-400 dark:text-zinc-600 select-none w-14 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex-shrink-0">
               {idx + 1}
             </div>
-            <div className="table-cell pl-4 py-0.5 pr-4 text-[15px] leading-relaxed whitespace-pre-wrap text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900">
+            <div className="table-cell pl-4 py-0.5 pr-4 text-[15px] leading-relaxed whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-900 max-w-full min-w-0">
               {line ? processUnicodeContent(line, true) : ' '}
             </div>
           </div>
@@ -563,11 +568,11 @@ export function FileOperationToolView({
     : toolTitle;
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <Tabs defaultValue="preview" className="w-full h-full">
-        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0">
-          <div className="flex flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
+      <Tabs defaultValue="preview" className="w-full h-full max-w-full min-w-0">
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
+          <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
               <div className={cn("relative p-2 rounded-lg border flex-shrink-0", `bg-gradient-to-br ${headerGradientBg}`, headerBorderColor)}>
                 <HeaderIcon className={cn("h-5 w-5", headerIconColor)} />
               </div>
@@ -608,6 +613,19 @@ export function FileOperationToolView({
                   )}
                 </Button>
               )}
+              {/* Edit in Files Manager button */}
+              {processedFilePath && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openFileInComputer(processedFilePath)}
+                  className="h-8 gap-1.5 px-2"
+                  title="Edit in Files Manager"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="text-xs hidden sm:inline">Edit</span>
+                </Button>
+              )}
               {/* Presentation fullscreen button */}
               {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && !isStreaming && (
                 <Button
@@ -626,31 +644,13 @@ export function FileOperationToolView({
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               )}
-              {isHtml && htmlPreviewUrl && !isStreaming && !isPresentationSlide && (
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Open in browser" asChild>
-                  <a href={htmlPreviewUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="h-4 w-4" />
-                  </a>
-                </Button>
-              )}
-              {processedFilePath && onFileClick && !isStreaming && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onFileClick(processedFilePath)}
-                  className="h-8 w-8 p-0"
-                  title="Open in workspace manager"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </Button>
-              )}
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative bg-white dark:bg-zinc-900">
-          <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900">
-            <ScrollArea ref={sourceScrollRef} className="h-full w-full min-h-0">
+        <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative bg-white dark:bg-zinc-900 flex flex-col min-h-0 max-w-full min-w-0">
+          <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900 flex flex-col min-h-0 max-w-full min-w-0">
+            <ScrollArea ref={sourceScrollRef} className="h-full w-full flex-1 min-h-0 max-w-full">
               {!fileContent && !isStreaming ? (
                 <LoadingState
                   icon={Icon}
@@ -688,20 +688,20 @@ export function FileOperationToolView({
             </ScrollArea>
           </TabsContent>
 
-          <TabsContent value="preview" className="w-full flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900">
+          <TabsContent value="preview" className="w-full max-w-full flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900 flex flex-col min-h-0 min-w-0">
             {/* Presentation slides have their own loading/streaming state */}
             {isPresentationSlide && presentationName ? (
-              <div className="w-full h-full relative bg-white dark:bg-zinc-900">
+              <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>
             ) : isHtml && htmlPreviewUrl ? (
               // For HTML files, render iframe directly without ScrollArea for full viewport
-              <div className="w-full h-full relative bg-white dark:bg-zinc-900">
+              <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>
             ) : (
               // For non-HTML files, use ScrollArea with smooth auto-scroll
-              <ScrollArea ref={previewScrollRef} className="h-full w-full min-h-0 bg-white dark:bg-zinc-900">
+              <ScrollArea ref={previewScrollRef} className="h-full w-full max-w-full flex-1 min-h-0 bg-white dark:bg-zinc-900 min-w-0">
                 {!fileContent && !isStreaming ? (
                   <LoadingState
                     icon={Icon}

@@ -5,6 +5,7 @@ import { UnifiedMessage, ParsedMetadata, AgentStatus } from '@/components/thread
 import { safeJsonParse } from '@/components/thread/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isAskOrCompleteTool } from './utils';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 interface UseThreadToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -45,6 +46,9 @@ export function useThreadToolCalls(
   const userClosedPanelRef = useRef(false);
   const userNavigatedRef = useRef(false);
   const isMobile = useIsMobile();
+  
+  // Store action for navigating to a tool call
+  const navigateToToolCall = useKortixComputerStore((state) => state.navigateToToolCall);
 
   const toggleSidePanel = useCallback(() => {
     setIsSidePanelOpen((prevIsOpen) => {
@@ -220,12 +224,18 @@ export function useThreadToolCalls(
     const compositeKey = `${clickedAssistantMessageId}:${normalizedToolName}`;
     const toolIndex = assistantMessageToToolIndex.current.get(compositeKey);
 
-    if (toolIndex !== undefined) {
-      setExternalNavIndex(toolIndex);
-      setCurrentToolIndex(toolIndex);
+    // Helper function to navigate to a tool index
+    const navigateToIndex = (index: number) => {
+      setExternalNavIndex(index);
+      setCurrentToolIndex(index);
       setIsSidePanelOpen(true);
-
+      // Use store action to ensure KortixComputer switches to tools view
+      navigateToToolCall(index);
       setTimeout(() => setExternalNavIndex(undefined), 100);
+    };
+
+    if (toolIndex !== undefined) {
+      navigateToIndex(toolIndex);
     } else {
       console.warn(
         `[PAGE] Could not find matching tool call in toolCalls array for assistant message ID: ${clickedAssistantMessageId}, tool name: ${clickedToolName}`,
@@ -255,10 +265,7 @@ export function useThreadToolCalls(
           );
           
           if (foundIndex !== -1) {
-            setExternalNavIndex(foundIndex);
-            setCurrentToolIndex(foundIndex);
-            setIsSidePanelOpen(true);
-            setTimeout(() => setExternalNavIndex(undefined), 100);
+            navigateToIndex(foundIndex);
             return;
           }
         }
@@ -266,7 +273,7 @@ export function useThreadToolCalls(
       
       toast.info('Could not find details for this tool call.');
     }
-  }, [messages, toolCalls]);
+  }, [messages, toolCalls, navigateToToolCall]);
 
   const handleStreamingToolCall = useCallback(
     (toolCall: UnifiedMessage | null) => {

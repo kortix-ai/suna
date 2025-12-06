@@ -4,6 +4,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
@@ -143,6 +144,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     <div className={cn('kortix-markdown', className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
         components={{
           // ═══════════════════════════════════════════════════════════════
           // HEADINGS - Clean hierarchy with proper weight distribution
@@ -348,25 +350,29 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
           // ═══════════════════════════════════════════════════════════════
           // IMAGES - Polished with proper spacing and rounded corners
           // ═══════════════════════════════════════════════════════════════
-          img: ({ src, alt }) => (
-            <span className="block my-5">
-              <img
-                src={src}
-                alt={alt || ''}
-                className={cn(
-                  "max-w-full h-auto rounded-xl",
-                  "border border-border/40",
-                  "shadow-sm"
+          img: ({ src, alt }) => {
+            // Don't render img with empty src to avoid browser warning
+            if (!src) return null;
+            return (
+              <span className="block my-5">
+                <img
+                  src={src}
+                  alt={alt || ''}
+                  className={cn(
+                    "max-w-full h-auto rounded-xl",
+                    "border border-border/40",
+                    "shadow-sm"
+                  )}
+                  loading="lazy"
+                />
+                {alt && (
+                  <span className="block mt-2 text-center text-sm text-muted-foreground">
+                    {alt}
+                  </span>
                 )}
-                loading="lazy"
-              />
-              {alt && (
-                <span className="block mt-2 text-center text-sm text-muted-foreground">
-                  {alt}
-                </span>
-              )}
-            </span>
-          ),
+              </span>
+            );
+          },
 
           // ═══════════════════════════════════════════════════════════════
           // TEXT FORMATTING - Proper emphasis styling
@@ -402,6 +408,28 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
               )}
               {...props}
             />
+          ),
+
+          // ═══════════════════════════════════════════════════════════════
+          // RAW HTML SUPPORT (GFM allows raw HTML)
+          // ═══════════════════════════════════════════════════════════════
+          div: ({ children, style, className: divClassName, ...props }) => (
+            <div 
+              className={cn("text-sm text-foreground", divClassName)}
+              style={style as React.CSSProperties}
+              {...props}
+            >
+              {children}
+            </div>
+          ),
+          span: ({ children, style, className: spanClassName, ...props }) => (
+            <span 
+              className={cn("text-foreground", spanClassName)}
+              style={style as React.CSSProperties}
+              {...props}
+            >
+              {children}
+            </span>
           ),
         }}
       >

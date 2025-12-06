@@ -102,11 +102,25 @@ function SidebarProvider({
         return;
       }
 
+      // Skip if user is in an editable element (editor, input, textarea)
+      const el = document.activeElement;
+      if (el) {
+        const tagName = el.tagName.toLowerCase();
+        if (
+          tagName === 'input' ||
+          tagName === 'textarea' ||
+          el.getAttribute('contenteditable') === 'true' ||
+          el.closest('.cm-editor') ||
+          el.closest('.ProseMirror')
+        ) {
+          return;
+        }
+      }
+
       if (
         event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
         (event.metaKey || event.ctrlKey)
       ) {
-        console.log('Sidebar handler - processing CMD+B');
         event.preventDefault();
         toggleSidebar();
       }

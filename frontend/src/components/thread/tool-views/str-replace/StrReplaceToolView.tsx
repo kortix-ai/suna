@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Minus,
   Plus,
+  Pencil,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -29,10 +30,11 @@ import {
 import { extractFilePath, extractStrReplaceContent, formatTimestamp, getToolTitle } from '../utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
-  <div className="bg-white dark:bg-zinc-950 font-mono text-sm overflow-x-auto -mt-2">
-    <table className="w-full border-collapse">
+  <div className="bg-white dark:bg-zinc-950 font-mono text-sm overflow-x-auto -mt-2 max-w-full min-w-0">
+    <table className="w-full border-collapse max-w-full min-w-0">
       <tbody>
         {lineDiff.map((line, i) => (
           <tr
@@ -43,18 +45,18 @@ const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
               line.type === 'added' && "bg-emerald-50 dark:bg-emerald-950/30",
             )}
           >
-            <td className="w-10 text-right select-none py-0.5 pr-1 pl-4 text-xs text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-800">
+            <td className="w-10 text-right select-none py-0.5 pr-1 pl-4 text-xs text-zinc-500 dark:text-zinc-400 border-r border-zinc-200 dark:border-zinc-800 flex-shrink-0">
               {line.lineNumber}
             </td>
-            <td className="pl-2 py-0.5 w-6 select-none">
+            <td className="pl-2 py-0.5 w-6 select-none flex-shrink-0">
               {line.type === 'removed' && <Minus className="h-3.5 w-3.5 text-red-500" />}
               {line.type === 'added' && <Plus className="h-3.5 w-3.5 text-emerald-500" />}
             </td>
-            <td className="w-full px-3 py-0.5">
-              <div className="overflow-x-auto max-w-full text-xs">
-                {line.type === 'removed' && <span className="text-red-700 dark:text-red-400">{line.oldLine}</span>}
-                {line.type === 'added' && <span className="text-emerald-700 dark:text-emerald-400">{line.newLine}</span>}
-                {line.type === 'unchanged' && <span className="text-zinc-700 dark:text-zinc-300">{line.oldLine}</span>}
+            <td className="w-full px-3 py-0.5 min-w-0 max-w-full">
+              <div className="overflow-x-auto max-w-full text-xs break-words min-w-0">
+                {line.type === 'removed' && <span className="text-red-700 dark:text-red-400 break-words">{line.oldLine}</span>}
+                {line.type === 'added' && <span className="text-emerald-700 dark:text-emerald-400 break-words">{line.newLine}</span>}
+                {line.type === 'unchanged' && <span className="text-zinc-700 dark:text-zinc-300 break-words">{line.oldLine}</span>}
               </div>
             </td>
           </tr>
@@ -65,12 +67,12 @@ const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
 );
 
 const SplitDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
-  <div className="bg-white dark:bg-zinc-950 font-mono text-sm overflow-x-auto -my-2">
-    <table className="w-full border-collapse">
+  <div className="bg-white dark:bg-zinc-950 font-mono text-sm overflow-x-auto -my-2 max-w-full min-w-0">
+    <table className="w-full border-collapse max-w-full min-w-0">
       <thead>
         <tr className="border-b border-zinc-200 dark:border-zinc-800 text-xs">
-          <th className="p-2 text-left text-zinc-500 dark:text-zinc-400 w-1/2">Removed</th>
-          <th className="p-2 text-left text-zinc-500 dark:text-zinc-400 w-1/2">Added</th>
+          <th className="p-2 text-left text-zinc-500 dark:text-zinc-400 w-1/2 min-w-0">Removed</th>
+          <th className="p-2 text-left text-zinc-500 dark:text-zinc-400 w-1/2 min-w-0">Added</th>
         </tr>
       </thead>
       <tbody>
@@ -78,20 +80,20 @@ const SplitDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
           <tr key={i}>
             <td
               className={cn(
-                "p-2 align-top",
+                "p-2 align-top min-w-0 max-w-full",
                 line.type === 'removed' ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400' : '',
                 line.oldLine === null ? 'bg-zinc-100 dark:bg-zinc-900' : ''
               )}
             >
               {line.oldLine !== null ? (
-                <div className="flex">
-                  <div className="w-8 text-right pr-2 select-none text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="flex min-w-0 max-w-full">
+                  <div className="w-8 text-right pr-2 select-none text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
                     {line.lineNumber}
                   </div>
                   {line.type === 'removed' &&
                     <Minus className="h-3.5 w-3.5 text-red-500 mt-0.5 mr-2 flex-shrink-0" />
                   }
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto min-w-0 flex-1 max-w-full">
                     <span className="break-all">{line.oldLine}</span>
                   </div>
                 </div>
@@ -99,20 +101,20 @@ const SplitDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
             </td>
             <td
               className={cn(
-                "p-2 align-top",
+                "p-2 align-top min-w-0 max-w-full",
                 line.type === 'added' ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400' : '',
                 line.newLine === null ? 'bg-zinc-100 dark:bg-zinc-900' : ''
               )}
             >
               {line.newLine !== null ? (
-                <div className="flex">
-                  <div className="w-8 text-right pr-2 select-none text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="flex min-w-0 max-w-full">
+                  <div className="w-8 text-right pr-2 select-none text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
                     {line.lineNumber}
                   </div>
                   {line.type === 'added' &&
                     <Plus className="h-3.5 w-3.5 text-emerald-500 mt-0.5 mr-2 flex-shrink-0" />
                   }
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto min-w-0 flex-1 max-w-full">
                     <span className="break-all">{line.newLine}</span>
                   </div>
                 </div>
@@ -150,6 +152,9 @@ export function StrReplaceToolView({
   // All hooks must be called unconditionally at the top
   const [expanded, setExpanded] = useState<boolean>(true);
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('unified');
+  
+  // Kortix Computer store for opening files in Files Manager
+  const { openFileInComputer } = useKortixComputerStore();
 
   // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
@@ -192,10 +197,10 @@ export function StrReplaceToolView({
   const shouldShowError = !isStreaming && (!oldStr || !newStr);
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
+      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 max-w-full min-w-0">
+        <div className="flex flex-row items-center justify-between max-w-full min-w-0">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="relative p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
               <FileDiff className="w-5 h-5 text-purple-500 dark:text-purple-400" />
             </div>
@@ -204,34 +209,50 @@ export function StrReplaceToolView({
             </CardTitle>
           </div>
 
-          {!isStreaming && (
-            <Badge
-              variant="secondary"
-              className={
-                actualIsSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
-            >
-              {actualIsSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 mr-1" />
-              ) : (
-                <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-              )}
-              {actualIsSuccess ? 'Replacement completed' : 'Replacement failed'}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Edit in Files Manager button */}
+            {filePath && !isStreaming && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openFileInComputer(filePath)}
+                className="h-8 gap-1.5 px-2"
+                title="Edit in Files Manager"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                <span className="text-xs hidden sm:inline">Edit</span>
+              </Button>
+            )}
+            
+            {!isStreaming && (
+              <Badge
+                variant="secondary"
+                className={
+                  actualIsSuccess
+                    ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
+                    : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
+                }
+              >
+                {actualIsSuccess ? (
+                  <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                ) : (
+                  <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                )}
+                {actualIsSuccess ? 'Replacement completed' : 'Replacement failed'}
+              </Badge>
+            )}
 
-          {isStreaming && (
-            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-              Processing replacement
-            </Badge>
-          )}
+            {isStreaming && (
+              <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                Processing replacement
+              </Badge>
+            )}
+          </div>
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
+      <CardContent className="p-0 h-full flex-1 overflow-hidden relative max-w-full min-w-0">
         {isStreaming ? (
           <LoadingState
             icon={FileDiff}
@@ -245,7 +266,7 @@ export function StrReplaceToolView({
         ) : shouldShowError ? (
           <ErrorState />
         ) : (
-          <ScrollArea className="h-full w-full">
+          <ScrollArea className="h-full w-full max-w-full min-w-0">
             <div className="p-4">
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden mb-4">
                 <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 bg-accent flex items-center justify-between">

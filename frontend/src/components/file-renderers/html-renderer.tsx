@@ -200,12 +200,12 @@ export function HtmlRenderer({
             )}
           </div>
         ) : (
-          <div className="absolute inset-0">
+          <div className="absolute inset-0 overflow-auto">
             <CodeEditor
               content={content}
               fileName="preview.html"
               readOnly={true}
-              className="w-full h-full"
+              className="w-full min-h-full"
             />
           </div>
         )}

@@ -32,7 +32,6 @@ import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
-import { UITextViewTest } from '@/components/test/UITextViewTest';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -750,7 +749,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
   return (
     <View className="flex-1 pt-4">
-      <UITextViewTest />
       {groupedMessages.map((group, groupIndex) => {
         if (group.type === 'user') {
           const message = group.messages[0];
