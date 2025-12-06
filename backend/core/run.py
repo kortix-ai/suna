@@ -326,11 +326,26 @@ class MCPManager:
             await mcp_wrapper_instance.initialize_and_register_tools()
             
             updated_schemas = mcp_wrapper_instance.get_schemas()
+            
             for method_name, schema_list in updated_schemas.items():
                 for schema in schema_list:
-                    self.thread_manager.tool_registry.tools[method_name] = {
+                    registration_name = method_name
+                    
+                    # Check for collision with existing built-in tools
+                    if method_name in self.thread_manager.tool_registry.tools:
+                        existing = self.thread_manager.tool_registry.tools[method_name]
+                        # Add custom_mcp_ prefix to avoid collision (clean and predictable)
+                        registration_name = f"custom_mcp_{method_name}"
+                        logger.info(f"🔄 MCP tool '{method_name}' registered as '{registration_name}' to avoid collision with {type(existing['instance']).__name__}")
+                        
+                        # Update the schema function name to match
+                        if schema.schema.get('function', {}).get('name'):
+                            schema.schema['function']['name'] = registration_name
+                    
+                    self.thread_manager.tool_registry.tools[registration_name] = {
                         "instance": mcp_wrapper_instance,
-                        "schema": schema
+                        "schema": schema,
+                        "method_name": method_name  # Store for function lookup
                     }
             
             logger.info(f"⚡ Registered {len(updated_schemas)} MCP tools (Redis cache enabled)")
@@ -477,8 +492,10 @@ class PromptManager:
                     for schema in schema_list:
                         if schema.schema_type == SchemaType.OPENAPI:
                             func_info = schema.schema.get('function', {})
+                            # Use the actual function name from schema (may be renamed for collisions)
+                            tool_name = func_info.get('name', method_name)
                             description = func_info.get('description', 'No description available')
-                            mcp_info += f"- **{method_name}**: {description}\n"
+                            mcp_info += f"- **{tool_name}**: {description}\n"
                             
                             params = func_info.get('parameters', {})
                             props = params.get('properties', {})

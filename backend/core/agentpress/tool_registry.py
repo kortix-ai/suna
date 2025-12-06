@@ -94,9 +94,11 @@ class ToolRegistry:
         # Get OpenAPI tool functions
         for tool_name, tool_info in self.tools.items():
             tool_instance = tool_info['instance']
-            function_name = tool_name
-            function = getattr(tool_instance, function_name)
-            available_functions[function_name] = function
+            # Use stored method_name if available (for renamed MCP tools with collisions)
+            # Otherwise fall back to the registration name
+            method_name = tool_info.get('method_name', tool_name)
+            function = getattr(tool_instance, method_name)
+            available_functions[tool_name] = function  # Key is registration name
             
         # logger.debug(f"Retrieved {len(available_functions)} available functions")
         return available_functions
