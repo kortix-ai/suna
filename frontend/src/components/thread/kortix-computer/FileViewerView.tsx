@@ -65,6 +65,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
+import { VersionBanner } from './VersionBanner';
 
 
 
@@ -136,6 +137,10 @@ export function FileViewerView({
     clearUnsavedContent,
     setUnsavedState,
     getUnsavedState,
+    selectedVersion: globalSelectedVersion,
+    selectedVersionDate: globalSelectedVersionDate,
+    setSelectedVersion: setGlobalSelectedVersion,
+    clearSelectedVersion: clearGlobalSelectedVersion,
   } = useKortixComputerStore();
 
   // React Query client for cache invalidation
@@ -181,8 +186,11 @@ export function FileViewerView({
   // File version history state
   const [fileVersions, setFileVersions] = useState<Array<{ commit: string; author_name: string; author_email: string; date: string; message: string }>>([]);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [isLoadingVersionContent, setIsLoadingVersionContent] = useState(false);
+
+  // Use global version from store (set by file browser) or allow local override
+  const selectedVersion = globalSelectedVersion;
+  const selectedVersionDate = globalSelectedVersionDate;
 
   // Revert modal state
   const [revertModalOpen, setRevertModalOpen] = useState(false);
@@ -237,14 +245,23 @@ export function FileViewerView({
     }
   }, [canNavigateNext, currentFileIndex, setCurrentFileIndex]);
 
-  // Load file version history on demand (when dropdown opens)
-  const loadVersionHistory = useCallback(async () => {
+  // Load file version history on demand (when dropdown opens or when needed for selected version)
+  const loadVersionHistory = useCallback(async (force: boolean = false) => {
     if (!sandboxId || !filePath) return;
-    if (fileVersions.length > 0) return; // already loaded
+    if (fileVersions.length > 0 && !force) return; // already loaded
     setIsLoadingVersions(true);
     try {
       const data = await fetchFileHistory(sandboxId, filePath, session?.access_token, 200);
       setFileVersions(data.versions || []);
+
+      // If there's a selected version, update the date in the global store
+      if (selectedVersion && data.versions && data.versions.length > 0) {
+        const versionInfo = data.versions.find(v => v.commit === selectedVersion);
+        if (versionInfo && versionInfo.date !== selectedVersionDate) {
+          setGlobalSelectedVersion(selectedVersion, versionInfo.date);
+        }
+      }
+
       console.log('[FileViewerView] Loaded file history', { count: (data.versions || []).length });
     } catch (error) {
       console.error('[FileViewerView] Failed to load history', error);
@@ -252,11 +269,21 @@ export function FileViewerView({
     } finally {
       setIsLoadingVersions(false);
     }
-  }, [sandboxId, filePath, session?.access_token, fileVersions.length]);
+  }, [sandboxId, filePath, session?.access_token, fileVersions.length, selectedVersion, selectedVersionDate, setGlobalSelectedVersion]);
+
+  // Auto-load version history if we have a selected version but no date
+  useEffect(() => {
+    if (selectedVersion && !selectedVersionDate && sandboxId && filePath && fileVersions.length === 0) {
+      console.log('[FileViewerView] Auto-loading version history for selected version');
+      loadVersionHistory(true);
+    }
+  }, [selectedVersion, selectedVersionDate, sandboxId, filePath, fileVersions.length, loadVersionHistory]);
 
   const loadFileByVersion = useCallback(async (commit: string) => {
     if (!commit || !sandboxId || !filePath) return;
-    setSelectedVersion(commit);
+
+    const versionDate = fileVersions.find(v => v.commit === commit)?.date;
+    setGlobalSelectedVersion(commit, versionDate);
     setIsLoadingVersionContent(true);
     setContentError(null);
     try {
@@ -304,7 +331,7 @@ export function FileViewerView({
     } finally {
       setIsLoadingVersionContent(false);
     }
-  }, [filePath, sandboxId, session?.access_token, fileVersions]);
+  }, [filePath, sandboxId, session?.access_token, fileVersions, setGlobalSelectedVersion]);
 
   // Open revert modal and fetch commit info (files changed)
   const openRevertModal = useCallback(async (commit: string) => {
@@ -374,7 +401,7 @@ export function FileViewerView({
       setRevertModalOpen(false);
 
       // Clear selected version to return to current
-      setSelectedVersion(null);
+      clearGlobalSelectedVersion();
 
       // Clear version history to force reload next time
       setFileVersions([]);
@@ -411,7 +438,31 @@ export function FileViewerView({
     } finally {
       setRevertInProgress(false);
     }
-  }, [revertCommitInfo, revertMode, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent]);
+  }, [revertCommitInfo, revertMode, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent, clearGlobalSelectedVersion]);
+
+  // Track the last loaded version+path combo to prevent re-loading
+  const lastLoadedRef = useRef<{ version: string | null, path: string | null }>({ version: null, path: null });
+
+  // Effect to auto-load file at selected version when opened from file browser or when switching files
+  useEffect(() => {
+    if (selectedVersion && filePath && sandboxId) {
+      // Only load if version+path combo has changed
+      if (lastLoadedRef.current.version !== selectedVersion || lastLoadedRef.current.path !== filePath) {
+        console.log('[FileViewerView] Auto-loading file at version:', selectedVersion, 'for path:', filePath);
+        lastLoadedRef.current = { version: selectedVersion, path: filePath };
+        // Clear current content
+        setTextContentForRenderer(null);
+        setBlobUrlForRenderer(null);
+        setRawContent(null);
+        setContentError(null);
+        // Load the file at the selected version
+        loadFileByVersion(selectedVersion);
+      }
+    } else if (!selectedVersion) {
+      // Reset tracking when returning to current
+      lastLoadedRef.current = { version: null, path: null };
+    }
+  }, [selectedVersion, filePath, sandboxId, loadFileByVersion]);
 
   // Effect to handle cached file content updates
   useEffect(() => {
@@ -876,32 +927,47 @@ export function FileViewerView({
               <>
                 {/* Save Button */}
                 {mdEditorControls.saveState === 'saving' ? (
-                  <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span className="hidden sm:inline">Saving</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground"
+                    title="Saving..."
+                  >
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   </Button>
                 ) : mdEditorControls.saveState === 'saved' ? (
-                  <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs text-green-600">
-                    <Check className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Saved</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled
+                    className="h-8 w-8 p-0 bg-transparent border border-green-500/20 rounded-xl text-green-600"
+                    title="Saved"
+                  >
+                    <Check className="h-4 w-4" />
                   </Button>
                 ) : mdEditorControls.saveState === 'error' ? (
-                  <Button variant="ghost" size="sm" onClick={mdEditorControls.save} className="h-7 px-2 gap-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Retry</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={mdEditorControls.save}
+                    className="h-8 w-8 p-0 bg-transparent border border-red-500/20 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                    title="Retry save"
+                  >
+                    <AlertCircle className="h-4 w-4" />
                   </Button>
                 ) : (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         onClick={mdEditorControls.save}
                         disabled={!mdEditorControls.hasChanges}
-                        className="h-7 px-2 gap-1.5 text-xs"
+                        className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                        title="Save file"
                       >
-                        <Save className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Save</span>
+                        <Save className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
@@ -917,13 +983,18 @@ export function FileViewerView({
                 {/* Export Dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 gap-1.5 text-xs" disabled={isExporting}>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                      disabled={isExporting}
+                      title="Export file"
+                    >
                       {isExporting ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <Download className="h-3.5 w-3.5" />
+                        <Download className="h-4 w-4" />
                       )}
-                      <span className="hidden sm:inline">Export</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -949,24 +1020,35 @@ export function FileViewerView({
             </TooltipProvider>
           )}
 
+          <div className="flex-1" />
+
           {/* Version history dropdown */}
-          <DropdownMenu onOpenChange={(open) => { if (open) loadVersionHistory(); }}>
+          <DropdownMenu onOpenChange={(open) => { if (open) loadVersionHistory(false); }}>
             <DropdownMenuTrigger asChild>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 disabled={isCachedFileLoading}
-                className="h-7 px-2 gap-1.5 text-xs"
+                className="h-8 px-3 gap-1.5 text-xs bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
               >
                 {isLoadingVersions ? (
-                  <Loader className="h-3 w-3 animate-spin" />
+                  <Loader className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 )}
-                <span className="hidden sm:inline">History</span>
-                <ChevronDown className="h-2.5 w-2.5 ml-1" />
+                <span>
+                  {selectedVersion && selectedVersionDate ? (
+                    new Date(selectedVersionDate).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric'
+                    })
+                  ) : (
+                    'History'
+                  )}
+                </span>
+                <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="max-h-[400px] overflow-y-auto w-[320px]">
@@ -992,7 +1074,7 @@ export function FileViewerView({
                       onClick={() => {
                         if (isCurrent) {
                           // Return to current: clear unsaved & cache, then refetch
-                          setSelectedVersion(null);
+                          clearGlobalSelectedVersion();
                           setContentError(null);
                           setIsLoadingVersionContent(true);
                           clearUnsavedContent(filePath);
@@ -1077,22 +1159,47 @@ export function FileViewerView({
           {/* Download button - for non-markdown files */}
           {!isMarkdownFile && (
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={handleDownload}
               disabled={isDownloading || isCachedFileLoading}
-              className="h-7 px-2 gap-1.5 text-xs"
+              className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              title="Download file"
             >
               {isDownloading ? (
-                <Loader className="h-3 w-3 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
-                <Download className="h-3 w-3" />
+                <Download className="h-4 w-4" />
               )}
-              Download
             </Button>
           )}
         </div>
       </div>
+
+      {/* Version viewing banner */}
+      {selectedVersion && (
+        <VersionBanner
+          versionDate={selectedVersionDate || undefined}
+          onReturnToCurrent={() => {
+            // Return to current version
+            clearGlobalSelectedVersion();
+            setContentError(null);
+            setIsLoadingVersionContent(true);
+            clearUnsavedContent(filePath);
+
+            const normalizedPath = filePath.startsWith('/workspace')
+              ? filePath
+              : `/workspace/${filePath.replace(/^\//, '')}`;
+
+            ['text', 'blob', 'json'].forEach(contentType => {
+              const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
+              FileCache.delete(cacheKey);
+            });
+
+            refetchFile().finally(() => setIsLoadingVersionContent(false));
+          }}
+        />
+      )}
 
       {/* File content */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
@@ -1167,7 +1274,7 @@ export function FileViewerView({
                   originalContent={isBinaryFile ? undefined : originalTextContent}
                   hasUnsavedChanges={getUnsavedState(filePath)}
                   onUnsavedChange={(hasUnsaved) => {
-                    if (canEdit && filePath) {
+                    if (canEdit && filePath && !selectedVersion) {
                       setUnsavedState(filePath, hasUnsaved);
                     }
                   }}
@@ -1176,8 +1283,8 @@ export function FileViewerView({
                   filePath={filePath}
                   className="h-full w-full max-w-full min-w-0"
                   project={project}
-                  readOnly={false}
-                  onSave={canEdit ? handleSaveFile : undefined}
+                  readOnly={!!selectedVersion}
+                  onSave={canEdit && !selectedVersion ? handleSaveFile : undefined}
                   onDiscard={() => {
                     // Clear unsaved content when user discards
                     if (filePath) {
@@ -1194,8 +1301,8 @@ export function FileViewerView({
                   hideMarkdownToolbarActions={isMarkdownFile}
                   onMarkdownEditorReady={isMarkdownFile ? setMdEditorControls : undefined}
                   onChange={(content) => {
-                    // Persist unsaved content to store
-                    if (canEdit && filePath) {
+                    // Persist unsaved content to store (only if not viewing a version)
+                    if (canEdit && filePath && !selectedVersion) {
                       setUnsavedContent(filePath, content);
                     }
                   }}

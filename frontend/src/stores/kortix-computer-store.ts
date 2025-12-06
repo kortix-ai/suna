@@ -15,6 +15,10 @@ interface KortixComputerState {
   filePathList: string[] | undefined;
   currentFileIndex: number;
   
+  // Version history state (shared across file browser and viewer)
+  selectedVersion: string | null;
+  selectedVersionDate: string | null;
+  
   // Panel state
   shouldOpenPanel: boolean;
   
@@ -34,6 +38,10 @@ interface KortixComputerState {
   goBackToBrowser: () => void;
   navigateToPath: (path: string) => void;
   setCurrentFileIndex: (index: number) => void;
+  
+  // Version history actions
+  setSelectedVersion: (commit: string | null, date?: string | null) => void;
+  clearSelectedVersion: () => void;
   
   // For external triggers (clicking file in chat)
   openFileInComputer: (filePath: string, filePathList?: string[]) => void;
@@ -70,6 +78,8 @@ const initialState = {
   selectedFilePath: null,
   filePathList: undefined,
   currentFileIndex: -1,
+  selectedVersion: null as string | null,
+  selectedVersionDate: null as string | null,
   shouldOpenPanel: false,
   pendingToolNavIndex: null as number | null,
   unsavedFileContent: {} as Record<string, string>,
@@ -153,6 +163,20 @@ export const useKortixComputerStore = create<KortixComputerState>()(
             selectedFilePath: normalizedPath,
           });
         }
+      },
+      
+      setSelectedVersion: (commit: string | null, date?: string | null) => {
+        set({
+          selectedVersion: commit,
+          selectedVersionDate: date ?? null,
+        });
+      },
+      
+      clearSelectedVersion: () => {
+        set({
+          selectedVersion: null,
+          selectedVersionDate: null,
+        });
       },
       
       openFileInComputer: (filePath: string, filePathList?: string[]) => {
