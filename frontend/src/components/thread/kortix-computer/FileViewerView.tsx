@@ -353,20 +353,41 @@ export function FileViewerView({
       console.log('[FileViewerView] Revert result', result);
       toast.success('Version restored successfully');
 
-      // If the current file was affected, clear cache and refetch
+      // Close modal first for better UX
+      setRevertModalOpen(false);
+
+      // Clear selected version to return to current
+      setSelectedVersion(null);
+
+      // Clear version history to force reload next time
+      setFileVersions([]);
+
+      // Clear any unsaved content
+      clearUnsavedContent(filePath);
+
+      // If the current file was affected, clear all caches and refetch
       const normalizedPath = filePath.startsWith('/workspace') ? filePath : `/workspace/${filePath.replace(/^\//, '')}`;
       const affectedPaths: string[] = result?.affected_paths || (body.paths || []);
       const currentRelative = (filePath.startsWith('/workspace') ? filePath.replace(/^\/workspace\//, '') : filePath.replace(/^\//, ''));
       const affected = affectedPaths.length === 0 ? true : affectedPaths.map(p => p.replace(/^\//, '')).includes(currentRelative);
+
       if (affected) {
+        // Clear legacy FileCache
         ['text', 'blob', 'json'].forEach(contentType => {
           const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
           FileCache.delete(cacheKey);
         });
+
+        // Invalidate React Query cache
+        ['text', 'blob', 'json'].forEach(contentType => {
+          queryClient.invalidateQueries({
+            queryKey: fileQueryKeys.content(sandboxId, normalizedPath, contentType),
+          });
+        });
+
+        // Refetch the file to get the reverted content
         await refetchFile();
       }
-
-      setRevertModalOpen(false);
     } catch (error) {
       console.error('[FileViewerView] Revert error', error);
       toast.error(`Failed to restore version: ${error instanceof Error ? error.message : String(error)}`);
