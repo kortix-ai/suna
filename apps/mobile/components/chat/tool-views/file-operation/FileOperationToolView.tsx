@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { View, ScrollView, Pressable, WebView } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -103,10 +104,12 @@ export function FileOperationToolView({
   }
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
-  const args = toolCall.arguments || {};
+  const rawArgs = toolCall.arguments || {};
+  // Ensure args is an object, not a string
+  const args: Record<string, any> = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {};
   const output = toolResult?.output;
 
-  const operation = getOperationType(name, args);
+  const operation = getOperationType(name);
   const configs = getOperationConfigs();
   const config = configs[operation];
   const OperationIcon = config.icon;
@@ -421,7 +424,6 @@ export function FileOperationToolView({
           <View className="p-4">
             <XlsxRenderer
               content={fileContent}
-              filePath={processedFilePath}
               fileName={fileName}
             />
           </View>
@@ -607,7 +609,7 @@ export function FileOperationToolView({
                 />
               </Pressable>
             )}
-            {processedFilePath && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
+            {processedFilePath && !isStreaming && !isPresentationSlide && (
               <Pressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

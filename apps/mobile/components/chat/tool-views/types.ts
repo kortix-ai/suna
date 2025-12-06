@@ -34,6 +34,9 @@ export interface ToolViewProps {
   /** Whether tool is currently executing */
   isStreaming?: boolean;
   
+  /** Streaming text content (for partial JSON during streaming) */
+  streamingText?: string;
+  
   /** Project context (optional) */
   project?: {
     id: string;
