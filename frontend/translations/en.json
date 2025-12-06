@@ -94,8 +94,8 @@
     },
     "referrals": {
       "title": "Referral Program",
-      "description": "Share your referral link with friends. When they sign up and create an account, you'll earn",
-      "creditsPerReferral": "100 non-expiring credits",
+      "description": "Share your referral link with friends and earn credits when they sign up.",
+      "creditsPerReferral": "100 credits",
       "youEarn": "You earn",
       "friendGets": "Your friend gets",
       "maxEarnable": "Maximum earnable through referrals:",
