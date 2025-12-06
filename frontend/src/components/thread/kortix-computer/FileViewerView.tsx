@@ -104,6 +104,23 @@ export function FileViewerView({
   const [isExporting, setIsExporting] = useState(false);
   const [mdEditorControls, setMdEditorControls] = useState<MarkdownEditorControls | null>(null);
   const activeDownloadUrls = useRef<Set<string>>(new Set());
+  
+  // Track previous sandboxId to detect thread switches
+  const prevSandboxIdRef = useRef<string | null>(null);
+  
+  // Reset all local file state when sandboxId changes (thread switch)
+  useEffect(() => {
+    if (prevSandboxIdRef.current !== null && prevSandboxIdRef.current !== sandboxId) {
+      // SandboxId changed - reset all file content state
+      console.log('[FileViewerView] Thread switched, resetting file state');
+      setRawContent(null);
+      setTextContentForRenderer(null);
+      setBlobUrlForRenderer(null);
+      setContentError(null);
+      setMdEditorControls(null);
+    }
+    prevSandboxIdRef.current = sandboxId;
+  }, [sandboxId]);
 
   // Use the React Query hook for the selected file
   const {

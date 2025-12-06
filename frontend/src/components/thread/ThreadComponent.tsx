@@ -171,7 +171,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [setIsSidePanelOpen, setAutoOpenedPanel]);
 
   // Kortix Computer Store - for file viewing in the unified panel
-  const { openFileInComputer, openFileBrowser } = useKortixComputerStore();
+  const { openFileInComputer, openFileBrowser, reset: resetKortixComputerStore } = useKortixComputerStore();
 
   // Billing hooks - always call unconditionally, but disable for unauthenticated/shared
   const billingModal = useBillingModal();
@@ -230,8 +230,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     if (!isShared) {
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
+      // Reset kortix computer store state when switching threads
+      resetKortixComputerStore();
     }
-  }, [threadId, queryClient, isShared]);
+  }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 
   // Listen for sandbox-active event to invalidate file caches
   useEffect(() => {
