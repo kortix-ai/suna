@@ -6,13 +6,30 @@ import {
   File,
   Folder,
   Upload,
+  Download,
   ChevronRight,
   Home,
   Loader,
   FileText,
-  Archive,
   Presentation,
+  ChevronDown,
+  AlertTriangle,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   listSandboxFiles,
@@ -32,6 +49,7 @@ import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { Badge } from '@/components/ui/badge';
+import { VersionBanner } from './VersionBanner';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -53,6 +71,10 @@ export function FileBrowserView({
     currentPath, 
     navigateToPath,
     openFile,
+    selectedVersion,
+    selectedVersionDate,
+    setSelectedVersion,
+    clearSelectedVersion,
   } = useKortixComputerStore();
   
   // Download restriction for free tier users
@@ -81,6 +103,18 @@ export function FileBrowserView({
     currentFile: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Workspace version history state
+  const [workspaceVersions, setWorkspaceVersions] = useState<Array<{ commit: string; author_name: string; author_email: string; date: string; message: string }>>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [versionFiles, setVersionFiles] = useState<FileInfo[]>([]);
+  const [isLoadingVersionFiles, setIsLoadingVersionFiles] = useState(false);
+
+  // Revert modal state
+  const [revertModalOpen, setRevertModalOpen] = useState(false);
+  const [revertCommitInfo, setRevertCommitInfo] = useState<any | null>(null);
+  const [revertLoadingInfo, setRevertLoadingInfo] = useState(false);
+  const [revertInProgress, setRevertInProgress] = useState(false);
 
   // Check computer status
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
@@ -159,18 +193,23 @@ export function FileBrowserView({
       if (file.is_dir) {
         // Check if it's a presentation folder (direct child of /presentations/)
         if (isPresentationFolder(file)) {
+          // Presentations not supported in version view
+          if (selectedVersion) {
+            toast.info('Cannot view presentations from historical versions');
+            return;
+          }
           // Open presentation in viewer
           openFile(file.path);
         } else {
-          // Navigate to folder
+          // Navigate to folder (works in both current and version view)
           navigateToPath(file.path);
         }
       } else {
-        // Open file in viewer
+        // Open file in viewer (FileViewerView will detect selectedVersion from store)
         openFile(file.path);
       }
     },
-    [navigateToPath, openFile, isPresentationFolder],
+    [navigateToPath, openFile, isPresentationFolder, selectedVersion],
   );
 
   // Recursive function to discover all files from the current path
@@ -441,6 +480,171 @@ export function FileBrowserView({
     return <File className="h-8 w-8 text-muted-foreground" />;
   }, [isPresentationFolder]);
 
+  // Load workspace version history
+  const loadWorkspaceHistory = useCallback(async (force: boolean = false) => {
+    if (!sandboxId) return;
+    if (workspaceVersions.length > 0 && !force) return; // already loaded
+    setIsLoadingVersions(true);
+    try {
+      // Fetch git log for entire workspace (no specific path)
+      const url = `${API_URL}/sandboxes/${sandboxId}/files/history?path=/workspace&limit=100`;
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch workspace history: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setWorkspaceVersions(data.versions || []);
+      
+      // If there's a selected version, update the date in the global store
+      if (selectedVersion && data.versions && data.versions.length > 0) {
+        const versionInfo = data.versions.find(v => v.commit === selectedVersion);
+        if (versionInfo && versionInfo.date !== selectedVersionDate) {
+          setSelectedVersion(selectedVersion, versionInfo.date);
+        }
+      }
+      
+      console.log('[FileBrowserView] Loaded workspace history', { count: (data.versions || []).length });
+    } catch (error) {
+      console.error('[FileBrowserView] Failed to load workspace history', error);
+      toast.error('Failed to load workspace history');
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  }, [sandboxId, session?.access_token, workspaceVersions.length, selectedVersion, selectedVersionDate, setSelectedVersion]);
+
+  // Auto-load workspace history if we have a selected version but no date
+  useEffect(() => {
+    if (selectedVersion && !selectedVersionDate && sandboxId && workspaceVersions.length === 0) {
+      console.log('[FileBrowserView] Auto-loading workspace history for selected version');
+      loadWorkspaceHistory(true);
+    }
+  }, [selectedVersion, selectedVersionDate, sandboxId, workspaceVersions.length, loadWorkspaceHistory]);
+
+  // Load files at selected version
+  const loadFilesAtVersion = useCallback(async (commit: string | null, showToast: boolean = true) => {
+    if (!commit) {
+      // Return to current
+      clearSelectedVersion();
+      setVersionFiles([]);
+      refetchFiles();
+      return;
+    }
+
+    const versionDate = workspaceVersions.find(v => v.commit === commit)?.date;
+    setSelectedVersion(commit, versionDate);
+
+    // Load files at that commit using the new /files/tree endpoint
+    setIsLoadingVersionFiles(true);
+    try {
+      const url = `${API_URL}/sandboxes/${sandboxId}/files/tree?path=${encodeURIComponent(currentPath)}&commit=${encodeURIComponent(commit)}`;
+      const headers: Record<string, string> = {};
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch files at commit: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      setVersionFiles(data.files || []);
+      
+      if (showToast && versionDate) {
+        toast.success(`Viewing workspace from ${new Date(versionDate).toLocaleDateString()}`);
+      }
+    } catch (error) {
+      console.error('[FileBrowserView] Failed to load files at version:', error);
+      toast.error('Failed to load files at this version');
+      clearSelectedVersion();
+    } finally {
+      setIsLoadingVersionFiles(false);
+    }
+  }, [sandboxId, currentPath, session?.access_token, workspaceVersions, refetchFiles, setSelectedVersion, clearSelectedVersion]);
+
+  // Reload version files when currentPath changes while viewing a version
+  useEffect(() => {
+    if (selectedVersion) {
+      loadFilesAtVersion(selectedVersion, false);
+    }
+  }, [currentPath, selectedVersion]); // Don't include loadFilesAtVersion to avoid loops
+
+  // Open revert modal and fetch commit info
+  const openRevertModal = useCallback(async (commit: string) => {
+    if (!commit || !sandboxId) return;
+    setRevertModalOpen(true);
+    setRevertLoadingInfo(true);
+    setRevertCommitInfo(null);
+    try {
+      const url = `${API_URL}/sandboxes/${sandboxId}/files/commit-info?commit=${encodeURIComponent(commit)}`;
+      const res = await fetch(url, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Failed to fetch commit info');
+      }
+      const data = await res.json();
+      setRevertCommitInfo(data);
+    } catch (error) {
+      console.error('Failed to load commit info:', error);
+      toast.error('Failed to load commit info');
+      setRevertModalOpen(false);
+    } finally {
+      setRevertLoadingInfo(false);
+    }
+  }, [sandboxId, session?.access_token]);
+
+  // Perform revert (always entire commit for workspace history)
+  const performRevert = useCallback(async () => {
+    if (!revertCommitInfo || !sandboxId) return;
+    setRevertInProgress(true);
+    try {
+      // Always revert entire commit (no paths specified)
+      const body: any = { commit: revertCommitInfo.commit };
+
+      const res = await fetch(`${API_URL}/sandboxes/${sandboxId}/files/revert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Revert failed');
+      }
+
+      const result = await res.json();
+      console.log('[FileBrowserView] Revert result', result);
+
+      // Close modal first for better UX
+      setRevertModalOpen(false);
+
+      // Clear selected version to return to current
+      clearSelectedVersion();
+
+      // Clear version history to force reload next time
+      setWorkspaceVersions([]);
+
+      // Refetch files to show the reverted state
+      console.log('[FileBrowserView] Refetching files after restore');
+      await refetchFiles();
+
+      toast.success('Version restored successfully');
+    } catch (error) {
+      console.error('[FileBrowserView] Revert error', error);
+      toast.error(`Failed to restore version: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setRevertInProgress(false);
+    }
+  }, [revertCommitInfo, sandboxId, session?.access_token, refetchFiles, clearSelectedVersion]);
+
   return (
     <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0 border-t border-zinc-200 dark:border-zinc-800">
       {/* Header with Breadcrumb Navigation */}
@@ -499,34 +703,140 @@ export function FileBrowserView({
           )}
 
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={handleDownloadFolder}
             disabled={isDownloadingAll || isLoadingFiles}
-            className="h-7 px-2 gap-1.5 text-xs"
+            className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            title="Download folder"
           >
             {isDownloadingAll ? (
-              <Loader className="h-3.5 w-3.5 animate-spin" />
+              <Loader className="h-4 w-4 animate-spin" />
             ) : (
-              <Archive className="h-3.5 w-3.5" />
+              <Download className="h-4 w-4" />
             )}
-            <span className="hidden sm:inline">Download</span>
           </Button>
 
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={handleUpload}
-            disabled={isUploading}
-            className="h-7 px-2 gap-1.5 text-xs"
+            disabled={isUploading || !!selectedVersion}
+            className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            title={selectedVersion ? 'Cannot upload while viewing historical version' : 'Upload file'}
           >
             {isUploading ? (
-              <Loader className="h-3.5 w-3.5 animate-spin" />
+              <Loader className="h-4 w-4 animate-spin" />
             ) : (
-              <Upload className="h-3.5 w-3.5" />
+              <Upload className="h-4 w-4" />
             )}
-            <span className="hidden sm:inline">Upload</span>
           </Button>
+
+          <div className="flex-1" />
+
+          {/* Version history dropdown */}
+          <DropdownMenu onOpenChange={(open) => { if (open) loadWorkspaceHistory(false); }}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoadingFiles}
+                className="h-8 px-3 gap-1.5 text-xs bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
+              >
+                {isLoadingVersions ? (
+                  <Loader className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span>
+                  {selectedVersion && selectedVersionDate ? (
+                    new Date(selectedVersionDate).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric'
+                    })
+                  ) : (
+                    'History'
+                  )}
+                </span>
+                <ChevronDown className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-[400px] overflow-y-auto w-[320px]">
+              {isLoadingVersions ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading history...</span>
+                </div>
+              ) : workspaceVersions.length === 0 ? (
+                <div className="flex items-center justify-center py-8">
+                  <span className="text-sm text-muted-foreground">No history available</span>
+                </div>
+              ) : (
+                workspaceVersions.map((version, index) => {
+                  const isCurrent = index === 0;
+                  const isSelected = isCurrent ? !selectedVersion : selectedVersion === version.commit;
+                  const parts = (version.message || '').split(':');
+
+                  return (
+                    <DropdownMenuItem
+                      key={version.commit}
+                      onClick={() => loadFilesAtVersion(isCurrent ? null : version.commit)}
+                      className={cn(
+                        "flex items-start gap-2 cursor-pointer py-2.5 px-3 rounded-xl",
+                        isSelected && "bg-accent"
+                      )}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-1">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-medium text-sm">
+                              {parts[0]}
+                            </div>
+                            {parts.length > 1 && (
+                              <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {parts.slice(1).join(':').trim()}
+                              </div>
+                            )}
+                          </div>
+
+                          {!isCurrent && (
+                            <div className="flex items-center ml-3 shrink-0">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openRevertModal(version.commit);
+                                }}
+                                className="h-6 px-2 text-[11px] inline-flex items-center rounded-full hover:bg-muted"
+                                title="Restore this version"
+                              >
+                                <span className="text-[11px]">Restore</span>
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(version.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: new Date(version.date).getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                          })} at {new Date(version.date).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <input
             type="file"
@@ -538,18 +848,29 @@ export function FileBrowserView({
         </div>
       </div>
 
+      {/* Version viewing banner */}
+      {selectedVersion && (
+        <VersionBanner 
+          versionDate={selectedVersionDate || undefined}
+          onReturnToCurrent={() => loadFilesAtVersion(null)}
+        />
+      )}
+
       {/* File Explorer */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
-        {isLoadingFiles ? (
+        {(isLoadingFiles || isLoadingVersionFiles) ? (
           <div className="h-full w-full max-w-full flex flex-col items-center justify-center gap-2 min-w-0">
             <Loader className="h-6 w-6 animate-spin text-primary" />
-            {dirRetryAttempt > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {isLoadingVersionFiles ? 'Loading version...' : 'Loading files...'}
+            </p>
+            {!isLoadingVersionFiles && dirRetryAttempt > 0 && (
               <p className="text-xs text-muted-foreground">
                 Retrying... (attempt {dirRetryAttempt + 1})
               </p>
             )}
           </div>
-        ) : files.length === 0 ? (
+        ) : (selectedVersion ? versionFiles : files).length === 0 ? (
           <div className="h-full w-full flex flex-col items-center justify-center gap-2">
             <Folder className="h-12 w-12 mb-2 text-muted-foreground opacity-30" />
             {!hasSandbox ? (
@@ -579,7 +900,7 @@ export function FileBrowserView({
         ) : (
           <ScrollArea className="h-full w-full max-w-full p-2 min-w-0">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-4 max-w-full min-w-0">
-              {files.map((file) => (
+              {(selectedVersion ? versionFiles : files).map((file) => (
                 <button
                   key={file.path}
                   className={cn(
@@ -611,17 +932,91 @@ export function FileBrowserView({
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 flex-shrink-0">
+      <div className="px-4 py-2 h-10 bg-linear-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 shrink-0">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <Badge variant="outline" className="py-0.5 h-6">
             <Folder className="h-3 w-3 mr-1" />
-            {files.length} {files.length === 1 ? 'item' : 'items'}
+            {(selectedVersion ? versionFiles : files).length} {(selectedVersion ? versionFiles : files).length === 1 ? 'item' : 'items'}
           </Badge>
         </div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
           {currentPath}
         </div>
       </div>
+
+      {/* Revert Modal */}
+      <Dialog open={revertModalOpen} onOpenChange={setRevertModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-xl bg-background border border-border">
+          <DialogHeader>
+            <DialogTitle>Restore Previous Version</DialogTitle>
+            <DialogDescription>
+              This will restore all files from this version snapshot.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30">
+            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500 mt-0.5 shrink-0" />
+            <span className="text-xs text-red-700 dark:text-red-400">This will replace current files with the selected version snapshot. Your current changes will be overwritten.</span>
+          </div>
+
+          {revertLoadingInfo ? (
+            <div className="py-6 flex items-center justify-center">
+              <Loader className="h-6 w-6 animate-spin" />
+            </div>
+          ) : revertCommitInfo ? (
+            <div className="mt-2">
+              <div className="text-sm font-medium mb-1">{revertCommitInfo.message}</div>
+              <div className="text-xs text-muted-foreground mb-3">
+                {revertCommitInfo.date && new Date(revertCommitInfo.date).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric'
+                })}
+              </div>
+
+              <div className="text-xs text-muted-foreground mb-2">Files that will be affected:</div>
+
+              <div className="max-h-40 overflow-y-auto mb-3 border rounded-2xl p-2">
+                {(() => {
+                  const revertList = revertCommitInfo.revert_files || [];
+                  const inCommitList = revertCommitInfo.files_in_commit || [];
+
+                  return (revertList.length ? revertList : inCommitList).map((f: any) => {
+                    const p = f.path;
+                    const effect = f.revert_effect || f.revertEffect || 'unknown';
+                    const effectLabel = effect === 'will_delete' ? 'Will delete' : effect === 'will_restore' ? 'Will restore' : effect === 'will_modify' ? 'Will modify' : 'Unknown';
+                    return (
+                      <div key={p + (f.old_path || '')} className="flex items-center justify-between gap-2 py-1 px-1 rounded">
+                        <div className="flex flex-col min-w-0">
+                          <div className="text-sm truncate max-w-[260px]">{p}</div>
+                          {f.old_path && f.old_path !== p && (
+                            <div className="text-[11px] text-muted-foreground mt-0.5 truncate">Renamed from: {f.old_path}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <div className="text-xs text-muted-foreground">{f.status}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{effectLabel}</div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          ) : (
+            <div className="py-4">No commit info</div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRevertModalOpen(false)} disabled={revertInProgress}>Cancel</Button>
+            <Button onClick={performRevert} disabled={revertInProgress}>
+              {revertInProgress ? (<><Loader className="h-4 w-4 animate-spin mr-2" />Restoring...</>) : 'Restore'}
+            </Button>
+          </DialogFooter>
+
+          <DialogClose />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
