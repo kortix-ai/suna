@@ -85,7 +85,7 @@ export const useInitiateAgentWithInvalidation = () => {
   const baseMutation = useInitiateAgentMutation();
   
   return useMutation({
-    mutationFn: baseMutation.mutateAsync,
+    mutationFn: (formData: FormData) => baseMutation.mutateAsync(formData),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.all });
       queryClient.invalidateQueries({ queryKey: threadKeys.all });
