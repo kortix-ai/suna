@@ -18,7 +18,7 @@ export function ImageEditToolView({ toolCall, toolResult, isStreaming = false, a
 
   // Prefer project prop, fallback to thread project
   const effectiveProject = project || thread?.project;
-  const effectiveSandboxId = effectiveProject?.sandbox_id || effectiveProject?.sandbox?.id;
+  const effectiveSandboxId = effectiveProject?.sandbox?.id;
 
   const fallbackSandboxId = effectiveSandboxId || assistantMessage?.sandbox_id;
   const extractedData = extractImageEditData({ toolCall, toolResult }, fallbackSandboxId);
@@ -41,8 +41,8 @@ export function ImageEditToolView({ toolCall, toolResult, isStreaming = false, a
     hasThread: !!thread,
     toolDataArgs: toolCall.arguments,
     toolDataResult: toolResult,
-    projectSandboxId: project?.sandbox_id,
-    threadProjectSandboxId: thread?.project?.sandbox_id,
+    projectSandboxId: project?.sandbox?.id,
+    threadProjectSandboxId: thread?.project?.sandbox?.id,
     assistantSandboxId: assistantMessage?.sandbox_id
   });
 

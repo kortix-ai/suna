@@ -4,7 +4,7 @@ import { CircleDashed, Maximize2 } from 'lucide-react';
 import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { ToolCallInput } from '@/components/thread/tool-call-side-panel';
+import { ToolCallInput } from '@/components/thread/kortix-computer';
 
 // Re-export for use in chat-snack.tsx
 export type { ToolCallInput };

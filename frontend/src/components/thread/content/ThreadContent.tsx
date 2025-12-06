@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, memo, useMemo } from 'react';
 import { CircleDashed, CheckCircle, AlertTriangle, Info, CheckCircle2, Clock } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
@@ -83,7 +83,7 @@ export interface ThreadContentProps {
     onPromptFill?: (message: string) => void; // Handler for filling ChatInput with prompt text from samples
 }
 
-export const ThreadContent: React.FC<ThreadContentProps> = ({
+export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadContent({
     messages,
     streamingTextContent = "",
     streamingToolCall,
@@ -106,7 +106,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     scrollContainerRef,
     threadId,
     onPromptFill,
-}) => {
+}) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
@@ -124,8 +124,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     // In playback mode, we use visibleMessages instead of messages
     const displayMessages = readOnly && visibleMessages ? visibleMessages : messages;
 
-    // Helper function to get agent info robustly
-    const getAgentInfo = useCallback(() => {
+    // Memoized agent info - computed once when dependencies change
+    const agentInfo = useMemo(() => {
         // First check thread metadata for is_agent_builder flag
         if (threadMetadata?.is_agent_builder) {
             return {
@@ -464,10 +464,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                                         return (
                                             <div key={group.key} className="flex justify-end">
-                                                <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
-                                                    <div className="space-y-3 min-w-0 flex-1">
+                                                <div className="flex max-w-[90%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
+                                                    <div className="space-y-2 min-w-0 flex-1">
                                                         {cleanContent && (
-                                                            <ComposioUrlDetector content={cleanContent} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                            <ComposioUrlDetector content={cleanContent} />
                                                         )}
 
                                                         {/* Use the helper function to render user attachments */}
@@ -482,15 +482,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                 <div className="flex flex-col gap-2">
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center relative">
-                                                            {getAgentInfo().avatar}
+                                                            {agentInfo.avatar}
                                                         </div>
                                                         <p className='ml-2 text-sm text-muted-foreground'>
-                                                            {getAgentInfo().name}
+                                                            {agentInfo.name}
                                                         </p>
                                                     </div>
 
                                                     {/* Message content - ALL messages in the group */}
-                                                    <div className="flex max-w-[90%] text-sm break-words overflow-hidden">
+                                                    <div className="flex max-w-[90%] break-words overflow-hidden">
                                                         <div className="space-y-2 min-w-0 flex-1">
                                                             {(() => {
                                                                 const toolResultsMap = new Map<string | null, UnifiedMessage[]>();
@@ -542,7 +542,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                                                                         elements.push(
                                                                             <div key={msgKey} className={assistantMessageCount > 0 ? "mt-4" : ""}>
-                                                                                <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-hidden">
+                                                                                <div className="break-words overflow-hidden">
                                                                                     {renderedContent}
                                                                                 </div>
                                                                             </div>
@@ -609,7 +609,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         return (
                                                                             <>
                                                                                 {textBeforeTag && (
-                                                                                    <ComposioUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                                                    <ComposioUrlDetector content={textBeforeTag} />
                                                                                 )}
 
                                                                                 {detectedTag && isAskOrComplete ? (
@@ -620,7 +620,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                         return (
                                                                                             <ComposioUrlDetector 
                                                                                                 content={extractedText} 
-                                                                                                className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
                                                                                             />
                                                                                         );
                                                                                     })()
@@ -696,7 +695,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         return (
                                                                             <>
                                                                                 {textBeforeTag && (
-                                                                                            <ComposioUrlDetector content={textBeforeTag} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
+                                                                                            <ComposioUrlDetector content={textBeforeTag} />
                                                                                         )}
 
                                                                                         {detectedTag && isAskOrComplete ? (
@@ -707,7 +706,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                                 return (
                                                                                                     <ComposioUrlDetector 
                                                                                                         content={extractedText} 
-                                                                                                        className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
                                                                                                     />
                                                                                                 );
                                                                                             })()
@@ -783,7 +781,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                             <div className="mt-2">
                                                                                 <ComposioUrlDetector 
                                                                                     content={textToShow} 
-                                                                                    className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3" 
                                                                                 />
                                                                             </div>
                                                                         );
@@ -882,10 +879,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             {/* Logo positioned above the loader */}
                                             <div className="flex items-center">
                                                 <div className="rounded-md flex items-center justify-center">
-                                                    {getAgentInfo().avatar}
+                                                    {agentInfo.avatar}
                                                 </div>
                                                 <p className='ml-2 text-sm text-muted-foreground'>
-                                                    {getAgentInfo().name}
+                                                    {agentInfo.name}
                                                 </p>
                                             </div>
 
@@ -902,10 +899,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         {/* Logo positioned above the tool call */}
                                         <div className="flex justify-start">
                                             <div className="rounded-md flex items-center justify-center">
-                                                {getAgentInfo().avatar}
+                                                {agentInfo.avatar}
                                             </div>
                                             <p className='ml-2 text-sm text-muted-foreground'>
-                                                {getAgentInfo().name}
+                                                {agentInfo.name}
                                             </p>
                                         </div>
 
@@ -929,10 +926,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         {/* Logo positioned above the streaming indicator */}
                                         <div className="flex justify-start">
                                             <div className="rounded-md flex items-center justify-center">
-                                                {getAgentInfo().avatar}
+                                                {agentInfo.avatar}
                                             </div>
                                             <p className='ml-2 text-sm text-muted-foreground'>
-                                                {getAgentInfo().name}
+                                                {agentInfo.name}
                                             </p>
                                         </div>
 
@@ -956,6 +953,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
             {/* No scroll button needed with flex-column-reverse */}
         </>
     );
-};
+});
 
 export default ThreadContent; 

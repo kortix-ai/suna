@@ -19,7 +19,7 @@ import { useComposioToolkitDetails } from '@/hooks/composio/use-composio';
 import { toast } from 'sonner';
 import { cn, truncateString } from '@/lib/utils';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
-import { Markdown } from '@/components/ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { AgentModelSelector } from '@/components/agents/config/model-selector';
 
 interface EventBasedTriggerDialogProps {
@@ -716,9 +716,10 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                             >
                                         <div className="max-w-2xl mx-auto space-y-6">
                                             {selectedTrigger.instructions && (
-                                                <Markdown className="text-sm w-full text-muted-foreground">
-                                                    {selectedTrigger.instructions}
-                                                </Markdown>
+                                                <UnifiedMarkdown 
+                                                    content={selectedTrigger.instructions} 
+                                                    className="text-sm w-full text-muted-foreground" 
+                                                />
                                             )}
 
                                             {(!loadingProfiles && (profiles || []).filter(p => p.is_connected).length === 0) ? (

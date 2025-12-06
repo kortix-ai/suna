@@ -33,13 +33,12 @@ import { ListPresentationsToolView } from '../presentation-tools/ListPresentatio
 import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 // import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
-import { ExportToPptxToolView, ExportToPdfToolView } from '../presentation-tools/ExportToolView';
+import { ExportToolView } from '../presentation-tools/ExportToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { DesignerToolView } from '../designer-tool/DesignerToolView';
 import { UploadFileToolView } from '../UploadFileToolView';
-import { DocsToolView, ListDocumentsToolView, DeleteDocumentToolView } from '../docs-tool';
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { UpdateAgentToolView } from '../update-agent/update-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
@@ -135,8 +134,13 @@ const defaultRegistry: ToolViewRegistryType = {
   'delete-presentation': DeletePresentationToolView,
   'validate-slide': PresentationViewer,
   // 'presentation-styles': PresentationStylesToolView,
-  'export-to-pptx': ExportToPptxToolView,
-  'export-to-pdf': ExportToPdfToolView,
+  'export-presentation': ExportToolView,
+  'export_presentation': ExportToolView,
+  // Legacy support for old tool names (backward compatibility)
+  'export-to-pptx': ExportToolView,
+  'export-to-pdf': ExportToolView,
+  'export_to_pptx': ExportToolView,
+  'export_to_pdf': ExportToolView,
 
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,
@@ -171,21 +175,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'global-kb-delete-item': KbToolView,
   'global_kb_enable_item': KbToolView,
   'global-kb-enable-item': KbToolView,
-
-  // Document operations - using specific views for different operations
-  'create-document': DocsToolView,
-  'update-document': DocsToolView,
-  'read-document': DocsToolView,
-  'list-documents': ListDocumentsToolView,
-  'delete-document': DeleteDocumentToolView,
-  'export-document': DocsToolView,
-  'create_document': DocsToolView,
-  'update_document': DocsToolView,
-  'read_document': DocsToolView,
-  'list_documents': ListDocumentsToolView,
-  'delete_document': DeleteDocumentToolView,
-  'export_document': DocsToolView,
-  'get_tiptap_format_guide': DocsToolView,
 
   'default': GenericToolView,
 
@@ -290,7 +279,11 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
   if (!toolCall || !toolCall.function_name) {
     console.warn('ToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     // Fallback to GenericToolView with error handling
-    return <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />;
+    return (
+      <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+        <GenericToolView toolCall={toolCall} toolResult={toolResult} {...props} />
+      </div>
+    );
   }
 
   // if the file path is a presentation slide, we need to modify the tool result to match the expected structure for PresentationViewer
@@ -303,5 +296,10 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     };
   }
 
-  return <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />;
+  // Wrap all tool views in a container with strict CSS containment to prevent overflow
+  return (
+    <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+      <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />
+    </div>
+  );
 }

@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from '@/components/ui/progress';
-import { Markdown } from '@/components/ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { FileAttachment } from '../file-attachment';
 import { TaskCompletedFeedback } from './shared/TaskCompletedFeedback';
 
@@ -185,9 +185,10 @@ export function CompleteToolView({
             {(text || resultText) && (
               <div className="space-y-2">
                 <div className="bg-muted/50 rounded-2xl p-4 border border-border">
-                  <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
-                    {text || resultText || ''}
-                  </Markdown>
+                  <UnifiedMarkdown 
+                    content={text || resultText || ''} 
+                    className="text-sm" 
+                  />
                   {isStreaming && (
                     <span className="inline-block h-4 w-0.5 bg-primary ml-1 -mb-1 animate-pulse" />
                   )}
@@ -291,9 +292,10 @@ export function CompleteToolView({
                         <CheckCircle className="h-4 w-4 text-emerald-500" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0">
-                          {task}
-                        </Markdown>
+                        <UnifiedMarkdown 
+                          content={task} 
+                          className="text-sm" 
+                        />
                       </div>
                     </div>
                   ))}

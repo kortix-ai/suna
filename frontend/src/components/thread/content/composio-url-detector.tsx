@@ -3,7 +3,7 @@ import { ExternalLink, ShieldCheck, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Markdown } from '@/components/ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 
 interface ComposioUrlDetectorProps {
   content: string;
@@ -300,9 +300,10 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
 }) => {
   const composioUrls = detectComposioUrls(content);
 
+  // Don't pass prose/chat-markdown classes to UnifiedMarkdown - it has its own styling
   if (composioUrls.length === 0) {
     return (
-      <Markdown className={className}>{content}</Markdown>
+      <UnifiedMarkdown content={content} />
     );
   }
 
@@ -324,7 +325,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
 
       if (cleanedTextBefore.trim()) {
         contentParts.push(
-          <Markdown key={`text-${index}`} className={className}>{cleanedTextBefore}</Markdown>
+          <UnifiedMarkdown key={`text-${index}`} content={cleanedTextBefore} />
         );
       }
     }
@@ -345,7 +346,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
     const remainingText = content.substring(lastIndex);
     if (remainingText.trim()) {
       contentParts.push(
-        <Markdown key="text-final" className={className}>{remainingText}</Markdown>
+        <UnifiedMarkdown key="text-final" content={remainingText} />
       );
     }
   }

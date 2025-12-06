@@ -170,8 +170,18 @@ export function SidebarLeft({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDocumentModalOpen) return;
 
-      // CMD+B to toggle sidebar
-      if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
+      // Skip if user is in an editable element (editor, input, textarea)
+      const el = document.activeElement;
+      const isEditing = el && (
+        el.tagName.toLowerCase() === 'input' ||
+        el.tagName.toLowerCase() === 'textarea' ||
+        el.getAttribute('contenteditable') === 'true' ||
+        el.closest('.cm-editor') ||
+        el.closest('.ProseMirror')
+      );
+
+      // CMD+B to toggle sidebar (skip if editing)
+      if ((event.metaKey || event.ctrlKey) && event.key === 'b' && !isEditing) {
         event.preventDefault();
         setOpen(!state.startsWith('expanded'));
         window.dispatchEvent(

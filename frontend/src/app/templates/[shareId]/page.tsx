@@ -30,7 +30,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Markdown } from '@/components/ui/markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -573,9 +573,10 @@ export default function TemplateSharePage() {
                       "transition-all duration-300 overflow-hidden",
                       !isPromptExpanded && "max-h-[600px]"
                     )}>
-                      <Markdown className="prose prose-sm dark:prose-invert max-w-none">
-                        {template.system_prompt || 'No system prompt available'}
-                      </Markdown>
+                      <UnifiedMarkdown 
+                        content={template.system_prompt || 'No system prompt available'} 
+                        className="prose prose-sm dark:prose-invert max-w-none" 
+                      />
                       {!isPromptExpanded && template.system_prompt && template.system_prompt.length > 10000 && (
                         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-muted/10 to-transparent pointer-events-none" />
                       )}

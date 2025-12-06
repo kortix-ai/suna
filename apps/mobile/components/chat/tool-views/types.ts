@@ -38,7 +38,13 @@ export interface ToolViewProps {
   project?: {
     id: string;
     name: string;
-    sandbox_id?: string;
+    /** Sandbox information */
+    sandbox?: {
+      id?: string;
+      sandbox_url?: string;
+      vnc_preview?: string;
+      pass?: string;
+    };
   };
   
   /** Current index in the tool call list (for determining if this is the latest) */

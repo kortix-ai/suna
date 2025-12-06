@@ -10,7 +10,8 @@ import { TaskCompletedFeedback } from './TaskCompletedFeedback';
 
 export function CompleteToolView({ toolCall, toolResult, isStreaming = false, project, assistantMessage, currentIndex, totalCalls, onPromptFill }: ToolViewProps) {
   const { text, attachments, follow_up_prompts, success } = extractCompleteData({ toolCall, toolResult });
-  const sandboxId = project?.sandbox_id || assistantMessage?.sandbox_id;
+  const sandboxId = project?.sandbox?.id || assistantMessage?.sandbox_id;
+  const sandboxUrl = project?.sandbox?.sandbox_url;
 
   if (isStreaming) {
     return (
@@ -69,6 +70,7 @@ export function CompleteToolView({ toolCall, toolResult, isStreaming = false, pr
             <FileAttachmentsGrid
               filePaths={attachments}
               sandboxId={sandboxId}
+              sandboxUrl={sandboxUrl}
               compact={false}
               showPreviews={true}
             />

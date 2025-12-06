@@ -465,6 +465,7 @@ export function ThreadPage({
               agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
               streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
               sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+              sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
               handleToolClick={handleToolClick}
               onToolPress={handleToolPress}
               onFilePress={handleFilePress}

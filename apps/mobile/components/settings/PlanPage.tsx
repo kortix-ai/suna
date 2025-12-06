@@ -128,6 +128,8 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
   const [error, setError] = useState<string | null>(null);
   // Per-tier billing period selection (tier_id -> 'monthly' | 'yearly')
   const [tierBillingPeriod, setTierBillingPeriod] = useState<Record<string, 'monthly' | 'yearly'>>({});
+  // Track if we've done initial auto-selection
+  const [hasAutoSelected, setHasAutoSelected] = useState(false);
 
   const purchaseButtonScale = useSharedValue(1);
 
@@ -215,6 +217,19 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
   const hasYearlyOption = (tierId: string): boolean => {
     return tierId !== 'free' && tierId !== 'tier_25_200'; // Ultra doesn't have yearly
   };
+
+  // Auto-select the first paid tier (Plus) when page loads and no plan is selected
+  useEffect(() => {
+    if (!hasAutoSelected && tierGroups.length > 0 && !selectedPlanOption && !isLoadingPricing) {
+      // Find the first paid tier (skip 'free')
+      const firstPaidGroup = tierGroups.find(g => g.tier.id !== 'free');
+      if (firstPaidGroup?.monthly) {
+        console.log('📋 Auto-selecting recommended plan:', firstPaidGroup.tier.name);
+        setSelectedPlanOption(firstPaidGroup.monthly);
+        setHasAutoSelected(true);
+      }
+    }
+  }, [tierGroups, selectedPlanOption, hasAutoSelected, isLoadingPricing]);
 
   const handleSubscriptionUpdate = () => {
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
