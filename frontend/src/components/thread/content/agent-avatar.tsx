@@ -56,15 +56,23 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   // Calculate responsive border radius - proportional to size
   // Use a ratio that prevents full rounding while maintaining nice corners
+  // For size 40, this gives 16px border radius (rounded-2xl)
+  const borderRadius = Math.min(size * 0.4, 16);
   const borderRadiusStyle = {
-    borderRadius: `${Math.min(size * 0.25, 16)}px` // 25% of size, max 16px
+    borderRadius: `${borderRadius}px` // 40% of size, max 16px (16px for size 40)
   };
+
+  // Filter out any rounded-* classes from className to prevent overrides
+  const filteredClassName = className
+    .split(' ')
+    .filter(cls => !cls.match(/^rounded(-[a-z0-9]+)?$/))
+    .join(' ');
 
   // Show skeleton when no data is available
   if (!agent && !propIconName && !propIsSunaDefault && agentId) {
     return (
       <div
-        className={cn("bg-muted animate-pulse", className)}
+        className={cn("bg-muted animate-pulse", filteredClassName)}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       />
     );
@@ -75,7 +83,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       <div
         className={cn(
           "flex items-center justify-center bg-card border",
-          className
+          filteredClassName
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
@@ -89,7 +97,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
       <div
         className={cn(
           "flex items-center justify-center transition-all border",
-          className
+          filteredClassName
         )}
         style={{
           width: size,
@@ -112,7 +120,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     <div
       className={cn(
         "flex items-center justify-center bg-card border",
-        className
+        filteredClassName
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}
     >

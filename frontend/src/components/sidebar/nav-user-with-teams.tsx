@@ -28,6 +28,7 @@ import {
   BarChart3,
   FileText,
   TrendingDown,
+  Heart,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
 import { useAccountState } from '@/hooks/billing';
@@ -213,7 +214,7 @@ export function NavUserWithTeams({
                 size="lg"
                 className="w-full items-center gap-2 px-3 hover:bg-muted/50 transition-colors"
               >
-                <Users className="h-4 w-4 flex-shrink-0" />
+                <Heart className="h-4 w-4 flex-shrink-0" />
                 <span className="text-sm flex-1 text-left">{t('referAndEarn')}</span>
                 <span className="text-xs font-semibold text-primary flex-shrink-0">+400</span>
               </Button>
