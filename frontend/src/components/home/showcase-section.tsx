@@ -105,10 +105,10 @@ export function ShowCaseSection() {
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-8 sm:mb-12 md:mb-16">
-                    <h1 className="text-2xl sm:text-3xl md:text-[43px] font-medium leading-tight mb-3 sm:mb-4">
+                    <h1 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center mb-3 sm:mb-4">
                         {t('title')}
                     </h1>
-                    <h2 className="text-sm sm:text-base md:text-lg max-w-3xl mx-auto block text-muted-foreground font-normal px-2">
+                    <h2 className="text-[15px] max-w-3xl mx-auto block text-muted-foreground font-normal px-2">
                         {t('subtitle')}
                     </h2>
                 </div>
@@ -134,7 +134,7 @@ export function ShowCaseSection() {
                                         />
 
                                         {/* Title */}
-                                        <h3 className="text-xl sm:text-2xl md:text-[32px] font-semibold leading-tight">
+                                        <h3 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance">
                                             {worker.title}
                                         </h3>
 
