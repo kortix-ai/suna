@@ -1696,13 +1696,6 @@ class ResponseProcessor:
         from core.jit.function_map import get_tool_for_function
         from core.jit.result_types import ActivationSuccess, ActivationError
         
-        tool_name = get_tool_for_function(function_name)
-        if not tool_name:
-            logger.error(f"⚡ [JIT AUTO] Function '{function_name}' not mapped to any tool")
-            return False
-        
-        logger.info(f"⚡ [JIT AUTO] Auto-activating '{tool_name}' for function '{function_name}'")
-        
         thread_manager = self.thread_manager
         project_id = self.project_id
         
@@ -1717,21 +1710,55 @@ class ResponseProcessor:
                     break
             
             if not thread_manager:
-                logger.error(f"⚡ [JIT AUTO] No thread_manager available for activation (neither direct nor from tool instances)")
+                logger.error(f"⚡ [JIT AUTO] No thread_manager available for activation")
                 return False
         
-        result = await JITLoader.activate_tool(
-            tool_name, 
-            thread_manager, 
+        tool_name = get_tool_for_function(function_name)
+        if tool_name:
+            logger.info(f"⚡ [JIT AUTO] Auto-activating regular tool '{tool_name}' for function '{function_name}'")
+            
+            result = await JITLoader.activate_tool(
+                tool_name, 
+                thread_manager, 
+                project_id,
+                jit_config=self.jit_config
+            )
+            
+            if isinstance(result, ActivationSuccess):
+                logger.info(f"✅ [JIT AUTO] {result}")
+                return True
+            else:
+                logger.error(f"❌ [JIT AUTO] Regular tool activation failed: {result.to_user_message()}")
+
+        return await self._try_mcp_auto_activation(function_name, thread_manager, project_id)
+    
+    async def _try_mcp_auto_activation(self, function_name: str, thread_manager, project_id: str) -> bool:
+        from core.jit import JITLoader
+        from core.jit.result_types import ActivationSuccess
+        
+        mcp_loader = getattr(thread_manager, 'mcp_loader', None)
+        
+        if not mcp_loader:
+            return False
+        
+        # Check if tool is available (async for dynamic registry)
+        if not await mcp_loader.is_tool_available(function_name):
+            return False
+        
+        logger.info(f"⚡ [JIT MCP AUTO] Auto-activating MCP tool '{function_name}'")
+        
+        result = await JITLoader.activate_mcp_tool(
+            function_name,
+            thread_manager,
             project_id,
             jit_config=self.jit_config
         )
         
         if isinstance(result, ActivationSuccess):
-            logger.info(f"✅ [JIT AUTO] {result}")
+            logger.info(f"✅ [JIT MCP AUTO] {result}")
             return True
         else:
-            logger.error(f"❌ [JIT AUTO] {result.to_user_message()}")
+            logger.warning(f"❌ [JIT MCP AUTO] {result.to_user_message()}")
             return False
 
     async def _execute_tools(

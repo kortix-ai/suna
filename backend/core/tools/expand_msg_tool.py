@@ -179,7 +179,7 @@ class ExpandMessageTool(Tool):
         from core.jit.tool_cache import get_tool_cache
         
         tool_cache = get_tool_cache()
-        cached_guides = tool_cache.get_multiple(valid_tool_names)
+        cached_guides = await tool_cache.get_multiple(valid_tool_names)
         
         guides = []
         guides_to_cache = {}
@@ -203,7 +203,7 @@ class ExpandMessageTool(Tool):
                     guides_to_cache[tool_name] = fallback_guide
         
         if guides_to_cache:
-            tool_cache.set_multiple(guides_to_cache)
+            await tool_cache.set_multiple(guides_to_cache)
             logger.info(f"💾 [CACHE STORE] Cached {len(guides_to_cache)} new guides")
         
         if activation_failures:

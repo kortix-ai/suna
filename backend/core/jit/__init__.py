@@ -4,6 +4,9 @@ from .function_map import get_tool_for_function, build_function_map
 from .config import JITConfig
 from .dependencies import DependencyResolver, get_dependency_resolver, TOOL_DEPENDENCIES
 from .tool_cache import ToolGuideCache, get_tool_cache
+from .mcp_loader import MCPJITLoader
+from .mcp_dynamic_registry import get_toolkit_tools, get_all_available_tools_from_toolkits
+from .mcp_dynamic_registry import get_dynamic_registry, warm_cache_for_agent_toolkits
 from .result_types import (
     ActivationResult, ActivationSuccess, ActivationError,
     ActivationErrorType, BatchActivationResult,
@@ -22,6 +25,11 @@ __all__ = [
     'TOOL_DEPENDENCIES',
     'ToolGuideCache',
     'get_tool_cache',
+    'MCPJITLoader',
+    'get_toolkit_tools',
+    'get_all_available_tools_from_toolkits',
+    'get_dynamic_registry',
+    'warm_cache_for_agent_toolkits',
     'ActivationResult',
     'ActivationSuccess',
     'ActivationError',
