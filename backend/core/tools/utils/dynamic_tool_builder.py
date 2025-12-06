@@ -65,20 +65,18 @@ class DynamicToolBuilder:
         return tool_data
     
     def _parse_tool_name(self, tool_name: str) -> tuple[str, str, str]:
+        """Parse tool name and extract server info, but KEEP the full name to prevent collisions."""
+        # Extract server_name for description purposes only
         if tool_name.startswith("custom_"):
             parts = tool_name.split("_")
-            if len(parts) >= 3:
-                clean_tool_name = "_".join(parts[2:])
-                server_name = parts[1] if len(parts) > 1 else "unknown"
-            else:
-                clean_tool_name = tool_name
-                server_name = "unknown"
+            server_name = parts[1] if len(parts) > 1 else "unknown"
         else:
             parts = tool_name.split("_", 2)
-            clean_tool_name = parts[2] if len(parts) > 2 else tool_name
             server_name = parts[1] if len(parts) > 1 else "unknown"
         
-        method_name = clean_tool_name.replace('-', '_')
+        # KEEP the full tool name - don't strip prefix to prevent collision with built-in tools
+        method_name = tool_name.replace('-', '_')
+        clean_tool_name = tool_name
         return method_name, clean_tool_name, server_name
     
     def _build_description(self, tool_info: Dict[str, Any], server_name: str) -> str:
