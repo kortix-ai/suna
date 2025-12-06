@@ -1,6 +1,5 @@
 export { ThreadContent } from './ThreadContent';
 export type { ToolMessagePair } from './ThreadContent';
-export { ToolCallPanel } from './ToolCallPanel';
 export { ChatInput } from './ChatInput';
 export { 
   FileAttachmentRenderer, 

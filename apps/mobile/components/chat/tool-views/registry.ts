@@ -67,7 +67,7 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   
   // Command execution
   'execute-command': CommandToolView,
-  'check-command-output': CommandToolView,
+  'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
   
   // Task management
@@ -221,6 +221,9 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'delete-slide': PresentationToolView,
   'delete-presentation': PresentationToolView,
   'validate-slide': PresentationToolView,
+  'export_presentation': ExportToolView,
+  'export-presentation': ExportToolView,
+  // Legacy support for old tool names (backward compatibility)
   'export-to-pdf': ExportToolView,
   'export_to_pdf': ExportToolView,
   'export-to-pptx': ExportToolView,

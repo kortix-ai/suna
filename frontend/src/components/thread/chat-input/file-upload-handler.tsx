@@ -1,6 +1,6 @@
 'use client';
 
-import React, { forwardRef, useEffect } from 'react';
+import React, { forwardRef, useEffect, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Paperclip, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,7 +10,6 @@ import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { UploadedFile } from './chat-input';
@@ -287,7 +286,7 @@ interface FileUploadHandlerProps {
   isLoggedIn?: boolean;
 }
 
-export const FileUploadHandler = forwardRef<
+export const FileUploadHandler = memo(forwardRef<
   HTMLInputElement,
   FileUploadHandlerProps
 >(
@@ -352,33 +351,31 @@ export const FileUploadHandler = forwardRef<
 
     return (
       <>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-block">
-                <Button
-                  type="button"
-                  onClick={handleFileUpload}
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
-                  disabled={
-                    !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
-                  }
-                >
-                  {isUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Paperclip className="h-4 w-4" />
-                  )}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p>{isLoggedIn ? 'Attach files' : 'Please login to attach files'}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-block">
+              <Button
+                type="button"
+                onClick={handleFileUpload}
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                disabled={
+                  !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
+                }
+              >
+                {isUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Paperclip className="h-4 w-4" />
+                )}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            <p>{isLoggedIn ? 'Attach files' : 'Please login to attach files'}</p>
+          </TooltipContent>
+        </Tooltip>
 
         <input
           type="file"
@@ -390,7 +387,7 @@ export const FileUploadHandler = forwardRef<
       </>
     );
   },
-);
+));
 
 FileUploadHandler.displayName = 'FileUploadHandler';
 export { handleFiles, handleLocalFiles, uploadFiles };

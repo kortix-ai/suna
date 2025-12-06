@@ -3,13 +3,14 @@
 import React, {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AgentRunLimitError, ProjectLimitError, BillingError } from '@/lib/api/errors';
 import { toast } from 'sonner';
-import { ChatInput } from '@/components/thread/chat-input/chat-input';
+import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { useSidebar, SidebarContext } from '@/components/ui/sidebar';
 import { useAgentStream } from '@/hooks/messages';
 import { cn } from '@/lib/utils';
@@ -46,7 +47,13 @@ import {
   useAgents,
 } from '@/hooks/agents/use-agents';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
-import { useAgentSelection } from '@/stores/agent-selection-store';
+import { 
+  useSelectedAgentId, 
+  useSetSelectedAgent, 
+  useInitializeFromAgents, 
+  useGetCurrentAgent, 
+  useIsSunaAgentFn 
+} from '@/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { threadKeys } from '@/hooks/threads/keys';
 import { fileQueryKeys } from '@/hooks/files';
@@ -54,6 +61,7 @@ import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 import { useTranslations } from 'next-intl';
 import { backendApi } from '@/lib/api-client';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -74,33 +82,24 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   // State
   const [isSending, setIsSending] = useState(false);
-  const [fileViewerOpen, setFileViewerOpen] = useState(false);
-  const [fileToView, setFileToView] = useState<string | null>(null);
-  const [filePathList, setFilePathList] = useState<string[] | undefined>(
-    undefined,
-  );
-  const [chatInputValue, setChatInputValue] = useState('');
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
     useState(false);
   // Use Zustand store for agent selection persistence - skip in shared mode
-  // Always call hooks unconditionally, but disable queries for unauthenticated users
-  const agentSelection = useAgentSelection();
+  // Individual selectors prevent re-renders when unrelated store values change
+  const storeSelectedAgentId = useSelectedAgentId();
+  const storeSetSelectedAgent = useSetSelectedAgent();
+  const storeInitializeFromAgents = useInitializeFromAgents();
+  const storeGetCurrentAgent = useGetCurrentAgent();
+  const storeIsSunaAgentFn = useIsSunaAgentFn();
+  
   const agentsQuery = useAgents({}, { enabled: isAuthenticated && !isShared });
 
   // Use conditional values based on isShared
-  const {
-    selectedAgentId,
-    setSelectedAgent,
-    initializeFromAgents,
-    getCurrentAgent,
-    isSunaAgent,
-  } = isShared ? {
-    selectedAgentId: undefined,
-    setSelectedAgent: () => { },
-    initializeFromAgents: () => { },
-    getCurrentAgent: () => undefined,
-    isSunaAgent: false,
-  } : agentSelection;
+  const selectedAgentId = isShared ? undefined : storeSelectedAgentId;
+  const setSelectedAgent = isShared ? (() => { }) : storeSetSelectedAgent;
+  const initializeFromAgents = isShared ? (() => { }) : storeInitializeFromAgents;
+  const getCurrentAgent = isShared ? (() => undefined) : storeGetCurrentAgent;
+  const isSunaAgent = isShared ? false : storeIsSunaAgentFn;
 
   const agents = isShared ? [] : (agentsQuery?.data?.agents || []);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
@@ -118,6 +117,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastStreamStartedRef = useRef<string | null>(null); // Track last runId we started streaming for
   const pendingMessageRef = useRef<string | null>(null); // Store pending message to add when agent starts
+  const chatInputRef = useRef<ChatInputHandles>(null); // Ref for ChatInput imperative handle
 
   // Sidebar - safely use it if SidebarProvider is available (logged in users on share page will have it)
   // Use React.useContext directly which returns null if context is not available (doesn't throw)
@@ -169,6 +169,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef.current = true;
     setAutoOpenedPanel(true);
   }, [setIsSidePanelOpen, setAutoOpenedPanel]);
+
+  // Kortix Computer Store - for file viewing in the unified panel
+  const { openFileInComputer, openFileBrowser, reset: resetKortixComputerStore } = useKortixComputerStore();
 
   // Billing hooks - always call unconditionally, but disable for unauthenticated/shared
   const billingModal = useBillingModal();
@@ -227,8 +230,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     if (!isShared) {
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
+      // Reset kortix computer store state when switching threads
+      resetKortixComputerStore();
     }
-  }, [threadId, queryClient, isShared]);
+  }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 
   // Listen for sandbox-active event to invalidate file caches
   useEffect(() => {
@@ -355,6 +360,17 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
+
+  // Stable callback for filling chat input from prompt examples (via ref to avoid parent re-renders)
+  const handlePromptFill = useCallback((message: string) => {
+    chatInputRef.current?.setValue(message);
+  }, []);
+
+  // Stable callback for expanding tool preview panel
+  const handleExpandToolPreview = useCallback(() => {
+    setIsSidePanelOpen(true);
+    userClosedPanelRef.current = false;
+  }, [setIsSidePanelOpen]);
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
@@ -494,6 +510,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleStreamClose = useCallback(() => { }, []);
 
+  // Memoize the callbacks object to prevent useAgentStream from recreating handlers on every render
+  const streamCallbacks = useMemo(() => ({
+    onMessage: handleNewMessageFromStream,
+    onStatusChange: handleStreamStatusChange,
+    onError: handleStreamError,
+    onClose: handleStreamClose,
+    onToolCallChunk: handleStreamingToolCall,
+  }), [handleNewMessageFromStream, handleStreamStatusChange, handleStreamError, handleStreamClose, handleStreamingToolCall]);
+
   const {
     status: streamHookStatus,
     textContent: streamingTextContent,
@@ -503,16 +528,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     startStreaming,
     stopStreaming,
   } = useAgentStream(
-    {
-      onMessage: handleNewMessageFromStream,
-      onStatusChange: handleStreamStatusChange,
-      onError: handleStreamError,
-      onClose: handleStreamClose,
-      onToolCallChunk: (message) => {
-        // Pass the UnifiedMessage with metadata.tool_calls to handleStreamingToolCall
-        handleStreamingToolCall(message);
-      },
-    },
+    streamCallbacks,
     threadId,
     setMessages,
     threadAgentData?.agent?.agent_id,
@@ -586,8 +602,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           throw new Error(`Failed to start agent: ${error?.message || error}`);
         }
 
-        // Message sent successfully - now clear the input
-        setChatInputValue('');
+        // Message sent successfully - now clear the input via ref
+        chatInputRef.current?.setValue('');
 
         const agentResult = results[1].value;
         setUserInitiatedRun(true);
@@ -615,7 +631,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       setAgentRunId,
       isShared,
       selectedAgentId,
-      setChatInputValue,
     ],
   );
 
@@ -637,8 +652,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleOpenFileViewer = useCallback(
     (filePath?: string, filePathList?: string[]) => {
-      // Invalidate project query to ensure fresh data when opening modal
-      // The modal's refetchOnMount will handle the actual refetch
+      // Invalidate project query to ensure fresh data
       if (projectId) {
         queryClient.invalidateQueries({
           queryKey: threadKeys.project(projectId),
@@ -646,11 +660,22 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         });
       }
 
-      setFileToView(filePath || null);
-      setFilePathList(filePathList);
-      setFileViewerOpen(true);
+      // Open file in Kortix Computer panel (files will open in the side panel)
+      if (filePath) {
+        openFileInComputer(filePath, filePathList);
+        // Open the side panel if it's not already open
+        if (!isSidePanelOpen) {
+          toggleSidePanel();
+        }
+      } else {
+        // Just open the files tab without a specific file
+        openFileInComputer('/workspace');
+        if (!isSidePanelOpen) {
+          toggleSidePanel();
+        }
+      }
     },
-    [projectId, queryClient],
+    [projectId, queryClient, openFileInComputer, isSidePanelOpen, toggleSidePanel],
   );
 
   const toolViewAssistant = useCallback(
@@ -954,10 +979,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         isSidePanelOpen={isSidePanelOpen}
         onToggleSidePanel={toggleSidePanel}
         onViewFiles={handleOpenFileViewer}
-        fileViewerOpen={fileViewerOpen}
-        setFileViewerOpen={setFileViewerOpen}
-        fileToView={fileToView}
-        filePathList={filePathList}
         toolCalls={toolCalls}
         messages={messages as ApiMessageType[]}
         externalNavIndex={externalNavIndex}
@@ -990,10 +1011,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           onToggleSidePanel={toggleSidePanel}
           onProjectRenamed={handleProjectRenamed}
           onViewFiles={handleOpenFileViewer}
-          fileViewerOpen={fileViewerOpen}
-          setFileViewerOpen={setFileViewerOpen}
-          fileToView={fileToView}
-          filePathList={filePathList}
           toolCalls={toolCalls}
           messages={messages as ApiMessageType[]}
           externalNavIndex={externalNavIndex}
@@ -1037,7 +1054,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 agentAvatar={undefined}
                 scrollContainerRef={scrollContainerRef}
                 isPreviewMode={true}
-                onPromptFill={!isShared ? setChatInputValue : undefined}
+                onPromptFill={!isShared ? handlePromptFill : undefined}
                 threadId={threadId}
               />
             </div>
@@ -1047,6 +1064,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           {!isShared && (
             <div className="flex-shrink-0 border-t border-border/20  p-4">
               <ChatInput
+                ref={chatInputRef}
                 onSubmit={handleSubmitMessage}
                 placeholder={t('describeWhatYouNeed')}
                 loading={isSending}
@@ -1068,16 +1086,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 toolCalls={toolCalls}
                 toolCallIndex={currentToolIndex}
                 showToolPreview={!isSidePanelOpen && toolCalls.length > 0}
-                onExpandToolPreview={() => {
-                  setIsSidePanelOpen(true);
-                  userClosedPanelRef.current = false;
-                }}
+                onExpandToolPreview={handleExpandToolPreview}
                 defaultShowSnackbar="tokens"
                 showScrollToBottomIndicator={showScrollToBottom}
                 onScrollToBottom={scrollToBottom}
                 threadId={threadId}
-                value={chatInputValue}
-                onChange={setChatInputValue}
               />
             </div>
           )}
@@ -1120,6 +1133,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const chatInputElement = !isShared ? (
     <div className={cn('mx-auto', isMobile ? 'w-full' : 'max-w-3xl')}>
       <ChatInput
+        ref={chatInputRef}
         onSubmit={handleSubmitMessage}
         placeholder={t('describeWhatYouNeed')}
         loading={isSending}
@@ -1142,16 +1156,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         toolCalls={toolCalls}
         toolCallIndex={currentToolIndex}
         showToolPreview={!isSidePanelOpen && toolCalls.length > 0}
-        onExpandToolPreview={() => {
-          setIsSidePanelOpen(true);
-          userClosedPanelRef.current = false;
-        }}
+        onExpandToolPreview={handleExpandToolPreview}
         defaultShowSnackbar="tokens"
         showScrollToBottomIndicator={showScrollToBottom}
         onScrollToBottom={scrollToBottom}
         bgColor="bg-card"
-        value={chatInputValue}
-        onChange={setChatInputValue}
       />
     </div>
   ) : undefined;
@@ -1168,10 +1177,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         onToggleSidePanel={toggleSidePanel}
         onProjectRenamed={handleProjectRenamed}
         onViewFiles={handleOpenFileViewer}
-        fileViewerOpen={fileViewerOpen}
-        setFileViewerOpen={setFileViewerOpen}
-        fileToView={fileToView}
-        filePathList={filePathList}
         toolCalls={toolCalls}
         messages={messages as ApiMessageType[]}
         externalNavIndex={externalNavIndex}
@@ -1211,7 +1216,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           agentAvatar={undefined}
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}
-          onPromptFill={!isShared ? setChatInputValue : undefined}
+          onPromptFill={!isShared ? handlePromptFill : undefined}
         />
 
         {isShared && (

@@ -22,6 +22,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { AgentIdentifier } from '@/components/agents';
 import {
   FileAttachmentsGrid,
@@ -31,6 +32,8 @@ import { CircleDashed, CheckCircle2, AlertCircle, Info } from 'lucide-react-nati
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
+import { PromptExamples } from '@/components/shared';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -40,6 +43,7 @@ export interface ToolMessagePair {
 function renderStandaloneAttachments(
   attachments: string[],
   sandboxId?: string,
+  sandboxUrl?: string,
   onFilePress?: (filePath: string) => void,
   alignRight: boolean = false
 ) {
@@ -53,6 +57,7 @@ function renderStandaloneAttachments(
       <FileAttachmentsGrid
         filePaths={validAttachments}
         sandboxId={sandboxId}
+        sandboxUrl={sandboxUrl}
         compact={false}
         showPreviews={true}
         onFilePress={onFilePress}
@@ -106,11 +111,14 @@ interface MarkdownContentProps {
   threadId?: string;
   onFilePress?: (filePath: string) => void;
   sandboxId?: string;
+  sandboxUrl?: string;
   isLatestMessage?: boolean;
+  onPromptFill?: (prompt: string) => void;
 }
 
-const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, isLatestMessage }: MarkdownContentProps) {
+const MarkdownContent = React.memo(function MarkdownContent({ content, handleToolClick, messageId, threadId, onFilePress, sandboxId, sandboxUrl, isLatestMessage, onPromptFill }: MarkdownContentProps) {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const processedContent = useMemo(() => {
     let processed = preprocessTextOnlyToolsLocal(content);
@@ -138,6 +146,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
     processed = processed.replace(/^\s*\n/gm, '');
     processed = processed.trim();
 
+    // Auto-link plain URLs
+    processed = autoLinkUrls(processed);
+
     return processed;
   }, [content]);
 
@@ -156,13 +167,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
             <View key={`md-${lastIndex}`}>
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules}
-                onLinkPress={(url) => {
-                  Linking.openURL(url).catch(console.error);
-                  return false;
-                }}
+                rules={selectableRenderRules(isDark)}
               >
-                {textBeforeBlock}
+                {textBeforeBlock.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
             </View>
           );
@@ -177,33 +184,43 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
         if (toolName === 'ask') {
           const askText = toolCall.parameters.text || '';
           const attachments = toolCall.parameters.attachments || [];
+          const followUpAnswers = toolCall.parameters.follow_up_answers || [];
 
           const attachmentArray = Array.isArray(attachments) ? attachments :
             (typeof attachments === 'string' ? attachments.split(',').map(a => a.trim()) : []);
+          const answersArray = Array.isArray(followUpAnswers) ? followUpAnswers :
+            (typeof followUpAnswers === 'string' ? followUpAnswers.split(',').map(a => a.trim()).filter(Boolean) : []);
 
           contentParts.push(
-            <View key={`ask-${match?.index}-${index}`} className="space-y-3">
+            <View key={`ask-${match?.index}-${index}`} className="gap-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules}
-                onLinkPress={(url) => {
-                  Linking.openURL(url).catch(console.error);
-                  return false;
-                }}
+                rules={selectableRenderRules(isDark)}
               >
-                {askText}
+                {autoLinkUrls(askText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
-              <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5 mt-2">
+              <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
                 <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
                 <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
                   Kortix will automatically continue working once you provide your response.
                 </Text>
               </View>
+
+              {/* Follow-up Answers - Suggested responses using shared PromptExamples */}
+              {answersArray.length > 0 && (
+                <PromptExamples
+                  prompts={answersArray}
+                  onPromptClick={onPromptFill}
+                  title="Suggested responses"
+                  showTitle={true}
+                  maxPrompts={4}
+                />
+              )}
             </View>
           );
 
-          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, onFilePress);
+          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, sandboxUrl, onFilePress);
           if (standaloneAttachments) {
             contentParts.push(
               <View key={`ask-func-attachments-${match?.index}-${index}`}>
@@ -214,34 +231,37 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
         } else if (toolName === 'complete') {
           const completeText = toolCall.parameters.text || '';
           const attachments = toolCall.parameters.attachments || '';
+          const followUpPrompts = toolCall.parameters.follow_up_prompts || [];
 
           const attachmentArray = Array.isArray(attachments) ? attachments :
             (typeof attachments === 'string' ? attachments.split(',').map(a => a.trim()) : []);
+          const promptsArray = Array.isArray(followUpPrompts) ? followUpPrompts :
+            (typeof followUpPrompts === 'string' ? followUpPrompts.split(',').map(a => a.trim()).filter(Boolean) : []);
+
           contentParts.push(
-            <View key={`complete-${match?.index}-${index}`} className="space-y-3">
+            <View key={`complete-${match?.index}-${index}`} className="gap-3">
               <Markdown
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules}
-                onLinkPress={(url) => {
-                  Linking.openURL(url).catch(console.error);
-                  return false;
-                }}
+                rules={selectableRenderRules(isDark)}
               >
-                {completeText}
+                {autoLinkUrls(completeText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
               <TaskCompletedFeedback
                 taskSummary={completeText}
+                followUpPrompts={promptsArray.length > 0 ? promptsArray : undefined}
                 threadId={threadId || ''}
                 messageId={messageId || ''}
+                samplePromptsTitle="Sample prompts"
                 onFollowUpClick={(prompt) => {
-                  // TODO: Handle follow-up click - could trigger a new message
+                  console.log('📝 Inline follow-up clicked:', prompt);
+                  onPromptFill?.(prompt);
                 }}
               />
             </View>
           );
 
-          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, onFilePress);
+          const standaloneAttachments = renderStandaloneAttachments(attachmentArray, sandboxId, sandboxUrl, onFilePress);
           if (standaloneAttachments) {
             contentParts.push(
               <View key={`complete-func-attachments-${match?.index}-${index}`}>
@@ -276,13 +296,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
           <View key={`md-${lastIndex}`}>
             <Markdown
               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-              rules={selectableRenderRules}
-              onLinkPress={(url) => {
-                Linking.openURL(url).catch(console.error);
-                return false;
-              }}
+              rules={selectableRenderRules(isDark)}
             >
-              {remainingText}
+              {remainingText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
             </Markdown>
           </View>
         );
@@ -292,13 +308,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
     return <View>{contentParts.length > 0 ? contentParts : (
       <Markdown
         style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules}
-        onLinkPress={(url) => {
-          Linking.openURL(url).catch(console.error);
-          return false;
-        }}
+        rules={selectableRenderRules(isDark)}
       >
-        {processedContent}
+        {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
     )}</View>;
   }
@@ -306,13 +318,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
   return (
     <Markdown
       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-      rules={selectableRenderRules}
-      onLinkPress={(url) => {
-        Linking.openURL(url).catch(console.error);
-        return false;
-      }}
+      rules={selectableRenderRules(isDark)}
     >
-      {processedContent}
+      {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
     </Markdown>
   );
 });
@@ -474,7 +482,11 @@ interface ThreadContentProps {
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
   streamHookStatus?: string;
   sandboxId?: string;
+  /** Sandbox URL for direct file access (used for presentations and HTML previews) */
+  sandboxUrl?: string;
   agentName?: string;
+  /** Handler to auto-fill chat input with a prompt (for follow-up prompts) */
+  onPromptFill?: (prompt: string) => void;
 }
 
 interface MessageGroup {
@@ -493,7 +505,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
   onToolPress,
   streamHookStatus = "idle",
   sandboxId,
+  sandboxUrl,
   agentName = 'Suna',
+  onPromptFill,
 }) => {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -731,12 +745,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
     return maps;
   }, [groupedMessages]);
 
+  const { navigateToToolCall } = useKortixComputerStore();
+
   const handleToolPressInternal = useCallback((clickedToolMsg: UnifiedMessage) => {
     const clickedIndex = allToolMessages.findIndex(
       t => t.toolMessage.message_id === clickedToolMsg.message_id
     );
-    onToolPress?.(allToolMessages, clickedIndex >= 0 ? clickedIndex : 0);
-  }, [allToolMessages, onToolPress]);
+    if (clickedIndex >= 0) {
+      // Call onToolPress first to set selectedToolData, then navigate
+      onToolPress?.(allToolMessages, clickedIndex);
+      navigateToToolCall(clickedIndex);
+    }
+  }, [allToolMessages, onToolPress, navigateToToolCall]);
 
   return (
     <View className="flex-1 pt-4">
@@ -783,12 +803,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
           return (
             <View key={group.key} className="mb-6">
-              {renderStandaloneAttachments(attachments as string[], sandboxId, onFilePress, true)}
+              {renderStandaloneAttachments(attachments as string[], sandboxId, sandboxUrl, onFilePress, true)}
 
               {cleanContent && (
                 <View className="flex-row justify-end">
                   <View
-                    className="max-w-[85%] bg-card border border-border px-4 py-0.5"
+                    className="max-w-[85%] bg-card border border-border px-4 pb-0.5 pt-0"
                     style={{
                       borderRadius: 24,
                       borderBottomRightRadius: 8,
@@ -796,13 +816,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   >
                     <Markdown
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                      rules={selectableRenderRules}
-                      onLinkPress={(url) => {
-                        Linking.openURL(url).catch(console.error);
-                        return false;
-                      }}
+                      rules={selectableRenderRules(isDark)}
                     >
-                      {cleanContent}
+                      {autoLinkUrls(cleanContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                     </Markdown>
                   </View>
                 </View>
@@ -856,9 +872,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                     onToolClick: handleToolClick || (() => { }),
                     onFileClick: onFilePress,
                     sandboxId,
+                    sandboxUrl,
                     isLatestMessage,
-                    threadId: undefined, // TODO: pass threadId if available
-                    onPromptFill: undefined, // TODO: add prompt fill handler if needed
+                    threadId: message.thread_id,
+                    onPromptFill,
                     isDark, // Pass color scheme from parent
                   });
 
@@ -871,7 +888,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       )}
 
                       {linkedTools && linkedTools.length > 0 && (
-                        <View className="gap-2 mt-3">
+                        <View className="gap-1 mt-2">
                           {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => {
                             const handlePress = () => {
                               const clickedIndex = allToolMessages.findIndex(
@@ -896,7 +913,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
                 {/* Render streaming text content (XML tool calls or regular text) */}
                 {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && streamingTextContent && (
-                  <View className="mt-3">
+                  <View className="mt-2">
                     {(() => {
                       const rawContent = streamingTextContent || '';
 
@@ -927,13 +944,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                           {processedTextBeforeTag.trim() && (
                             <Markdown
                               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                              rules={selectableRenderRules}
-                              onLinkPress={(url) => {
-                                Linking.openURL(url).catch(console.error);
-                                return false;
-                              }}
+                              rules={selectableRenderRules(isDark)}
                             >
-                              {processedTextBeforeTag}
+                              {autoLinkUrls(processedTextBeforeTag).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                             </Markdown>
                           )}
                           {detectedTag && (
@@ -982,16 +995,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       const textToShow = askCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
 
                       return (
-                        <View className="mt-3">
+                        <View className="mt-2">
                           <Markdown
                             style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                            rules={selectableRenderRules}
-                            onLinkPress={(url) => {
-                              Linking.openURL(url).catch(console.error);
-                              return false;
-                            }}
+                            rules={selectableRenderRules(isDark)}
                           >
-                            {textToShow}
+                            {autoLinkUrls(textToShow).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                           </Markdown>
                         </View>
                       );
@@ -1051,7 +1060,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                   !streamingTextContent &&
                   !streamingToolCall &&
                   (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                    <View className="mt-3">
+                    <View className="mt-2">
                       <AgentLoader />
                     </View>
                   )}

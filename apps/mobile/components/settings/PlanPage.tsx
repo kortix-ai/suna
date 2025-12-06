@@ -128,6 +128,8 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
   const [error, setError] = useState<string | null>(null);
   // Per-tier billing period selection (tier_id -> 'monthly' | 'yearly')
   const [tierBillingPeriod, setTierBillingPeriod] = useState<Record<string, 'monthly' | 'yearly'>>({});
+  // Track if we've done initial auto-selection
+  const [hasAutoSelected, setHasAutoSelected] = useState(false);
 
   const purchaseButtonScale = useSharedValue(1);
 
@@ -215,6 +217,19 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
   const hasYearlyOption = (tierId: string): boolean => {
     return tierId !== 'free' && tierId !== 'tier_25_200'; // Ultra doesn't have yearly
   };
+
+  // Auto-select the first paid tier (Plus) when page loads and no plan is selected
+  useEffect(() => {
+    if (!hasAutoSelected && tierGroups.length > 0 && !selectedPlanOption && !isLoadingPricing) {
+      // Find the first paid tier (skip 'free')
+      const firstPaidGroup = tierGroups.find(g => g.tier.id !== 'free');
+      if (firstPaidGroup?.monthly) {
+        console.log('📋 Auto-selecting recommended plan:', firstPaidGroup.tier.name);
+        setSelectedPlanOption(firstPaidGroup.monthly);
+        setHasAutoSelected(true);
+      }
+    }
+  }, [tierGroups, selectedPlanOption, hasAutoSelected, isLoadingPricing]);
 
   const handleSubscriptionUpdate = () => {
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
@@ -789,18 +804,23 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
               </View>
             )}
 
+            {/* Legal disclaimer for subscription */}
+            <Text className="text-[10px] text-muted-foreground text-center mt-3 px-4">
+              {t('billing.subscriptionDisclaimer', 'Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24-hours before the end of the current period. Your account will be charged for renewal within 24-hours prior to the end of the current period. You can manage and cancel your subscriptions by going to your account settings on the App Store after purchase.')}
+            </Text>
+            
             <View className="flex-row justify-center mt-4 gap-4">
-              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/privacy')}>
-                <Text className="text-xs text-muted-foreground font-roobert-medium">
-                {t('billing.privacyPolicy', 'Privacy Policy')}
-              </Text>
-            </Pressable>
-              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/terms')}>
-                <Text className="text-xs text-muted-foreground font-roobert-medium">
-                {t('billing.termsOfService', 'Terms of Service')}
-              </Text>
-            </Pressable>
-          </View>
+              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=privacy')}>
+                <Text className="text-xs text-muted-foreground font-roobert-medium underline">
+                  {t('billing.privacyPolicy', 'Privacy Policy')}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => WebBrowser.openBrowserAsync('https://www.kortix.com/legal?tab=terms')}>
+                <Text className="text-xs text-muted-foreground font-roobert-medium underline">
+                  {t('billing.termsOfService', 'Terms of Service')}
+                </Text>
+              </Pressable>
+            </View>
         </AnimatedView>
         );
       })()}

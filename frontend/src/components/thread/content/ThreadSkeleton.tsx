@@ -109,7 +109,7 @@ export function ThreadSkeleton({
     return (
         <div className="flex h-screen">
             <div
-                className="flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]"
+                className="flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out sm:mr-[50vw]"
             >
                 {/* Skeleton Header */}
                 {showHeader && (
@@ -216,7 +216,7 @@ export function ThreadSkeleton({
             </div>
 
             {/* Side Panel - Elegant floating skeleton matching actual design */}
-            <div className="hidden sm:block fixed top-2 right-2 bottom-4 w-[40vw] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[645px] pointer-events-none z-30">
+            <div className="hidden sm:block fixed top-2 right-2 bottom-4 w-[calc(50vw-1rem)] pointer-events-none z-30">
                 <div className="h-full border rounded-3xl bg-card pointer-events-auto flex flex-col overflow-hidden">
                     {/* Header */}
                     <div className="pt-4 pl-4 pr-4">

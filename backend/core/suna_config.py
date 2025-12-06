@@ -13,6 +13,7 @@ SUNA_CONFIG = {
         "sb_files_tool": True,
         "sb_expose_tool": True,
         "sb_upload_file_tool": True,
+        "sb_git_sync": True,
         
         # Search and research tools
         "web_search_tool": True,

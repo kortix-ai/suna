@@ -9,6 +9,7 @@ from datetime import datetime
 import re
 import asyncio
 import httpx
+from urllib.parse import unquote
 
 @tool_metadata(
     display_name="Presentations",
@@ -1078,112 +1079,82 @@ print(json.dumps(result))
         except Exception as e:
             return self.fail_response(f"Failed to validate slide: {str(e)}")
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "export_to_pptx",
-            "description": "Export a presentation to PPTX format. The PPTX file can be stored locally in the sandbox for repeated downloads, or returned directly. Use store_locally=True to enable the download button in the UI for repeated downloads.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "presentation_name": {
-                        "type": "string",
-                        "description": "Name of the presentation to export"
-                    },
-                    "store_locally": {
-                        "type": "boolean",
-                        "description": "If True, stores the PPTX file in the sandbox at /workspace/presentations/{presentation_name}/{presentation_name}.pptx for repeated downloads. If False, returns the file content directly without storing.",
-                        "default": True
-                    }
-                },
-                "required": ["presentation_name"]
-            }
-        }
-    })
-    async def export_to_pptx(self, presentation_name: str, store_locally: bool = True) -> ToolResult:
-        """Export presentation to PPTX format via sandbox conversion service"""
+    async def _export_to_format(
+        self, 
+        presentation_name: str, 
+        safe_name: str, 
+        presentation_path: str, 
+        format_type: str,
+        store_locally: bool,
+        client: httpx.AsyncClient
+    ) -> Dict:
+        """Internal helper to export to a specific format (pptx or pdf)"""
         try:
-            await self._ensure_sandbox()
+            convert_response = await client.post(
+                f"{self.sandbox_url}/presentation/convert-to-{format_type}",
+                json={
+                    "presentation_path": presentation_path,
+                    "download": not store_locally
+                },
+                timeout=180.0
+            )
             
-            if not presentation_name:
-                return self.fail_response("Presentation name is required.")
-            
-            safe_name = self._sanitize_filename(presentation_name)
-            presentation_path = f"/workspace/{self.presentations_dir}/{safe_name}"
-            
-            # Verify presentation exists
-            metadata = await self._load_presentation_metadata(presentation_path)
-            if not metadata.get("slides"):
-                return self.fail_response(f"Presentation '{presentation_name}' not found or has no slides")
-            
-            # Call sandbox conversion endpoint
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                convert_response = await client.post(
-                    f"{self.sandbox_url}/presentation/convert-to-pptx",
-                    json={
-                        "presentation_path": presentation_path,
-                        "download": not store_locally
-                    }
-                )
+            if not convert_response.is_success:
+                error_detail = convert_response.json().get("detail", "Unknown error") if convert_response.headers.get("content-type", "").startswith("application/json") else convert_response.text
+                return {"success": False, "format": format_type, "error": f"{format_type.upper()} conversion failed: {error_detail}"}
                 
-                if not convert_response.is_success:
-                    error_detail = convert_response.json().get("detail", "Unknown error") if convert_response.headers.get("content-type", "").startswith("application/json") else convert_response.text
-                    return self.fail_response(f"PPTX conversion failed: {error_detail}")
-                
-                if store_locally:
-                    # Response is JSON with download URL
-                    result = convert_response.json()
-                    pptx_filename = result.get("filename")
-                    
-                    # File is already stored in /workspace/downloads/ by the conversion service
-                    # Optionally copy to presentation directory for organization
-                    downloads_path = f"/workspace/downloads/{pptx_filename}"
-                    presentation_pptx_path = f"{presentation_path}/{safe_name}.pptx"
-                    
-                    try:
-                        # Copy to presentation directory as well for easy access
-                        pptx_content = await self.sandbox.fs.download_file(downloads_path)
-                        await self.sandbox.fs.upload_file(pptx_content, presentation_pptx_path)
-                    except Exception as e:
-                        # If copy fails, file is still available in downloads, so continue
-                        pass
-                    
-                    return self.success_response({
-                        "message": f"Presentation '{presentation_name}' exported to PPTX successfully",
-                        "presentation_name": presentation_name,
-                        "pptx_file": f"{self.presentations_dir}/{safe_name}/{safe_name}.pptx",
-                        "download_url": f"/workspace/downloads/{pptx_filename}",
-                        "total_slides": result.get("total_slides"),
-                        "stored_locally": True,
-                        "note": "PPTX file is stored in /workspace/downloads/ and can be downloaded repeatedly"
-                    })
-                else:
-                    # Response is the PPTX file content directly
-                    pptx_content = convert_response.content
-                    filename = f"{safe_name}.pptx"
-                    
-                    # Extract filename from Content-Disposition if available
-                    content_disposition = convert_response.headers.get("Content-Disposition", "")
-                    if "filename=" in content_disposition:
-                        filename = content_disposition.split('filename="')[1].split('"')[0]
-                    
-                    return self.success_response({
-                        "message": f"Presentation '{presentation_name}' exported to PPTX successfully",
-                        "presentation_name": presentation_name,
-                        "filename": filename,
-                        "file_size": len(pptx_content),
-                        "stored_locally": False,
-                        "note": "PPTX file content returned directly (not stored in sandbox)"
-                    })
-        
         except Exception as e:
-            return self.fail_response(f"Failed to export presentation to PPTX: {str(e)}")
+            return {"success": False, "format": format_type, "error": str(e)}
+        
+        # Process successful response
+        try:
+            
+            if store_locally:
+                result = convert_response.json()
+                filename = result.get("filename")
+                downloads_path = f"/workspace/downloads/{filename}"
+                presentation_file_path = f"{presentation_path}/{safe_name}.{format_type}"
+                
+                try:
+                    file_content = await self.sandbox.fs.download_file(downloads_path)
+                    await self.sandbox.fs.upload_file(file_content, presentation_file_path)
+                except Exception:
+                    pass
+                
+                return {
+                    "success": True,
+                    "format": format_type,
+                    "file": f"{self.presentations_dir}/{safe_name}/{safe_name}.{format_type}",
+                    "download_url": f"/workspace/downloads/{filename}",
+                    "total_slides": result.get("total_slides"),
+                    "stored_locally": True
+                }
+            else:
+                file_content = convert_response.content
+                filename = f"{safe_name}.{format_type}"
+                
+                content_disposition = convert_response.headers.get("Content-Disposition", "")
+                if "filename*=UTF-8''" in content_disposition:
+                    encoded_name = content_disposition.split("filename*=UTF-8''")[1].split(';')[0]
+                    filename = unquote(encoded_name)
+                elif 'filename="' in content_disposition:
+                    filename = content_disposition.split('filename="')[1].split('"')[0]
+                
+                return {
+                    "success": True,
+                    "format": format_type,
+                    "filename": filename,
+                    "file_size": len(file_content),
+                    "stored_locally": False
+                }
+        except Exception as e:
+            return {"success": False, "format": format_type, "error": str(e)}
 
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "export_to_pdf",
-            "description": "Export a presentation to PDF format. The PDF file can be stored locally in the sandbox for repeated downloads, or returned directly. Use store_locally=True to enable the download button in the UI for repeated downloads.",
+            "name": "export_presentation",
+            "description": "Export a presentation to both PPTX and PDF formats simultaneously. Both exports run in parallel for faster completion. Files can be stored locally in the sandbox for repeated downloads, or returned directly. Use store_locally=True to enable the download button in the UI for repeated downloads.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1193,7 +1164,7 @@ print(json.dumps(result))
                     },
                     "store_locally": {
                         "type": "boolean",
-                        "description": "If True, stores the PDF file in the sandbox at /workspace/downloads/ for repeated downloads. If False, returns the file content directly without storing.",
+                        "description": "If True, stores the files in the sandbox at /workspace/downloads/ for repeated downloads. If False, returns the file content directly without storing.",
                         "default": True
                     }
                 },
@@ -1201,8 +1172,8 @@ print(json.dumps(result))
             }
         }
     })
-    async def export_to_pdf(self, presentation_name: str, store_locally: bool = True) -> ToolResult:
-        """Export presentation to PDF format via sandbox conversion service"""
+    async def export_presentation(self, presentation_name: str, store_locally: bool = True) -> ToolResult:
+        """Export presentation to both PPTX and PDF formats in parallel"""
         try:
             await self._ensure_sandbox()
             
@@ -1217,65 +1188,62 @@ print(json.dumps(result))
             if not metadata.get("slides"):
                 return self.fail_response(f"Presentation '{presentation_name}' not found or has no slides")
             
-            # Call sandbox conversion endpoint
+            total_slides = len(metadata.get("slides", {}))
+            
+            # Run both exports in parallel
             async with httpx.AsyncClient(timeout=120.0) as client:
-                convert_response = await client.post(
-                    f"{self.sandbox_url}/presentation/convert-to-pdf",
-                    json={
-                        "presentation_path": presentation_path,
-                        "download": not store_locally
-                    }
+                pptx_task = self._export_to_format(
+                    presentation_name, safe_name, presentation_path, "pptx", store_locally, client
+                )
+                pdf_task = self._export_to_format(
+                    presentation_name, safe_name, presentation_path, "pdf", store_locally, client
                 )
                 
-                if not convert_response.is_success:
-                    error_detail = convert_response.json().get("detail", "Unknown error") if convert_response.headers.get("content-type", "").startswith("application/json") else convert_response.text
-                    return self.fail_response(f"PDF conversion failed: {error_detail}")
-                
-                if store_locally:
-                    # Response is JSON with download URL
-                    result = convert_response.json()
-                    pdf_filename = result.get("filename")
-                    
-                    # File is already stored in /workspace/downloads/ by the conversion service
-                    # Optionally copy to presentation directory for organization
-                    downloads_path = f"/workspace/downloads/{pdf_filename}"
-                    presentation_pdf_path = f"{presentation_path}/{safe_name}.pdf"
-                    
-                    try:
-                        # Copy to presentation directory as well for easy access
-                        pdf_content = await self.sandbox.fs.download_file(downloads_path)
-                        await self.sandbox.fs.upload_file(pdf_content, presentation_pdf_path)
-                    except Exception as e:
-                        # If copy fails, file is still available in downloads, so continue
-                        pass
-                    
-                    return self.success_response({
-                        "message": f"Presentation '{presentation_name}' exported to PDF successfully",
-                        "presentation_name": presentation_name,
-                        "pdf_file": f"{self.presentations_dir}/{safe_name}/{safe_name}.pdf",
-                        "download_url": f"/workspace/downloads/{pdf_filename}",
-                        "total_slides": result.get("total_slides"),
-                        "stored_locally": True,
-                        "note": "PDF file is stored in /workspace/downloads/ and can be downloaded repeatedly"
-                    })
-                else:
-                    # Response is the PDF file content directly
-                    pdf_content = convert_response.content
-                    filename = f"{safe_name}.pdf"
-                    
-                    # Extract filename from Content-Disposition if available
-                    content_disposition = convert_response.headers.get("Content-Disposition", "")
-                    if "filename=" in content_disposition:
-                        filename = content_disposition.split('filename="')[1].split('"')[0]
-                    
-                    return self.success_response({
-                        "message": f"Presentation '{presentation_name}' exported to PDF successfully",
-                        "presentation_name": presentation_name,
-                        "filename": filename,
-                        "file_size": len(pdf_content),
-                        "stored_locally": False,
-                        "note": "PDF file content returned directly (not stored in sandbox)"
-                    })
+                pptx_result, pdf_result = await asyncio.gather(pptx_task, pdf_task)
+            
+            # Build response
+            response_data = {
+                "presentation_name": presentation_name,
+                "total_slides": total_slides,
+                "exports": {}
+            }
+            
+            errors = []
+            successes = []
+            
+            # Process PPTX result
+            if pptx_result.get("success"):
+                response_data["exports"]["pptx"] = {
+                    "file": pptx_result.get("file"),
+                    "download_url": pptx_result.get("download_url"),
+                    "stored_locally": pptx_result.get("stored_locally")
+                }
+                successes.append("PPTX")
+            else:
+                errors.append(f"PPTX: {pptx_result.get('error')}")
+            
+            # Process PDF result
+            if pdf_result.get("success"):
+                response_data["exports"]["pdf"] = {
+                    "file": pdf_result.get("file"),
+                    "download_url": pdf_result.get("download_url"),
+                    "stored_locally": pdf_result.get("stored_locally")
+                }
+                successes.append("PDF")
+            else:
+                errors.append(f"PDF: {pdf_result.get('error')}")
+            
+            # Set message based on results
+            if len(successes) == 2:
+                response_data["message"] = f"Presentation '{presentation_name}' exported to PPTX and PDF successfully"
+                response_data["note"] = "Both files are stored in /workspace/downloads/ and can be downloaded repeatedly"
+            elif len(successes) == 1:
+                response_data["message"] = f"Presentation '{presentation_name}' exported to {successes[0]} successfully. {errors[0] if errors else ''}"
+                response_data["partial_success"] = True
+            else:
+                return self.fail_response(f"Failed to export presentation: {'; '.join(errors)}")
+            
+            return self.success_response(response_data)
         
         except Exception as e:
-            return self.fail_response(f"Failed to export presentation to PDF: {str(e)}")
+            return self.fail_response(f"Failed to export presentation: {str(e)}")

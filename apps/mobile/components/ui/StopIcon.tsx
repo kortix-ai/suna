@@ -10,8 +10,8 @@ interface StopIconProps extends SvgProps {
 const StopIconBase = ({ size = 24, ...props }: StopIconProps) => {
     return (
         <Svg
-            width={size}
-            height={size}
+            width={24}
+            height={24}
             viewBox="0 0 24 24"
             fill="none"
             {...props}

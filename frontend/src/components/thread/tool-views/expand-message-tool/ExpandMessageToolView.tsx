@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import Markdown from 'react-markdown';
+import { UnifiedMarkdown } from '@/components/markdown';
 
 export function ExpandMessageToolView({
   toolCall,
@@ -147,9 +147,7 @@ export function ExpandMessageToolView({
             {/* Expanded Message Content - Simple display */}
             {message ? (
               <div className="bg-muted/30 rounded-lg p-4 border border-border overflow-hidden">
-                <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 break-words overflow-wrap-anywhere [&_pre]:whitespace-pre-wrap [&_pre]:break-words [&_code]:break-words">
-                  <Markdown>{message}</Markdown>
-                </div>
+                <UnifiedMarkdown content={message} />
               </div>
             ) : !isStreaming ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">

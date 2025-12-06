@@ -24,7 +24,9 @@ import {
   type FileInfo,
 } from '@/lib/api/sandbox';
 import { toast } from 'sonner';
+import { useDownloadRestriction } from '@/hooks/billing';
 import { useDraggable } from '@dnd-kit/core';
+import { cn } from '@/lib/utils';
 
 // Draggable file item component
 function DraggableFileItem({
@@ -90,6 +92,11 @@ export function FileBrowser({
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<string[]>([]);
+  
+  // Download restriction for free tier users
+  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+    featureName: 'files',
+  });
 
   // Reset state when dialog opens
   useEffect(() => {
@@ -174,6 +181,10 @@ export function FileBrowser({
   };
 
   const handleAddToKnowledgeBase = () => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
     if (selectedFile && fileContent) {
       // Create a blob and download the file so user can upload it to knowledge base
       const blob = new Blob([fileContent], { type: 'text/plain' });
@@ -203,29 +214,41 @@ export function FileBrowser({
         </DialogHeader>
 
         {/* Breadcrumbs */}
-        <div className="flex items-center space-x-1 text-sm py-2 border-b">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2"
+        <div className="flex items-center gap-3 py-3 border-b bg-zinc-50/80 dark:bg-zinc-900/80 -mx-6 px-6 -mt-2">
+          <button
             onClick={() => navigateToBreadcrumb(-1)}
+            className="relative p-2 rounded-lg border flex-shrink-0 bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
+            title="Root"
           >
-            <Folder className="h-4 w-4 mr-1" />
-            root
-          </Button>
-          {breadcrumbs.map((part, index) => (
-            <div key={index} className="flex items-center">
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2"
-                onClick={() => navigateToBreadcrumb(index)}
-              >
-                {part}
-              </Button>
+            <Folder className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+          </button>
+          
+          {breadcrumbs.length === 0 ? (
+            <span className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+              Root
+            </span>
+          ) : (
+            <div className="flex items-center gap-1.5 min-w-0">
+              {breadcrumbs.map((part, index) => (
+                <div key={index} className="flex items-center gap-1.5">
+                  {index > 0 && (
+                    <span className="text-zinc-400 dark:text-zinc-600">/</span>
+                  )}
+                  <button
+                    onClick={() => navigateToBreadcrumb(index)}
+                    className={cn(
+                      "text-base transition-colors truncate max-w-[150px]",
+                      index === breadcrumbs.length - 1 
+                        ? "text-zinc-900 dark:text-zinc-100 font-medium" 
+                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                    )}
+                  >
+                    {part}
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4 flex-1 overflow-hidden">

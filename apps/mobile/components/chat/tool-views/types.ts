@@ -34,11 +34,20 @@ export interface ToolViewProps {
   /** Whether tool is currently executing */
   isStreaming?: boolean;
   
+  /** Streaming text content (for partial JSON during streaming) */
+  streamingText?: string;
+  
   /** Project context (optional) */
   project?: {
     id: string;
     name: string;
-    sandbox_id?: string;
+    /** Sandbox information */
+    sandbox?: {
+      id?: string;
+      sandbox_url?: string;
+      vnc_preview?: string;
+      pass?: string;
+    };
   };
   
   /** Current index in the tool call list (for determining if this is the latest) */
@@ -52,6 +61,9 @@ export interface ToolViewProps {
   
   /** Optional thread ID */
   threadId?: string;
+  
+  /** Handler to auto-fill chat input with a prompt (for follow-up prompts/answers) */
+  onPromptFill?: (prompt: string) => void;
 }
 
 export interface ToolViewComponent {

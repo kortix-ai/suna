@@ -17,9 +17,11 @@ import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 import { isAskOrCompleteTool, extractTextFromArguments } from '@/lib/utils/streaming-utils';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
+import { PromptExamples } from '@/components/shared';
 import { parseXmlToolCalls, preprocessTextOnlyTools } from '@/lib/utils/tool-parser';
 
 export interface AssistantMessageRendererProps {
@@ -27,6 +29,8 @@ export interface AssistantMessageRendererProps {
   onToolClick: (assistantMessageId: string | null, toolName: string) => void;
   onFileClick?: (filePath: string) => void;
   sandboxId?: string;
+  /** Sandbox URL for direct file access (used for presentations and HTML previews) */
+  sandboxUrl?: string;
   isLatestMessage?: boolean;
   threadId?: string;
   onPromptFill?: (message: string) => void;
@@ -100,7 +104,7 @@ function renderAskToolCall(
   index: number,
   props: AssistantMessageRendererProps
 ): React.ReactNode {
-  const { onFileClick, sandboxId, isLatestMessage, onPromptFill, isDark = false } = props;
+  const { onFileClick, sandboxId, sandboxUrl, isLatestMessage, onPromptFill, isDark = false } = props;
 
   let args: Record<string, any> = {};
   if (toolCall.arguments) {
@@ -120,23 +124,20 @@ function renderAskToolCall(
   const followUpAnswers = normalizeArrayValue(args.follow_up_answers);
 
   return (
-    <View key={`ask-${index}`} className="space-y-3">
+    <View key={`ask-${index}`} className="gap-3">
       {askText && (
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
-          rules={selectableRenderRules}
-          onLinkPress={(url) => {
-            Linking.openURL(url).catch(console.error);
-            return false;
-          }}
+          rules={selectableRenderRules(isDark)}
         >
-          {askText}
+          {autoLinkUrls(askText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
       )}
       {attachments.length > 0 && (
         <FileAttachmentsGrid
           filePaths={attachments}
           sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
           compact={false}
           showPreviews={true}
           onFilePress={onFileClick}
@@ -150,7 +151,16 @@ function renderAskToolCall(
           </Text>
         </View>
       )}
-      {/* TODO: Add PromptExamples component for mobile if needed */}
+      {/* Follow-up Answers - Suggested responses using shared PromptExamples */}
+      {isLatestMessage && followUpAnswers.length > 0 && (
+        <PromptExamples
+          prompts={followUpAnswers}
+          onPromptClick={onPromptFill}
+          title="Suggested responses"
+          showTitle={true}
+          maxPrompts={4}
+        />
+      )}
     </View>
   );
 }
@@ -163,7 +173,7 @@ function renderCompleteToolCall(
   index: number,
   props: AssistantMessageRendererProps
 ): React.ReactNode {
-  const { onFileClick, sandboxId, isLatestMessage, threadId, message, onPromptFill, isDark = false } = props;
+  const { onFileClick, sandboxId, sandboxUrl, isLatestMessage, threadId, message, onPromptFill, isDark = false } = props;
 
   let args: Record<string, any> = {};
   if (toolCall.arguments) {
@@ -183,23 +193,20 @@ function renderCompleteToolCall(
   const followUpPrompts = normalizeArrayValue(args.follow_up_prompts);
 
   return (
-    <View key={`complete-${index}`} className="space-y-3">
+    <View key={`complete-${index}`} className="gap-3">
       {completeText && (
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
-          rules={selectableRenderRules}
-          onLinkPress={(url) => {
-            Linking.openURL(url).catch(console.error);
-            return false;
-          }}
+          rules={selectableRenderRules(isDark)}
         >
-          {completeText}
+          {autoLinkUrls(completeText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
       )}
       {attachments.length > 0 && (
         <FileAttachmentsGrid
           filePaths={attachments}
           sandboxId={sandboxId}
+          sandboxUrl={sandboxUrl}
           compact={false}
           showPreviews={true}
           onFilePress={onFileClick}
@@ -209,6 +216,7 @@ function renderCompleteToolCall(
         taskSummary={completeText}
         followUpPrompts={isLatestMessage && followUpPrompts.length > 0 ? followUpPrompts : undefined}
         onFollowUpClick={(prompt) => onPromptFill?.(prompt)}
+        samplePromptsTitle="Sample prompts"
         threadId={threadId}
         messageId={message.message_id}
       />
@@ -318,13 +326,9 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       <Markdown
         key="text-content"
         style={isDark ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules}
-        onLinkPress={(url) => {
-          Linking.openURL(url).catch(console.error);
-          return false;
-        }}
+        rules={selectableRenderRules(isDark)}
       >
-        {textContent}
+        {autoLinkUrls(textContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
     );
   }
@@ -345,9 +349,8 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   if (contentParts.length === 0) return null;
 
   return (
-    <View className="space-y-2">
+    <View className="gap-2">
       {contentParts}
     </View>
   );
 }
-
