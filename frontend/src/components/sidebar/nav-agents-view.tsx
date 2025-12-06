@@ -77,7 +77,7 @@ const AgentItem: React.FC<{
                         <DropdownMenuTrigger asChild>
                             <button
                                 className={cn(
-                                    "absolute top-1/2 right-0 -translate-y-1/2 p-1 rounded-md hover:bg-accent transition-all text-muted-foreground",
+                                    "absolute top-1/2 right-0 -translate-y-1/2 p-1 rounded-2xl hover:bg-accent transition-all text-muted-foreground",
                                     isHoveringCard ? "opacity-100" : "opacity-0 pointer-events-none"
                                 )}
                                 onClick={(e) => {
@@ -179,7 +179,7 @@ export function NavAgentsView() {
     };
 
     return (
-        <div>
+        <div className="w-full">
             <div className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-32">
                 {(state !== 'collapsed' || isMobile) && (
                     <>

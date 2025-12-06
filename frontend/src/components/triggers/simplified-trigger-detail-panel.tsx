@@ -106,7 +106,7 @@ const ExecutionItem = ({ execution }: { execution: TriggerExecution }) => {
       href={`/threads/${execution.thread_id}`}
       className="block"
     >
-      <div className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors group">
+      <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-muted/50 transition-colors group">
         <div className="flex items-center gap-3">
           {getStatusIcon(execution.status)}
           <div>
@@ -424,7 +424,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
             </div>
             <Link
               href={`/agents/config/${trigger.agent_id}`}
-              className="p-2 rounded-lg hover:bg-muted transition-colors"
+              className="p-2 rounded-2xl hover:bg-muted transition-colors"
             >
               <ExternalLink className="h-4 w-4 text-muted-foreground" />
             </Link>
