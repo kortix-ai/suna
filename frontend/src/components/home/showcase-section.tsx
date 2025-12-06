@@ -195,7 +195,10 @@ export function ShowCaseSection() {
                                                 alt={worker.imageAlt}
                                                 fill
                                                 className="object-cover"
+                                                quality={100}
                                                 priority={worker.id === workers[0].id}
+                                                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                                unoptimized={true}
                                             />
                                         </div>
 
