@@ -208,10 +208,10 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
                 disabled={loading || (disabled && !isAgentRunning)}
               >
-                <Plug className="h-4 w-4" />
+                <Plug className="h-5 w-5" />
               </Button>
               {isFreeTier && !isLocalMode() && (
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
@@ -364,7 +364,7 @@ const ModeButton = memo(function ModeButton({
         }
       }}
       className={cn(
-        "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
+        "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
         !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
         isModeDismissing && "animate-out fade-out-0 zoom-out-95"
       )}
@@ -504,7 +504,7 @@ const SubmitButton = memo(function SubmitButton({
             onClick={isAgentRunning && onStopAgent ? onStopAgent : onSubmit}
             size="sm"
             className={cn(
-              "w-8 h-8 flex-shrink-0 self-end rounded-xl relative z-10",
+              "w-10 h-10 flex-shrink-0 self-end border-[1.5px] border-border rounded-2xl relative z-10",
               (loading || isUploading) && "opacity-100 [&[disabled]]:opacity-100"
             )}
             disabled={isDisabled}
@@ -1151,7 +1151,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     // Controls are split into left and right to minimize re-renders
     // Memoized to prevent recreation on every keystroke
     const leftControls = useMemo(() => (
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink overflow-visible">
+      <div className="flex items-center gap-2 min-w-0 flex-shrink overflow-visible">
         {!hideAttachments && (
           <FileUploadHandler
             ref={fileInputRef}
@@ -1281,7 +1281,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }}
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl`}>
+              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-2xl`}>
                 {(uploadedFiles.length > 0 || isUploading) && (
                   <div className="relative">
                     <AttachmentGroup
@@ -1316,7 +1316,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 <div className="flex items-center justify-between gap-1 overflow-x-auto scrollbar-none relative">
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'integrations' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <div className="flex items-center -space-x-0.5">
                       {quickIntegrations.every(int => integrationIcons[int.id as keyof typeof integrationIcons]) ? (
@@ -1346,21 +1346,21 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'tools' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Wrench className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Tools</span>
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'instructions' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Brain className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Instructions</span>
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'knowledge' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Database className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Knowledge</span>
@@ -1368,7 +1368,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'triggers' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Zap className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Triggers</span>

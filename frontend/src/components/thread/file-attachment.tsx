@@ -776,14 +776,14 @@ export function FileAttachment({
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={handleDownload}
-                                    className="px-3 py-1.5 bg-secondary/10 hover:bg-secondary/20 rounded-md text-sm flex items-center gap-1"
+                                    className="px-3 py-1.5 bg-secondary/10 hover:bg-secondary/20 rounded-2xl text-sm flex items-center gap-1"
                                 >
                                     <Download size={14} />
                                     Download
                                 </button>
                                 <button
                                     onClick={handleClick}
-                                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-md text-sm flex items-center gap-1"
+                                    className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 rounded-2xl text-sm flex items-center gap-1"
                                 >
                                     <ExternalLink size={14} />
                                     Open in viewer

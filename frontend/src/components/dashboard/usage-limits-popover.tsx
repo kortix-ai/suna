@@ -22,7 +22,7 @@ export function UsageLimitsPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button size='icon' variant='outline'>
+        <Button size='icon' variant='outline' className='h-[41px] w-[41px] rounded-full bg-transparent hover:bg-transparent dark:bg-transparent dark:hover:bg-transparent'>
           <Info className='h-4 w-4'/>
         </Button>
       </PopoverTrigger>

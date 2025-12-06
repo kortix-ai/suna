@@ -135,7 +135,7 @@ export function AgentIconEditorDialog({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="h-10 w-12 rounded-md border cursor-pointer hover:border-primary/50 transition-colors"
+                className="h-10 w-12 rounded-2xl border cursor-pointer hover:border-primary/50 transition-colors"
                 style={{ backgroundColor: color }}
                 aria-label={`${label} color`}
               />
