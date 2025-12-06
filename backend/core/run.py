@@ -33,6 +33,7 @@ from core.tools.company_search_tool import CompanySearchTool
 from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
 from core.tools.vapi_voice_tool import VapiVoiceTool
+from core.tools.sb_git_sync import SandboxGitTool
 
 load_dotenv()
 
@@ -115,6 +116,11 @@ class ToolManager:
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(MessageTool)
         self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
+        # Register local sandbox git tool as a core tool (requires project context)
+        try:
+            self.thread_manager.add_tool(SandboxGitTool, project_id=self.project_id, thread_manager=self.thread_manager)
+        except Exception as e:
+            logger.warning(f"Failed to register SandboxGitTool as core tool: {e}")
     
     def _register_sandbox_tools(self, disabled_tools: List[str]):
         """Register sandbox-related tools with granular control."""
@@ -814,7 +820,7 @@ class AgentRunner:
             'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
-            'sb_docs_tool',
+            'sb_docs_tool', 'sb_git_sync',
             'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
             'agent_creation_tool'

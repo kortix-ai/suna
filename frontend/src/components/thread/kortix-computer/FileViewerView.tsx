@@ -8,6 +8,7 @@ import {
   Loader2,
   AlertTriangle,
   Check,
+  RotateCcw,
   ChevronLeft,
   ChevronRight,
   Maximize2,
@@ -17,6 +18,7 @@ import {
   Home,
   Save,
   AlertCircle,
+  ChevronDown,
 } from 'lucide-react';
 import {
   EditableFileRenderer,
@@ -51,9 +53,63 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
+
+
+
+// Define API_URL
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+
+// API Helper: Get file history (git commits)
+async function fetchFileHistory(
+  sandboxId: string,
+  filePath: string,
+  sessionToken?: string,
+  limit: number = 100
+): Promise<{ path: string; versions: Array<{ commit: string; author_name: string; author_email: string; date: string; message: string }> }> {
+  const url = `${API_URL}/sandboxes/${sandboxId}/files/history?path=${encodeURIComponent(filePath)}&limit=${limit}`;
+  const headers: Record<string, string> = {};
+  if (sessionToken) {
+    headers['Authorization'] = `Bearer ${sessionToken}`;
+  }
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch file history: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+// API Helper: Get file content at specific commit
+async function fetchFileByHash(
+  sandboxId: string,
+  filePath: string,
+  commit: string,
+  sessionToken?: string
+): Promise<Blob> {
+  const url = `${API_URL}/sandboxes/${sandboxId}/files/content-by-hash?path=${encodeURIComponent(filePath)}&commit=${encodeURIComponent(commit)}`;
+  const headers: Record<string, string> = {};
+  if (sessionToken) {
+    headers['Authorization'] = `Bearer ${sessionToken}`;
+  }
+
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch file at commit ${commit}: ${response.statusText}`);
+  }
+  return response.blob();
+}
 
 interface FileViewerViewProps {
   sandboxId: string;
@@ -68,9 +124,9 @@ export function FileViewerView({
   project,
 }: FileViewerViewProps) {
   const { session } = useAuth();
-  
+
   // Kortix Computer Store
-  const { 
+  const {
     filePathList,
     currentFileIndex,
     setCurrentFileIndex,
@@ -81,13 +137,13 @@ export function FileViewerView({
     setUnsavedState,
     getUnsavedState,
   } = useKortixComputerStore();
-  
+
   // React Query client for cache invalidation
   const queryClient = useQueryClient();
-  
+
   // Presentation viewer store for fullscreen
   const presentationViewerStore = usePresentationViewerStore();
-  
+
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'files',
@@ -104,10 +160,10 @@ export function FileViewerView({
   const [isExporting, setIsExporting] = useState(false);
   const [mdEditorControls, setMdEditorControls] = useState<MarkdownEditorControls | null>(null);
   const activeDownloadUrls = useRef<Set<string>>(new Set());
-  
+
   // Track previous sandboxId to detect thread switches
   const prevSandboxIdRef = useRef<string | null>(null);
-  
+
   // Reset all local file state when sandboxId changes (thread switch)
   useEffect(() => {
     if (prevSandboxIdRef.current !== null && prevSandboxIdRef.current !== sandboxId) {
@@ -122,6 +178,21 @@ export function FileViewerView({
     prevSandboxIdRef.current = sandboxId;
   }, [sandboxId]);
 
+  // File version history state
+  const [fileVersions, setFileVersions] = useState<Array<{ commit: string; author_name: string; author_email: string; date: string; message: string }>>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
+  const [isLoadingVersionContent, setIsLoadingVersionContent] = useState(false);
+
+  // Revert modal state
+  const [revertModalOpen, setRevertModalOpen] = useState(false);
+  const [revertCommitInfo, setRevertCommitInfo] = useState<any | null>(null);
+  const [revertLoadingInfo, setRevertLoadingInfo] = useState(false);
+  const [revertInProgress, setRevertInProgress] = useState(false);
+  const [revertCurrentRelativePath, setRevertCurrentRelativePath] = useState<string | null>(null);
+  const [revertMode, setRevertMode] = useState<'commit' | 'single'>('single');
+  const [revertSelectedPaths, setRevertSelectedPaths] = useState<string[]>([]);
+
   // Use the React Query hook for the selected file
   const {
     data: cachedFileContent,
@@ -133,7 +204,7 @@ export function FileViewerView({
     sandboxId,
     filePath,
     {
-      enabled: !!filePath && !!sandboxId,
+      enabled: !!filePath && !!sandboxId && !selectedVersion, // Disable when viewing a specific version
       staleTime: 5 * 60 * 1000,
     }
   );
@@ -143,7 +214,7 @@ export function FileViewerView({
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
   const fileType = getEditableFileType(fileName);
   const canEdit = isEditableFileType(fileType);
-  
+
   // File type checks
   const isMarkdownFile = fileExtension === 'md' || fileExtension === 'markdown';
   const isHtmlFile = fileExtension === 'html' || fileExtension === 'htm';
@@ -166,9 +237,198 @@ export function FileViewerView({
     }
   }, [canNavigateNext, currentFileIndex, setCurrentFileIndex]);
 
+  // Load file version history on demand (when dropdown opens)
+  const loadVersionHistory = useCallback(async () => {
+    if (!sandboxId || !filePath) return;
+    if (fileVersions.length > 0) return; // already loaded
+    setIsLoadingVersions(true);
+    try {
+      const data = await fetchFileHistory(sandboxId, filePath, session?.access_token, 200);
+      setFileVersions(data.versions || []);
+      console.log('[FileViewerView] Loaded file history', { count: (data.versions || []).length });
+    } catch (error) {
+      console.error('[FileViewerView] Failed to load history', error);
+      toast.error('Failed to load history');
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  }, [sandboxId, filePath, session?.access_token, fileVersions.length]);
+
+  const loadFileByVersion = useCallback(async (commit: string) => {
+    if (!commit || !sandboxId || !filePath) return;
+    setSelectedVersion(commit);
+    setIsLoadingVersionContent(true);
+    setContentError(null);
+    try {
+      // Normalize path for cache operations and clear legacy cache for this file
+      const normalizedPath = filePath.startsWith('/workspace') ? filePath : `/workspace/${filePath.replace(/^\//, '')}`;
+      ['text', 'blob', 'json'].forEach(contentType => {
+        const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
+        FileCache.delete(cacheKey);
+        console.log('[FileViewerView] Deleted cache key:', cacheKey);
+      });
+
+      const blob = await fetchFileByHash(sandboxId, filePath, commit, session?.access_token);
+
+      console.log('[FileViewerView] Fetched blob:', { size: blob.size, type: blob.type });
+
+      // Convert blob to text or keep as blob depending on file type
+      const isImageFile = FileCache.isImageFile(filePath);
+      const isPdfFile = FileCache.isPdfFile(filePath);
+      const extension = filePath.split('.').pop()?.toLowerCase();
+      const isOfficeFile = ['xlsx', 'xls', 'docx', 'pptx', 'ppt'].includes(extension || '');
+      const isBinaryFile = isImageFile || isPdfFile || isOfficeFile;
+
+      setRawContent(blob);
+
+      if (isBinaryFile) {
+        const blobUrl = URL.createObjectURL(blob);
+        setBlobUrlForRenderer(blobUrl);
+        setTextContentForRenderer(null);
+        console.log('[FileViewerView] Set binary content:', blobUrl);
+      } else {
+        const text = await blob.text();
+        setTextContentForRenderer(text);
+        setBlobUrlForRenderer(null);
+        console.log('[FileViewerView] Set text content, length:', text.length, 'preview:', text.substring(0, 100));
+      }
+
+      const versionDate = fileVersions.find(v => v.commit === commit)?.date;
+      if (versionDate) {
+        toast.success(`Loaded version from ${new Date(versionDate).toLocaleDateString()}`);
+      }
+    } catch (error) {
+      console.error('[FileViewerView] Error loading version:', error);
+      setContentError(`Failed to load file version: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Failed to load file version: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsLoadingVersionContent(false);
+    }
+  }, [filePath, sandboxId, session?.access_token, fileVersions]);
+
+  // Open revert modal and fetch commit info (files changed)
+  const openRevertModal = useCallback(async (commit: string) => {
+    if (!commit || !sandboxId) return;
+    setRevertModalOpen(true);
+    setRevertLoadingInfo(true);
+    setRevertCommitInfo(null);
+    try {
+      const url = `${API_URL}/sandboxes/${sandboxId}/files/commit-info?commit=${encodeURIComponent(commit)}${filePath ? `&path=${encodeURIComponent(filePath)}` : ''}`;
+      const res = await fetch(url, { headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {} });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Failed to fetch commit info');
+      }
+      const data = await res.json();
+      setRevertCommitInfo(data);
+
+      // Normalize current file path relative to workspace and store for single-file revert
+      const normalizedRelative = filePath ? (filePath.startsWith('/workspace') ? filePath.replace(/^\/workspace\//, '') : filePath.replace(/^\//, '')) : '';
+      setRevertCurrentRelativePath(normalizedRelative || null);
+      // default to single-file if the current file would be affected by reverting, otherwise default to commit
+      // backend now returns `files_in_commit` (what changed in the commit) and `revert_files` (what revert would affect)
+      const filesInCommit = (data.files_in_commit || []).map((f: any) => f.path);
+      const revertFiles = (data.revert_files || []).map((f: any) => f.path);
+      // prefer explicit flag if provided
+      const shouldDefaultSingle = data.path_affected_on_revert === true || revertFiles.includes(normalizedRelative) || filesInCommit.includes(normalizedRelative);
+      setRevertMode(shouldDefaultSingle ? 'single' : 'commit');
+    } catch (error) {
+      console.error('Failed to load commit info:', error);
+      toast.error('Failed to load commit info');
+      setRevertModalOpen(false);
+    } finally {
+      setRevertLoadingInfo(false);
+    }
+  }, [sandboxId, filePath, session?.access_token]);
+
+  // NOTE: file-selection toggle removed — modal is read-only list with single-file or entire-commit mode
+
+  const performRevert = useCallback(async () => {
+    if (!revertCommitInfo || !sandboxId) return;
+    setRevertInProgress(true);
+    try {
+      const body: any = { commit: revertCommitInfo.commit };
+      // If user chose single-file revert, send only the current relative path
+      if (revertMode === 'single' && revertCurrentRelativePath) {
+        body.paths = [revertCurrentRelativePath];
+      }
+
+      const res = await fetch(`${API_URL}/sandboxes/${sandboxId}/files/revert`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Revert failed');
+      }
+
+      const result = await res.json();
+      console.log('[FileViewerView] Revert result', result);
+
+      // Close modal first for better UX
+      setRevertModalOpen(false);
+
+      // Clear selected version to return to current
+      setSelectedVersion(null);
+
+      // Clear version history to force reload next time
+      setFileVersions([]);
+
+      // Clear any unsaved content
+      clearUnsavedContent(filePath);
+
+      // Always clear caches and refetch after restore
+      const normalizedPath = filePath.startsWith('/workspace') ? filePath : `/workspace/${filePath.replace(/^\//, '')}`;
+
+      console.log('[FileViewerView] Clearing caches for path:', normalizedPath);
+
+      // Clear legacy FileCache
+      ['text', 'blob', 'json'].forEach(contentType => {
+        const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
+        FileCache.delete(cacheKey);
+      });
+
+      // Invalidate React Query cache
+      ['text', 'blob', 'json'].forEach(contentType => {
+        queryClient.invalidateQueries({
+          queryKey: fileQueryKeys.content(sandboxId, normalizedPath, contentType),
+        });
+      });
+
+      // Refetch the file to get the reverted content
+      console.log('[FileViewerView] Refetching file after restore');
+      await refetchFile();
+
+      toast.success('Version restored successfully');
+    } catch (error) {
+      console.error('[FileViewerView] Revert error', error);
+      toast.error(`Failed to restore version: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setRevertInProgress(false);
+    }
+  }, [revertCommitInfo, revertMode, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent]);
+
   // Effect to handle cached file content updates
   useEffect(() => {
     if (!filePath) return;
+
+    // Skip this effect if we're viewing a specific version (handled by loadFileByVersion)
+    if (selectedVersion) {
+      console.log('[FileViewerView] Skipping effect - viewing version:', selectedVersion);
+      return;
+    }
+
+    console.log('[FileViewerView] Effect running for current version:', {
+      filePath,
+      isCachedFileLoading,
+      hasContent: cachedFileContent !== null,
+      contentType: typeof cachedFileContent
+    });
 
     // Handle errors
     if (cachedFileError && !isCachedFileLoading && fileRetryAttempt >= 15) {
@@ -181,6 +441,7 @@ export function FileViewerView({
     // Check for unsaved content first - if it exists, use it instead of cached content
     const unsavedContent = getUnsavedContent(filePath);
     if (unsavedContent !== undefined && canEdit) {
+      console.log('[FileViewerView] Using unsaved content');
       // Use unsaved content if available
       setTextContentForRenderer(unsavedContent);
       setRawContent(unsavedContent);
@@ -190,6 +451,12 @@ export function FileViewerView({
 
     // Handle successful content from cache/server
     if (cachedFileContent !== null && !isCachedFileLoading) {
+      console.log('[FileViewerView] Setting content from cache/server:', {
+        contentType: typeof cachedFileContent,
+        isString: typeof cachedFileContent === 'string',
+        isBlob: cachedFileContent instanceof Blob,
+        preview: typeof cachedFileContent === 'string' ? cachedFileContent.substring(0, 100) : 'N/A'
+      });
       const isImageFile = FileCache.isImageFile(filePath);
       const isPdfFile = FileCache.isPdfFile(filePath);
       const extension = filePath.split('.').pop()?.toLowerCase();
@@ -224,7 +491,7 @@ export function FileViewerView({
         setContentError('Unknown content type received.');
       }
     }
-  }, [filePath, cachedFileContent, isCachedFileLoading, cachedFileError, fileRetryAttempt, getUnsavedContent, canEdit]);
+  }, [filePath, cachedFileContent, isCachedFileLoading, cachedFileError, fileRetryAttempt, getUnsavedContent, canEdit, selectedVersion]);
 
   // Cleanup blob URLs
   useEffect(() => {
@@ -261,7 +528,7 @@ export function FileViewerView({
   // Handle markdown export
   const handleMarkdownExport = useCallback(async (format: ExportFormat) => {
     if (!mdEditorControls) return;
-    
+
     setIsExporting(true);
     try {
       const content = mdEditorControls.getHtml();
@@ -282,7 +549,7 @@ export function FileViewerView({
     if (!filePath || !sandboxId) {
       throw new Error('Missing file path or sandbox ID');
     }
-    
+
     try {
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files`,
@@ -308,7 +575,7 @@ export function FileViewerView({
       const normalizedPath = filePath.startsWith('/workspace')
         ? filePath
         : `/workspace/${filePath.replace(/^\//, '')}`;
-      
+
       // Clear unsaved content from store
       clearUnsavedContent(filePath);
 
@@ -429,7 +696,7 @@ export function FileViewerView({
   // Handle fullscreen for presentations
   const handleOpenPresentationFullscreen = useCallback(() => {
     if (!project?.sandbox?.sandbox_url) return;
-    
+
     // Extract presentation name from path
     const pathParts = filePath.split('/');
     const presentationsIndex = pathParts.indexOf('presentations');
@@ -451,24 +718,26 @@ export function FileViewerView({
     return (
       <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0 border-t border-zinc-200 dark:border-zinc-800">
         {/* Header */}
-        <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
+        <div className="px-3 py-2 flex items-center justify-between border-b shrink-0 bg-zinc-50/80 dark:bg-zinc-900/80 max-w-full min-w-0">
           {/* Left: Home + Name */}
           <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
             <button
               onClick={goBackToBrowser}
-              className="relative p-2 rounded-lg border flex-shrink-0 bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
+              className="relative p-2 rounded-lg border shrink-0 bg-linear-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
               title="Back to files"
             >
               <Home className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
             </button>
-            
-            <span className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
+
+            <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+
+            <span className="px-2 py-1 text-xs font-medium text-foreground bg-muted rounded truncate max-w-[200px]">
               {presentationName}
             </span>
           </div>
-          
+
           {/* Right: Actions */}
-          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          <div className="flex items-center gap-1.5 shrink-0 ml-2">
             {hasMultipleFiles && (
               <div className="flex items-center gap-1 mr-1">
                 <button
@@ -492,7 +761,7 @@ export function FileViewerView({
                 </button>
               </div>
             )}
-            
+
             <Button
               variant="ghost"
               size="sm"
@@ -503,7 +772,7 @@ export function FileViewerView({
               <Maximize2 className="h-3.5 w-3.5" />
             </Button>
           </div>
-        </div>
+        </div >
 
         {/* Presentation content - use a mock tool call for PresentationViewer */}
         <div className="flex-1 overflow-hidden max-w-full min-w-0">
@@ -529,7 +798,7 @@ export function FileViewerView({
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 flex-shrink-0">
+        <div className="px-4 py-2 h-10 bg-linear-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 shrink-0">
           <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
             <Badge variant="outline" className="py-0.5 h-6">
               <FileText className="h-3 w-3 mr-1" />
@@ -556,24 +825,26 @@ export function FileViewerView({
   return (
     <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0 border-t border-zinc-200 dark:border-zinc-800">
       {/* Header */}
-      <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
+      <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between shrink-0 max-w-full min-w-0">
         {/* Left: Home + Filename */}
         <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
           <button
             onClick={goBackToBrowser}
-            className="relative p-2 rounded-lg border flex-shrink-0 bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
+            className="relative p-2 rounded-lg border shrink-0 bg-linear-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
             title="Back to files"
           >
             <Home className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
           </button>
-          
-          <span className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
+
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+
+          <span className="px-2 py-1 text-xs font-medium text-foreground rounded truncate max-w-[200px]">
             {fileName}
           </span>
         </div>
-        
+
         {/* Right: Actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
           {/* File navigation for multiple files */}
           {hasMultipleFiles && (
             <div className="flex items-center gap-1 mr-1">
@@ -602,36 +873,36 @@ export function FileViewerView({
           {/* For markdown files with editor: Save + Export */}
           {isMarkdownFile && mdEditorControls && (
             <TooltipProvider delayDuration={300}>
-            <>
-              {/* Save Button */}
-              {mdEditorControls.saveState === 'saving' ? (
-                <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs">
+              <>
+                {/* Save Button */}
+                {mdEditorControls.saveState === 'saving' ? (
+                  <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     <span className="hidden sm:inline">Saving</span>
-                </Button>
-              ) : mdEditorControls.saveState === 'saved' ? (
-                <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs text-green-600">
+                  </Button>
+                ) : mdEditorControls.saveState === 'saved' ? (
+                  <Button variant="ghost" size="sm" disabled className="h-7 px-2 gap-1.5 text-xs text-green-600">
                     <Check className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Saved</span>
-                </Button>
-              ) : mdEditorControls.saveState === 'error' ? (
-                <Button variant="ghost" size="sm" onClick={mdEditorControls.save} className="h-7 px-2 gap-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">
+                  </Button>
+                ) : mdEditorControls.saveState === 'error' ? (
+                  <Button variant="ghost" size="sm" onClick={mdEditorControls.save} className="h-7 px-2 gap-1.5 text-xs text-red-500 hover:text-red-600 hover:bg-red-50">
                     <AlertCircle className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Retry</span>
-                </Button>
-              ) : (
+                  </Button>
+                ) : (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={mdEditorControls.save} 
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={mdEditorControls.save}
                         disabled={!mdEditorControls.hasChanges}
                         className="h-7 px-2 gap-1.5 text-xs"
                       >
                         <Save className="h-3.5 w-3.5" />
                         <span className="hidden sm:inline">Save</span>
-                </Button>
+                      </Button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom">
                       {mdEditorControls.hasChanges ? (
@@ -641,42 +912,167 @@ export function FileViewerView({
                       )}
                     </TooltipContent>
                   </Tooltip>
-              )}
+                )}
 
-              {/* Export Dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 px-2 gap-1.5 text-xs" disabled={isExporting}>
-                    {isExporting ? (
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 gap-1.5 text-xs" disabled={isExporting}>
+                      {isExporting ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
+                      ) : (
                         <Download className="h-3.5 w-3.5" />
-                    )}
+                      )}
                       <span className="hidden sm:inline">Export</span>
-                  </Button>
-                </DropdownMenuTrigger>
+                    </Button>
+                  </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => handleMarkdownExport('pdf')}>
                       <FileType className="h-4 w-4 text-muted-foreground" />
-                    PDF
-                  </DropdownMenuItem>
+                      PDF
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleMarkdownExport('docx')}>
                       <FileText className="h-4 w-4 text-muted-foreground" />
-                    Word
-                  </DropdownMenuItem>
+                      Word
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleMarkdownExport('html')}>
                       <FileCode className="h-4 w-4 text-muted-foreground" />
-                    HTML
-                  </DropdownMenuItem>
+                      HTML
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleMarkdownExport('markdown')}>
                       <FileCode className="h-4 w-4 text-muted-foreground" />
-                    Markdown
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </>
+                      Markdown
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
             </TooltipProvider>
           )}
+
+          {/* Version history dropdown */}
+          <DropdownMenu onOpenChange={(open) => { if (open) loadVersionHistory(); }}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isCachedFileLoading}
+                className="h-7 px-2 gap-1.5 text-xs"
+              >
+                {isLoadingVersions ? (
+                  <Loader className="h-3 w-3 animate-spin" />
+                ) : (
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+                <span className="hidden sm:inline">History</span>
+                <ChevronDown className="h-2.5 w-2.5 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-[400px] overflow-y-auto w-[320px]">
+              {isLoadingVersions ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading history...</span>
+                </div>
+              ) : fileVersions.length === 0 ? (
+                <div className="flex items-center justify-center py-8">
+                  <span className="text-sm text-muted-foreground">No history available</span>
+                </div>
+              ) : (
+                fileVersions.map((version, index) => {
+                  const isCurrent = index === 0;
+                  const isSelected = isCurrent ? !selectedVersion : selectedVersion === version.commit;
+                  const parts = (version.message || '').split(':');
+                  console.log('[FileViewerView] history item parts', { commit: version.commit, parts });
+
+                  return (
+                    <DropdownMenuItem
+                      key={version.commit}
+                      onClick={() => {
+                        if (isCurrent) {
+                          // Return to current: clear unsaved & cache, then refetch
+                          setSelectedVersion(null);
+                          setContentError(null);
+                          setIsLoadingVersionContent(true);
+                          clearUnsavedContent(filePath);
+
+                          const normalizedPath = filePath.startsWith('/workspace')
+                            ? filePath
+                            : `/workspace/${filePath.replace(/^\//, '')}`;
+
+                          ['text', 'blob', 'json'].forEach(contentType => {
+                            const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
+                            FileCache.delete(cacheKey);
+                          });
+
+                          refetchFile().finally(() => setIsLoadingVersionContent(false));
+                        } else {
+                          loadFileByVersion(version.commit);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-start gap-2 cursor-pointer py-2.5 px-3 rounded-xl",
+                        isSelected && "bg-accent"
+                      )}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between mb-1">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-medium text-sm">
+                              {parts[0]}
+                            </div>
+                            {parts.length > 1 && (
+                              <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {parts.slice(1).join(':').trim()}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center ml-3 shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isCurrent) openRevertModal(version.commit);
+                              }}
+                              className={cn(
+                                'h-6 px-2 text-[11px] inline-flex items-center gap-0.5 rounded-full',
+                                isCurrent ? 'opacity-90 cursor-default' : 'hover:bg-muted'
+                              )}
+                              disabled={isCurrent}
+                              title={isCurrent ? 'Current version' : 'Restore this version'}
+                            >
+                              {isCurrent ? (
+                                <span className="px-1">Current</span>
+                              ) : (
+                                <>
+                                  <span className="text-[11px]">Restore</span>
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(version.date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: new Date(version.date).getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                          })} at {new Date(version.date).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true
+                          })}
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Download button - for non-markdown files */}
           {!isMarkdownFile && (
@@ -700,13 +1096,13 @@ export function FileViewerView({
 
       {/* File content */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
-        {isCachedFileLoading ? (
+        {(isCachedFileLoading || isLoadingVersionContent) ? (
           <div className="h-full w-full max-w-full flex flex-col items-center justify-center min-w-0">
             <Loader className="h-8 w-8 animate-spin text-primary mb-3" />
             <p className="text-sm text-muted-foreground">
-              Loading {fileName}
+              {isLoadingVersionContent ? 'Loading version...' : `Loading ${fileName}`}
             </p>
-            {fileRetryAttempt > 0 && (
+            {!isLoadingVersionContent && fileRetryAttempt > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
                 Retrying... (attempt {fileRetryAttempt + 1})
               </p>
@@ -760,8 +1156,8 @@ export function FileViewerView({
               }
 
               // Get original content - must be a plain text string (not blob URL, not Blob object)
-              const originalTextContent = typeof cachedFileContent === 'string' && !cachedFileContent.startsWith('blob:') 
-                ? cachedFileContent 
+              const originalTextContent = typeof cachedFileContent === 'string' && !cachedFileContent.startsWith('blob:')
+                ? cachedFileContent
                 : undefined;
 
               return (
@@ -810,8 +1206,123 @@ export function FileViewerView({
         )}
       </div>
 
+      <Dialog open={revertModalOpen} onOpenChange={setRevertModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-xl bg-background border border-border">
+          <DialogHeader>
+            <DialogTitle>Restore Previous Version</DialogTitle>
+            <DialogDescription>
+              Choose to restore just this file or all files from this version snapshot.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30">
+            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500 mt-0.5 shrink-0" />
+            <span className="text-xs text-red-700 dark:text-red-400">This will replace current files with the selected version snapshot. Your current changes will be overwritten.</span>
+          </div>
+
+          {revertLoadingInfo ? (
+            <div className="py-6 flex items-center justify-center">
+              <Loader className="h-6 w-6 animate-spin" />
+            </div>
+          ) : revertCommitInfo ? (
+            <div className="mt-2">
+              <div className="text-sm font-medium mb-1">{revertCommitInfo.message}</div>
+              <div className="text-xs text-muted-foreground mb-3">
+                {revertCommitInfo.date && new Date(revertCommitInfo.date).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  year: 'numeric'
+                })}
+              </div>
+
+              <div className="mb-3">
+                <div className="flex gap-2">
+                  <Button
+                    variant={revertMode === 'single' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setRevertMode('single')}
+                  >
+                    Just this file
+                  </Button>
+                  <Button
+                    variant={revertMode === 'commit' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setRevertMode('commit')}
+                  >
+                    Entire version snapshot
+                  </Button>
+                </div>
+              </div>
+
+              <div className="max-h-40 overflow-y-auto mb-3 border rounded-2xl p-2">
+                {(() => {
+                  const currentRel = revertCurrentRelativePath || (filePath.startsWith('/workspace') ? filePath.replace(/^\/workspace\//, '') : filePath.replace(/^\//, ''));
+                  const revertList = revertCommitInfo.revert_files || [];
+                  const inCommitList = revertCommitInfo.files_in_commit || [];
+
+                  if (revertMode === 'single') {
+                    // Find matching metadata for the current file in revert_files or files_in_commit
+                    const match = revertList.find((x: any) => x.path === currentRel) || inCommitList.find((x: any) => x.path === currentRel);
+                    const f = match || { path: currentRel, status: 'M', old_path: null, revert_effect: 'will_modify' };
+                    const effect = f.revert_effect || f.revertEffect || 'unknown';
+                    const effectLabel = effect === 'will_delete' ? 'Will delete' : effect === 'will_restore' ? 'Will restore' : effect === 'will_modify' ? 'Will modify' : 'Unknown';
+
+                    return (
+                      <div key={f.path + (f.old_path || '')} className="flex items-center justify-between gap-2 py-1 px-1 rounded">
+                        <div className="flex flex-col min-w-0">
+                          <div className="text-sm truncate max-w-[260px]">{f.path}</div>
+                          {f.old_path && f.old_path !== f.path && (
+                            <div className="text-[11px] text-muted-foreground mt-0.5 truncate">Renamed from: {f.old_path}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <div className="text-xs text-muted-foreground">{f.status}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{effectLabel}</div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // commit mode: show all revert_files
+                  return (revertList.length ? revertList : inCommitList).map((f: any) => {
+                    const p = f.path;
+                    const effect = f.revert_effect || f.revertEffect || 'unknown';
+                    const effectLabel = effect === 'will_delete' ? 'Will delete' : effect === 'will_restore' ? 'Will restore' : effect === 'will_modify' ? 'Will modify' : 'Unknown';
+                    return (
+                      <div key={p + (f.old_path || '')} className="flex items-center justify-between gap-2 py-1 px-1 rounded">
+                        <div className="flex flex-col min-w-0">
+                          <div className="text-sm truncate max-w-[260px]">{p}</div>
+                          {f.old_path && f.old_path !== p && (
+                            <div className="text-[11px] text-muted-foreground mt-0.5 truncate">Renamed from: {f.old_path}</div>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <div className="text-xs text-muted-foreground">{f.status}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">{effectLabel}</div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          ) : (
+            <div className="py-4">No commit info</div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRevertModalOpen(false)} disabled={revertInProgress}>Cancel</Button>
+            <Button onClick={performRevert} disabled={revertInProgress || (revertMode === 'single' && !revertCurrentRelativePath)}>
+              {revertInProgress ? (<><Loader className="h-4 w-4 animate-spin mr-2" />Restoring...</>) : 'Restore'}
+            </Button>
+          </DialogFooter>
+
+          <DialogClose />
+        </DialogContent>
+      </Dialog>
+
       {/* Footer */}
-      <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 flex-shrink-0">
+      <div className="px-4 py-2 h-10 bg-linear-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 shrink-0">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <Badge variant="outline" className="py-0.5 h-6">
             <FileText className="h-3 w-3 mr-1" />
@@ -825,3 +1336,4 @@ export function FileViewerView({
     </div>
   );
 }
+
