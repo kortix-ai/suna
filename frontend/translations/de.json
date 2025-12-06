@@ -354,10 +354,15 @@
   "agents": {
     "title": "Agenten",
     "create": "Agent erstellen",
+    "createNewWorker": "Neuen Worker erstellen",
     "edit": "Agent bearbeiten",
     "delete": "Agent löschen",
     "name": "Name",
-    "description": "Beschreibung"
+    "description": "Beschreibung",
+    "model": "Modell",
+    "systemPrompt": "System-Prompt",
+    "systemPromptPlaceholder": "Definiere, wie sich dein Agent verhalten soll...",
+    "customizeIcon": "Klicke, um das Agenten-Icon anzupassen"
   },
   "threads": {
     "title": "Threads",
@@ -467,6 +472,9 @@
     "downgradePending": "Downgrade ausstehend",
     "downgrade": "Herabstufen",
     "switchToLegacyYearly": "Zu Legacy-Jahresplan wechseln",
+    "confirmDowngradeTitle": "Bist du sicher, dass du herabstufen möchtest?",
+    "confirmDowngradeDescription": "Du wechselst zum {planName}-Plan. Diese Änderung wird am Ende deines aktuellen Abrechnungszeitraums wirksam.",
+    "confirmDowngrade": "Ja, Herabstufen",
     "pickPlan": "Wähle den Plan, der zu dir passt.",
     "reachedLimit": "Du hast deine Limits erreicht.",
     "projectLimit": "Projektlimit ({current}/{limit})",
@@ -689,8 +697,7 @@
     "notFound": "Nicht gefunden"
   },
   "home": {
-    "title": "Willkommen",
-    "subtitle": "Loslegen"
+    "heroPlaceholder": "Beschreibe die Aufgabe, die dein Worker erledigen soll..."
   },
   "showcase": {
     "title": "Kortix: Dein autonomer KI-Worker",
@@ -774,7 +781,31 @@
   "languages": {
     "en": "English",
     "de": "Deutsch",
-    "it": "Italiano"
+    "it": "Italiano",
+    "zh": "中文",
+    "ja": "日本語",
+    "pt": "Português",
+    "fr": "Français",
+    "es": "Español"
+  },
+  "notifications": {
+    "title": "Benachrichtigungen",
+    "description": "Verwalte, wie du Benachrichtigungen erhältst",
+    "preferences": "Benachrichtigungseinstellungen",
+    "channels": "Benachrichtigungskanäle",
+    "emailNotifications": "E-Mail-Benachrichtigungen",
+    "emailDescription": "Benachrichtigungen per E-Mail erhalten",
+    "pushNotifications": "Push-Benachrichtigungen",
+    "pushDescription": "Push-Benachrichtigungen auf deinem Gerät erhalten",
+    "inAppNotifications": "In-App-Benachrichtigungen",
+    "inAppDescription": "Benachrichtigungen in der App sehen",
+    "deviceTokens": "Registrierte Geräte",
+    "noDevices": "Keine Geräte registriert",
+    "settingsUpdated": "Benachrichtigungseinstellungen erfolgreich aktualisiert",
+    "settingsFailed": "Benachrichtigungseinstellungen konnten nicht aktualisiert werden",
+    "enableAll": "Alle aktivieren",
+    "disableAll": "Alle deaktivieren",
+    "saveChanges": "Änderungen speichern"
   },
   "suna": {
     "samplePrompts": "Beispiel-Prompts",

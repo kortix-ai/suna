@@ -377,7 +377,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     }
 
     return (
-        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
+        <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
             <div>
                 <h3 className="text-lg font-semibold mb-1">{t('title')}</h3>
                 <p className="text-sm text-muted-foreground">
@@ -487,9 +487,9 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                             setDeletionType('grace-period');
                         }
                     }}>
-                        <DialogContent className="max-w-md">
+                        <DialogContent className="max-w-md max-h-[90vh] sm:max-h-[85vh] overflow-y-auto p-4 sm:p-6">
                             <DialogHeader>
-                                <DialogTitle>{t('deleteAccount.dialogTitle')}</DialogTitle>
+                                <DialogTitle className="text-base sm:text-lg">{t('deleteAccount.dialogTitle')}</DialogTitle>
                             </DialogHeader>
                             <div className="space-y-4">
                                 <Alert className={cn(
@@ -499,11 +499,11 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         : "border-amber-500/30 bg-amber-500/5"
                                 )}>
                                     <AlertTriangle className={cn(
-                                        "h-4 w-4",
+                                        "h-4 w-4 flex-shrink-0",
                                         deletionType === 'immediate' ? "text-red-600" : "text-amber-600"
                                     )} />
                                     <AlertDescription>
-                                        <strong className="text-foreground">
+                                        <strong className="text-foreground text-sm sm:text-base">
                                             {deletionType === 'immediate' 
                                                 ? t('deleteAccount.warningImmediate')
                                                 : t('deleteAccount.warningGracePeriod')}
@@ -515,7 +515,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                     <p className="text-sm font-medium mb-2">
                                         {t('deleteAccount.whenDelete')}
                                     </p>
-                                    <ul className="text-sm text-muted-foreground space-y-1.5 pl-5 list-disc">
+                                    <ul className="text-xs sm:text-sm text-muted-foreground space-y-1.5 pl-4 sm:pl-5 list-disc">
                                         <li>{t('deleteAccount.agentsDeleted')}</li>
                                         <li>{t('deleteAccount.threadsDeleted')}</li>
                                         <li>{t('deleteAccount.credentialsRemoved')}</li>
@@ -528,26 +528,26 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 </div>
 
                                 <div className="space-y-3">
-                                    <Label>{t('deleteAccount.chooseDeletionType')}</Label>
+                                    <Label className="text-sm">{t('deleteAccount.chooseDeletionType')}</Label>
                                     <RadioGroup value={deletionType} onValueChange={(value) => setDeletionType(value as 'grace-period' | 'immediate')}>
-                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border p-4">
-                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5" />
-                                            <div className="space-y-1 flex-1">
-                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border p-3 sm:p-4">
+                                            <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5 flex-shrink-0" />
+                                            <div className="space-y-1 flex-1 min-w-0">
+                                                <Label htmlFor="grace-period" className="font-medium cursor-pointer text-sm sm:text-base block">
                                                     {t('deleteAccount.gracePeriodOption')}
                                                 </Label>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="text-xs sm:text-sm text-muted-foreground">
                                                     {t('deleteAccount.gracePeriodDescription')}
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-start space-x-2 space-y-0 rounded-md border border-red-500/30 p-4">
-                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5" />
-                                            <div className="space-y-1 flex-1">
-                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-red-600">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border border-red-500/30 p-3 sm:p-4">
+                                            <RadioGroupItem value="immediate" id="immediate" className="mt-0.5 flex-shrink-0" />
+                                            <div className="space-y-1 flex-1 min-w-0">
+                                                <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base text-red-600 block">
                                                     {t('deleteAccount.immediateOption')}
                                                 </Label>
-                                                <p className="text-sm text-muted-foreground">
+                                                <p className="text-xs sm:text-sm text-muted-foreground">
                                                     {t('deleteAccount.immediateDescription')}
                                                 </p>
                                             </div>
@@ -556,7 +556,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 </div>
                                 
                                 <div className="space-y-2">
-                                    <Label htmlFor="delete-confirm">
+                                    <Label htmlFor="delete-confirm" className="text-sm">
                                         {t('deleteAccount.confirmText')}
                                     </Label>
                                     <Input
@@ -564,12 +564,12 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                         value={deleteConfirmText}
                                         onChange={(e) => setDeleteConfirmText(e.target.value)}
                                         placeholder={t('deleteAccount.confirmPlaceholder')}
-                                        className="shadow-none"
+                                        className="shadow-none text-sm sm:text-base"
                                         autoComplete="off"
                                     />
                                 </div>
                                 
-                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
                                     <Button variant="outline" onClick={() => {
                                         setShowDeleteDialog(false);
                                         setDeleteConfirmText('');
@@ -596,15 +596,15 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     </Dialog>
 
                     <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-                        <AlertDialogContent className="max-w-md">
+                        <AlertDialogContent className="max-w-md p-4 sm:p-6">
                             <AlertDialogHeader>
-                                <AlertDialogTitle>{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
+                                <AlertDialogTitle className="text-base sm:text-lg">{t('deleteAccount.cancelDeletionTitle')}</AlertDialogTitle>
                             </AlertDialogHeader>
                             <div className="space-y-4">
-                                <p className="text-sm text-muted-foreground">
+                                <p className="text-xs sm:text-sm text-muted-foreground">
                                     {t('deleteAccount.cancelDeletionDescription')}
                                 </p>
-                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+                                <div className="flex flex-col-reverse sm:flex-row gap-2 sm:justify-end pt-2">
                                     <Button variant="outline" onClick={() => setShowCancelDialog(false)} className="w-full sm:w-auto">
                                         {tCommon('back')}
                                     </Button>

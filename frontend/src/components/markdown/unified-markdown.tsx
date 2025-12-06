@@ -9,6 +9,7 @@ import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
 import { isMermaidCode } from '@/lib/mermaid-utils';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 
 // Helper to check if a URL is internal (same origin)
 function isInternalUrl(href: string | undefined): boolean {
@@ -139,6 +140,9 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
       </div>
     );
   }
+
+  // Auto-link plain URLs before rendering
+  const processedContent = autoLinkUrls(content);
 
   return (
     <div className={cn('kortix-markdown', className)}>
@@ -433,7 +437,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
           ),
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );

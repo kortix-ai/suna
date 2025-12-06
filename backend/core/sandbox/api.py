@@ -1,7 +1,8 @@
 import os
+import asyncio
 import urllib.parse
 import uuid
-from typing import Optional
+from typing import Optional, TypeVar, Callable, Awaitable
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
 from fastapi.responses import Response
@@ -13,6 +14,81 @@ from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from core.services.supabase import DBConnection
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
+
+T = TypeVar('T')
+
+# Retry configuration for transient sandbox errors
+RETRY_MAX_ATTEMPTS = 5
+RETRY_BASE_DELAY = 0.5  # seconds
+RETRY_MAX_DELAY = 8.0  # seconds
+
+
+def is_retryable_error(error: Exception) -> bool:
+    """Check if an error is a transient error that should be retried."""
+    error_str = str(error).lower()
+    # Check for gateway errors (502, 503, 504) and connection errors
+    retryable_patterns = [
+        '502', 'bad gateway',
+        '503', 'service unavailable',
+        '504', 'gateway timeout',
+        'connection reset',
+        'connection refused',
+        'connection error',
+        'timeout',
+    ]
+    return any(pattern in error_str for pattern in retryable_patterns)
+
+
+async def retry_with_backoff(
+    operation: Callable[[], Awaitable[T]],
+    operation_name: str,
+    max_attempts: int = RETRY_MAX_ATTEMPTS,
+    base_delay: float = RETRY_BASE_DELAY,
+    max_delay: float = RETRY_MAX_DELAY,
+) -> T:
+    """
+    Retry an async operation with exponential backoff.
+    
+    Args:
+        operation: Async callable to execute
+        operation_name: Name of the operation for logging
+        max_attempts: Maximum number of retry attempts
+        base_delay: Initial delay between retries in seconds
+        max_delay: Maximum delay between retries in seconds
+    
+    Returns:
+        Result of the operation
+        
+    Raises:
+        The last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await operation()
+        except Exception as e:
+            last_exception = e
+            
+            if not is_retryable_error(e):
+                # Not a transient error, don't retry
+                logger.debug(f"{operation_name} failed with non-retryable error: {str(e)}")
+                raise
+            
+            if attempt == max_attempts:
+                logger.error(f"{operation_name} failed after {max_attempts} attempts: {str(e)}")
+                raise
+            
+            # Calculate delay with exponential backoff
+            delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+            logger.warning(
+                f"{operation_name} failed (attempt {attempt}/{max_attempts}), "
+                f"retrying in {delay:.1f}s: {str(e)}"
+            )
+            await asyncio.sleep(delay)
+    
+    # Should never reach here, but just in case
+    raise last_exception
 
 # Initialize shared resources
 router = APIRouter(tags=["sandbox"])
@@ -210,8 +286,11 @@ async def list_files(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
-        # List files
-        files = await sandbox.fs.list_files(path)
+        # List files with retry logic for transient errors
+        files = await retry_with_backoff(
+            operation=lambda: sandbox.fs.list_files(path),
+            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
+        )
         result = []
         
         for file in files:
@@ -259,9 +338,12 @@ async def read_file(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
-        # Read file directly - don't check existence first with a separate call
+        # Read file with retry logic for transient errors (502, 503, 504)
         try:
-            content = await sandbox.fs.download_file(path)
+            content = await retry_with_backoff(
+                operation=lambda: sandbox.fs.download_file(path),
+                operation_name=f"download_file({path}) from sandbox {sandbox_id}"
+            )
         except Exception as download_err:
             logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
             raise HTTPException(
