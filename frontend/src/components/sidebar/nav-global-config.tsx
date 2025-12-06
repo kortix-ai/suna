@@ -109,7 +109,7 @@ export function NavGlobalConfig() {
                     <Button
                         variant="outline"
                         size="sm"
-                        className="w-full shadow-none justify-center items-center h-10 px-4 bg-background mt-3"
+                        className="w-full shadow-none justify-start items-center h-10 px-4 bg-background mt-3"
                     >
                         <Plus className="h-4 w-4" />
                         Add Trigger
