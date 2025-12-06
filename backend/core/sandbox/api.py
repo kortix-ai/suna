@@ -1,8 +1,9 @@
 import os
 import shlex
+import asyncio
 import urllib.parse
 import uuid
-from typing import Optional
+from typing import Optional, TypeVar, Callable, Awaitable
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
 from fastapi.responses import Response
@@ -14,6 +15,81 @@ from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from core.services.supabase import DBConnection
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
+
+T = TypeVar('T')
+
+# Retry configuration for transient sandbox errors
+RETRY_MAX_ATTEMPTS = 5
+RETRY_BASE_DELAY = 0.5  # seconds
+RETRY_MAX_DELAY = 8.0  # seconds
+
+
+def is_retryable_error(error: Exception) -> bool:
+    """Check if an error is a transient error that should be retried."""
+    error_str = str(error).lower()
+    # Check for gateway errors (502, 503, 504) and connection errors
+    retryable_patterns = [
+        '502', 'bad gateway',
+        '503', 'service unavailable',
+        '504', 'gateway timeout',
+        'connection reset',
+        'connection refused',
+        'connection error',
+        'timeout',
+    ]
+    return any(pattern in error_str for pattern in retryable_patterns)
+
+
+async def retry_with_backoff(
+    operation: Callable[[], Awaitable[T]],
+    operation_name: str,
+    max_attempts: int = RETRY_MAX_ATTEMPTS,
+    base_delay: float = RETRY_BASE_DELAY,
+    max_delay: float = RETRY_MAX_DELAY,
+) -> T:
+    """
+    Retry an async operation with exponential backoff.
+    
+    Args:
+        operation: Async callable to execute
+        operation_name: Name of the operation for logging
+        max_attempts: Maximum number of retry attempts
+        base_delay: Initial delay between retries in seconds
+        max_delay: Maximum delay between retries in seconds
+    
+    Returns:
+        Result of the operation
+        
+    Raises:
+        The last exception if all retries fail
+    """
+    last_exception = None
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await operation()
+        except Exception as e:
+            last_exception = e
+            
+            if not is_retryable_error(e):
+                # Not a transient error, don't retry
+                logger.debug(f"{operation_name} failed with non-retryable error: {str(e)}")
+                raise
+            
+            if attempt == max_attempts:
+                logger.error(f"{operation_name} failed after {max_attempts} attempts: {str(e)}")
+                raise
+            
+            # Calculate delay with exponential backoff
+            delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
+            logger.warning(
+                f"{operation_name} failed (attempt {attempt}/{max_attempts}), "
+                f"retrying in {delay:.1f}s: {str(e)}"
+            )
+            await asyncio.sleep(delay)
+    
+    # Should never reach here, but just in case
+    raise last_exception
 
 # Initialize shared resources
 router = APIRouter(tags=["sandbox"])
@@ -211,8 +287,11 @@ async def list_files(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
-        # List files
-        files = await sandbox.fs.list_files(path)
+        # List files with retry logic for transient errors
+        files = await retry_with_backoff(
+            operation=lambda: sandbox.fs.list_files(path),
+            operation_name=f"list_files({path}) in sandbox {sandbox_id}"
+        )
         result = []
         
         for file in files:
@@ -260,9 +339,12 @@ async def read_file(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
-        # Read file directly - don't check existence first with a separate call
+        # Read file with retry logic for transient errors (502, 503, 504)
         try:
-            content = await sandbox.fs.download_file(path)
+            content = await retry_with_backoff(
+                operation=lambda: sandbox.fs.download_file(path),
+                operation_name=f"download_file({path}) from sandbox {sandbox_id}"
+            )
         except Exception as download_err:
             logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
             raise HTTPException(
@@ -1032,6 +1114,7 @@ async def revert_commit_or_files(
                 "status": "success",
                 "mode": "snapshot_repo",
                 "target_commit": commit,
+                "affected_paths": [],  # Empty array means all files affected
             }
 
         # 2) Per-file snapshot revert
@@ -1043,9 +1126,6 @@ async def revert_commit_or_files(
 
         commands = [
             "cd /workspace",
-            # ensure clean working tree before touching anything
-            'if [ -n "$(git status --porcelain)" ]; then '
-            'echo "Working tree not clean"; exit 1; fi',
             f"TARGET={shlex.quote(commit)}",
         ]
 
@@ -1057,10 +1137,11 @@ async def revert_commit_or_files(
             # 1) Check if it exists in the target commit
             # 2) If yes: write blob to tmp and move into place
             # 3) If no: remove it if tracked now
+            # Note: We use bare 'rel' inside double quotes for git commands since it's already safe
             commands.append(
-                "if git cat-file -e \"$TARGET\":\"" + shlex.quote(rel)[1:-1] + "\" 2>/dev/null; then "
+                "if git cat-file -e \"$TARGET\":" + shlex.quote(rel) + " 2>/dev/null; then "
                 "mkdir -p $(dirname " + shlex.quote(abs_path) + ") || true; "
-                "git show \"$TARGET\":\"" + shlex.quote(rel)[1:-1] + "\" > " + shlex.quote(tmp_path) + " && "
+                "git show \"$TARGET\":" + shlex.quote(rel) + " > " + shlex.quote(tmp_path) + " && "
                 "mv " + shlex.quote(tmp_path) + " " + shlex.quote(abs_path) + "; "
                 "else "
                 "if git ls-files --error-unmatch "
@@ -1083,6 +1164,9 @@ async def revert_commit_or_files(
 
         full_cmd = " && ".join(commands)
 
+        logger.info(f"Executing single-file revert for paths {safe_paths} to commit {commit} in sandbox {sandbox_id}")
+        logger.debug(f"Revert command: {full_cmd}")
+
         try:
             await sandbox.process.execute_session_command(
                 session_id,
@@ -1091,6 +1175,7 @@ async def revert_commit_or_files(
                     var_async=False,
                 ),
             )
+            logger.info(f"Successfully reverted files {safe_paths} to commit {commit} in sandbox {sandbox_id}")
         except Exception as e:
             logger.error(
                 f"Snapshot revert of files {safe_paths} to commit {commit} in sandbox {sandbox_id} failed: {str(e)}"
@@ -1104,6 +1189,7 @@ async def revert_commit_or_files(
             "mode": "snapshot_files",
             "target_commit": commit,
             "reverted_files": safe_paths,
+            "affected_paths": safe_paths,  # Frontend expects this field
         }
 
     except HTTPException:

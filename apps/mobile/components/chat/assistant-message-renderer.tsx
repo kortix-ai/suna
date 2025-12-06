@@ -17,6 +17,7 @@ import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 import { isAskOrCompleteTool, extractTextFromArguments } from '@/lib/utils/streaming-utils';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
@@ -129,7 +130,7 @@ function renderAskToolCall(
           style={isDark ? markdownStylesDark : markdownStyles}
           rules={selectableRenderRules(isDark)}
         >
-          {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+          {autoLinkUrls(askText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
       )}
       {attachments.length > 0 && (
@@ -198,7 +199,7 @@ function renderCompleteToolCall(
           style={isDark ? markdownStylesDark : markdownStyles}
           rules={selectableRenderRules(isDark)}
         >
-          {completeText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+          {autoLinkUrls(completeText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
         </Markdown>
       )}
       {attachments.length > 0 && (
@@ -327,7 +328,7 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
         style={isDark ? markdownStylesDark : markdownStyles}
         rules={selectableRenderRules(isDark)}
       >
-        {textContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+        {autoLinkUrls(textContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
       </Markdown>
     );
   }

@@ -442,38 +442,44 @@ export function FileBrowserView({
   }, [isPresentationFolder]);
 
   return (
-    <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0">
+    <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0 border-t border-zinc-200 dark:border-zinc-800">
       {/* Header with Breadcrumb Navigation */}
-      <div className="px-3 py-2 flex items-center justify-between border-b flex-shrink-0 bg-muted/30 max-w-full min-w-0">
+      <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
         {/* Breadcrumb */}
-        <div className="flex items-center gap-1 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
+        <div className="flex items-center gap-3 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
           <button
             onClick={navigateHome}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors flex-shrink-0"
+            className="relative p-2 rounded-lg border flex-shrink-0 bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
             title="Home"
           >
-            <Home className="h-3.5 w-3.5" />
+            <Home className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
           </button>
 
-          {currentPath !== '/workspace' && (
-            <>
+          {currentPath === '/workspace' ? (
+            <span className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+              Files
+            </span>
+          ) : (
+            <div className="flex items-center gap-1.5 min-w-0">
               {getBreadcrumbSegments(currentPath).map((segment, index) => (
                 <Fragment key={segment.path}>
-                  <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+                  {index > 0 && (
+                    <span className="text-zinc-400 dark:text-zinc-600">/</span>
+                  )}
                   <button
                     onClick={() => navigateToBreadcrumb(segment.path)}
                     className={cn(
-                      "px-2 py-1 text-xs font-medium rounded transition-colors truncate max-w-[150px]",
+                      "text-base transition-colors truncate max-w-[150px]",
                       segment.isLast 
-                        ? "text-foreground bg-muted" 
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        ? "text-zinc-900 dark:text-zinc-100 font-medium" 
+                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                     )}
                   >
                     {segment.name}
                   </button>
                 </Fragment>
               ))}
-            </>
+            </div>
           )}
         </div>
 
@@ -602,6 +608,19 @@ export function FileBrowserView({
             </div>
           </ScrollArea>
         )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 flex-shrink-0">
+        <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <Badge variant="outline" className="py-0.5 h-6">
+            <Folder className="h-3 w-3 mr-1" />
+            {files.length} {files.length === 1 ? 'item' : 'items'}
+          </Badge>
+        </div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
+          {currentPath}
+        </div>
       </div>
     </div>
   );

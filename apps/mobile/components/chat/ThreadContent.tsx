@@ -22,6 +22,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { AgentIdentifier } from '@/components/agents';
 import {
   FileAttachmentsGrid,
@@ -32,6 +33,7 @@ import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -144,6 +146,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
     processed = processed.replace(/^\s*\n/gm, '');
     processed = processed.trim();
 
+    // Auto-link plain URLs
+    processed = autoLinkUrls(processed);
+
     return processed;
   }, [content]);
 
@@ -192,7 +197,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules(isDark)}
               >
-                {askText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+                {autoLinkUrls(askText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
               <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
@@ -239,7 +244,7 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
                 style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                 rules={selectableRenderRules(isDark)}
               >
-                {completeText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+                {autoLinkUrls(completeText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
               </Markdown>
 
               <TaskCompletedFeedback
@@ -740,12 +745,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
     return maps;
   }, [groupedMessages]);
 
+  const { navigateToToolCall } = useKortixComputerStore();
+
   const handleToolPressInternal = useCallback((clickedToolMsg: UnifiedMessage) => {
     const clickedIndex = allToolMessages.findIndex(
       t => t.toolMessage.message_id === clickedToolMsg.message_id
     );
-    onToolPress?.(allToolMessages, clickedIndex >= 0 ? clickedIndex : 0);
-  }, [allToolMessages, onToolPress]);
+    if (clickedIndex >= 0) {
+      // Call onToolPress first to set selectedToolData, then navigate
+      onToolPress?.(allToolMessages, clickedIndex);
+      navigateToToolCall(clickedIndex);
+    }
+  }, [allToolMessages, onToolPress, navigateToToolCall]);
 
   return (
     <View className="flex-1 pt-4">
@@ -807,7 +818,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                       rules={selectableRenderRules(isDark)}
                     >
-                      {cleanContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+                      {autoLinkUrls(cleanContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                     </Markdown>
                   </View>
                 </View>
@@ -935,7 +946,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                               style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                               rules={selectableRenderRules(isDark)}
                             >
-                              {processedTextBeforeTag.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+                              {autoLinkUrls(processedTextBeforeTag).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                             </Markdown>
                           )}
                           {detectedTag && (
@@ -989,7 +1000,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                             style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
                             rules={selectableRenderRules(isDark)}
                           >
-                            {textToShow.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
+                            {autoLinkUrls(textToShow).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
                           </Markdown>
                         </View>
                       );

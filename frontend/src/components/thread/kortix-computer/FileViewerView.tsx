@@ -62,6 +62,7 @@ import {
   DialogDescription,
   DialogClose,
 } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 
@@ -159,6 +160,23 @@ export function FileViewerView({
   const [isExporting, setIsExporting] = useState(false);
   const [mdEditorControls, setMdEditorControls] = useState<MarkdownEditorControls | null>(null);
   const activeDownloadUrls = useRef<Set<string>>(new Set());
+
+  // Track previous sandboxId to detect thread switches
+  const prevSandboxIdRef = useRef<string | null>(null);
+
+  // Reset all local file state when sandboxId changes (thread switch)
+  useEffect(() => {
+    if (prevSandboxIdRef.current !== null && prevSandboxIdRef.current !== sandboxId) {
+      // SandboxId changed - reset all file content state
+      console.log('[FileViewerView] Thread switched, resetting file state');
+      setRawContent(null);
+      setTextContentForRenderer(null);
+      setBlobUrlForRenderer(null);
+      setContentError(null);
+      setMdEditorControls(null);
+    }
+    prevSandboxIdRef.current = sandboxId;
+  }, [sandboxId]);
 
   // File version history state
   const [fileVersions, setFileVersions] = useState<Array<{ commit: string; author_name: string; author_email: string; date: string; message: string }>>([]);
@@ -351,7 +369,6 @@ export function FileViewerView({
 
       const result = await res.json();
       console.log('[FileViewerView] Revert result', result);
-      toast.success('Version restored successfully');
 
       // Close modal first for better UX
       setRevertModalOpen(false);
@@ -365,36 +382,36 @@ export function FileViewerView({
       // Clear any unsaved content
       clearUnsavedContent(filePath);
 
-      // If the current file was affected, clear all caches and refetch
+      // Always clear caches and refetch after restore
       const normalizedPath = filePath.startsWith('/workspace') ? filePath : `/workspace/${filePath.replace(/^\//, '')}`;
-      const affectedPaths: string[] = result?.affected_paths || (body.paths || []);
-      const currentRelative = (filePath.startsWith('/workspace') ? filePath.replace(/^\/workspace\//, '') : filePath.replace(/^\//, ''));
-      const affected = affectedPaths.length === 0 ? true : affectedPaths.map(p => p.replace(/^\//, '')).includes(currentRelative);
 
-      if (affected) {
-        // Clear legacy FileCache
-        ['text', 'blob', 'json'].forEach(contentType => {
-          const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
-          FileCache.delete(cacheKey);
+      console.log('[FileViewerView] Clearing caches for path:', normalizedPath);
+
+      // Clear legacy FileCache
+      ['text', 'blob', 'json'].forEach(contentType => {
+        const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
+        FileCache.delete(cacheKey);
+      });
+
+      // Invalidate React Query cache
+      ['text', 'blob', 'json'].forEach(contentType => {
+        queryClient.invalidateQueries({
+          queryKey: fileQueryKeys.content(sandboxId, normalizedPath, contentType),
         });
+      });
 
-        // Invalidate React Query cache
-        ['text', 'blob', 'json'].forEach(contentType => {
-          queryClient.invalidateQueries({
-            queryKey: fileQueryKeys.content(sandboxId, normalizedPath, contentType),
-          });
-        });
+      // Refetch the file to get the reverted content
+      console.log('[FileViewerView] Refetching file after restore');
+      await refetchFile();
 
-        // Refetch the file to get the reverted content
-        await refetchFile();
-      }
+      toast.success('Version restored successfully');
     } catch (error) {
       console.error('[FileViewerView] Revert error', error);
       toast.error(`Failed to restore version: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setRevertInProgress(false);
     }
-  }, [revertCommitInfo, revertMode, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile]);
+  }, [revertCommitInfo, revertMode, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent]);
 
   // Effect to handle cached file content updates
   useEffect(() => {
@@ -699,20 +716,20 @@ export function FileViewerView({
       : '';
 
     return (
-      <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0">
+      <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0 border-t border-zinc-200 dark:border-zinc-800">
         {/* Header */}
-        <div className="px-3 py-2 flex items-center justify-between border-b flex-shrink-0 bg-zinc-50/80 dark:bg-zinc-900/80 max-w-full min-w-0">
+        <div className="px-3 py-2 flex items-center justify-between border-b shrink-0 bg-zinc-50/80 dark:bg-zinc-900/80 max-w-full min-w-0">
           {/* Left: Home + Name */}
-          <div className="flex items-center gap-1 min-w-0 flex-1 max-w-full">
+          <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
             <button
               onClick={goBackToBrowser}
-              className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors flex-shrink-0"
+              className="relative p-2 rounded-lg border shrink-0 bg-linear-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
               title="Back to files"
             >
-              <Home className="h-3.5 w-3.5" />
+              <Home className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
             </button>
 
-            <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+            <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
 
             <span className="px-2 py-1 text-xs font-medium text-foreground bg-muted rounded truncate max-w-[200px]">
               {presentationName}
@@ -720,7 +737,7 @@ export function FileViewerView({
           </div>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+          <div className="flex items-center gap-1.5 shrink-0 ml-2">
             {hasMultipleFiles && (
               <div className="flex items-center gap-1 mr-1">
                 <button
@@ -755,7 +772,7 @@ export function FileViewerView({
               <Maximize2 className="h-3.5 w-3.5" />
             </Button>
           </div>
-        </div>
+        </div >
 
         {/* Presentation content - use a mock tool call for PresentationViewer */}
         <div className="flex-1 overflow-hidden max-w-full min-w-0">
@@ -780,6 +797,19 @@ export function FileViewerView({
           />
         </div>
 
+        {/* Footer */}
+        <div className="px-4 py-2 h-10 bg-linear-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 shrink-0">
+          <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+            <Badge variant="outline" className="py-0.5 h-6">
+              <FileText className="h-3 w-3 mr-1" />
+              PRESENTATION
+            </Badge>
+          </div>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            {filePath}
+          </div>
+        </div>
+
         {/* Fullscreen presentation viewer */}
         <FullScreenPresentationViewer
           isOpen={presentationViewerStore.isOpen}
@@ -793,20 +823,20 @@ export function FileViewerView({
   }
 
   return (
-    <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0">
+    <div className="flex flex-col h-full max-w-full overflow-hidden min-w-0 border-t border-zinc-200 dark:border-zinc-800">
       {/* Header */}
-      <div className="px-3 py-2 flex items-center justify-between border-b flex-shrink-0 bg-zinc-50/80 dark:bg-zinc-900/80 max-w-full min-w-0">
+      <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between shrink-0 max-w-full min-w-0">
         {/* Left: Home + Filename */}
-        <div className="flex items-center gap-1 min-w-0 flex-1 max-w-full">
+        <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
           <button
             onClick={goBackToBrowser}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors flex-shrink-0"
+            className="relative p-2 rounded-lg border shrink-0 bg-linear-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border-zinc-200 dark:border-zinc-700 hover:from-zinc-200 hover:to-zinc-100 dark:hover:from-zinc-700 dark:hover:to-zinc-800 transition-all"
             title="Back to files"
           >
-            <Home className="h-3.5 w-3.5" />
+            <Home className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
           </button>
 
-          <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
+          <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
 
           <span className="px-2 py-1 text-xs font-medium text-foreground rounded truncate max-w-[200px]">
             {fileName}
@@ -814,7 +844,7 @@ export function FileViewerView({
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
           {/* File navigation for multiple files */}
           {hasMultipleFiles && (
             <div className="flex items-center gap-1 mr-1">
@@ -999,7 +1029,7 @@ export function FileViewerView({
                             )}
                           </div>
 
-                          <div className="flex items-center ml-3 flex-shrink-0">
+                          <div className="flex items-center ml-3 shrink-0">
                             <Button
                               variant="outline"
                               size="sm"
@@ -1290,6 +1320,19 @@ export function FileViewerView({
           <DialogClose />
         </DialogContent>
       </Dialog>
+
+      {/* Footer */}
+      <div className="px-4 py-2 h-10 bg-linear-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4 shrink-0">
+        <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+          <Badge variant="outline" className="py-0.5 h-6">
+            <FileText className="h-3 w-3 mr-1" />
+            {fileExtension.toUpperCase() || 'FILE'}
+          </Badge>
+        </div>
+        <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
+          {filePath}
+        </div>
+      </div>
     </div>
   );
 }

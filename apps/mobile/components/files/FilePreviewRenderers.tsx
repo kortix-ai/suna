@@ -12,7 +12,8 @@ import { KortixLoader } from '@/components/ui';
 import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
+import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 // @ts-ignore - no types available
 import SyntaxHighlighter from 'react-native-syntax-highlighter';
 // @ts-ignore - no types available  
@@ -246,8 +247,11 @@ function MarkdownPreview({ content }: { content: string }) {
       showsVerticalScrollIndicator={true}
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
     >
-      <Markdown style={isDark ? markdownStylesDark : markdownStyles}>
-        {content}
+      <Markdown 
+        style={isDark ? markdownStylesDark : markdownStyles}
+        rules={selectableRenderRules(isDark)}
+      >
+        {autoLinkUrls(content)}
       </Markdown>
     </ScrollView>
   );

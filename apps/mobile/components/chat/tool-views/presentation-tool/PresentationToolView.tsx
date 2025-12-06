@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, ScrollView, useColorScheme, Pressable } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
 import {
   Presentation,
   AlertTriangle,
@@ -13,7 +12,11 @@ import type { ToolViewProps } from '../types';
 import { useThread } from '@/lib/chat/hooks';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
+import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
+import { getToolMetadata } from '../tool-metadata';
+import { KortixLoader } from '@/components/ui';
 import * as Haptics from 'expo-haptics';
+import { useColorScheme } from 'nativewind';
 
 interface SlideMetadata {
   title: string;
@@ -43,6 +46,17 @@ const constructHtmlPreviewUrl = (sandboxUrl: string, filePath: string): string =
   return `${sandboxUrl}/${encodedPath}`;
 };
 
+// Utility functions
+function formatTimestamp(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+  } catch (e) {
+    return 'Invalid date';
+  }
+}
+
 export function PresentationToolView({
   toolCall,
   toolResult,
@@ -50,11 +64,17 @@ export function PresentationToolView({
   assistantMessage,
   isSuccess = true,
   isStreaming = false,
-  project
+  project,
+  assistantTimestamp,
+  toolTimestamp,
 }: ToolViewProps) {
   if (!toolCall) {
     return null;
   }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolMetadata = getToolMetadata(name, toolCall.arguments);
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   const toolName = toolCall.function_name;
   const colorScheme = useColorScheme();
@@ -277,8 +297,24 @@ export function PresentationToolView({
 
   if (isValidateSlide && !isStreaming) {
     return (
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-6 py-8 items-center">
+      <ToolViewCard
+        header={{
+          icon: toolMetadata.icon,
+          iconColor: toolMetadata.iconColor,
+          iconBgColor: toolMetadata.iconBgColor,
+          subtitle: toolMetadata.subtitle.toUpperCase(),
+          title: toolMetadata.title,
+          isSuccess: validationPassed !== false,
+          isStreaming: false,
+          rightContent: (
+            <StatusBadge
+              variant={validationPassed !== false ? 'success' : 'error'}
+              label={validationPassed !== false ? 'Validated' : 'Failed'}
+            />
+          ),
+        }}
+      >
+        <View className="flex-1 w-full items-center justify-center py-12 px-6">
           <View 
             className="rounded-2xl items-center justify-center mb-4" 
             style={{ 
@@ -292,7 +328,7 @@ export function PresentationToolView({
             <Icon 
               as={validationPassed ? CheckCircle2 : AlertTriangle} 
               size={32} 
-              color={validationPassed ? '#22c55e' : '#ef4444'} 
+              className={validationPassed ? 'text-primary' : 'text-destructive'} 
             />
           </View>
           <Text className="text-base font-roobert-medium text-foreground mb-2 text-center">
@@ -304,129 +340,153 @@ export function PresentationToolView({
             </Text>
           )}
         </View>
-      </ScrollView>
+      </ToolViewCard>
     );
   }
 
   // Loading state
   if (isStreaming || (isLoadingMetadata && !metadata && slidesFromOutput.length === 0)) {
     return (
-      <View className="flex-1 items-center justify-center py-12 px-6">
-        <KortixLoader size="large" />
-        <Text className="text-lg font-roobert-semibold text-foreground mb-2 mt-6">
-          {isStreaming ? 'Creating Slide...' : 'Loading Presentation'}
-        </Text>
-        <Text className="text-sm font-roobert text-muted-foreground text-center">
-          {isStreaming
-            ? 'Your slide is being created'
-            : retryAttempt > 0
-              ? `Fetching slides... (${retryAttempt + 1})`
-              : 'Fetching slides...'}
-        </Text>
-      </View>
+      <ToolViewCard
+        header={{
+          icon: toolMetadata.icon,
+          iconColor: toolMetadata.iconColor,
+          iconBgColor: toolMetadata.iconBgColor,
+          subtitle: toolMetadata.subtitle.toUpperCase(),
+          title: toolMetadata.title,
+          isSuccess: actualIsSuccess,
+          isStreaming: true,
+          rightContent: <StatusBadge variant="streaming" label="Processing" />,
+        }}
+      >
+        <View className="flex-1 w-full items-center justify-center py-12 px-6">
+          <KortixLoader size="large" />
+          <Text className="text-lg font-roobert-semibold text-foreground mb-2 mt-6">
+            {isStreaming ? 'Creating Slide...' : 'Loading Presentation'}
+          </Text>
+          <Text className="text-sm font-roobert text-muted-foreground text-center">
+            {isStreaming
+              ? 'Your slide is being created'
+              : retryAttempt > 0
+                ? `Fetching slides... (${retryAttempt + 1})`
+                : 'Fetching slides...'}
+          </Text>
+        </View>
+      </ToolViewCard>
     );
   }
 
   return (
-    <View className="flex-1">
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="px-4 gap-4 pb-4">
-          {error ? (
-            <View className="py-8 items-center">
-              <View 
-                className="rounded-2xl items-center justify-center mb-4" 
-                style={{ 
-                  width: 64, 
-                  height: 64,
-                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)',
-                }}
-              >
-                <Icon as={AlertTriangle} size={32} color="#ef4444" />
-              </View>
-              <Text className="text-base font-roobert-medium text-foreground mb-1">
-                Failed to Load
-              </Text>
-              <Text className="text-sm font-roobert text-muted-foreground text-center">
-                {error}
-              </Text>
-            </View>
-          ) : slideCount === 0 ? (
-            <View className="py-8 items-center">
-              <View 
-                className="rounded-2xl items-center justify-center mb-4" 
-                style={{ 
-                  width: 64, 
-                  height: 64,
-                  backgroundColor: isDark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)',
-                }}
-              >
-                <Icon as={CheckCircle2} size={32} color="#22c55e" />
-              </View>
-              <Text className="text-base font-roobert-medium text-foreground mb-2">
-                {toolName === 'create_slide' ? 'Slide Created' : 'No Slides Yet'}
-              </Text>
-              {toolName === 'create_slide' && currentSlideNumber && (
-                <Text className="text-sm font-roobert text-muted-foreground">
-                  Slide {currentSlideNumber}
-                </Text>
-              )}
-            </View>
-          ) : (
-            <>
-              {/* Open Presentation Button */}
-              <Pressable
-                onPress={handleOpenPresentation}
-                className="flex-row items-center justify-center gap-2 py-3 rounded-xl"
-                style={{
-                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.08)' : 'rgba(18, 18, 21, 0.04)',
-                  borderWidth: 1,
-                  borderColor: isDark ? 'rgba(248, 248, 248, 0.12)' : 'rgba(18, 18, 21, 0.08)',
-                }}
-              >
-                <Icon as={Maximize2} size={18} color={isDark ? '#f8f8f8' : '#121215'} />
-                <Text className="text-sm font-roobert-medium text-foreground">
-                  Open Presentation
-                </Text>
-              </Pressable>
-
-              {/* Slides */}
-              <View className="gap-3">
-                {slides.map((slide) => (
-                  <PresentationSlideCard
-                    key={slide.number}
-                    slide={slide}
-                    sandboxUrl={sandboxUrl}
-                    onFullScreenClick={handleFullScreenClick}
-                    refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
-                    isCurrentSlide={currentSlideNumber === slide.number}
-                  />
-                ))}
-              </View>
-            </>
+    <ToolViewCard
+      header={{
+        icon: toolMetadata.icon,
+        iconColor: toolMetadata.iconColor,
+        iconBgColor: toolMetadata.iconBgColor,
+        subtitle: toolMetadata.subtitle.toUpperCase(),
+        title: toolMetadata.title,
+        isSuccess: actualIsSuccess,
+        isStreaming: false,
+        rightContent: (
+          <StatusBadge
+            variant={actualIsSuccess ? 'success' : 'error'}
+            label={slideCount > 0 ? `${slideCount} slide${slideCount !== 1 ? 's' : ''}` : actualIsSuccess ? 'Success' : 'Failed'}
+          />
+        ),
+      }}
+      footer={
+        <View className="flex-row items-center justify-between w-full">
+          {displayTitle && (
+            <Text className="text-xs text-muted-foreground flex-1" numberOfLines={1}>
+              {displayTitle}
+            </Text>
+          )}
+          {(toolTimestamp || assistantTimestamp) && (
+            <Text className="text-xs text-muted-foreground ml-2">
+              {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
+            </Text>
           )}
         </View>
-      </ScrollView>
+      }
+    >
+      <View className="flex-1">
+        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+          <View className="px-4 gap-4 pb-4">
+            {error ? (
+              <View className="py-8 items-center">
+                <View 
+                  className="rounded-2xl items-center justify-center mb-4" 
+                  style={{ 
+                    width: 64, 
+                    height: 64,
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.1)',
+                  }}
+                >
+                  <Icon as={AlertTriangle} size={32} className="text-destructive" />
+                </View>
+                <Text className="text-base font-roobert-medium text-foreground mb-1">
+                  Failed to Load
+                </Text>
+                <Text className="text-sm font-roobert text-muted-foreground text-center">
+                  {error}
+                </Text>
+              </View>
+            ) : slideCount === 0 ? (
+              <View className="py-8 items-center">
+                <View 
+                  className="rounded-2xl items-center justify-center mb-4" 
+                  style={{ 
+                    width: 64, 
+                    height: 64,
+                    backgroundColor: isDark ? 'rgba(34, 197, 94, 0.15)' : 'rgba(34, 197, 94, 0.1)',
+                  }}
+                >
+                  <Icon as={CheckCircle2} size={32} className="text-primary" />
+                </View>
+                <Text className="text-base font-roobert-medium text-foreground mb-2">
+                  {toolName === 'create_slide' ? 'Slide Created' : 'No Slides Yet'}
+                </Text>
+                {toolName === 'create_slide' && currentSlideNumber && (
+                  <Text className="text-sm font-roobert text-muted-foreground">
+                    Slide {currentSlideNumber}
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <>
+                {/* Open Presentation Button */}
+                <Pressable
+                  onPress={handleOpenPresentation}
+                  className="flex-row items-center justify-center gap-2 py-3 rounded-xl active:opacity-70"
+                  style={{
+                    backgroundColor: isDark ? 'rgba(248, 248, 248, 0.08)' : 'rgba(18, 18, 21, 0.04)',
+                    borderWidth: 1,
+                    borderColor: isDark ? 'rgba(248, 248, 248, 0.12)' : 'rgba(18, 18, 21, 0.08)',
+                  }}
+                >
+                  <Icon as={Maximize2} size={18} className="text-foreground" />
+                  <Text className="text-sm font-roobert-medium text-foreground">
+                    Open Presentation
+                  </Text>
+                </Pressable>
 
-      {/* Footer */}
-      {slideCount > 0 && (
-        <View
-          className="px-4 py-2.5 flex-row justify-between items-center border-t"
-          style={{
-            backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-            borderTopColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.08)',
-          }}
-        >
-          <Text className="text-xs font-mono text-muted-foreground">
-            {slideCount} {slideCount === 1 ? 'slide' : 'slides'}
-          </Text>
-          <Text
-            className="text-xs font-roobert text-muted-foreground"
-            numberOfLines={1}
-          >
-            {displayTitle}
-          </Text>
-        </View>
-      )}
+                {/* Slides */}
+                <View className="gap-3">
+                  {slides.map((slide) => (
+                    <PresentationSlideCard
+                      key={slide.number}
+                      slide={slide}
+                      sandboxUrl={sandboxUrl}
+                      onFullScreenClick={handleFullScreenClick}
+                      refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
+                      isCurrentSlide={currentSlideNumber === slide.number}
+                    />
+                  ))}
+                </View>
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </View>
 
       {/* Full Screen Viewer */}
       <FullScreenPresentationViewer
@@ -436,6 +496,6 @@ export function PresentationToolView({
         sandboxUrl={sandboxUrl}
         initialSlide={fullScreenInitialSlide}
       />
-    </View>
+    </ToolViewCard>
   );
 }

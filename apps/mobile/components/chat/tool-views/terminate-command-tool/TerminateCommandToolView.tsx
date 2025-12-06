@@ -2,72 +2,131 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { StopCircle, CheckCircle2, AlertCircle, Terminal, Power } from 'lucide-react-native';
+import { StopCircle, Terminal, Power } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractTerminateCommandData } from './_utils';
+import { ToolViewCard, StatusBadge, LoadingState, CodeRenderer } from '../shared';
+import { getToolMetadata } from '../tool-metadata';
 
-export function TerminateCommandToolView({ toolCall, toolResult, isSuccess = true, isStreaming = false }: ToolViewProps) {
+// Utility functions
+function formatTimestamp(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
+  } catch (e) {
+    return 'Invalid date';
+  }
+}
+
+export function TerminateCommandToolView({ toolCall, toolResult, isSuccess = true, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
   const { sessionName, output, success } = extractTerminateCommandData(toolCall, toolResult, isSuccess);
+
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolMetadata = getToolMetadata(name, toolCall.arguments);
+  const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : (success !== false);
+
   const lines = output ? output.split('\n') : [];
 
   if (isStreaming) {
     return (
-      <View className="flex-1 items-center justify-center py-12 px-6">
-        <View className="bg-red-500/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-          <Icon as={StopCircle} size={40} className="text-red-500 animate-pulse" />
+      <ToolViewCard
+        header={{
+          icon: toolMetadata.icon,
+          iconColor: toolMetadata.iconColor,
+          iconBgColor: toolMetadata.iconBgColor,
+          subtitle: toolMetadata.subtitle.toUpperCase(),
+          title: toolMetadata.title,
+          isSuccess: actualIsSuccess,
+          isStreaming: true,
+          rightContent: <StatusBadge variant="streaming" label="Terminating" />,
+        }}
+      >
+        <View className="flex-1 w-full">
+          <LoadingState
+            icon={toolMetadata.icon}
+            iconColor={toolMetadata.iconColor}
+            bgColor={toolMetadata.iconBgColor}
+            title="Terminating Session"
+            filePath={sessionName || undefined}
+            showProgress={false}
+          />
         </View>
-        <Text className="text-xl font-roobert-semibold text-foreground mb-2">
-          Terminating Session
-        </Text>
-        {sessionName && (
-          <View className="bg-card border border-border rounded-2xl px-4 py-3 mt-3">
-            <Text className="text-sm font-roobert-mono text-foreground/60 text-center">
-              {sessionName}
-            </Text>
-          </View>
-        )}
-      </View>
+      </ToolViewCard>
     );
   }
 
   return (
-    <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-      <View className="px-6 gap-6">
-        <View className="bg-card border border-border rounded-2xl p-4">
-          <View className="flex-row items-center gap-2 mb-3">
-            <Icon as={Power} size={16} className="text-foreground/60" />
-            <Text className="text-sm font-roobert-medium text-foreground/70">Session</Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            <Text className="text-red-500" selectable>●</Text>
-            <Text className="text-sm font-roobert-mono text-foreground flex-1" selectable>
-              {sessionName || 'Unknown'}
+    <ToolViewCard
+      header={{
+        icon: toolMetadata.icon,
+        iconColor: toolMetadata.iconColor,
+        iconBgColor: toolMetadata.iconBgColor,
+        subtitle: toolMetadata.subtitle.toUpperCase(),
+        title: toolMetadata.title,
+        isSuccess: actualIsSuccess,
+        isStreaming: false,
+        rightContent: (
+          <StatusBadge
+            variant={actualIsSuccess ? 'success' : 'error'}
+            label={actualIsSuccess ? 'Terminated' : 'Failed'}
+          />
+        ),
+      }}
+      footer={
+        <View className="flex-row items-center justify-between w-full">
+          {sessionName && (
+            <Text className="text-xs text-muted-foreground flex-1 font-roobert-mono" numberOfLines={1}>
+              {sessionName}
             </Text>
-          </View>
+          )}
+          {(toolTimestamp || assistantTimestamp) && (
+            <Text className="text-xs text-muted-foreground ml-2">
+              {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
+            </Text>
+          )}
         </View>
-
-        {output && (
-          <View className="gap-2">
-            <Text className="text-sm font-roobert-medium text-foreground/70">
-              Result
-            </Text>
-            <View className="rounded-2xl p-4 border bg-card border-border" style={{ maxHeight: 400 }}>
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {lines.map((line, idx) => (
-                  <Text
-                    key={idx}
-                    className="text-sm font-roobert-mono text-foreground/80 leading-5"
-                    selectable
-                  >
-                    {line || ' '}
-                  </Text>
-                ))}
-              </ScrollView>
+      }
+    >
+      <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
+        <View className="px-4 py-4 gap-6">
+          <View className="bg-card border border-border rounded-2xl p-4">
+            <View className="flex-row items-center gap-2 mb-3">
+              <Icon as={Power} size={16} className="text-muted-foreground" />
+              <Text className="text-sm font-roobert-medium text-foreground/70">Session</Text>
+            </View>
+            <View className="flex-row items-center gap-2">
+              <Text className="text-destructive" selectable>●</Text>
+              <Text className="text-sm font-roobert-mono text-foreground flex-1" selectable>
+                {sessionName || 'Unknown'}
+              </Text>
             </View>
           </View>
-        )}
-      </View>
-    </ScrollView>
+
+          {output && (
+            <View className="gap-2">
+              <Text className="text-sm font-roobert-medium text-foreground/70">
+                Result
+              </Text>
+              <View className="bg-card border border-border rounded-2xl overflow-hidden">
+                <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={true}>
+                  <View className="p-3">
+                    <CodeRenderer
+                      code={output}
+                      language="bash"
+                      showLineNumbers={false}
+                    />
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </ToolViewCard>
   );
 }
-

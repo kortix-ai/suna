@@ -777,6 +777,15 @@ export const selectableRenderRules = (isDark: boolean = false): any => {
       }
       return <RNText key={node.key} style={styles.heading3}>{children}</RNText>;
     },
+    // Inline code renderer - must be defined to prevent React Native from trying to render HTML <code> tags
+    code_inline: (node: any, children: any, parent: any, styles: any) => {
+      // Extract text content from node or children
+      const text = node.content || extractTextContent(children) || '';
+      if (Platform.OS === 'ios') {
+        return <SelectableText key={node.key} style={styles.code_inline} isDark={isDark}>{text}</SelectableText>;
+      }
+      return <RNText key={node.key} style={styles.code_inline}>{text}</RNText>;
+    },
     // Code blocks with copy button
     code_block: (node: any, children: any, parent: any, styles: any) => {
       // For code blocks, the markdown parser puts the actual code in node.content, not children
@@ -1090,6 +1099,7 @@ export const markdownStylesDark = StyleSheet.create({
     ...markdownStyles.th,
     borderBottomColor: '#52525b', // zinc-600
     borderRightColor: '#3f3f46', // zinc-700
+    color: '#fafafa', // zinc-50 - light text for dark mode
   },
 
   tr: {
@@ -1100,6 +1110,7 @@ export const markdownStylesDark = StyleSheet.create({
   td: {
     ...markdownStyles.td,
     borderRightColor: '#3f3f46', // zinc-700
+    color: '#fafafa', // zinc-50 - light text for dark mode
   },
 
   link: {
@@ -1115,6 +1126,33 @@ export const markdownStylesDark = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
     backgroundColor: '#a1a1aa', // zinc-400
+  },
+
+  // Paragraph and text must be light in dark mode
+  paragraph: {
+    ...markdownStyles.paragraph,
+    color: '#fafafa', // zinc-50 - light text for dark mode
+  },
+
+  text: {
+    ...markdownStyles.text,
+    color: '#fafafa', // zinc-50 - light text for dark mode
+  },
+
+  // List items also need light text
+  list_item: {
+    ...markdownStyles.list_item,
+    color: '#fafafa', // zinc-50 - light text for dark mode
+  },
+
+  bullet_list_content: {
+    ...markdownStyles.bullet_list_content,
+    color: '#fafafa', // zinc-50 - light text for dark mode
+  },
+
+  ordered_list_content: {
+    ...markdownStyles.ordered_list_content,
+    color: '#fafafa', // zinc-50 - light text for dark mode
   },
 });
 

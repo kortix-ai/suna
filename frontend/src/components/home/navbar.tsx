@@ -2,6 +2,7 @@
 
 import { NavMenu } from '@/components/home/nav-menu';
 import { ThemeToggle } from '@/components/home/theme-toggle';
+import { LocaleSwitcher } from '@/components/home/locale-switcher';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import { Menu, X, Github } from 'lucide-react';
@@ -154,6 +155,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
             <div className="flex items-center justify-end flex-shrink-0 w-auto md:w-[200px] ml-auto">
               <div className="flex flex-row items-center gap-2 md:gap-3 shrink-0">
                 <div className="flex items-center space-x-3">
+                  <LocaleSwitcher variant="compact" />
                   <Link
                     href="https://github.com/kortix-ai/suna"
                     target="_blank"
@@ -318,7 +320,8 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                       </Link>
                     </Button>
                   )}
-                  <div className="flex justify-between">
+                  <div className="flex items-center justify-between gap-2">
+                    <LocaleSwitcher variant="full" />
                     <ThemeToggle />
                   </div>
                 </div>

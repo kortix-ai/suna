@@ -507,7 +507,7 @@ interface EmptyStateProps {
 
 const EmptyState = memo(function EmptyState({ t }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center flex-1 p-8">
+    <div className="flex flex-col items-center justify-center h-full w-full p-8">
       <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
         <div className="relative">
           <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center">

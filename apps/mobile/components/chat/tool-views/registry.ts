@@ -67,7 +67,7 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   
   // Command execution
   'execute-command': CommandToolView,
-  'check-command-output': CommandToolView,
+  'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
   
   // Task management

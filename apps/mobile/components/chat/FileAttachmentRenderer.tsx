@@ -22,6 +22,7 @@ import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Prese
 import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
+import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { WebView } from 'react-native-webview';
 import { getAuthToken } from '@/api/config';
 import Animated, {
@@ -523,7 +524,7 @@ function DocumentAttachment({
               <ScrollView className="p-4" style={{ height: 400 }} showsVerticalScrollIndicator={true}>
                 {isMarkdown ? (
                   <Markdown style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}>
-                    {fileContent}
+                    {autoLinkUrls(fileContent)}
                   </Markdown>
                 ) : (
                   <Text className="text-xs font-mono text-foreground leading-5" selectable style={{ fontFamily: 'monospace' }}>
