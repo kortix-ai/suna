@@ -170,7 +170,7 @@ function renderRegularToolCall(
         className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
       >
         <div className='flex items-center justify-center'>
-          <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+          <AppIcon toolCall={toolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
         </div>
         <span className="font-mono text-xs text-foreground">{displayName}</span>
         {paramDisplay && (

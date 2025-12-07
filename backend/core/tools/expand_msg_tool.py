@@ -93,32 +93,32 @@ class ExpandMessageTool(Tool):
         "type": "function", 
         "function": {
         "name": "execute_tool", 
-        "description": "Execute external MCP integration tools ONLY (Twitter, Gmail, Google Sheets, etc.). CRITICAL: Discover ALL needed tools ONCE at start, then just call them. NEVER re-discover tools already in conversation history!",
+        "description": "Execute external MCP tools (Gmail, Twitter, Slack, etc.). MANDATORY WORKFLOW: (1) Check conversation history - if tool schemas already exist, skip to step 3. (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Call tools using discovered schemas. NEVER discover same tools twice!",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
                         "enum": ["discover", "call"], 
-                        "description": "Action: 'discover' gets tool schemas (use ONCE at start for ALL tools needed), 'call' executes a tool (use schemas from conversation thereafter)"
+                        "description": "'discover' = Get schemas for ALL tools you'll need in ONE call (never one-by-one). 'call' = Execute tool using schema from conversation. CRITICAL: Check conversation first - if schemas exist, ONLY use 'call'!"
                     },
                     "tool_name": {
                         "type": "string",
-                        "description": "Required for 'call' action. Name of tool to execute (e.g., 'TWITTER_USER_LOOKUP_BY_USERNAME')"
+                        "description": "For 'call' ONLY. Exact tool name from discovered schema (e.g., 'GMAIL_SEND_MESSAGE'). Cannot be used without schema in conversation history."
                     },
                     "args": {
                         "type": "object", 
-                        "description": "Required for 'call' action. Arguments object matching the tool's OpenAPI schema parameters"
+                        "description": "For 'call' ONLY. Arguments matching discovered schema parameters. Use exact names from schema in conversation history."
                     },
                     "filter": {
                         "type": "string",
-                        "description": "Required for 'discover' action. Comma-separated tool names (e.g., 'SLACK_SEND_MESSAGE,SLACK_FIND_USERS,SLACK_LIST_CHANNELS') to get ALL needed schemas at once, or toolkit name (e.g., 'slack') for all tools. CRITICAL: List ALL tools you'll need in ONE call!"
+                        "description": "For 'discover' ONLY. Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times!"
                     }
                 },
                 "required": ["action"]
             }
         }
-    })
+    }) 
     async def execute_tool(self, action: str, tool_name: str = None, args: dict = None, filter: str = None) -> ToolResult:
         if action == "discover":
             return await self._discover_tools(filter)

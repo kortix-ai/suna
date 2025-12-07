@@ -822,7 +822,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                 onClick={() => handleToolClick(streamingToolCall.message_id || null, toolName)}
                                                                                                 className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
                                                                                             >
-                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
+                                                                                                <AppIcon toolCall={firstToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
                                                                                                 <span className="font-mono text-xs text-foreground">
                                                                                                     {getUserFriendlyToolName(toolName)}
                                                                                                 </span>
@@ -831,6 +831,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                         {paramDisplay}
                                                                                                     </span>
                                                                                                 )}
+                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
                                                                                             </button>
                                                                                         );
                                                                                     }

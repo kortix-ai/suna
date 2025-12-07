@@ -280,10 +280,10 @@ class ResponseProcessor:
                 transformed_tc = unified_tool_call.copy()
                 if ',' in filter_val:
                     tool_count = len([t.strip() for t in filter_val.split(',')])
-                    transformed_tc['_display_hint'] = f"Discovering {app_name} schemas"
+                    transformed_tc['_display_hint'] = f"Discovering schemas"
                 else:
                     app_name = filter_val.split()[0].title() if filter_val else "MCP"
-                    transformed_tc['_display_hint'] = f"Discovering {app_name} schemas"
+                    transformed_tc['_display_hint'] = f"Discovering schemas"
                 transformed_tc['_app_filter'] = filter_val
                 logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
                 return transformed_tc

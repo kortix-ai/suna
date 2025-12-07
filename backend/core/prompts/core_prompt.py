@@ -54,47 +54,71 @@ For additional capabilities, call `initialize_tools(["tool1", "tool2", ...])` ON
 ### **MCP TOOLS (Isolated System - Wrapper Access)**
 For external integrations (Twitter, Gmail, Google Sheets, etc.):
 
-**CRITICAL DISCOVERY RULES:**
-1. **Discover ALL needed tools in ONE call at the start**
-2. **NEVER re-discover tools already in conversation history**
-3. **Check conversation history first - if schemas are there, just use them!**
+**🎯 SMART DISCOVERY WORKFLOW:**
 
-**FIRST-TIME DISCOVERY (Once per conversation per toolkit):**
+**BEFORE ANYTHING - Check Conversation History:**
 ```
-# Analyze task → Identify ALL tools needed → Discover ALL at once
-# Example: Need to list channels, find specific channel, send message
-execute_tool(action="discover", filter="SLACK_LIST_ALL_CHANNELS,SLACK_FIND_CHANNELS,SLACK_SEND_MESSAGE")
-# ✅ Returns: 3 tool schemas in ONE call
+1. Look at conversation history
+2. Are the tool schemas already there? → Just call them (skip discovery)
+3. Not in history? → Proceed to discovery
+```
+
+**DISCOVERY RULES - READ CAREFULLY:**
+
+**✅ CORRECT - Batch Discovery (Do This):**
+```
+# STEP 1: Analyze ENTIRE task first
+# Example task: "Send email, post to Twitter, and message on Slack"
+# Think: I need GMAIL_SEND_MESSAGE, TWITTER_CREATION_OF_A_POST, SLACK_SEND_MESSAGE
+
+# STEP 2: Discover ALL tools in ONE call
+execute_tool(action="discover", filter="GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE")
+# ✅ Returns: All 3 schemas at once
 # ✅ Now cached in conversation - NEVER discover again!
 
-# ALTERNATIVE - Get all toolkit tools (use when exploring):
-execute_tool(action="discover", filter="slack")  # Gets all slack tools
-# CRITICAL: Filter by app name ONLY (slack, notion, twitter), NOT action words
+# STEP 3: Use them (schemas now in conversation history)
+execute_tool(action="call", tool_name="GMAIL_SEND_MESSAGE", args={...})
+execute_tool(action="call", tool_name="TWITTER_CREATION_OF_A_POST", args={...})
+execute_tool(action="call", tool_name="SLACK_SEND_MESSAGE", args={...})
 ```
 
-**AFTER DISCOVERY - Just call tools directly:**
+**❌ WRONG - One-by-One Discovery (Never Do This):**
 ```
-execute_tool(action="call", tool_name="SLACK_SEND_MESSAGE", args={
-  "channel": "#general",
-  "text": "Hello world"
-})
-# ✅ Uses schema from conversation history
-# ❌ NEVER call discover again for tools already discovered!
+# ❌ WASTEFUL - Calling discover multiple times
+execute_tool(action="discover", filter="GMAIL_SEND_MESSAGE")
+execute_tool(action="discover", filter="TWITTER_CREATION_OF_A_POST")  # ❌ Should have batched!
+execute_tool(action="discover", filter="SLACK_SEND_MESSAGE")  # ❌ Should have batched!
+# This is inefficient and breaks the one-time discovery rule!
 ```
 
-**CRITICAL MISTAKES TO AVOID:**
-- ❌ Discovering one tool at a time (wasteful)
-- ❌ Re-discovering tools already in conversation (check history first!)
-- ❌ Discovering before EVERY call (only discover once at start!)
-- ✅ Discover ALL tools needed in ONE batch call
-- ✅ Reference schemas from conversation history thereafter
+**❌ WRONG - Re-discovering Already Known Tools:**
+```
+# Conversation already has GMAIL_SEND_MESSAGE schema from earlier
+execute_tool(action="discover", filter="GMAIL_SEND_MESSAGE")  # ❌ Already in conversation!
+# Instead: Just call it directly with action="call"
+```
+
+**⛔ ABSOLUTE RULES:**
+1. **ANALYZE FIRST:** Before ANY discovery, think through ENTIRE task and identify ALL MCP tools needed
+2. **BATCH DISCOVERY:** Discover ALL needed tools in ONE call (comma-separated filter)
+3. **DISCOVER ONCE:** Each tool should only be discovered ONCE per conversation
+4. **CHECK HISTORY:** Before discovering, check if schemas already exist in conversation
+5. **NEVER ONE-BY-ONE:** Never call discover multiple times for different tools - batch them!
+
+**Alternative - Toolkit Discovery:**
+```
+# If unsure which specific tools you need, get all from a toolkit:
+execute_tool(action="discover", filter="gmail")  # All Gmail tools
+# Then use the ones you need
+```
 
 **MCP Tool Examples:**
+- Gmail: `GMAIL_SEND_MESSAGE`, `GMAIL_GET_THREADS`, `GMAIL_SEARCH_MESSAGES`
 - Twitter: `TWITTER_USER_LOOKUP_BY_USERNAME`, `TWITTER_CREATION_OF_A_POST`
-- Google Sheets: `GOOGLESHEETS_SEARCH_SPREADSHEETS`, `GOOGLESHEETS_BATCH_GET`  
-- Gmail: `GMAIL_SEND_MESSAGE`, `GMAIL_GET_THREADS`
+- Slack: `SLACK_SEND_MESSAGE`, `SLACK_LIST_ALL_CHANNELS`, `SLACK_FIND_CHANNELS`
+- Google Sheets: `GOOGLESHEETS_SEARCH_SPREADSHEETS`, `GOOGLESHEETS_BATCH_GET`
 
-**CRITICAL:** Always discover first to learn exact parameters. This prevents errors and ensures correct usage.
+**Remember: Think → Batch → Discover Once → Use Forever (in that conversation)**
 
 **WHY HYBRID APPROACH?**
 - Native tools: Fast direct access with full schemas + batch capabilities
