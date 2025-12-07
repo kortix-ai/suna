@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError, handleNetworkError, ErrorContext, ApiError } from './error-handler';
-import { parseTierRestrictionError } from './api/errors';
+import { parseTierRestrictionError, RequestTooLargeError } from './api/errors';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -57,9 +57,8 @@ async function makeRequest<T = any>(
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
 
-    if (session?.refresh_token) {
-      headers['X-Refresh-Token'] = session.refresh_token;
-    }
+    // Note: X-Refresh-Token was removed to reduce header size and prevent HTTP 431 errors.
+    // The backend handles token refresh via Supabase directly.
 
     const response = await fetch(url, {
       ...fetchOptions,
@@ -99,6 +98,15 @@ async function makeRequest<T = any>(
 
       if (response.status === 402) {
         error = parseTierRestrictionError(error);
+      }
+
+      // Handle HTTP 431 - Request Header Fields Too Large
+      // This typically happens when uploading many files at once
+      if (response.status === 431) {
+        error = new RequestTooLargeError(431, {
+          message: 'Request is too large to process',
+          suggestion: 'Try uploading files one at a time, or reduce the number of files attached to your message.',
+        });
       }
 
       if (showErrors) {

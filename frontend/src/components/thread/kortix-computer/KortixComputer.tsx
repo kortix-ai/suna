@@ -834,7 +834,7 @@ export const KortixComputer = memo(function KortixComputer({
   let displayIndex = safeInternalIndex;
   const displayTotalCalls = totalCalls;
 
-  const isCurrentToolStreaming = currentToolCall?.toolResult === undefined;
+  const isCurrentToolStreaming = currentToolCall != null && currentToolCall.toolResult === undefined;
 
   const currentToolName = currentToolCall?.toolCall?.function_name?.replace(/_/g, '-').toLowerCase();
   const isFileOperation = currentToolName && ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'].includes(currentToolName);
@@ -847,7 +847,8 @@ export const KortixComputer = memo(function KortixComputer({
     }
   }
 
-  const isStreaming = displayToolCall?.toolResult === undefined;
+  // Only streaming if we have a display tool call AND its result is undefined
+  const isStreaming = displayToolCall != null && displayToolCall.toolResult === undefined;
 
   const getActualSuccess = (toolCall: ToolCallInput): boolean => {
     if (toolCall?.toolResult?.success !== undefined) {
@@ -1142,7 +1143,7 @@ export const KortixComputer = memo(function KortixComputer({
             variant="motion"
             currentView={activeView}
             onViewChange={setActiveView}
-            showFilesTab={!!effectiveSandboxId}
+            showFilesTab={true}
           />
         )}
 
@@ -1166,7 +1167,7 @@ export const KortixComputer = memo(function KortixComputer({
             variant="drawer"
             currentView={activeView}
             onViewChange={setActiveView}
-            showFilesTab={!!effectiveSandboxId}
+            showFilesTab={true}
           />
 
           <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>

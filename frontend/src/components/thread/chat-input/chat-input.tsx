@@ -656,6 +656,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
     const [hasSubmitted, setHasSubmitted] = useState(false);
+    const [isSendingFiles, setIsSendingFiles] = useState(false);
 
     // Derived values
     const hasFiles = uploadedFiles.length > 0;
@@ -931,12 +932,25 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         setHasContent(false);
         setHasSubmitted(false);
         
+        // Clear files when agent starts running
+        setUploadedFiles([]);
+        setIsSendingFiles(false);
+        
         // Notify parent in controlled mode
         if (isControlled && controlledOnChange) {
           controlledOnChange('');
         }
       }
     }, [isAgentRunning, isControlled, controlledOnChange]);
+
+    // Reset sending state if loading becomes false without agent starting (submission failure)
+    useEffect(() => {
+      if (!loading && !isAgentRunning && isSendingFiles) {
+        // If loading stopped but agent didn't start, reset sending state
+        // This allows user to retry or remove files
+        setIsSendingFiles(false);
+      }
+    }, [loading, isAgentRunning, isSendingFiles]);
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
       e.preventDefault();
@@ -959,6 +973,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
       // Mark as submitted to disable input immediately
       setHasSubmitted(true);
+
+      // Mark files as being sent (show loading spinner)
+      if (currentUploadedFiles.length > 0) {
+        setIsSendingFiles(true);
+      }
 
       let message = currentValue;
 
@@ -990,10 +1009,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
       });
 
-      // TODO: Clear input after agent stream connects
-      // For now, keep the text visible until stream starts
-
-      setUploadedFiles([]);
+      // Keep files visible with loading spinner - they'll be cleared when agent starts running
     }, [loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, generateSlidesTemplateMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId]);
 
     // Handle paste for image files
@@ -1287,16 +1303,24 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                     <AttachmentGroup
                       files={uploadedFiles || []}
                       sandboxId={sandboxId}
-                      onRemove={removeUploadedFile}
+                      onRemove={isSendingFiles ? undefined : removeUploadedFile}
                       layout="inline"
                       maxHeight="216px"
                       showPreviews={true}
                     />
-                    {isUploading && pendingFiles.length > 0 && (
-                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                    {(isUploading && pendingFiles.length > 0) && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
                         <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
                           <KortixLoader size="small" customSize={16} variant="auto" />
                           <span className="text-sm">Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</span>
+                        </div>
+                      </div>
+                    )}
+                    {isSendingFiles && !isUploading && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
+                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
+                          <KortixLoader size="small" customSize={16} variant="auto" />
+                          <span className="text-sm">Sending {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}...</span>
                         </div>
                       </div>
                     )}

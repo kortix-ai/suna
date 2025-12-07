@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
 from ..utils.logger import logger
-from run_agent_background import update_agent_run_status, _cleanup_redis_response_list
+from run_agent_background import update_agent_run_status, _cleanup_redis_response_stream
 
 
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):
@@ -12,7 +12,7 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     Stop an agent run and clean up all associated resources.
     
     This function:
-    1. Fetches final responses from Redis
+    1. Fetches final responses from Redis stream
     2. Updates database status
     3. Publishes STOP signals to all control channels
     4. Cleans up Redis keys
@@ -30,15 +30,15 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     client = await db.client
     final_status = "failed" if error_message else "stopped"
 
-    # Attempt to fetch final responses from Redis
-    response_list_key = f"agent_run:{agent_run_id}:responses"
+    # Attempt to fetch final responses from Redis stream
+    stream_key = f"agent_run:{agent_run_id}:stream"
     all_responses = []
     try:
-        all_responses_json = await redis.lrange(response_list_key, 0, -1)
-        all_responses = [json.loads(r) for r in all_responses_json]
-        logger.debug(f"Fetched {len(all_responses)} responses from Redis for DB update on stop/fail: {agent_run_id}")
+        stream_entries = await redis.xrange(stream_key)
+        all_responses = [json.loads(entry[1].get('data', '{}')) for entry in stream_entries] if stream_entries else []
+        logger.debug(f"Fetched {len(all_responses)} responses from Redis stream for DB update on stop/fail: {agent_run_id}")
     except Exception as e:
-        logger.error(f"Failed to fetch responses from Redis for {agent_run_id} during stop/fail: {e}")
+        logger.error(f"Failed to fetch responses from Redis stream for {agent_run_id} during stop/fail: {e}")
 
     # Update the agent run status in the database
     update_success = await update_agent_run_status(
@@ -76,8 +76,8 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
             else:
                  logger.warning(f"Unexpected key format found: {key}")
 
-        # Clean up the response list immediately on stop/fail
-        await _cleanup_redis_response_list(agent_run_id)
+        # Clean up the response stream immediately on stop/fail
+        await _cleanup_redis_response_stream(agent_run_id)
 
     except Exception as e:
         logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")

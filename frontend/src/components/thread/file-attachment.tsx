@@ -153,7 +153,10 @@ function getFileUrl(sandboxId: string | undefined, path: string): string {
     if (!sandboxId) return path;
 
     // Check if the path already starts with /workspace
-    if (!path.startsWith('/workspace')) {
+    // Handle paths that start with "workspace" (without leading /)
+    if (path === 'workspace' || path.startsWith('workspace/')) {
+        path = '/' + path;
+    } else if (!path.startsWith('/workspace')) {
         // Prepend /workspace to the path if it doesn't already have it
         path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;
     }

@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
-import { BillingError, AgentRunLimitError, ProjectLimitError, NoAccessTokenAvailableError } from './errors';
+import { BillingError, AgentRunLimitError, ProjectLimitError, NoAccessTokenAvailableError, RequestTooLargeError } from './errors';
 import { nonRunningAgentRuns, activeStreams, cleanupEventSource } from './streaming';
 import { Message } from './threads';
 
@@ -132,6 +132,18 @@ export const unifiedAgentStart = async (options: {
         throw new AgentRunLimitError(status, detail);
       }
 
+      // Handle HTTP 431 - Request Header Fields Too Large
+      // This happens when uploading many files at once
+      if (status === 431 || response.error instanceof RequestTooLargeError) {
+        const filesCount = options.files?.length || 0;
+        throw new RequestTooLargeError(431, {
+          message: `Request is too large (${filesCount} files attached)`,
+          suggestion: filesCount > 1 
+            ? 'Try uploading files one at a time instead of all at once.'
+            : 'The file or request data is too large. Try a smaller file or simplify your message.',
+        });
+      }
+
       console.error(
         `[API] Error starting agent: ${status} ${response.error.message}`,
       );
@@ -154,6 +166,10 @@ export const unifiedAgentStart = async (options: {
     }
 
     if (error instanceof NoAccessTokenAvailableError) {
+      throw error;
+    }
+
+    if (error instanceof RequestTooLargeError) {
       throw error;
     }
 

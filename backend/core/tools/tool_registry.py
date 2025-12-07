@@ -18,6 +18,7 @@ CORE_TOOLS = [
     ('expand_msg_tool', 'core.tools.expand_msg_tool', 'ExpandMessageTool'),
     ('message_tool', 'core.tools.message_tool', 'MessageTool'),
     ('task_list_tool', 'core.tools.task_list_tool', 'TaskListTool'),
+    ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
 ]
 
 # Sandbox tools - File system, shell, and workspace operations
@@ -32,6 +33,7 @@ SANDBOX_TOOLS = [
     ('sb_presentation_tool', 'core.tools.sb_presentation_tool', 'SandboxPresentationTool'),
     ('sb_upload_file_tool', 'core.tools.sb_upload_file_tool', 'SandboxUploadFileTool'),
     # ('sb_docs_tool', 'core.tools.sb_docs_tool', 'SandboxDocsTool'),
+    ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
 ]
 
 # Search and research tools

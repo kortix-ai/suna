@@ -9,7 +9,8 @@ import {
   AgentCountLimitError,
   TriggerLimitError,
   CustomWorkerLimitError,
-  ModelAccessDeniedError
+  ModelAccessDeniedError,
+  RequestTooLargeError
 } from "@/lib/api/errors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { handleApiSuccess, handleApiError } from "@/lib/error-handler";
@@ -69,7 +70,8 @@ export const useInitiateAgentMutation = () => {
           error instanceof AgentCountLimitError ||
           error instanceof TriggerLimitError ||
           error instanceof CustomWorkerLimitError ||
-          error instanceof ModelAccessDeniedError) {
+          error instanceof ModelAccessDeniedError ||
+          error instanceof RequestTooLargeError) {
         throw error;
       }
       if (error instanceof Error && error.message.toLowerCase().includes("payment required")) {
@@ -85,7 +87,7 @@ export const useInitiateAgentWithInvalidation = () => {
   const baseMutation = useInitiateAgentMutation();
   
   return useMutation({
-    mutationFn: baseMutation.mutateAsync,
+    mutationFn: (formData: FormData) => baseMutation.mutateAsync(formData),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.all });
       queryClient.invalidateQueries({ queryKey: threadKeys.all });
@@ -99,7 +101,8 @@ export const useInitiateAgentWithInvalidation = () => {
           error instanceof AgentCountLimitError ||
           error instanceof TriggerLimitError ||
           error instanceof CustomWorkerLimitError ||
-          error instanceof ModelAccessDeniedError) {
+          error instanceof ModelAccessDeniedError ||
+          error instanceof RequestTooLargeError) {
         throw error;
       }
       if (error instanceof Error) {

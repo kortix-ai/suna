@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import Image from 'next/image';
 import {
   Globe,
   MonitorPlay,
@@ -199,12 +200,15 @@ export function BrowserToolView({
             <ImageLoader />
           )}
           <Card className={`p-0 overflow-hidden relative border ${imageLoading ? 'hidden' : 'block'}`}>
-            <img
+            <Image
               src={screenshotUrlFinal}
               alt="Browser Screenshot"
               className="max-w-full max-h-full object-contain"
               onLoad={handleImageLoad}
               onError={handleImageError}
+              width={1920}
+              height={1080}
+              unoptimized
             />
           </Card>
           {imageError && !imageLoading && (
@@ -224,12 +228,15 @@ export function BrowserToolView({
             <ImageLoader />
           )}
           <Card className={`overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
-            <img
+            <Image
               src={`data:image/jpeg;base64,${screenshotBase64Final}`}
               alt="Browser Screenshot"
               className="max-w-full max-h-full object-contain"
               onLoad={handleImageLoad}
               onError={handleImageError}
+              width={1920}
+              height={1080}
+              unoptimized
             />
           </Card>
           {imageError && !imageLoading && (
