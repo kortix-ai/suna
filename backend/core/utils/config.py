@@ -90,6 +90,13 @@ class Configuration:
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
     # ============================================
     
+
+    ENABLE_BOOTSTRAP_MODE: bool = True        # Use two-phase bootstrap+enrichment (faster startup)
+    ENABLE_MINIMAL_PROMPT: bool = True        # Use minimal prompt for first turn (no DB queries)
+    BOOTSTRAP_SLO_WARNING_MS: int = 750       # Emit warning if Phase A exceeds this threshold
+    BOOTSTRAP_SLO_CRITICAL_MS: int = 1500     # Hard timeout for Phase A (fail if exceeded)
+    # =========================================
+    
     # ===== PRESENCE CONFIGURATION =====
     DISABLE_PRESENCE: bool = False  # Disable presence tracking entirely
     # ==================================

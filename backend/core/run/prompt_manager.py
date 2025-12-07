@@ -13,6 +13,35 @@ from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
+    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None) -> dict:
+        import datetime
+        
+        if agent_config and agent_config.get('system_prompt'):
+            content = agent_config['system_prompt'].strip()
+        else:
+            from core.prompts.core_prompt import get_core_system_prompt
+            content = get_core_system_prompt()
+        
+        now = datetime.datetime.now(datetime.timezone.utc)
+        content += f"\n\n=== CURRENT DATE/TIME ===\n"
+        content += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
+        content += f"Current time: {now.strftime('%H:%M UTC')}\n"
+        
+        content += """
+
+⚠️ BOOTSTRAP MODE - FAST START:
+You are currently in fast-start mode. Core capabilities are ready NOW:
+✅ Available immediately: files, shell, web_search, git operations
+⏳ Loading shortly: advanced tools (browser, presentations, image editing), knowledge base, user context
+
+If you need specialized tools, they will become available during execution.
+If relevant context seems missing, ask a clarifying question.
+
+"""
+        
+        return {"role": "system", "content": content}
+    
+    @staticmethod
     async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
                                   thread_id: str, 
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
@@ -26,12 +55,22 @@ class PromptManager:
         system_content = PromptManager._build_base_prompt(use_dynamic_tools)
         system_content = PromptManager._append_agent_system_prompt(system_content, agent_config, use_dynamic_tools)
         system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
-        system_content = await PromptManager._append_knowledge_base(system_content, agent_config, client)
+        
+        kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
+        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        
         system_content = PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance)
         system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader)
         system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
-        system_content = await PromptManager._append_user_context(system_content, user_id, client)
+        
+        kb_data, user_context_data = await asyncio.gather(kb_task, user_context_task)
+        
+        if kb_data:
+            system_content += kb_data
+        
+        if user_context_data:
+            system_content += user_context_data
         
         PromptManager._log_prompt_stats(system_content, use_dynamic_tools)
         
@@ -75,9 +114,9 @@ class PromptManager:
         return system_content
     
     @staticmethod
-    async def _append_knowledge_base(system_content: str, agent_config: Optional[dict], client) -> str:
+    async def _fetch_knowledge_base(agent_config: Optional[dict], client) -> Optional[str]:
         if not (agent_config and client and 'agent_id' in agent_config):
-            return system_content
+            return None
         
         try:
             logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
@@ -99,12 +138,19 @@ class PromptManager:
 
                 IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
                 
-                system_content += kb_section
+                return kb_section
             else:
                 logger.debug("No knowledge base context found for this agent")
+                return None
         except Exception as e:
             logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
-        
+            return None
+    
+    @staticmethod
+    async def _append_knowledge_base(system_content: str, agent_config: Optional[dict], client) -> str:
+        kb_data = await PromptManager._fetch_knowledge_base(agent_config, client)
+        if kb_data:
+            system_content += kb_data
         return system_content
     
     @staticmethod
@@ -312,28 +358,37 @@ Example of correct tool call format (multiple invokes in one block):
         return system_content + datetime_info
     
     @staticmethod
-    async def _append_user_context(system_content: str, user_id: Optional[str], client) -> str:
+    async def _fetch_user_context_data(user_id: Optional[str], client) -> Optional[str]:
         if not (user_id and client):
-            return system_content
+            return None
         
         locale_task = PromptManager._fetch_user_locale(user_id, client)
         username_task = PromptManager._fetch_username(user_id, client)
         
         locale, username = await asyncio.gather(locale_task, username_task)
         
+        context_parts = []
+        
         if locale:
             from core.utils.user_locale import get_locale_context_prompt
             locale_prompt = get_locale_context_prompt(locale)
-            system_content += f"\n\n{locale_prompt}\n"
+            context_parts.append(f"\n\n{locale_prompt}\n")
             logger.debug(f"Added locale context ({locale}) to system prompt for user {user_id}")
         
         if username:
             username_info = f"\n\n=== USER INFORMATION ===\n"
             username_info += f"The user's name is: {username}\n"
             username_info += "Use this information to personalize your responses and address the user appropriately.\n"
-            system_content += username_info
+            context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         
+        return ''.join(context_parts) if context_parts else None
+    
+    @staticmethod
+    async def _append_user_context(system_content: str, user_id: Optional[str], client) -> str:
+        user_context_data = await PromptManager._fetch_user_context_data(user_id, client)
+        if user_context_data:
+            system_content += user_context_data
         return system_content
     
     @staticmethod

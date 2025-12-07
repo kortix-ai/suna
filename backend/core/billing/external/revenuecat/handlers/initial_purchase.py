@@ -35,10 +35,11 @@ class InitialPurchaseHandler:
                 webhook_data=webhook_data
             )
             
-            # Invalidate account state cache to ensure UI reflects changes immediately
             try:
                 from core.billing.shared.cache_utils import invalidate_account_state_cache
+                from core.billing.credits.integration import invalidate_daily_credit_check_cache
                 await invalidate_account_state_cache(app_user_id)
+                await invalidate_daily_credit_check_cache(app_user_id)
                 logger.info(f"[REVENUECAT INITIAL_PURCHASE] Cache invalidated for {app_user_id}")
             except Exception as cache_error:
                 logger.warning(f"[REVENUECAT INITIAL_PURCHASE] Cache invalidation failed: {cache_error}")

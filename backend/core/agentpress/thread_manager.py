@@ -190,44 +190,54 @@ class ThreadManager:
         except Exception as e:
             logger.error(f"Error handling billing: {str(e)}", exc_info=True)
 
-    async def get_llm_messages(self, thread_id: str) -> List[Dict[str, Any]]:
-        """Get all messages for a thread."""
-        logger.debug(f"Getting messages for thread {thread_id}")
+    async def get_llm_messages(self, thread_id: str, lightweight: bool = False) -> List[Dict[str, Any]]:
+        """
+        Get messages for a thread.
+        
+        Args:
+            thread_id: Thread ID to get messages for
+            lightweight: If True, fetch only recent messages with minimal payload (for bootstrap)
+        """
+        logger.debug(f"Getting messages for thread {thread_id} (lightweight={lightweight})")
         client = await self.db.client
 
         try:
             all_messages = []
-            batch_size = 1000
-            offset = 0
             
-            while True:
-                result = await client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
+            if lightweight:
+                result = await client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
                 
-                if not result.data:
-                    break
+                if result.data:
+                    all_messages = result.data
+            else:
+                batch_size = 1000
+                offset = 0
+                
+                while True:
+                    result = await client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
                     
-                all_messages.extend(result.data)
-                if len(result.data) < batch_size:
-                    break
-                offset += batch_size
+                    if not result.data:
+                        break
+                        
+                    all_messages.extend(result.data)
+                    if len(result.data) < batch_size:
+                        break
+                    offset += batch_size
 
             if not all_messages:
                 return []
 
             messages = []
             for item in all_messages:
-                # Check if this message has a compressed version in metadata
                 content = item['content']
                 metadata = item.get('metadata', {})
                 is_compressed = False
                 
-                # If compressed, use compressed_content for LLM instead of full content
-                if isinstance(metadata, dict) and metadata.get('compressed'):
+                if not lightweight and isinstance(metadata, dict) and metadata.get('compressed'):
                     compressed_content = metadata.get('compressed_content')
                     if compressed_content:
                         content = compressed_content
                         is_compressed = True
-                        # logger.debug(f"Using compressed content for message {item['message_id']}")
                 
                 # Parse content and add message_id
                 if isinstance(content, str):

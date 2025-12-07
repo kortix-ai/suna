@@ -310,6 +310,13 @@ For large outputs and complex content, create files:
 
 
 def get_core_system_prompt() -> str:
+    try:
+        import run_agent_background
+        if run_agent_background._STATIC_CORE_PROMPT:
+            return run_agent_background._STATIC_CORE_PROMPT
+    except (ImportError, AttributeError):
+        pass
+    
     return CORE_SYSTEM_PROMPT
 
 

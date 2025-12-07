@@ -55,10 +55,11 @@ class CreditService:
         if result_data and result_data.get('success'):
             await SubscriptionRepository.update_tier_only(client, app_user_id, tier_name)
             
-            # Invalidate account state cache to ensure UI reflects updated credits immediately
             try:
                 from core.billing.shared.cache_utils import invalidate_account_state_cache
+                from core.billing.credits.integration import invalidate_daily_credit_check_cache
                 await invalidate_account_state_cache(app_user_id)
+                await invalidate_daily_credit_check_cache(app_user_id)
                 logger.info(f"[REVENUECAT RENEWAL] Cache invalidated for {app_user_id}")
             except Exception as cache_error:
                 logger.warning(f"[REVENUECAT RENEWAL] Cache invalidation failed: {cache_error}")
