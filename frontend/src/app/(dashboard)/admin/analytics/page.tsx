@@ -20,7 +20,6 @@ import {
   Calendar,
   RefreshCw,
   ExternalLink,
-  Sparkles,
   Languages,
   Eye,
   Filter,
@@ -35,7 +34,6 @@ import {
   useThreadBrowser,
   useMessageDistribution,
   useRetentionData,
-  useBatchSummary,
   useTranslate,
   useRefreshAnalytics,
   type ThreadAnalytics,
@@ -97,10 +95,9 @@ function ThreadBrowser() {
   });
   const [emailSearch, setEmailSearch] = useState('');
   const [messageFilter, setMessageFilter] = useState<string>('all');
-  const [summaries, setSummaries] = useState<Record<string, string>>({});
+  const [translations, setTranslations] = useState<Record<string, string>>({});
   
   const { data: threadsData, isLoading } = useThreadBrowser(params);
-  const batchSummaryMutation = useBatchSummary();
   const translateMutation = useTranslate();
 
   const handleFilterChange = (filter: string) => {
@@ -132,34 +129,13 @@ function ThreadBrowser() {
     setParams({ ...params, search_email: emailSearch || undefined, page: 1 });
   };
 
-  const handleGenerateSummaries = async () => {
-    if (!threadsData?.data?.length) return;
-    
-    const threadIds = threadsData.data.slice(0, 10).map(t => t.thread_id);
-    
-    try {
-      const result = await batchSummaryMutation.mutateAsync(threadIds);
-      const newSummaries: Record<string, string> = {};
-      Object.entries(result.summaries).forEach(([id, data]) => {
-        if (data.summary) {
-          newSummaries[id] = data.summary;
-        }
-      });
-      setSummaries(prev => ({ ...prev, ...newSummaries }));
-      toast.success(`Generated ${Object.keys(newSummaries).length} summaries`);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to generate summaries');
-    }
-  };
-
-  const handleTranslate = async (text: string) => {
+  const handleTranslate = async (threadId: string, text: string) => {
     try {
       const result = await translateMutation.mutateAsync({ text });
+      setTranslations(prev => ({ ...prev, [threadId]: result.translated }));
       toast.success('Translated to English');
-      return result.translated;
     } catch (error: any) {
       toast.error(error.message || 'Failed to translate');
-      return null;
     }
   };
 
@@ -212,30 +188,30 @@ function ThreadBrowser() {
       id: 'first_message',
       header: 'First Prompt',
       cell: (thread) => {
-        const summary = summaries[thread.thread_id];
-        const text = summary || thread.first_user_message;
+        const translation = translations[thread.thread_id];
+        const displayText = translation || thread.first_user_message;
         
         return (
           <div className="min-w-[300px] max-w-[400px]">
-            {text ? (
+            {displayText ? (
               <div>
-                <p className="text-sm line-clamp-2">{text}</p>
-                {!summary && thread.first_user_message && (
+                <p className="text-sm line-clamp-2">{displayText}</p>
+                {!translation && thread.first_user_message && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="mt-1 h-6 text-xs"
-                    onClick={() => handleTranslate(thread.first_user_message!)}
+                    onClick={() => handleTranslate(thread.thread_id, thread.first_user_message!)}
                     disabled={translateMutation.isPending}
                   >
                     <Languages className="h-3 w-3 mr-1" />
                     Translate
                   </Button>
                 )}
-                {summary && (
+                {translation && (
                   <Badge variant="secondary" className="mt-1 text-xs">
-                    <Sparkles className="h-3 w-3 mr-1" />
-                    AI Summary
+                    <Languages className="h-3 w-3 mr-1" />
+                    Translated
                   </Badge>
                 )}
               </div>
@@ -278,7 +254,7 @@ function ThreadBrowser() {
       ),
       width: 'w-24',
     },
-  ], [summaries, translateMutation.isPending]);
+  ], [translations, translateMutation.isPending]);
 
   return (
     <div className="space-y-4">

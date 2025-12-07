@@ -65,21 +65,6 @@ export interface MessageDistribution {
   total_threads: number;
 }
 
-export interface ThreadSummary {
-  thread_id: string;
-  first_message?: string | null;
-  summary?: string | null;
-  created_at?: string;
-  error?: string;
-}
-
-export interface BatchSummaryResponse {
-  summaries: Record<string, {
-    first_message?: string | null;
-    summary?: string | null;
-  }>;
-}
-
 export interface TranslationResponse {
   original: string;
   translated: string;
@@ -213,50 +198,6 @@ export function useRetentionData(params: RetentionParams = {}) {
       return response.data;
     },
     staleTime: 300000, // 5 minutes
-  });
-}
-
-export function useThreadSummary(threadId: string | null) {
-  return useQuery({
-    queryKey: ['admin', 'analytics', 'thread-summary', threadId],
-    queryFn: async (): Promise<ThreadSummary> => {
-      if (!threadId) throw new Error('Thread ID required');
-      
-      const response = await backendApi.get(`/admin/analytics/threads/${threadId}/summary`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    enabled: !!threadId,
-    staleTime: 600000, // 10 minutes (summaries don't change)
-  });
-}
-
-export function useBatchSummary() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: async (threadIds: string[]): Promise<BatchSummaryResponse> => {
-      const response = await backendApi.post('/admin/analytics/threads/batch-summary', threadIds);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    onSuccess: (data) => {
-      // Cache individual summaries
-      Object.entries(data.summaries).forEach(([threadId, summary]) => {
-        queryClient.setQueryData(
-          ['admin', 'analytics', 'thread-summary', threadId],
-          {
-            thread_id: threadId,
-            first_message: summary.first_message,
-            summary: summary.summary,
-          }
-        );
-      });
-    },
   });
 }
 

@@ -89,30 +89,6 @@ async def get_openai_client():
     return openai.AsyncOpenAI(api_key=api_key)
 
 
-async def summarize_text(text: str, client: openai.AsyncOpenAI) -> str:
-    """Summarize text using OpenAI, translating to English if needed."""
-    try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant. Summarize the following user message in 1-2 concise sentences in ENGLISH. If the text is not in English, translate it first then summarize. Focus on what the user is trying to accomplish."
-                },
-                {
-                    "role": "user",
-                    "content": text[:2000]  # Limit input length
-                }
-            ],
-            max_tokens=150,
-            temperature=0.3
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"Failed to summarize text: {e}")
-        return None
-
-
 # ============================================================================
 # ANALYTICS ENDPOINTS
 # ============================================================================
@@ -538,131 +514,6 @@ async def _enrich_threads(client, threads: List[Dict]) -> List[ThreadAnalytics]:
     return result
 
 
-@router.get("/threads/{thread_id}/summary")
-async def get_thread_summary(
-    thread_id: str,
-    admin: dict = Depends(require_admin)
-) -> Dict[str, Any]:
-    """Get AI summary of a thread's first user message."""
-    try:
-        db = DBConnection()
-        client = await db.client
-        
-        # Get first user message
-        messages_result = await client.from_('messages').select(
-            'content, created_at'
-        ).eq('thread_id', thread_id).eq('type', 'user').order('created_at', desc=False).limit(1).execute()
-        
-        if not messages_result.data:
-            return {
-                "thread_id": thread_id,
-                "first_message": None,
-                "summary": None,
-                "error": "No user messages found"
-            }
-        
-        msg = messages_result.data[0]
-        content = msg.get('content', {})
-        
-        if isinstance(content, dict):
-            text = content.get('content', '')
-        elif isinstance(content, str):
-            text = content
-        else:
-            text = str(content)
-        
-        if not text:
-            return {
-                "thread_id": thread_id,
-                "first_message": None,
-                "summary": None,
-                "error": "Empty message content"
-            }
-        
-        # Get AI summary
-        openai_client = await get_openai_client()
-        summary = await summarize_text(text, openai_client)
-        
-        return {
-            "thread_id": thread_id,
-            "first_message": text[:1000],
-            "summary": summary,
-            "created_at": msg.get('created_at')
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get thread summary: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get thread summary")
-
-
-@router.post("/threads/batch-summary")
-async def batch_summarize_threads(
-    thread_ids: List[str],
-    admin: dict = Depends(require_admin)
-) -> Dict[str, Any]:
-    """Get AI summaries for multiple threads."""
-    if len(thread_ids) > 20:
-        raise HTTPException(status_code=400, detail="Maximum 20 threads per batch")
-    
-    try:
-        db = DBConnection()
-        client = await db.client
-        
-        # Get first user messages for all threads
-        messages_result = await client.from_('messages').select(
-            'thread_id, content, created_at'
-        ).in_('thread_id', thread_ids).eq('type', 'user').order('created_at', desc=False).execute()
-        
-        # Group by thread (first message only)
-        thread_messages = {}
-        for msg in messages_result.data or []:
-            tid = msg['thread_id']
-            if tid not in thread_messages:
-                content = msg.get('content', {})
-                if isinstance(content, dict):
-                    text = content.get('content', '')
-                elif isinstance(content, str):
-                    text = content
-                else:
-                    text = str(content)
-                thread_messages[tid] = text
-        
-        # Get AI summaries
-        openai_client = await get_openai_client()
-        summaries = {}
-        
-        for tid, text in thread_messages.items():
-            if text:
-                summary = await summarize_text(text, openai_client)
-                summaries[tid] = {
-                    "first_message": text[:500],
-                    "summary": summary
-                }
-            else:
-                summaries[tid] = {
-                    "first_message": None,
-                    "summary": None
-                }
-        
-        # Include threads with no messages
-        for tid in thread_ids:
-            if tid not in summaries:
-                summaries[tid] = {
-                    "first_message": None,
-                    "summary": None
-                }
-        
-        return {"summaries": summaries}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to batch summarize threads: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to batch summarize threads")
-
-
 @router.get("/retention")
 async def get_retention_data(
     page: int = Query(1, ge=1, description="Page number"),
@@ -774,32 +625,36 @@ async def translate_text(
     """Translate text to target language using OpenAI."""
     if len(text) > 5000:
         raise HTTPException(status_code=400, detail="Text too long (max 5000 characters)")
-    
+
     try:
         openai_client = await get_openai_client()
-        
+
         response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": f"Translate the following text to {target_language}. Only output the translation, nothing else."
+                    "content": f"""You are a translator. Translate the user's message to {target_language}.
+
+Rules:
+- If the text is already in {target_language}, return it as-is
+- Preserve the original meaning and intent
+- Only output the translated text, nothing else
+- Do not add explanations or notes"""
                 },
                 {
                     "role": "user",
                     "content": text
                 }
             ],
-            max_tokens=2000,
-            temperature=0.1
         )
-        
+
         return {
             "original": text,
             "translated": response.choices[0].message.content.strip(),
             "target_language": target_language
         }
-        
+
     except Exception as e:
         logger.error(f"Failed to translate text: {e}")
         raise HTTPException(status_code=500, detail="Failed to translate text")
