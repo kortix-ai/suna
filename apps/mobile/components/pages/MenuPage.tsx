@@ -1,11 +1,7 @@
 import * as React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
@@ -14,13 +10,26 @@ import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { KortixLoader } from '@/components/ui';
-import { Search, Plus, X, AlertCircle, MessageSquare, Users, Zap, PanelLeftClose, CircleChevronLeft, ChevronLeft, ChevronFirst, ChevronsUpDown } from 'lucide-react-native';
+import {
+  Search,
+  Plus,
+  X,
+  AlertCircle,
+  MessageSquare,
+  Users,
+  Zap,
+  PanelLeftClose,
+  CircleChevronLeft,
+  ChevronLeft,
+  ChevronFirst,
+  ChevronsUpDown,
+} from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsPage } from '@/components/settings/SettingsPage';
 import { useAuthContext, useLanguage } from '@/contexts';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
 import { useAgent } from '@/contexts/AgentContext';
 import { useSearch } from '@/lib/utils/search';
@@ -30,7 +39,11 @@ import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { useAdvancedFeatures } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
-import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
+import type {
+  Conversation,
+  UserProfile,
+  ConversationSection as ConversationSectionType,
+} from '@/components/menu/types';
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
@@ -109,29 +122,22 @@ function EmptyState({
 
   if (type === 'loading') {
     return (
-      <View className="items-center justify-center py-16 px-8">
+      <View className="items-center justify-center px-8 py-16">
         <KortixLoader size="large" />
-        <Text className="text-muted-foreground text-sm font-roobert mt-4 text-center">
-          {title}
-        </Text>
+        <Text className="mt-4 text-center font-roobert text-sm text-muted-foreground">{title}</Text>
       </View>
     );
   }
 
   return (
-    <View className="items-center justify-center py-20 px-8">
-      <View className={`w-20 h-20 rounded-full ${iconBgColor} items-center justify-center mb-6`}>
-        <Icon
-          as={icon}
-          size={36}
-          color={iconColor}
-          strokeWidth={2}
-        />
+    <View className="items-center justify-center px-8 py-20">
+      <View className={`h-20 w-20 rounded-full ${iconBgColor} mb-6 items-center justify-center`}>
+        <Icon as={icon} size={36} color={iconColor} strokeWidth={2} />
       </View>
-      <Text className="text-foreground text-xl font-roobert-semibold text-center tracking-tight mb-2">
+      <Text className="mb-2 text-center font-roobert-semibold text-xl tracking-tight text-foreground">
         {title}
       </Text>
-      <Text className="text-muted-foreground text-sm font-roobert text-center leading-5">
+      <Text className="text-center font-roobert text-sm leading-5 text-muted-foreground">
         {description}
       </Text>
       {actionLabel && onActionPress && (
@@ -140,19 +146,11 @@ function EmptyState({
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           style={animatedStyle}
-          className="mt-8 px-6 py-3.5 bg-primary rounded-full flex-row items-center gap-2"
+          className="mt-8 flex-row items-center gap-2 rounded-full bg-primary px-6 py-3.5"
           accessibilityRole="button"
-          accessibilityLabel={actionLabel}
-        >
-          <Icon
-            as={Plus}
-            size={18}
-            className="text-primary-foreground"
-            strokeWidth={2.5}
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {actionLabel}
-          </Text>
+          accessibilityLabel={actionLabel}>
+          <Icon as={Plus} size={18} className="text-primary-foreground" strokeWidth={2.5} />
+          <Text className="font-roobert-medium text-sm text-primary-foreground">{actionLabel}</Text>
         </AnimatedPressable>
       )}
     </View>
@@ -192,21 +190,14 @@ function BackButton({ onPress }: BackButtonProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className="w-10 h-10 rounded-full items-center justify-center p-0"
+      className="h-10 w-10 items-center justify-center rounded-full p-0"
       accessibilityRole="button"
       accessibilityLabel={t('actions.goBack')}
-      accessibilityHint={t('actions.returnToHome')}
-    >
-      <Icon
-        as={ChevronFirst}
-        size={22}
-        className="text-foreground"
-        strokeWidth={2}
-      />
+      accessibilityHint={t('actions.returnToHome')}>
+      <Icon as={ChevronFirst} size={22} className="text-foreground" strokeWidth={2} />
     </AnimatedPressable>
   );
 }
-
 
 interface NewChatButtonProps {
   onPress?: () => void;
@@ -234,17 +225,9 @@ function NewChatButton({ onPress }: NewChatButtonProps) {
       onPressOut={() => {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
-      className="h-14 w-full rounded-2xl bg-primary flex-row items-center justify-center gap-2"
-    >
-      <Icon
-        as={Plus}
-        size={20}
-        strokeWidth={2}
-        className="text-primary-foreground"
-      />
-      <Text className="text-primary-foreground font-roobert-medium">
-        {t('menu.newChat')}
-      </Text>
+      className="h-14 w-full flex-row items-center justify-center gap-2 rounded-2xl bg-primary">
+      <Icon as={Plus} size={20} strokeWidth={2} className="text-primary-foreground" />
+      <Text className="font-roobert-medium text-primary-foreground">{t('menu.newChat')}</Text>
     </AnimatedPressable>
   );
 }
@@ -256,17 +239,19 @@ interface FloatingActionButtonProps {
   onTriggerPress?: () => void;
 }
 
-function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTriggerPress }: FloatingActionButtonProps) {
+function FloatingActionButton({
+  activeTab,
+  onChatPress,
+  onWorkerPress,
+  onTriggerPress,
+}: FloatingActionButtonProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: scale.value },
-      { rotate: `${rotate.value}deg` }
-    ],
+    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }],
   }));
 
   const handlePressIn = () => {
@@ -278,7 +263,12 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
   };
 
   const handlePress = () => {
-    const action = activeTab === 'chats' ? t('menu.newChat') : activeTab === 'workers' ? t('menu.newWorker') : t('menu.newTrigger');
+    const action =
+      activeTab === 'chats'
+        ? t('menu.newChat')
+        : activeTab === 'workers'
+          ? t('menu.newWorker')
+          : t('menu.newTrigger');
     console.log('🎯 FAB pressed:', action);
     console.log('⏰ Timestamp:', new Date().toISOString());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -314,18 +304,12 @@ function FloatingActionButton({ activeTab, onChatPress, onWorkerPress, onTrigger
           shadowOpacity: 0.25,
           shadowRadius: 12,
           elevation: 10,
-        }
+        },
       ]}
-      className="absolute bottom-44 right-6 rounded-full items-center justify-center"
+      className="absolute bottom-44 right-6 items-center justify-center rounded-full"
       accessibilityRole="button"
-      accessibilityLabel={getAccessibilityLabel()}
-    >
-      <Icon
-        as={Plus}
-        size={26}
-        color={iconColor}
-        strokeWidth={2.5}
-      />
+      accessibilityLabel={getAccessibilityLabel()}>
+      <Icon as={Plus} size={26} color={iconColor} strokeWidth={2.5} />
     </AnimatedPressable>
   );
 }
@@ -349,10 +333,10 @@ interface MenuPageProps {
 
 /**
  * MenuPage Component
- * 
+ *
  * Full-screen menu page showing conversations, navigation, and profile.
  * This is page 0 in the swipeable pager.
- * 
+ *
  * Features:
  * - Search with clear button for all tabs
  * - New chat/worker/trigger buttons with haptic feedback
@@ -364,7 +348,7 @@ interface MenuPageProps {
  * - Elegant spring animations
  * - Full accessibility support
  * - Design token system for theme consistency
- * 
+ *
  * Accessibility:
  * - All interactive elements have proper labels and hints
  * - Keyboard navigation support
@@ -426,44 +410,62 @@ export function MenuPage({
   // Search functionality for different tabs
   const chatsSearchFields = React.useMemo(() => ['title', 'lastMessage'], []);
   const workersSearchFields = React.useMemo(() => ['name', 'description'], []);
-  const triggersSearchFields = React.useMemo(() => ['name', 'description', 'agent_name', 'trigger_type'], []);
+  const triggersSearchFields = React.useMemo(
+    () => ['name', 'description', 'agent_name', 'trigger_type', 'is_active'],
+    []
+  );
 
   // Memoize conversations array to prevent infinite loops
-  const conversations = React.useMemo(() =>
-    sections.flatMap(section => section.conversations),
+  const conversations = React.useMemo(
+    () => sections.flatMap((section) => section.conversations),
     [sections]
   );
 
   const chatsSearch = useSearch(conversations, chatsSearchFields);
 
   // Transform agents to have 'id' field for search
-  const searchableAgents = React.useMemo(() =>
-    agents.map(agent => ({ ...agent, id: agent.agent_id })),
+  const searchableAgents = React.useMemo(
+    () => agents.map((agent) => ({ ...agent, id: agent.agent_id })),
     [agents]
   );
   const workersSearch = useSearch(searchableAgents, workersSearchFields);
 
   // Transform results back to Agent type
-  const agentResults = React.useMemo(() =>
-    workersSearch.results.map(result => ({ ...result, agent_id: result.id })),
+  const agentResults = React.useMemo(
+    () => workersSearch.results.map((result) => ({ ...result, agent_id: result.id })),
     [workersSearch.results]
   );
 
   // Get triggers data
-  const { data: triggers = [], isLoading: triggersLoading, error: triggersError, refetch: refetchTriggers } = useAllTriggers();
+  const {
+    data: triggers = [],
+    isLoading: triggersLoading,
+    error: triggersError,
+    refetch: refetchTriggers,
+  } = useAllTriggers();
 
-  // Transform triggers to have 'id' field for search
-  const searchableTriggers = React.useMemo(() =>
-    triggers.map(trigger => ({ ...trigger, id: trigger.trigger_id })),
+  // Transform triggers to have 'id' field for search (same pattern as conversations)
+  const searchableTriggers = React.useMemo(
+    () => triggers.map((trigger) => ({ ...trigger, id: trigger.trigger_id })),
     [triggers]
   );
   const triggersSearch = useSearch(searchableTriggers, triggersSearchFields);
 
-  // Transform results back to TriggerWithAgent type
-  const triggerResults = React.useMemo(() =>
-    triggersSearch.results.map(result => ({ ...result, trigger_id: result.id })),
-    [triggersSearch.results]
+  // Filter triggers based on search results (same pattern as conversations)
+  const filteredTriggers = React.useMemo(
+    () =>
+      triggersSearch.isSearching
+        ? triggers.filter((trigger) =>
+            triggersSearch.results.some((result) => result.id === trigger.trigger_id)
+          )
+        : triggers,
+    [triggers, triggersSearch.isSearching, triggersSearch.results]
   );
+
+  // refetch the data when tab changes
+  React.useEffect(() => {
+    refetchTriggers();
+  }, [activeTab]);
 
   /**
    * Handle scroll event to track scroll position
@@ -532,15 +534,14 @@ export function MenuPage({
 
   return (
     <View
-      className="flex-1 bg-background rounded-r-[24px] overflow-hidden"
+      className="flex-1 overflow-hidden rounded-r-[24px] bg-background"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: -8, height: 0 },
         shadowOpacity: colorScheme === 'dark' ? 0.6 : 0.2,
         shadowRadius: 16,
         elevation: 16,
-      }}
-    >
+      }}>
       <SafeAreaView edges={['top', 'bottom']} className="flex-1">
         <View className="flex-1 px-6 pt-2">
           <View className="mb-4 flex-row items-center gap-3">
@@ -584,26 +585,19 @@ export function MenuPage({
                 profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
               }}
               style={profileAnimatedStyle}
-              className="w-11 h-11 rounded-[21px] bg-primary items-center justify-center"
-            >
-              <Icon
-                as={Plus}
-                size={20}
-                className="text-primary-foreground"
-                strokeWidth={2.5}
-              />
+              className="h-11 w-11 items-center justify-center rounded-[21px] bg-primary">
+              <Icon as={Plus} size={20} className="text-primary-foreground" strokeWidth={2.5} />
             </AnimatedPressable>
           </View>
 
-          <View className="flex-1 relative -mx-6">
+          <View className="relative -mx-6 flex-1">
             <AnimatedScrollView
               className="flex-1"
               contentContainerClassName="px-6"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingTop: 0, paddingBottom: 40 }}
               onScroll={handleScroll}
-              scrollEventThrottle={16}
-            >
+              scrollEventThrottle={16}>
               {activeTab === 'chats' && (
                 <>
                   {isLoadingThreads ? (
@@ -625,7 +619,10 @@ export function MenuPage({
                       type="empty"
                       icon={MessageSquare}
                       title={t('emptyStates.noConversations') || 'No chats yet'}
-                      description={t('emptyStates.noConversationsDescription') || 'Start a new chat to get started'}
+                      description={
+                        t('emptyStates.noConversationsDescription') ||
+                        'Start a new chat to get started'
+                      }
                       actionLabel={t('chat.newChat') || 'New Chat'}
                       onActionPress={onNewChat}
                     />
@@ -633,9 +630,9 @@ export function MenuPage({
                     <View className="gap-8">
                       {sections.map((section) => {
                         const filteredConversations = chatsSearch.isSearching
-                          ? section.conversations.filter(conv =>
-                            chatsSearch.results.some(result => result.id === conv.id)
-                          )
+                          ? section.conversations.filter((conv) =>
+                              chatsSearch.results.some((result) => result.id === conv.id)
+                            )
                           : section.conversations;
 
                         if (filteredConversations.length === 0 && chatsSearch.isSearching) {
@@ -647,7 +644,7 @@ export function MenuPage({
                             key={section.id}
                             section={{
                               ...section,
-                              conversations: filteredConversations
+                              conversations: filteredConversations,
                             }}
                             onConversationPress={onConversationPress}
                           />
@@ -655,16 +652,19 @@ export function MenuPage({
                       })}
 
                       {chatsSearch.isSearching &&
-                        sections.every(section =>
-                          !section.conversations.some(conv =>
-                            chatsSearch.results.some(result => result.id === conv.id)
-                          )
+                        sections.every(
+                          (section) =>
+                            !section.conversations.some((conv) =>
+                              chatsSearch.results.some((result) => result.id === conv.id)
+                            )
                         ) && (
                           <EmptyState
                             type="no-results"
                             icon={Search}
                             title={t('emptyStates.noResults') || 'No results'}
-                            description={t('emptyStates.tryDifferentSearch') || 'Try a different search term'}
+                            description={
+                              t('emptyStates.tryDifferentSearch') || 'Try a different search term'
+                            }
                           />
                         )}
                     </View>
@@ -679,7 +679,10 @@ export function MenuPage({
                       type="empty"
                       icon={Users}
                       title={t('emptyStates.noWorkers') || 'No workers yet'}
-                      description={t('emptyStates.noWorkersDescription') || 'Create your first worker to get started'}
+                      description={
+                        t('emptyStates.noWorkersDescription') ||
+                        'Create your first worker to get started'
+                      }
                       actionLabel={t('agents.newWorker') || 'New Worker'}
                       onActionPress={onNewWorker}
                     />
@@ -688,7 +691,9 @@ export function MenuPage({
                       type="no-results"
                       icon={Search}
                       title={t('emptyStates.noResults') || 'No results'}
-                      description={t('emptyStates.tryDifferentSearch') || 'Try a different search term'}
+                      description={
+                        t('emptyStates.tryDifferentSearch') || 'Try a different search term'
+                      }
                     />
                   ) : (
                     <AgentList
@@ -718,18 +723,30 @@ export function MenuPage({
                       title={t('errors.loadingTriggers') || 'Failed to load triggers'}
                       description={t('errors.tryAgain') || 'Please try again later'}
                     />
-                  ) : triggerResults.length === 0 && !triggersSearch.isSearching ? (
+                  ) : filteredTriggers.length === 0 && !triggersSearch.isSearching ? (
                     <EmptyState
                       type="empty"
                       icon={Zap}
                       title={t('emptyStates.triggers') || 'No triggers yet'}
-                      description={t('emptyStates.triggersDescription') || 'Create your first trigger to get started'}
+                      description={
+                        t('emptyStates.triggersDescription') ||
+                        'Create your first trigger to get started'
+                      }
                       actionLabel={t('menu.newTrigger') || 'Create Trigger'}
                       onActionPress={handleTriggerCreate}
                     />
+                  ) : filteredTriggers.length === 0 && triggersSearch.isSearching ? (
+                    <EmptyState
+                      type="no-results"
+                      icon={Search}
+                      title={t('emptyStates.noResults') || 'No results'}
+                      description={
+                        t('emptyStates.tryDifferentSearch') || 'Try a different search term'
+                      }
+                    />
                   ) : (
                     <TriggerList
-                      triggers={triggerResults}
+                      triggers={filteredTriggers}
                       isLoading={triggersLoading}
                       error={triggersError}
                       searchQuery={triggersSearch.query}
@@ -738,7 +755,7 @@ export function MenuPage({
                         // Navigate to trigger detail page
                         router.push({
                           pathname: '/trigger-detail',
-                          params: { triggerId: selectedTrigger.trigger_id }
+                          params: { triggerId: selectedTrigger.trigger_id },
                         });
                       }}
                     />
@@ -748,28 +765,27 @@ export function MenuPage({
             </AnimatedScrollView>
 
             <View
-              className="absolute bottom-0 left-0 right-0 pointer-events-none"
-              style={{ height: 70 }}
-            >
+              className="pointer-events-none absolute bottom-0 left-0 right-0"
+              style={{ height: 70 }}>
               <LinearGradient
                 colors={
                   colorScheme === 'dark'
                     ? [
-                      'rgba(18, 18, 21, 0)',
-                      'rgba(18, 18, 21, 0.2)',
-                      'rgba(18, 18, 21, 0.5)',
-                      'rgba(18, 18, 21, 0.8)',
-                      'rgba(18, 18, 21, 0.95)',
-                      '#121215'
-                    ]
+                        'rgba(18, 18, 21, 0)',
+                        'rgba(18, 18, 21, 0.2)',
+                        'rgba(18, 18, 21, 0.5)',
+                        'rgba(18, 18, 21, 0.8)',
+                        'rgba(18, 18, 21, 0.95)',
+                        '#121215',
+                      ]
                     : [
-                      'rgba(248, 248, 248, 0)',
-                      'rgba(248, 248, 248, 0.2)',
-                      'rgba(248, 248, 248, 0.5)',
-                      'rgba(248, 248, 248, 0.8)',
-                      'rgba(248, 248, 248, 0.95)',
-                      '#F8F8F8'
-                    ]
+                        'rgba(248, 248, 248, 0)',
+                        'rgba(248, 248, 248, 0.2)',
+                        'rgba(248, 248, 248, 0.5)',
+                        'rgba(248, 248, 248, 0.8)',
+                        'rgba(248, 248, 248, 0.95)',
+                        '#F8F8F8',
+                      ]
                 }
                 locations={[0, 0.2, 0.4, 0.6, 0.8, 1]}
                 style={{ flex: 1 }}
@@ -778,21 +794,25 @@ export function MenuPage({
           </View>
         </View>
 
-        <View className="px-6 pb-0 gap-4">
+        <View className="gap-4 px-6 pb-0">
           <AnimatedPressable
             onPress={handleProfilePress}
             onPressIn={handleProfilePressIn}
             onPressOut={handleProfilePressOut}
             style={profileAnimatedStyle}
-            className="flex-row items-center gap-3 border border-border p-3 rounded-2xl"
-          >
-            <ProfilePicture 
-              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar} 
+            className="flex-row items-center gap-3 rounded-2xl border border-border p-3">
+            <ProfilePicture
+              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar}
               size={12}
-              fallbackText={profile.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+              fallbackText={
+                profile.name ||
+                user?.user_metadata?.full_name ||
+                user?.email?.split('@')[0] ||
+                'User'
+              }
             />
-            <View className="flex-col items-start -mt-1.5">
-              <Text className="text-lg font-roobert-semibold text-foreground">
+            <View className="-mt-1.5 flex-col items-start">
+              <Text className="font-roobert-semibold text-lg text-foreground">
                 {profile.name || 'User'}
               </Text>
               {profile.planName ? (
@@ -800,7 +820,7 @@ export function MenuPage({
                   <TierBadge planName={profile.planName} size="sm" variant="default" />
                 </View>
               ) : (
-                <Text className="text-sm font-roobert text-muted-foreground">
+                <Text className="font-roobert text-sm text-muted-foreground">
                   {profile.email || 'Tap to open settings'}
                 </Text>
               )}
@@ -808,7 +828,7 @@ export function MenuPage({
             <Icon
               as={ChevronsUpDown}
               size={20}
-              className="text-muted-foreground ml-auto"
+              className="ml-auto text-muted-foreground"
               strokeWidth={2}
             />
           </AnimatedPressable>
@@ -825,11 +845,7 @@ export function MenuPage({
 
       {/* Settings Page */}
       <AnimatedPageWrapper visible={isSettingsVisible} onClose={handleCloseSettings}>
-        <SettingsPage
-          visible={isSettingsVisible}
-          profile={profile}
-          onClose={handleCloseSettings}
-        />
+        <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
       </AnimatedPageWrapper>
 
       {/* Floating Action Button */}

@@ -1,6 +1,6 @@
 /**
  * Conversation Item Component - Unified thread item using SelectableListItem
- * 
+ *
  * Uses the unified SelectableListItem with ThreadAvatar
  * Ensures consistent design across all list types
  */
@@ -21,14 +21,14 @@ interface ConversationItemProps {
 
 /**
  * ConversationItem Component
- * 
+ *
  * Individual conversation list item with avatar, title, preview, and date.
  * Uses the unified SelectableListItem for consistent design.
  */
-export function ConversationItem({ 
-  conversation, 
+export function ConversationItem({
+  conversation,
   onPress,
-  showChevron = false 
+  showChevron = false,
 }: ConversationItemProps) {
   const { currentLanguage } = useLanguage();
 
@@ -39,14 +39,14 @@ export function ConversationItem({
     () => formatConversationDate(conversation.timestamp, currentLanguage),
     [conversation.timestamp, currentLanguage]
   );
-  
+
   return (
     <SelectableListItem
       avatar={
-        <ThreadAvatar 
-          title={conversation.title} 
+        <ThreadAvatar
+          title={conversation.title}
           icon={conversation.iconName || conversation.icon}
-          size={48} 
+          size={48}
           backgroundColor={isDarkMode ? '#1C1D20' : '#ECECEC'}
           className="flex-row items-center justify-center"
           style={{
@@ -54,6 +54,7 @@ export function ConversationItem({
           }}
         />
       }
+      isActive
       title={conversation.title}
       subtitle={conversation.preview}
       meta={formattedDate}

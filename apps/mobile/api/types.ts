@@ -1,6 +1,6 @@
 /**
  * API Type Definitions
- * 
+ *
  * Centralized TypeScript types for all API models and responses
  */
 
@@ -23,7 +23,16 @@ export interface Message {
 export interface UnifiedMessage {
   message_id: string | null; // null for transient stream chunks
   thread_id: string;
-  type: 'user' | 'assistant' | 'tool' | 'system' | 'status' | 'browser_state' | 'image_context' | 'llm_response_end' | 'llm_response_start';
+  type:
+    | 'user'
+    | 'assistant'
+    | 'tool'
+    | 'system'
+    | 'status'
+    | 'browser_state'
+    | 'image_context'
+    | 'llm_response_end'
+    | 'llm_response_start';
   is_llm_message: boolean;
   content: string; // JSON string from backend
   metadata: string; // JSON string from backend
@@ -479,6 +488,69 @@ export interface DiscordTriggerConfig {
   trigger_keywords?: string[];
 }
 
+export interface TriggerApp {
+  slug: string;
+  name: string;
+  logo: string;
+}
+
+// Composio Event Trigger Types
+export interface ComposioTriggerType {
+  slug: string;
+  name: string;
+  description?: string;
+  type: string;
+  instructions?: string;
+  config?: {
+    title?: string;
+    type?: string;
+    properties?: Record<string, any>;
+    required?: string[];
+  };
+  payload?: Record<string, any>;
+  toolkit: {
+    slug: string;
+    name: string;
+    logo?: string;
+  };
+}
+
+export interface ComposioAppsWithTriggersResponse {
+  success: boolean;
+  items: TriggerApp[];
+  total: number;
+}
+
+export interface ComposioAppTriggersResponse {
+  success: boolean;
+  items: ComposioTriggerType[];
+  toolkit: {
+    slug: string;
+    name: string;
+    logo?: string;
+  };
+  total: number;
+}
+
+export interface CreateComposioEventTriggerRequest {
+  agent_id: string;
+  profile_id: string;
+  slug: string;
+  trigger_config: Record<string, any>;
+  route: 'agent';
+  name?: string;
+  agent_prompt?: string;
+  connected_account_id?: string;
+  toolkit_slug?: string;
+  model?: string;
+}
+
+export interface CreateComposioEventTriggerResponse {
+  trigger_id: string;
+  agent_id: string;
+  [key: string]: any;
+}
+
 // Request/Response Types
 export interface TriggerCreateRequest {
   provider_id: string;
@@ -502,6 +574,9 @@ export interface ProvidersResponse {
   providers: TriggerProvider[];
 }
 
+export interface TriggerAppsResponse {
+  items: TriggerApp[];
+}
 // ============================================================================
 // API Request/Response Types
 // ============================================================================
@@ -571,4 +646,3 @@ export interface ApiErrorResponse {
   detail?: ApiErrorDetail;
   status: number;
 }
-
