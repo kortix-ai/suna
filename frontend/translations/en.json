@@ -44,8 +44,16 @@
       "envManager": "Env Manager"
     },
     "general": {
-      "title": "Profile Settings",
+      "title": "General settings",
       "description": "Manage your account information",
+      "profilePicture": {
+        "title": "Profile Picture",
+        "upload": "Upload avatar",
+        "hint": "JPG, PNG or GIF. Max 5MB.",
+        "invalidType": "Please select an image file",
+        "tooLarge": "Image must be less than 5MB",
+        "uploadFailed": "Failed to upload profile picture"
+      },
       "name": "Name",
       "email": "Email",
       "namePlaceholder": "Enter your name",

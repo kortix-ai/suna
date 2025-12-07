@@ -32,7 +32,7 @@ import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { toast } from 'sonner';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
-import { X } from 'lucide-react';
+import { X, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
 import { UsageLimitsPopover } from './usage-limits-popover';
@@ -521,27 +521,20 @@ export function DashboardContent() {
 
                         {alertType === 'thread_limit' && (
                           <div 
-                            className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
+                            className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-center overflow-hidden cursor-pointer hover:bg-amber-500/15 transition-colors'
                             style={{
                               marginTop: '-40px',
                               transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
                             }}
+                            onClick={() => pricingModalStore.openPricingModal()}
                           >
-                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>
+                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm flex items-center gap-1'>
                               {t('limitsExceeded', { 
                                 current: accountState?.limits?.threads?.current ?? 0, 
                                 limit: accountState?.limits?.threads?.max ?? 0 
                               })}
+                              <ChevronRight className='h-4 w-4' />
                             </span>
-                            <div className='flex items-center -mb-3.5'>
-                              <Button 
-                                size='sm' 
-                                className='h-6 text-xs'
-                                onClick={() => pricingModalStore.openPricingModal()}
-                              >
-                                {tCommon('upgrade')}
-                              </Button>
-                            </div>
                           </div>
                         )}
                       </div>

@@ -46,6 +46,14 @@
     "general": {
       "title": "プロフィール設定",
       "description": "アカウント情報を管理",
+      "profilePicture": {
+        "title": "プロフィール写真",
+        "upload": "アバターをアップロード",
+        "hint": "JPG、PNGまたはGIF。最大5MB。",
+        "invalidType": "画像ファイルを選択してください",
+        "tooLarge": "画像は5MB未満にしてください",
+        "uploadFailed": "プロフィール写真のアップロードに失敗しました"
+      },
       "name": "名前",
       "email": "メール",
       "namePlaceholder": "名前を入力",
