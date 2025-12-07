@@ -228,13 +228,13 @@ export function ImageEditGenerateToolView({
             <div className={cn(
               "relative p-2 rounded-xl border transition-colors",
               isGenerate 
-                ? "bg-gradient-to-b from-purple-100 to-purple-50 dark:from-purple-800/40 dark:to-purple-900/60 border-purple-200/50 dark:border-purple-800/30"
-                : "bg-gradient-to-b from-blue-100 to-blue-50 dark:from-blue-800/40 dark:to-blue-900/60 border-blue-200/50 dark:border-blue-800/30"
+                ? "bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60 border-zinc-200/50 dark:border-zinc-800/30"
+                : "bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60 border-zinc-200/50 dark:border-zinc-800/30"
             )}>
               {isGenerate ? (
-                <Sparkles className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+                <Sparkles className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
               ) : (
-                <Edit3 className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+                <Edit3 className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
               )}
             </div>
             <div>

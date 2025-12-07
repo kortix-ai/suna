@@ -86,8 +86,8 @@ export function DocumentParserToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-indigo-500/20 border border-indigo-500/20">
-              <FileText className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-500/20 border border-zinc-500/20">
+              <FileText className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">

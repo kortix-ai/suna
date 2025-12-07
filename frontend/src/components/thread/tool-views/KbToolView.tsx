@@ -597,11 +597,11 @@ export function KbToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={isGlobal
-              ? "relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20"
+              ? "relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20"
               : "relative p-2 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20"
             }>
               <Icon className={isGlobal
-                ? "w-5 h-5 text-blue-500 dark:text-blue-400"
+                ? "w-5 h-5 text-zinc-500 dark:text-zinc-400"
                 : "w-5 h-5 text-green-500 dark:text-green-400"
               } />
             </div>
@@ -657,11 +657,11 @@ export function KbToolView({
         {isStreaming ? (
           <LoadingState
             iconColor={isGlobal
-              ? "text-blue-500 dark:text-blue-400"
+              ? "text-zinc-500 dark:text-zinc-400"
               : "text-green-500 dark:text-green-400"
             }
             bgColor={isGlobal
-              ? "bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60"
+              ? "bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
               : "bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60"
             }
             title={`${operation.type} ${scopeLabel}`}

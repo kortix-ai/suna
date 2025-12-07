@@ -272,7 +272,7 @@ export function SeeImageToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20 rounded-xl transition-colors border border-blue-200/50 dark:border-blue-800/30 text-blue-500 dark:text-blue-400">
+            <div className="relative p-2 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20 rounded-xl transition-colors border border-zinc-200/50 dark:border-zinc-800/30 text-zinc-500 dark:text-zinc-400">
               {isClearTool ? (
                 <Trash2 className="w-5 h-5" />
               ) : (
