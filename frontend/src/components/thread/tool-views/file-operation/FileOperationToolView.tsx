@@ -757,7 +757,7 @@ export function FileOperationToolView({
   // =====================================================
   if (isStrReplace) {
     return (
-      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
+      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
         {/* Header */}
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
           <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
@@ -878,7 +878,7 @@ export function FileOperationToolView({
   // OTHER FILE OPERATIONS: Tabs-based view
   // =====================================================
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
       <Tabs defaultValue="preview" className="w-full h-full max-w-full min-w-0">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
           <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">

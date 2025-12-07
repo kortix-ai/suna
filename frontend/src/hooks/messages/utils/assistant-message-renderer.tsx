@@ -163,7 +163,7 @@ function renderRegularToolCall(
     <div key={`tool-${index}`} className="my-1">
       <button
         onClick={() => onToolClick(message.message_id, toolName)}
-        className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-2xl transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+        className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
       >
         <div className='flex items-center justify-center'>
           <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />

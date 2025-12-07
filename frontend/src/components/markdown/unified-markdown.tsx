@@ -287,7 +287,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
             // Inline code - subtle pill style
             return (
-              <code className="px-1.5 py-0.5 rounded-md text-[13px] font-mono bg-muted text-foreground">
+              <code className="px-2 py-1 rounded-md text-[13px] font-mono bg-[#161618] border border-zinc-200 dark:border-zinc-800 text-foreground">
                 {children}
               </code>
             );
