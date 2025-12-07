@@ -313,9 +313,42 @@
     "customWorkers": "Custom Workers",
     "scheduledTriggers": "Scheduled Triggers",
     "appTriggers": "App Triggers",
-    "limitsExceeded": "You've reached your chat limit ({current}/{limit}). Upgrade your plan to create more chats.",
+    "limitsExceeded": "You've reached your chat limit. Upgrade your plan to create more chats.",
     "agentInitiatedSuccessfully": "Agent initiated successfully",
-    "aiAssistantReady": "Your AI assistant is ready to help"
+    "aiAssistantReady": "Your AI assistant is ready to help",
+    "greetings": {
+      "morning": [
+        "Good morning! What's on the agenda?",
+        "Rise and shine! What are we building?",
+        "Morning! Ready to be productive?"
+      ],
+      "afternoon": [
+        "Good afternoon! What can I help with?",
+        "Hope your day's going well! What's next?"
+      ],
+      "evening": [
+        "Good evening! Burning the midnight oil?",
+        "Evening! What are we working on tonight?",
+        "Good evening! Let's get things done."
+      ],
+      "random": [
+        "Guess who's back, back again",
+        "Ahoy! What can Kortix do for you?",
+        "What do you want to get done?",
+        "Let's build something awesome",
+        "Ready when you are!",
+        "What's cooking?",
+        "At your service! What's the mission?",
+        "Let's make some magic happen",
+        "What challenge shall we tackle?",
+        "Your wish is my command",
+        "What's the plan, Stan?",
+        "Buckle up! Where are we headed?",
+        "Another day, another build",
+        "What's on your mind?",
+        "Let's get this show on the road"
+      ]
+    }
   },
   "thread": {
     "integrations": "Integrations",

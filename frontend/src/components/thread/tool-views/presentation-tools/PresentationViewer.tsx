@@ -100,6 +100,11 @@ export function PresentationViewer({
   const { isOpen, presentationName, sandboxUrl, initialSlide, openPresentation, closePresentation } = usePresentationViewerStore();
   const viewerState = { isOpen, presentationName, sandboxUrl, initialSlide };
 
+  // Helper function to sanitize filename (matching backend logic)
+  const sanitizeFilename = (name: string): string => {
+    return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
+  };
+
   // Extract presentation info from toolResult.output (from metadata)
   let extractedPresentationName: string | undefined;
   let extractedPresentationPath: string | undefined;
@@ -148,11 +153,6 @@ export function PresentationViewer({
   const name = toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || 'presentation-viewer';
   const toolTitle = getToolTitle(name);
 
-  // Helper function to sanitize filename (matching backend logic)
-  const sanitizeFilename = (name: string): string => {
-    return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
-  };
-
   // Ensure sandbox is active and wait for sandbox URL
   const ensureSandboxActive = useCallback(async () => {
     if (!project?.id || !project?.sandbox?.id || isEnsuringSandboxRef.current) {
@@ -188,15 +188,14 @@ export function PresentationViewer({
 
   // Load metadata.json for the presentation with retry logic
   const loadMetadata = useCallback(async (retryCount = 0, maxRetries = Infinity, forceRefresh = false) => {
-    // If sandbox URL isn't available yet, wait and don't set loading state
-    if (!extractedPresentationName || !project?.sandbox?.sandbox_url) {
+    if (!extractedPresentationName) {
       setIsLoadingMetadata(false);
       return;
     }
 
     const sanitizedPresentationName = sanitizeFilename(extractedPresentationName);
     
-    // Check if we have cached metadata for this presentation
+    // Check if we have cached metadata for this presentation FIRST
     const cachedMetadata = metadataCacheRef.current.get(sanitizedPresentationName);
     
     // If we have cached data and this is not a force refresh, use it immediately
@@ -204,8 +203,17 @@ export function PresentationViewer({
       setMetadata(cachedMetadata);
       setIsLoadingMetadata(false);
       hasLoadedRef.current = true;
-      // Still refresh in background to get latest data
-      loadMetadata(0, maxRetries, true);
+      // Still refresh in background to get latest data if we have sandbox URL
+      if (project?.sandbox?.sandbox_url) {
+        loadMetadata(0, maxRetries, true);
+      }
+      return;
+    }
+    
+    // If sandbox URL isn't available yet, wait and don't set loading state
+    // But if we have cached data, we already returned above
+    if (!project?.sandbox?.sandbox_url) {
+      setIsLoadingMetadata(false);
       return;
     }
     
@@ -234,6 +242,12 @@ export function PresentationViewer({
       
       if (response.ok) {
         const data = await response.json();
+        
+        console.log('[PresentationViewer] Metadata loaded successfully:', {
+          presentationName: sanitizedPresentationName,
+          slideCount: Object.keys(data.slides || {}).length,
+          metadata: data
+        });
         
         // Cache the metadata
         metadataCacheRef.current.set(sanitizedPresentationName, data);
@@ -303,8 +317,9 @@ export function PresentationViewer({
     // Listen for sandbox-active event
     const handleSandboxActive = (event: CustomEvent) => {
       if (event.detail?.projectId === project?.id) {
-        // The project prop should update, but we can also trigger a check
-        // by clearing the ensuring flag so we can try again
+        // The project prop should update with sandbox_url, which will trigger
+        // the useEffect that watches project?.sandbox?.sandbox_url
+        // Clear the ensuring flag so ensureSandboxActive can run again if needed
         isEnsuringSandboxRef.current = false;
       }
     };
@@ -337,15 +352,39 @@ export function PresentationViewer({
       retryTimeoutRef.current = null;
     }
     
-    // Only start loading if we have the required data
+    // FIRST: Check for cached metadata and use it immediately if available
+    if (sanitizedName) {
+      const cachedMetadata = metadataCacheRef.current.get(sanitizedName);
+      if (cachedMetadata && !metadata) {
+        // Set cached metadata immediately so slides can render right away
+        console.log('[PresentationViewer] Using cached metadata immediately:', {
+          presentationName: sanitizedName,
+          slideCount: Object.keys(cachedMetadata.slides || {}).length,
+          cachedMetadata
+        });
+        setMetadata(cachedMetadata);
+        setIsLoadingMetadata(false);
+        hasLoadedRef.current = true;
+      }
+    }
+    
+    // THEN: Start loading fresh data if we have the required data
     if (extractedPresentationName && project?.sandbox?.sandbox_url) {
+      console.log('[PresentationViewer] Starting metadata load:', {
+        presentationName: sanitizedName,
+        sandboxUrl: project.sandbox.sandbox_url,
+        hasCachedMetadata: !!metadataCacheRef.current.get(sanitizedName || ''),
+        currentMetadata: !!metadata
+      });
       loadMetadata();
     } else if (extractedPresentationName && project?.sandbox?.id && !project?.sandbox?.sandbox_url) {
       // Sandbox exists but URL not available yet
       // Only show loading if we don't have cached data for this presentation
       const hasCachedData = sanitizedName && metadataCacheRef.current.has(sanitizedName);
-      if (!hasCachedData) {
+      if (!hasCachedData && !metadata) {
         setIsLoadingMetadata(true);
+      } else {
+        setIsLoadingMetadata(false);
       }
     } else {
       setIsLoadingMetadata(false);
@@ -529,7 +568,7 @@ export function PresentationViewer({
       {showHeader && <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
               <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
@@ -630,7 +669,7 @@ export function PresentationViewer({
 
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        {(isStreaming || isLoadingMetadata || (!metadata && !toolExecutionError)) ? (
+        {(isStreaming || (isLoadingMetadata && !metadata) || (!metadata && !toolExecutionError && extractedPresentationName)) ? (
           <LoadingState
             icon={Presentation}
             iconColor="text-blue-500 dark:text-blue-400"
