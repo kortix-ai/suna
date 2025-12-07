@@ -191,7 +191,9 @@ export default function ExplorerPage() {
   const handleSearch = () => {
     if (searchQuery.trim()) {
       console.log('Searching for:', searchQuery);
-      // Implement search logic here
+      // Navigate to the result page with the search query as URL slug
+      const slug = searchQuery.trim().toLowerCase().replace(/\s+/g, '-');
+      router.push(`/explorer/${encodeURIComponent(slug)}`);
     }
   };
 

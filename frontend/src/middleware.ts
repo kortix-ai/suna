@@ -33,6 +33,7 @@ const PUBLIC_ROUTES = [
   '/suna', // Suna rebrand page should be public for SEO
   '/help', // Help center and documentation should be public
   '/credits-explained', // Credits explained page should be public
+  '/explorer', // Kortixpedia explorer should be public
   // Add locale routes for marketing pages
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];

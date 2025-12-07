@@ -289,6 +289,9 @@ api_router.include_router(google_docs_router)
 from core.referrals import router as referrals_router
 api_router.include_router(referrals_router)
 
+from kortixpedia.main import router as kortixpedia_router
+api_router.include_router(kortixpedia_router)
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
