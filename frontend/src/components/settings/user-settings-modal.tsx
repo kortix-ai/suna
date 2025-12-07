@@ -30,8 +30,16 @@ import {
     AppWindow,
     Users,
     Key,
+    Camera,
+    Loader2,
+    Upload,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { isLocalMode, isProductionMode } from '@/lib/config';
@@ -87,6 +95,7 @@ import { formatCredits } from '@/lib/utils/credit-formatter';
 import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
 import { ReferralsTab } from '@/components/referrals/referrals-tab';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 type TabId = 'general' | 'plan' | 'billing' | 'usage' | 'env-manager' | 'knowledge-base' | 'integrations' | 'api-keys' | 'referrals';
 
@@ -289,12 +298,17 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const tCommon = useTranslations('common');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState('');
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
     const queryClient = useQueryClient();
 
@@ -310,6 +324,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             if (data.user) {
                 setUserName(data.user.user_metadata?.name || data.user.email?.split('@')[0] || '');
                 setUserEmail(data.user.email || '');
+                setAvatarUrl(data.user.user_metadata?.avatar_url || '');
             }
             setIsLoading(false);
         };
@@ -317,14 +332,103 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         fetchUserData();
     }, []);
 
+    const getInitials = (name: string) => {
+        return name
+            .split(' ')
+            .map(part => part[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2) || 'U';
+    };
+
+    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                toast.error(t('profilePicture.invalidType'));
+                return;
+            }
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                toast.error(t('profilePicture.tooLarge'));
+                return;
+            }
+            setAvatarFile(file);
+            const previewUrl = URL.createObjectURL(file);
+            setAvatarPreview(previewUrl);
+        }
+    };
+
+    const uploadAvatar = async (userId: string): Promise<string | null> => {
+        if (!avatarFile) return avatarUrl;
+
+        setIsUploadingAvatar(true);
+        try {
+            const fileExt = avatarFile.name.split('.').pop();
+            const fileName = `${userId}-${Date.now()}.${fileExt}`;
+
+            // Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+                .from('avatars')
+                .upload(fileName, avatarFile, {
+                    cacheControl: '3600',
+                    upsert: true,
+                });
+
+            if (uploadError) {
+                console.error('Upload error:', uploadError);
+                throw uploadError;
+            }
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(fileName);
+
+            return publicUrl;
+        } catch (error) {
+            console.error('Avatar upload failed:', error);
+            toast.error(t('profilePicture.uploadFailed'));
+            return null;
+        } finally {
+            setIsUploadingAvatar(false);
+        }
+    };
+
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const { data: userData } = await supabase.auth.getUser();
+            const userId = userData.user?.id;
+            
+            if (!userId) throw new Error('User not found');
+
+            // Upload avatar if a new one was selected
+            let newAvatarUrl = avatarUrl;
+            if (avatarFile) {
+                const uploadedUrl = await uploadAvatar(userId);
+                if (uploadedUrl) {
+                    newAvatarUrl = uploadedUrl;
+                }
+            }
+
             const { data, error } = await supabase.auth.updateUser({
-                data: { name: userName }
+                data: { 
+                    name: userName,
+                    avatar_url: newAvatarUrl,
+                }
             });
 
             if (error) throw error;
+
+            // Clean up preview URL
+            if (avatarPreview) {
+                URL.revokeObjectURL(avatarPreview);
+                setAvatarPreview(null);
+            }
+            setAvatarFile(null);
+            setAvatarUrl(newAvatarUrl);
 
             toast.success(t('profileUpdated'));
 
@@ -386,6 +490,58 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="space-y-4">
+                {/* Profile Picture Section */}
+                <div className="space-y-3">
+                    <Label>{t('profilePicture.title')}</Label>
+                    <div className="flex items-center gap-4">
+                        <div className="relative group">
+                            <Avatar className="h-16 w-16 border-2 border-border">
+                                <AvatarImage 
+                                    src={avatarPreview || avatarUrl} 
+                                    alt={userName} 
+                                />
+                                <AvatarFallback className="text-base bg-muted">
+                                    {getInitials(userName)}
+                                </AvatarFallback>
+                            </Avatar>
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingAvatar}
+                                className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                                {isUploadingAvatar ? (
+                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                ) : (
+                                    <Camera className="h-5 w-5 text-white" />
+                                )}
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleAvatarChange}
+                                className="hidden"
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploadingAvatar}
+                                className="w-full sm:w-auto"
+                            >
+                                <Upload className="h-4 w-4 mr-1.5" />
+                                {t('profilePicture.upload')}
+                            </Button>
+                            <p className="text-xs text-muted-foreground">
+                                {t('profilePicture.hint')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-2">
                     <Label htmlFor="name">{t('name')}</Label>
                     <Input
@@ -399,18 +555,22 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 
                 <div className="space-y-2">
                     <Label htmlFor="email">{t('email')}</Label>
-                    <Input
-                        id="email"
-                        value={userEmail}
-                        disabled
-                        className="bg-muted/50 cursor-not-allowed shadow-none"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                        {t('emailCannotChange')}
-                    </p>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Input
+                                id="email"
+                                value={userEmail}
+                                disabled
+                                className="bg-muted/50 cursor-not-allowed shadow-none"
+                            />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {t('emailCannotChange')}
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
 
-                <div className="space-y-2 pt-4">
+                <div className="space-y-2">
                     <LanguageSwitcher />
                 </div>
             </div>

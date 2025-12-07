@@ -46,6 +46,14 @@
     "general": {
       "title": "Paramètres du Profil",
       "description": "Gère les infos de ton compte",
+      "profilePicture": {
+        "title": "Photo de Profil",
+        "upload": "Télécharger l'avatar",
+        "hint": "JPG, PNG ou GIF. Max 5 Mo.",
+        "invalidType": "Veuillez sélectionner un fichier image",
+        "tooLarge": "L'image doit faire moins de 5 Mo",
+        "uploadFailed": "Échec du téléchargement de la photo de profil"
+      },
       "name": "Nom",
       "email": "Email",
       "namePlaceholder": "Entre ton nom",

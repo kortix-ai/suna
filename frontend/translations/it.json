@@ -46,6 +46,14 @@
     "general": {
       "title": "Impostazioni profilo",
       "description": "Gestisci le informazioni del tuo account",
+      "profilePicture": {
+        "title": "Foto Profilo",
+        "upload": "Carica avatar",
+        "hint": "JPG, PNG o GIF. Max 5MB.",
+        "invalidType": "Seleziona un file immagine",
+        "tooLarge": "L'immagine deve essere inferiore a 5MB",
+        "uploadFailed": "Impossibile caricare la foto profilo"
+      },
       "name": "Nome",
       "email": "Email",
       "namePlaceholder": "Inserisci il tuo nome",

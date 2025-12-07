@@ -46,6 +46,14 @@
     "general": {
       "title": "个人资料设置",
       "description": "管理你的账户信息",
+      "profilePicture": {
+        "title": "头像",
+        "upload": "上传头像",
+        "hint": "JPG、PNG或GIF。最大5MB。",
+        "invalidType": "请选择图片文件",
+        "tooLarge": "图片必须小于5MB",
+        "uploadFailed": "上传头像失败"
+      },
       "name": "姓名",
       "email": "邮箱",
       "namePlaceholder": "输入你的姓名",
