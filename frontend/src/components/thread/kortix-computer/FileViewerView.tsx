@@ -16,6 +16,7 @@ import {
   AlertCircle,
   ChevronDown,
   FileText,
+  Download,
 } from 'lucide-react';
 import {
   EditableFileRenderer,
@@ -434,7 +435,7 @@ export function FileViewerView({
     } finally {
       setRevertInProgress(false);
     }
-  }, [revertCommitInfo, revertMode, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent, clearGlobalSelectedVersion]);
+  }, [revertCommitInfo, revertMode, revertCurrentRelativePath, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent, clearGlobalSelectedVersion]);
 
   // Track the last loaded version+path combo to prevent re-loading
   const lastLoadedRef = useRef<{ version: string | null, path: string | null }>({ version: null, path: null });
@@ -542,9 +543,11 @@ export function FileViewerView({
 
   // Cleanup blob URLs
   useEffect(() => {
+    const currentBlobUrl = blobUrlForRenderer;
+    const currentActiveUrls = activeDownloadUrls.current;
     return () => {
-      if (blobUrlForRenderer && !isDownloading && !activeDownloadUrls.current.has(blobUrlForRenderer)) {
-        URL.revokeObjectURL(blobUrlForRenderer);
+      if (currentBlobUrl && !isDownloading && !currentActiveUrls.has(currentBlobUrl)) {
+        URL.revokeObjectURL(currentBlobUrl);
       }
     };
   }, [blobUrlForRenderer, isDownloading]);
