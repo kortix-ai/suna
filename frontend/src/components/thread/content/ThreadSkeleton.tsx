@@ -7,6 +7,7 @@ interface ThreadSkeletonProps {
     showHeader?: boolean;
     messageCount?: number;
     compact?: boolean;
+    initializingMessage?: string;
 }
 
 export function ThreadSkeleton({
@@ -14,6 +15,7 @@ export function ThreadSkeleton({
     showHeader = true,
     messageCount = 3,
     compact = false,
+    initializingMessage,
 }: ThreadSkeletonProps) {
     // Compact mode for embedded use
     if (compact) {
@@ -115,16 +117,28 @@ export function ThreadSkeleton({
                 {showHeader && (
                     <div className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                         <div className="flex h-14 items-center gap-4 px-4">
+                            {initializingMessage && (
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                        <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                                        <span className="text-sm">{initializingMessage}</span>
+                                    </div>
+                                </div>
+                            )}
+                            {!initializingMessage && (
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                     <Skeleton className="h-5 w-5 rounded" />
                                     <Skeleton className="h-5 w-40" />
                                 </div>
                             </div>
+                            )}
+                            {!initializingMessage && (
                             <div className="flex items-center gap-2">
                                 <Skeleton className="h-9 w-9 rounded-md" />
                                 <Skeleton className="h-9 w-9 rounded-md" />
                             </div>
+                            )}
                         </div>
                     </div>
                 )}

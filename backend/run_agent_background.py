@@ -43,10 +43,8 @@ logger.info("✅ Worker process ready, tool cache warmed")
 _initialized = False
 db = DBConnection()
 instance_id = ""
-# Response list TTL: 1 hour after run completes
-# Users can reconnect to stream within 1 hour; after that, data is gone but
-# the run results are persisted in the database anyway
-REDIS_RESPONSE_LIST_TTL = 3600  # 1 hour (was 24h - too long, fills Redis)
+
+REDIS_RESPONSE_LIST_TTL = 3600
 
 
 def check_terminating_tool_call(response: Dict[str, Any]) -> Optional[str]:
@@ -467,6 +465,8 @@ async def cleanup_pubsub(pubsub, agent_run_id: str):
                 pass
     except Exception as e:
         logger.warning(f"Error closing pubsub for {agent_run_id}: {str(e)}")
+
+from core import thread_init_service
 
 @dramatiq.actor
 async def run_agent_background(

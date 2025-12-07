@@ -26,7 +26,17 @@ interface UseThreadDataReturn {
   agentRunsQuery: ReturnType<typeof useAgentRunsQuery>;
 }
 
-export function useThreadData(threadId: string, projectId: string, isShared: boolean = false): UseThreadDataReturn {
+interface UseThreadDataOptions {
+  enablePolling?: boolean;
+}
+
+export function useThreadData(
+  threadId: string, 
+  projectId: string, 
+  isShared: boolean = false,
+  options?: UseThreadDataOptions
+): UseThreadDataReturn {
+  const { enablePolling = false } = options || {};
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('idle');
@@ -40,19 +50,21 @@ export function useThreadData(threadId: string, projectId: string, isShared: boo
   
 
   const threadQuery = useThreadQuery(threadId);
-  const messagesQuery = useMessagesQuery(threadId);
+  const messagesQuery = useMessagesQuery(threadId, {
+    refetchInterval: enablePolling ? 1000 : false,
+  });
   
-  // For shared pages, projectId might be empty - get it from thread data
   const effectiveProjectId = projectId || threadQuery.data?.project_id || '';
   const projectQuery = useProjectQuery(effectiveProjectId, {
     refetchOnWindowFocus: true,
-    refetchInterval: 10000, // Refetch every 10 seconds
+    refetchInterval: 10000,
   });
   
-  // Only fetch agent runs if not in shared mode (requires authentication)
-  const agentRunsQuery = useAgentRunsQuery(threadId, { enabled: !isShared });
+  const agentRunsQuery = useAgentRunsQuery(threadId, { 
+    enabled: !isShared,
+    refetchInterval: enablePolling ? 1000 : false,
+  });
 
-  // Derive values from projectQuery directly - no duplicate state
   const project = projectQuery.data || null;
   const sandboxId = project?.sandbox?.id || (typeof project?.sandbox === 'string' ? project.sandbox : null);
   const projectName = project?.name || '';

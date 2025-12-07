@@ -22,6 +22,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
+import { optimisticAgentStart } from '@/lib/api/agents';
 import { useAccountState, accountStateSelectors, invalidateAccountState } from '@/hooks/billing';
 import { getPlanName } from '@/components/billing/plan-utils';
 import { useAgents } from '@/hooks/agents/use-agents';
@@ -311,14 +312,28 @@ export function DashboardContent() {
         filesCount: files.length,
       });
 
-      const result = await initiateAgentMutation.mutateAsync(formData);
-
-      if (result.thread_id) {
-        setInitiatedThreadId(result.thread_id);
-      } else {
-        throw new Error('Agent initiation did not return a thread_id.');
-      }
+      const threadId = crypto.randomUUID();
+      const projectId = crypto.randomUUID();
+      
       chatInputRef.current?.clearPendingFiles();
+      setIsRedirecting(true);
+      
+      sessionStorage.setItem('optimistic_prompt', trimmedMessage || message);
+      sessionStorage.setItem('optimistic_thread', threadId);
+      
+      router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+      
+      optimisticAgentStart({
+        thread_id: threadId,
+        project_id: projectId,
+        prompt: trimmedMessage || message,
+        files: files,
+        model_name: options?.model_name,
+        agent_id: selectedAgentId || undefined,
+      }).catch((error) => {
+        console.error('Background agent start failed:', error);
+        toast.error('Failed to start conversation');
+      });
     } catch (error: any) {
       console.error('Error during submission process:', error);
       if (error instanceof ProjectLimitError) {
