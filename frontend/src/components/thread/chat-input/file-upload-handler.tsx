@@ -101,6 +101,10 @@ const uploadFiles = async (
       });
 
       if (!response.ok) {
+        // Handle HTTP 431 - Request Header Fields Too Large
+        if (response.status === 431) {
+          throw new Error('Request is too large. Try uploading one file at a time.');
+        }
         throw new Error(`Upload failed: ${response.statusText}`);
       }
 
@@ -208,6 +212,10 @@ const uploadFilesToProject = async (
       });
 
       if (!response.ok) {
+        // Handle HTTP 431 - Request Header Fields Too Large
+        if (response.status === 431) {
+          throw new Error('Request is too large. Try uploading one file at a time.');
+        }
         throw new Error(`Upload failed: ${response.statusText}`);
       }
 

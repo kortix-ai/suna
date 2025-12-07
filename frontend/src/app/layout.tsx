@@ -112,11 +112,7 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://connect.facebook.net" />
         <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
         
-        <Script
-          crossOrigin="anonymous"
-          src="//unpkg.com/react-scan/dist/auto.global.js"
-          strategy="lazyOnload"
-        />
+        {/* React Scan removed - causing initialization errors */}
         {/* rest of your scripts go under */}
         
         {/* Static SEO meta tags - rendered in initial HTML */}
