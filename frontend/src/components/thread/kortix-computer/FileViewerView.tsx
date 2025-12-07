@@ -458,7 +458,7 @@ export function FileViewerView({
     } finally {
       setRevertInProgress(false);
     }
-  }, [revertCommitInfo, revertMode, revertCurrentRelativePath, revertSelectedPaths, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent, clearGlobalSelectedVersion]);
+  }, [revertCommitInfo, revertMode, revertCurrentRelativePath, sandboxId, filePath, session?.access_token, refetchFile, queryClient, clearUnsavedContent, clearGlobalSelectedVersion]);
 
   // Track the last loaded version+path combo to prevent re-loading
   const lastLoadedRef = useRef<{ version: string | null, path: string | null }>({ version: null, path: null });

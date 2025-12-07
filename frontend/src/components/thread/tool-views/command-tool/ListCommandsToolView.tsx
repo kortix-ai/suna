@@ -37,15 +37,9 @@ export function ListCommandsToolView({
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
 
-  if (!toolCall) {
-    return null;
-  }
-
-  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
-  const toolTitle = getToolTitle(name) || 'Running Commands';
-
-  // Extract commands/sessions from output
+  // Extract commands/sessions from output - must be called before early return
   const commands = useMemo(() => {
+    if (!toolResult?.output) return [];
     if (!toolResult?.output) return [];
 
     let output = toolResult.output;
@@ -91,6 +85,13 @@ export function ListCommandsToolView({
 
     return [];
   }, [toolResult?.output]);
+
+  if (!toolCall) {
+    return null;
+  }
+
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name) || 'Running Commands';
 
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
