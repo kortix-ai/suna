@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, Loader2 } from 'lucide-react';
+import { Search, Zap, Loader2, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/home/theme-toggle';
@@ -21,32 +21,21 @@ import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { cn } from '@/lib/utils';
 
 // Types
-interface InfoboxItem { label: string; value: string; }
-interface TocEntry { id: string; title: string; }
-
-// Content piece - either a full section or a card in a row
-interface ContentPiece {
+interface TocSection { id: string; title: string; }
+interface GridCell {
   id: string;
+  cols: string;
+  type: string;
+  tokens: string;
   title: string;
   description: string;
-  type: string;
-  isSection: boolean;
-  size?: 'quarter' | 'third' | 'half' | 'full';
 }
 
-// Row of cards
-interface CardRow {
-  cards: ContentPiece[];
-}
-
-// Page layout
 interface PageLayout {
   title: string;
   subtitle: string;
-  infobox: InfoboxItem[];
-  intro: string;
-  toc: TocEntry[];
-  content: (ContentPiece | CardRow)[];
+  toc: TocSection[];
+  cells: GridCell[];
 }
 
 interface ContentState {
@@ -55,166 +44,125 @@ interface ContentState {
   isComplete: boolean;
 }
 
-// Parse the hybrid XML format
-function parseLayoutXML(xml: string): { layout: Partial<PageLayout>; closedContent: ContentPiece[] } {
+// Parse XML
+function parseLayoutXML(xml: string): { layout: Partial<PageLayout>; closedCells: GridCell[] } {
   const layout: Partial<PageLayout> = {};
-  const closedContent: ContentPiece[] = [];
-  const content: (ContentPiece | CardRow)[] = [];
+  const closedCells: GridCell[] = [];
 
-  // Parse title, subtitle
   const titleMatch = xml.match(/<title>([\s\S]*?)<\/title>/);
   if (titleMatch) layout.title = titleMatch[1].trim();
   
   const subtitleMatch = xml.match(/<subtitle>([\s\S]*?)<\/subtitle>/);
   if (subtitleMatch) layout.subtitle = subtitleMatch[1].trim();
 
-  // Parse intro
-  const introMatch = xml.match(/<intro>([\s\S]*?)<\/intro>/);
-  if (introMatch) layout.intro = introMatch[1].trim();
-
-  // Parse infobox
-  const infoboxMatch = xml.match(/<infobox>([\s\S]*?)<\/infobox>/);
-  if (infoboxMatch) {
-    const items: InfoboxItem[] = [];
-    const itemRegex = /<item label="([^"]+)">([\s\S]*?)<\/item>/g;
-    let match;
-    while ((match = itemRegex.exec(infoboxMatch[1])) !== null) {
-      items.push({ label: match[1], value: match[2].trim() });
-    }
-    layout.infobox = items;
-  }
-
   // Parse TOC
   const tocMatch = xml.match(/<toc>([\s\S]*?)<\/toc>/);
   if (tocMatch) {
-    const entries: TocEntry[] = [];
-    const entryRegex = /<entry id="(\d+)">([\s\S]*?)<\/entry>/g;
+    const sections: TocSection[] = [];
+    const sectionRegex = /<section id="([^"]+)" title="([^"]+)"\s*\/>/g;
     let match;
-    while ((match = entryRegex.exec(tocMatch[1])) !== null) {
-      entries.push({ id: match[1], title: match[2].trim() });
+    while ((match = sectionRegex.exec(tocMatch[1])) !== null) {
+      sections.push({ id: match[1], title: match[2] });
     }
-    layout.toc = entries;
+    layout.toc = sections;
   }
 
-  // Parse content (sections and rows of cards)
-  const contentMatch = xml.match(/<content>([\s\S]*)/);
-  if (contentMatch) {
-    const contentXml = contentMatch[1];
-    
-    // Find all sections (full-width, in-depth)
-    const sectionRegex = /<section id="(\d+)" type="([^"]+)">([\s\S]*?)<\/section>/g;
-    let sectionMatch;
-    while ((sectionMatch = sectionRegex.exec(contentXml)) !== null) {
-      const sectionContent = sectionMatch[3];
-      const titleMatch = sectionContent.match(/<title>([\s\S]*?)<\/title>/);
-      const descMatch = sectionContent.match(/<desc>([\s\S]*?)<\/desc>/);
+  // Parse cells
+  const gridMatch = xml.match(/<grid>([\s\S]*)/);
+  if (gridMatch) {
+    const cellRegex = /<cell id="([^"]+)" cols="(\d+)" type="([^"]+)" tokens="(\d+)">([\s\S]*?)<\/cell>/g;
+    let match;
+    while ((match = cellRegex.exec(gridMatch[1])) !== null) {
+      const cellContent = match[5];
+      const titleMatch = cellContent.match(/<title>([\s\S]*?)<\/title>/);
+      const descMatch = cellContent.match(/<desc>([\s\S]*?)<\/desc>/);
       
-      const piece: ContentPiece = {
-        id: sectionMatch[1],
-        type: sectionMatch[2],
+      closedCells.push({
+        id: match[1],
+        cols: match[2],
+        type: match[3],
+        tokens: match[4],
         title: titleMatch ? titleMatch[1].trim() : '',
-        description: descMatch ? descMatch[1].trim() : '',
-        isSection: true,
-        size: 'full'
-      };
-      closedContent.push(piece);
-      content.push(piece);
-    }
-
-    // Find all rows of cards
-    const rowRegex = /<row>([\s\S]*?)<\/row>/g;
-    let rowMatch;
-    while ((rowMatch = rowRegex.exec(contentXml)) !== null) {
-      const rowContent = rowMatch[1];
-      const cards: ContentPiece[] = [];
-      
-      const cardRegex = /<card id="(\d+)" size="([^"]+)" type="([^"]+)">([\s\S]*?)<\/card>/g;
-      let cardMatch;
-      while ((cardMatch = cardRegex.exec(rowContent)) !== null) {
-        const cardContent = cardMatch[4];
-        const titleMatch = cardContent.match(/<title>([\s\S]*?)<\/title>/);
-        const descMatch = cardContent.match(/<desc>([\s\S]*?)<\/desc>/);
-        
-        const card: ContentPiece = {
-          id: cardMatch[1],
-          size: cardMatch[2] as ContentPiece['size'],
-          type: cardMatch[3],
-          title: titleMatch ? titleMatch[1].trim() : '',
-          description: descMatch ? descMatch[1].trim() : '',
-          isSection: false
-        };
-        cards.push(card);
-        closedContent.push(card);
-      }
-      
-      if (cards.length > 0) {
-        content.push({ cards });
-      }
+        description: descMatch ? descMatch[1].trim() : ''
+      });
     }
   }
 
-  layout.content = content;
-  return { layout, closedContent };
+  layout.cells = closedCells;
+  return { layout, closedCells };
 }
 
-// Check if item is a CardRow
-function isCardRow(item: ContentPiece | CardRow): item is CardRow {
-  return 'cards' in item;
-}
-
-// Content renderer with Shadow DOM
+// Shadow DOM renderer
 function ContentRenderer({ html, isDark }: { html: string; isDark: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
-
     if (!shadowRootRef.current) {
-      try {
-        shadowRootRef.current = containerRef.current.attachShadow({ mode: 'open' });
-      } catch { return; }
+      try { shadowRootRef.current = containerRef.current.attachShadow({ mode: 'open' }); }
+      catch { return; }
     }
 
-    const vars = isDark ? `
-      --kp-bg: #0a0a0a;
-      --kp-card: #171717;
-      --kp-border: #262626;
-      --kp-text: #fafafa;
-      --kp-muted: #a1a1aa;
-      --kp-primary: #8b5cf6;
-    ` : `
-      --kp-bg: #ffffff;
-      --kp-card: #f5f5f5;
-      --kp-border: #e5e5e5;
-      --kp-text: #171717;
-      --kp-muted: #525252;
-      --kp-primary: #7c3aed;
-    `;
+    const vars = isDark
+      ? `--kp-text:#fafafa;--kp-muted:#a1a1aa;--kp-primary:#8b5cf6;--kp-card:#171717;--kp-border:#262626;`
+      : `--kp-text:#171717;--kp-muted:#525252;--kp-primary:#7c3aed;--kp-card:#fafafa;--kp-border:#e5e5e5;`;
 
-    const baseStyles = `
-      :host { display: block; ${vars} }
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      .kp-section, .kp-card {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        color: var(--kp-text);
-        font-size: 15px;
-        line-height: 1.7;
-      }
-      h1, h2, h3, h4 { color: var(--kp-text); font-weight: 600; }
-      h2 { font-size: 1.5rem; margin-bottom: 1rem; }
-      h3 { font-size: 1.15rem; margin: 1.5rem 0 0.75rem; }
-      p { color: var(--kp-muted); margin-bottom: 1rem; }
-      a { color: var(--kp-primary); text-decoration: none; }
-      ul, ol { color: var(--kp-muted); padding-left: 1.5rem; margin-bottom: 1rem; }
-      li { margin-bottom: 0.5rem; }
-      strong { color: var(--kp-text); }
-    `;
-
-    shadowRootRef.current.innerHTML = `<style>${baseStyles}</style>${html || ''}`;
+    shadowRootRef.current.innerHTML = `<style>
+      :host{display:block;${vars}}
+      *{margin:0;padding:0;box-sizing:border-box}
+      .kp-cell{font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:var(--kp-text);font-size:14px;line-height:1.6}
+      h2{font-size:1.2rem;font-weight:600;margin-bottom:0.75rem;color:var(--kp-text)}
+      h3{font-size:1rem;font-weight:600;margin:1rem 0 0.5rem;color:var(--kp-text)}
+      p{color:var(--kp-muted);margin-bottom:0.6rem;font-size:13px;line-height:1.65}
+      ul,ol{color:var(--kp-muted);padding-left:1.25rem;font-size:13px;margin-bottom:0.6rem}
+      li{margin-bottom:0.3rem}
+      strong{color:var(--kp-text);font-weight:600}
+      a{color:var(--kp-primary)}
+    </style>${html || ''}`;
   }, [html, isDark]);
 
   return <div ref={containerRef} className="w-full h-full" />;
+}
+
+// Image Lightbox
+function ImageLightbox({ images, currentIndex, onClose, onPrev, onNext }: { 
+  images: string[]; currentIndex: number; onClose: () => void; onPrev: () => void; onNext: () => void;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') onPrev();
+      if (e.key === 'ArrowRight') onNext();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', handleKeyDown); document.body.style.overflow = ''; };
+  }, [onClose, onPrev, onNext]);
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center" onClick={onClose}>
+      <button onClick={onClose} className="absolute top-4 right-4 p-2 text-white/70 hover:text-white transition-colors z-10">
+        <X className="w-6 h-6" />
+      </button>
+      {images.length > 1 && (
+        <>
+          <button onClick={(e) => { e.stopPropagation(); onPrev(); }} className="absolute left-4 p-3 text-white/70 hover:text-white bg-white/10 rounded-full transition-colors">
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); onNext(); }} className="absolute right-4 p-3 text-white/70 hover:text-white bg-white/10 rounded-full transition-colors">
+            <ChevronRight className="w-6 h-6" />
+          </button>
+        </>
+      )}
+      <motion.img key={currentIndex} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        src={images[currentIndex]} alt="" className="max-w-[90vw] max-h-[85vh] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <div className="absolute bottom-4 px-4 py-2 bg-black/50 rounded-full text-white/70 text-sm">
+        {currentIndex + 1} / {images.length}
+      </div>
+    </motion.div>
+  );
 }
 
 export default function ExplorerResultPage() {
@@ -225,6 +173,11 @@ export default function ExplorerResultPage() {
 
   const [isPlanning, setIsPlanning] = useState(true);
   const [layout, setLayout] = useState<Partial<PageLayout>>({});
+  const [images, setImages] = useState<string[]>([]);
+  const [imageCount, setImageCount] = useState(0);
+  
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   
   const activeStreamsRef = useRef<Set<string>>(new Set());
   const plannerStartedRef = useRef(false);
@@ -237,7 +190,6 @@ export default function ExplorerResultPage() {
 
   const displayTopic = useMemo(() => decodeURIComponent(result).replace(/-/g, ' '), [result]);
 
-  // Track theme
   useEffect(() => {
     const checkTheme = () => setIsDark(document.documentElement.classList.contains('dark'));
     checkTheme();
@@ -246,57 +198,40 @@ export default function ExplorerResultPage() {
     return () => observer.disconnect();
   }, []);
 
-  // Start content generation
-  const startContentGeneration = useCallback((piece: ContentPiece, topic: string) => {
-    if (activeStreamsRef.current.has(piece.id)) return;
-    activeStreamsRef.current.add(piece.id);
+  const startContentGeneration = useCallback((cell: GridCell, topic: string) => {
+    if (activeStreamsRef.current.has(cell.id)) return;
+    activeStreamsRef.current.add(cell.id);
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     const params = new URLSearchParams({
-      title: piece.title,
-      description: piece.description,
-      type: piece.type,
-      size: piece.size || 'full',
-      is_section: piece.isSection ? 'true' : 'false',
-      topic,
+      title: cell.title, description: cell.description, type: cell.type, cols: cell.cols, tokens: cell.tokens, topic
     });
-    const streamUrl = `${apiUrl}/api/explore/content/${piece.id}?${params.toString()}`;
 
-    setContentStates(prev => ({
-      ...prev,
-      [piece.id]: { html: '', isStreaming: true, isComplete: false }
-    }));
+    setContentStates(prev => ({ ...prev, [cell.id]: { html: '', isStreaming: true, isComplete: false } }));
 
-    const eventSource = new EventSource(streamUrl);
-    contentSourcesRef.current.set(piece.id, eventSource);
+    const es = new EventSource(`${apiUrl}/api/explore/content/${cell.id}?${params.toString()}`);
+    contentSourcesRef.current.set(cell.id, es);
 
-    eventSource.onmessage = (event) => {
+    es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'content') {
-          setContentStates(prev => ({
-            ...prev,
-            [piece.id]: { ...prev[piece.id], html: (prev[piece.id]?.html || '') + data.content }
-          }));
+          setContentStates(prev => ({ ...prev, [cell.id]: { ...prev[cell.id], html: (prev[cell.id]?.html || '') + data.content } }));
         } else if (data.type === 'done') {
-          setContentStates(prev => ({
-            ...prev,
-            [piece.id]: { ...prev[piece.id], isStreaming: false, isComplete: true }
-          }));
-          eventSource.close();
-          contentSourcesRef.current.delete(piece.id);
+          setContentStates(prev => ({ ...prev, [cell.id]: { ...prev[cell.id], isStreaming: false, isComplete: true } }));
+          es.close();
+          contentSourcesRef.current.delete(cell.id);
         }
       } catch (e) { console.error('Parse error:', e); }
     };
 
-    eventSource.onerror = () => {
-      setContentStates(prev => ({ ...prev, [piece.id]: { ...prev[piece.id], isStreaming: false } }));
-      eventSource.close();
-      contentSourcesRef.current.delete(piece.id);
+    es.onerror = () => {
+      setContentStates(prev => ({ ...prev, [cell.id]: { ...prev[cell.id], isStreaming: false } }));
+      es.close();
+      contentSourcesRef.current.delete(cell.id);
     };
   }, []);
 
-  // Main planner effect
   useEffect(() => {
     setMounted(true);
     if (plannerStartedRef.current) return;
@@ -304,38 +239,40 @@ export default function ExplorerResultPage() {
 
     const processedIds = new Set<string>();
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    const streamUrl = `${apiUrl}/api/explore/${encodeURIComponent(result)}`;
 
-    const eventSource = new EventSource(streamUrl);
-    eventSourceRef.current = eventSource;
+    const es = new EventSource(`${apiUrl}/api/explore/${encodeURIComponent(result)}`);
+    eventSourceRef.current = es;
     let accumulatedXML = '';
 
-    eventSource.onmessage = (event) => {
+    es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'content') {
+        if (data.type === 'images') {
+          setImages(data.images || []);
+          setImageCount(data.count || data.images?.length || 0);
+        } else if (data.type === 'content') {
           accumulatedXML += data.content;
-          const { layout: parsedLayout, closedContent } = parseLayoutXML(accumulatedXML);
+          const { layout: parsedLayout, closedCells } = parseLayoutXML(accumulatedXML);
           setLayout(parsedLayout);
           
-          closedContent.forEach(piece => {
-            if (!processedIds.has(piece.id)) {
-              processedIds.add(piece.id);
-              startContentGeneration(piece, decodeURIComponent(result).replace(/-/g, ' '));
+          closedCells.forEach(cell => {
+            if (!processedIds.has(cell.id)) {
+              processedIds.add(cell.id);
+              startContentGeneration(cell, decodeURIComponent(result).replace(/-/g, ' '));
             }
           });
         } else if (data.type === 'done') {
           setIsPlanning(false);
-          eventSource.close();
+          es.close();
         }
       } catch (e) { console.error('Parse error:', e); }
     };
 
-    eventSource.onerror = () => { setIsPlanning(false); eventSource.close(); };
+    es.onerror = () => { setIsPlanning(false); es.close(); };
 
     return () => {
       eventSourceRef.current?.close();
-      contentSourcesRef.current.forEach(es => es.close());
+      contentSourcesRef.current.forEach(s => s.close());
       contentSourcesRef.current.clear();
       plannerStartedRef.current = false;
       activeStreamsRef.current.clear();
@@ -353,264 +290,256 @@ export default function ExplorerResultPage() {
 
   if (!mounted) return <div className="min-h-screen w-full bg-background" />;
 
-  const contentItems = layout.content || [];
+  const cells = layout.cells || [];
   const toc = layout.toc || [];
-  const infobox = layout.infobox || [];
   const isAnyStreaming = isPlanning || Object.values(contentStates).some(s => s.isStreaming);
+  const completedCount = Object.values(contentStates).filter(s => s.isComplete).length;
 
-  const getColSpan = (size?: string) => {
-    switch (size) {
-      case 'quarter': return 'col-span-12 sm:col-span-6 lg:col-span-3';
-      case 'third': return 'col-span-12 sm:col-span-6 lg:col-span-4';
-      case 'half': return 'col-span-12 lg:col-span-6';
-      default: return 'col-span-12';
+  const getColSpan = (cols: string) => {
+    switch (cols) {
+      case '1': return 'col-span-6 md:col-span-3';
+      case '2': return 'col-span-12 md:col-span-6';
+      case '3': return 'col-span-12 md:col-span-9';
+      case '4': return 'col-span-12';
+      default: return 'col-span-12 md:col-span-6';
     }
   };
 
+  const getTypeStyle = (type: string) => {
+    const styles: Record<string, { bg: string; border: string; badge: string }> = {
+      stat: { bg: 'bg-emerald-500/5', border: 'border-emerald-500/20', badge: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+      fact: { bg: 'bg-blue-500/5', border: 'border-blue-500/20', badge: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+      component: { bg: 'bg-purple-500/5', border: 'border-purple-500/20', badge: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+      section: { bg: 'bg-card', border: 'border-border/50', badge: 'bg-muted text-muted-foreground' },
+      steps: { bg: 'bg-primary/5', border: 'border-primary/30', badge: 'bg-primary/10 text-primary' },
+      timeline: { bg: 'bg-cyan-500/5', border: 'border-cyan-500/20', badge: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' },
+      pros: { bg: 'bg-green-500/5', border: 'border-green-500/20', badge: 'bg-green-500/10 text-green-600 dark:text-green-400' },
+      cons: { bg: 'bg-red-500/5', border: 'border-red-500/20', badge: 'bg-red-500/10 text-red-600 dark:text-red-400' },
+      resource: { bg: 'bg-orange-500/5', border: 'border-orange-500/20', badge: 'bg-orange-500/10 text-orange-600 dark:text-orange-400' },
+    };
+    return styles[type] || styles.section;
+  };
+
+  const isLargeCell = (type: string) => ['section', 'steps', 'timeline'].includes(type);
+
   return (
     <div className="min-h-screen w-full bg-background">
-      {/* Background */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-b from-muted/30 via-transparent to-transparent dark:from-primary/5" />
-        <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[150px] -translate-x-1/2 -translate-y-1/2" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-primary/5 rounded-full blur-[120px] translate-x-1/3 translate-y-1/3" />
       </div>
 
       {/* Header */}
       <header className="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-xl border-b border-border/40">
-        <div className="flex items-center justify-between h-16 px-4 md:px-6 max-w-[1600px] mx-auto">
-          <Link href="/explorer" className="flex items-center gap-3">
+        <div className="flex items-center justify-between h-14 px-4 md:px-6 max-w-[1400px] mx-auto">
+          <Link href="/explorer" className="flex items-center gap-2">
             <KortixLogo size={18} variant="logomark" />
-            <span className="text-lg font-medium text-foreground">Explorer</span>
-            <span className="text-sm text-muted-foreground">v0.2</span>
+            <span className="text-base font-medium text-foreground">Explorer</span>
           </Link>
-
-          <div className="flex-1 flex justify-center px-8 max-w-xl mx-auto">
-            <Link href="/explorer" className={cn(
-              "flex items-center gap-3 h-10 px-4 rounded-2xl w-full",
-              "border bg-card hover:bg-accent/50 transition-colors"
-            )}>
+          <div className="flex-1 flex justify-center px-4 max-w-md mx-auto">
+            <Link href="/explorer" className="flex items-center gap-2 h-9 px-3 rounded-xl w-full border bg-card hover:bg-accent/50 transition-colors">
               <Search className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground flex-1">Search anything...</span>
-              <kbd className="text-xs text-muted-foreground/60 font-mono">⌘K</kbd>
+              <span className="text-sm text-muted-foreground flex-1">Search...</span>
             </Link>
           </div>
-
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <ThemeToggle />
             {user && !authLoading ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="h-9 w-9 rounded-full p-0 border border-border hover:bg-accent">
-                    <Avatar className="h-9 w-9">
+                  <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
+                    <Avatar className="h-8 w-8">
                       <AvatarImage src={user.user_metadata?.avatar_url} />
-                      <AvatarFallback className="bg-muted text-muted-foreground text-sm font-medium">
-                        {getInitials(user.user_metadata?.full_name || user.email || 'U')}
-                      </AvatarFallback>
+                      <AvatarFallback className="text-xs">{getInitials(user.user_metadata?.full_name || user.email || 'U')}</AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuContent align="end" className="w-40">
                   <DropdownMenuItem asChild><Link href="/dashboard">Dashboard</Link></DropdownMenuItem>
                   <DropdownMenuItem onClick={handleLogout}>Log out</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button asChild variant="ghost" size="sm" className="rounded-full">
-                <Link href="/auth">Sign in</Link>
-              </Button>
+              <Button asChild variant="ghost" size="sm"><Link href="/auth">Sign in</Link></Button>
             )}
           </div>
         </div>
       </header>
 
       {/* Main Layout */}
-      <div className="max-w-[1600px] mx-auto flex relative">
-        {/* Sidebar */}
-        <aside className="hidden lg:block w-72 flex-shrink-0 border-r border-border/40">
-          <nav className="sticky top-16 p-6 max-h-[calc(100vh-64px)] overflow-y-auto">
+      <div className="max-w-[1400px] mx-auto flex">
+        {/* Left Sidebar */}
+        <aside className="hidden lg:block w-56 flex-shrink-0 border-r border-border/40">
+          <div className="sticky top-14 p-4 max-h-[calc(100vh-56px)] overflow-y-auto">
             {/* Status */}
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-border/40">
               {isAnyStreaming ? (
-                <>
-                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                  <span className="text-sm text-primary font-medium">Generating...</span>
-                </>
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                  <span className="text-xs text-primary font-medium">{completedCount}/{cells.length || '...'}</span>
+                </div>
               ) : (
-                <>
-                  <Zap className="w-4 h-4 text-emerald-500" />
-                  <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Complete</span>
-                </>
+                <div className="flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Complete</span>
+                </div>
               )}
             </div>
 
             {/* TOC */}
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Contents</div>
+            <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Contents</div>
             {toc.length > 0 ? (
-              <ul className="space-y-1 mb-8">
-                {toc.map((entry) => (
-                  <li key={entry.id}>
-                    <a href={`#content-${entry.id}`}
-                      className="flex items-center gap-2 py-2 px-3 -mx-3 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors">
-                      <span className="text-xs text-muted-foreground/50 w-4">{entry.id}</span>
-                      <span className="truncate">{entry.title}</span>
-                    </a>
-                  </li>
+              <nav className="space-y-0.5 mb-5">
+                {toc.map((section, i) => (
+                  <a key={section.id} href={`#cell-${section.id}`}
+                    className="flex items-center gap-2 py-1.5 px-2 -mx-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md transition-colors">
+                    <span className="w-4 h-4 flex items-center justify-center text-[9px] font-medium bg-muted rounded">{i + 1}</span>
+                    <span className="truncate">{section.title}</span>
+                  </a>
                 ))}
-              </ul>
+              </nav>
             ) : (
-              <div className="space-y-2 mb-8">
-                {[1,2,3,4].map(i => <div key={i} className="h-8 bg-muted/30 rounded-lg animate-pulse" />)}
+              <div className="space-y-1.5 mb-5">
+                {[1,2,3,4,5].map(i => <div key={i} className="h-6 bg-muted/30 rounded animate-pulse" />)}
               </div>
             )}
 
-            {/* Infobox */}
-            {infobox.length > 0 && (
+            {/* Images */}
+            {images.length > 0 && (
               <>
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">Quick Facts</div>
-                <div className="space-y-4">
-                  {infobox.map((item, i) => (
-                    <div key={i}>
-                      <div className="text-xs text-muted-foreground mb-0.5">{item.label}</div>
-                      <div className="text-sm text-foreground font-medium">{item.value}</div>
-                    </div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Images</div>
+                  <span className="text-[10px] text-muted-foreground">{imageCount}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {images.slice(0, 6).map((img, i) => (
+                    <button key={i} onClick={() => { setLightboxIndex(i); setLightboxOpen(true); }}
+                      className="aspect-square rounded-md overflow-hidden bg-muted/30 hover:ring-2 hover:ring-primary/50 transition-all group">
+                      <img src={img} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" loading="lazy"
+                        onError={(e) => (e.currentTarget.parentElement!.style.display = 'none')} />
+                    </button>
                   ))}
                 </div>
               </>
             )}
-          </nav>
+          </div>
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 min-w-0 p-6 md:p-8 lg:p-10">
+        <main className="flex-1 min-w-0 p-4 md:p-6">
           {/* Title */}
-          <AnimatePresence mode="wait">
-            <motion.header initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="mb-6">
-              <h1 className="text-3xl md:text-4xl lg:text-5xl font-medium tracking-tight text-foreground mb-2">
-                {layout.title || displayTopic}
-              </h1>
-              {layout.subtitle && <p className="text-lg text-muted-foreground">{layout.subtitle}</p>}
-            </motion.header>
-          </AnimatePresence>
-
-          {/* Intro */}
-          {layout.intro && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-              className="mb-10 text-base text-muted-foreground leading-relaxed max-w-4xl prose prose-neutral dark:prose-invert">
-              {layout.intro}
-            </motion.div>
-          )}
+          <div className="mb-6">
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground mb-1">{layout.title || displayTopic}</h1>
+            {layout.subtitle && <p className="text-sm text-muted-foreground">{layout.subtitle}</p>}
+          </div>
 
           {/* Mobile TOC */}
-          {toc.length > 0 && (
-            <div className="lg:hidden mb-8 p-4 bg-card rounded-2xl border border-border/40">
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Contents</div>
-              <div className="flex flex-wrap gap-2">
-                {toc.map((entry) => (
-                  <a key={entry.id} href={`#content-${entry.id}`}
-                    className="text-sm px-3 py-1.5 bg-muted/50 rounded-lg border border-border/40 text-muted-foreground hover:text-foreground transition-colors">
-                    {entry.title}
-                  </a>
+          <div className="lg:hidden mb-4 space-y-2">
+            {images.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto pb-2">
+                {images.slice(0, 5).map((img, i) => (
+                  <button key={i} onClick={() => { setLightboxIndex(i); setLightboxOpen(true); }}
+                    className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden bg-muted/30">
+                    <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+            {toc.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {toc.map((section) => (
+                  <a key={section.id} href={`#cell-${section.id}`}
+                    className="px-2 py-0.5 text-[10px] bg-muted/50 hover:bg-muted rounded border border-border/40 text-muted-foreground">{section.title}</a>
+                ))}
+              </div>
+            )}
+          </div>
 
-          {/* Content - Sections and Card Rows */}
-          <div className="space-y-8">
-            {contentItems.map((item, idx) => {
-              if (isCardRow(item)) {
-                // Render card row as a grid
-                return (
-                  <motion.div key={`row-${idx}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }} className="grid grid-cols-12 gap-4 md:gap-6">
-                    {item.cards.map((card) => {
-                      const state = contentStates[card.id];
-                      return (
-                        <div key={card.id} id={`content-${card.id}`} className={cn(getColSpan(card.size), "scroll-mt-24")}>
-                          <div className="h-full rounded-2xl border border-border/40 bg-card overflow-hidden hover:border-border/60 hover:shadow-lg transition-all">
-                            <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-muted/20">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-muted-foreground/50 font-mono">{card.id}</span>
-                                <h3 className="text-sm font-semibold text-foreground truncate">{card.title}</h3>
-                              </div>
-                              {state?.isStreaming && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
-                              {state?.isComplete && <Zap className="w-3 h-3 text-emerald-500" />}
-                            </div>
-                            <div className="p-4 min-h-[100px]">
-                              {state?.html ? (
-                                <ContentRenderer html={state.html} isDark={isDark} />
-                              ) : (
-                                <div className="flex items-center justify-center h-full min-h-[80px]">
-                                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/50" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </motion.div>
-                );
-              } else {
-                // Render major section (full width)
-                const state = contentStates[item.id];
-                return (
-                  <motion.section key={item.id} id={`content-${item.id}`} initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="scroll-mt-24">
-                    <div className="rounded-2xl border border-border/40 bg-card overflow-hidden hover:border-border/60 transition-colors">
-                      <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 bg-muted/20">
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-muted-foreground/50 font-mono">{item.id}</span>
-                          <h2 className="text-lg font-semibold text-foreground">{item.title}</h2>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground capitalize">{item.type}</span>
-                          {state?.isStreaming && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-                          {state?.isComplete && <Zap className="w-4 h-4 text-emerald-500" />}
-                        </div>
-                      </div>
-                      <div className="p-6 min-h-[200px]">
-                        {state?.html ? (
-                          <ContentRenderer html={state.html} isDark={isDark} />
-                        ) : (
-                          <div className="flex items-center justify-center h-full min-h-[150px]">
-                            <div className="flex items-center gap-3 text-muted-foreground">
-                              <Loader2 className="w-5 h-5 animate-spin" />
-                              <span className="text-sm">Generating {item.type} content...</span>
-                            </div>
-                          </div>
-                        )}
+          {/* Content Grid - All cells flow top to bottom */}
+          <div className="grid grid-cols-12 gap-3">
+            {cells.map((cell, i) => {
+              const state = contentStates[cell.id];
+              const style = getTypeStyle(cell.type);
+              const isLarge = isLargeCell(cell.type);
+              
+              return (
+                <motion.div 
+                  key={cell.id} 
+                  id={`cell-${cell.id}`} 
+                  initial={{ opacity: 0, y: 20 }} 
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.05, duration: 0.3 }}
+                  className={cn(getColSpan(cell.cols), "scroll-mt-20")}
+                >
+                  <div className={cn(
+                    "h-full rounded-xl border overflow-hidden transition-all duration-300",
+                    style.bg, style.border,
+                    state?.isStreaming && "ring-1 ring-primary/30",
+                    !state?.html && "animate-pulse"
+                  )}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-border/20 bg-background/30">
+                      <h3 className={cn(
+                        "font-medium text-foreground truncate pr-2",
+                        isLarge ? "text-sm" : "text-xs"
+                      )}>{cell.title}</h3>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className={cn("text-[8px] font-medium px-1.5 py-0.5 rounded uppercase", style.badge)}>{cell.type}</span>
+                        {state?.isStreaming && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+                        {state?.isComplete && <Zap className="w-3 h-3 text-emerald-500" />}
                       </div>
                     </div>
-                  </motion.section>
-                );
-              }
+                    
+                    {/* Content */}
+                    <div className={cn(
+                      "p-3 overflow-auto",
+                      isLarge ? "min-h-[150px]" : "min-h-[80px]"
+                    )}>
+                      {state?.html ? (
+                        <ContentRenderer html={state.html} isDark={isDark} />
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/30" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
             })}
           </div>
 
-          {/* Loading skeleton */}
-          {isPlanning && contentItems.length === 0 && (
-            <div className="space-y-6">
-              <div className="h-48 bg-card rounded-2xl border border-border/40 animate-pulse" />
-              <div className="grid grid-cols-12 gap-4">
-                <div className="col-span-3 h-32 bg-card rounded-2xl border border-border/40 animate-pulse" />
-                <div className="col-span-3 h-32 bg-card rounded-2xl border border-border/40 animate-pulse" />
-                <div className="col-span-3 h-32 bg-card rounded-2xl border border-border/40 animate-pulse" />
-                <div className="col-span-3 h-32 bg-card rounded-2xl border border-border/40 animate-pulse" />
-              </div>
-              <div className="h-64 bg-card rounded-2xl border border-border/40 animate-pulse" />
+          {/* Skeleton while planning */}
+          {isPlanning && cells.length === 0 && (
+            <div className="grid grid-cols-12 gap-3">
+              {/* Stats row skeleton */}
+              {[1, 2, 3, 4].map(i => (
+                <div key={`stat-${i}`} className="col-span-6 md:col-span-3 h-24 bg-card rounded-xl border border-border/30 animate-pulse" />
+              ))}
+              {/* Section skeleton */}
+              <div className="col-span-12 h-40 bg-card rounded-xl border border-border/30 animate-pulse" />
+              {/* Two column skeleton */}
+              <div className="col-span-12 md:col-span-6 h-32 bg-card rounded-xl border border-border/30 animate-pulse" />
+              <div className="col-span-12 md:col-span-6 h-32 bg-card rounded-xl border border-border/30 animate-pulse" />
+              {/* Full width skeleton */}
+              <div className="col-span-12 h-48 bg-primary/5 rounded-xl border border-primary/20 animate-pulse" />
             </div>
           )}
 
           {/* Footer */}
-          <motion.footer initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="mt-12 pt-6 border-t border-border/30">
-            <p className="text-xs text-muted-foreground">
-              Generated by <span className="font-medium text-foreground">Explorer</span> · Wikipedia-style parallel AI content generation
-            </p>
-          </motion.footer>
+          <div className="mt-8 pt-4 border-t border-border/30 text-center">
+            <p className="text-[10px] text-muted-foreground">Generated by <span className="font-medium text-foreground">Explorer</span></p>
+          </div>
         </main>
       </div>
+
+      {/* Lightbox */}
+      <AnimatePresence>
+        {lightboxOpen && (
+          <ImageLightbox images={images} currentIndex={lightboxIndex} onClose={() => setLightboxOpen(false)}
+            onPrev={() => setLightboxIndex((p) => (p - 1 + images.length) % images.length)}
+            onNext={() => setLightboxIndex((p) => (p + 1) % images.length)} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

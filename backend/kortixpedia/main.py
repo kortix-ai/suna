@@ -1,231 +1,229 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
+import httpx
 from core.services import llm
 from core.utils.logger import logger
+from core.utils.config import config
 import json
 
 router = APIRouter(tags=["Kortixpedia"])
 
-# System prompt for the PLANNER - Wikipedia-style with in-depth sections
-PLANNER_SYSTEM_PROMPT = """You are a knowledge page planner creating Wikipedia-style educational pages with DEPTH and DETAIL.
+# ============ IMAGE SEARCH ============
+async def search_images(query: str, num_results: int = 8) -> list[str]:
+    """Search for images using SERPER API."""
+    if not config.SERPER_API_KEY:
+        return []
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://google.serper.dev/images",
+                json={"q": query, "num": num_results},
+                headers={"X-API-KEY": config.SERPER_API_KEY, "Content-Type": "application/json"},
+                timeout=10.0
+            )
+            response.raise_for_status()
+            images = response.json().get("images", [])
+            return [img.get("imageUrl") for img in images if img.get("imageUrl") and not img.get("imageUrl", "").endswith('.svg')][:num_results]
+    except Exception as e:
+        logger.error(f"Image search error: {e}")
+        return []
 
-OUTPUT ONLY VALID XML. No explanations, no markdown, just pure XML starting with <page>.
 
-Structure a comprehensive page like Wikipedia with:
-1. Quick facts sidebar (infobox)
-2. Introduction
-3. Multiple in-depth sections with subsections
-4. Mix of content types (text, diagrams, timelines, stats, comparisons)
+# ============ DYNAMIC LAYOUT PLANNER ============
+PLANNER_SYSTEM_PROMPT = """You create educational pages with DYNAMIC, VARIED layouts. NOT all same-type cells grouped together.
 
-XML Structure:
+OUTPUT ONLY VALID XML. No markdown. Start with <page>.
+
+CRITICAL LAYOUT RULES:
+1. NEVER put all stats together - spread them throughout the page
+2. ALTERNATE between large sections and small cells
+3. Create visual rhythm: section → 2 small cells → section → 1 stat + 1 fact → etc.
+4. The page should feel like reading a well-designed magazine, not a data dump
+
+EXAMPLE FLOW (vary this based on topic):
+- Overview section (full width)
+- 1 stat + 1 key fact (half width each)
+- How It Works section (full width) 
+- 2-3 component cards (quarter/half width)
+- 1 stat + deep insight (half width each)
+- Applications section (full width)
+- Pros + Cons (half width each)
+- 1 stat + timeline intro (quarter + three-quarter)
+- History section (full width)
+- Resources (2 half-width cards)
+
+XML STRUCTURE:
 <page>
-  <title>Page Title</title>
-  <subtitle>Brief one-line description</subtitle>
-  
-  <infobox>
-    <item label="Category">Value</item>
-    <item label="Type">Value</item>
-    <item label="Key Stat">Value</item>
-    <item label="Related">Value</item>
-  </infobox>
-  
-  <intro>A comprehensive 2-3 paragraph introduction covering the topic overview, its importance, and key aspects.</intro>
+  <title>Clear Topic Title</title>
+  <subtitle>One compelling sentence</subtitle>
   
   <toc>
-    <entry id="1">First Major Section</entry>
-    <entry id="2">Second Major Section</entry>
-    <entry id="3">Third Major Section</entry>
+    <section id="overview" title="Overview" />
+    <section id="how-it-works" title="How It Works" />
+    <section id="components" title="Key Parts" />
+    <section id="deep-dive" title="Deep Dive" />
+    <section id="applications" title="Applications" />
+    <section id="history" title="History" />
   </toc>
   
-  <content>
-    <!-- Major section - full width, in-depth -->
-    <section id="1" type="text">
-      <title>First Major Section Title</title>
-      <desc>Detailed explanation of this section covering multiple aspects. Include historical context, key concepts, and current state. This should be comprehensive and educational.</desc>
-    </section>
+  <grid>
+    <!-- INTRO: Overview first -->
+    <cell id="overview" cols="4" type="section" tokens="400">
+      <title>What is [Topic]?</title>
+      <desc>Clear introduction explaining what it is and why it matters.</desc>
+    </cell>
     
-    <!-- Stats row - multiple small cards -->
-    <row>
-      <card id="2" size="quarter" type="stat">
-        <title>Key Number</title>
-        <desc>Important statistic with context</desc>
-      </card>
-      <card id="3" size="quarter" type="stat">
-        <title>Another Stat</title>
-        <desc>Another important number</desc>
-      </card>
-      <card id="4" size="quarter" type="fact">
-        <title>Quick Fact</title>
-        <desc>Interesting tidbit</desc>
-      </card>
-      <card id="5" size="quarter" type="fact">
-        <title>Did You Know</title>
-        <desc>Engaging fact</desc>
-      </card>
-    </row>
+    <!-- MIXED ROW: Stat + Fact -->
+    <cell id="stat1" cols="2" type="stat" tokens="100">
+      <title>Key Number</title>
+      <desc>Important metric</desc>
+    </cell>
+    <cell id="keypoint1" cols="2" type="fact" tokens="200">
+      <title>Key Point</title>
+      <desc>Important concept</desc>
+    </cell>
     
-    <!-- Another major section with visual -->
-    <section id="6" type="diagram">
-      <title>How It Works</title>
-      <desc>Visual explanation of the process or system. Include step-by-step breakdown, key components, and relationships between elements.</desc>
-    </section>
+    <!-- MAIN SECTION: How it works -->
+    <cell id="how-it-works" cols="4" type="steps" tokens="700">
+      <title>How [Topic] Works</title>
+      <desc>Step-by-step A-to-Z explanation</desc>
+    </cell>
     
-    <!-- Two-column comparison or related topics -->
-    <row>
-      <card id="7" size="half" type="text">
-        <title>Sub-topic A</title>
-        <desc>Detailed explanation of this aspect</desc>
-      </card>
-      <card id="8" size="half" type="text">
-        <title>Sub-topic B</title>
-        <desc>Detailed explanation of this aspect</desc>
-      </card>
-    </row>
+    <!-- COMPONENTS ROW: Mixed sizes -->
+    <cell id="part1" cols="1" type="component" tokens="120">
+      <title>Part 1</title>
+      <desc>Key component</desc>
+    </cell>
+    <cell id="part2" cols="1" type="component" tokens="120">
+      <title>Part 2</title>
+      <desc>Key component</desc>
+    </cell>
+    <cell id="stat2" cols="2" type="stat" tokens="100">
+      <title>Another Metric</title>
+      <desc>Relevant number</desc>
+    </cell>
     
-    <!-- Timeline section -->
-    <section id="9" type="timeline">
-      <title>History and Development</title>
-      <desc>Chronological overview of key events, milestones, and developments. Include dates, significant moments, and how things evolved over time.</desc>
-    </section>
+    <!-- DEEP SECTION -->
+    <cell id="deep-dive" cols="4" type="section" tokens="450">
+      <title>Understanding [Detail]</title>
+      <desc>Deeper technical explanation</desc>
+    </cell>
     
-    <!-- Impact or applications section -->
-    <section id="10" type="list">
-      <title>Impacts and Effects</title>
-      <desc>Comprehensive list of consequences, applications, or effects. Cover multiple categories and provide context for each.</desc>
-    </section>
+    <!-- INSIGHT ROW -->
+    <cell id="insight1" cols="2" type="fact" tokens="200">
+      <title>Key Insight</title>
+      <desc>Important takeaway</desc>
+    </cell>
+    <cell id="stat3" cols="2" type="stat" tokens="100">
+      <title>Impact Metric</title>
+      <desc>Measurable result</desc>
+    </cell>
     
-    <!-- Comparison section -->
-    <section id="11" type="comparison">
-      <title>Comparing Approaches</title>
-      <desc>Side-by-side comparison of different methods, viewpoints, or options. Highlight pros, cons, and key differences.</desc>
-    </section>
-  </content>
+    <!-- COMPARISON -->
+    <cell id="pros" cols="2" type="pros" tokens="200">
+      <title>Advantages</title>
+      <desc>Benefits</desc>
+    </cell>
+    <cell id="cons" cols="2" type="cons" tokens="200">
+      <title>Limitations</title>
+      <desc>Challenges</desc>
+    </cell>
+    
+    <!-- APPLICATIONS -->
+    <cell id="applications" cols="4" type="section" tokens="400">
+      <title>Real-World Applications</title>
+      <desc>Practical uses and examples</desc>
+    </cell>
+    
+    <!-- HISTORY with stat -->
+    <cell id="stat4" cols="1" type="stat" tokens="80">
+      <title>Year Started</title>
+      <desc>Origin date</desc>
+    </cell>
+    <cell id="history" cols="3" type="timeline" tokens="350">
+      <title>History & Evolution</title>
+      <desc>Key milestones</desc>
+    </cell>
+    
+    <!-- RESOURCES -->
+    <cell id="learn" cols="2" type="resource" tokens="150">
+      <title>Learn More</title>
+      <desc>Resources</desc>
+    </cell>
+    <cell id="start" cols="2" type="resource" tokens="150">
+      <title>Get Started</title>
+      <desc>First steps</desc>
+    </cell>
+  </grid>
 </page>
 
-Content Guidelines:
-- Create 8-12 content pieces total
-- Mix sections (full-width, in-depth) with cards (grid, quick info)
-- Sections should have rich, detailed descriptions (3-5 sentences)
-- Cards should be concise but informative
-- Use varied types: text, diagram, timeline, stats, comparison, list, quote
-- Follow Wikipedia's depth - cover history, causes, effects, solutions
-- Make it educational and comprehensive
+CELL TYPES:
+- stat: Big number (80-100 tokens) - SPREAD THESE OUT, don't group
+- fact: Quick insight card (150-200 tokens)
+- component: Part/element (100-150 tokens)
+- section: In-depth content (400-500 tokens)
+- steps: A-to-Z guide (600-800 tokens)
+- timeline: Chronological (300-400 tokens)
+- pros/cons: Lists (150-200 tokens)
+- resource: Next steps (100-150 tokens)
 
-Card sizes: quarter (25%), third (33%), half (50%)
-Section types: text, diagram, timeline, comparison, list, stats, quote, gallery
+COLS: 1=quarter, 2=half, 3=three-quarter, 4=full
 
-OUTPUT ONLY THE XML."""
-
-# System prompt for MAJOR SECTION content - rich, in-depth HTML
-SECTION_CONTENT_PROMPT = """You generate rich, in-depth HTML content for Wikipedia-style knowledge sections.
-
-OUTPUT RULES:
-1. Start with <div class="kp-section"> - NO markdown, NO backticks
-2. Include <style> tag with all CSS inside
-3. End with </div>
-4. Create COMPREHENSIVE content with multiple paragraphs, subsections, and visual elements
-
-CSS Variables:
---kp-bg: var(--background);
---kp-card: var(--card);
---kp-border: var(--border);
---kp-text: var(--foreground);
---kp-muted: var(--muted-foreground);
---kp-primary: var(--primary);
-
-Design principles:
-- Wikipedia-level depth and quality
-- Clear typography hierarchy (h2 for section, h3 for subsections)
-- 15-16px body text, proper line-height (1.7)
-- Use subsections, bullet points, and highlights
-- Include visual elements based on type
-
-For different types create RICH content:
-- text: Multiple paragraphs with subsection headings (h3), key terms highlighted, comprehensive coverage
-- diagram: SVG or CSS visuals with labels, explanations, and step-by-step breakdowns
-- timeline: Vertical or horizontal timeline with dates, events, descriptions, and visual markers
-- comparison: Side-by-side cards with detailed pros/cons, features, and analysis
-- list: Categorized lists with icons, descriptions, and supporting details
-- stats: Large numbers with context, trends, comparisons, and visualizations
-- quote: Styled quotes with attribution and context
-
-Example for "text" type section:
-<div class="kp-section">
-<style>
-.kp-section { padding: 1.5rem; }
-.kp-title { font-size: 1.5rem; font-weight: 600; color: var(--kp-text); margin-bottom: 1rem; }
-.kp-subtitle { font-size: 1.1rem; font-weight: 600; color: var(--kp-text); margin: 1.5rem 0 0.75rem; }
-.kp-para { font-size: 15px; line-height: 1.7; color: var(--kp-muted); margin-bottom: 1rem; }
-.kp-highlight { background: var(--kp-primary); color: white; padding: 0.1rem 0.3rem; border-radius: 3px; font-weight: 500; }
-.kp-list { margin: 1rem 0; padding-left: 1.5rem; }
-.kp-list li { margin-bottom: 0.5rem; color: var(--kp-muted); }
-</style>
-<h2 class="kp-title">Section Title</h2>
-<p class="kp-para">Opening paragraph with comprehensive introduction to the topic. Include <span class="kp-highlight">key terms</span> and important context.</p>
-<h3 class="kp-subtitle">First Subsection</h3>
-<p class="kp-para">Detailed content for this subsection...</p>
-<h3 class="kp-subtitle">Second Subsection</h3>
-<p class="kp-para">More detailed content...</p>
-<ul class="kp-list">
-  <li><strong>Key point:</strong> Explanation of the point</li>
-  <li><strong>Another point:</strong> More details</li>
-</ul>
-</div>
-
-Make content COMPREHENSIVE and EDUCATIONAL!"""
-
-# System prompt for CARD content - compact but informative
-CARD_CONTENT_PROMPT = """You generate compact HTML content blocks for info cards in a knowledge page grid.
-
-OUTPUT RULES:
-1. Start with <div class="kp-card"> - NO markdown, NO backticks
-2. Include <style> tag with CSS
-3. End with </div>
-4. Keep it COMPACT but INFORMATIVE
-
-CSS Variables:
---kp-bg: var(--background);
---kp-card: var(--card);
---kp-border: var(--border);
---kp-text: var(--foreground);
---kp-muted: var(--muted-foreground);
---kp-primary: var(--primary);
-
-For different types:
-- stat: Big number (2rem+), label, trend indicator or comparison
-- fact: Icon/emoji + concise text, interesting tidbit
-- text: 2-3 short paragraphs with key info
-- list: 4-6 bullet points with brief descriptions
-- quote: Styled blockquote with attribution
-
-Keep cards focused and scannable - they complement the main sections."""
+REMEMBER: Create VISUAL VARIETY. Never group same types. Alternate big/small cells."""
 
 
-@router.get("/explore/{topic}", summary="Stream knowledge page layout", operation_id="explore_topic")
+# ============ CONTENT GENERATOR ============
+CONTENT_SYSTEM_PROMPT = """Generate clean educational HTML content.
+
+OUTPUT: <div class="kp-cell">...<style>...</style></div>. NO markdown.
+
+CSS Variables: --kp-text, --kp-muted, --kp-primary, --kp-card, --kp-border
+
+STYLES BY TYPE:
+
+STAT: Center a large number (2.5rem), label below, subtle gradient bg
+FACT: Bold title, 2-3 bullet points or short paragraph
+COMPONENT: Emoji + title + 2-sentence description
+SECTION: h2 title, 2-3 paragraphs, bold key terms
+STEPS: Numbered steps with colored circles, title + explanation each
+TIMELINE: Vertical line, year badges, events
+PROS: Green ✓ items with brief text
+CONS: Red ✗ items with brief text  
+RESOURCE: Card with icon, action items
+
+Keep it scannable, educational, well-spaced."""
+
+
+# ============ API ENDPOINTS ============
+
+@router.get("/explore/{topic}", summary="Stream knowledge page", operation_id="explore_topic")
 async def explore_topic(topic: str):
-    """Planner endpoint - streams the layout XML structure."""
-    logger.info(f"📋 Planning layout for topic: {topic}")
-
+    """Stream structured layout XML with images."""
+    logger.info(f"📋 Generating dynamic page for: {topic}")
+    
+    images = await search_images(f"{topic} explained diagram", num_results=8)
+    logger.info(f"🖼️ Found {len(images)} images")
+    
     messages = [
         {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Create a comprehensive Wikipedia-style knowledge page layout for: {topic}"}
+        {"role": "user", "content": f"Create a comprehensive, visually varied educational page about: {topic}"}
     ]
 
     try:
         llm_response = await llm.make_llm_api_call(
             messages=messages,
             model_name="groq/moonshotai/kimi-k2-instruct",
-            temperature=0.7,
-            max_tokens=3000,
+            temperature=0.8,  # Slightly higher for more variety
+            max_tokens=2500,
             stream=True,
         )
 
         async def stream_generator():
+            yield f"data: {json.dumps({'type': 'images', 'images': images, 'count': len(images)})}\n\n"
             try:
                 async for chunk in llm_response:
                     if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                        yield f"data: {json.dumps({'type': 'content', 'content': chunk.choices[0].delta.content})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
             except Exception as e:
                 logger.error(f"Stream error: {e}")
@@ -237,40 +235,46 @@ async def explore_topic(topic: str):
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "Access-Control-Allow-Origin": "*"}
         )
     except Exception as e:
-        logger.error(f"Error in explore_topic: {e}")
+        logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/explore/content/{content_id}", summary="Stream content", operation_id="generate_content")
-async def generate_content(
-    content_id: str,
+@router.get("/explore/content/{cell_id}", summary="Stream cell content", operation_id="generate_cell_content")
+async def generate_cell_content(
+    cell_id: str,
     title: str,
     description: str,
     type: str = "text",
-    size: str = "full",
-    is_section: str = "true",
+    cols: str = "2",
+    tokens: str = "300",
     topic: str = ""
 ):
-    """Content endpoint - streams HTML for sections or cards."""
-    is_major_section = is_section.lower() == "true"
-    logger.info(f"🎨 Generating {'section' if is_major_section else 'card'} {content_id}: {title}")
+    """Generate HTML content for a cell."""
+    max_tokens = min(int(tokens), 1200) if tokens.isdigit() else 300
+    logger.info(f"🎨 Cell {cell_id}: {title} ({type}, {cols} cols, {max_tokens} tokens)")
 
-    # Choose appropriate prompt based on content type
-    system_prompt = SECTION_CONTENT_PROMPT if is_major_section else CARD_CONTENT_PROMPT
+    type_instructions = {
+        "stat": "Large centered number (2.5rem), label below, subtle gradient background.",
+        "fact": "Bold title, 2-3 concise bullet points. Clean scannable format.",
+        "component": "Emoji icon + bold title + 2-sentence description. Card style.",
+        "section": "h2 title, 2-3 paragraphs with bold key terms. Educational depth.",
+        "steps": "Numbered steps (Step 1, Step 2...) with colored circle numbers. Each: bold title + explanation. 5-7 steps.",
+        "timeline": "Vertical timeline with year badges on left, event descriptions. 4-6 milestones.",
+        "pros": "Green checkmarks (✓), 4-5 benefit items with brief text.",
+        "cons": "Red x marks (✗), 4-5 limitation items with brief text.",
+        "resource": "Card with emoji, title, 3-4 action items or resources.",
+    }
 
-    user_prompt = f"""Create {'comprehensive, in-depth' if is_major_section else 'compact, informative'} HTML content:
-
-Topic: {topic}
+    user_prompt = f"""Create {type.upper()} content for "{topic}":
 Title: {title}
 Description: {description}
-Type: {type}
-{'This is a MAJOR SECTION - make it detailed with subsections, multiple paragraphs, and rich content.' if is_major_section else 'This is a CARD - keep it compact but informative.'}
 
-Generate {'rich, educational content with depth' if is_major_section else 'focused, scannable content'}.
-Start with <div class="kp-{'section' if is_major_section else 'card'}">, include <style>, end with </div>."""
+{type_instructions.get(type, "Create clear educational content.")}
+
+Start with <div class="kp-cell">, include <style>, end with </div>."""
 
     messages = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": CONTENT_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt}
     ]
 
@@ -279,7 +283,7 @@ Start with <div class="kp-{'section' if is_major_section else 'card'}">, include
             messages=messages,
             model_name="groq/moonshotai/kimi-k2-instruct",
             temperature=0.7,
-            max_tokens=4000 if is_major_section else 2000,
+            max_tokens=max_tokens,
             stream=True,
         )
 
@@ -287,12 +291,11 @@ Start with <div class="kp-{'section' if is_major_section else 'card'}">, include
             try:
                 async for chunk in llm_response:
                     if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        yield f"data: {json.dumps({'type': 'content', 'content': content, 'content_id': content_id})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'content_id': content_id})}\n\n"
+                        yield f"data: {json.dumps({'type': 'content', 'content': chunk.choices[0].delta.content, 'cell_id': cell_id})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'cell_id': cell_id})}\n\n"
             except Exception as e:
-                logger.error(f"Stream error for {content_id}: {e}")
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'content_id': content_id})}\n\n"
+                logger.error(f"Stream error {cell_id}: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'cell_id': cell_id})}\n\n"
 
         return StreamingResponse(
             stream_generator(),
@@ -300,5 +303,5 @@ Start with <div class="kp-{'section' if is_major_section else 'card'}">, include
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "Access-Control-Allow-Origin": "*"}
         )
     except Exception as e:
-        logger.error(f"Error generating content {content_id}: {e}")
+        logger.error(f"Error cell {cell_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
