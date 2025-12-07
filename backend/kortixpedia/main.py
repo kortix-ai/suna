@@ -6,110 +6,120 @@ import json
 
 router = APIRouter(tags=["Kortixpedia"])
 
-# System prompt for the PLANNER - outputs layout XML structure with grid/layout info
-PLANNER_SYSTEM_PROMPT = """You are a knowledge page layout planner. Create a structured XML layout for an educational page.
+# System prompt for the PLANNER - Wikipedia-style grid layout with info boxes
+PLANNER_SYSTEM_PROMPT = """You are a knowledge page layout planner creating Wikipedia-style educational pages.
 
 OUTPUT ONLY VALID XML. No explanations, no markdown, just pure XML starting with <page>.
 
-The XML structure:
+Structure:
 <page>
   <title>Page Title</title>
-  <hero>
-    <headline>Catchy headline</headline>
-    <subheadline>Brief description</subheadline>
-  </hero>
-  <rows>
-    <row layout="full">
-      <section id="1">
-        <title>Section Title</title>
-        <description>What this section covers</description>
-        <type>text</type>
-      </section>
-    </row>
-    <row layout="2-col">
-      <section id="2">
-        <title>Left Section</title>
-        <description>Description</description>
-        <type>diagram</type>
-      </section>
-      <section id="3">
-        <title>Right Section</title>
-        <description>Description</description>
-        <type>list</type>
-      </section>
-    </row>
-    <row layout="full">
-      <section id="4">
-        <title>Another Full Section</title>
-        <description>Description</description>
-        <type>timeline</type>
-      </section>
-    </row>
-  </rows>
+  <subtitle>Brief one-line description</subtitle>
+  <infobox>
+    <item label="Category">Value</item>
+    <item label="Type">Value</item>
+    <item label="Key Fact">Value</item>
+    <item label="Related">Value</item>
+  </infobox>
+  <intro>One paragraph introduction/summary of the topic</intro>
+  <toc>
+    <entry id="1">Section Name</entry>
+    <entry id="2">Section Name</entry>
+  </toc>
+  <grid>
+    <cell id="1" size="full" type="text">
+      <title>Overview</title>
+      <desc>Main overview content</desc>
+    </cell>
+    <cell id="2" size="half" type="diagram">
+      <title>How It Works</title>
+      <desc>Visual explanation</desc>
+    </cell>
+    <cell id="3" size="half" type="stats">
+      <title>Key Numbers</title>
+      <desc>Important statistics</desc>
+    </cell>
+    <cell id="4" size="third" type="fact">
+      <title>Quick Fact</title>
+      <desc>Interesting tidbit</desc>
+    </cell>
+    <cell id="5" size="third" type="fact">
+      <title>Did You Know?</title>
+      <desc>Another fact</desc>
+    </cell>
+    <cell id="6" size="third" type="list">
+      <title>Related Topics</title>
+      <desc>Links and references</desc>
+    </cell>
+    <cell id="7" size="full" type="timeline">
+      <title>History</title>
+      <desc>Historical timeline</desc>
+    </cell>
+  </grid>
 </page>
 
-Layout options for rows:
-- full: Single section spanning full width
-- 2-col: Two sections side by side (50/50)
-- 3-col: Three sections in a row
-- sidebar-left: Main content with left sidebar (30/70)
-- sidebar-right: Main content with right sidebar (70/30)
-
-Section types: text, diagram, timeline, comparison, list, code, stats, quote, gallery
+Cell sizes: full (100%), half (50%), third (33%), quarter (25%)
+Cell types: text, diagram, stats, fact, list, timeline, comparison, code, quote, gallery
 
 Rules:
-- Create 5-8 sections organized into 3-5 rows
-- Mix different layouts for visual variety
-- Use 2-col and 3-col for related content
-- Each section needs unique id starting from 1
+- Create 6-10 cells with varied sizes for visual interest
+- Use smaller cells (third, quarter) for facts and stats
+- Use full/half for main content and diagrams
+- Keep titles short (2-4 words)
+- Keep descriptions brief (1 sentence)
+- Infobox should have 4-6 key facts
 - Output ONLY the XML"""
 
-# System prompt for CONTENT generator - outputs clean inline HTML+CSS
-CONTENT_SYSTEM_PROMPT = """You generate self-contained HTML content blocks with inline CSS.
+# System prompt for CONTENT generator - compact, minimal Wikipedia-style
+CONTENT_SYSTEM_PROMPT = """You generate compact, minimal HTML content blocks for a Wikipedia-style knowledge page.
 
-OUTPUT RULES - VERY IMPORTANT:
-1. Start DIRECTLY with <div class="kp-block"> - no markdown, no backticks, no ```html
+OUTPUT RULES:
+1. Start with <div class="kp-cell"> - no markdown, no backticks
 2. End with </div>
-3. Include a <style> tag INSIDE the div with all CSS
-4. Use class names starting with "kp-" to avoid conflicts
+3. Include <style> tag with all CSS inside the div
+4. Keep content COMPACT and MINIMAL
+5. Use class names starting with "kp-"
 
-CSS Variables available:
---kp-bg: #0a0a0a;
---kp-card: #141414;
---kp-border: #262626;
---kp-text: #fafafa;
---kp-muted: #a1a1aa;
---kp-primary: #8b5cf6;
---kp-accent: #06b6d4;
+CSS Variables:
+--kp-bg: var(--background);
+--kp-card: var(--card);
+--kp-border: var(--border);
+--kp-text: var(--foreground);
+--kp-muted: var(--muted-foreground);
+--kp-primary: var(--primary);
 
-Example:
-<div class="kp-block">
+Design principles:
+- Clean, minimal, professional
+- Small font sizes (12-14px for body)
+- Tight spacing (8-16px padding)
+- Subtle borders and shadows
+- No excessive decoration
+- Wikipedia-inspired but modern
+
+For different types:
+- text: Clean paragraphs, 13px font, tight line-height
+- stats: Big numbers with small labels, grid layout
+- fact: Icon + short text, compact card
+- diagram: Simple SVG or CSS visuals
+- list: Compact bullet points
+- timeline: Horizontal or vertical timeline
+- comparison: Side-by-side minimal cards
+- quote: Subtle blockquote styling
+
+Example for a "fact" type:
+<div class="kp-cell">
 <style>
-.kp-intro {
-  padding: 2rem;
-  background: var(--kp-card);
-  border-radius: 1rem;
-  border: 1px solid var(--kp-border);
-}
-.kp-intro h3 { color: var(--kp-text); font-size: 1.5rem; margin-bottom: 1rem; }
-.kp-intro p { color: var(--kp-muted); line-height: 1.7; }
-.kp-highlight { color: var(--kp-primary); font-weight: 600; }
+.kp-fact { padding: 12px; }
+.kp-fact-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--kp-muted); margin-bottom: 4px; }
+.kp-fact-value { font-size: 14px; color: var(--kp-text); font-weight: 500; }
 </style>
-<div class="kp-intro">
-  <h3>Introduction</h3>
-  <p>Content with <span class="kp-highlight">highlighted text</span>.</p>
+<div class="kp-fact">
+  <div class="kp-fact-title">Key Insight</div>
+  <div class="kp-fact-value">The main fact goes here in a concise way.</div>
 </div>
 </div>
 
-Create visually engaging content:
-- For diagrams: Use SVG or creative CSS shapes
-- For timelines: Visual timeline with dots and lines
-- For comparisons: Side-by-side cards with vs styling
-- For lists: Styled lists with icons/numbers
-- For stats: Big numbers with labels
-- For code: Syntax-highlighted code blocks
-- For quotes: Stylized blockquotes
-- For gallery: Grid of visual elements"""
+Keep everything tight and minimal!"""
 
 
 @router.get("/explore/{topic}", summary="Stream knowledge page layout", operation_id="explore_topic")
@@ -121,7 +131,7 @@ async def explore_topic(topic: str):
 
     messages = [
         {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Create a knowledge page layout for: {topic}"}
+        {"role": "user", "content": f"Create a Wikipedia-style knowledge page layout for: {topic}"}
     ]
 
     try:
@@ -159,30 +169,33 @@ async def explore_topic(topic: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/explore/content/{section_id}", summary="Stream section content", operation_id="generate_section_content")
-async def generate_section_content(
-    section_id: str,
+@router.get("/explore/content/{cell_id}", summary="Stream cell content", operation_id="generate_cell_content")
+async def generate_cell_content(
+    cell_id: str,
     title: str,
     description: str,
     type: str = "text",
+    size: str = "full",
     topic: str = ""
 ):
     """
-    Content endpoint - streams HTML+CSS for a specific section.
+    Content endpoint - streams HTML+CSS for a specific grid cell.
     """
-    logger.info(f"🎨 Generating content for section {section_id}: {title}")
+    logger.info(f"🎨 Generating {type} content for cell {cell_id}: {title}")
 
-    user_prompt = f"""Create HTML content for a "{type}" section:
+    user_prompt = f"""Create compact HTML content for a "{type}" cell in a Wikipedia-style knowledge page:
 
 Topic: {topic}
-Section Title: {title}
+Cell Title: {title}
 Description: {description}
+Size: {size}
 
-Generate informative, educational content with beautiful styling. Remember:
-- Start with <div class="kp-block">
-- Include all CSS in a <style> tag
-- End with </div>
-- NO markdown, NO code fences, just raw HTML"""
+Requirements:
+- Keep it COMPACT and MINIMAL
+- Cell is {size} width, so adjust content density accordingly
+- Use small fonts (12-14px), tight spacing
+- NO excessive padding or margins
+- Start with <div class="kp-cell">, include <style>, end with </div>"""
 
     messages = [
         {"role": "system", "content": CONTENT_SYSTEM_PROMPT},
@@ -194,7 +207,7 @@ Generate informative, educational content with beautiful styling. Remember:
             messages=messages,
             model_name="groq/moonshotai/kimi-k2-instruct",
             temperature=0.7,
-            max_tokens=4000,
+            max_tokens=2500,
             stream=True,
         )
 
@@ -203,11 +216,11 @@ Generate informative, educational content with beautiful styling. Remember:
                 async for chunk in llm_response:
                     if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                         content = chunk.choices[0].delta.content
-                        yield f"data: {json.dumps({'type': 'content', 'content': content, 'section_id': section_id})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'section_id': section_id})}\n\n"
+                        yield f"data: {json.dumps({'type': 'content', 'content': content, 'cell_id': cell_id})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'cell_id': cell_id})}\n\n"
             except Exception as e:
-                logger.error(f"Stream error for section {section_id}: {e}")
-                yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'section_id': section_id})}\n\n"
+                logger.error(f"Stream error for cell {cell_id}: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e), 'cell_id': cell_id})}\n\n"
 
         return StreamingResponse(
             stream_generator(),
@@ -220,5 +233,5 @@ Generate informative, educational content with beautiful styling. Remember:
         )
 
     except Exception as e:
-        logger.error(f"Error generating content for section {section_id}: {e}")
+        logger.error(f"Error generating content for cell {cell_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
