@@ -4,6 +4,28 @@ import { devtools } from 'zustand/middleware';
 export type ViewType = 'tools' | 'files' | 'browser';
 export type FilesSubView = 'browser' | 'viewer';
 
+/**
+ * Normalize a file path to ensure it starts with /workspace
+ * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
+ */
+function normalizeWorkspacePath(path: string): string {
+  if (!path) return '/workspace';
+  
+  // Handle paths that start with "workspace" (without leading /)
+  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    return '/' + path;
+  }
+  
+  // If already starts with /workspace, return as-is
+  if (path.startsWith('/workspace')) {
+    return path;
+  }
+  
+  // Otherwise, prepend /workspace/
+  return `/workspace/${path.replace(/^\//, '')}`;
+}
+
 interface KortixComputerState {
   // Main view state
   activeView: ViewType;
@@ -97,9 +119,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       
       openFile: (filePath: string, filePathList?: string[]) => {
         // Normalize the file path
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         
         // Extract directory from file path for breadcrumb context
         const lastSlashIndex = normalizedPath.lastIndexOf('/');
@@ -111,9 +131,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         let fileIndex = -1;
         if (filePathList && filePathList.length > 0) {
           fileIndex = filePathList.findIndex(path => {
-            const normalizedListPath = path.startsWith('/workspace')
-              ? path
-              : `/workspace/${path.replace(/^\//, '')}`;
+            const normalizedListPath = normalizeWorkspacePath(path);
             return normalizedListPath === normalizedPath;
           });
         }
@@ -137,9 +155,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       navigateToPath: (path: string) => {
-        const normalizedPath = path.startsWith('/workspace')
-          ? path
-          : `/workspace/${path.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(path);
         
         set({
           currentPath: normalizedPath,
@@ -154,9 +170,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         const { filePathList } = get();
         if (filePathList && index >= 0 && index < filePathList.length) {
           const filePath = filePathList[index];
-          const normalizedPath = filePath.startsWith('/workspace')
-            ? filePath
-            : `/workspace/${filePath.replace(/^\//, '')}`;
+          const normalizedPath = normalizeWorkspacePath(filePath);
           
           set({
             currentFileIndex: index,
@@ -182,9 +196,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       openFileInComputer: (filePath: string, filePathList?: string[]) => {
         // This is called from external sources (clicking file in chat)
         // It should open the panel, switch to files view, and show the file
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         
         const lastSlashIndex = normalizedPath.lastIndexOf('/');
         const directoryPath = lastSlashIndex > 0
@@ -194,9 +206,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         let fileIndex = -1;
         if (filePathList && filePathList.length > 0) {
           fileIndex = filePathList.findIndex(path => {
-            const normalizedListPath = path.startsWith('/workspace')
-              ? path
-              : `/workspace/${path.replace(/^\//, '')}`;
+            const normalizedListPath = normalizeWorkspacePath(path);
             return normalizedListPath === normalizedPath;
           });
         }
@@ -243,9 +253,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       setUnsavedContent: (filePath: string, content: string) => {
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         set((state) => ({
           unsavedFileContent: {
             ...state.unsavedFileContent,
@@ -255,16 +263,12 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       getUnsavedContent: (filePath: string) => {
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         return get().unsavedFileContent[normalizedPath];
       },
       
       clearUnsavedContent: (filePath: string) => {
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         set((state) => {
           const { [normalizedPath]: _, ...restContent } = state.unsavedFileContent;
           const { [normalizedPath]: __, ...restState } = state.unsavedFileState;
@@ -276,9 +280,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       setUnsavedState: (filePath: string, hasUnsaved: boolean) => {
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         set((state) => ({
           unsavedFileState: {
             ...state.unsavedFileState,
@@ -288,9 +290,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       getUnsavedState: (filePath: string) => {
-        const normalizedPath = filePath.startsWith('/workspace')
-          ? filePath
-          : `/workspace/${filePath.replace(/^\//, '')}`;
+        const normalizedPath = normalizeWorkspacePath(filePath);
         return get().unsavedFileState[normalizedPath] ?? false;
       },
       

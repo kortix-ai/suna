@@ -125,6 +125,10 @@ export function FileBrowserView({
     if (typeof path !== 'string' || !path) {
       return '/workspace';
     }
+    // Handle paths that start with "workspace" (without leading /)
+    if (path === 'workspace' || path.startsWith('workspace/')) {
+      return '/' + path;
+    }
     return path.startsWith('/workspace')
       ? path
       : `/workspace/${path.replace(/^\//, '')}`;

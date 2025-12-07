@@ -22,6 +22,12 @@ const inProgressPreloads = new Map<string, Promise<any>>();
 function normalizePath(path: string): string {
   if (!path) return '/workspace';
   
+  // Handle paths that start with "workspace" (without leading /)
+  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    path = '/' + path;
+  }
+  
   // Ensure path starts with /workspace
   if (!path.startsWith('/workspace')) {
     path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;

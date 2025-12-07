@@ -70,6 +70,28 @@ import { FileDownloadButton } from '../tool-views/shared/FileDownloadButton';
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
+/**
+ * Normalize a file path to ensure it starts with /workspace
+ * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
+ */
+function normalizeWorkspacePath(path: string): string {
+  if (!path) return '/workspace';
+  
+  // Handle paths that start with "workspace" (without leading /)
+  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    return '/' + path;
+  }
+  
+  // If already starts with /workspace, return as-is
+  if (path.startsWith('/workspace')) {
+    return path;
+  }
+  
+  // Otherwise, prepend /workspace/
+  return `/workspace/${path.replace(/^\//, '')}`;
+}
+
 // API Helper: Get file history (git commits)
 async function fetchFileHistory(
   sandboxId: string,
@@ -285,7 +307,7 @@ export function FileViewerView({
     setContentError(null);
     try {
       // Normalize path for cache operations and clear legacy cache for this file
-      const normalizedPath = filePath.startsWith('/workspace') ? filePath : `/workspace/${filePath.replace(/^\//, '')}`;
+      const normalizedPath = normalizeWorkspacePath(filePath);
       ['text', 'blob', 'json'].forEach(contentType => {
         const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
         FileCache.delete(cacheKey);
@@ -407,7 +429,7 @@ export function FileViewerView({
       clearUnsavedContent(filePath);
 
       // Always clear caches and refetch after restore
-      const normalizedPath = filePath.startsWith('/workspace') ? filePath : `/workspace/${filePath.replace(/^\//, '')}`;
+      const normalizedPath = normalizeWorkspacePath(filePath);
 
       console.log('[FileViewerView] Clearing caches for path:', normalizedPath);
 
@@ -603,9 +625,7 @@ export function FileViewerView({
       }
 
       // Normalize path for cache operations
-      const normalizedPath = filePath.startsWith('/workspace')
-        ? filePath
-        : `/workspace/${filePath.replace(/^\//, '')}`;
+      const normalizedPath = normalizeWorkspacePath(filePath);
 
       // Clear unsaved content from store
       clearUnsavedContent(filePath);
@@ -1029,9 +1049,7 @@ export function FileViewerView({
                           setIsLoadingVersionContent(true);
                           clearUnsavedContent(filePath);
 
-                          const normalizedPath = filePath.startsWith('/workspace')
-                            ? filePath
-                            : `/workspace/${filePath.replace(/^\//, '')}`;
+                          const normalizedPath = normalizeWorkspacePath(filePath);
 
                           ['text', 'blob', 'json'].forEach(contentType => {
                             const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
@@ -1137,9 +1155,7 @@ export function FileViewerView({
             setIsLoadingVersionContent(true);
             clearUnsavedContent(filePath);
 
-            const normalizedPath = filePath.startsWith('/workspace')
-              ? filePath
-              : `/workspace/${filePath.replace(/^\//, '')}`;
+            const normalizedPath = normalizeWorkspacePath(filePath);
 
             ['text', 'blob', 'json'].forEach(contentType => {
               const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
@@ -1176,9 +1192,7 @@ export function FileViewerView({
                   onClick={() => {
                     setContentError(null);
                     // Trigger refetch by clearing cache
-                    const normalizedPath = filePath.startsWith('/workspace')
-                      ? filePath
-                      : `/workspace/${filePath.replace(/^\//, '')}`;
+                    const normalizedPath = normalizeWorkspacePath(filePath);
                     const contentType = FileCache.getContentTypeFromPath(normalizedPath);
                     const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
                     FileCache.delete(cacheKey);

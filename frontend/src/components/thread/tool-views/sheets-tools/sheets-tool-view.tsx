@@ -16,7 +16,10 @@ import { useDownloadRestriction } from '@/hooks/billing';
 
 function getFileUrl(sandboxId: string | undefined, path: string): string {
   if (!sandboxId) return path;
-  if (!path.startsWith('/workspace')) {
+  // Handle paths that start with "workspace" (without leading /)
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    path = '/' + path;
+  } else if (!path.startsWith('/workspace')) {
     path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;
   }
   try {
