@@ -15,7 +15,6 @@ import {
 } from '@/components/thread/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentLoader } from './loader';
-// Removed XML parsing - we only use metadata now
 import { ShowToolStream } from './ShowToolStream';
 import { ComposioUrlDetector } from './composio-url-detector';
 import { TaskCompletedFeedback } from '@/components/thread/tool-views/shared/TaskCompletedFeedback';
@@ -29,6 +28,7 @@ import {
     findAskOrCompleteTool,
     shouldSkipStreamingRender,
 } from '@/hooks/messages/utils';
+import { AppIcon } from '../tool-views/shared/AppIcon';
 
 // Configuration for prompt/answer rendering
 const PROMPT_SAMPLES_CONFIG = {
@@ -807,7 +807,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         const toolName = firstToolCall.function_name?.replace(/_/g, '-') || '';
                                                                                         const IconComponent = getToolIcon(toolName);
                                                                                         
-                                                                                        // Extract display parameter (same logic as rendered version)
+                                                                                        console.log('ThreadContent - firstToolCall:', firstToolCall);
+                                                                                        
                                                                                         let paramDisplay = '';
                                                                                         if (firstToolCall.arguments) {
                                                                                             const args = typeof firstToolCall.arguments === 'string' 
@@ -817,9 +818,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         }
                                                                                         
                                                                                         return (
-                                                                                            <div className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50">
+                                                                                            <div className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50">
                                                                                                 <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                                                                                                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
+                                                                                                    <AppIcon toolCall={firstToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
                                                                                                 </div>
                                                                                                 <span className="font-mono text-xs text-foreground">
                                                                                                     {getUserFriendlyToolName(toolName)}
@@ -829,6 +830,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                         {paramDisplay}
                                                                                                     </span>
                                                                                                 )}
+                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
                                                                                             </div>
                                                                                         );
                                                                                     }
@@ -896,7 +898,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                             {readOnly && currentToolCall && (
                                 <div ref={latestMessageRef}>
                                     <div className="flex flex-col gap-2">
-                                        {/* Logo positioned above the tool call */}
                                         <div className="flex justify-start">
                                             <div className="rounded-md flex items-center justify-center">
                                                 {agentInfo.avatar}
@@ -906,13 +907,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                             </p>
                                         </div>
 
-                                        {/* Tool call content */}
                                         <div className="space-y-2">
                                             <div className="animate-shimmer inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
-                                                <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
+                                                <AppIcon toolCall={currentToolCall} size={14} className="h-3.5 w-3.5 text-primary flex-shrink-0" />
                                                 <span className="font-mono text-xs text-primary">
                                                     {currentToolCall.name || 'Using Tool'}
                                                 </span>
+                                                <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
                                             </div>
                                         </div>
                                     </div>

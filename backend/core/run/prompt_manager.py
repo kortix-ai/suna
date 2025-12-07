@@ -168,10 +168,10 @@ class PromptManager:
             if not available_tools:
                 return system_content
             
-            mcp_jit_info = "\n\n--- EXTERNAL INTEGRATION FUNCTIONS (READY TO USE) ---\n"
-            mcp_jit_info += f"🔥 You have {len(available_tools)} external functions from {len(toolkits)} connected services.\n"
-            mcp_jit_info += "⚡ IMPORTANT: Call these functions DIRECTLY - NO initialize_tools() needed!\n"
-            mcp_jit_info += "These functions are already active and ready for immediate use:\n\n"
+            mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS (USE execute_tool WRAPPER) ---\n"
+            mcp_jit_info += f"🔥 You have {len(available_tools)} external MCP tools from {len(toolkits)} connected services.\n"
+            mcp_jit_info += "⚡ CRITICAL: Use execute_tool wrapper for ALL external MCP tools to preserve cache efficiency!\n"
+            mcp_jit_info += "🎯 USAGE: execute_tool(action=\"call\", tool_name=\"TOOL_NAME\", args={...})\n\n"
             
             toolkit_tools = {}
             for tool_name in available_tools:
@@ -194,11 +194,19 @@ class PromptManager:
                 else:
                     mcp_jit_info += f"**{toolkit} Functions**: {', '.join(tools)}\n"
             
-            mcp_jit_info += "\n🎯 **USAGE EXAMPLES (Call Directly):**\n"
-            mcp_jit_info += "- Search Twitter user: `TWITTER_USER_LOOKUP_BY_USERNAME(username=\"bobbieismad\")`\n"
-            mcp_jit_info += "- Create Twitter post: `TWITTER_CREATION_OF_A_POST(text=\"Hello world!\")`\n"
-            mcp_jit_info += "🚨 **CRITICAL**: For external service tasks (Twitter, Google Sheets, etc), use these functions DIRECTLY.\n"
-            mcp_jit_info += "Only use initialize_tools() for AgentPress tools (sb_files_tool, web_search_tool, etc.).\n\n"
+            mcp_jit_info += "\n🎯 **USAGE WORKFLOW:**\n\n"
+            mcp_jit_info += "**STEP 1 - Discover ALL Tools (ONCE at start):**\n"
+            mcp_jit_info += "`execute_tool(action=\"discover\", filter=\"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\")`\n"
+            mcp_jit_info += "→ Returns: All 3 schemas in ONE call, cached in conversation\n"
+            mcp_jit_info += "→ Alternative: `filter=\"notion\"` for all toolkit tools\n\n"
+            mcp_jit_info += "**STEP 2 - Call Tools (No more discovery needed!):**\n"
+            mcp_jit_info += "`execute_tool(action=\"call\", tool_name=\"NOTION_CREATE_PAGE\", args={...})`\n"
+            mcp_jit_info += "`execute_tool(action=\"call\", tool_name=\"NOTION_APPEND_BLOCK\", args={...})`\n"
+            mcp_jit_info += "→ Uses schemas from conversation history\n\n"
+            mcp_jit_info += "🚨 **CRITICAL RULES**:\n"
+            mcp_jit_info += "1. Discover ALL needed tools in ONE call at task start\n"
+            mcp_jit_info += "2. NEVER re-discover tools already in conversation\n"
+            mcp_jit_info += "3. Check conversation history - if schemas exist, just call!\n\n"
             
             return system_content + mcp_jit_info
         except Exception as e:

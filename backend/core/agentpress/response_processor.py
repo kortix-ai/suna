@@ -179,6 +179,162 @@ class ResponseProcessor:
             # Ultimate fallback: convert to string
             return {"raw_response": str(model_response), "serialization_error": str(e)}
 
+    def _transform_execute_tool_call(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform execute_tool calls to appear as real tool calls for frontend UI components."""
+        try:
+            function_info = tool_call.get('function', {})
+            function_name = function_info.get('name', '')
+            
+            # Only transform execute_tool calls
+            if function_name != 'execute_tool':
+                return tool_call
+            
+            # Parse arguments to extract real tool info
+            arguments_str = function_info.get('arguments', '{}')
+            if isinstance(arguments_str, str):
+                import json
+                try:
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse execute_tool arguments: {arguments_str}")
+                    return tool_call
+            else:
+                arguments = arguments_str
+            
+            # Extract real tool name and args
+            action = arguments.get('action')
+            tool_name = arguments.get('tool_name')
+            filter_val = arguments.get('filter')
+            real_args = arguments.get('args', {})
+            
+            if action == 'call' and tool_name:
+                # Transform to appear as real tool call
+                transformed_tool_call = tool_call.copy()
+                transformed_tool_call['function'] = {
+                    'name': tool_name,
+                    'arguments': json.dumps(real_args) if isinstance(real_args, dict) else str(real_args)
+                }
+                logger.debug(f"🎭 [TRANSFORM] execute_tool -> {tool_name} for frontend display")
+                return transformed_tool_call
+                
+        except Exception as e:
+            logger.warning(f"Error transforming execute_tool call: {e}")
+        
+        return tool_call
+
+    def _transform_xml_execute_tool_call(self, xml_tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform execute_tool XML calls to appear as real tool calls for frontend UI components."""
+        try:
+            function_name = xml_tool_call.get("function_name", "")
+            
+            # Only transform execute_tool calls
+            if function_name != 'execute_tool':
+                return xml_tool_call
+            
+            arguments = xml_tool_call.get("arguments", {})
+            action = arguments.get('action')
+            tool_name = arguments.get('tool_name')
+            filter_val = arguments.get('filter')
+            real_args = arguments.get('args', {})
+            
+            if action == 'call' and tool_name:
+                # Transform to appear as real tool call
+                transformed_xml_tc = xml_tool_call.copy()
+                transformed_xml_tc['function_name'] = tool_name
+                transformed_xml_tc['arguments'] = real_args
+                logger.debug(f"🎭 [TRANSFORM XML] execute_tool -> {tool_name} for frontend display")
+                return transformed_xml_tc
+                
+        except Exception as e:
+            logger.warning(f"Error transforming XML execute_tool call: {e}")
+        
+        return xml_tool_call
+
+    def _transform_streaming_execute_tool_call(self, unified_tool_call: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            function_name = unified_tool_call.get("function_name", "")
+            if function_name != 'execute_tool':
+                return unified_tool_call
+            
+            arguments = unified_tool_call.get("arguments", {})
+            
+            if isinstance(arguments, str):
+                try:
+                    import json
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    return unified_tool_call
+            
+            action = arguments.get('action')
+            tool_name = arguments.get('tool_name')
+            filter_val = arguments.get('filter')
+            real_args = arguments.get('args', {})
+            
+            if action == 'call' and tool_name:
+                transformed_tc = unified_tool_call.copy()
+                transformed_tc['function_name'] = tool_name
+                transformed_tc['arguments'] = real_args
+                logger.info(f"🎭 [STREAM TRANSFORM] execute_tool -> {tool_name} (tool_call_id: {unified_tool_call.get('tool_call_id')})")
+                return transformed_tc
+            elif action == 'discover' and filter_val:
+                transformed_tc = unified_tool_call.copy()
+                if ',' in filter_val:
+                    tool_count = len([t.strip() for t in filter_val.split(',')])
+                    transformed_tc['_display_hint'] = f"Discovering {app_name} schemas"
+                else:
+                    app_name = filter_val.split()[0].title() if filter_val else "MCP"
+                    transformed_tc['_display_hint'] = f"Discovering {app_name} schemas"
+                transformed_tc['_app_filter'] = filter_val
+                logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
+                return transformed_tc
+                
+        except Exception as e:
+            logger.warning(f"Error transforming streaming execute_tool call: {e}")
+        
+        return unified_tool_call
+
+    def _transform_buffer_execute_tool_call(self, buffer_entry: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            function_info = buffer_entry.get('function', {})
+            function_name = function_info.get('name', '')
+
+            if function_name != 'execute_tool':
+                return buffer_entry
+
+            arguments_str = function_info.get('arguments', '{}')
+            try:
+                import json
+                arguments = json.loads(arguments_str)
+            except json.JSONDecodeError:
+                logger.debug(f"🔍 [BUFFER TRANSFORM] Incomplete JSON, skipping: {arguments_str}")
+                return buffer_entry
+            
+            action = arguments.get('action')
+            tool_name = arguments.get('tool_name')
+            filter_val = arguments.get('filter')
+            real_args = arguments.get('args', {})
+            
+            if action == 'call' and tool_name:
+                transformed_entry = buffer_entry.copy()
+                transformed_entry['function'] = {
+                    'name': tool_name,
+                    'arguments': json.dumps(real_args) if isinstance(real_args, dict) else str(real_args)
+                }
+                logger.info(f"🎭 [BUFFER TRANSFORM] execute_tool(call) -> {tool_name} in raw buffer")
+                return transformed_entry
+            
+            elif action == 'discover' and filter_val:
+                transformed_entry = buffer_entry.copy()
+                transformed_entry['_display_hint'] = f"Processing schemas"
+                transformed_entry['_app_filter'] = filter_val
+                logger.debug(f"🔍 [BUFFER TRANSFORM] Added discovery metadata for {filter_val}")
+                return transformed_entry
+
+        except Exception as e:
+            logger.warning(f"Error transforming buffer execute_tool call: {e}")
+        
+        return buffer_entry
+
     async def _add_message_with_agent_info(
         self,
         thread_id: str,
@@ -187,7 +343,6 @@ class ResponseProcessor:
         is_llm_message: bool = False,
         metadata: Optional[Dict[str, Any]] = None
     ):
-        """Helper to add a message with agent version information if available."""
         agent_id = None
         agent_version_id = None
         
@@ -531,6 +686,10 @@ class ResponseProcessor:
                             
                             # Check if tool call is complete
                             has_complete_tool_call = is_tool_call_complete(tool_calls_buffer.get(idx))
+                            
+                            # CRITICAL FIX: Transform execute_tool calls in buffer immediately when complete
+                            if has_complete_tool_call:
+                                tool_calls_buffer[idx] = self._transform_buffer_execute_tool_call(tool_calls_buffer[idx])
 
                             if has_complete_tool_call and config.execute_tools and config.execute_on_stream and idx not in executed_native_tool_indices:
                                 # Mark this index as executed to prevent duplicate executions
@@ -577,11 +736,17 @@ class ResponseProcessor:
                             
                             # Yield single unified streaming chunk if we have any tool calls
                             if unified_tool_calls:
+                                # CRITICAL FIX: Transform execute_tool calls for frontend display during streaming
+                                transformed_unified_tool_calls = []
+                                for tc in unified_tool_calls:
+                                    transformed_tc = self._transform_streaming_execute_tool_call(tc)
+                                    transformed_unified_tool_calls.append(transformed_tc)
+                                
                                 now_tool_chunk = datetime.now(timezone.utc).isoformat()
                                 assistant_metadata = {
                                     "thread_run_id": thread_run_id,
                                     "stream_status": "tool_call_chunk",
-                                    "tool_calls": unified_tool_calls
+                                    "tool_calls": transformed_unified_tool_calls
                                 }
                                 
                                 yield {
@@ -784,17 +949,27 @@ class ResponseProcessor:
                 # Add native tool calls
                 if config.native_tool_calling and complete_native_tool_calls:
                     for tc in complete_native_tool_calls:
-                        unified_tool_calls.append(convert_to_unified_tool_call_format(tc))
+                        # Transform execute_tool calls to appear as real tool calls for frontend
+                        transformed_tc = self._transform_execute_tool_call(tc)
+                        unified_tc = convert_to_unified_tool_call_format(transformed_tc)
+                        # Apply streaming transformation as well for consistency
+                        final_tc = self._transform_streaming_execute_tool_call(unified_tc)
+                        unified_tool_calls.append(final_tc)
                 
                 # Add XML tool calls
                 if config.xml_tool_calling and xml_tool_calls_with_ids:
                     for xml_tc in xml_tool_calls_with_ids:
-                        unified_tool_calls.append({
-                            "tool_call_id": xml_tc.get("tool_call_id"),
-                            "function_name": xml_tc.get("function_name"),
-                            "arguments": xml_tc.get("arguments"),
+                        # Transform execute_tool calls for XML as well  
+                        transformed_xml_tc = self._transform_xml_execute_tool_call(xml_tc)
+                        unified_xml_tc = {
+                            "tool_call_id": transformed_xml_tc.get("tool_call_id"),
+                            "function_name": transformed_xml_tc.get("function_name"),
+                            "arguments": transformed_xml_tc.get("arguments"),
                             "source": "xml"
-                        })
+                        }
+                        # Apply streaming transformation for consistency
+                        final_xml_tc = self._transform_streaming_execute_tool_call(unified_xml_tc)
+                        unified_tool_calls.append(final_xml_tc)
                 
                 if unified_tool_calls:
                     assistant_metadata["tool_calls"] = unified_tool_calls
@@ -1577,12 +1752,39 @@ class ResponseProcessor:
             # Get available functions from tool registry
             logger.debug(f"🔍 Looking up tool function: {function_name}")
             available_functions = self.tool_registry.get_available_functions()
-            # logger.debug(f"📋 Available functions: {list(available_functions.keys())}")
 
-            # Look up the function by name
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
-                logger.warning(f"⚠️  Tool function '{function_name}' not found - attempting JIT auto-activation")
+                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
+                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
+                is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+                
+                if is_mcp_tool:
+                    logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_tool wrapper")
+                    execute_tool_fn = available_functions.get('execute_tool')
+                    if execute_tool_fn:
+                        try:
+                            result = await execute_tool_fn(
+                                action="call",
+                                tool_name=function_name, 
+                                args=arguments if isinstance(arguments, dict) else {}
+                            )
+                            logger.info(f"✅ [AUTO REDIRECT] Successfully executed {function_name} via execute_tool wrapper")
+                            return result
+                        except Exception as e:
+                            logger.error(f"❌ [AUTO REDIRECT] Failed to redirect {function_name}: {e}")
+                            return ToolResult(
+                                success=False,
+                                output=f"Failed to execute MCP tool {function_name}: {str(e)}"
+                            )
+                    else:
+                        logger.error(f"❌ [AUTO REDIRECT] execute_tool not found in registry for redirection")
+                        return ToolResult(
+                            success=False, 
+                            output=f"Tool '{function_name}' is an external MCP integration but execute_tool wrapper not available."
+                        )
+                
+                logger.warning(f"⚠️  Native tool function '{function_name}' not found - attempting JIT auto-activation")
                 activation_success = await self._spark_auto_activate(function_name)
                 
                 if activation_success:
@@ -1730,6 +1932,17 @@ class ResponseProcessor:
             else:
                 logger.error(f"❌ [JIT AUTO] Regular tool activation failed: {result.to_user_message()}")
 
+        # CRITICAL: MCP tools should NOT be auto-activated into main registry
+        # They must use the isolated MCP registry via execute_tool wrapper
+        mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
+                       'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
+        is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
+        
+        if is_mcp_tool:
+            logger.info(f"🔒 [ARCH PROTECTION] Blocked MCP tool '{function_name}' from main registry - must use execute_tool wrapper")
+            return False
+        
+        # Only try MCP auto-activation for non-MCP tools (edge cases)
         return await self._try_mcp_auto_activation(function_name, thread_manager, project_id)
     
     async def _try_mcp_auto_activation(self, function_name: str, thread_manager, project_id: str) -> bool:
@@ -2061,17 +2274,13 @@ class ResponseProcessor:
                 logger.debug(f"Adding tool result for tool_call_id={tool_call['id']} with role=tool")
                 self.trace.event(name="adding_tool_result_for_tool_call_id", level="DEFAULT", status_message=(f"Adding tool result for tool_call_id={tool_call['id']} with role=tool"))
                 
-                # Create structured result for frontend (pure result only - output, success, error)
                 structured_result = self._format_tool_result(tool_call, result, for_llm=False)
                 
-                # Add function_name directly to metadata (not in result)
                 metadata["function_name"] = function_name
                 
-                # Add structured result to metadata for frontend (only output, success, error)
                 metadata["result"] = structured_result
                 metadata["return_format"] = "native"
                 
-                # Check if this is an internal tool result (should not be shown to users)
                 is_internal = False
                 if isinstance(result.output, str):
                     try:

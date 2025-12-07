@@ -90,6 +90,44 @@ class ExpandMessageTool(Tool):
             return self.fail_response(f"Error expanding message: {str(e)}")
 
     @openapi_schema({
+        "type": "function", 
+        "function": {
+        "name": "execute_tool", 
+        "description": "Execute external MCP integration tools ONLY (Twitter, Gmail, Google Sheets, etc.). CRITICAL: Discover ALL needed tools ONCE at start, then just call them. NEVER re-discover tools already in conversation history!",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["discover", "call"], 
+                        "description": "Action: 'discover' gets tool schemas (use ONCE at start for ALL tools needed), 'call' executes a tool (use schemas from conversation thereafter)"
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Required for 'call' action. Name of tool to execute (e.g., 'TWITTER_USER_LOOKUP_BY_USERNAME')"
+                    },
+                    "args": {
+                        "type": "object", 
+                        "description": "Required for 'call' action. Arguments object matching the tool's OpenAPI schema parameters"
+                    },
+                    "filter": {
+                        "type": "string",
+                        "description": "Required for 'discover' action. Comma-separated tool names (e.g., 'SLACK_SEND_MESSAGE,SLACK_FIND_USERS,SLACK_LIST_CHANNELS') to get ALL needed schemas at once, or toolkit name (e.g., 'slack') for all tools. CRITICAL: List ALL tools you'll need in ONE call!"
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    })
+    async def execute_tool(self, action: str, tool_name: str = None, args: dict = None, filter: str = None) -> ToolResult:
+        if action == "discover":
+            return await self._discover_tools(filter)
+        elif action == "call":
+            return await self._call_tool(tool_name, args)
+        else:
+            return self.fail_response(f"Invalid action: {action}. Use 'discover' or 'call'")
+
+    @openapi_schema({
         "type": "function",
         "function": {
             "name": "initialize_tools",
@@ -223,6 +261,86 @@ class ExpandMessageTool(Tool):
         })
         
         return result
+
+    async def _discover_tools(self, filter: str = None) -> ToolResult:
+        """Discover available MCP tools using the isolated MCP registry"""
+        from core.agentpress.mcp_registry import get_mcp_registry
+        from core.utils.logger import logger
+        
+        mcp_registry = get_mcp_registry()
+        
+        # Initialize MCP registry if needed
+        mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
+        if mcp_loader and not mcp_registry._initialized:
+            from core.agentpress.mcp_registry import init_mcp_registry_from_loader
+            init_mcp_registry_from_loader(mcp_loader)
+            mcp_registry._initialized = True
+        
+        # Get discovery info from isolated MCP registry
+        discovery_info = mcp_registry.get_discovery_info(filter)
+        
+        logger.debug(f"🔍 [MCP DISCOVERY] Found {discovery_info['total_count']} MCP tools across {len(discovery_info['toolkits'])} toolkits")
+        
+        return self.success_response(discovery_info)
+
+    async def _call_tool(self, tool_name: str, args: dict) -> ToolResult:
+        from core.utils.logger import logger
+        
+        if not tool_name:
+            return self.fail_response("tool_name required for call action")
+        
+        if args is None:
+            args = {}
+        
+        if isinstance(args, str):
+            try:
+                import json
+                args = json.loads(args)
+                logger.info(f"🔧 [ARGS FIX] Converted string args to JSON object for {tool_name}")
+            except json.JSONDecodeError:
+                logger.warning(f"⚠️  [ARGS FIX] Failed to parse args string: {args}")
+                args = {}
+        
+        native_tools = ['web_search', 'image_search', 'create_file', 'read_file', 'edit_file', 'create_slide', 'browser_navigate', 'shell_command', 'scrape_webpage']
+        if tool_name in native_tools:
+            return self.fail_response(f"Tool '{tool_name}' is a native tool. Use initialize_tools(['{tool_name}_tool']) first, then call {tool_name}() directly.")
+
+        integration_labels = {
+            'TWITTER_': 'Accessing Twitter',
+            'GMAIL_': 'Accessing Gmail',  
+            'SLACK_': 'Accessing Slack',
+            'GITHUB_': 'Accessing GitHub',
+            'GOOGLESHEETS_': 'Accessing Google Sheets',
+            'LINEAR_': 'Accessing Linear',
+            'NOTION_': 'Accessing Notion'
+        }
+        
+        friendly_status = f'Executing {tool_name}'
+        for prefix, label in integration_labels.items():
+            if tool_name.startswith(prefix):
+                friendly_status = label
+                break
+        
+        logger.info(f"🔧 [MCP_ACTION] {friendly_status}")
+
+        # Use the isolated, modular MCP registry for execution
+        from core.agentpress.mcp_registry import get_mcp_registry, MCPExecutionContext
+        
+        mcp_registry = get_mcp_registry()
+        
+        # Initialize registry if needed (lazy initialization)
+        mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
+        if mcp_loader and not mcp_registry._initialized:
+            from core.agentpress.mcp_registry import init_mcp_registry_from_loader
+            init_mcp_registry_from_loader(mcp_loader)
+            mcp_registry._initialized = True
+        
+        # Create execution context with full thread context
+        execution_context = MCPExecutionContext(self.thread_manager)
+        
+        # Execute through isolated MCP registry (completely separate from native tools)
+        # This ensures MCP tools NEVER appear in the main tool registry that feeds LLM
+        return await mcp_registry.execute_tool(tool_name, args, execution_context)
 
 if __name__ == "__main__":
     import asyncio

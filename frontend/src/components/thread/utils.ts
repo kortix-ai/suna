@@ -536,34 +536,34 @@ function formatMCPToolName(serverName: string, toolName: string): string {
   };
   
   const formattedServerName = serverMappings[serverName.toLowerCase()] || 
-    serverName.charAt(0).toUpperCase() + serverName.slice(1);
+    serverName.charAt(0).toUpperCase() + serverName.slice(1).toLowerCase();
   
   let formattedToolName = toolName;
   
   if (toolName.includes('-')) {
     formattedToolName = toolName
       .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
   else if (toolName.includes('_')) {
     formattedToolName = toolName
       .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
   else if (/[a-z][A-Z]/.test(toolName)) {
     formattedToolName = toolName
       .replace(/([a-z])([A-Z])/g, '$1 $2')
       .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
       .join(' ');
   }
   else {
-    formattedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1);
+    formattedToolName = toolName.charAt(0).toUpperCase() + toolName.slice(1).toLowerCase();
   }
   
-  return `${formattedServerName}: ${formattedToolName}`;
+  return `${formattedServerName} ${formattedToolName}`;
 }
 
 export function getUserFriendlyToolName(toolName: string): string {
@@ -619,3 +619,56 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'execute-data-provider-call',
   'execute-data-provider-endpoint',
 ]);
+
+export function extractAppSlugFromToolCall(toolCall: any): string | null {
+  if (!toolCall) return null;
+
+  if (toolCall._app_filter) {
+    const filter = toolCall._app_filter;
+    const appName = filter.split(' ')[0].toLowerCase();
+    if (appName) return appName;
+  }
+
+  if (toolCall.custom_type === 'composio' || toolCall.customType === 'composio' || toolCall.isComposio) {
+    const slug = toolCall.toolkit_slug || toolCall.toolkitSlug || toolCall.config?.toolkit_slug;
+    if (slug) return slug;
+  }
+
+  const qualifiedName = toolCall.mcp_qualified_name || toolCall.qualifiedName || toolCall.function_name;
+  if (qualifiedName && qualifiedName.startsWith('composio.')) {
+    return qualifiedName.substring(9);
+  }
+
+  if (qualifiedName && qualifiedName.includes('_COMPOSIO_')) {
+    const parts = qualifiedName.split('_COMPOSIO_');
+    if (parts.length > 1) {
+      return parts[1].split('_')[0];
+    }
+  }
+
+  if (toolCall.function_name) {
+    const functionName = toolCall.function_name;
+    
+    const knownApps = [
+      'TWITTER', 'GITHUB', 'SLACK', 'GMAIL', 'GOOGLE', 'NOTION', 'ASANA', 'JIRA',
+      'TRELLO', 'DISCORD', 'LINKEDIN', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'SPOTIFY',
+      'DROPBOX', 'ONEDRIVE', 'SALESFORCE', 'HUBSPOT', 'ZENDESK', 'INTERCOM', 'MAILCHIMP',
+      'STRIPE', 'PAYPAL', 'TWILIO', 'SENDGRID', 'AIRTABLE', 'MONDAY', 'CLICKUP',
+      'FIGMA', 'MIRO', 'SHOPIFY', 'WOOCOMMERCE', 'WORDPRESS', 'MEDIUM', 'REDDIT',
+      'TELEGRAM', 'WHATSAPP', 'ZOOM', 'CALENDAR', 'DRIVE', 'SHEETS', 'DOCS', 'SLIDES'
+    ];
+    
+    for (const app of knownApps) {
+      if (functionName.startsWith(app + '_')) {
+        return app.toLowerCase();
+      }
+    }
+    
+    const parts = functionName.split('_');
+    if (parts.length >= 2 && parts[0].length > 0 && parts[0] === parts[0].toUpperCase()) {
+      return parts[0].toLowerCase();
+    }
+  }
+
+  return null;
+}

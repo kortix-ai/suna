@@ -1,15 +1,3 @@
-"""
-Centralized Tool Registry - Single Source of Truth for Tool Names and Classes
-
-This registry maps tool names (used in configs) to their Python class names.
-Both runtime registration (run.py) and UI metadata (tool_discovery.py) use this registry
-to ensure tool names are always consistent.
-
-To add a new tool:
-1. Add the mapping to the appropriate category list below
-2. The tool will automatically be available in both runtime and UI
-"""
-
 from typing import Dict, List, Tuple, Type, Optional
 from core.agentpress.tool import Tool
 
@@ -29,7 +17,6 @@ SANDBOX_TOOLS = [
     ('sb_kb_tool', 'core.tools.sb_kb_tool', 'SandboxKbTool'),
     ('sb_presentation_tool', 'core.tools.sb_presentation_tool', 'SandboxPresentationTool'),
     ('sb_upload_file_tool', 'core.tools.sb_upload_file_tool', 'SandboxUploadFileTool'),
-    # ('sb_docs_tool', 'core.tools.sb_docs_tool', 'SandboxDocsTool'),
     ('sb_git_sync', 'core.tools.sb_git_sync', 'SandboxGitTool'),
 ]
 
@@ -94,14 +81,6 @@ def get_tools_by_category() -> Dict[str, List[Tuple[str, str, str]]]:
 
 
 def get_tool_usage_guide(tool_name: str) -> Optional[str]:
-    """Get the usage guide for a specific tool.
-    
-    Args:
-        tool_name: Tool name (e.g., 'sb_files_tool')
-    
-    Returns:
-        Usage guide string or None if not found
-    """
     info = get_tool_info(tool_name)
     if not info:
         return None
@@ -118,14 +97,6 @@ def get_tool_usage_guide(tool_name: str) -> Optional[str]:
 
 
 def get_tool_metadata_summary(tool_name: str) -> Optional[Dict[str, str]]:
-    """Get a summary of tool metadata (display name, description).
-    
-    Args:
-        tool_name: Tool name (e.g., 'sb_files_tool')
-    
-    Returns:
-        Dict with 'display_name' and 'description', or None
-    """
     info = get_tool_info(tool_name)
     if not info:
         return None
@@ -146,11 +117,6 @@ def get_tool_metadata_summary(tool_name: str) -> Optional[Dict[str, str]]:
 
 
 def get_all_tool_summaries() -> Dict[str, Dict[str, str]]:
-    """Get summaries of all tools for the minimal index.
-    
-    Returns:
-        Dict mapping tool_name to {'display_name': str, 'description': str}
-    """
     summaries = {}
     for tool_name, module_path, class_name in ALL_TOOLS:
         try:

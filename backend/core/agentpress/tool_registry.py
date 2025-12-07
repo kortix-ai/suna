@@ -81,17 +81,44 @@ class ToolRegistry:
     def get_openapi_schemas(self) -> List[Dict[str, Any]]:
         if self._cached_openapi_schemas is not None:
             return self._cached_openapi_schemas
+
+        schemas = []
+        native_exposed = 0
+        mcp_hidden = 0
         
-        schemas = [
+        for tool_name, tool_info in self.tools.items():
+            if tool_info['schema'].schema_type == SchemaType.OPENAPI:
+
+                tool_instance = tool_info.get('instance')
+                is_mcp_by_instance = (tool_instance and 
+                                    hasattr(tool_instance, '__class__') and 
+                                    ('MCPToolWrapper' in str(tool_instance.__class__.__name__) or
+                                     'MCP' in str(tool_instance.__class__.__name__)))
+                
+                mcp_patterns = ['TWITTER_', 'GMAIL_', 'SLACK_', 'GITHUB_', 'LINEAR_', 
+                               'NOTION_', 'GOOGLESHEETS_', 'COMPOSIO_']
+                is_mcp_by_name = any(pattern in tool_name for pattern in mcp_patterns)
+                
+                is_mcp_tool = is_mcp_by_instance or is_mcp_by_name
+                
+                if not is_mcp_tool:
+                    schemas.append(tool_info['schema'].schema)
+                    native_exposed += 1
+                    logger.debug(f"✅ [EXPOSE] {tool_name} (native)")
+                else:
+                    mcp_hidden += 1
+                    logger.debug(f"🔒 [HIDE] {tool_name} (MCP)")
+        
+        self._cached_openapi_schemas = schemas
+        logger.info(f"🎯 [HYBRID CACHE] Exposing {native_exposed} native tools, hiding {mcp_hidden} MCP tools (smart separation)")
+        return schemas
+    
+    def get_all_schemas(self) -> List[Dict[str, Any]]:
+        return [
             tool_info['schema'].schema 
             for tool_info in self.tools.values()
             if tool_info['schema'].schema_type == SchemaType.OPENAPI
         ]
-        
-        self._cached_openapi_schemas = schemas
-        logger.debug(f"⚡ [CACHE] Cached {len(schemas)} OpenAPI schemas for reuse")
-        return schemas
     
     def invalidate_schema_cache(self):
         self._cached_openapi_schemas = None
-
