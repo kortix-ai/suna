@@ -667,6 +667,9 @@ async def start_agent_run(
         # NEW THREAD PATH
         # ================================================================
         
+        # Track if we created the project (for rollback on failure)
+        project_created_here = False
+        
         # Create project only if not already provided (e.g., pre-created for file uploads)
         if not project_id:
             t_project = time.time()
@@ -679,6 +682,7 @@ async def start_agent_run(
                 "name": placeholder_name,
                 "created_at": datetime.now(timezone.utc).isoformat()
             }).execute()
+            project_created_here = True
             logger.debug(f"⏱️ [TIMING] Project created: {(time.time() - t_project) * 1000:.1f}ms")
             
             # Pre-cache project metadata
@@ -691,16 +695,27 @@ async def start_agent_run(
             # Background naming task
             asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
         
-        # Create Thread
+        # Create Thread (with rollback on failure to prevent orphan projects)
         t_thread = time.time()
         thread_id = str(uuid.uuid4())
-        await client.table('threads').insert({
-            "thread_id": thread_id,
-            "project_id": project_id,
-            "account_id": account_id,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }).execute()
-        logger.debug(f"⏱️ [TIMING] Thread created: {(time.time() - t_thread) * 1000:.1f}ms")
+        try:
+            await client.table('threads').insert({
+                "thread_id": thread_id,
+                "project_id": project_id,
+                "account_id": account_id,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+            logger.debug(f"⏱️ [TIMING] Thread created: {(time.time() - t_thread) * 1000:.1f}ms")
+        except Exception as thread_error:
+            # Rollback: delete project if we created it to prevent orphan projects
+            if project_created_here:
+                logger.warning(f"Thread creation failed, rolling back project {project_id}: {str(thread_error)}")
+                try:
+                    await client.table('projects').delete().eq('project_id', project_id).execute()
+                    logger.debug(f"✅ Rolled back orphan project {project_id}")
+                except Exception as rollback_error:
+                    logger.error(f"Failed to rollback orphan project {project_id}: {str(rollback_error)}")
+            raise thread_error
         
         structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
         
