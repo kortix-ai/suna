@@ -1056,7 +1056,7 @@ export const KortixComputer = memo(function KortixComputer({
     }
 
     return (
-      <div className="h-full w-full max-w-full max-h-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+      <div className="h-full w-full max-w-full max-h-full overflow-auto min-w-0 min-h-0" style={{ contain: 'layout style' }}>
         <ToolView
           toolCall={displayToolCall.toolCall}
           toolResult={displayToolCall.toolResult}

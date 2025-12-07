@@ -359,9 +359,9 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         <div className="my-1">
             <button
                 onClick={() => onToolClick?.(messageId, toolName)}
-                className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-2xl transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
+                className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-2xl transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
             >
-                <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
+                <div className='flex items-center justify-center'>
                     <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
                 </div>
                 <span className="font-mono text-xs text-foreground">{displayName}</span>
