@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  Download,
   Loader,
   Loader2,
   AlertTriangle,
@@ -12,13 +11,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
-  FileText,
-  FileType,
-  FileCode,
   Home,
   Save,
   AlertCircle,
   ChevronDown,
+  FileText,
 } from 'lucide-react';
 import {
   EditableFileRenderer,
@@ -26,7 +23,6 @@ import {
   isEditableFileType,
   type MarkdownEditorControls,
 } from '@/components/file-editors';
-import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
 import { Project } from '@/lib/api/threads';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
@@ -66,6 +62,7 @@ import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { VersionBanner } from './VersionBanner';
+import { FileDownloadButton } from '../tool-views/shared/FileDownloadButton';
 
 
 
@@ -162,7 +159,6 @@ export function FileViewerView({
 
   // Utility state
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [mdEditorControls, setMdEditorControls] = useState<MarkdownEditorControls | null>(null);
   const activeDownloadUrls = useRef<Set<string>>(new Set());
 
@@ -576,25 +572,6 @@ export function FileViewerView({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [hasMultipleFiles, navigatePrevious, navigateNext]);
 
-  // Handle markdown export
-  const handleMarkdownExport = useCallback(async (format: ExportFormat) => {
-    if (!mdEditorControls) return;
-
-    setIsExporting(true);
-    try {
-      const content = mdEditorControls.getHtml();
-      await exportDocument({
-        content,
-        fileName: fileName.replace(/\.(md|markdown)$/i, ''),
-        format,
-      });
-    } catch (error) {
-      console.error('Export error:', error);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [mdEditorControls, fileName]);
-
   // Handle file save
   const handleSaveFile = useCallback(async (newContent: string) => {
     if (!filePath || !sandboxId) {
@@ -980,42 +957,12 @@ export function FileViewerView({
                   </Tooltip>
                 )}
 
-                {/* Export Dropdown */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                      disabled={isExporting}
-                      title="Export file"
-                    >
-                      {isExporting ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleMarkdownExport('pdf')}>
-                      <FileType className="h-4 w-4 text-muted-foreground" />
-                      PDF
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleMarkdownExport('docx')}>
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                      Word
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleMarkdownExport('html')}>
-                      <FileCode className="h-4 w-4 text-muted-foreground" />
-                      HTML
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleMarkdownExport('markdown')}>
-                      <FileCode className="h-4 w-4 text-muted-foreground" />
-                      Markdown
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Export Dropdown - uses shared FileDownloadButton component */}
+                <FileDownloadButton
+                  content={typeof rawContent === 'string' ? rawContent : ''}
+                  fileName={fileName}
+                  getHtmlContent={mdEditorControls?.getHtml ? () => mdEditorControls.getHtml() : undefined}
+                />
               </>
             </TooltipProvider>
           )}

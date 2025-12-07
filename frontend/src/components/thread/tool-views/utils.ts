@@ -1091,7 +1091,7 @@ export function getToolComponent(toolName: string): string {
 
     // String operations
     case 'str-replace':
-      return 'StrReplaceToolView';
+      return 'FileOperationToolView';
 
     // Web operations
     case 'web-search':

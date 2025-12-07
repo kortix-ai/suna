@@ -6,7 +6,6 @@ import { CommandToolView } from '../command-tool/CommandToolView';
 import { CheckCommandOutputToolView } from '../command-tool/CheckCommandOutputToolView';
 import { ExposePortToolView } from '../expose-port-tool/ExposePortToolView';
 import { FileOperationToolView } from '../file-operation/FileOperationToolView';
-import { StrReplaceToolView } from '../str-replace/StrReplaceToolView';
 import { WebCrawlToolView } from '../WebCrawlToolView';
 import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
@@ -83,7 +82,7 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'parse-document': DocumentParserToolView,
 
-  'str-replace': StrReplaceToolView,
+  'str-replace': FileOperationToolView,
 
   'web-search': WebSearchToolView,
   'people-search': PeopleSearchToolView,
