@@ -55,14 +55,14 @@ export function KortixComputerHeader({
         {onIconClick ? (
           <button
             onClick={onIconClick}
-            className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-900 border-zinc-700 hover:bg-zinc-800 transition-colors"
+            className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-300/60 dark:hover:bg-zinc-800 transition-colors"
             title={iconTitle}
           >
-            <Icon className="h-5 w-5 text-zinc-400" />
+            <Icon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
           </button>
         ) : (
-          <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-900 border-zinc-700">
-            <Icon className="h-5 w-5 text-zinc-400" />
+          <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
+            <Icon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
           </div>
         )}
 
