@@ -159,7 +159,7 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
         onPaste={onPaste}
         placeholder={placeholder}
         className={cn(
-          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
+          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
           isDraggingOver ? 'opacity-40' : '',
         )}
         disabled={disabled && !isAgentRunning}
@@ -1281,7 +1281,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }}
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-2xl`}>
+              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-[24px]`}>
                 {(uploadedFiles.length > 0 || isUploading) && (
                   <div className="relative">
                     <AttachmentGroup
