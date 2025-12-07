@@ -8,7 +8,7 @@ export const Icons = {
       viewBox="0 0 46 45"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('size-4', className)}
+      className={cn('size-4 text-foreground', className)}
     >
       <g filter="url(#filter0_ddd_1_4900)">
         <rect
@@ -41,7 +41,7 @@ export const Icons = {
             y1="21.2488"
             x2="34.988"
             y2="21.2488"
-            stroke="#E5E7EB"
+            stroke="currentColor"
             strokeWidth="0.263158"
           />
         </g>
@@ -203,7 +203,7 @@ export const Icons = {
       viewBox="0 0 46 45"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('size-4', className)}
+      className={cn('size-4 text-foreground', className)}
     >
       <g filter="url(#filter0_ddd_1_2018)">
         <rect
@@ -236,7 +236,7 @@ export const Icons = {
             y1="21.2488"
             x2="34.9881"
             y2="21.2488"
-            stroke="#E4E4E7"
+            stroke="currentColor"
             strokeWidth="0.263158"
           />
         </g>
@@ -678,7 +678,7 @@ export const Icons = {
       viewBox="0 0 46 45"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('size-4', className)}
+      className={cn('size-4 text-foreground', className)}
     >
       <g filter="url(#filter0_ddd_1_4914)">
         <rect
@@ -983,7 +983,7 @@ export const Icons = {
       viewBox="0 0 46 45"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn('size-4', className)}
+      className={cn('size-4 text-foreground', className)}
     >
       <g filter="url(#filter0_ddd_1_2046)">
         <rect

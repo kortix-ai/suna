@@ -409,7 +409,7 @@ const OutputFormatIcon = ({ type, className }: { type: string; className?: strin
 
 // Slide template icon component
 const SlideTemplateIcon = ({ type, className }: { type: string; className?: string }) => {
-  const baseClasses = cn('w-full h-full', className);
+  const baseClasses = cn('w-full h-full text-foreground', className);
   
   switch (type) {
     case 'modern':
@@ -880,7 +880,7 @@ const DocsTemplateIcon = ({ type, className }: { type: string; className?: strin
 
 // Chart icon component
 const ChartIcon = ({ type, className }: { type: string; className?: string }) => {
-  const baseClasses = cn('w-full h-full', className);
+  const baseClasses = cn('w-full h-full text-foreground', className);
   
   switch (type) {
     case 'bar':

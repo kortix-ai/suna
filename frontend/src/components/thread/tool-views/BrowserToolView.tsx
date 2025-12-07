@@ -18,12 +18,13 @@ import {
   getToolTitle,
 } from './utils';
 import { safeJsonParse } from '@/components/thread/utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ImageLoader } from './shared/ImageLoader';
 import { ParsedContent } from '../types';
 import { JsonViewer } from './shared/JsonViewer';
+import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
 
 interface BrowserHeaderProps {
   isConnected: boolean;
@@ -33,38 +34,30 @@ interface BrowserHeaderProps {
 
 export const BrowserHeader: React.FC<BrowserHeaderProps> = ({ isConnected, onRefresh, viewToggle }) => {
   return (
-    <div className={`flex items-center justify-between px-3 md:px-4 py-2 border border-border ${!isConnected ? 'bg-muted/30 border-b' : ''}`}>
-      <div className="flex items-center gap-2 justify-between min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-            <Globe className="w-5 h-5 text-purple-500 dark:text-purple-400" />
-          </div>
-          <div>
-            <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-              Browser
-            </CardTitle>
-          </div>
-        </div>
-        <div className='flex items-center gap-1'>
-        <Badge variant="outline" className="gap-1.5 p-2 rounded-3xl mr-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500/80 animate-pulse' : 'bg-gray-400'}`}></div>
-          <span className="sm:inline">Live Preview</span>
-        </Badge>
-        {viewToggle}
-        {isConnected && onRefresh && (
-          <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRefresh}
-          className="h-7 w-7 p-0 hover:bg-muted rounded-xl"
-          title="Refresh browser view"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        </div>
-      </div>
-    </div>
+    <KortixComputerHeader
+      icon={Globe}
+      title="Browser"
+      actions={
+        <>
+          <Badge variant="outline" className="gap-1.5 p-2 rounded-3xl">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500/80 animate-pulse' : 'bg-gray-400'}`}></div>
+            <span className="sm:inline">Live Preview</span>
+          </Badge>
+          {viewToggle}
+          {isConnected && onRefresh && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              className="h-7 w-7 p-0 hover:bg-muted rounded-xl"
+              title="Refresh browser view"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </>
+      }
+    />
   );
 };
 
@@ -254,7 +247,7 @@ export function BrowserToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-scroll bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-scroll bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">

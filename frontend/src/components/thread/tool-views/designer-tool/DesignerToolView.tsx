@@ -412,7 +412,7 @@ export function DesignerToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-16 border-b p-3 px-4">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-3">
