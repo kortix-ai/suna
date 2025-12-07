@@ -204,9 +204,10 @@ export function useRetentionData(params: RetentionParams = {}) {
 export function useTranslate() {
   return useMutation({
     mutationFn: async ({ text, targetLanguage = 'English' }: { text: string; targetLanguage?: string }): Promise<TranslationResponse> => {
-      const response = await backendApi.post(
-        `/admin/analytics/translate?text=${encodeURIComponent(text)}&target_language=${encodeURIComponent(targetLanguage)}`
-      );
+      const response = await backendApi.post('/admin/analytics/translate', {
+        text,
+        target_language: targetLanguage
+      });
       if (response.error) {
         throw new Error(response.error.message);
       }

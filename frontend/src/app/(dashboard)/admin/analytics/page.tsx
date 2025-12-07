@@ -570,7 +570,7 @@ export default function AdminAnalyticsPage() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">1 message</p>
                   <p className="text-xs text-muted-foreground">
-                    ({((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1)}%)
+                    ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
                   </p>
                 </div>
                 <div className="text-center p-4 rounded-lg bg-muted/50">
@@ -579,7 +579,7 @@ export default function AdminAnalyticsPage() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">2-3 messages</p>
                   <p className="text-xs text-muted-foreground">
-                    ({((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1)}%)
+                    ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
                   </p>
                 </div>
                 <div className="text-center p-4 rounded-lg bg-muted/50">
@@ -588,7 +588,7 @@ export default function AdminAnalyticsPage() {
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">5+ messages</p>
                   <p className="text-xs text-muted-foreground">
-                    ({((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1)}%)
+                    ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
                   </p>
                 </div>
               </div>

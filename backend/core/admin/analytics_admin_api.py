@@ -77,6 +77,11 @@ class AnalyticsSummary(BaseModel):
     avg_threads_per_user: float
 
 
+class TranslateRequest(BaseModel):
+    text: str
+    target_language: str = "English"
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -573,6 +578,9 @@ async def get_retention_data(
             if len(weeks) >= min_weeks_active
         ]
         
+        # Sort by weeks active descending BEFORE pagination
+        recurring_users.sort(key=lambda uid: len(user_weeks[uid]), reverse=True)
+        
         total_count = len(recurring_users)
         
         # Paginate
@@ -602,9 +610,6 @@ async def get_retention_data(
                 is_recurring=True
             ))
         
-        # Sort by weeks active descending
-        result.sort(key=lambda x: x.weeks_active, reverse=True)
-        
         return await PaginationService.paginate_with_total_count(
             items=result,
             total_count=total_count,
@@ -618,11 +623,12 @@ async def get_retention_data(
 
 @router.post("/translate")
 async def translate_text(
-    text: str,
-    target_language: str = "English",
+    request: TranslateRequest,
     admin: dict = Depends(require_admin)
 ) -> Dict[str, str]:
     """Translate text to target language using OpenAI."""
+    text = request.text
+    target_language = request.target_language
     if len(text) > 5000:
         raise HTTPException(status_code=400, detail="Text too long (max 5000 characters)")
 
@@ -705,8 +711,9 @@ async def get_message_distribution(
                 distribution["1_message"] += 1
             elif count <= 3:
                 distribution["2_3_messages"] += 1
-            else:
+            elif count >= 5:
                 distribution["5_plus_messages"] += 1
+            # count == 4 is intentionally not categorized
         
         return {
             "distribution": distribution,
