@@ -19,5 +19,15 @@ export {
   useCreateSandboxDirectory,
   useDownloadSandboxFile,
   blobToDataURL,
+  // Version history hooks
+  useFileHistory,
+  useFileContentAtCommit,
+  useFilesAtCommit,
+  useRevertToCommit,
+  fetchCommitInfo,
+  // Types
+  type FileVersion,
+  type FileHistoryResponse,
+  type CommitInfo,
 } from './hooks';
 

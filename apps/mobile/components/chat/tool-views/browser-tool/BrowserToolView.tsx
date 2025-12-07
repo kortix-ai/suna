@@ -12,6 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
+import type { UnifiedMessage } from '@/api/types';
 import { ToolViewCard, StatusBadge, LoadingState, JsonViewer, ImageLoader } from '../shared';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
@@ -30,21 +31,42 @@ function formatTimestamp(isoString?: string): string {
 }
 
 function getToolTitle(toolName: string): string {
-  const normalizedName = toolName.toLowerCase();
+  const normalizedName = toolName.toLowerCase().replace(/_/g, '-');
   const toolTitles: Record<string, string> = {
     'browser-navigate-to': 'Browser Navigate',
     'browser-act': 'Browser Action',
     'browser-extract-content': 'Browser Extract',
     'browser-screenshot': 'Browser Screenshot',
+    'browser-click-element': 'Browser Click',
+    'browser-input-text': 'Browser Input',
+    'browser-scroll-down': 'Browser Scroll',
+    'browser-scroll-up': 'Browser Scroll',
+    'browser-go-back': 'Browser Navigate',
+    'browser-wait': 'Browser Wait',
+    'browser-send-keys': 'Browser Send Keys',
+    'browser-switch-tab': 'Browser Switch Tab',
+    'browser-close-tab': 'Browser Close Tab',
+    'browser-scroll-to-text': 'Browser Scroll',
+    'browser-get-dropdown-options': 'Browser Get Options',
+    'browser-select-dropdown-option': 'Browser Select',
+    'browser-drag-drop': 'Browser Drag & Drop',
+    'browser-click-coordinates': 'Browser Click',
   };
   return toolTitles[normalizedName] || 'Browser';
 }
 
 function extractBrowserOperation(name: string): string {
-  const normalizedName = name.toLowerCase();
-  if (normalizedName.includes('navigate')) return 'Navigate';
+  const normalizedName = name.toLowerCase().replace(/_/g, '-');
+  if (normalizedName.includes('navigate') || normalizedName.includes('go-back')) return 'Navigate';
   if (normalizedName.includes('screenshot')) return 'Screenshot';
   if (normalizedName.includes('extract')) return 'Extract';
+  if (normalizedName.includes('click')) return 'Click';
+  if (normalizedName.includes('input') || normalizedName.includes('send-keys')) return 'Input';
+  if (normalizedName.includes('scroll')) return 'Scroll';
+  if (normalizedName.includes('switch-tab') || normalizedName.includes('close-tab')) return 'Tab';
+  if (normalizedName.includes('dropdown') || normalizedName.includes('select')) return 'Select';
+  if (normalizedName.includes('drag') || normalizedName.includes('drop')) return 'Drag & Drop';
+  if (normalizedName.includes('wait')) return 'Wait';
   if (normalizedName.includes('act')) return 'Action';
   return 'Browser';
 }
@@ -62,7 +84,6 @@ export function BrowserToolView({
 }: ToolViewProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const [showContext, setShowContext] = useState(false);
   const [progress, setProgress] = useState(100);
 
   if (!toolCall) {
@@ -74,8 +95,14 @@ export function BrowserToolView({
   const toolTitle = getToolTitle(name);
 
   // Extract data directly from structured props
-  const url = toolCall.arguments?.url || toolCall.arguments?.target_url || null;
-  const parameters = toolCall.arguments || null;
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => { try { return JSON.parse(toolCall.arguments); } catch { return {}; } })()
+      : {};
+  
+  const url = args?.url || args?.target_url || null;
+  const parameters = args || null;
 
   // Extract result data from toolResult - match frontend logic exactly
   let browserStateMessageId: string | undefined;
@@ -126,9 +153,9 @@ export function BrowserToolView({
   }
 
   // Try to find browser state message if we have a message_id (frontend logic)
-  if (!screenshotUrlFinal && !screenshotBase64Final && browserStateMessageId && messages.length > 0) {
-    const browserStateMessage = messages.find(
-      (msg) =>
+  if (!screenshotUrlFinal && !screenshotBase64Final && browserStateMessageId && messages && messages.length > 0) {
+    const browserStateMessage: UnifiedMessage | undefined = messages.find(
+      (msg: UnifiedMessage) =>
         (msg.type as string) === 'browser_state' &&
         msg.message_id === browserStateMessageId,
     );
@@ -153,6 +180,21 @@ export function BrowserToolView({
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
   const hasScreenshot = !!(screenshotUrlFinal || screenshotBase64Final);
   const hasContext = !!(result || parameters);
+  
+  // For extract operations, prioritize showing extracted content
+  const isExtractOperation = name.includes('extract');
+  const hasExtractedContent = isExtractOperation && result && Object.keys(result).length > 0;
+  const shouldShowExtractedContent = isExtractOperation && hasExtractedContent && !hasScreenshot;
+  
+  // Default to showing context for extract operations if no screenshot
+  const [showContextState, setShowContextState] = useState(shouldShowExtractedContent);
+  
+  // Update showContextState when operation type changes
+  useEffect(() => {
+    if (shouldShowExtractedContent) {
+      setShowContextState(true);
+    }
+  }, [shouldShowExtractedContent]);
 
   // Progress indicator during streaming
   useEffect(() => {
@@ -204,12 +246,20 @@ export function BrowserToolView({
     const calculatedHeight = imageWidth / aspectRatio;
 
     return (
-      <View className="w-full items-center justify-center p-4">
+      <View 
+        className="flex-1 items-center justify-center"
+        style={{
+          minHeight: 600,
+          padding: 16,
+        }}
+      >
         <View 
           className="bg-card border border-border rounded-2xl overflow-hidden"
           style={{
             width: imageWidth,
             maxWidth: '100%',
+            backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
+            borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
           }}
         >
           <ImageLoader
@@ -221,6 +271,7 @@ export function BrowserToolView({
               minHeight: 300,
             }}
             className="w-full"
+            showLoadingState={true}
           />
         </View>
       </View>
@@ -228,14 +279,14 @@ export function BrowserToolView({
   };
 
   // Show loading state during streaming with no screenshot
-  if (isStreaming && !hasScreenshot && !showContext) {
+  if (isStreaming && !hasScreenshot && !showContextState) {
     return (
       <ToolViewCard
         header={{
           icon: MonitorPlay,
           iconColor: 'text-primary',
           iconBgColor: 'bg-primary/10 border-primary/20',
-          subtitle: 'BROWSER',
+          subtitle: '',
           title: toolTitle,
           isSuccess: actualIsSuccess,
           isStreaming: true,
@@ -263,17 +314,24 @@ export function BrowserToolView({
         icon: MonitorPlay,
         iconColor: 'text-primary',
         iconBgColor: 'bg-primary/10 border-primary/20',
-        subtitle: 'BROWSER',
+        subtitle: '', // Simplified - just show tool name
         title: toolTitle,
         isSuccess: actualIsSuccess,
         isStreaming: isStreaming,
+        showStatus: false, // Don't show status icon in header
         rightContent: (
           <View className="flex-row items-center gap-2">
+            {!isRunning && (
+              <StatusBadge
+                variant={actualIsSuccess ? 'success' : 'error'}
+                label={actualIsSuccess ? 'Completed' : 'Failed'}
+              />
+            )}
             {hasScreenshot && hasContext && (
               <Pressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setShowContext(!showContext);
+                  setShowContextState(!showContextState);
                 }}
                 className="h-8 w-8 items-center justify-center rounded-lg active:opacity-70"
                 style={{
@@ -281,17 +339,11 @@ export function BrowserToolView({
                 }}
               >
                 <Icon
-                  as={showContext ? ImageIcon : Code2}
+                  as={showContextState ? ImageIcon : Code2}
                   size={16}
                   className="text-foreground"
                 />
               </Pressable>
-            )}
-            {!isStreaming && (
-              <StatusBadge
-                variant={actualIsSuccess ? 'success' : 'error'}
-                label={actualIsSuccess ? 'Success' : 'Failed'}
-              />
             )}
             {isStreaming && <StatusBadge variant="streaming" label="Processing" />}
           </View>
@@ -339,7 +391,7 @@ export function BrowserToolView({
       }
     >
       <View className="flex-1 w-full">
-        {showContext && hasContext ? (
+        {showContextState && hasContext ? (
           <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
             <View className="p-4 gap-4">
               {parameters && (
@@ -362,11 +414,26 @@ export function BrowserToolView({
             </View>
           </ScrollView>
         ) : hasScreenshot ? (
-          <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            className="flex-1 w-full" 
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{
+              flexGrow: 1,
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: isDark ? '#000000' : '#ffffff',
+            }}
+          >
             {renderScreenshot()}
             {isRunning && (
-              <View className="px-4 pb-4">
-                <View className="bg-muted/50 border border-border rounded-xl p-3">
+              <View className="px-4 pb-4 mt-4">
+                <View 
+                  className="bg-muted/50 border border-border rounded-xl p-3"
+                  style={{
+                    backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
+                    borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+                  }}
+                >
                   <View className="flex-row items-center gap-2">
                     <Icon as={Loader2} size={14} className="text-primary" />
                     <Text className="text-xs text-muted-foreground">
@@ -378,9 +445,31 @@ export function BrowserToolView({
             )}
           </ScrollView>
         ) : (
-          <View className="flex-1 w-full items-center justify-center py-12 px-6">
-            <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-              <Icon as={MonitorPlay} size={40} className="text-primary" />
+          <View 
+            className="flex-1 w-full items-center justify-center py-12 px-6"
+            style={{
+              backgroundColor: isDark 
+                ? 'rgba(18, 18, 21, 1)' 
+                : 'rgba(255, 255, 255, 1)',
+              minHeight: 600,
+            }}
+          >
+            <View 
+              className="rounded-full items-center justify-center mb-6"
+              style={{
+                width: 80,
+                height: 80,
+                backgroundColor: isDark 
+                  ? 'rgba(168, 85, 247, 0.2)' 
+                  : 'rgba(168, 85, 247, 0.1)',
+              }}
+            >
+              <Icon 
+                as={MonitorPlay} 
+                size={40} 
+                color={isDark ? '#a855f7' : '#9333ea'}
+                strokeWidth={2}
+              />
             </View>
             <Text className="text-xl font-roobert-semibold mb-2 text-foreground">
               {isRunning ? 'Browser action in progress' : 'Browser action completed'}
@@ -393,7 +482,16 @@ export function BrowserToolView({
             {url && (
               <Pressable
                 onPress={handleOpenUrl}
-                className="bg-card border border-border rounded-xl px-4 py-3 w-full active:opacity-70"
+                className="bg-card border border-border rounded-xl px-4 py-3 active:opacity-70"
+                style={{
+                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
+                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 2,
+                  elevation: 2,
+                }}
               >
                 <View className="flex-row items-center gap-2">
                   <Icon as={ExternalLink} size={14} className="text-primary" />

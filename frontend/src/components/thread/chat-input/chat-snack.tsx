@@ -46,7 +46,7 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
         subscriptionData.plan_name === 'free'
     );
 
-    // Determine what notifications we have - match exact rendering conditions
+    // Determine what notifications we have
     const notifications = [];
 
     // Tool notification: only if we have tool calls and showToolPreview is true
@@ -54,12 +54,10 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
         notifications.push('tool');
     }
 
-    // Upgrade notification: only for free tier users who haven't dismissed it (must have subscriptionData)
+    // Upgrade notification: only for free tier users who haven't dismissed it
     if (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade) {
         notifications.push('upgrade');
     }
-
-
 
     const totalNotifications = notifications.length;
     const hasMultiple = totalNotifications > 1;
@@ -71,8 +69,8 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
         }
     }, [totalNotifications, currentView]);
 
-    // Update isVisible to include upgrade notification - only show if we have subscriptionData
-    const shouldShowSnack = isVisible || (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade && totalNotifications > 0);
+    const shouldShowSnack = isVisible || 
+        (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade && totalNotifications > 0);
     
     // Auto-cycle through notifications
     React.useEffect(() => {
@@ -83,7 +81,7 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
         }, 20000);
 
         return () => clearInterval(interval);
-    }, [hasMultiple, shouldShowSnack, totalNotifications, currentView]); // Reset timer when currentView changes
+    }, [hasMultiple, shouldShowSnack, totalNotifications, currentView]);
     
     if (!shouldShowSnack || totalNotifications === 0) return null;
 
@@ -130,7 +128,6 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={(e) => {
-                            // Don't trigger if clicking on indicators or close button
                             const target = e.target as HTMLElement;
                             const isIndicatorClick = target.closest('[data-indicator-click]');
                             const isCloseClick = target.closest('[data-close-click]');
@@ -143,13 +140,8 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
                         <UpgradePreview
                             subscriptionData={subscriptionData}
                             onClose={() => {
-                                // Mark upgrade as dismissed
                                 setUserDismissedUpgrade(true);
-
-                                // Check what notifications will remain after closing upgrade
                                 const willHaveToolNotification = showToolPreview && toolCalls.length > 0;
-
-                                // If there will be other notifications, switch to them
                                 if (willHaveToolNotification) {
                                     setCurrentView(0);
                                 }

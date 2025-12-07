@@ -64,10 +64,12 @@ export function ToolHeader({
         )}
       </View>
       <View className="flex-1 min-w-0">
-        <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
-          {subtitle}
-        </Text>
-        <Text className="text-xl font-roobert-semibold text-foreground" numberOfLines={1}>
+        {subtitle && (
+          <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider mb-1">
+            {subtitle}
+          </Text>
+        )}
+        <Text className={`font-roobert-semibold text-foreground ${subtitle ? 'text-xl' : 'text-base'}`} numberOfLines={1}>
           {title}
         </Text>
       </View>

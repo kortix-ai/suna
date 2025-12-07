@@ -761,7 +761,7 @@ export function MarkdownToolbar({
                   Add row below
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={deleteRow} className="text-destructive focus:text-destructive">
+                <DropdownMenuItem onClick={deleteRow} className="text-destructive focus:text-destructive hover:text-destructive hover:bg-destructive/10">
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete row
                 </DropdownMenuItem>
@@ -784,7 +784,7 @@ export function MarkdownToolbar({
                   Add column right
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={deleteColumn} className="text-destructive focus:text-destructive">
+                <DropdownMenuItem onClick={deleteColumn} className="text-destructive focus:text-destructive hover:text-destructive hover:bg-destructive/10">
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete column
                 </DropdownMenuItem>
