@@ -165,41 +165,40 @@ export function DashboardContent() {
     const getGreeting = () => {
       const hour = new Date().getHours();
       
-      // Time-based greetings
+      // Get greeting arrays from translations
       const morningGreetings = [
-        "Good morning! What's on the agenda?",
-        "Rise and shine! What are we building?",
-        "Morning! Ready to be productive?",
+        t('greetings.morning.0'),
+        t('greetings.morning.1'),
+        t('greetings.morning.2'),
       ];
       
       const afternoonGreetings = [
-        "Good afternoon! What can I help with?",
-        "Hope your day's going well! What's next?",
+        t('greetings.afternoon.0'),
+        t('greetings.afternoon.1'),
       ];
       
       const eveningGreetings = [
-        "Good evening! Burning the midnight oil?",
-        "Evening! What are we working on tonight?",
-        "Good evening! Let's get things done.",
+        t('greetings.evening.0'),
+        t('greetings.evening.1'),
+        t('greetings.evening.2'),
       ];
       
-      // Random greetings (shown anytime)
       const randomGreetings = [
-        "Guess who's back, back again",
-        "Ahoy! What can Kortix do for you?",
-        "What do you want to get done?",
-        "Let's build something awesome",
-        "Ready when you are!",
-        "What's cooking?",
-        "At your service! What's the mission?",
-        "Let's make some magic happen",
-        "What challenge shall we tackle?",
-        "Your wish is my command",
-        "What's the plan, Stan?",
-        "Buckle up! Where are we headed?",
-        "Another day, another build",
-        "What's on your mind?",
-        "Let's get this show on the road",
+        t('greetings.random.0'),
+        t('greetings.random.1'),
+        t('greetings.random.2'),
+        t('greetings.random.3'),
+        t('greetings.random.4'),
+        t('greetings.random.5'),
+        t('greetings.random.6'),
+        t('greetings.random.7'),
+        t('greetings.random.8'),
+        t('greetings.random.9'),
+        t('greetings.random.10'),
+        t('greetings.random.11'),
+        t('greetings.random.12'),
+        t('greetings.random.13'),
+        t('greetings.random.14'),
       ];
       
       // 40% chance of time-based greeting, 60% chance of random
@@ -219,7 +218,7 @@ export function DashboardContent() {
     };
     
     setGreeting(getGreeting());
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
     if (agents.length > 0) {

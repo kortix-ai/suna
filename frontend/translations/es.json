@@ -313,9 +313,42 @@
     "customWorkers": "Workers Personalizados",
     "scheduledTriggers": "Triggers Programados",
     "appTriggers": "Triggers de App",
-    "limitsExceeded": "Has alcanzado tu límite de chats ({current}/{limit}). Mejora tu plan para crear más chats.",
+    "limitsExceeded": "Has alcanzado tu límite de chats. Mejora tu plan para crear más chats.",
     "agentInitiatedSuccessfully": "Agente iniciado correctamente",
-    "aiAssistantReady": "Tu asistente de IA está listo para ayudar"
+    "aiAssistantReady": "Tu asistente de IA está listo para ayudar",
+    "greetings": {
+      "morning": [
+        "¡Buenos días! ¿Qué toca hoy?",
+        "¡Arriba! ¿Qué vamos a crear?",
+        "¡Buen día! ¿Listos para la acción?"
+      ],
+      "afternoon": [
+        "¡Buenas tardes! ¿En qué te ayudo?",
+        "¿Qué tal el día? ¿Qué necesitas?"
+      ],
+      "evening": [
+        "¡Buenas noches! ¿Trabajando hasta tarde?",
+        "¡Hola! ¿En qué andamos esta noche?",
+        "¡Buenas noches! Manos a la obra."
+      ],
+      "random": [
+        "¡Mira quién volvió!",
+        "¡Hola! ¿Qué puede hacer Kortix por ti?",
+        "¿Qué quieres lograr hoy?",
+        "Vamos a crear algo increíble",
+        "¡A tus órdenes!",
+        "¿Qué se cuece?",
+        "¡A tu servicio! ¿Cuál es la misión?",
+        "Hagamos magia juntos",
+        "¿Qué reto enfrentamos hoy?",
+        "Tus deseos son órdenes",
+        "¿Cuál es el plan?",
+        "¡Abróchate el cinturón! ¿A dónde vamos?",
+        "Otro día, otro proyecto",
+        "¿Qué tienes en mente?",
+        "¡Vamos al lío!"
+      ]
+    }
   },
   "thread": {
     "integrations": "Integraciones",
