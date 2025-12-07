@@ -14,6 +14,7 @@ import {
   Plus,
   Maximize2,
   Pencil,
+  Download,
 } from 'lucide-react';
 import {
   extractFilePath,
@@ -158,6 +159,7 @@ export function FileEditToolView({
   
   // Add copy functionality state
   const [isCopyingContent, setIsCopyingContent] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Copy functions
   const copyToClipboard = async (text: string) => {
@@ -226,6 +228,36 @@ export function FileEditToolView({
 
   const lineDiff = originalContent && updatedContent ? generateLineDiff(originalContent, updatedContent) : [];
   const stats: DiffStats = calculateDiffStats(lineDiff);
+
+  // Handle file download
+  const handleDownload = () => {
+    if (!updatedContent || !processedFilePath || isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      
+      // Create blob from content
+      const blob = new Blob([updatedContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create download link
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      // Cleanup
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      
+      toast.success('Download started');
+    } catch (error) {
+      toast.error(`Failed to download file: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const shouldShowError = !isStreaming && (!actualIsSuccess || (actualIsSuccess && (originalContent === null || updatedContent === null)));
 
@@ -396,6 +428,23 @@ export function FileEditToolView({
                     <Check className="h-4 w-4" />
                   ) : (
                     <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+              {/* Download button */}
+              {updatedContent && !isStreaming && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDownload}
+                  disabled={isDownloading}
+                  className="h-8 w-8 p-0"
+                  title="Download file"
+                >
+                  {isDownloading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
                   )}
                 </Button>
               )}

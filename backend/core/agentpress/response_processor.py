@@ -36,7 +36,7 @@ from langfuse.client import StatefulTraceClient
 from core.services.langfuse import langfuse
 from core.utils.json_helpers import (
     ensure_dict, ensure_list, safe_json_parse, 
-    to_json_string, format_for_yield
+    to_json_string, to_json_string_fast, format_for_yield
 )
 from core.agentpress.xml_tool_parser import strip_xml_tool_calls
 
@@ -272,16 +272,27 @@ class ResponseProcessor:
         llm_response_id = str(uuid.uuid4())
         logger.info(f"🔵 LLM CALL #{auto_continue_count + 1} starting - llm_response_id: {llm_response_id}")
 
+        # Track background DB tasks for cleanup
+        background_db_tasks = []
+        
         try:
-            # --- Save and Yield Start Events ---
+            # --- Yield Start Events (DB saves in background for zero latency) ---
             if auto_continue_count == 0:
                 start_content = {"status_type": "thread_run_start"}
-                start_msg_obj = await self.add_message(
-                    thread_id=thread_id, type="status", content=start_content, 
-                    is_llm_message=False, metadata={"thread_run_id": thread_run_id}
-                )
-                if start_msg_obj: 
-                    yield format_for_yield(start_msg_obj)
+                # Yield immediately, save to DB in background (non-blocking)
+                now_start = datetime.now(timezone.utc).isoformat()
+                yield {
+                    "message_id": None, "thread_id": thread_id, "type": "status",
+                    "is_llm_message": False,
+                    "content": to_json_string(start_content),
+                    "metadata": to_json_string({"thread_run_id": thread_run_id}),
+                    "created_at": now_start, "updated_at": now_start
+                }
+                # Fire-and-forget DB save
+                background_db_tasks.append(asyncio.create_task(
+                    self.add_message(thread_id=thread_id, type="status", content=start_content, 
+                                   is_llm_message=False, metadata={"thread_run_id": thread_run_id})
+                ))
 
             llm_start_content = {
                 "llm_response_id": llm_response_id,
@@ -289,16 +300,21 @@ class ResponseProcessor:
                 "model": llm_model,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
-            llm_start_msg_obj = await self.add_message(
-                thread_id=thread_id, type="llm_response_start", content=llm_start_content, 
-                is_llm_message=False, metadata={
-                    "thread_run_id": thread_run_id,
-                    "llm_response_id": llm_response_id
-                }
-            )
-            if llm_start_msg_obj: 
-                yield format_for_yield(llm_start_msg_obj)
-                logger.info(f"✅ Saved llm_response_start for call #{auto_continue_count + 1}")
+            # Yield immediately, save to DB in background (non-blocking)
+            now_llm_start = datetime.now(timezone.utc).isoformat()
+            yield {
+                "message_id": None, "thread_id": thread_id, "type": "llm_response_start",
+                "is_llm_message": False,
+                "content": to_json_string(llm_start_content),
+                "metadata": to_json_string({"thread_run_id": thread_run_id, "llm_response_id": llm_response_id}),
+                "created_at": now_llm_start, "updated_at": now_llm_start
+            }
+            # Fire-and-forget DB save
+            background_db_tasks.append(asyncio.create_task(
+                self.add_message(thread_id=thread_id, type="llm_response_start", content=llm_start_content, 
+                               is_llm_message=False, metadata={"thread_run_id": thread_run_id, "llm_response_id": llm_response_id})
+            ))
+            logger.debug(f"Yielded llm_response_start for call #{auto_continue_count + 1} (DB save in background)")
             # --- End Start Events ---
 
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
@@ -318,6 +334,11 @@ class ResponseProcessor:
                 logger.info(f"📁 Saving raw stream output to: {debug_file}")
             
             chunk_count = 0
+            
+            # Pre-build metadata and timestamp for content chunks (HOT PATH optimization)
+            # This avoids json.dumps() and datetime.now() calls per chunk
+            _chunk_metadata_cached = to_json_string_fast({"stream_status": "chunk", "thread_run_id": thread_run_id})
+            _stream_start_time = datetime.now(timezone.utc).isoformat()
             
             async for chunk in llm_response:
                 # Check for cancellation before processing each chunk
@@ -425,27 +446,24 @@ class ResponseProcessor:
                         # logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += reasoning_content
 
-                    # Process content chunk
+                    # Process content chunk - HOT PATH, optimized for minimum latency
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
-                        # logger.debug(f"Processing chunk_content: type={type(chunk_content)}, value={chunk_content}")
                         if isinstance(chunk_content, list):
                             chunk_content = ''.join(str(item) for item in chunk_content)
-                        # print(chunk_content, end='', flush=True)
-                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += chunk_content
-                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
                         current_xml_content += chunk_content
 
-                        # Yield ONLY content chunk (don't save)
-                        now_chunk = datetime.now(timezone.utc).isoformat()
+                        # Yield content chunk IMMEDIATELY - no datetime call, use pre-built metadata
+                        # This is the hot path - every microsecond counts!
                         yield {
                             "sequence": __sequence,
                             "message_id": None, "thread_id": thread_id, "type": "assistant",
                             "is_llm_message": True,
-                            "content": to_json_string({"role": "assistant", "content": chunk_content}),
-                            "metadata": to_json_string({"stream_status": "chunk", "thread_run_id": thread_run_id}),
-                            "created_at": now_chunk, "updated_at": now_chunk
+                            "content": to_json_string_fast({"role": "assistant", "content": chunk_content}),
+                            "metadata": _chunk_metadata_cached,  # Pre-built, no serialization per chunk
+                            "created_at": _stream_start_time,  # Reuse start time, no datetime.now() per chunk
+                            "updated_at": _stream_start_time
                         }
                         __sequence += 1
 
@@ -1116,6 +1134,13 @@ class ResponseProcessor:
             
             # Phase 3: Resource Cleanup - Cancel pending tasks and close generator
             try:
+                # Wait for background DB tasks (fire-and-forget saves) to complete
+                if 'background_db_tasks' in locals() and background_db_tasks:
+                    try:
+                        await asyncio.gather(*background_db_tasks, return_exceptions=True)
+                    except Exception as bg_err:
+                        logger.debug(f"Background DB tasks cleanup error (non-fatal): {bg_err}")
+                
                 # Cancel all pending tool execution tasks when stopping
                 if pending_tool_executions:
                     logger.info(f"Cancelling {len(pending_tool_executions)} pending tool executions due to stop/cancellation")

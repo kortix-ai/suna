@@ -871,31 +871,42 @@ export function FileBrowserView({
             )}
           </div>
         ) : (selectedVersion ? versionFiles : files).length === 0 ? (
-          <div className="h-full w-full flex flex-col items-center justify-center gap-2">
-            <Folder className="h-12 w-12 mb-2 text-muted-foreground opacity-30" />
-            {!hasSandbox ? (
-              <>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Computer is not available yet
-                </p>
-                <p className="text-xs text-muted-foreground/70">
-                  A computer will be created when you start working on this task
-                </p>
-              </>
-            ) : !isComputerStarted ? (
-              <>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Computer is not started yet
-                </p>
-                <p className="text-xs text-muted-foreground/70">
-                  Files will appear once the computer is ready
-                </p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Directory is empty
-              </p>
-            )}
+          <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
+            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+              <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center border-2 border-zinc-200 dark:border-zinc-700">
+                <Folder className="h-8 w-8 text-zinc-400 dark:text-zinc-500" />
+              </div>
+              <div className="space-y-2">
+                {!hasSandbox ? (
+                  <>
+                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      Files not available
+                    </h3>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      A computer will be created when you start working on this task. Files will appear here once ready.
+                    </p>
+                  </>
+                ) : !isComputerStarted ? (
+                  <>
+                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      Computer starting...
+                    </h3>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      Files will appear once the computer is ready.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      Directory is empty
+                    </h3>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      This folder doesn&apos;t contain any files yet.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         ) : (
           <ScrollArea className="h-full w-full max-w-full p-2 min-w-0">

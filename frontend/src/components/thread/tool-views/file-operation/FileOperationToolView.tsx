@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   CheckCircle,
   AlertTriangle,
@@ -12,6 +12,10 @@ import {
   Maximize2,
   Presentation,
   Pencil,
+  Download,
+  FileType,
+  FileText,
+  FileCode,
 } from 'lucide-react';
 import {
   formatTimestamp,
@@ -37,6 +41,14 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
+import { marked } from 'marked';
 
 import {
   getLanguageFromFileName,
@@ -115,6 +127,8 @@ export function FileOperationToolView({
 
   // Add copy functionality state
   const [isCopyingContent, setIsCopyingContent] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const operation = getOperationType(name, args);
   const configs = getOperationConfigs();
@@ -330,6 +344,58 @@ export function FileOperationToolView({
     }
     setTimeout(() => setIsCopyingContent(false), 500);
   };
+
+  // Handle file download
+  const handleDownload = useCallback(() => {
+    if (!fileContent || !processedFilePath || isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      
+      // Create blob from content
+      const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      
+      // Create download link
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      // Cleanup
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      
+      toast.success('Download started');
+    } catch (error) {
+      toast.error(`Failed to download file: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [fileContent, processedFilePath, isDownloading, fileName]);
+
+  // Handle markdown export (PDF, DOCX, HTML, Markdown)
+  const handleExport = useCallback(async (format: ExportFormat) => {
+    if (!fileContent || !fileName) return;
+
+    setIsExporting(true);
+    try {
+      // Convert markdown to HTML
+      const htmlContent = marked.parse(fileContent, { async: false }) as string;
+      
+      await exportDocument({
+        content: htmlContent,
+        fileName: fileName.replace(/\.(md|markdown)$/i, ''),
+        format,
+      });
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [fileContent, fileName]);
 
   // Always show FileOperationToolView for file operations, even during streaming
   // Don't fallback to GenericToolView
@@ -610,6 +676,23 @@ export function FileOperationToolView({
                     <Check className="h-4 w-4" />
                   ) : (
                     <Copy className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+              {/* Download button */}
+              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDownload}
+                  disabled={isDownloading}
+                  className="h-8 w-8 p-0"
+                  title="Download file"
+                >
+                  {isDownloading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
                   )}
                 </Button>
               )}
