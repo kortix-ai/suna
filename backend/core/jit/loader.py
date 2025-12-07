@@ -24,7 +24,10 @@ class JITLoader:
             'expand_msg_tool', 
             'message_tool', 
             'task_list_tool', 
-            'sb_shell_tool'
+            'sb_shell_tool',
+            'web_search_tool',
+            'sb_git_sync',
+            'sb_files_tool'
         ]
     
     @staticmethod

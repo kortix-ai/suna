@@ -77,15 +77,40 @@ class ToolManager:
             logger.info(f"⚠️  [LEGACY] Tool registration complete. {len(self.thread_manager.tool_registry.tools)} functions in {total:.1f}ms")
     
     def _register_core_tools(self):
+        from core.jit.loader import JITLoader
+        from core.tools.tool_registry import get_tool_info, get_tool_class
+        
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(MessageTool)
         self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
+        
+        if config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY:
+            enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
+            self.thread_manager.add_tool(SandboxWebSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
+        
+        core_sandbox_tools = ['sb_shell_tool', 'sb_git_sync', 'sb_files_tool']
+        tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
+        
+        for tool_name in core_sandbox_tools:
+            tool_info = get_tool_info(tool_name)
+            if tool_info:
+                _, module_path, class_name = tool_info
+                try:
+                    tool_class = get_tool_class(module_path, class_name)
+                    kwargs = {
+                        'project_id': self.project_id,
+                        'thread_manager': self.thread_manager
+                    }
+                    if tool_name in tools_needing_thread_id:
+                        kwargs['thread_id'] = self.thread_id
+                    
+                    enabled_methods = self._get_enabled_methods_for_tool(tool_name)
+                    self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
+                except (ImportError, AttributeError) as e:
+                    logger.warning(f"❌ Failed to load core tool {tool_name} ({class_name}): {e}")
     
     def _register_sandbox_tools(self, disabled_tools: List[str]):
-        if config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY:
-            if 'web_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
-                self.thread_manager.add_tool(SandboxWebSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
+        core_tools_already_loaded = ['sb_shell_tool', 'sb_git_sync', 'sb_files_tool', 'web_search_tool']
         
         if config.SERPER_API_KEY:
             if 'image_search_tool' not in disabled_tools:
@@ -98,6 +123,9 @@ class ToolManager:
         
         sandbox_tools = []
         for tool_name, module_path, class_name in SANDBOX_TOOLS:
+            if tool_name in core_tools_already_loaded:
+                continue
+            
             try:
                 tool_class = get_tool_class(module_path, class_name)
                 kwargs = {
