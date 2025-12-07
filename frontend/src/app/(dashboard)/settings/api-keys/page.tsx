@@ -207,7 +207,6 @@ export default function APIKeysPage() {
       <div className="space-y-6">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <Key className="w-6 h-6" />
             <h1 className="text-2xl font-medium">API Keys</h1>
           </div>
           <p className="text-muted-foreground">
@@ -219,20 +218,16 @@ export default function APIKeysPage() {
         <Card className="border-blue-200/60 bg-gradient-to-br from-blue-50/80 to-indigo-50/40 dark:from-blue-950/20 dark:to-indigo-950/10 dark:border-blue-800/30">
           <CardContent className="">
             <div className="flex items-start gap-4">
-              <div className="relative">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-500/20">
-                  <Sparkles className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div className="absolute -top-1 -right-1">
-                  <Badge variant="secondary" className="h-5 px-1.5 text-xs bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
-                    Beta
-                  </Badge>
-                </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-500/20">
+                <Sparkles className="w-6 h-6 text-blue-600 dark:text-blue-400" />
               </div>
               <div className="flex-1 space-y-3">
                 <div>
-                  <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                  <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
                     Kortix API
+                    <Badge variant="secondary" className="h-5 px-1.5 text-xs bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
+                      Beta
+                    </Badge>
                   </h3>
                   <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
                     Our API is currently in beta. Use these API keys to integrate with our
