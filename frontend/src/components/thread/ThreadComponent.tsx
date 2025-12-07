@@ -20,6 +20,7 @@ import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 import { PlaybackFloatingControls } from '@/components/thread/content/PlaybackFloatingControls';
 import { usePlaybackController, useAddUserMessageMutation } from '@/hooks/messages';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
   useStartAgentMutation,
   useStopAgentMutation,
@@ -118,6 +119,18 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const lastStreamStartedRef = useRef<string | null>(null); // Track last runId we started streaming for
   const pendingMessageRef = useRef<string | null>(null); // Store pending message to add when agent starts
   const chatInputRef = useRef<ChatInputHandles>(null); // Ref for ChatInput imperative handle
+
+  // Message queue for when agent is running - using Zustand store
+  const queueMessage = useMessageQueueStore((state) => state.queueMessage);
+  const removeQueuedMessage = useMessageQueueStore((state) => state.removeMessage);
+  const clearQueue = useMessageQueueStore((state) => state.clearQueue);
+  const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
+  
+  // Filter messages for this thread using useMemo to avoid infinite loop
+  const queuedMessages = useMemo(() => 
+    allQueuedMessages.filter((msg) => msg.threadId === threadId),
+    [allQueuedMessages, threadId]
+  );
 
   // Sidebar - safely use it if SidebarProvider is available (logged in users on share page will have it)
   // Use React.useContext directly which returns null if context is not available (doesn't throw)
@@ -435,6 +448,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           setAgentRunId(null);
           setAutoOpenedPanel(false);
 
+          // Send queued messages when agent stops (feature flag)
+          const ENABLE_MESSAGE_QUEUE = false;
+          if (ENABLE_MESSAGE_QUEUE && queuedMessages.length > 0) {
+            console.log('[ThreadComponent] Agent stopped, will send queued messages:', queuedMessages.length);
+            // Auto-send first queued message after a short delay
+            setTimeout(() => {
+              const firstMessage = queuedMessages[0];
+              if (firstMessage) {
+                removeQueuedMessage(firstMessage.id);
+                handleSubmitMessage(firstMessage.message, firstMessage.options);
+              }
+            }, 500);
+          }
+
           // No scroll needed with flex-column-reverse
           break;
         case 'connecting':
@@ -469,7 +496,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           break;
       }
     },
-    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages],
+    [setAgentStatus, setAgentRunId, setAutoOpenedPanel, threadId, setMessages, queuedMessages, removeQueuedMessage],
   );
 
   const handleStreamError = useCallback((errorMessage: string) => {
@@ -540,6 +567,21 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       options?: { model_name?: string },
     ) => {
       if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
+
+      // Check if agent is running - if so, queue the message instead
+      if (agentStatus === 'running' || agentStatus === 'connecting') {
+        console.log('[ThreadComponent] Agent is running, queueing message:', { message, options, agentStatus });
+        const queuedId = queueMessage(threadId, message, {
+          ...options,
+          agent_id: selectedAgentId,
+        });
+        console.log('[ThreadComponent] Queued message ID:', queuedId);
+        
+        // Clear the input - the queue panel will show the message
+        chatInputRef.current?.setValue('');
+        return;
+      }
+
       setIsSending(true);
 
       // Store the message to add optimistically when agent starts running
@@ -631,6 +673,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       setAgentRunId,
       isShared,
       selectedAgentId,
+      agentStatus,
+      queueMessage,
+      queuedMessages,
     ],
   );
 
@@ -826,6 +871,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   useEffect(() => {
     lastStreamStartedRef.current = null;
   }, [threadId]);
+
 
   // SEO title update
   useEffect(() => {
@@ -1062,7 +1108,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
           {/* Compact Chat Input or Playback Controls */}
           {!isShared && (
-            <div className="flex-shrink-0 border-t border-border/20  p-4">
+            <div className="flex-shrink-0 border-t border-border/20 p-4">
               <ChatInput
                 ref={chatInputRef}
                 onSubmit={handleSubmitMessage}

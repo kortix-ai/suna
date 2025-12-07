@@ -501,7 +501,7 @@ export function MarkdownEditor({
         />
       )}
       <div className="flex-1 overflow-auto">
-        <div className="mx-auto px-6 py-4 max-w-4xl">
+        <div className="mx-auto px-6 pb-12 max-w-4xl">
           {editor && (
             <>
               <BubbleMenu
@@ -781,7 +781,7 @@ export function MarkdownEditor({
               margin: 1.5rem 0;
             }
           ` }} />
-          <div className="tiptap-editor">
+          <div className="tiptap-editor pt-6">
             <EditorContent
               editor={editor}
               className="min-h-[300px]"

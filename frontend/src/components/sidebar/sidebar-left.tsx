@@ -243,7 +243,7 @@ export function SidebarLeft({
           <div className={cn("flex h-[32px] items-center justify-between min-w-[200px]")}>
             <div className="pl-2 relative flex items-center justify-center w-fit">
               <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
-                <KortixLogo size={20} className="flex-shrink-0" />
+                <KortixLogo size={20} className="flex-shrink-0 transition-transform duration-700 ease-in-out hover:rotate-180" />
               </Link>
             </div>
             <div className="flex items-center gap-1">

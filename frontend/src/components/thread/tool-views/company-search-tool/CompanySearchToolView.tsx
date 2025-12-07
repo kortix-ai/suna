@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 import {
   Building2,
   CheckCircle,
@@ -137,9 +138,11 @@ export function CompanySearchToolView({
                         <div className="flex items-start gap-3">
                           <div className="flex-shrink-0 mt-0.5">
                             {result.company_logo_url && result.company_logo_url !== '' ? (
-                              <img
+                              <Image
                                 src={result.company_logo_url}
                                 alt={result.company_name}
+                                width={32}
+                                height={32}
                                 className="w-8 h-8 rounded-lg object-cover"
                                 onError={(e) => {
                                   const target = e.target as HTMLImageElement;
@@ -147,6 +150,7 @@ export function CompanySearchToolView({
                                   const fallback = target.nextSibling as HTMLElement;
                                   if (fallback) fallback.style.display = 'flex';
                                 }}
+                                unoptimized
                               />
                             ) : null}
                             <div 

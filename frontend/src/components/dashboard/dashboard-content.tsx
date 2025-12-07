@@ -103,6 +103,7 @@ export function DashboardContent() {
     runningThreadIds: string[];
   } | null>(null);
   const [showUpgradeCelebration, setShowUpgradeCelebration] = useState(false);
+  const [greeting, setGreeting] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -158,6 +159,67 @@ export function DashboardContent() {
     }
     return `${minutes}m`;
   };
+
+  // Generate randomized greeting on mount
+  React.useEffect(() => {
+    const getGreeting = () => {
+      const hour = new Date().getHours();
+      
+      // Time-based greetings
+      const morningGreetings = [
+        "Good morning! What's on the agenda?",
+        "Rise and shine! What are we building?",
+        "Morning! Ready to be productive?",
+      ];
+      
+      const afternoonGreetings = [
+        "Good afternoon! What can I help with?",
+        "Hope your day's going well! What's next?",
+      ];
+      
+      const eveningGreetings = [
+        "Good evening! Burning the midnight oil?",
+        "Evening! What are we working on tonight?",
+        "Good evening! Let's get things done.",
+      ];
+      
+      // Random greetings (shown anytime)
+      const randomGreetings = [
+        "Guess who's back, back again",
+        "Ahoy! What can Kortix do for you?",
+        "What do you want to get done?",
+        "Let's build something awesome",
+        "Ready when you are!",
+        "What's cooking?",
+        "At your service! What's the mission?",
+        "Let's make some magic happen",
+        "What challenge shall we tackle?",
+        "Your wish is my command",
+        "What's the plan, Stan?",
+        "Buckle up! Where are we headed?",
+        "Another day, another build",
+        "What's on your mind?",
+        "Let's get this show on the road",
+      ];
+      
+      // 40% chance of time-based greeting, 60% chance of random
+      const useTimeBased = Math.random() < 0.4;
+      
+      if (useTimeBased) {
+        if (hour >= 5 && hour < 12) {
+          return morningGreetings[Math.floor(Math.random() * morningGreetings.length)];
+        } else if (hour >= 12 && hour < 17) {
+          return afternoonGreetings[Math.floor(Math.random() * afternoonGreetings.length)];
+        } else {
+          return eveningGreetings[Math.floor(Math.random() * eveningGreetings.length)];
+        }
+      }
+      
+      return randomGreetings[Math.floor(Math.random() * randomGreetings.length)];
+    };
+    
+    setGreeting(getGreeting());
+  }, []);
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -468,7 +530,7 @@ export function DashboardContent() {
                         <p
                           className="tracking-tight text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90"
                         >
-                          {t('whatWouldYouLike')}
+                          {greeting || t('whatWouldYouLike')}
                         </p>
                       </div>
 
@@ -529,10 +591,7 @@ export function DashboardContent() {
                             onClick={() => pricingModalStore.openPricingModal()}
                           >
                             <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm flex items-center gap-1'>
-                              {t('limitsExceeded', { 
-                                current: accountState?.limits?.threads?.current ?? 0, 
-                                limit: accountState?.limits?.threads?.max ?? 0 
-                              })}
+                              {t('limitsExceeded')}
                               <ChevronRight className='h-4 w-4' />
                             </span>
                           </div>
