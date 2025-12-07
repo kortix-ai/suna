@@ -437,6 +437,14 @@ export function NavUserWithTeams({
                     )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
+                        <Link href="/admin/analytics" className="gap-2 p-2">
+                          <BarChart3 className="h-4 w-4" />
+                          <span>Analytics</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
                         <Link href="/admin/notifications" className="gap-2 p-2">
                           <Bell className="h-4 w-4" />
                           <span>Notifications</span>
