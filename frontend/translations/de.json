@@ -46,6 +46,14 @@
     "general": {
       "title": "Profileinstellungen",
       "description": "Verwalte deine Kontoinformationen",
+      "profilePicture": {
+        "title": "Profilbild",
+        "upload": "Avatar hochladen",
+        "hint": "JPG, PNG oder GIF. Max 5MB.",
+        "invalidType": "Bitte wähle eine Bilddatei",
+        "tooLarge": "Bild muss kleiner als 5MB sein",
+        "uploadFailed": "Profilbild konnte nicht hochgeladen werden"
+      },
       "name": "Name",
       "email": "E-Mail",
       "namePlaceholder": "Gib deinen Namen ein",
@@ -237,6 +245,8 @@
   },
   "sidebar": {
     "referAndEarn": "Empfehlen",
+    "referralShareTitle": "Freunde empfehlen",
+    "referralShareSubtitle": "Erhalte 400 Credits",
     "new": "Neu",
     "upgrade": "Upgrade",
     "chats": "Chats",
@@ -304,9 +314,42 @@
     "customWorkers": "Benutzerdefinierte Worker",
     "scheduledTriggers": "Geplante Trigger",
     "appTriggers": "App-Trigger",
-    "limitsExceeded": "Du hast dein Chat-Limit erreicht ({current}/{limit}). Upgraden deinen Plan, um mehr Chats zu erstellen.",
+    "limitsExceeded": "Du hast dein Chat-Limit erreicht. Upgraden deinen Plan, um mehr Chats zu erstellen.",
     "agentInitiatedSuccessfully": "Agent erfolgreich gestartet",
-    "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen"
+    "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen",
+    "greetings": {
+      "morning": [
+        "Guten Morgen! Was steht heute an?",
+        "Moin moin! Was bauen wir heute?",
+        "Morgen! Bereit durchzustarten?"
+      ],
+      "afternoon": [
+        "Guten Tag! Wie kann ich helfen?",
+        "Na, wie läuft's? Was gibt's zu tun?"
+      ],
+      "evening": [
+        "Guten Abend! Nachtschicht?",
+        "Abend! Woran arbeiten wir heute?",
+        "Guten Abend! Lass uns loslegen."
+      ],
+      "random": [
+        "Schön, dass du da bist!",
+        "Ahoi! Was kann Kortix für dich tun?",
+        "Was möchtest du erledigen?",
+        "Lass uns was Geniales bauen",
+        "Bin startklar!",
+        "Was liegt an?",
+        "Zu Diensten! Was ist die Mission?",
+        "Auf geht's! Was zaubern wir?",
+        "Welche Herausforderung wartet?",
+        "Dein Wunsch ist mir Befehl",
+        "Was steht auf dem Plan?",
+        "Anschnallen! Wohin geht die Reise?",
+        "Ein neuer Tag, ein neues Projekt",
+        "Was beschäftigt dich?",
+        "Los geht's!"
+      ]
+    }
   },
   "thread": {
     "integrations": "Integrationen",

@@ -43,7 +43,9 @@ export function TabSwitcher({
           <Pressable
             key={tab.id}
             onPress={() => handleTabPress(tab.id)}
-            className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-md flex-1 ${
+            className={`flex-row items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md ${
+              tabs.length > 2 ? 'flex-1 min-w-0' : 'flex-1'
+            } ${
               isActive
                 ? 'bg-background dark:bg-primary/10'
                 : 'bg-transparent'
@@ -52,7 +54,7 @@ export function TabSwitcher({
             {tab.icon && (
               <Icon
                 as={tab.icon}
-                size={14}
+                size={13}
                 className={
                   isActive
                     ? 'text-foreground'
@@ -61,11 +63,12 @@ export function TabSwitcher({
               />
             )}
             <Text
-              className={`text-xs font-roobert-medium ${
+              className={`text-[11px] font-roobert-medium ${
                 isActive
                   ? 'text-foreground'
                   : 'text-muted-foreground'
               }`}
+              numberOfLines={1}
             >
               {tab.label}
             </Text>

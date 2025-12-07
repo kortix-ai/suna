@@ -33,7 +33,7 @@ import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { toast } from 'sonner';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { Button } from '../ui/button';
-import { X } from 'lucide-react';
+import { X, ChevronRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
 import { UsageLimitsPopover } from './usage-limits-popover';
@@ -104,6 +104,7 @@ export function DashboardContent() {
     runningThreadIds: string[];
   } | null>(null);
   const [showUpgradeCelebration, setShowUpgradeCelebration] = useState(false);
+  const [greeting, setGreeting] = useState('');
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -159,6 +160,66 @@ export function DashboardContent() {
     }
     return `${minutes}m`;
   };
+
+  // Generate randomized greeting on mount
+  React.useEffect(() => {
+    const getGreeting = () => {
+      const hour = new Date().getHours();
+      
+      // Get greeting arrays from translations
+      const morningGreetings = [
+        t('greetings.morning.0'),
+        t('greetings.morning.1'),
+        t('greetings.morning.2'),
+      ];
+      
+      const afternoonGreetings = [
+        t('greetings.afternoon.0'),
+        t('greetings.afternoon.1'),
+      ];
+      
+      const eveningGreetings = [
+        t('greetings.evening.0'),
+        t('greetings.evening.1'),
+        t('greetings.evening.2'),
+      ];
+      
+      const randomGreetings = [
+        t('greetings.random.0'),
+        t('greetings.random.1'),
+        t('greetings.random.2'),
+        t('greetings.random.3'),
+        t('greetings.random.4'),
+        t('greetings.random.5'),
+        t('greetings.random.6'),
+        t('greetings.random.7'),
+        t('greetings.random.8'),
+        t('greetings.random.9'),
+        t('greetings.random.10'),
+        t('greetings.random.11'),
+        t('greetings.random.12'),
+        t('greetings.random.13'),
+        t('greetings.random.14'),
+      ];
+      
+      // 40% chance of time-based greeting, 60% chance of random
+      const useTimeBased = Math.random() < 0.4;
+      
+      if (useTimeBased) {
+        if (hour >= 5 && hour < 12) {
+          return morningGreetings[Math.floor(Math.random() * morningGreetings.length)];
+        } else if (hour >= 12 && hour < 17) {
+          return afternoonGreetings[Math.floor(Math.random() * afternoonGreetings.length)];
+        } else {
+          return eveningGreetings[Math.floor(Math.random() * eveningGreetings.length)];
+        }
+      }
+      
+      return randomGreetings[Math.floor(Math.random() * randomGreetings.length)];
+    };
+    
+    setGreeting(getGreeting());
+  }, [t]);
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -483,7 +544,7 @@ export function DashboardContent() {
                         <p
                           className="tracking-tight text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90"
                         >
-                          {t('whatWouldYouLike')}
+                          {greeting || t('whatWouldYouLike')}
                         </p>
                       </div>
 
@@ -536,27 +597,17 @@ export function DashboardContent() {
 
                         {alertType === 'thread_limit' && (
                           <div 
-                            className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-between overflow-hidden'
+                            className='w-full h-16 p-2 px-4 dark:bg-amber-500/5 bg-amber-500/10 dark:border-amber-500/10 border-amber-700/10 border text-white rounded-b-3xl flex items-center justify-center overflow-hidden cursor-pointer hover:bg-amber-500/15 transition-colors'
                             style={{
                               marginTop: '-40px',
                               transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
                             }}
+                            onClick={() => pricingModalStore.openPricingModal()}
                           >
-                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm'>
-                              {t('limitsExceeded', { 
-                                current: accountState?.limits?.threads?.current ?? 0, 
-                                limit: accountState?.limits?.threads?.max ?? 0 
-                              })}
+                            <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm flex items-center gap-1'>
+                              {t('limitsExceeded')}
+                              <ChevronRight className='h-4 w-4' />
                             </span>
-                            <div className='flex items-center -mb-3.5'>
-                              <Button 
-                                size='sm' 
-                                className='h-6 text-xs'
-                                onClick={() => pricingModalStore.openPricingModal()}
-                              >
-                                {tCommon('upgrade')}
-                              </Button>
-                            </div>
                           </div>
                         )}
                       </div>

@@ -4,6 +4,8 @@ import { GenericToolView } from '../GenericToolView';
 import { BrowserToolView } from '../BrowserToolView';
 import { CommandToolView } from '../command-tool/CommandToolView';
 import { CheckCommandOutputToolView } from '../command-tool/CheckCommandOutputToolView';
+import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
+import { ListCommandsToolView } from '../command-tool/ListCommandsToolView';
 import { ExposePortToolView } from '../expose-port-tool/ExposePortToolView';
 import { FileOperationToolView } from '../file-operation/FileOperationToolView';
 import { WebCrawlToolView } from '../WebCrawlToolView';
@@ -13,7 +15,6 @@ import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
-import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { WaitToolView } from '../wait-tool/WaitToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
@@ -72,7 +73,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'execute-command': CommandToolView,
   'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
-  'list-commands': GenericToolView,
+  'list-commands': ListCommandsToolView,
 
   'create-file': FileOperationToolView,
   'delete-file': FileOperationToolView,

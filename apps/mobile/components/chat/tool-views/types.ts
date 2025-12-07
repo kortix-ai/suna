@@ -64,6 +64,15 @@ export interface ToolViewProps {
   
   /** Handler to auto-fill chat input with a prompt (for follow-up prompts/answers) */
   onPromptFill?: (prompt: string) => void;
+  
+  /** Agent status (for browser tool views) */
+  agentStatus?: 'idle' | 'running' | 'paused';
+  
+  /** Messages array (for browser tool views to find browser_state messages) */
+  messages?: UnifiedMessage[];
+  
+  /** View toggle component (for browser tool views) */
+  viewToggle?: React.ReactNode;
 }
 
 export interface ToolViewComponent {

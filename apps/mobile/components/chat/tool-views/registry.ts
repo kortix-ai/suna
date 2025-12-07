@@ -20,6 +20,7 @@ import { StrReplaceToolView } from './str-replace-tool/StrReplaceToolView';
 import { FileOperationToolView } from './file-operation/FileOperationToolView';
 import { CheckCommandOutputToolView } from './check-command-output-tool/CheckCommandOutputToolView';
 import { TerminateCommandToolView } from './terminate-command-tool/TerminateCommandToolView';
+import { ListCommandsToolView } from './list-commands-tool/ListCommandsToolView';
 import { AskToolView } from './ask-tool/AskToolView';
 import { CompleteToolView } from './complete-tool/CompleteToolView';
 import { DataProviderToolView } from './data-provider-tool/DataProviderToolView';
@@ -69,6 +70,8 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'execute-command': CommandToolView,
   'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
+  'list-commands': ListCommandsToolView,
+  'list_commands': ListCommandsToolView,
   
   // Task management
   'create-tasks': TaskListToolView,
@@ -94,6 +97,7 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'browser-act': BrowserToolView,
   'browser_act': BrowserToolView,
   'browser-navigate-to': BrowserToolView,
+  'browser-navigate_to': BrowserToolView,
   'browser-click-element': BrowserToolView,
   'browser-input-text': BrowserToolView,
   'browser-scroll-down': BrowserToolView,
@@ -108,6 +112,10 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'browser-select-dropdown-option': BrowserToolView,
   'browser-drag-drop': BrowserToolView,
   'browser-click-coordinates': BrowserToolView,
+  'browser-extract-content': BrowserToolView,
+  'browser_extract_content': BrowserToolView,
+  'browser-screenshot': BrowserToolView,
+  'browser_screenshot': BrowserToolView,
   
   // Wait tool
   'wait': WaitToolView,

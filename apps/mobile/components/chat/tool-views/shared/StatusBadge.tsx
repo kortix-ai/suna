@@ -7,9 +7,10 @@ import { useColorScheme } from 'nativewind';
 
 interface StatusBadgeProps {
   variant: 'success' | 'error' | 'streaming';
-  label: string;
+  label?: string;
   icon?: LucideIcon;
   className?: string;
+  iconOnly?: boolean;
 }
 
 export function StatusBadge({
@@ -17,6 +18,7 @@ export function StatusBadge({
   label,
   icon,
   className = '',
+  iconOnly = false,
 }: StatusBadgeProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -50,6 +52,33 @@ export function StatusBadge({
   const styles = getVariantStyles();
   const IconComponent = icon || styles.defaultIcon;
 
+  if (iconOnly) {
+    return (
+      <View
+        className={`items-center justify-center ${styles.bg} ${styles.border} ${className}`}
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+        }}
+      >
+        {IconComponent === Loader2 ? (
+          <Icon
+            as={Loader2}
+            size={14}
+            className={`${styles.text} animate-spin`}
+          />
+        ) : (
+          <Icon
+            as={IconComponent}
+            size={14}
+            className={styles.text}
+          />
+        )}
+      </View>
+    );
+  }
+
   return (
     <View
       className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full border ${styles.bg} ${styles.border} ${className}`}
@@ -67,9 +96,11 @@ export function StatusBadge({
           className={styles.text}
         />
       )}
-      <Text className={`text-xs font-roobert-medium ${styles.text}`}>
-        {label}
-      </Text>
+      {label && (
+        <Text className={`text-xs font-roobert-medium ${styles.text}`}>
+          {label}
+        </Text>
+      )}
     </View>
   );
 }

@@ -46,6 +46,14 @@
     "general": {
       "title": "Impostazioni profilo",
       "description": "Gestisci le informazioni del tuo account",
+      "profilePicture": {
+        "title": "Foto Profilo",
+        "upload": "Carica avatar",
+        "hint": "JPG, PNG o GIF. Max 5MB.",
+        "invalidType": "Seleziona un file immagine",
+        "tooLarge": "L'immagine deve essere inferiore a 5MB",
+        "uploadFailed": "Impossibile caricare la foto profilo"
+      },
       "name": "Nome",
       "email": "Email",
       "namePlaceholder": "Inserisci il tuo nome",
@@ -237,6 +245,8 @@
   },
   "sidebar": {
     "referAndEarn": "Invita e Guadagna",
+    "referralShareTitle": "Invita Amici",
+    "referralShareSubtitle": "Ottieni 400 crediti",
     "new": "Nuovo",
     "upgrade": "Aggiorna",
     "chats": "Chat",
@@ -304,9 +314,42 @@
     "customWorkers": "Worker personalizzati",
     "scheduledTriggers": "Trigger pianificati",
     "appTriggers": "Trigger app",
-    "limitsExceeded": "Hai raggiunto il limite delle chat ({current}/{limit}). Aggiorna il tuo piano per creare più chat.",
+    "limitsExceeded": "Hai raggiunto il limite delle chat. Aggiorna il tuo piano per creare più chat.",
     "agentInitiatedSuccessfully": "Agente avviato con successo",
-    "aiAssistantReady": "Il tuo assistente AI è pronto ad aiutare"
+    "aiAssistantReady": "Il tuo assistente AI è pronto ad aiutare",
+    "greetings": {
+      "morning": [
+        "Buongiorno! Cosa c'è in programma?",
+        "Sveglia! Cosa costruiamo oggi?",
+        "Buongiorno! Pronti a spaccare?"
+      ],
+      "afternoon": [
+        "Buon pomeriggio! Come posso aiutare?",
+        "Come va? Cosa c'è da fare?"
+      ],
+      "evening": [
+        "Buonasera! Lavoro notturno?",
+        "Ciao! Su cosa lavoriamo stasera?",
+        "Buonasera! Mettiamoci al lavoro."
+      ],
+      "random": [
+        "Indovina chi è tornato!",
+        "Ehi! Cosa può fare Kortix per te?",
+        "Cosa vuoi realizzare oggi?",
+        "Creiamo qualcosa di fantastico",
+        "Pronto quando vuoi!",
+        "Cosa bolle in pentola?",
+        "Ai tuoi ordini! Qual è la missione?",
+        "Facciamo un po' di magia",
+        "Quale sfida affrontiamo?",
+        "I tuoi desideri sono ordini",
+        "Qual è il piano?",
+        "Allaccia le cinture! Dove andiamo?",
+        "Un altro giorno, un altro progetto",
+        "A cosa stai pensando?",
+        "Partiamo!"
+      ]
+    }
   },
   "thread": {
     "integrations": "Integrazioni",

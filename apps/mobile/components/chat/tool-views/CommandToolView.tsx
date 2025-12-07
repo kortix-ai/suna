@@ -9,6 +9,8 @@ import {
   Check,
   Clock,
   Loader2,
+  TerminalIcon,
+  CircleDashed,
 } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
 import { extractCommandData } from './command-tool/_utils';
@@ -66,6 +68,21 @@ export function CommandToolView({
   const displayLabel = name === 'check-command-output' ? 'Session' : 'Command';
   const displayPrefix = name === 'check-command-output' ? 'tmux:' : '$';
 
+  // Get tool title - match frontend getToolTitle function
+  const getToolTitle = (toolName: string): string => {
+    const normalizedName = toolName.toLowerCase();
+    const toolTitles: Record<string, string> = {
+      'execute-command': 'Execute Command',
+      'check-command-output': 'Check Command Output',
+      'terminate-command': 'Terminate Session',
+    };
+    return toolTitles[normalizedName] || toolName
+      .split('-')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const toolTitle = getToolTitle(name);
   const toolMetadata = getToolMetadata(name, toolCall?.arguments);
 
   // Check if this is a non-blocking command with just a status message
@@ -146,6 +163,9 @@ export function CommandToolView({
   const hasMoreLines = formattedOutput.length > 10;
   const previewLines = formattedOutput.slice(0, 10);
   const linesToShow = showFullOutput ? formattedOutput : previewLines;
+  
+  // Add empty lines for natural scrolling
+  const emptyLines = Array.from({ length: 30 }, () => '');
 
   const handleCopy = async () => {
     if (!output) return;
@@ -163,8 +183,8 @@ export function CommandToolView({
           icon: toolMetadata.icon,
           iconColor: toolMetadata.iconColor,
           iconBgColor: toolMetadata.iconBgColor,
-          subtitle: toolMetadata.subtitle.toUpperCase(),
-          title: toolMetadata.title,
+          subtitle: '',
+          title: toolTitle,
           isSuccess: actualIsSuccess,
           isStreaming: true,
           rightContent: <StatusBadge variant="streaming" label="Executing" />,
@@ -190,19 +210,20 @@ export function CommandToolView({
         icon: toolMetadata.icon,
         iconColor: toolMetadata.iconColor,
         iconBgColor: toolMetadata.iconBgColor,
-        subtitle: toolMetadata.subtitle.toUpperCase(),
-        title: toolMetadata.title,
+        subtitle: '',
+        title: toolTitle,
         isSuccess: actualIsSuccess,
         isStreaming: isStreaming,
-        rightContent: !isStreaming && (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={
-              actualIsSuccess
-                ? (name === 'check-command-output' ? 'Retrieved' : 'Success')
-                : (name === 'check-command-output' ? 'Failed' : 'Failed')
-            }
-          />
+        rightContent: (
+          <View className="flex-row items-center gap-2">
+            {!isStreaming && (
+              <StatusBadge
+                variant={actualIsSuccess ? 'success' : 'error'}
+                iconOnly={true}
+              />
+            )}
+            {isStreaming && <StatusBadge variant="streaming" iconOnly={true} />}
+          </View>
         ),
       }}
       footer={
@@ -276,11 +297,17 @@ export function CommandToolView({
           )}
         </View>
       ) : displayText ? (
-        <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
-          <View className="p-4 gap-4">
+        <View className="flex-1 w-full">
+          <View className="flex-shrink-0 p-4 pb-2">
             {/* Command section */}
             {command && (
-              <View className="bg-card border border-border rounded-xl p-3.5">
+              <View
+                className="bg-card border border-border rounded-xl p-3.5 mb-4"
+                style={{
+                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
+                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+                }}
+              >
                 <View className="flex-row items-center gap-2 mb-2">
                   <View
                     className="px-1.5 py-0.5 rounded border"
@@ -288,16 +315,19 @@ export function CommandToolView({
                       borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
                     }}
                   >
-                    <Text className="text-xs font-roobert-medium text-foreground">
-                      Command
-                    </Text>
+                    <View className="flex-row items-center gap-1">
+                      <Icon as={TerminalIcon} size={10} className="text-muted-foreground" />
+                      <Text className="text-xs font-roobert-medium text-foreground">
+                        Command
+                      </Text>
+                    </View>
                   </View>
                 </View>
                 <View className="flex-row items-center">
-                  <Text className="text-sm font-roobert-mono text-primary font-semibold">
+                  <Text className="text-xs font-roobert-mono text-primary font-semibold">
                     {displayPrefix}{' '}
                   </Text>
-                  <Text className="text-sm font-roobert-mono text-foreground flex-1" selectable>
+                  <Text className="text-xs font-roobert-mono text-foreground flex-1" selectable>
                     {command}
                   </Text>
                 </View>
@@ -306,75 +336,111 @@ export function CommandToolView({
 
             {/* Show status message for non-blocking commands */}
             {isNonBlockingCommand && output && (
-              <View className="bg-muted/50 border border-border rounded-xl p-3.5">
+              <View
+                className="bg-card border border-border rounded-xl p-3.5 mb-4"
+                style={{
+                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
+                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+                }}
+              >
                 <View className="flex-row items-center gap-2 mb-2">
-                  <Icon as={AlertCircle} size={16} className="text-primary" />
-                  <Text className="text-sm font-roobert-medium text-foreground">
-                    Command Status
-                  </Text>
-                </View>
-                <Text className="text-sm text-muted-foreground">{String(output)}</Text>
-              </View>
-            )}
-
-            {/* Output section */}
-            {formattedOutput.length > 0 ? (
-              <View className="bg-card border border-border rounded-xl overflow-hidden">
-                <View className="flex-row items-center justify-between p-3.5 pb-2 border-b border-border">
-                  <View className="flex-row items-center gap-2">
-                    <View
-                      className="px-1.5 py-0.5 rounded border"
-                      style={{
-                        borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-                      }}
-                    >
+                  <View
+                    className="px-1.5 py-0.5 rounded border"
+                    style={{
+                      borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
+                    }}
+                  >
+                    <View className="flex-row items-center gap-1">
+                      <Icon as={CircleDashed} size={10} className="text-blue-500 opacity-70" />
                       <Text className="text-xs font-roobert-medium text-foreground">
-                        Output
+                        Status
                       </Text>
                     </View>
-                    {exitCode !== null && exitCode !== 0 && (
+                  </View>
+                </View>
+                <Text className="text-xs font-roobert-mono text-foreground" selectable>
+                  {String(output)}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Output section - fills remaining height and scrolls */}
+          {formattedOutput.length > 0 ? (
+            <View className="flex-1 min-h-0 px-4 pb-4">
+              <View
+                className="flex-1 bg-card border border-border rounded-xl flex-col overflow-hidden"
+                style={{
+                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
+                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+                }}
+              >
+                <View className="flex-shrink-0 p-3.5 pb-2 border-b border-border">
+                  <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
                       <View
                         className="px-1.5 py-0.5 rounded border"
                         style={{
-                          borderColor: '#ef4444',
-                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)',
+                          borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
                         }}
                       >
                         <View className="flex-row items-center gap-1">
-                          <Icon as={AlertCircle} size={10} className="text-destructive" />
-                          <Text className="text-xs font-roobert-medium text-destructive">
-                            Error
+                          <Icon as={TerminalIcon} size={10} className="text-muted-foreground" />
+                          <Text className="text-xs font-roobert-medium text-foreground">
+                            Output
                           </Text>
                         </View>
                       </View>
-                    )}
+                      {exitCode !== null && exitCode !== 0 && (
+                        <View
+                          className="px-1.5 py-0.5 rounded border"
+                          style={{
+                            borderColor: '#ef4444',
+                            backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)',
+                          }}
+                        >
+                          <View className="flex-row items-center gap-1">
+                            <Icon as={AlertCircle} size={10} className="text-destructive" />
+                            <Text className="text-xs font-roobert-medium text-destructive">
+                              Error
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                    <Pressable
+                      onPress={handleCopy}
+                      className="flex-row items-center gap-1.5 px-2 py-1 rounded active:opacity-70"
+                      style={{
+                        backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
+                      }}
+                    >
+                      <Icon
+                        as={copied ? Check : Copy}
+                        size={14}
+                        className={copied ? 'text-primary' : 'text-foreground'}
+                      />
+                    </Pressable>
                   </View>
-                  <Pressable
-                    onPress={handleCopy}
-                    className="flex-row items-center gap-1.5 px-2 py-1 rounded active:opacity-70"
-                    style={{
-                      backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                    }}
-                  >
-                    <Icon
-                      as={copied ? Check : Copy}
-                      size={14}
-                      className={copied ? 'text-primary' : 'text-foreground'}
-                    />
-                  </Pressable>
                 </View>
                 <ScrollView
-                  className="max-h-96"
+                  className="flex-1 min-h-0"
                   showsVerticalScrollIndicator={true}
                 >
                   <View className="p-3.5 pt-2">
                     {linesToShow.map((line, idx) => (
                       <Text
                         key={idx}
-                        className="text-xs font-roobert-mono text-foreground/80 leading-5"
+                        className="text-xs font-roobert-mono text-foreground leading-5"
                         selectable
                       >
                         {line}
+                        {'\n'}
+                      </Text>
+                    ))}
+                    {/* Add empty lines for natural scrolling */}
+                    {showFullOutput && emptyLines.map((_, idx) => (
+                      <Text key={`empty-${idx}`} className="text-xs font-roobert-mono">
                         {'\n'}
                       </Text>
                     ))}
@@ -394,21 +460,34 @@ export function CommandToolView({
                   </View>
                 </ScrollView>
               </View>
-            ) : !isNonBlockingCommand ? (
-              <View className="flex-1 items-center justify-center py-8">
-                <View className="bg-card border border-border rounded-xl p-4">
-                  <Icon as={AlertCircle} size={32} className="text-muted-foreground mb-2" />
-                  <Text className="text-sm text-muted-foreground text-center">
-                    No output received
-                  </Text>
+            </View>
+          ) : !isNonBlockingCommand ? (
+            <View className="flex-1 flex items-center justify-center px-4 pb-4">
+              <View
+                className="bg-card border border-border rounded-xl p-4"
+                style={{
+                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
+                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+                }}
+              >
+                <View className="items-center">
+                  <Icon as={CircleDashed} size={32} className="text-muted-foreground mb-2" />
+                  <Text className="text-sm text-muted-foreground">No output received</Text>
                 </View>
               </View>
-            ) : null}
-          </View>
-        </ScrollView>
+            </View>
+          ) : null}
+        </View>
       ) : (
         <View className="flex-1 items-center justify-center py-12 px-6">
-          <View className="bg-muted/30 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <View 
+            className="rounded-full items-center justify-center mb-6"
+            style={{
+              width: 80,
+              height: 80,
+              backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
+            }}
+          >
             <Icon as={Terminal} size={40} className="text-muted-foreground" />
           </View>
           <Text className="text-xl font-roobert-semibold mb-2 text-foreground">
