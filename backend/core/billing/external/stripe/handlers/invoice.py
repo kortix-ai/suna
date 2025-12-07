@@ -407,8 +407,6 @@ class InvoiceHandler:
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     await Cache.invalidate(f"subscription_tier:{account_id}")
                     await invalidate_account_state_cache(account_id)
-                    from core.billing.credits.integration import invalidate_daily_credit_check_cache
-                    await invalidate_daily_credit_check_cache(account_id)
                 elif is_true_renewal and result and hasattr(result, 'data') and result.data and result.data.get('duplicate_prevented'):
                     logger.info(
                         f"[RENEWAL DEDUPE] ⛔ Duplicate renewal prevented for {account_id} period {period_start} "
@@ -424,8 +422,6 @@ class InvoiceHandler:
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     await Cache.invalidate(f"subscription_tier:{account_id}")
                     await invalidate_account_state_cache(account_id)
-                    from core.billing.credits.integration import invalidate_daily_credit_check_cache
-                    await invalidate_daily_credit_check_cache(account_id)
             
             except Exception as e:
                 logger.error(f"Error handling subscription renewal: {e}")

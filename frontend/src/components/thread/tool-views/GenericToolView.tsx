@@ -234,13 +234,7 @@ export function GenericToolView({
                       )}
                     </Button>
                   </div>
-                  <div className="bg-card border border-border rounded-lg overflow-hidden">
-                    <div className="p-4">
-                      <pre className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
-                        {JSON.stringify(toolCall.arguments, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
+                  <SmartJsonViewer data={toolCall.arguments} />
                 </div>
               )}
 
@@ -265,15 +259,7 @@ export function GenericToolView({
                       )}
                     </Button>
                   </div>
-                  <div className="bg-card border border-border rounded-lg overflow-hidden">
-                    <div className="p-4">
-                      <pre className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
-                        {typeof toolResult.output === 'string' 
-                          ? toolResult.output 
-                          : JSON.stringify(toolResult.output, null, 2)}
-                      </pre>
-                    </div>
-                  </div>
+                  <SmartJsonViewer data={toolResult.output} />
                 </div>
               )}
             </div>

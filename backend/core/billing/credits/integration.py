@@ -9,16 +9,6 @@ from core.services.supabase import DBConnection
 from ..shared.config import is_model_allowed
 from ..shared.cache_utils import invalidate_account_state_cache
 
-async def invalidate_daily_credit_check_cache(account_id: str):
-    try:
-        from core.services import redis_worker as redis
-        today = datetime.now(timezone.utc).date().isoformat()
-        cache_key = f"daily_credit_check:{account_id}:{today}"
-        await redis.delete(cache_key)
-        logger.debug(f"🗑️ [CREDIT_CACHE] Invalidated daily refresh check cache for {account_id}")
-    except Exception as e:
-        logger.warning(f"Failed to invalidate daily credit check cache for {account_id}: {e}")
-
 class BillingIntegration:
     @staticmethod
     async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
@@ -39,13 +29,16 @@ class BillingIntegration:
                 refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
                 if refreshed and amount > 0:
                     logger.info(f"✅ [DAILY_REFRESH] Granted ${amount} to {account_id}")
-                    await invalidate_daily_credit_check_cache(account_id)
                 await redis.set(cache_key, "checked", ex=3600)
                 logger.debug(f"✅ [CREDIT_CACHE] Daily refresh check completed and cached for {account_id} (TTL: 1h)")
         except Exception as e:
             logger.warning(f"[DAILY_CREDITS] Failed to check/refresh daily credits for {account_id}: {e}")
         
-        balance_info = await credit_manager.get_balance(account_id, use_cache=False)
+        import time
+        balance_start = time.time()
+        balance_info = await credit_manager.get_balance(account_id, use_cache=True)
+        balance_elapsed = (time.time() - balance_start) * 1000
+        logger.debug(f"⏱️ [BILLING] Balance query (use_cache=True): {balance_elapsed:.1f}ms")
         
         if isinstance(balance_info, dict):
             balance = Decimal(str(balance_info.get('total', 0)))
@@ -198,8 +191,6 @@ class BillingIntegration:
             **kwargs
         )
         await invalidate_account_state_cache(account_id)
-        await invalidate_daily_credit_check_cache(account_id)
-        logger.debug(f"🗑️ [CREDIT_CACHE] Invalidated caches after adding ${amount} credits for {account_id}")
         return result
 
 billing_integration = BillingIntegration()
