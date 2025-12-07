@@ -159,7 +159,7 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
         onPaste={onPaste}
         placeholder={placeholder}
         className={cn(
-          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
+          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
           isDraggingOver ? 'opacity-40' : '',
         )}
         disabled={disabled && !isAgentRunning}
@@ -208,10 +208,10 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
                 disabled={loading || (disabled && !isAgentRunning)}
               >
-                <Plug className="h-4 w-4" />
+                <Plug className="h-5 w-5" />
               </Button>
               {isFreeTier && !isLocalMode() && (
                 <div className="absolute -top-1 -right-1 w-4 h-4 bg-primary rounded-full flex items-center justify-center z-10 pointer-events-none">
@@ -364,7 +364,7 @@ const ModeButton = memo(function ModeButton({
         }
       }}
       className={cn(
-        "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
+        "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
         !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
         isModeDismissing && "animate-out fade-out-0 zoom-out-95"
       )}
@@ -504,7 +504,7 @@ const SubmitButton = memo(function SubmitButton({
             onClick={isAgentRunning && onStopAgent ? onStopAgent : onSubmit}
             size="sm"
             className={cn(
-              "w-8 h-8 flex-shrink-0 self-end rounded-xl relative z-10",
+              "w-10 h-10 flex-shrink-0 self-end border-[1.5px] border-border rounded-2xl relative z-10",
               (loading || isUploading) && "opacity-100 [&[disabled]]:opacity-100"
             )}
             disabled={isDisabled}
@@ -656,6 +656,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [isUploading, setIsUploading] = useState(false);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
     const [hasSubmitted, setHasSubmitted] = useState(false);
+    const [isSendingFiles, setIsSendingFiles] = useState(false);
 
     // Derived values
     const hasFiles = uploadedFiles.length > 0;
@@ -931,12 +932,25 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         setHasContent(false);
         setHasSubmitted(false);
         
+        // Clear files when agent starts running
+        setUploadedFiles([]);
+        setIsSendingFiles(false);
+        
         // Notify parent in controlled mode
         if (isControlled && controlledOnChange) {
           controlledOnChange('');
         }
       }
     }, [isAgentRunning, isControlled, controlledOnChange]);
+
+    // Reset sending state if loading becomes false without agent starting (submission failure)
+    useEffect(() => {
+      if (!loading && !isAgentRunning && isSendingFiles) {
+        // If loading stopped but agent didn't start, reset sending state
+        // This allows user to retry or remove files
+        setIsSendingFiles(false);
+      }
+    }, [loading, isAgentRunning, isSendingFiles]);
 
     const handleSubmit = useCallback(async (e: React.FormEvent) => {
       e.preventDefault();
@@ -959,6 +973,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
       // Mark as submitted to disable input immediately
       setHasSubmitted(true);
+
+      // Mark files as being sent (show loading spinner)
+      if (currentUploadedFiles.length > 0) {
+        setIsSendingFiles(true);
+      }
 
       let message = currentValue;
 
@@ -990,10 +1009,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
       });
 
-      // TODO: Clear input after agent stream connects
-      // For now, keep the text visible until stream starts
-
-      setUploadedFiles([]);
+      // Keep files visible with loading spinner - they'll be cleared when agent starts running
     }, [loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, generateSlidesTemplateMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId]);
 
     // Handle paste for image files
@@ -1151,7 +1167,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     // Controls are split into left and right to minimize re-renders
     // Memoized to prevent recreation on every keystroke
     const leftControls = useMemo(() => (
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-shrink overflow-visible">
+      <div className="flex items-center gap-2 min-w-0 flex-shrink overflow-visible">
         {!hideAttachments && (
           <FileUploadHandler
             ref={fileInputRef}
@@ -1281,22 +1297,30 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }}
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl`}>
+              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-[24px]`}>
                 {(uploadedFiles.length > 0 || isUploading) && (
                   <div className="relative">
                     <AttachmentGroup
                       files={uploadedFiles || []}
                       sandboxId={sandboxId}
-                      onRemove={removeUploadedFile}
+                      onRemove={isSendingFiles ? undefined : removeUploadedFile}
                       layout="inline"
                       maxHeight="216px"
                       showPreviews={true}
                     />
-                    {isUploading && pendingFiles.length > 0 && (
-                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                    {(isUploading && pendingFiles.length > 0) && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
                         <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
                           <KortixLoader size="small" customSize={16} variant="auto" />
                           <span className="text-sm">Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</span>
+                        </div>
+                      </div>
+                    )}
+                    {isSendingFiles && !isUploading && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
+                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
+                          <KortixLoader size="small" customSize={16} variant="auto" />
+                          <span className="text-sm">Sending {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}...</span>
                         </div>
                       </div>
                     )}
@@ -1316,7 +1340,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 <div className="flex items-center justify-between gap-1 overflow-x-auto scrollbar-none relative">
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'integrations' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <div className="flex items-center -space-x-0.5">
                       {quickIntegrations.every(int => integrationIcons[int.id as keyof typeof integrationIcons]) ? (
@@ -1346,21 +1370,21 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'tools' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Wrench className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Tools</span>
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'instructions' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Brain className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Instructions</span>
                   </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'knowledge' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Database className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Knowledge</span>
@@ -1368,7 +1392,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'triggers' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
                   >
                     <Zap className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Triggers</span>

@@ -100,7 +100,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
     project,
     isPreviewMode = false,
     agentName = 'Suna',
-    agentAvatar = <KortixLogo size={16} />,
+    agentAvatar = <KortixLogo size={14} />,
     emptyStateComponent,
     threadMetadata,
     scrollContainerRef,
@@ -159,7 +159,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                 name: recentAssistantWithAgent.agents.name,
                 avatar: (
                     <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
-                        <KortixLogo size={16} />
+                        <KortixLogo size={14} />
                     </div>
                 )
             };
@@ -818,10 +818,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         }
                                                                                         
                                                                                         return (
-                                                                                            <div className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50">
-                                                                                                <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                                                                                                    <AppIcon toolCall={firstToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
-                                                                                                </div>
+                                                                                            <button
+                                                                                                onClick={() => handleToolClick(streamingToolCall.message_id || null, toolName)}
+                                                                                                className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                                                                                            >
+                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
                                                                                                 <span className="font-mono text-xs text-foreground">
                                                                                                     {getUserFriendlyToolName(toolName)}
                                                                                                 </span>
@@ -830,19 +831,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                         {paramDisplay}
                                                                                                     </span>
                                                                                                 )}
-                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
-                                                                                            </div>
+                                                                                            </button>
                                                                                         );
                                                                                     }
                                                                                     
                                                                                     // Fallback if no tool calls found
                                                                                     return (
-                                                                                        <div className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50">
-                                                                                            <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
-                                                                                                <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
-                                                                                            </div>
+                                                                                        <button
+                                                                                            onClick={() => handleToolClick(streamingToolCall.message_id || null, 'unknown')}
+                                                                                            className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                                                                                        >
+                                                                                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
                                                                                             <span className="font-mono text-xs text-foreground">Using Tool</span>
-                                                                                        </div>
+                                                                                        </button>
                                                                                     );
                                                                                 })()}
                                                                             </div>

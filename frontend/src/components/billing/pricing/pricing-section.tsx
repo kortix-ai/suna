@@ -347,7 +347,7 @@ function PricingTier({
     if (isCurrentPlan) {
       buttonText = t('currentPlan');
       buttonDisabled = true;
-      statusBadge = <Badge variant="default" className="text-xs">{t('currentBadge')}</Badge>;
+      statusBadge = null;
       ringClass = '';
     }
     else if (isRevenueCatSubscription && !isCurrentPlan) {
@@ -365,11 +365,7 @@ function PricingTier({
         );
       } else {
         buttonText = t('currentPlan');
-        statusBadge = (
-          <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-            Current{isRevenueCatSubscription ? ' (Mobile)' : ''}
-          </span>
-        );
+        statusBadge = null;
       }
       buttonDisabled = true;
       buttonVariant = 'secondary';
@@ -586,6 +582,35 @@ function PricingTier({
               </Badge>
             ) : null}
             {isAuthenticated && statusBadge}
+            {/* Billing toggle - desktop only, on the right */}
+            {!isFreeTier ? (
+              <div className="hidden sm:flex items-center gap-2.5 bg-muted/50 rounded-full px-3 py-1.5">
+                <span className={cn(
+                  "text-sm transition-colors",
+                  !isYearly ? "text-foreground font-medium" : "text-muted-foreground"
+                )}>Monthly</span>
+                <button
+                  onClick={() => onBillingPeriodChange?.(isYearly ? 'monthly' : 'yearly')}
+                  className={cn(
+                    "relative w-12 h-6 rounded-full transition-colors duration-200",
+                    isYearly 
+                      ? "bg-black dark:bg-white" 
+                      : "bg-zinc-300 dark:bg-zinc-600"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200",
+                      isYearly && "translate-x-6"
+                    )}
+                  />
+                </button>
+                <span className={cn(
+                  "text-sm transition-colors",
+                  isYearly ? "text-foreground font-medium" : "text-muted-foreground"
+                )}>Annual</span>
+              </div>
+            ) : null}
           </div>
         </div>
         
@@ -613,36 +638,6 @@ function PricingTier({
               ) : null}
             </div>
           </div>
-          
-          {/* Annual toggle - only for paid tiers - desktop */}
-          {!isFreeTier ? (
-            <div className="flex items-center gap-2.5 bg-muted/50 rounded-full px-3 py-1.5">
-              <span className={cn(
-                "text-sm transition-colors",
-                !isYearly ? "text-foreground font-medium" : "text-muted-foreground"
-              )}>Monthly</span>
-              <button
-                onClick={() => onBillingPeriodChange?.(isYearly ? 'monthly' : 'yearly')}
-                className={cn(
-                  "relative w-12 h-6 rounded-full transition-colors duration-200",
-                  isYearly 
-                    ? "bg-primary" 
-                    : "bg-zinc-300 dark:bg-zinc-600"
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200",
-                    isYearly && "translate-x-6"
-                  )}
-                />
-              </button>
-              <span className={cn(
-                "text-sm transition-colors",
-                isYearly ? "text-foreground font-medium" : "text-muted-foreground"
-              )}>Annual</span>
-            </div>
-          ) : null}
         </div>
         
         {/* Mobile billing toggle - matches desktop style */}
@@ -658,7 +653,7 @@ function PricingTier({
                 className={cn(
                   "relative w-10 h-5 rounded-full transition-colors duration-200",
                   isYearly 
-                    ? "bg-primary" 
+                    ? "bg-black dark:bg-white" 
                     : "bg-zinc-300 dark:bg-zinc-600"
                 )}
               >
@@ -774,7 +769,7 @@ function PricingTier({
                         <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-md">
                           <KortixLogo size={10} variant="symbol" className="sm:hidden" />
                           <KortixLogo size={12} variant="symbol" className="hidden sm:block" />
-                          <span className="text-[10px] sm:text-xs font-semibold text-primary">Power</span>
+                          <span className="text-[10px] sm:text-xs font-semibold text-primary">Advanced</span>
                         </span>
                       </div>
                       {description && (
@@ -1137,15 +1132,15 @@ export function PricingSection({
                     key={tier.name}
                     onClick={() => setSelectedPaidTierIndex(index)}
                     className={cn(
-                      "px-4 py-2 rounded-full font-medium text-sm transition-all duration-200",
+                      "pl-1 pr-2 py-1 rounded-full font-medium text-sm transition-all duration-200 flex items-center gap-2",
                       selectedPaidTierIndex === index
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
-                    {tier.name}
+                    <TierBadge planName={tier.name} size="sm" variant="default" />
                     {tier.price && (
-                      <span className="ml-1.5 opacity-70">{tier.price}/mo</span>
+                      <span className="opacity-70">{tier.price}/mo</span>
                     )}
                   </button>
                 ))}
@@ -1213,14 +1208,14 @@ export function PricingSection({
                       key={tier.name}
                       onClick={() => setSelectedPaidTierIndex(index)}
                       className={cn(
-                        "flex-1 px-3 py-2 rounded-full font-medium text-xs transition-all duration-200",
+                        "flex-1 pl-1 pr-2 py-1 rounded-full font-medium text-xs transition-all duration-200 flex items-center justify-center gap-1.5",
                         selectedPaidTierIndex === index
                           ? "bg-primary text-primary-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
-                      {tier.name}
-                      <span className="ml-1.5 opacity-80">{tier.price}</span>
+                      <TierBadge planName={tier.name} size="xs" variant="default" />
+                      <span className="opacity-80">{tier.price}</span>
                     </button>
                   ))}
                 </div>

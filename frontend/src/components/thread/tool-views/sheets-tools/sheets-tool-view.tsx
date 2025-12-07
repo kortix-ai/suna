@@ -16,7 +16,10 @@ import { useDownloadRestriction } from '@/hooks/billing';
 
 function getFileUrl(sandboxId: string | undefined, path: string): string {
   if (!sandboxId) return path;
-  if (!path.startsWith('/workspace')) {
+  // Handle paths that start with "workspace" (without leading /)
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    path = '/' + path;
+  } else if (!path.startsWith('/workspace')) {
     path = `/workspace/${path.startsWith('/') ? path.substring(1) : path}`;
   }
   try {
@@ -104,7 +107,7 @@ export function SheetsToolView({
   const sheetIconBgColor = useMemo(() => {
     switch (toolName) {
       case 'create-sheet': return 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20';
-      case 'update-sheet': return 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20';
+      case 'update-sheet': return 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20';
       case 'view-sheet': return 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border border-yellow-500/20';
       case 'analyze-sheet': return 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20';
       case 'visualize-sheet': return 'bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20';
@@ -116,7 +119,7 @@ export function SheetsToolView({
   const getSheetIconColor = useCallback(() => {
     switch (toolName) {
       case 'create-sheet': return 'text-emerald-600';
-      case 'update-sheet': return 'text-blue-600';
+      case 'update-sheet': return 'text-zinc-600';
       case 'view-sheet': return 'text-yellow-600';
       case 'analyze-sheet': return 'text-purple-600';
       case 'visualize-sheet': return 'text-green-600';
@@ -175,7 +178,7 @@ export function SheetsToolView({
   );
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

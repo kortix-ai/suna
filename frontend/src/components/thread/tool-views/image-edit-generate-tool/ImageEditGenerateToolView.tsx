@@ -18,7 +18,7 @@ import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { extractImageEditGenerateData } from './_utils';
 import { cn } from '@/lib/utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -220,40 +220,38 @@ export function ImageEditGenerateToolView({
   const shortPrompt = prompt && prompt.length > 60 ? `${prompt.substring(0, 60)}...` : prompt;
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-zinc-900">
       {/* Header */}
-      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              "relative p-2 rounded-xl border transition-colors",
-              isGenerate 
-                ? "bg-gradient-to-b from-purple-100 to-purple-50 dark:from-purple-800/40 dark:to-purple-900/60 border-purple-200/50 dark:border-purple-800/30"
-                : "bg-gradient-to-b from-blue-100 to-blue-50 dark:from-blue-800/40 dark:to-blue-900/60 border-blue-200/50 dark:border-blue-800/30"
-            )}>
-              {isGenerate ? (
-                <Sparkles className="w-5 h-5 text-purple-500 dark:text-purple-400" />
-              ) : (
-                <Edit3 className="w-5 h-5 text-blue-500 dark:text-blue-400" />
-              )}
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {isGenerate ? 'Image Generation' : 'Image Editing'}
-                {totalImages > 1 && (
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
-                    ({totalImages} images)
-                  </span>
-                )}
-              </CardTitle>
-              {shortPrompt && (
-                <p className="text-xs text-muted-foreground mt-0.5 max-w-md truncate">
-                  {shortPrompt}
-                </p>
-              )}
-            </div>
+      <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
+        <div className="flex items-center gap-3 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
+          <div className={cn(
+            "relative p-2 rounded-lg border flex-shrink-0 transition-colors",
+            "bg-zinc-900 border-zinc-700"
+          )}>
+            {isGenerate ? (
+              <Sparkles className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+            ) : (
+              <Edit3 className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+            )}
           </div>
+          <div>
+            <div className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+              {isGenerate ? 'Image Generation' : 'Image Editing'}
+              {totalImages > 1 && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  ({totalImages} images)
+                </span>
+              )}
+            </div>
+            {shortPrompt && (
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-md truncate">
+                {shortPrompt}
+              </p>
+            )}
+          </div>
+        </div>
 
+        <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
           {!isStreaming ? (
             <Badge 
               variant="secondary" 
@@ -279,7 +277,7 @@ export function ImageEditGenerateToolView({
             </Badge>
           )}
         </div>
-      </CardHeader>
+      </div>
 
       {/* Content */}
       <CardContent className="p-0 flex-1 overflow-hidden">

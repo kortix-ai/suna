@@ -289,7 +289,7 @@ const ToolPreviewCard = ({ tool, searchTerm }: {
 
   return (
     <div
-      className="border rounded-md p-2 hover:bg-muted/30 transition-colors group cursor-pointer"
+      className="border rounded-2xl p-2 hover:bg-muted/30 transition-colors group cursor-pointer"
       title={tool.description} // Show full description on hover
     >
       <div className="flex items-center gap-2">

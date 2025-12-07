@@ -674,7 +674,9 @@ async def list_file_history(
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
     """
-    List all available git versions (commits) for a specific file in the sandbox.
+    List all available git versions (commits) for a specific file or entire workspace.
+    If path is /workspace (or normalizes to empty), returns all commits in the repo.
+    If path is a specific file/directory, returns commits that affected that path.
     Returns commit hashes, authors, dates, and messages. Most recent first.
     """
     import shlex
@@ -707,18 +709,31 @@ async def list_file_history(
         rel_path = path
         if rel_path.startswith("/workspace/"):
             rel_path = rel_path[len("/workspace/"):]
+        elif rel_path == "/workspace":
+            rel_path = ""
         rel_path = rel_path.lstrip("/")
 
         tmp_path = f"/tmp/git_log_{uuid.uuid4().hex}"
 
         # Use a structured git log format with field and record separators
         fmt = "%H%x1f%an%x1f%ae%x1f%ad%x1f%s%x1e"
-        git_cmd = (
-            f"cd /workspace && "
-            f"git log --follow --date=iso-strict "
-            f"--format={shlex.quote(fmt)} "
-            f"-n {limit_int} -- {shlex.quote(rel_path)} > {shlex.quote(tmp_path)}"
-        )
+        
+        # If rel_path is empty, get all commits (entire repo history)
+        # Otherwise, filter by specific file/directory path
+        if rel_path:
+            git_cmd = (
+                f"cd /workspace && "
+                f"git log --follow --date=iso-strict "
+                f"--format={shlex.quote(fmt)} "
+                f"-n {limit_int} -- {shlex.quote(rel_path)} > {shlex.quote(tmp_path)}"
+            )
+        else:
+            git_cmd = (
+                f"cd /workspace && "
+                f"git log --date=iso-strict "
+                f"--format={shlex.quote(fmt)} "
+                f"-n {limit_int} > {shlex.quote(tmp_path)}"
+            )
 
         try:
             session_id = f"session_{uuid.uuid4().hex}"
@@ -1024,6 +1039,139 @@ async def get_commit_info(
     except Exception as e:
         logger.error(
             f"Error retrieving commit info in sandbox {sandbox_id}, commit {commit}: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/sandboxes/{sandbox_id}/files/tree")
+async def list_files_at_commit(
+    sandbox_id: str,
+    path: str = "/workspace",
+    commit: Optional[str] = None,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """
+    List files and directories at a specific git commit (or current state if no commit).
+    Returns the file tree structure similar to regular file listing.
+    """
+    import shlex
+    import uuid
+
+    original_path = path
+    path = normalize_path(path)
+
+    logger.debug(
+        f"Received file tree request for sandbox {sandbox_id}, "
+        f"path: {path}, commit: {commit}, user_id: {user_id}"
+    )
+    if original_path != path:
+        logger.debug(f"Normalized path from '{original_path}' to '{path}'")
+
+    client = await db.client
+    await verify_sandbox_access_optional(client, sandbox_id, user_id)
+
+    try:
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+
+        # If no commit specified, use regular file listing
+        if not commit:
+            return await list_files(sandbox_id, path, request, user_id)
+
+        # Normalize path relative to workspace
+        rel_path = path
+        if rel_path.startswith("/workspace/"):
+            rel_path = rel_path[len("/workspace/"):]
+        elif rel_path.startswith("/workspace"):
+            rel_path = ""
+        rel_path = rel_path.lstrip("/")
+
+        tmp_path = f"/tmp/git_ls_tree_{uuid.uuid4().hex}"
+
+        # Use git ls-tree to list files/dirs at the commit
+        # Format: <mode> <type> <hash><TAB><name>
+        # Types: blob (file), tree (directory)
+        git_path = f"{shlex.quote(commit)}:{shlex.quote(rel_path)}" if rel_path else shlex.quote(commit)
+        git_cmd = (
+            f"cd /workspace && "
+            f"git ls-tree {git_path} > {shlex.quote(tmp_path)}"
+        )
+
+        try:
+            session_id = f"session_{uuid.uuid4().hex}"
+            await sandbox.process.create_session(session_id)
+            await sandbox.process.execute_session_command(
+                session_id,
+                SessionExecuteRequest(
+                    command=f"bash -lc {shlex.quote(git_cmd)}",
+                    var_async=False,
+                ),
+            )
+        except Exception as git_err:
+            logger.error(
+                f"Error running git ls-tree for path {path} at commit {commit} "
+                f"in sandbox {sandbox_id}: {str(git_err)}"
+            )
+            # Return empty list if path doesn't exist in commit
+            return {"files": []}
+
+        try:
+            tree_bytes = await sandbox.fs.download_file(tmp_path)
+        finally:
+            try:
+                await sandbox.fs.delete_file(tmp_path)
+            except Exception as cleanup_err:
+                logger.warning(
+                    f"Failed to delete temp file {tmp_path} in sandbox {sandbox_id}: {str(cleanup_err)}"
+                )
+
+        tree_text = tree_bytes.decode("utf-8", errors="ignore")
+        lines = [ln for ln in tree_text.splitlines() if ln.strip()]
+
+        result = []
+        for line in lines:
+            # Parse git ls-tree output: <mode> <type> <hash><TAB><name>
+            parts = line.split("\t", 1)
+            if len(parts) < 2:
+                continue
+            
+            meta_parts = parts[0].split()
+            if len(meta_parts) < 3:
+                continue
+            
+            mode, obj_type, obj_hash = meta_parts[0], meta_parts[1], meta_parts[2]
+            name = parts[1]
+
+            is_dir = obj_type == "tree"
+            
+            # Construct full path
+            if path.endswith('/'):
+                full_path = f"{path}{name}"
+            elif path == "/workspace":
+                full_path = f"/workspace/{name}"
+            else:
+                full_path = f"{path}/{name}"
+
+            file_info = FileInfo(
+                name=name,
+                path=full_path,
+                is_dir=is_dir,
+                size=0,  # git ls-tree doesn't provide size
+                mod_time="",  # We could get this from git log if needed
+                permissions=mode
+            )
+            result.append(file_info)
+
+        logger.debug(
+            f"Found {len(result)} entries at commit {commit} for path {path} in sandbox {sandbox_id}"
+        )
+
+        return {"files": [file.dict() for file in result]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error listing file tree in sandbox {sandbox_id}, path {path}, commit {commit}: {str(e)}"
         )
         raise HTTPException(status_code=500, detail=str(e))
 

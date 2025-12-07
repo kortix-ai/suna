@@ -20,45 +20,145 @@ import {
 } from '@/components/ui/tooltip';
 
 // Map of language aliases to CodeMirror language support
+// Note: langs object from @uiw/codemirror-extensions-langs is keyed by file extensions
+// Using type assertion because TypeScript types are incomplete
+const langsTyped = langs as Record<string, (() => any) | undefined>;
+
+// Debug: Log available languages in development
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  const availableLangs = Object.keys(langsTyped).filter(
+    (key) => typeof langsTyped[key] === 'function'
+  );
+  console.log('[CodeEditor] Available languages:', availableLangs);
+}
+
+// Helper function to safely get language extension
+const getLangExtension = (langKey: string): any => {
+  try {
+    const langFn = langsTyped[langKey];
+    if (langFn && typeof langFn === 'function') {
+      const extension = langFn();
+      if (extension) {
+        return extension;
+      }
+      // Extension function exists but returned null/undefined
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[CodeEditor] Language extension "${langKey}" function returned null/undefined`);
+      }
+      return null;
+    }
+    
+    // Language not found in langs object
+    if (process.env.NODE_ENV === 'development') {
+      const availableLangs = Object.keys(langsTyped)
+        .filter(k => typeof langsTyped[k] === 'function')
+        .sort();
+      console.warn(
+        `[CodeEditor] Language "${langKey}" not found.`,
+        `Looking for similar: ${availableLangs.filter(l => 
+          l.includes(langKey.toLowerCase()) || langKey.toLowerCase().includes(l)
+        ).join(', ') || 'none'}`,
+        `Total available: ${availableLangs.length} languages`
+      );
+    }
+    return null;
+  } catch (error) {
+    console.error(`[CodeEditor] Error loading language extension "${langKey}":`, error);
+    return null;
+  }
+};
+
+// Language mapping: maps language identifiers to CodeMirror language keys
+// This ensures consistent language detection and proper extension loading
 const languageMap: Record<string, () => any> = {
-  js: () => langs.javascript(),
-  javascript: () => langs.javascript(),
-  jsx: () => langs.jsx(),
-  ts: () => langs.typescript(),
-  typescript: () => langs.typescript(),
-  tsx: () => langs.tsx(),
-  html: () => langs.html(),
-  css: () => langs.css(),
-  json: () => langs.json(),
-  md: () => langs.markdown(),
-  markdown: () => langs.markdown(),
-  python: () => langs.python(),
-  py: () => langs.python(),
-  rust: () => langs.rust(),
-  go: () => langs.go(),
-  java: () => langs.java(),
-  c: () => langs.c(),
-  cpp: () => langs.cpp(),
-  cs: () => langs.csharp(),
-  csharp: () => langs.csharp(),
-  php: () => langs.php(),
-  ruby: () => langs.ruby(),
-  rb: () => langs.ruby(),
-  sh: () => langs.shell(),
-  bash: () => langs.shell(),
-  shell: () => langs.shell(),
-  sql: () => langs.sql(),
-  yaml: () => langs.yaml(),
-  yml: () => langs.yaml(),
-  xml: () => langs.xml(),
-  swift: () => langs.swift(),
-  kotlin: () => langs.kotlin(),
-  scala: () => langs.scala(),
-  r: () => langs.r(),
-  lua: () => langs.lua(),
-  perl: () => langs.perl(),
-  dockerfile: () => langs.dockerfile(),
-  toml: () => langs.toml(),
+  // JavaScript/TypeScript family
+  js: () => getLangExtension('javascript'),
+  javascript: () => getLangExtension('javascript'),
+  jsx: () => getLangExtension('jsx'),
+  ts: () => getLangExtension('typescript'),
+  typescript: () => getLangExtension('typescript'),
+  tsx: () => getLangExtension('tsx'),
+  mjs: () => getLangExtension('javascript'),
+  cjs: () => getLangExtension('javascript'),
+  
+  // Web technologies
+  html: () => getLangExtension('html'),
+  htm: () => getLangExtension('html'),
+  css: () => getLangExtension('css'),
+  scss: () => getLangExtension('scss'),
+  sass: () => getLangExtension('sass'),
+  less: () => getLangExtension('less'),
+  
+  // Data formats
+  json: () => getLangExtension('json'),
+  jsonc: () => getLangExtension('json'),
+  json5: () => getLangExtension('json'),
+  
+  // Markdown
+  md: () => getLangExtension('markdown'),
+  markdown: () => getLangExtension('markdown'),
+  mdx: () => getLangExtension('markdown'),
+  
+  // Python
+  python: () => getLangExtension('python'),
+  py: () => getLangExtension('python'),
+  pyi: () => getLangExtension('python'),
+  pyw: () => getLangExtension('python'),
+  
+  // Systems languages
+  rust: () => getLangExtension('rust'),
+  rs: () => getLangExtension('rust'),
+  go: () => getLangExtension('go'),
+  golang: () => getLangExtension('go'),
+  c: () => getLangExtension('c'),
+  h: () => getLangExtension('c'),
+  cpp: () => getLangExtension('cpp'),
+  cxx: () => getLangExtension('cpp'),
+  cc: () => getLangExtension('cpp'),
+  hpp: () => getLangExtension('cpp'),
+  hxx: () => getLangExtension('cpp'),
+  
+  // Java family
+  java: () => getLangExtension('java'),
+  cs: () => getLangExtension('csharp'),
+  csharp: () => getLangExtension('csharp'),
+  kotlin: () => getLangExtension('kotlin'),
+  kt: () => getLangExtension('kotlin'),
+  scala: () => getLangExtension('scala'),
+  
+  // Scripting languages
+  php: () => getLangExtension('php'),
+  ruby: () => getLangExtension('ruby'),
+  rb: () => getLangExtension('ruby'),
+  rbx: () => getLangExtension('ruby'),
+  rjs: () => getLangExtension('ruby'),
+  perl: () => getLangExtension('perl'),
+  pl: () => getLangExtension('perl'),
+  pm: () => getLangExtension('perl'),
+  lua: () => getLangExtension('lua'),
+  r: () => getLangExtension('r'),
+  
+  // Shell scripts
+  sh: () => getLangExtension('shell'),
+  bash: () => getLangExtension('shell'),
+  zsh: () => getLangExtension('shell'),
+  fish: () => getLangExtension('shell'),
+  shell: () => getLangExtension('shell'),
+  
+  // Data/Config
+  sql: () => getLangExtension('sql'),
+  yaml: () => getLangExtension('yaml'),
+  yml: () => getLangExtension('yaml'),
+  xml: () => getLangExtension('xml'),
+  toml: () => getLangExtension('toml'),
+  
+  // Mobile
+  swift: () => getLangExtension('swift'),
+  
+  // Other
+  vue: () => getLangExtension('vue'),
+  svelte: () => getLangExtension('svelte'),
+  nix: () => getLangExtension('nix'),
 };
 
 // Get language from file extension
@@ -80,50 +180,97 @@ export function getLanguageFromExtension(fileName: string): string {
   }
   
   const extensionToLanguage: Record<string, string> = {
+    // JavaScript/TypeScript
     js: 'javascript',
     jsx: 'jsx',
+    mjs: 'javascript',
+    cjs: 'javascript',
     ts: 'typescript',
     tsx: 'tsx',
+    
+    // Web technologies
     html: 'html',
     htm: 'html',
     css: 'css',
+    scss: 'scss',
+    sass: 'sass',
+    less: 'less',
+    
+    // Data formats
     json: 'json',
+    jsonc: 'json',
+    json5: 'json',
+    
+    // Markdown
     md: 'markdown',
     markdown: 'markdown',
+    mdx: 'markdown',
+    
+    // Python
     py: 'python',
     python: 'python',
-    java: 'java',
-    c: 'c',
-    cpp: 'cpp',
-    h: 'c',
-    hpp: 'cpp',
-    cs: 'csharp',
-    go: 'go',
+    pyi: 'python',
+    pyw: 'python',
+    
+    // Systems languages
     rs: 'rust',
+    go: 'go',
+    c: 'c',
+    h: 'c',
+    cpp: 'cpp',
+    cxx: 'cpp',
+    cc: 'cpp',
+    hpp: 'cpp',
+    hxx: 'cpp',
+    
+    // Java family
+    java: 'java',
+    cs: 'csharp',
+    kt: 'kotlin',
+    scala: 'scala',
+    
+    // Scripting languages
     php: 'php',
     rb: 'ruby',
+    rbx: 'ruby',
+    rjs: 'ruby',
+    pl: 'perl',
+    pm: 'perl',
+    lua: 'lua',
+    r: 'r',
+    
+    // Shell scripts
     sh: 'shell',
     bash: 'shell',
     zsh: 'shell',
     fish: 'shell',
-    xml: 'xml',
+    
+    // Data/Config
+    sql: 'sql',
     yml: 'yaml',
     yaml: 'yaml',
-    sql: 'sql',
-    swift: 'swift',
-    kt: 'kotlin',
-    scala: 'scala',
-    r: 'r',
-    lua: 'lua',
-    pl: 'perl',
-    dockerfile: 'dockerfile',
+    xml: 'xml',
     toml: 'toml',
+    
+    // Mobile
+    swift: 'swift',
+    
+    // Other
+    vue: 'vue',
+    svelte: 'svelte',
+    nix: 'nix',
+    
+    // Plain text (no syntax highlighting)
     txt: 'text',
     log: 'text',
     env: 'text',
     ini: 'text',
     gitignore: 'text',
     editorconfig: 'text',
+    dockerignore: 'text',
+    npmignore: 'text',
+    prettierignore: 'text',
+    eslintignore: 'text',
   };
   return extensionToLanguage[extension] || 'text';
 }
@@ -238,8 +385,34 @@ export function CodeEditor({
 
   // Get language extension
   const langExtension = useMemo(() => {
-    const langFn = languageMap[language];
-    return langFn ? [langFn()] : [];
+    try {
+      // Handle 'text' language - no syntax highlighting needed
+      if (language === 'text') {
+        return [];
+      }
+
+      const langFn = languageMap[language];
+      if (!langFn || typeof langFn !== 'function') {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn(`[CodeEditor] No language function found for "${language}"`);
+        }
+        return [];
+      }
+
+      const extension = langFn();
+      // Only return if extension is truthy (not null/undefined)
+      if (extension) {
+        return [extension];
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(`[CodeEditor] Language extension for "${language}" returned null/undefined`);
+      }
+      return [];
+    } catch (error) {
+      console.error(`[CodeEditor] Failed to load language extension for "${language}":`, error);
+      return [];
+    }
   }, [language]);
 
   // Manual save function
@@ -321,13 +494,24 @@ export function CodeEditor({
   // Theme selection
   const theme = mounted && resolvedTheme === 'dark' ? vscodeDark : xcodeLight;
 
-  // Extensions
+  // Extensions - ensure we only include valid extensions
   const extensions = useMemo(() => {
-    const exts = [
-      ...langExtension,
+    const exts: any[] = [];
+    
+    // Add language extension if available (filter out null/undefined)
+    if (langExtension && langExtension.length > 0) {
+      const validLangExts = langExtension.filter(ext => ext != null);
+      if (validLangExts.length > 0) {
+        exts.push(...validLangExts);
+      }
+    }
+    
+    // Always add these core extensions
+    exts.push(
       EditorView.lineWrapping,
-      keymap.of([indentWithTab]),
-    ];
+      keymap.of([indentWithTab])
+    );
+    
     return exts;
   }, [langExtension]);
 

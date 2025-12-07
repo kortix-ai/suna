@@ -128,7 +128,7 @@ export function WebCrawlToolView({
   const contentStats = webpageContent?.text ? getContentStats(webpageContent.text) : null;
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
@@ -244,8 +244,8 @@ export function WebCrawlToolView({
                     {/* Content Header */}
                     <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700">
                       <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 flex items-center justify-center border border-blue-500/20">
-                          <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 flex items-center justify-center border border-zinc-500/20">
+                          <FileText className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                         </div>
                         <div>
                           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">

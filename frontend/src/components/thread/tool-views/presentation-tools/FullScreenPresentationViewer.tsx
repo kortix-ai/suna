@@ -432,8 +432,8 @@ export function FullScreenPresentationViewer({
       <div className="flex-shrink-0 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
-              <Presentation className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+              <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             
             {metadata && (

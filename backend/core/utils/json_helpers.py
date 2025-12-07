@@ -144,6 +144,22 @@ def to_json_string(value: Any) -> str:
     return json.dumps(value)
 
 
+def to_json_string_fast(value: Any) -> str:
+    """
+    Fast path for converting to JSON string - no validation.
+    
+    Use this when you KNOW the value is a dict/list that needs serialization.
+    This is optimized for the streaming hot path where we serialize every chunk.
+    
+    Args:
+        value: The value to convert (must be JSON-serializable)
+        
+    Returns:
+        JSON string representation
+    """
+    return json.dumps(value, separators=(',', ':'))  # Compact JSON, no extra whitespace
+
+
 def format_for_yield(message_object: Dict[str, Any]) -> Dict[str, Any]:
     """
     Format a message object for yielding, ensuring content and metadata are JSON strings.
