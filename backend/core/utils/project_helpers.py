@@ -6,18 +6,30 @@ from core.services.llm import make_llm_api_call
 from .logger import logger
 from .icon_generator import RELEVANT_ICONS
 
+# Project categories for analytics classification (based on actual usage data)
+PROJECT_CATEGORIES = [
+    "Research & Information Gathering",
+    "Business & Marketing",
+    "Code & Programming",
+    "Web Development",
+    "Content Creation",
+    "Presentations",
+    "Image Generation",
+    "Other"
+]
+
 
 async def generate_and_update_project_name(project_id: str, prompt: str):
     """
-    Generates a project name and icon using an LLM and updates the database.
+    Generates a project name, icon, and category using an LLM and updates the database.
     
     This is typically run as a background task after project creation.
     
     Args:
         project_id: The project ID to update
-        prompt: The initial user prompt to base the name/icon on
+        prompt: The initial user prompt to base the name/icon/category on
     """
-    logger.debug(f"Starting background task to generate name and icon for project: {project_id}")
+    logger.info(f"Starting background task to generate name, icon, and category for project: {project_id}")
     
     try:
         db_conn = DBConnection()
@@ -27,19 +39,23 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
         
         # Use pre-loaded Lucide React icons
         relevant_icons = RELEVANT_ICONS
-        system_prompt = f"""You are a helpful assistant that generates extremely concise titles (2-4 words maximum) and selects appropriate icons for chat threads based on the user's message.
+        system_prompt = f"""You are a helpful assistant that generates extremely concise titles (2-4 words maximum), selects appropriate icons, and categorizes chat threads based on the user's message.
 
         Available Lucide React icons to choose from:
         {', '.join(relevant_icons)}
 
+        Available categories to choose from:
+        {', '.join(PROJECT_CATEGORIES)}
+
         Respond with a JSON object containing:
         - "title": A concise 2-4 word title for the thread
         - "icon": The most appropriate icon name from the list above
+        - "category": The most appropriate category from the list above
 
         Example response:
-        {{"title": "Code Review Help", "icon": "code"}}"""
+        {{"title": "Code Review Help", "icon": "code", "category": "Coding & Development"}}"""
 
-        user_message = f"Generate an extremely brief title (2-4 words only) and select the most appropriate icon for a chat thread that starts with this message: \"{prompt}\""
+        user_message = f"Generate an extremely brief title (2-4 words only), select the most appropriate icon, and categorize this chat thread that starts with this message: \"{prompt}\""
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
 
         logger.debug(f"Calling LLM ({model_name}) for project {project_id} naming and icon selection.")
@@ -54,6 +70,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
 
         generated_name = None
         selected_icon = None
+        selected_category = None
         
         if response and response.get('choices') and response['choices'][0].get('message'):
             raw_content = response['choices'][0]['message'].get('content', '').strip()
@@ -75,6 +92,15 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
                     else:
                         logger.warning(f"LLM selected invalid icon '{icon}' for project {project_id}, using default 'message-circle'")
                         selected_icon = "message-circle"
+                    
+                    # Extract category
+                    category = parsed_response.get('category', '').strip()
+                    if category and category in PROJECT_CATEGORIES:
+                        selected_category = category
+                        logger.debug(f"LLM selected category for project {project_id}: '{selected_category}'")
+                    else:
+                        logger.warning(f"LLM selected invalid category '{category}' for project {project_id}, using default 'Other'")
+                        selected_category = "Other"
                 else:
                     logger.warning(f"LLM returned non-dict JSON for project {project_id}: {parsed_response}")
                     
@@ -85,21 +111,23 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
                 if cleaned_content:
                     generated_name = cleaned_content[:50]  # Limit fallback title length
                 selected_icon = "message-circle"  # Default icon
+                selected_category = "Other"  # Default category
         else:
             logger.warning(f"Failed to get valid response from LLM for project {project_id} naming. Response: {response}")
 
         if generated_name:
-            # Store title and icon in dedicated fields
+            # Store title, icon, and category in dedicated fields
             update_data = {"name": generated_name}
             if selected_icon:
                 update_data["icon_name"] = selected_icon
-                logger.debug(f"Storing project {project_id} with title: '{generated_name}' and icon: '{selected_icon}'")
-            else:
-                logger.debug(f"Storing project {project_id} with title: '{generated_name}' (no icon)")
+            if selected_category:
+                update_data["category"] = selected_category
+            
+            logger.info(f"Storing project {project_id} with title: '{generated_name}', icon: '{selected_icon}', category: '{selected_category}'")
             
             update_result = await client.table('projects').update(update_data).eq("project_id", project_id).execute()
             if hasattr(update_result, 'data') and update_result.data:
-                logger.debug(f"Successfully updated project {project_id} with clean title and dedicated icon field")
+                logger.debug(f"Successfully updated project {project_id} with title, icon, and category")
             else:
                 logger.error(f"Failed to update project {project_id} in database. Update result: {update_result}")
         else:
@@ -109,5 +137,5 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
         logger.error(f"Error in background naming task for project {project_id}: {str(e)}\n{traceback.format_exc()}")
     finally:
         # No need to disconnect DBConnection singleton instance here
-        logger.debug(f"Finished background naming and icon selection task for project: {project_id}")
+        logger.debug(f"Finished background naming, icon, and category selection task for project: {project_id}")
 

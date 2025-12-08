@@ -8,6 +8,7 @@ import dramatiq
 
 from core.utils.logger import logger, structlog
 from core.services.supabase import DBConnection
+from core.utils.project_helpers import generate_and_update_project_name
 
 db = DBConnection()
 
@@ -115,6 +116,9 @@ async def create_thread_optimistically(
         }).execute()
         
         logger.debug(f"Created project {project_id} optimistically")
+        
+        # Start background task to generate proper name, icon, and category
+        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
         
     except Exception as e:
         logger.error(f"Failed to create project optimistically: {str(e)}")
