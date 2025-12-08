@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Pressable, TextInput, Alert, Image } from 'react-native';
+import { View, Pressable, TextInput, Alert, Image, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -23,6 +23,7 @@ import {
   Link2,
   CheckCircle2,
   ArrowLeft,
+  Info,
 } from 'lucide-react-native';
 import { useAgent } from '@/contexts/AgentContext';
 import {
@@ -185,12 +186,27 @@ export function TriggerCreationDrawer({
   const createTriggerMutation = useCreateTrigger();
   const updateTriggerMutation = useUpdateTrigger();
   const createEventTriggerMutation = useCreateComposioEventTrigger();
-  const { data: triggersApps, isLoading: triggersAppsLoading } = useComposioAppsWithTriggers();
-  const { data: triggersData, isLoading: loadingTriggers } = useComposioAppTriggers(
+  const {
+    data: triggersApps,
+    isLoading: triggersAppsLoading,
+    error: triggersAppsError,
+    refetch: refetchTriggersApps,
+  } = useComposioAppsWithTriggers();
+  const {
+    data: triggersData,
+    isLoading: loadingTriggers,
+    error: triggersError,
+    refetch: refetchTriggers,
+  } = useComposioAppTriggers(
     selectedApp?.slug,
-    visible && !!selectedApp && eventStep === 'triggers'
+    visible && !!selectedApp && (eventStep === 'triggers' || (isEditMode && eventStep === 'config'))
   );
-  const { data: profiles, refetch: refetchProfiles } = useComposioProfiles();
+  const {
+    data: profiles,
+    isLoading: isLoadingProfiles,
+    error: profilesError,
+    refetch: refetchProfiles,
+  } = useComposioProfiles();
 
   const snapPoints = useMemo(() => ['90%'], []);
 
@@ -270,6 +286,13 @@ export function TriggerCreationDrawer({
         const matchingTrigger = triggersData.items.find((t) => t.slug.toLowerCase() === searchSlug);
         if (matchingTrigger) {
           setSelectedTrigger(matchingTrigger);
+          // Update selectedApp logo from trigger toolkit if available
+          if (matchingTrigger.toolkit?.logo && !selectedApp.logo) {
+            setSelectedApp({
+              ...selectedApp,
+              logo: matchingTrigger.toolkit.logo,
+            });
+          }
         }
       }
     }
@@ -667,7 +690,21 @@ export function TriggerCreationDrawer({
         <View className="flex-row items-center pb-4 pt-6">
           {(currentStep !== 'type' || isEditMode) && (
             <Pressable onPress={handleBack} className="mr-3 active:opacity-70">
-              {selectedApp && <AppLogo app={selectedApp} />}
+              {(() => {
+                // Show app logo if available, otherwise show trigger toolkit logo if available
+                if (selectedApp) {
+                  return <AppLogo app={selectedApp} />;
+                }
+                if (selectedTrigger?.toolkit) {
+                  const toolkitApp: TriggerApp = {
+                    slug: selectedTrigger.toolkit.slug,
+                    name: selectedTrigger.toolkit.name,
+                    logo: selectedTrigger.toolkit.logo || '',
+                  };
+                  return <AppLogo app={toolkitApp} />;
+                }
+                return null;
+              })()}
             </Pressable>
           )}
           <View className="flex-1">
@@ -701,7 +738,14 @@ export function TriggerCreationDrawer({
         {/* Progress Stepper for Event Triggers */}
         {selectedType === 'event' && currentStep !== 'type' && (
           <View className="-mx-6 mb-6 border-b border-border bg-muted/30 px-6 py-3">
-            <View className="flex-row items-center">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingRight: 24,
+              }}>
               {[
                 { id: 'apps', name: 'Select App', icon: Link2 },
                 { id: 'triggers', name: 'Choose Trigger', icon: Zap },
@@ -713,7 +757,7 @@ export function TriggerCreationDrawer({
 
                 return (
                   <React.Fragment key={step.id}>
-                    <View className="flex-row items-center gap-2">
+                    <View className="flex-row items-center gap-2" style={{ minWidth: 100 }}>
                       <View
                         className={`h-6 w-6 items-center justify-center rounded-full ${
                           isCompleted || isCurrent ? 'bg-primary' : 'bg-muted'
@@ -749,7 +793,7 @@ export function TriggerCreationDrawer({
                   </React.Fragment>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
         )}
 
@@ -1089,25 +1133,59 @@ export function TriggerCreationDrawer({
             )}
 
             {/* Config Step */}
-            {eventStep === 'config' && selectedTrigger && selectedApp && (
-              <TriggerConfigStep
-                trigger={selectedTrigger}
-                app={selectedApp}
-                config={eventConfig}
-                onConfigChange={setEventConfig}
-                profileId={profileId}
-                onProfileChange={setProfileId}
-                profiles={profiles || []}
-                isLoadingProfiles={false}
-                onCreateProfile={() => setShowComposioConnector(true)}
-                triggerName={triggerName}
-                onTriggerNameChange={setTriggerName}
-                agentPrompt={agentPrompt}
-                onAgentPromptChange={setAgentPrompt}
-                model={model}
-                onModelChange={setModel}
-                isConfigValid={isEventConfigValid}
-              />
+            {eventStep === 'config' && (
+              <>
+                {isEditMode && selectedApp && loadingTriggers && !selectedTrigger ? (
+                  <View className="items-center justify-center py-16">
+                    <Loading title="Loading trigger configuration..." />
+                  </View>
+                ) : isEditMode && selectedApp && triggersError && !selectedTrigger ? (
+                  <View className="items-center justify-center px-8 py-16">
+                    <View
+                      className="mb-4 h-16 w-16 items-center justify-center rounded-2xl"
+                      style={{
+                        backgroundColor:
+                          colorScheme === 'dark'
+                            ? 'rgba(239, 68, 68, 0.1)'
+                            : 'rgba(239, 68, 68, 0.05)',
+                      }}>
+                      <Icon as={Info} size={32} color="#ef4444" strokeWidth={2} />
+                    </View>
+                    <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
+                      Failed to load trigger
+                    </Text>
+                    <Text className="mb-6 text-center text-sm text-muted-foreground">
+                      {triggersError?.message || 'An error occurred while loading trigger data'}
+                    </Text>
+                    <Pressable
+                      onPress={() => refetchTriggers()}
+                      className="rounded-xl bg-primary px-6 py-3 active:opacity-80">
+                      <Text className="font-roobert-semibold text-sm text-primary-foreground">
+                        Retry
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : selectedTrigger && selectedApp ? (
+                  <TriggerConfigStep
+                    trigger={selectedTrigger}
+                    app={selectedApp}
+                    config={eventConfig}
+                    onConfigChange={setEventConfig}
+                    profileId={profileId}
+                    onProfileChange={setProfileId}
+                    profiles={profiles || []}
+                    isLoadingProfiles={isLoadingProfiles}
+                    onCreateProfile={() => setShowComposioConnector(true)}
+                    triggerName={triggerName}
+                    onTriggerNameChange={setTriggerName}
+                    agentPrompt={agentPrompt}
+                    onAgentPromptChange={setAgentPrompt}
+                    model={model}
+                    onModelChange={setModel}
+                    isConfigValid={isEventConfigValid}
+                  />
+                ) : null}
+              </>
             )}
           </View>
         )}

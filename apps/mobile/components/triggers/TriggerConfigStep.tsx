@@ -12,6 +12,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Info, Plus, Check, CheckCircle2 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
+import Markdown from 'react-native-markdown-display';
+import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { DynamicConfigForm } from './DynamicConfigForm';
 import { ModelToggle } from '../models/ModelToggle';
 import { useAvailableModels } from '@/lib/models/hooks';
@@ -126,6 +128,7 @@ export function TriggerConfigStep({
   const { colorScheme } = useColorScheme();
   const { data: modelsData } = useAvailableModels();
   const { data: accountState } = useAccountState();
+  const isDark = colorScheme === 'dark';
 
   if (!trigger || !app) {
     return null;
@@ -144,10 +147,32 @@ export function TriggerConfigStep({
     <View className="space-y-6">
       {/* Instructions */}
       {trigger.instructions && (
-        <View className="rounded-xl bg-muted p-4">
-          <Text className="font-roobert text-sm leading-5 text-muted-foreground">
+        <View
+          className="rounded-xl bg-muted p-4"
+          style={{
+            backgroundColor: isDark ? '#27272A' : '#F4F4F5',
+            borderWidth: 0,
+          }}>
+          <Markdown
+            style={{
+              ...(isDark ? markdownStylesDark : markdownStyles),
+              body: {
+                ...(isDark ? markdownStylesDark.body : markdownStyles.body),
+                fontSize: 14,
+                lineHeight: 20,
+                color: isDark ? '#A1A1AA' : '#71717A',
+              },
+            }}>
             {trigger.instructions}
-          </Text>
+          </Markdown>
+        </View>
+      )}
+
+      {/* Loading Profiles */}
+      {isLoadingProfiles && (
+        <View className="items-center justify-center py-12">
+          <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#121215'} />
+          <Text className="mt-4 font-roobert text-sm text-muted-foreground">Loading profiles...</Text>
         </View>
       )}
 
