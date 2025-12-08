@@ -48,6 +48,13 @@ from typing import Optional
 - Treat the file as a living document that you continuously update
 - Edit existing files rather than creating multiple new files
 - Build one comprehensive file that contains all related content
+
+**CSS & STYLE GUIDELINES:**
+- **KORTIX BRAND COLORS:** Always use Kortix on-brand black/white color scheme
+- **NO GRADIENTS WHATSOEVER:** Absolutely forbidden - use solid colors only (black, white, or shades of gray)
+- **NO PURPLE COLORS:** Purple is absolutely forbidden in any form - no purple backgrounds, no purple text, no purple accents, no purple anything
+- **NO GENERIC AI/TECH GRADIENTS:** Explicitly forbidden: purple-to-blue gradients, blue-to-purple gradients, any purple/blue/teal gradient combinations, or any other generic "AI tech" gradient schemes
+- **SOLID COLORS ONLY:** Use only solid black, white, or shades of gray - no gradients, no color transitions, no fancy effects, NO PURPLE
 """
 )
 class SandboxFilesTool(SandboxToolsBase):

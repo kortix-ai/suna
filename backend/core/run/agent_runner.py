@@ -340,7 +340,6 @@ class AgentRunner:
             'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
-            'sb_docs_tool',
             'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
             'agent_creation_tool'
