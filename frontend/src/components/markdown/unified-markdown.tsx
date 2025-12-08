@@ -2,9 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeRaw from 'rehype-raw';
+import { Streamdown } from 'streamdown';
 import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
@@ -115,6 +113,7 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
 export interface UnifiedMarkdownProps {
   content: string;
   className?: string;
+  isStreaming?: boolean; // Enable streaming animation for incomplete markdown
 }
 
 /**
@@ -132,6 +131,7 @@ export interface UnifiedMarkdownProps {
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   content,
   className,
+  isStreaming = false,
 }) => {
   if (!content) {
     return (
@@ -146,9 +146,8 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
   return (
     <div className={cn('kortix-markdown', className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+      <Streamdown
+        isAnimating={isStreaming}
         components={{
           // ═══════════════════════════════════════════════════════════════
           // HEADINGS - Clean hierarchy with proper weight distribution
@@ -438,7 +437,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
         }}
       >
         {processedContent}
-      </ReactMarkdown>
+      </Streamdown>
     </div>
   );
 });

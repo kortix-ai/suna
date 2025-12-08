@@ -206,21 +206,8 @@ export function useThreadToolCalls(
   }, [isSidePanelOpen]);
 
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
-    if (!clickedAssistantMessageId) {
-      console.warn("Clicked assistant message ID is null. Cannot open side panel.");
-      toast.warning("Cannot view details: Assistant message ID is missing.");
-      return;
-    }
-
     userClosedPanelRef.current = false;
     userNavigatedRef.current = true;
-
-    // Normalize tool name to match the format used in the mapping (lowercase, with dashes)
-    const normalizedToolName = clickedToolName.replace(/_/g, '-').toLowerCase();
-    
-    // Use the pre-computed mapping with composite key: assistantMessageId:toolName
-    const compositeKey = `${clickedAssistantMessageId}:${normalizedToolName}`;
-    const toolIndex = assistantMessageToToolIndex.current.get(compositeKey);
 
     // Helper function to navigate to a tool index
     const navigateToIndex = (index: number) => {
@@ -231,6 +218,42 @@ export function useThreadToolCalls(
       navigateToToolCall(index);
       setTimeout(() => setExternalNavIndex(undefined), 100);
     };
+
+    // Handle streaming tool calls (message ID is null)
+    if (!clickedAssistantMessageId) {
+      // Find the latest streaming tool call (one without a toolResult yet)
+      // Search from the end backwards to find the most recent streaming tool
+      for (let i = toolCalls.length - 1; i >= 0; i--) {
+        const toolCall = toolCalls[i];
+        // A streaming tool call doesn't have a toolResult yet
+        if (!toolCall.toolResult) {
+          const toolName = toolCall.toolCall.function_name.replace(/_/g, '-').toLowerCase();
+          const normalizedToolName = clickedToolName.replace(/_/g, '-').toLowerCase();
+          
+          // If tool name matches or clickedToolName is 'unknown', navigate to this streaming tool
+          if (toolName === normalizedToolName || clickedToolName === 'unknown') {
+            navigateToIndex(i);
+            return;
+          }
+        }
+      }
+      
+      // If no matching streaming tool found, just open the latest tool call (streaming or not)
+      if (toolCalls.length > 0) {
+        navigateToIndex(toolCalls.length - 1);
+        return;
+      }
+      
+      console.warn("No streaming tool calls found to open.");
+      return;
+    }
+
+    // Normalize tool name to match the format used in the mapping (lowercase, with dashes)
+    const normalizedToolName = clickedToolName.replace(/_/g, '-').toLowerCase();
+    
+    // Use the pre-computed mapping with composite key: assistantMessageId:toolName
+    const compositeKey = `${clickedAssistantMessageId}:${normalizedToolName}`;
+    const toolIndex = assistantMessageToToolIndex.current.get(compositeKey);
 
     if (toolIndex !== undefined) {
       navigateToIndex(toolIndex);

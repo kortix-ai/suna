@@ -8,6 +8,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 interface ComposioUrlDetectorProps {
   content: string;
   className?: string;
+  isStreaming?: boolean; // Enable streaming animation for incomplete markdown
 }
 
 interface ComposioUrl {
@@ -296,14 +297,15 @@ const ComposioConnectButton: React.FC<ComposioConnectButtonProps> = ({
 
 export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({ 
   content, 
-  className 
+  className,
+  isStreaming = false,
 }) => {
   const composioUrls = detectComposioUrls(content);
 
   // Don't pass prose/chat-markdown classes to UnifiedMarkdown - it has its own styling
   if (composioUrls.length === 0) {
     return (
-      <UnifiedMarkdown content={content} />
+      <UnifiedMarkdown content={content} isStreaming={isStreaming} />
     );
   }
 
@@ -325,7 +327,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
 
       if (cleanedTextBefore.trim()) {
         contentParts.push(
-          <UnifiedMarkdown key={`text-${index}`} content={cleanedTextBefore} />
+          <UnifiedMarkdown key={`text-${index}`} content={cleanedTextBefore} isStreaming={isStreaming} />
         );
       }
     }
@@ -346,7 +348,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
     const remainingText = content.substring(lastIndex);
     if (remainingText.trim()) {
       contentParts.push(
-        <UnifiedMarkdown key="text-final" content={remainingText} />
+        <UnifiedMarkdown key="text-final" content={remainingText} isStreaming={isStreaming} />
       );
     }
   }
