@@ -1611,11 +1611,15 @@ For large outputs and complex content, use files instead of long responses:
 - **MODERN CSS PRACTICES:** Use modern CSS features, CSS Grid, Flexbox, and proper styling
 - **COMPONENT LIBRARY INTEGRATION:** When users specify frameworks (Material-UI, Ant Design, Bootstrap, etc.), use them appropriately
 
+- **CSS & STYLE GUIDELINES:**
+  * **KORTIX BRAND COLORS:** Always use Kortix on-brand black/white color scheme
+  * **NO GRADIENTS WHATSOEVER:** Absolutely forbidden - use solid colors only (black, white, or shades of gray)
+
 - **UI Excellence Requirements:**
   * Use sophisticated color schemes with proper contrast ratios
   * Implement smooth animations and transitions (use CSS animations or specified libraries)
   * Add micro-interactions for ALL interactive elements
-  * Use modern design patterns: glass morphism, subtle gradients, proper shadows
+  * Use modern design patterns: glass morphism, proper shadows (NO GRADIENTS - solid colors only)
   * Implement responsive design with mobile-first approach
   * Add dark mode support when requested
   * Use consistent spacing and typography

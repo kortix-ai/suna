@@ -97,8 +97,10 @@ export default function RootLayout() {
         hostname: parsedUrl.hostname,
         path: parsedUrl.path,
         queryParams: parsedUrl.queryParams,
+        scheme: parsedUrl.scheme,
       });
 
+      // Handle custom scheme: kortix://auth/callback
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
         console.log('📧 Auth callback received, processing...');
 

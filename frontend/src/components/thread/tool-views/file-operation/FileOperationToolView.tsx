@@ -622,8 +622,8 @@ export function FileOperationToolView({
     const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
     const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
     
-    // For HTML files with preview URL, use iframe directly
-    if (isHtml && htmlPreviewUrl) {
+    // For HTML files with preview URL, use iframe directly (but show CodeMirror during streaming)
+    if (isHtml && htmlPreviewUrl && !isStreaming) {
       return (
         <div className="w-full max-w-full h-full overflow-hidden min-w-0">
           <iframe
@@ -1017,7 +1017,7 @@ export function FileOperationToolView({
               <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>
-            ) : isHtml && htmlPreviewUrl ? (
+            ) : isHtml && htmlPreviewUrl && !isStreaming ? (
               <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>

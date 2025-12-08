@@ -6,6 +6,10 @@
     "dev": "expo start -c",
     "postinstall": "patch-package",
     "android": "expo start -c --android",
+    "android:dev": "./scripts/start-android.sh",
+    "android:build": "eas build:dev --platform android",
+    "android:setup": "./scripts/setup-android.sh",
+    "android:emulator": "emulator -avd Kortix_Dev",
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules"

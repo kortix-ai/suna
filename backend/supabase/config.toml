@@ -123,6 +123,8 @@ additional_redirect_urls = [
   "https://staging.suna.so/auth/callback",
   "https://kortix.com/**",
   "https://kortix.com/auth/callback",
+  "https://www.kortix.com/**",
+  "https://www.kortix.com/auth/callback",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
