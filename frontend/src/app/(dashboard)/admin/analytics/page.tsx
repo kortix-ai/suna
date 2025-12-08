@@ -38,6 +38,7 @@ import {
   useDailyStats,
   useThreadBrowser,
   useMessageDistribution,
+  useCategoryDistribution,
   useRetentionData,
   useTranslate,
   useRefreshAnalytics,
@@ -91,7 +92,12 @@ function StatCard({ title, value, description, icon, trend, className }: StatCar
 // THREAD BROWSER COMPONENT
 // ============================================================================
 
-function ThreadBrowser() {
+interface ThreadBrowserProps {
+  categoryFilter?: string | null;
+  onClearCategory?: () => void;
+}
+
+function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -102,7 +108,13 @@ function ThreadBrowser() {
   const [messageFilter, setMessageFilter] = useState<string>('all');
   const [translations, setTranslations] = useState<Record<string, string>>({});
   
-  const { data: threadsData, isLoading } = useThreadBrowser(params);
+  // Include category filter in query params
+  const queryParams: ThreadBrowseParams = {
+    ...params,
+    category: categoryFilter || undefined,
+  };
+  
+  const { data: threadsData, isLoading } = useThreadBrowser(queryParams);
   const translateMutation = useTranslate();
 
   const handleFilterChange = (filter: string) => {
@@ -295,6 +307,25 @@ function ThreadBrowser() {
             </SelectContent>
           </Select>
         </div>
+        
+        {/* Active Category Filter */}
+        {categoryFilter && (
+          <div className="flex items-end">
+            <div>
+              <Label className="text-sm">Category</Label>
+              <Badge variant="secondary" className="mt-1 flex items-center gap-1 h-10 px-3">
+                <Filter className="h-3 w-3" />
+                {categoryFilter}
+                <button
+                  onClick={onClearCategory}
+                  className="ml-1 hover:text-destructive"
+                >
+                  ×
+                </button>
+              </Badge>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -497,15 +528,24 @@ function RetentionTab() {
 // MAIN PAGE COMPONENT
 // ============================================================================
 
+// Get current date in UTC
+function getUTCToday(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
 export default function AdminAnalyticsPage() {
-  const [distributionDate, setDistributionDate] = useState<Date>(new Date());
+  const [distributionDate, setDistributionDate] = useState<Date>(getUTCToday);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   
+  const utcToday = getUTCToday();
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
   const { data: dailyStats } = useDailyStats(7);
   const { data: distribution } = useMessageDistribution(dateString);
+  const { data: categoryDistribution } = useCategoryDistribution(dateString);
   const { refreshAll } = useRefreshAnalytics();
 
   return (
@@ -569,7 +609,7 @@ export default function AdminAnalyticsPage() {
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Thread Distribution
+                Thread Distribution (UTC)
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Button
@@ -601,7 +641,7 @@ export default function AdminAnalyticsPage() {
                           setCalendarOpen(false);
                         }
                       }}
-                      disabled={(date) => date > new Date()}
+                      disabled={(date) => date > utcToday}
                       initialFocus
                     />
                   </PopoverContent>
@@ -610,7 +650,7 @@ export default function AdminAnalyticsPage() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
-                  disabled={format(distributionDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')}
+                  disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
                   onClick={() => {
                     const next = new Date(distributionDate);
                     next.setDate(next.getDate() + 1);
@@ -651,6 +691,60 @@ export default function AdminAnalyticsPage() {
                   </p>
                 </div>
               </div>
+              <p className="text-sm text-muted-foreground mt-4 text-center">
+                Total: <span className="font-semibold text-foreground">{distribution.total_threads}</span> threads on {format(distributionDate, 'MMM d, yyyy')}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Category Distribution */}
+        {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Category Distribution (UTC)
+              </CardTitle>
+              <CardDescription>
+                Project categories for {format(distributionDate, 'MMM d, yyyy')}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
+                  const percentage = categoryDistribution.total_projects > 0 
+                    ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
+                    : '0.0';
+                  const isSelected = categoryFilter === category;
+                  return (
+                    <button
+                      key={category}
+                      onClick={() => setCategoryFilter(isSelected ? null : category)}
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
+                        isSelected 
+                          ? 'bg-primary text-primary-foreground border-primary' 
+                          : 'bg-muted/50 hover:bg-muted border-transparent'
+                      }`}
+                    >
+                      <span className="font-medium truncate max-w-[120px]" title={category}>
+                        {category}
+                      </span>
+                      <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                        {count} ({percentage}%)
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                {categoryDistribution.total_projects} projects
+                {categoryFilter && (
+                  <span className="ml-2">
+                    • <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear</button>
+                  </span>
+                )}
+              </p>
             </CardContent>
           </Card>
         )}
@@ -669,7 +763,10 @@ export default function AdminAnalyticsPage() {
           </TabsList>
 
           <TabsContent value="threads">
-            <ThreadBrowser />
+            <ThreadBrowser 
+              categoryFilter={categoryFilter} 
+              onClearCategory={() => setCategoryFilter(null)} 
+            />
           </TabsContent>
 
           <TabsContent value="retention">
