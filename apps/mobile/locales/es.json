@@ -506,7 +506,9 @@
     "balanceAfter": "Saldo después",
     "noDescription": "Sin descripción",
     "popular": "Popular",
-    "subscription": "Suscripción"
+    "subscription": "Suscripción",
+    "subscriptionDisclaimerIos": "El pago se cargará a tu cuenta de Apple ID al confirmar la compra. La suscripción se renueva automáticamente a menos que la renovación automática se desactive al menos 24 horas antes del final del período actual. Tu cuenta se cargará para la renovación dentro de las 24 horas anteriores al final del período actual. Puedes gestionar y cancelar tus suscripciones yendo a la configuración de tu cuenta en la App Store después de la compra.",
+    "subscriptionDisclaimerAndroid": "El pago se cargará a tu cuenta de Google al confirmar la compra. La suscripción se renueva automáticamente a menos que la renovación automática se desactive al menos 24 horas antes del final del período actual. Puedes gestionar y cancelar tus suscripciones yendo a Google Play Store."
   },
   "theme": {
     "title": "Apariencia",
@@ -573,6 +575,8 @@
     "search": "Buscar...",
     "searchConversations": "Buscar chats",
     "searchAgents": "Buscar workers",
+    "searchWorkers": "Buscar workers",
+    "searchTriggers": "Buscar triggers",
     "imageGeneration": "Describe la imagen que quieres crear...",
     "imageWithStyle": "Describe tu imagen {{style}}...",
     "slidesGeneration": "¿Qué presentación necesitas?",

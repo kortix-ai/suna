@@ -486,7 +486,9 @@
     "balanceAfter": "Saldo dopo",
     "noDescription": "Nessuna descrizione",
     "popular": "Popolare",
-    "subscription": "Abbonamento"
+    "subscription": "Abbonamento",
+    "subscriptionDisclaimerIos": "Il pagamento verrà addebitato sul tuo account Apple ID al momento della conferma dell'acquisto. L'abbonamento si rinnova automaticamente a meno che il rinnovo automatico non sia disattivato almeno 24 ore prima della fine del periodo corrente. Il tuo account verrà addebitato per il rinnovo entro 24 ore prima della fine del periodo corrente. Puoi gestire e cancellare i tuoi abbonamenti andando alle impostazioni del tuo account sull'App Store dopo l'acquisto.",
+    "subscriptionDisclaimerAndroid": "Il pagamento verrà addebitato sul tuo account Google al momento della conferma dell'acquisto. L'abbonamento si rinnova automaticamente a meno che il rinnovo automatico non sia disattivato almeno 24 ore prima della fine del periodo corrente. Puoi gestire e cancellare i tuoi abbonamenti andando su Google Play Store."
   },
   "theme": {
     "title": "Aspetto",
@@ -553,6 +555,8 @@
     "search": "Cerca...",
     "searchConversations": "Cerca chat",
     "searchAgents": "Cerca workers",
+    "searchWorkers": "Cerca workers",
+    "searchTriggers": "Cerca triggers",
     "imageGeneration": "Descrivi l'immagine che vuoi creare...",
     "imageWithStyle": "Descrivi la tua immagine {{style}}...",
     "slidesGeneration": "Che presentazione ti serve?",

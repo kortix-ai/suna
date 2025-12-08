@@ -25,11 +25,7 @@ export function ToolViewCard({
     <View className={`flex-1 bg-card ${className}`}>
       {header && (
         <View
-          className="px-4 py-3 border-b flex-row items-center justify-between"
-          style={{
-            backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-          }}
+          className="px-4 py-3 bg-card border-b border-border flex-row items-center justify-between"
         >
           <View className="flex-1 min-w-0">
             <ToolHeader
@@ -43,11 +39,7 @@ export function ToolViewCard({
               isStreaming={header.isStreaming}
             />
           </View>
-          {header.rightContent && (
-            <View className="flex-shrink-0 ml-2">
-              {header.rightContent}
-            </View>
-          )}
+
         </View>
       )}
 
@@ -55,17 +47,6 @@ export function ToolViewCard({
         {children}
       </View>
 
-      {footer && (
-        <View
-          className="px-4 py-2 border-t flex-row items-center justify-between w-full"
-          style={{
-            backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-            borderTopColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-          }}
-        >
-          {footer}
-        </View>
-      )}
     </View>
   );
 }

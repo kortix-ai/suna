@@ -91,8 +91,8 @@ export function KortixComputer({
   }, [pendingToolNavIndex, toolMessages.length, setActiveView, onNavigate, clearPendingToolNav]);
 
   const safeIndex = toolMessages.length > 0 ? Math.min(internalIndex, Math.max(0, toolMessages.length - 1)) : 0;
-  const currentPair = toolMessages.length > 0 && safeIndex >= 0 && safeIndex < toolMessages.length 
-    ? toolMessages[safeIndex] 
+  const currentPair = toolMessages.length > 0 && safeIndex >= 0 && safeIndex < toolMessages.length
+    ? toolMessages[safeIndex]
     : undefined;
   const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
     if (!currentPair?.toolMessage) {
@@ -207,7 +207,7 @@ export function KortixComputer({
           {activeView === 'tools' && (
             <ToolsView
               toolCall={toolCall}
-              toolResult={toolResult}
+              toolResult={toolResult || undefined}
               assistantMessage={currentPair?.assistantMessage}
               toolMessage={currentPair?.toolMessage}
               assistantTimestamp={assistantTimestamp}

@@ -75,7 +75,7 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
           title: toolMetadata.title,
           isSuccess: actualIsSuccess,
           isStreaming: false,
-          rightContent: <StatusBadge variant="success" label="0 results" />,
+          showStatus: true,
         }}
       >
         <View className="flex-1 w-full items-center justify-center py-12 px-6">
@@ -110,12 +110,7 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={`${results.length} result${results.length !== 1 ? 's' : ''}`}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">
@@ -134,6 +129,13 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
     >
       <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
         <View className="px-4 py-4 gap-6">
+          {query && (
+            <View className="pb-3 border-b border-border">
+              <Text className="text-sm text-muted-foreground">
+                Found {results.length} {results.length === 1 ? 'company' : 'companies'} for "{query}"
+              </Text>
+            </View>
+          )}
           <View className="gap-3">
             {results.map((result, idx) => (
               <Pressable

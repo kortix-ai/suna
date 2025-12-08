@@ -4,11 +4,10 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
   Terminal,
-  AlertCircle,
   Copy,
   Check,
   Clock,
-  Loader2,
+  CircleDashed,
 } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
 import { extractCommandData } from './command-tool/_utils';
@@ -16,7 +15,6 @@ import { ToolViewCard, StatusBadge, LoadingState } from './shared';
 import { getToolMetadata } from './tool-metadata';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { useColorScheme } from 'nativewind';
 
 // Utility functions
 function formatTimestamp(isoString?: string): string {
@@ -37,8 +35,6 @@ export function CommandToolView({
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const [showFullOutput, setShowFullOutput] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -66,6 +62,21 @@ export function CommandToolView({
   const displayLabel = name === 'check-command-output' ? 'Session' : 'Command';
   const displayPrefix = name === 'check-command-output' ? 'tmux:' : '$';
 
+  // Get tool title - match frontend getToolTitle function
+  const getToolTitle = (toolName: string): string => {
+    const normalizedName = toolName.toLowerCase();
+    const toolTitles: Record<string, string> = {
+      'execute-command': 'Execute Command',
+      'check-command-output': 'Check Command Output',
+      'terminate-command': 'Terminate Session',
+    };
+    return toolTitles[normalizedName] || toolName
+      .split('-')
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const toolTitle = getToolTitle(name);
   const toolMetadata = getToolMetadata(name, toolCall?.arguments);
 
   // Check if this is a non-blocking command with just a status message
@@ -147,6 +158,9 @@ export function CommandToolView({
   const previewLines = formattedOutput.slice(0, 10);
   const linesToShow = showFullOutput ? formattedOutput : previewLines;
 
+  // Add empty lines for natural scrolling
+  const emptyLines = Array.from({ length: 30 }, () => '');
+
   const handleCopy = async () => {
     if (!output) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -163,8 +177,8 @@ export function CommandToolView({
           icon: toolMetadata.icon,
           iconColor: toolMetadata.iconColor,
           iconBgColor: toolMetadata.iconBgColor,
-          subtitle: toolMetadata.subtitle.toUpperCase(),
-          title: toolMetadata.title,
+          subtitle: '',
+          title: toolTitle,
           isSuccess: actualIsSuccess,
           isStreaming: true,
           rightContent: <StatusBadge variant="streaming" label="Executing" />,
@@ -190,41 +204,37 @@ export function CommandToolView({
         icon: toolMetadata.icon,
         iconColor: toolMetadata.iconColor,
         iconBgColor: toolMetadata.iconBgColor,
-        subtitle: toolMetadata.subtitle.toUpperCase(),
-        title: toolMetadata.title,
+        subtitle: '',
+        title: toolTitle,
         isSuccess: actualIsSuccess,
         isStreaming: isStreaming,
-        rightContent: !isStreaming && (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={
-              actualIsSuccess
-                ? (name === 'check-command-output' ? 'Retrieved' : 'Success')
-                : (name === 'check-command-output' ? 'Failed' : 'Failed')
-            }
-          />
+        rightContent: (
+          <View className="flex-row items-center gap-2">
+            {!isStreaming && (
+              <StatusBadge
+                variant={actualIsSuccess ? 'success' : 'error'}
+                iconOnly={true}
+              />
+            )}
+            {isStreaming && <StatusBadge variant="streaming" iconOnly={true} />}
+          </View>
         ),
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">
           <View className="flex-row items-center gap-2">
             {!isStreaming && displayText && (
-              <View
-                className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border"
-                style={{
-                  borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-                }}
-              >
-                <Icon as={Terminal} size={12} className="text-foreground" />
-                <Text className="text-xs font-roobert-medium text-foreground">
+              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+                <Icon as={Terminal} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary">
                   {displayLabel}
                 </Text>
               </View>
             )}
           </View>
           <View className="flex-row items-center gap-2">
-            <Icon as={Clock} size={12} className="text-muted-foreground" />
-            <Text className="text-xs text-muted-foreground">
+            <Icon as={Clock} size={12} className="text-primary opacity-50" />
+            <Text className="text-xs text-primary opacity-50">
               {actualToolTimestamp && !isStreaming
                 ? formatTimestamp(actualToolTimestamp)
                 : actualAssistantTimestamp
@@ -240,24 +250,11 @@ export function CommandToolView({
           {command && (
             <View className="p-4 pb-2">
               <View className="bg-card border border-border rounded-xl p-3.5 mb-4">
-                <View className="flex-row items-center gap-2 mb-2">
-                  <View
-                    className="px-1.5 py-0.5 rounded border"
-                    style={{
-                      borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-                    }}
-                  >
-                    <Text className="text-xs font-roobert-medium text-foreground">
-                      Command
-                    </Text>
-                  </View>
-                  <StatusBadge variant="streaming" label="Streaming" />
-                </View>
                 <View className="flex-row items-center">
                   <Text className="text-sm font-roobert-mono text-primary font-semibold">
                     {displayPrefix}{' '}
                   </Text>
-                  <Text className="text-sm font-roobert-mono text-foreground flex-1">
+                  <Text className="text-sm font-roobert-mono text-primary flex-1">
                     {command}
                   </Text>
                 </View>
@@ -276,28 +273,16 @@ export function CommandToolView({
           )}
         </View>
       ) : displayText ? (
-        <ScrollView className="flex-1 w-full" showsVerticalScrollIndicator={false}>
-          <View className="p-4 gap-4">
+        <View className="flex-1 w-full">
+          <View className="flex-shrink-0 p-4 pb-2">
             {/* Command section */}
             {command && (
-              <View className="bg-card border border-border rounded-xl p-3.5">
-                <View className="flex-row items-center gap-2 mb-2">
-                  <View
-                    className="px-1.5 py-0.5 rounded border"
-                    style={{
-                      borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-                    }}
-                  >
-                    <Text className="text-xs font-roobert-medium text-foreground">
-                      Command
-                    </Text>
-                  </View>
-                </View>
+              <View className="bg-card border border-border rounded-xl p-3.5 mb-4">
                 <View className="flex-row items-center">
-                  <Text className="text-sm font-roobert-mono text-primary font-semibold">
+                  <Text className="text-xs font-roobert-mono text-primary font-semibold">
                     {displayPrefix}{' '}
                   </Text>
-                  <Text className="text-sm font-roobert-mono text-foreground flex-1" selectable>
+                  <Text className="text-xs font-roobert-mono text-primary flex-1" selectable>
                     {command}
                   </Text>
                 </View>
@@ -306,115 +291,79 @@ export function CommandToolView({
 
             {/* Show status message for non-blocking commands */}
             {isNonBlockingCommand && output && (
-              <View className="bg-muted/50 border border-border rounded-xl p-3.5">
-                <View className="flex-row items-center gap-2 mb-2">
-                  <Icon as={AlertCircle} size={16} className="text-primary" />
-                  <Text className="text-sm font-roobert-medium text-foreground">
-                    Command Status
-                  </Text>
-                </View>
-                <Text className="text-sm text-muted-foreground">{String(output)}</Text>
+              <View className="bg-card border border-border rounded-xl p-3.5 mb-4">
+                <Text className="text-xs font-roobert-mono text-primary" selectable>
+                  {String(output)}
+                </Text>
               </View>
             )}
-
-            {/* Output section */}
-            {formattedOutput.length > 0 ? (
-              <View className="bg-card border border-border rounded-xl overflow-hidden">
-                <View className="flex-row items-center justify-between p-3.5 pb-2 border-b border-border">
-                  <View className="flex-row items-center gap-2">
-                    <View
-                      className="px-1.5 py-0.5 rounded border"
-                      style={{
-                        borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-                      }}
-                    >
-                      <Text className="text-xs font-roobert-medium text-foreground">
-                        Output
-                      </Text>
-                    </View>
-                    {exitCode !== null && exitCode !== 0 && (
-                      <View
-                        className="px-1.5 py-0.5 rounded border"
-                        style={{
-                          borderColor: '#ef4444',
-                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.1)',
-                        }}
-                      >
-                        <View className="flex-row items-center gap-1">
-                          <Icon as={AlertCircle} size={10} className="text-destructive" />
-                          <Text className="text-xs font-roobert-medium text-destructive">
-                            Error
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                  <Pressable
-                    onPress={handleCopy}
-                    className="flex-row items-center gap-1.5 px-2 py-1 rounded active:opacity-70"
-                    style={{
-                      backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                    }}
-                  >
-                    <Icon
-                      as={copied ? Check : Copy}
-                      size={14}
-                      className={copied ? 'text-primary' : 'text-foreground'}
-                    />
-                  </Pressable>
-                </View>
-                <ScrollView
-                  className="max-h-96"
-                  showsVerticalScrollIndicator={true}
-                >
-                  <View className="p-3.5 pt-2">
-                    {linesToShow.map((line, idx) => (
-                      <Text
-                        key={idx}
-                        className="text-xs font-roobert-mono text-foreground/80 leading-5"
-                        selectable
-                      >
-                        {line}
-                        {'\n'}
-                      </Text>
-                    ))}
-                    {!showFullOutput && hasMoreLines && (
-                      <Pressable
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          setShowFullOutput(true);
-                        }}
-                        className="mt-2 pt-2 border-t border-border"
-                      >
-                        <Text className="text-xs font-roobert-mono text-muted-foreground">
-                          + {formattedOutput.length - 10} more lines (tap to expand)
-                        </Text>
-                      </Pressable>
-                    )}
-                  </View>
-                </ScrollView>
-              </View>
-            ) : !isNonBlockingCommand ? (
-              <View className="flex-1 items-center justify-center py-8">
-                <View className="bg-card border border-border rounded-xl p-4">
-                  <Icon as={AlertCircle} size={32} className="text-muted-foreground mb-2" />
-                  <Text className="text-sm text-muted-foreground text-center">
-                    No output received
-                  </Text>
-                </View>
-              </View>
-            ) : null}
           </View>
-        </ScrollView>
+
+          {/* Output section - fills remaining height and scrolls */}
+          {formattedOutput.length > 0 ? (
+            <ScrollView
+              className="flex-1 px-4 pb-4"
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              <View className="bg-card border border-border rounded-xl p-3.5">
+                {linesToShow.map((line, idx) => (
+                  <Text
+                    key={idx}
+                    className="text-xs font-roobert-mono text-primary leading-5"
+                    selectable
+                  >
+                    {line}
+                    {'\n'}
+                  </Text>
+                ))}
+                {/* Add empty lines for natural scrolling */}
+                {showFullOutput && emptyLines.map((_, idx) => (
+                  <Text key={`empty-${idx}`} className="text-xs font-roobert-mono">
+                    {'\n'}
+                  </Text>
+                ))}
+                {!showFullOutput && hasMoreLines && (
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowFullOutput(true);
+                    }}
+                    className="mt-2 pt-2 border-t border-border"
+                  >
+                    <Text className="text-xs font-roobert-mono text-primary opacity-50">
+                      + {formattedOutput.length - 10} more lines (tap to expand)
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            </ScrollView>
+          ) : !isNonBlockingCommand ? (
+            <View className="flex-1 flex items-center justify-center px-4 pb-4">
+              <View className="bg-card border border-border rounded-xl p-4">
+                <View className="items-center">
+                  <Icon as={CircleDashed} size={32} className="text-primary opacity-50 mb-2" />
+                  <Text className="text-sm text-primary opacity-50">No output received</Text>
+                </View>
+              </View>
+            </View>
+          ) : null}
+        </View>
       ) : (
         <View className="flex-1 items-center justify-center py-12 px-6">
-          <View className="bg-muted/30 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
-            <Icon as={Terminal} size={40} className="text-muted-foreground" />
+          <View
+            className="rounded-full items-center justify-center mb-6 bg-card"
+            style={{
+              width: 80,
+              height: 80,
+            }}
+          >
+            <Icon as={Terminal} size={40} className="text-primary opacity-50" />
           </View>
-          <Text className="text-xl font-roobert-semibold mb-2 text-foreground">
+          <Text className="text-xl font-roobert-semibold mb-2 text-primary">
             {name === 'check-command-output' ? 'No Session Found' : 'No Command Found'}
           </Text>
-          <Text className="text-sm text-muted-foreground text-center max-w-md">
+          <Text className="text-sm text-primary opacity-50 text-center max-w-md">
             {name === 'check-command-output'
               ? 'No session name was detected. Please provide a valid session name to check.'
               : 'No command was detected. Please provide a valid command to execute.'}

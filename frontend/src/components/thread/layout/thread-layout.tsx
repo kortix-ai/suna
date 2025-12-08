@@ -139,23 +139,16 @@ export const ThreadLayout = memo(function ThreadLayout({
     }
   }, [shouldOpenPanel, isSidePanelOpen, onToggleSidePanel, clearShouldOpenPanel]);
 
-  // Update sizes when panel visibility changes with smooth animation
   useEffect(() => {
     if (shouldShowPanel) {
-      requestAnimationFrame(() => {
-        sidePanelRef.current?.resize(50);
-        mainPanelRef.current?.resize(50);
-      });
+      sidePanelRef.current?.resize(50);
+      mainPanelRef.current?.resize(50);
     } else {
-      const timeout = setTimeout(() => {
-        sidePanelRef.current?.resize(0);
-        mainPanelRef.current?.resize(100);
-      }, 0);
-      return () => clearTimeout(timeout);
+      sidePanelRef.current?.resize(0);
+      mainPanelRef.current?.resize(100);
     }
   }, [shouldShowPanel]);
 
-  // Compact mode for embedded use
   if (compact) {
     return (
       <>

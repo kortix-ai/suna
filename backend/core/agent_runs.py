@@ -189,7 +189,7 @@ async def _load_agent_config(client, agent_id: Optional[str], account_id: str, u
     return agent_config
 
 
-async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False):
+async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False, check_thread_limit: bool = False):
     """
     Check billing, model access, and rate limits.
     
@@ -200,14 +200,15 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         account_id: Account ID to check
         model_name: Model name to check access for
         check_project_limit: Whether to check project count limit (for new threads)
+        check_thread_limit: Whether to check thread count limit (for new threads)
     
     Raises:
         HTTPException: If billing/limits checks fail
     """
     import time
+    from core.utils.limits_checker import check_thread_limit as _check_thread_limit
     t_start = time.time()
     
-    # Run billing check and limit checks IN PARALLEL
     async def check_billing():
         return await billing_integration.check_model_and_billing_access(
             account_id, model_name, client
@@ -223,16 +224,20 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
             return {'can_create': True}
         return await check_project_count_limit(client, account_id)
     
-    # Execute all checks in parallel
-    billing_result, agent_run_result, project_result = await asyncio.gather(
+    async def check_threads():
+        if config.ENV_MODE == EnvMode.LOCAL or not check_thread_limit:
+            return {'can_create': True}
+        return await _check_thread_limit(client, account_id)
+    
+    billing_result, agent_run_result, project_result, thread_result = await asyncio.gather(
         check_billing(),
         check_agent_runs(),
-        check_projects()
+        check_projects(),
+        check_threads()
     )
     
     logger.debug(f"⏱️ [TIMING] Parallel billing/limit checks: {(time.time() - t_start) * 1000:.1f}ms")
     
-    # Process billing result
     can_proceed, error_message, context = billing_result
     if not can_proceed:
         if context.get("error_type") == "model_access_denied":
@@ -249,7 +254,6 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         else:
             raise HTTPException(status_code=500, detail={"message": error_message})
     
-    # Process agent run limit result
     if not agent_run_result.get('can_start', True):
         error_detail = {
             "message": f"Maximum of {agent_run_result['limit']} concurrent agent runs allowed. You currently have {agent_run_result['running_count']} running.",
@@ -261,7 +265,6 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         logger.warning(f"Agent run limit exceeded for account {account_id}: {agent_run_result['running_count']}/{agent_run_result['limit']} running agents")
         raise HTTPException(status_code=402, detail=error_detail)
 
-    # Process project limit result
     if check_project_limit and not project_result.get('can_create', True):
         error_detail = {
             "message": f"Maximum of {project_result['limit']} projects allowed for your current plan. You have {project_result['current_count']} projects.",
@@ -271,6 +274,17 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
             "error_code": "PROJECT_LIMIT_EXCEEDED"
         }
         logger.warning(f"Project limit exceeded for account {account_id}: {project_result['current_count']}/{project_result['limit']} projects")
+        raise HTTPException(status_code=402, detail=error_detail)
+    
+    if check_thread_limit and not thread_result.get('can_create', True):
+        error_detail = {
+            "message": f"Maximum of {thread_result['limit']} threads allowed for your current plan. You have {thread_result['current_count']} threads.",
+            "current_count": thread_result['current_count'],
+            "limit": thread_result['limit'],
+            "tier_name": thread_result['tier_name'],
+            "error_code": "THREAD_LIMIT_EXCEEDED"
+        }
+        logger.warning(f"Thread limit exceeded for account {account_id}: {thread_result['current_count']}/{thread_result['limit']} threads")
         raise HTTPException(status_code=402, detail=error_detail)
 
 
@@ -645,19 +659,15 @@ async def start_agent_run(
     
     async def check_limits():
         if skip_limits_check:
-            return {'can_create': True}
-        await _check_billing_and_limits(client, account_id, model_name or "default", check_project_limit=is_new_thread)
-        if is_new_thread and config.ENV_MODE != EnvMode.LOCAL:
-            from core.utils.limits_checker import check_thread_limit
-            return await check_thread_limit(client, account_id)
-        return {'can_create': True}
+            return
+        await _check_billing_and_limits(
+            client, account_id, model_name or "default", 
+            check_project_limit=is_new_thread, 
+            check_thread_limit=is_new_thread
+        )
     
-    agent_config, limit_result = await asyncio.gather(load_config(), check_limits())
+    agent_config, _ = await asyncio.gather(load_config(), check_limits())
     logger.debug(f"⏱️ [TIMING] Parallel config+limits: {(time.time() - t_parallel) * 1000:.1f}ms")
-    
-    # Check thread limit result
-    if limit_result and not limit_result.get('can_create', True):
-        raise ValueError(f"Thread limit exceeded: {limit_result.get('current_count', 0)}/{limit_result.get('limit', 0)}")
     
     # Resolve effective model
     effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
@@ -913,6 +923,147 @@ async def unified_agent_start(
             "traceback": traceback.format_exc()
         }
         logger.error(f"Full error details: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+
+@router.post("/agent/start-optimistic", summary="Start Agent (Optimistic)", operation_id="optimistic_agent_start")
+async def optimistic_agent_start(
+    request: Request,
+    thread_id: str = Form(...),
+    project_id: str = Form(...),
+    prompt: Optional[str] = Form(None),
+    model_name: Optional[str] = Form(None),
+    agent_id: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default=[]),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    import time
+    api_request_start = time.time()
+    
+    if not utils.instance_id:
+        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+    
+    client = await utils.db.client
+    account_id = user_id
+    
+    logger.debug(f"Received optimistic agent start request: thread_id={thread_id}, project_id={project_id}, prompt={prompt[:100] if prompt else None!r}, model_name={model_name!r}, agent_id={agent_id!r}, files_count={len(files)}")
+    
+    if not prompt or not prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required when creating a new thread")
+    
+    try:
+        import uuid
+        try:
+            uuid.UUID(thread_id)
+            uuid.UUID(project_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid UUID format")
+        
+        resolved_model = model_name
+        if resolved_model is None:
+            resolved_model = await model_manager.get_default_model_for_user(client, account_id)
+        else:
+            resolved_model = model_manager.resolve_model_id(resolved_model)
+        
+        t_billing = time.time()
+        await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
+        logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
+        
+        from core.thread_init_service import create_thread_optimistically
+        
+        result = await create_thread_optimistically(
+            thread_id=thread_id,
+            project_id=project_id,
+            account_id=account_id,
+            prompt=prompt,
+            agent_id=agent_id,
+            model_name=resolved_model,
+            files=files if len(files) > 0 else None,
+        )
+        
+        logger.info(f"⏱️ [TIMING] 🎯 Optimistic API Request Total: {(time.time() - api_request_start) * 1000:.1f}ms")
+        
+        return {
+            "thread_id": result["thread_id"],
+            "project_id": result["project_id"],
+            "agent_run_id": None,
+            "status": "pending"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in optimistic agent start: {str(e)}\n{traceback.format_exc()}")
+        error_details = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        logger.error(f"Full error details: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+
+@router.post("/thread/{thread_id}/start-agent", summary="Start Agent on Initialized Thread", operation_id="start_agent_on_thread")
+async def start_agent_on_thread(
+    thread_id: str,
+    model_name: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    import time
+    api_request_start = time.time()
+    
+    if not utils.instance_id:
+        raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
+    
+    client = await utils.db.client
+    account_id = user_id
+    
+    try:
+        thread_result = await client.table('threads').select('project_id, account_id, status').eq('thread_id', thread_id).execute()
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        thread_data = thread_result.data[0]
+        project_id = thread_data['project_id']
+        thread_status = thread_data.get('status', 'ready')
+        
+        if thread_data['account_id'] != user_id:
+            await verify_and_authorize_thread_access(client, thread_id, user_id)
+        
+        if thread_status == 'error':
+            raise HTTPException(status_code=400, detail="Thread initialization failed, cannot start agent")
+        
+        if thread_status in ['pending', 'initializing']:
+            raise HTTPException(status_code=409, detail=f"Thread is still {thread_status}, please wait for initialization to complete")
+        
+        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
+        
+        if model_name is None:
+            model_name = await model_manager.get_default_model_for_user(client, account_id)
+        else:
+            model_name = model_manager.resolve_model_id(model_name)
+        
+        result = await start_agent_run(
+            account_id=account_id,
+            prompt="",
+            agent_id=agent_id,
+            model_name=model_name,
+            thread_id=thread_id,
+            project_id=project_id,
+            message_content=None,
+        )
+        
+        await client.table('threads').update({
+            "status": "ready",
+        }).eq('thread_id', thread_id).execute()
+        
+        logger.info(f"⏱️ [TIMING] 🎯 Start Agent on Thread Total: {(time.time() - api_request_start) * 1000:.1f}ms")
+        
+        return {"thread_id": result["thread_id"], "agent_run_id": result["agent_run_id"], "status": "running"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting agent on thread: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
 
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")

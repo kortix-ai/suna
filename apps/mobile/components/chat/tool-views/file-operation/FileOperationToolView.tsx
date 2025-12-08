@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { View, ScrollView, Pressable } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
@@ -12,6 +12,9 @@ import {
   Loader2,
   Copy,
   Check,
+  FileDiff,
+  Plus,
+  Minus,
 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import {
@@ -25,7 +28,9 @@ import {
   getLanguageFromFileName,
   hasLanguageHighlighting,
   splitContentIntoLines,
-  generateEmptyLines,
+  generateLineDiff,
+  calculateDiffStats,
+  type LineDiff,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { CsvRenderer } from './CsvRenderer';
@@ -35,7 +40,6 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { useColorScheme } from 'nativewind';
 import { PresentationSlideCard } from '../presentation-tool/PresentationSlideCard';
 
 // Helper functions for presentation slide detection
@@ -69,7 +73,6 @@ function processUnicodeContent(text: string, preserveWhitespace = false): string
   return processed;
 }
 
-// Utility functions
 function formatTimestamp(isoString?: string): string {
   if (!isoString) return '';
   try {
@@ -90,14 +93,13 @@ export function FileOperationToolView({
   project,
   streamingText,
 }: ToolViewProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const { openFileInComputer } = useKortixComputerStore();
   const [isCopyingContent, setIsCopyingContent] = useState(false);
-  const [activeTab, setActiveTab] = useState<'code' | 'preview'>('preview');
+  const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'changes'>('preview');
   const sourceScrollRef = useRef<ScrollView>(null);
   const previewScrollRef = useRef<ScrollView>(null);
   const lastLineCountRef = useRef<number>(0);
+  const tabInitializedRef = useRef<boolean>(false);
 
   if (!toolCall) {
     return null;
@@ -105,22 +107,30 @@ export function FileOperationToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const rawArgs = toolCall.arguments || {};
-  // Ensure args is an object, not a string
   const args: Record<string, any> = typeof rawArgs === 'object' && rawArgs !== null ? rawArgs : {};
   const output = toolResult?.output;
 
   const operation = getOperationType(name);
+  const isStrReplace = operation === 'str-replace';
   const configs = getOperationConfigs();
   const config = configs[operation];
   const OperationIcon = config.icon;
 
   let filePath: string | null = null;
   let fileContent: string | null = null;
+  let oldStr: string | null = null;
+  let newStr: string | null = null;
 
-  // Extract file path from arguments (from metadata)
+  // Extract file path from arguments
   filePath = args.file_path || args.target_file || args.path || null;
 
-  // Also try to get file path from output first (more reliable for completed operations)
+  // Extract str-replace specific arguments
+  if (isStrReplace) {
+    oldStr = args.old_str || args.old_string || null;
+    newStr = args.new_str || args.new_string || null;
+  }
+
+  // Also try to get file path from output first
   if (output && typeof output === 'object' && output !== null) {
     if (!filePath && (output.file_path || output.path)) {
       filePath = output.file_path || output.path;
@@ -130,10 +140,8 @@ export function FileOperationToolView({
   // STREAMING: Extract content from live streaming JSON arguments
   if (isStreaming && streamingText) {
     try {
-      // Try parsing as complete JSON first
       const parsed = JSON.parse(streamingText);
 
-      // Extract based on operation type
       if (operation === 'create' || operation === 'rewrite') {
         if (parsed.file_contents) {
           fileContent = parsed.file_contents;
@@ -142,33 +150,32 @@ export function FileOperationToolView({
         if (parsed.code_edit) {
           fileContent = parsed.code_edit;
         }
+      } else if (isStrReplace) {
+        if (parsed.old_str || parsed.old_string) {
+          oldStr = parsed.old_str || parsed.old_string;
+        }
+        if (parsed.new_str || parsed.new_string) {
+          newStr = parsed.new_str || parsed.new_string;
+        }
       }
 
-      // Extract file_path if not already set
       if (!filePath && parsed.file_path) {
         filePath = parsed.file_path;
       }
     } catch (e) {
       // JSON incomplete - extract partial content
       if (operation === 'create' || operation === 'rewrite') {
-        // Find the start of file_contents value
         const startMatch = streamingText.match(/"file_contents"\s*:\s*"/);
         if (startMatch) {
           const startIndex = startMatch.index! + startMatch[0].length;
-          // Extract everything after "file_contents": " until we hit the end or a closing quote
           let rawContent = streamingText.substring(startIndex);
-
-          // Try to find the end quote (but it might not exist yet during streaming)
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
             rawContent = rawContent.substring(0, endQuoteMatch.index);
           }
-
-          // Unescape JSON sequences like \n, \t, \\, \"
           try {
             fileContent = JSON.parse('"' + rawContent + '"');
           } catch {
-            // If unescaping fails, replace common escapes manually
             fileContent = rawContent
               .replace(/\\n/g, '\n')
               .replace(/\\t/g, '\t')
@@ -182,12 +189,10 @@ export function FileOperationToolView({
         if (startMatch) {
           const startIndex = startMatch.index! + startMatch[0].length;
           let rawContent = streamingText.substring(startIndex);
-
           const endQuoteMatch = rawContent.match(/(?<!\\)"/);
           if (endQuoteMatch) {
             rawContent = rawContent.substring(0, endQuoteMatch.index);
           }
-
           try {
             fileContent = JSON.parse('"' + rawContent + '"');
           } catch {
@@ -199,9 +204,37 @@ export function FileOperationToolView({
               .replace(/\\\\/g, '\\');
           }
         }
+      } else if (isStrReplace) {
+        const oldStrMatch = streamingText.match(/"(?:old_str|old_string)"\s*:\s*"/);
+        if (oldStrMatch) {
+          const startIndex = oldStrMatch.index! + oldStrMatch[0].length;
+          let rawContent = streamingText.substring(startIndex);
+          const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+          if (endQuoteMatch) {
+            rawContent = rawContent.substring(0, endQuoteMatch.index);
+          }
+          try {
+            oldStr = JSON.parse('"' + rawContent + '"');
+          } catch {
+            oldStr = rawContent.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+          }
+        }
+        const newStrMatch = streamingText.match(/"(?:new_str|new_string)"\s*:\s*"/);
+        if (newStrMatch) {
+          const startIndex = newStrMatch.index! + newStrMatch[0].length;
+          let rawContent = streamingText.substring(startIndex);
+          const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+          if (endQuoteMatch) {
+            rawContent = rawContent.substring(0, endQuoteMatch.index);
+          }
+          try {
+            newStr = JSON.parse('"' + rawContent + '"');
+          } catch {
+            newStr = rawContent.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+          }
+        }
       }
 
-      // Extract file_path from partial JSON
       if (!filePath) {
         const pathMatch = streamingText.match(/"file_path"\s*:\s*"([^"]+)"/);
         if (pathMatch) {
@@ -211,7 +244,7 @@ export function FileOperationToolView({
     }
   }
 
-  // Fallback: Extract content from args (for completed operations)
+  // Fallback: Extract content from args
   if (!fileContent) {
     fileContent = args.file_contents || args.code_edit || args.updated_content || args.content || null;
   }
@@ -219,7 +252,19 @@ export function FileOperationToolView({
   // Override with output if available
   if (output) {
     if (typeof output === 'object' && output !== null) {
-      fileContent = output.file_content || output.content || output.updated_content || output.file_contents || fileContent;
+      // For str-replace, extract oldStr and newStr first
+      if (isStrReplace) {
+        oldStr = oldStr || output.old_str || output.old_string || null;
+        newStr = newStr || output.new_str || output.new_string || null;
+        // For str-replace, use newStr as fileContent for Source/Preview tabs
+        if (newStr) {
+          fileContent = newStr;
+        } else {
+          fileContent = output.file_content || output.content || output.updated_content || output.file_contents || fileContent;
+        }
+      } else {
+        fileContent = output.file_content || output.content || output.updated_content || output.file_contents || fileContent;
+      }
       if (!filePath && output.file_path) {
         filePath = output.file_path;
       }
@@ -228,19 +273,37 @@ export function FileOperationToolView({
     }
   }
 
-  // Debug logging for content extraction
-  if (operation === 'create' || operation === 'edit' || operation === 'rewrite') {
+  // Final fallback: For str-replace operations, use newStr as fileContent if we don't have fileContent yet
+  if (isStrReplace && !fileContent && newStr) {
+    fileContent = newStr;
+  }
+
+  // Debug: Log content extraction
+  if (operation === 'create' || operation === 'edit' || operation === 'rewrite' || isStrReplace) {
     console.log('[FileOperationToolView] Content extraction:', {
       operation,
+      isStrReplace,
       hasFileContent: !!fileContent,
       fileContentLength: fileContent?.length || 0,
+      hasOldStr: !!oldStr,
+      hasNewStr: !!newStr,
       filePath,
       hasStreamingText: !!streamingText,
       isStreaming,
-      argsKeys: Object.keys(args),
-      outputType: typeof output,
     });
   }
+
+  // Generate diff data for str-replace
+  const lineDiff = useMemo(() => {
+    if (oldStr && newStr) {
+      return generateLineDiff(oldStr, newStr);
+    }
+    return [];
+  }, [oldStr, newStr]);
+
+  const diffStats = useMemo(() => {
+    return calculateDiffStats(lineDiff);
+  }, [lineDiff]);
 
   const toolTitle = getOperationTitle(operation);
   const processedFilePath = processFilePath(filePath);
@@ -252,7 +315,6 @@ export function FileOperationToolView({
   const isCsv = fileExtension === 'csv' || fileExtension === 'tsv';
   const isXlsx = fileExtension === 'xlsx' || fileExtension === 'xls';
 
-  // Check if this is a presentation slide file
   const isPresentationSlide = processedFilePath ? isPresentationSlideFile(processedFilePath) : false;
   const presentationName = isPresentationSlide && processedFilePath ? extractPresentationName(processedFilePath) : null;
   const slideNumber = isPresentationSlide && processedFilePath ? extractSlideNumber(processedFilePath) : null;
@@ -268,15 +330,12 @@ export function FileOperationToolView({
 
   const FileIcon = config.icon;
 
-  // Auto-scroll for source code view during streaming
+  // Auto-scroll during streaming
   useEffect(() => {
     if (!isStreaming || !fileContent || !sourceScrollRef.current) return;
-
     const currentLineCount = contentLines.length;
     if (currentLineCount <= lastLineCountRef.current) return;
     lastLineCountRef.current = currentLineCount;
-
-    // Scroll to bottom
     setTimeout(() => {
       sourceScrollRef.current?.scrollToEnd({ animated: false });
     }, 100);
@@ -288,7 +347,6 @@ export function FileOperationToolView({
     }
   }, [isStreaming]);
 
-  // Auto-scroll for preview tab during streaming
   useEffect(() => {
     if (!isStreaming || !fileContent || !previewScrollRef.current) return;
     setTimeout(() => {
@@ -298,7 +356,6 @@ export function FileOperationToolView({
 
   const handleCopyContent = async () => {
     if (!fileContent) return;
-
     setIsCopyingContent(true);
     try {
       await Clipboard.setStringAsync(fileContent);
@@ -309,19 +366,74 @@ export function FileOperationToolView({
     setTimeout(() => setIsCopyingContent(false), 500);
   };
 
+  const renderDiffView = () => {
+    if (!oldStr || !newStr) {
+      return (
+        <View className="flex-1 items-center justify-center p-8">
+          <View className="bg-card rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
+            <Icon as={Check} size={32} className="text-primary" />
+          </View>
+          <Text className="text-sm font-roobert-medium text-primary">Replacement Complete</Text>
+          <Text className="text-xs text-primary opacity-50 mt-1">{processedFilePath}</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        <View className="p-2">
+          {lineDiff.map((line, idx) => {
+            if (line.type === 'unchanged') return null;
+
+            return (
+              <View
+                key={idx}
+                className={`flex-row items-start mb-1 rounded-lg overflow-hidden bg-card border-l-2 ${line.type === 'added' ? 'border-l-primary' : 'border-l-primary opacity-50'}`}
+              >
+                <View className="w-8 items-center justify-center py-2">
+                  <Icon
+                    as={line.type === 'added' ? Plus : Minus}
+                    size={12}
+                    className="text-primary"
+                  />
+                </View>
+                <View className="w-10 items-end justify-center pr-2 py-2">
+                  <Text className="text-[10px] font-roobert-mono text-primary opacity-50">
+                    {line.lineNumber}
+                  </Text>
+                </View>
+                <View className="flex-1 py-2 pr-3">
+                  <Text
+                    className="text-xs font-roobert-mono text-primary"
+                    selectable
+                  >
+                    {line.type === 'added' ? line.newLine : line.oldLine}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    );
+  };
+
   const renderFilePreview = () => {
-    // Handle presentation slide files specially
     if (isPresentationSlide && presentationName) {
       if (isStreaming) {
         return (
           <View className="flex-1 items-center justify-center p-8">
-            <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+            <View className="bg-card rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
               <Icon as={Presentation} size={40} className="text-primary" strokeWidth={2} />
             </View>
-            <Text className="text-lg font-roobert-semibold mb-2 text-foreground">
+            <Text className="text-lg font-roobert-semibold mb-2 text-primary">
               Updating Presentation
             </Text>
-            <Text className="text-sm text-muted-foreground text-center mb-4">
+            <Text className="text-sm text-primary opacity-50 text-center mb-4">
               {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
             </Text>
             <View className="flex-row items-center gap-2">
@@ -345,10 +457,7 @@ export function FileOperationToolView({
                 created_at: '',
               }}
               sandboxUrl={project.sandbox.sandbox_url}
-              onFullScreenClick={(slideNum) => {
-                // Open in fullscreen presentation viewer
-                // This would need to integrate with presentation viewer store
-              }}
+              onFullScreenClick={() => { }}
             />
           </View>
         );
@@ -356,17 +465,14 @@ export function FileOperationToolView({
 
       return (
         <View className="flex-1 items-center justify-center p-8">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <View className="bg-card rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
             <Icon as={Presentation} size={40} className="text-primary" strokeWidth={2} />
           </View>
-          <Text className="text-lg font-roobert-semibold mb-2 text-foreground">
+          <Text className="text-lg font-roobert-semibold mb-2 text-primary">
             Presentation Updated
           </Text>
-          <Text className="text-sm text-muted-foreground text-center">
+          <Text className="text-sm text-primary opacity-50 text-center">
             {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
-          </Text>
-          <Text className="text-xs text-muted-foreground mt-2">
-            Waiting for sandbox to be ready...
           </Text>
         </View>
       );
@@ -375,13 +481,12 @@ export function FileOperationToolView({
     if (!fileContent) {
       return (
         <View className="flex-1 items-center justify-center p-12">
-          <Icon as={FileIcon} size={48} className="text-muted-foreground mb-4" />
-          <Text className="text-sm text-muted-foreground">No content to preview</Text>
+          <Icon as={FileIcon} size={48} className="text-primary opacity-50 mb-4" />
+          <Text className="text-sm text-primary opacity-50">No content to preview</Text>
         </View>
       );
     }
 
-    // For HTML files with preview URL, use WebView
     if (isHtml && htmlPreviewUrl) {
       return (
         <View className="flex-1">
@@ -395,50 +500,60 @@ export function FileOperationToolView({
       );
     }
 
-    // For markdown files
     if (isMarkdown) {
       return (
-        <ScrollView ref={previewScrollRef} className="flex-1" showsVerticalScrollIndicator={false}>
-          <View className="p-4">
-            <MarkdownRenderer content={processUnicodeContent(fileContent)} />
-          </View>
+        <ScrollView
+          ref={previewScrollRef}
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+        >
+          <MarkdownRenderer content={fileContent} />
         </ScrollView>
       );
     }
 
-    // For CSV files
     if (isCsv) {
       return (
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+        >
           <View className="p-4">
-            <CsvRenderer content={processUnicodeContent(fileContent)} />
+            <CsvRenderer content={fileContent} />
           </View>
         </ScrollView>
       );
     }
 
-    // For XLSX files
     if (isXlsx) {
       return (
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+        >
           <View className="p-4">
-            <XlsxRenderer
-              content={fileContent}
-              fileName={fileName}
-            />
+            <XlsxRenderer content={fileContent} fileName={fileName} />
           </View>
         </ScrollView>
       );
     }
 
-    // For all other files, use CodeRenderer
+    // Default: Code preview
     return (
-      <ScrollView ref={previewScrollRef} className="flex-1" showsVerticalScrollIndicator={false}>
-        <View className="p-4">
+      <ScrollView
+        ref={previewScrollRef}
+        className="flex-1"
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        <View className="p-2">
           <CodeRenderer
-            code={processUnicodeContent(fileContent)}
+            code={fileContent}
             language={language}
-            showLineNumbers={false}
+            showLineNumbers={true}
           />
         </View>
       </ScrollView>
@@ -449,32 +564,47 @@ export function FileOperationToolView({
     if (!fileContent) {
       return (
         <View className="flex-1 items-center justify-center p-12">
-          <Icon as={FileIcon} size={48} className="text-muted-foreground mb-4" />
-          <Text className="text-sm text-muted-foreground">No source code to display</Text>
+          <Icon as={FileIcon} size={48} className="text-primary opacity-50 mb-4" />
+          <Text className="text-sm text-primary opacity-50">No source code to display</Text>
         </View>
       );
     }
 
-    const emptyLines = generateEmptyLines(50);
-    const allLines = [...contentLines, ...emptyLines];
+    // Use contentLines which is already computed from fileContent
+    if (contentLines.length === 0) {
+      return (
+        <View className="flex-1 items-center justify-center p-12">
+          <Icon as={FileIcon} size={48} className="text-primary opacity-50 mb-4" />
+          <Text className="text-sm text-primary opacity-50">No content to display</Text>
+        </View>
+      );
+    }
 
     return (
       <ScrollView
         ref={sourceScrollRef}
         className="flex-1"
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
       >
-        <View className="p-4">
-          {allLines.map((line, idx) => (
-            <View key={idx} className="flex-row">
-              <View className="w-12 items-end pr-4">
-                <Text className="text-xs text-muted-foreground font-roobert-mono">
+        <View className="p-2 bg-card">
+          {contentLines.map((line, idx) => (
+            <View key={idx} className="flex-row" style={{ minHeight: 22 }}>
+              <View
+                className="w-10 items-end pr-3 py-0.5 border-r border-border"
+              >
+                <Text
+                  className="text-[11px] font-roobert-mono text-primary opacity-50"
+                >
                   {idx + 1}
                 </Text>
               </View>
-              <View className="flex-1">
-                <Text className="text-sm font-roobert-mono text-foreground/80 leading-5" selectable>
-                  {line ? processUnicodeContent(line, true) : ' '}
+              <View className="flex-1 pl-3 py-0.5">
+                <Text
+                  className="text-[13px] font-roobert-mono leading-5 text-primary"
+                  selectable
+                >
+                  {line || ' '}
                 </Text>
               </View>
             </View>
@@ -492,22 +622,35 @@ export function FileOperationToolView({
     : toolTitle;
 
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
+  const hasDiffData = isStrReplace && oldStr && newStr;
 
-  // Show loading state during streaming with no content
-  if (isStreaming && !fileContent && !filePath) {
+  // Initialize activeTab for str-replace with diff data (only once)
+  useEffect(() => {
+    if (!tabInitializedRef.current) {
+      if (hasDiffData) {
+        setActiveTab('changes');
+      } else if (isMarkdown || isHtml || isCsv || isXlsx || isPresentationSlide) {
+        setActiveTab('preview');
+      } else {
+        setActiveTab('code');
+      }
+      tabInitializedRef.current = true;
+    }
+  }, [hasDiffData, isMarkdown, isHtml, isCsv, isXlsx, isPresentationSlide]);
+
+  // Loading state
+  if (isStreaming && !fileContent && !filePath && !oldStr) {
     return (
       <ToolViewCard
         header={{
           icon: HeaderIcon,
           iconColor: headerIconColor,
           iconBgColor: headerBgColor,
-          subtitle: 'FILE OPERATION',
+          subtitle: '',
           title: displayTitle,
           isSuccess: actualIsSuccess,
           isStreaming: true,
-          rightContent: (
-            <StatusBadge variant="streaming" label="Processing" />
-          ),
+          rightContent: <StatusBadge variant="streaming" label="Processing" />,
         }}
       >
         <View className="flex-1 w-full">
@@ -524,7 +667,7 @@ export function FileOperationToolView({
     );
   }
 
-  // Show delete operation
+  // Delete operation
   if (operation === 'delete') {
     return (
       <ToolViewCard
@@ -532,7 +675,7 @@ export function FileOperationToolView({
           icon: OperationIcon,
           iconColor: config.color,
           iconBgColor: config.bgColor,
-          subtitle: 'FILE OPERATION',
+          subtitle: '',
           title: displayTitle,
           isSuccess: actualIsSuccess,
           isStreaming: isStreaming,
@@ -545,20 +688,20 @@ export function FileOperationToolView({
         }}
       >
         <View className="flex-1 w-full items-center justify-center py-12 px-6">
-          <View className={`${config.bgColor} rounded-2xl items-center justify-center mb-6`} style={{ width: 80, height: 80 }}>
-            <Icon as={OperationIcon} size={40} className={config.color} strokeWidth={2} />
+          <View className="bg-card rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+            <Icon as={OperationIcon} size={40} className="text-primary" strokeWidth={2} />
           </View>
-          <Text className="text-xl font-roobert-semibold mb-6 text-foreground">
+          <Text className="text-xl font-roobert-semibold mb-6 text-primary">
             File Deleted
           </Text>
           {processedFilePath && (
-            <View className="bg-muted border border-border rounded-xl p-4 w-full max-w-md mb-4">
-              <Text className="text-sm font-roobert-mono text-foreground/80 text-center" numberOfLines={3}>
+            <View className="bg-card border border-border rounded-xl p-4 w-full max-w-md mb-4">
+              <Text className="text-sm font-roobert-mono text-primary text-center" numberOfLines={3}>
                 {processedFilePath}
               </Text>
             </View>
           )}
-          <Text className="text-sm text-muted-foreground text-center">
+          <Text className="text-sm text-primary opacity-50 text-center">
             This file has been permanently removed
           </Text>
         </View>
@@ -566,7 +709,14 @@ export function FileOperationToolView({
     );
   }
 
-  const hasPreview = isMarkdown || isHtml || isCsv || isXlsx || isPresentationSlide;
+  // Build tabs - always show Source/Preview, add Changes for str-replace
+  const tabs = [
+    { id: 'code', label: 'Source', icon: Code },
+    { id: 'preview', label: 'Preview', icon: Eye },
+  ];
+  if (hasDiffData) {
+    tabs.push({ id: 'changes', label: 'Changes', icon: FileDiff });
+  }
 
   return (
     <ToolViewCard
@@ -578,102 +728,94 @@ export function FileOperationToolView({
         title: displayTitle,
         isSuccess: actualIsSuccess,
         isStreaming: isStreaming,
-        rightContent: (
-          <View className="flex-row items-center gap-2">
-            {hasPreview && (
-              <TabSwitcher
-                tabs={[
-                  { id: 'code', label: 'Source', icon: Code },
-                  { id: 'preview', label: 'Preview', icon: Eye },
-                ]}
-                activeTab={activeTab}
-                onTabChange={(tabId) => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setActiveTab(tabId as 'code' | 'preview');
-                }}
-              />
-            )}
-            {fileContent && !isStreaming && !isPresentationSlide && (
-              <Pressable
-                onPress={handleCopyContent}
-                disabled={isCopyingContent}
-                className="h-8 w-8 items-center justify-center rounded-lg active:opacity-70"
-                style={{
-                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                }}
-              >
-                <Icon
-                  as={isCopyingContent ? Check : Copy}
-                  size={16}
-                  className={isCopyingContent ? 'text-primary' : 'text-foreground'}
-                />
-              </Pressable>
-            )}
-            {processedFilePath && !isStreaming && !isPresentationSlide && (
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  openFileInComputer(processedFilePath);
-                }}
-                className="flex-row items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-70"
-                style={{
-                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                  borderWidth: 1,
-                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                }}
-              >
-                <Icon as={Pencil} size={14} className="text-foreground" />
-                <Text className="text-xs font-roobert-medium text-foreground">Edit</Text>
-              </Pressable>
-            )}
-            {!isStreaming && (
-              <StatusBadge
-                variant={actualIsSuccess ? 'success' : 'error'}
-                label={actualIsSuccess ? 'Success' : 'Failed'}
-              />
-            )}
-            {isStreaming && <StatusBadge variant="streaming" label="Processing" />}
-          </View>
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">
           <View className="flex-row items-center gap-2">
             {processedFilePath && (
-              <View
-                className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border"
-                style={{
-                  borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-                }}
-              >
-                <Icon as={FileText} size={12} className="text-foreground" />
-                <Text className="text-xs font-roobert-medium text-foreground" numberOfLines={1}>
+              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+                <Icon as={FileText} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary" numberOfLines={1}>
                   {fileName || 'File'}
                 </Text>
               </View>
             )}
-            <View
-              className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border"
-              style={{
-                borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-              }}
-            >
-              <Icon as={FileIcon} size={12} className="text-foreground" />
-              <Text className="text-xs font-roobert-medium text-foreground">
+            <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+              <Icon as={FileIcon} size={12} className="text-primary" />
+              <Text className="text-xs font-roobert-medium text-primary">
                 {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
               </Text>
             </View>
           </View>
           {toolTimestamp && !isStreaming && (
-            <Text className="text-xs text-muted-foreground">
+            <Text className="text-xs text-primary opacity-50">
               {formatTimestamp(toolTimestamp)}
             </Text>
           )}
         </View>
       }
     >
+      {/* Toolbar section for tabs and actions */}
+      {!isStreaming && (tabs.length > 1 || hasDiffData || fileContent || processedFilePath) && (
+        <View className="px-4 py-3 border-b border-border bg-card flex-row items-center justify-between gap-3">
+          <View className="flex-row items-center gap-2 flex-1">
+            {tabs.length > 1 && (
+              <TabSwitcher
+                tabs={tabs}
+                activeTab={activeTab}
+                onTabChange={(tabId) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActiveTab(tabId as 'code' | 'preview' | 'changes');
+                }}
+              />
+            )}
+            {hasDiffData && (
+              <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-full bg-card border border-border">
+                <Icon as={Plus} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary">{diffStats.additions}</Text>
+                <Icon as={Minus} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary">{diffStats.deletions}</Text>
+              </View>
+            )}
+          </View>
+          <View className="flex-row items-center gap-2">
+            {fileContent && !isPresentationSlide && (
+              <Pressable
+                onPress={handleCopyContent}
+                disabled={isCopyingContent}
+                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+              >
+                <Icon
+                  as={isCopyingContent ? Check : Copy}
+                  size={17}
+                  className="text-primary"
+                />
+              </Pressable>
+            )}
+            {processedFilePath && !isPresentationSlide && (
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  openFileInComputer(processedFilePath);
+                }}
+                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+              >
+                <Icon as={Pencil} size={17} className="text-primary" />
+              </Pressable>
+            )}
+          </View>
+        </View>
+      )}
+
       <View className="flex-1 w-full">
-        {activeTab === 'code' ? renderSourceCode() : renderFilePreview()}
+        {activeTab === 'code' ? (
+          renderSourceCode()
+        ) : activeTab === 'changes' ? (
+          renderDiffView()
+        ) : (
+          renderFilePreview()
+        )}
       </View>
     </ToolViewCard>
   );

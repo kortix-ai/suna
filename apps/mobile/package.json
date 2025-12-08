@@ -6,6 +6,10 @@
     "dev": "expo start -c",
     "postinstall": "patch-package",
     "android": "expo start -c --android",
+    "android:dev": "./scripts/start-android.sh",
+    "android:build": "eas build:dev --platform android",
+    "android:setup": "./scripts/setup-android.sh",
+    "android:emulator": "emulator -avd Kortix_Dev",
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules"
@@ -16,6 +20,7 @@
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-masked-view/masked-view": "^0.3.2",
+    "@react-native-picker/picker": "2.11.1",
     "@react-navigation/native": "^7.0.0",
     "@rn-primitives/accordion": "^1.2.0",
     "@rn-primitives/alert-dialog": "^1.2.0",

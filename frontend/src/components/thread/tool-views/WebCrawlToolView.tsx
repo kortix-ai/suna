@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import Image from 'next/image';
 
 export function WebCrawlToolView({
   toolCall,
@@ -193,13 +194,16 @@ export function WebCrawlToolView({
                 <div className="group relative">
                   <div className="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors rounded-xl border border-zinc-200 dark:border-zinc-800">
                     {favicon && (
-                      <img
+                      <Image
                         src={favicon}
                         alt=""
+                        width={24}
+                        height={24}
                         className="w-6 h-6 rounded-md flex-shrink-0"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
+                        unoptimized
                       />
                     )}
                     <div className="flex-1 min-w-0">

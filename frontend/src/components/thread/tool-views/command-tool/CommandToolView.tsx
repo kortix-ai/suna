@@ -251,12 +251,14 @@ export function CommandToolView({
 
               {/* Show status message for non-blocking commands */}
               {isNonBlockingCommand && output && (
-                <div className="mb-4 bg-muted/50 border border-border rounded-lg p-3.5">
+                <div className="mb-4 bg-card border border-border rounded-lg p-3.5">
                   <div className="flex items-center gap-2 mb-2">
-                    <CircleDashed className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm font-medium text-foreground">Command Status</span>
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 h-4 font-normal">
+                      <CircleDashed className="h-2.5 w-2.5 mr-1 opacity-70 text-blue-500" />
+                      Status
+                    </Badge>
                   </div>
-                  <p className="text-sm text-muted-foreground">{output}</p>
+                  <p className="text-xs text-foreground font-mono">{output}</p>
                 </div>
               )}
             </div>

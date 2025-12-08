@@ -3,7 +3,6 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Code, Eye, LucideIcon } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 
 interface Tab {
@@ -25,9 +24,6 @@ export function TabSwitcher({
   onTabChange,
   className = '',
 }: TabSwitcherProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
   const handleTabPress = (tabId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onTabChange(tabId);
@@ -35,7 +31,7 @@ export function TabSwitcher({
 
   return (
     <View
-      className={`flex-row items-center gap-1 bg-muted/50 border border-border/50 rounded-lg p-0.5 ${className}`}
+      className={`flex-row items-center gap-1 bg-card border border-border rounded-full p-1 ${className}`}
     >
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
@@ -43,29 +39,29 @@ export function TabSwitcher({
           <Pressable
             key={tab.id}
             onPress={() => handleTabPress(tab.id)}
-            className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-md flex-1 ${
-              isActive
-                ? 'bg-background dark:bg-primary/10'
+            className={`flex-row items-center justify-center gap-1.5 px-3 py-1.5 rounded-full ${tabs.length > 2 ? 'flex-1 min-w-0' : 'flex-1'
+              } ${isActive
+                ? 'bg-primary'
                 : 'bg-transparent'
-            }`}
+              }`}
           >
             {tab.icon && (
               <Icon
                 as={tab.icon}
-                size={14}
+                size={15}
                 className={
                   isActive
-                    ? 'text-foreground'
-                    : 'text-muted-foreground'
+                    ? 'text-background'
+                    : 'text-primary'
                 }
               />
             )}
             <Text
-              className={`text-xs font-roobert-medium ${
-                isActive
-                  ? 'text-foreground'
-                  : 'text-muted-foreground'
-              }`}
+              className={`text-xs font-roobert-medium ${isActive
+                ? 'text-background'
+                : 'text-primary'
+                }`}
+              numberOfLines={1}
             >
               {tab.label}
             </Text>

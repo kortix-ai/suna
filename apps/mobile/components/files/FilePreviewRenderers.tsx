@@ -14,10 +14,6 @@ import { useColorScheme } from 'nativewind';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
-// @ts-ignore - no types available
-import SyntaxHighlighter from 'react-native-syntax-highlighter';
-// @ts-ignore - no types available  
-import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -274,6 +270,10 @@ function JsonPreview({ content }: { content: string }) {
     }
   }, [content]);
 
+  const lines = useMemo(() => formattedJson.split('\n'), [formattedJson]);
+  const textColor = isDark ? '#eeffff' : '#24292e';
+  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+
   return (
     <ScrollView 
       className="flex-1"
@@ -292,22 +292,28 @@ function JsonPreview({ content }: { content: string }) {
           JSON
         </Text>
       </View>
-      <View className="px-2 py-2">
-        <SyntaxHighlighter
-          language="json"
-          style={isDark ? atomOneDark : atomOneLight}
-          customStyle={{
-            backgroundColor: 'transparent',
-            padding: 12,
-            margin: 0,
-            fontSize: 13,
-            lineHeight: 20,
-          }}
-          highlighter="hljs"
-        >
-          {formattedJson}
-        </SyntaxHighlighter>
-      </View>
+      <ScrollView 
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ backgroundColor: bgColor }}
+      >
+        <View style={{ padding: 12 }}>
+          {lines.map((line, idx) => (
+            <Text
+              key={idx}
+              style={{
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: textColor,
+                lineHeight: 20,
+              }}
+              selectable
+            >
+              {line || ' '}
+            </Text>
+          ))}
+        </View>
+      </ScrollView>
     </ScrollView>
   );
 }
@@ -319,6 +325,10 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const language = getLanguageFromFilename(fileName);
+
+  const lines = useMemo(() => content.split('\n'), [content]);
+  const textColor = isDark ? '#eeffff' : '#24292e';
+  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
 
   return (
     <ScrollView 
@@ -338,22 +348,28 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
           {language.toUpperCase()}
         </Text>
       </View>
-      <View className="px-2 py-2">
-        <SyntaxHighlighter
-          language={language}
-          style={isDark ? atomOneDark : atomOneLight}
-          customStyle={{
-            backgroundColor: 'transparent',
-            padding: 12,
-            margin: 0,
-            fontSize: 13,
-            lineHeight: 20,
-          }}
-          highlighter="hljs"
-        >
-          {content}
-        </SyntaxHighlighter>
-      </View>
+      <ScrollView 
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ backgroundColor: bgColor }}
+      >
+        <View style={{ padding: 12 }}>
+          {lines.map((line, idx) => (
+            <Text
+              key={idx}
+              style={{
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: textColor,
+                lineHeight: 20,
+              }}
+              selectable
+            >
+              {line || ' '}
+            </Text>
+          ))}
+        </View>
+      </ScrollView>
     </ScrollView>
   );
 }

@@ -1,11 +1,10 @@
-from core.prompts.prompt import SYSTEM_PROMPT
+from core.prompts.core_prompt import CORE_SYSTEM_PROMPT
 
-# Suna default configuration - simplified and centralized
 SUNA_CONFIG = {
     "name": "Suna",
     "description": "Suna is your AI assistant with access to various tools and integrations to help you with tasks across domains.",
     "model": "kortix/basic",
-    "system_prompt": SYSTEM_PROMPT,
+    "system_prompt": CORE_SYSTEM_PROMPT,
     "configured_mcps": [],
     "custom_mcps": [],
     "agentpress_tools": {
@@ -27,7 +26,6 @@ SUNA_CONFIG = {
         "sb_design_tool": True,
         
         # Document and content creation
-        "sb_docs_tool": True,
         "sb_presentation_tool": True,
         "sb_kb_tool": True,
 

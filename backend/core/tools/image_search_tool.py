@@ -14,7 +14,34 @@ from typing import Union, List
     icon="ImageSearch",
     color="bg-fuchsia-100 dark:bg-fuchsia-800/50",
     weight=130,
-    visible=True
+    visible=True,
+    usage_guide="""
+### IMAGE SEARCH CAPABILITIES
+
+**CORE FUNCTIONALITY:**
+- Search for images using SERPER API
+- Retrieve relevant images related to search queries
+- **BATCH SEARCHING:** Execute multiple image queries concurrently
+- Get comprehensive image results with titles, URLs, and metadata
+
+**BATCH MODE FOR EFFICIENCY:**
+- Use `image_search(query=["query1", "query2", "query3"])` for multiple searches
+- All queries execute in parallel for faster results
+- Returns: `{"batch_results": [{"query": "...", "images": ["url1", "url2"]}, ...]}`
+
+**BEST PRACTICES:**
+- Use specific, descriptive queries for better results
+- Include topic context in queries (e.g., "[topic name] [specific attribute]")
+- Set `num_results` parameter to control how many images per query
+- Review image URLs and select most appropriate for your needs
+- Download images using shell commands (wget) before using them
+
+**INTEGRATION WITH PRESENTATIONS:**
+- Search for topic-specific images (not generic)
+- Always include actual topic/brand/product name in queries
+- Use batch mode to search for all needed images at once
+- Download all images in a single chained command
+"""
 )
 class SandboxImageSearchTool(SandboxToolsBase):
     """Tool for performing image searches using SERPER API."""

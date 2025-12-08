@@ -3,6 +3,28 @@ import { create } from 'zustand';
 export type ViewType = 'tools' | 'files' | 'browser';
 export type FilesSubView = 'browser' | 'viewer';
 
+/**
+ * Normalize a file path to ensure it starts with /workspace
+ * Handles paths like "workspace", "workspace/foo", "/workspace", "/workspace/foo", "/foo", "foo"
+ */
+function normalizeWorkspacePath(path: string): string {
+  if (!path) return '/workspace';
+  
+  // Handle paths that start with "workspace" (without leading /)
+  // This prevents "/workspace/workspace" when someone passes "workspace" or "workspace/foo"
+  if (path === 'workspace' || path.startsWith('workspace/')) {
+    return '/' + path;
+  }
+  
+  // If already starts with /workspace, return as-is
+  if (path.startsWith('/workspace')) {
+    return path;
+  }
+  
+  // Otherwise, prepend /workspace/
+  return `/workspace/${path.replace(/^\//, '')}`;
+}
+
 interface KortixComputerState {
   // Main view state
   activeView: ViewType;
@@ -13,6 +35,10 @@ interface KortixComputerState {
   selectedFilePath: string | null;
   filePathList: string[] | undefined;
   currentFileIndex: number;
+  
+  // Version history state (shared across file browser and viewer)
+  selectedVersion: string | null;
+  selectedVersionDate: string | null;
   
   // Panel state
   isOpen: boolean;
@@ -33,6 +59,10 @@ interface KortixComputerState {
   goBackToBrowser: () => void;
   navigateToPath: (path: string) => void;
   setCurrentFileIndex: (index: number) => void;
+  
+  // Version history actions
+  setSelectedVersion: (commit: string | null, date?: string | null) => void;
+  clearSelectedVersion: () => void;
   
   // For external triggers (clicking file in chat)
   openFileInComputer: (filePath: string, filePathList?: string[]) => void;
@@ -70,6 +100,8 @@ const initialState = {
   selectedFilePath: null,
   filePathList: undefined,
   currentFileIndex: -1,
+  selectedVersion: null as string | null,
+  selectedVersionDate: null as string | null,
   isOpen: false,
   pendingToolNavIndex: null as number | null,
   unsavedFileContent: {} as Record<string, string>,
@@ -85,9 +117,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
   
   openFile: (filePath: string, filePathList?: string[]) => {
     // Normalize the file path
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     
     // Extract directory from file path for breadcrumb context
     const lastSlashIndex = normalizedPath.lastIndexOf('/');
@@ -99,9 +129,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
     let fileIndex = -1;
     if (filePathList && filePathList.length > 0) {
       fileIndex = filePathList.findIndex(path => {
-        const normalizedListPath = path.startsWith('/workspace')
-          ? path
-          : `/workspace/${path.replace(/^\//, '')}`;
+        const normalizedListPath = normalizeWorkspacePath(path);
         return normalizedListPath === normalizedPath;
       });
     }
@@ -125,9 +153,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
   },
   
   navigateToPath: (path: string) => {
-    const normalizedPath = path.startsWith('/workspace')
-      ? path
-      : `/workspace/${path.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(path);
     
     set({
       currentPath: normalizedPath,
@@ -142,9 +168,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
     const { filePathList } = get();
     if (filePathList && index >= 0 && index < filePathList.length) {
       const filePath = filePathList[index];
-      const normalizedPath = filePath.startsWith('/workspace')
-        ? filePath
-        : `/workspace/${filePath.replace(/^\//, '')}`;
+      const normalizedPath = normalizeWorkspacePath(filePath);
       
       set({
         currentFileIndex: index,
@@ -153,12 +177,24 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
     }
   },
   
+  setSelectedVersion: (commit: string | null, date?: string | null) => {
+    set({
+      selectedVersion: commit,
+      selectedVersionDate: date ?? null,
+    });
+  },
+  
+  clearSelectedVersion: () => {
+    set({
+      selectedVersion: null,
+      selectedVersionDate: null,
+    });
+  },
+  
   openFileInComputer: (filePath: string, filePathList?: string[]) => {
     // This is called from external sources (clicking file in chat)
     // It should open the panel, switch to files view, and show the file
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     
     const lastSlashIndex = normalizedPath.lastIndexOf('/');
     const directoryPath = lastSlashIndex > 0
@@ -168,9 +204,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
     let fileIndex = -1;
     if (filePathList && filePathList.length > 0) {
       fileIndex = filePathList.findIndex(path => {
-        const normalizedListPath = path.startsWith('/workspace')
-          ? path
-          : `/workspace/${path.replace(/^\//, '')}`;
+        const normalizedListPath = normalizeWorkspacePath(path);
         return normalizedListPath === normalizedPath;
       });
     }
@@ -221,9 +255,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
   },
   
   setUnsavedContent: (filePath: string, content: string) => {
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     set((state) => ({
       unsavedFileContent: {
         ...state.unsavedFileContent,
@@ -233,16 +265,12 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
   },
   
   getUnsavedContent: (filePath: string) => {
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     return get().unsavedFileContent[normalizedPath];
   },
   
   clearUnsavedContent: (filePath: string) => {
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     set((state) => {
       const { [normalizedPath]: _, ...restContent } = state.unsavedFileContent;
       const { [normalizedPath]: __, ...restState } = state.unsavedFileState;
@@ -254,9 +282,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
   },
   
   setUnsavedState: (filePath: string, hasUnsaved: boolean) => {
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     set((state) => ({
       unsavedFileState: {
         ...state.unsavedFileState,
@@ -266,9 +292,7 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
   },
   
   getUnsavedState: (filePath: string) => {
-    const normalizedPath = filePath.startsWith('/workspace')
-      ? filePath
-      : `/workspace/${filePath.replace(/^\//, '')}`;
+    const normalizedPath = normalizeWorkspacePath(filePath);
     return get().unsavedFileState[normalizedPath] ?? false;
   },
   
@@ -306,4 +330,17 @@ export const useKortixComputerPendingToolNavIndex = () =>
 
 export const useKortixComputerClearPendingToolNav = () =>
   useKortixComputerStore((state) => state.clearPendingToolNav);
+
+// Version history selectors
+export const useKortixComputerSelectedVersion = () =>
+  useKortixComputerStore((state) => state.selectedVersion);
+
+export const useKortixComputerSelectedVersionDate = () =>
+  useKortixComputerStore((state) => state.selectedVersionDate);
+
+export const useKortixComputerVersionActions = () =>
+  useKortixComputerStore((state) => ({
+    setSelectedVersion: state.setSelectedVersion,
+    clearSelectedVersion: state.clearSelectedVersion,
+  }));
 

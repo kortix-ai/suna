@@ -442,11 +442,13 @@ class CreditManager:
             'ledger_id': ledger_id
         }
     
-    async def get_balance(self, account_id: str) -> Dict:
+    async def get_balance(self, account_id: str, use_cache: bool = True) -> Dict:
         cache_key = f"credit_balance:{account_id}"
-        cached_balance = await Cache.get(cache_key)
-        if cached_balance is not None:
-            return cached_balance
+        
+        if use_cache:
+            cached_balance = await Cache.get(cache_key)
+            if cached_balance is not None:
+                return cached_balance
         
         client = await self.db.client
         balance_result = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()

@@ -75,7 +75,7 @@ export function PaperReferencesToolView({ toolCall, toolResult, isStreaming = fa
           title: toolMetadata.title,
           isSuccess: actualIsSuccess,
           isStreaming: false,
-          rightContent: <StatusBadge variant="success" label="0 references" />,
+          showStatus: true,
         }}
       >
         <View className="flex-1 w-full items-center justify-center py-12 px-6">
@@ -105,12 +105,7 @@ export function PaperReferencesToolView({ toolCall, toolResult, isStreaming = fa
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={`${references.length} reference${references.length !== 1 ? 's' : ''}`}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">

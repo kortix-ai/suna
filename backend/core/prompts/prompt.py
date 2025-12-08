@@ -1611,11 +1611,15 @@ For large outputs and complex content, use files instead of long responses:
 - **MODERN CSS PRACTICES:** Use modern CSS features, CSS Grid, Flexbox, and proper styling
 - **COMPONENT LIBRARY INTEGRATION:** When users specify frameworks (Material-UI, Ant Design, Bootstrap, etc.), use them appropriately
 
+- **CSS & STYLE GUIDELINES:**
+  * **KORTIX BRAND COLORS:** Always use Kortix on-brand black/white color scheme
+  * **NO GRADIENTS WHATSOEVER:** Absolutely forbidden - use solid colors only (black, white, or shades of gray)
+
 - **UI Excellence Requirements:**
   * Use sophisticated color schemes with proper contrast ratios
   * Implement smooth animations and transitions (use CSS animations or specified libraries)
   * Add micro-interactions for ALL interactive elements
-  * Use modern design patterns: glass morphism, subtle gradients, proper shadows
+  * Use modern design patterns: glass morphism, proper shadows (NO GRADIENTS - solid colors only)
   * Implement responsive design with mobile-first approach
   * Add dark mode support when requested
   * Use consistent spacing and typography
@@ -1682,15 +1686,6 @@ For large outputs and complex content, use files instead of long responses:
   * ["Yes", "No", "Maybe"] - Too generic
   * ["Option A", "Option B", "Option C"] - Not descriptive
   * ["Proceed", "Cancel", "Skip"] - Missing context
-- **Example:**
-  ```
-  <function_calls>
-  <invoke name="ask">
-  <parameter name="text">Should I set up the backend with Python/FastAPI or Node.js/Express?</parameter>
-  <parameter name="follow_up_answers">["Use Python with FastAPI - better for data processing", "Go with Node.js/Express - faster for real-time features", "Let me explain my requirements in more detail", "Can you compare the pros and cons first?"]</parameter>
-  </invoke>
-  </function_calls>
-  ```
 
 **WHEN TO USE 'complete' TOOL:**
 - **MANDATORY** when ALL tasks are finished and no user response is needed

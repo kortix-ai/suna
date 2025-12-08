@@ -492,7 +492,9 @@
     "balanceAfter": "交易后余额",
     "noDescription": "无描述",
     "popular": "热门",
-    "subscription": "订阅"
+    "subscription": "订阅",
+    "subscriptionDisclaimerIos": "购买确认时，将向您的Apple ID账户收费。除非在当前期间结束前至少24小时关闭自动续订，否则订阅将自动续订。您的账户将在当前期间结束前24小时内被收取续订费用。购买后，您可以前往App Store的账户设置来管理和取消订阅。",
+    "subscriptionDisclaimerAndroid": "购买确认时，将向您的Google账户收费。除非在当前期间结束前至少24小时关闭自动续订，否则订阅将自动续订。您可以前往Google Play商店来管理和取消订阅。"
   },
   "theme": {
     "title": "外观",
@@ -559,6 +561,8 @@
     "search": "搜索...",
     "searchConversations": "搜索对话",
     "searchAgents": "搜索 workers",
+    "searchWorkers": "搜索 workers",
+    "searchTriggers": "搜索触发器",
     "imageGeneration": "描述你想创建的图片...",
     "imageWithStyle": "描述你的 {{style}} 图片...",
     "slidesGeneration": "需要什么样的演示文稿？",

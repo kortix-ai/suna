@@ -506,7 +506,9 @@
     "balanceAfter": "Solde après",
     "noDescription": "Aucune description",
     "popular": "Populaire",
-    "subscription": "Abonnement"
+    "subscription": "Abonnement",
+    "subscriptionDisclaimerIos": "Le paiement sera débité sur ton compte Apple ID lors de la confirmation de l'achat. L'abonnement se renouvelle automatiquement sauf si le renouvellement automatique est désactivé au moins 24 heures avant la fin de la période en cours. Ton compte sera débité pour le renouvellement dans les 24 heures précédant la fin de la période en cours. Tu peux gérer et annuler tes abonnements en allant dans les paramètres de ton compte sur l'App Store après l'achat.",
+    "subscriptionDisclaimerAndroid": "Le paiement sera débité sur ton compte Google lors de la confirmation de l'achat. L'abonnement se renouvelle automatiquement sauf si le renouvellement automatique est désactivé au moins 24 heures avant la fin de la période en cours. Tu peux gérer et annuler tes abonnements en allant sur Google Play Store."
   },
   "theme": {
     "title": "Apparence",
@@ -573,6 +575,8 @@
     "search": "Rechercher...",
     "searchConversations": "Rechercher chats",
     "searchAgents": "Rechercher workers",
+    "searchWorkers": "Rechercher workers",
+    "searchTriggers": "Rechercher triggers",
     "imageGeneration": "Décris l'image que tu veux créer...",
     "imageWithStyle": "Décris ton image {{style}}...",
     "slidesGeneration": "Quelle présentation tu veux?",

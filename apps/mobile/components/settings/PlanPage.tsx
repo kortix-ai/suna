@@ -336,13 +336,12 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
         err.code === 'USER_MISMATCH';
 
       if (isAlreadySubscribedDifferentAccount) {
-        // Apple ID already has a subscription on another account - show alert
+        // Platform-specific account already has a subscription on another account - show alert
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        const platform = Platform.OS === 'ios' ? 'Apple ID' : 'Google Play ID';
         Alert.alert(
           t('billing.subscriptionExists', 'Already Subscribed'),
-          Platform.OS === 'ios' 
-            ? 'You are already subscribed with a different account on this Apple ID. Please log into your original account to access your subscription.'
-            : 'You are already subscribed with a different account on this Google Play ID. Please log into your original account to access your subscription.',
+          t('billing.subscriptionExistsMessage', 'You are already subscribed with a different account on this {platform}.', { platform }) + ' ' + t('billing.subscriptionExistsHelp', 'Please log into your original account to access your subscription.'),
           [{ text: t('billing.gotIt', 'Got it') }]
         );
       } else if (isSessionError) {
@@ -806,7 +805,9 @@ export function PlanPage({ visible = true, onClose, onPurchaseComplete, customTi
 
             {/* Legal disclaimer for subscription */}
             <Text className="text-[10px] text-muted-foreground text-center mt-3 px-4">
-              {t('billing.subscriptionDisclaimer', 'Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24-hours before the end of the current period. Your account will be charged for renewal within 24-hours prior to the end of the current period. You can manage and cancel your subscriptions by going to your account settings on the App Store after purchase.')}
+              {Platform.OS === 'ios' 
+                ? t('billing.subscriptionDisclaimerIos', 'Payment will be charged to your Apple ID account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24-hours before the end of the current period. Your account will be charged for renewal within 24-hours prior to the end of the current period. You can manage and cancel your subscriptions by going to your account settings on the App Store after purchase.')
+                : t('billing.subscriptionDisclaimerAndroid', 'Payment will be charged to your Google account at confirmation of purchase. Subscription automatically renews unless auto-renew is turned off at least 24-hours before the end of the current period. You can manage and cancel your subscriptions by going to the Google Play Store.')}
             </Text>
             
             <View className="flex-row justify-center mt-4 gap-4">

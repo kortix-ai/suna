@@ -41,7 +41,43 @@ DEFAULT_PNG_COMPRESS_LEVEL = 6
     icon="Eye",
     color="bg-pink-100 dark:bg-pink-800/50",
     weight=40,
-    visible=True
+    visible=True,
+    usage_guide="""
+### VISUAL INPUT & IMAGE CONTEXT MANAGEMENT
+
+**CRITICAL: You MUST use the 'load_image' tool to see image files. There is NO other way to access visual information.**
+
+**HOW TO LOAD IMAGES:**
+- Provide the relative path to the image in the `/workspace` directory
+- Example: `load_image(file_path="docs/diagram.png")`
+- ALWAYS use this tool when visual information from a file is necessary
+- Supported formats: JPG, PNG, GIF, WEBP, and other common image formats
+- Maximum file size: 10 MB
+
+**IMAGE CONTEXT MANAGEMENT - HARD LIMIT:**
+- **Maximum 3 images can be loaded in context at any time**
+- Images consume significant context tokens (1000+ tokens per image)
+- You MUST manage image context intelligently
+
+**WHEN TO KEEP IMAGES LOADED:**
+- User wants to recreate, reproduce, or rebuild what's in the image
+- Writing code based on image content (UI from screenshots, diagrams, wireframes)
+- Editing, modifying, or iterating on the image content
+- Task requires ACTIVE VISUAL REFERENCE
+- In the middle of a multi-step task involving the image
+
+**WHEN TO CLEAR IMAGES (use clear_images_from_context tool):**
+- Task is complete and images no longer needed
+- User moves to different topic unrelated to images
+- You only needed to extract information/text from images (already done)
+- Reached the 3-image limit and need to load new images
+
+**CRITICAL WARNINGS:**
+- HARD LIMIT: Cannot load more than 3 images at any time
+- Clearing too early while working on image-based tasks = incomplete/failed work
+- Keep images loaded during active work, clear when done
+- Image files remain in sandbox - clearing only removes from conversation context
+"""
 )
 class SandboxVisionTool(SandboxToolsBase):
     """Tool for allowing the agent to 'see' images within the sandbox."""

@@ -5,7 +5,7 @@ import { UnifiedMessage, ParsedMetadata, AgentStatus } from '@/components/thread
 import { safeJsonParse } from '@/components/thread/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isAskOrCompleteTool } from './utils';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useKortixComputerStore, useIsSidePanelOpen, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
 
 interface UseThreadToolCallsReturn {
   toolCalls: ToolCallInput[];
@@ -40,28 +40,26 @@ export function useThreadToolCalls(
 ): UseThreadToolCallsReturn {
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
-  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
+  const isSidePanelOpen = useIsSidePanelOpen();
+  const setIsSidePanelOpen = useSetIsSidePanelOpen();
   const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
   const [externalNavIndex, setExternalNavIndex] = useState<number | undefined>(undefined);
   const userClosedPanelRef = useRef(false);
   const userNavigatedRef = useRef(false);
   const isMobile = useIsMobile();
   
-  // Store action for navigating to a tool call
   const navigateToToolCall = useKortixComputerStore((state) => state.navigateToToolCall);
 
   const toggleSidePanel = useCallback(() => {
-    setIsSidePanelOpen((prevIsOpen) => {
-      const newState = !prevIsOpen;
-      if (!newState) {
-        userClosedPanelRef.current = true;
-      }
-      if (newState && setLeftSidebarOpen) {
-        setLeftSidebarOpen(false);
-      }
-      return newState;
-    });
-  }, [setLeftSidebarOpen]);
+    const newState = !isSidePanelOpen;
+    if (!newState) {
+      userClosedPanelRef.current = true;
+    }
+    if (newState && setLeftSidebarOpen) {
+      setLeftSidebarOpen(false);
+    }
+    setIsSidePanelOpen(newState);
+  }, [isSidePanelOpen, setIsSidePanelOpen, setLeftSidebarOpen]);
 
   const handleSidePanelNavigate = useCallback((newIndex: number) => {
     setCurrentToolIndex(newIndex);
