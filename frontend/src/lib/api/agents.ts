@@ -310,17 +310,17 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
   try {
     const response = await backendApi.get<{ agent_runs: AgentRun[] }>(
       `/thread/${threadId}/agent-runs`,
-      { showErrors: true, cache: 'no-store' }
+      { showErrors: false, cache: 'no-store' }
     );
 
     if (response.error) {
-      throw new Error(`Error getting agent runs: ${response.error.message}`);
+      const error = new Error(`Error getting agent runs: HTTP ${response.error.status}: ${response.error.message}`);
+      (error as any).status = response.error.status;
+      throw error;
     }
 
     return response.data?.agent_runs || [];
   } catch (error) {
-    console.error('Failed to get agent runs:', error);
-    handleApiError(error, { operation: 'load agent runs', resource: 'conversation history' });
     throw error;
   }
 };
