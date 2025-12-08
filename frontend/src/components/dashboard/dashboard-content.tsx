@@ -395,6 +395,68 @@ export function DashboardContent() {
         agent_id: selectedAgentId || undefined,
       }).catch((error) => {
         console.error('Background agent start failed:', error);
+        
+        if (error instanceof BillingError || error?.status === 402) {
+          const message = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
+          const originalMessage = error.detail?.message || error.message || '';
+          const isCreditsExhausted = 
+            message.includes('credit') ||
+            message.includes('balance') ||
+            message.includes('insufficient') ||
+            message.includes('out of credits') ||
+            message.includes('no credits');
+          
+          const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
+          const balance = balanceMatch ? balanceMatch[1] : null;
+          
+          const alertTitle = isCreditsExhausted 
+            ? 'You ran out of credits'
+            : 'Pick the plan that works for you';
+          
+          const alertSubtitle = balance 
+            ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+            : isCreditsExhausted 
+              ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+              : undefined;
+          
+          router.replace('/dashboard');
+          pricingModalStore.openPricingModal({ 
+            isAlert: true,
+            alertTitle,
+            alertSubtitle
+          });
+          return;
+        }
+        
+        if (error instanceof AgentRunLimitError) {
+          const { running_thread_ids, running_count } = error.detail;
+          router.replace('/dashboard');
+          setAgentLimitData({
+            runningCount: running_count,
+            runningThreadIds: running_thread_ids,
+          });
+          setShowAgentLimitDialog(true);
+          return;
+        }
+        
+        if (error instanceof ProjectLimitError) {
+          router.replace('/dashboard');
+          pricingModalStore.openPricingModal({ 
+            isAlert: true,
+            alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+          });
+          return;
+        }
+        
+        if (error instanceof ThreadLimitError) {
+          router.replace('/dashboard');
+          pricingModalStore.openPricingModal({ 
+            isAlert: true,
+            alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+          });
+          return;
+        }
+        
         toast.error('Failed to start conversation');
       });
     } catch (error: any) {

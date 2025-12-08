@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
-import { BillingError, AgentRunLimitError, ProjectLimitError, NoAccessTokenAvailableError, RequestTooLargeError } from './errors';
+import { BillingError, AgentRunLimitError, ProjectLimitError, ThreadLimitError, NoAccessTokenAvailableError, RequestTooLargeError, parseTierRestrictionError } from './errors';
 import { nonRunningAgentRuns, activeStreams, cleanupEventSource } from './streaming';
 import { Message } from './threads';
 
@@ -119,7 +119,8 @@ export const unifiedAgentStart = async (options: {
       const status = response.error.status || 500;
       
       if (status === 402) {
-        throw response.error;
+        const detail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
+        throw new BillingError(status, detail);
       }
 
       if (status === 429) {
@@ -390,7 +391,11 @@ export const optimisticAgentStart = async (options: {
       const status = response.error.status || 500;
       
       if (status === 402) {
-        throw response.error;
+        const parsedError = parseTierRestrictionError({
+          status,
+          detail: response.error.details?.detail || { message: response.error.message || 'Payment required' }
+        });
+        throw parsedError;
       }
 
       if (status === 429) {
@@ -429,7 +434,7 @@ export const optimisticAgentStart = async (options: {
 
     return response.data!;
   } catch (error) {
-    if (error instanceof BillingError || error instanceof AgentRunLimitError || error instanceof ProjectLimitError) {
+    if (error instanceof BillingError || error instanceof AgentRunLimitError || error instanceof ProjectLimitError || error instanceof ThreadLimitError) {
       throw error;
     }
 

@@ -189,7 +189,7 @@ async def _load_agent_config(client, agent_id: Optional[str], account_id: str, u
     return agent_config
 
 
-async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False):
+async def _check_billing_and_limits(client, account_id: str, model_name: Optional[str], check_project_limit: bool = False, check_thread_limit: bool = False):
     """
     Check billing, model access, and rate limits.
     
@@ -200,14 +200,15 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         account_id: Account ID to check
         model_name: Model name to check access for
         check_project_limit: Whether to check project count limit (for new threads)
+        check_thread_limit: Whether to check thread count limit (for new threads)
     
     Raises:
         HTTPException: If billing/limits checks fail
     """
     import time
+    from core.utils.limits_checker import check_thread_limit as _check_thread_limit
     t_start = time.time()
     
-    # Run billing check and limit checks IN PARALLEL
     async def check_billing():
         return await billing_integration.check_model_and_billing_access(
             account_id, model_name, client
@@ -223,16 +224,20 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
             return {'can_create': True}
         return await check_project_count_limit(client, account_id)
     
-    # Execute all checks in parallel
-    billing_result, agent_run_result, project_result = await asyncio.gather(
+    async def check_threads():
+        if config.ENV_MODE == EnvMode.LOCAL or not check_thread_limit:
+            return {'can_create': True}
+        return await _check_thread_limit(client, account_id)
+    
+    billing_result, agent_run_result, project_result, thread_result = await asyncio.gather(
         check_billing(),
         check_agent_runs(),
-        check_projects()
+        check_projects(),
+        check_threads()
     )
     
     logger.debug(f"⏱️ [TIMING] Parallel billing/limit checks: {(time.time() - t_start) * 1000:.1f}ms")
     
-    # Process billing result
     can_proceed, error_message, context = billing_result
     if not can_proceed:
         if context.get("error_type") == "model_access_denied":
@@ -249,7 +254,6 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         else:
             raise HTTPException(status_code=500, detail={"message": error_message})
     
-    # Process agent run limit result
     if not agent_run_result.get('can_start', True):
         error_detail = {
             "message": f"Maximum of {agent_run_result['limit']} concurrent agent runs allowed. You currently have {agent_run_result['running_count']} running.",
@@ -261,7 +265,6 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
         logger.warning(f"Agent run limit exceeded for account {account_id}: {agent_run_result['running_count']}/{agent_run_result['limit']} running agents")
         raise HTTPException(status_code=402, detail=error_detail)
 
-    # Process project limit result
     if check_project_limit and not project_result.get('can_create', True):
         error_detail = {
             "message": f"Maximum of {project_result['limit']} projects allowed for your current plan. You have {project_result['current_count']} projects.",
@@ -271,6 +274,17 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
             "error_code": "PROJECT_LIMIT_EXCEEDED"
         }
         logger.warning(f"Project limit exceeded for account {account_id}: {project_result['current_count']}/{project_result['limit']} projects")
+        raise HTTPException(status_code=402, detail=error_detail)
+    
+    if check_thread_limit and not thread_result.get('can_create', True):
+        error_detail = {
+            "message": f"Maximum of {thread_result['limit']} threads allowed for your current plan. You have {thread_result['current_count']} threads.",
+            "current_count": thread_result['current_count'],
+            "limit": thread_result['limit'],
+            "tier_name": thread_result['tier_name'],
+            "error_code": "THREAD_LIMIT_EXCEEDED"
+        }
+        logger.warning(f"Thread limit exceeded for account {account_id}: {thread_result['current_count']}/{thread_result['limit']} threads")
         raise HTTPException(status_code=402, detail=error_detail)
 
 
@@ -645,19 +659,15 @@ async def start_agent_run(
     
     async def check_limits():
         if skip_limits_check:
-            return {'can_create': True}
-        await _check_billing_and_limits(client, account_id, model_name or "default", check_project_limit=is_new_thread)
-        if is_new_thread and config.ENV_MODE != EnvMode.LOCAL:
-            from core.utils.limits_checker import check_thread_limit
-            return await check_thread_limit(client, account_id)
-        return {'can_create': True}
+            return
+        await _check_billing_and_limits(
+            client, account_id, model_name or "default", 
+            check_project_limit=is_new_thread, 
+            check_thread_limit=is_new_thread
+        )
     
-    agent_config, limit_result = await asyncio.gather(load_config(), check_limits())
+    agent_config, _ = await asyncio.gather(load_config(), check_limits())
     logger.debug(f"⏱️ [TIMING] Parallel config+limits: {(time.time() - t_parallel) * 1000:.1f}ms")
-    
-    # Check thread limit result
-    if limit_result and not limit_result.get('can_create', True):
-        raise ValueError(f"Thread limit exceeded: {limit_result.get('current_count', 0)}/{limit_result.get('limit', 0)}")
     
     # Resolve effective model
     effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
@@ -948,6 +958,16 @@ async def optimistic_agent_start(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid UUID format")
         
+        resolved_model = model_name
+        if resolved_model is None:
+            resolved_model = await model_manager.get_default_model_for_user(client, account_id)
+        else:
+            resolved_model = model_manager.resolve_model_id(resolved_model)
+        
+        t_billing = time.time()
+        await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
+        logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
+        
         from core.thread_init_service import create_thread_optimistically
         
         result = await create_thread_optimistically(
@@ -956,7 +976,7 @@ async def optimistic_agent_start(
             account_id=account_id,
             prompt=prompt,
             agent_id=agent_id,
-            model_name=model_name,
+            model_name=resolved_model,
             files=files if len(files) > 0 else None,
         )
         
