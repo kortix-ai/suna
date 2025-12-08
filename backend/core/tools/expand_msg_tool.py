@@ -68,14 +68,6 @@ class ExpandMessageTool(Tool):
         }
     })
     async def expand_message(self, message_id: str) -> ToolResult:
-        """Expand a message from the previous conversation with the user.
-
-        Args:
-            message_id: The ID of the message to expand
-
-        Returns:
-            ToolResult indicating the message was successfully expanded
-        """
         try:
             client = await self.thread_manager.db.client
             message = await client.table('messages').select('*').eq('message_id', message_id).eq('thread_id', self.thread_id).execute()
@@ -286,15 +278,20 @@ class ExpandMessageTool(Tool):
         mcp_registry = get_mcp_registry()
         
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
-        if mcp_loader and not mcp_registry._initialized:
-            from core.agentpress.mcp_registry import init_mcp_registry_from_loader
-            init_mcp_registry_from_loader(mcp_loader)
-            mcp_registry._initialized = True
+        if mcp_loader:
+            loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
+            registry_tool_count = len(mcp_registry._tools)
             
-            account_id = getattr(self.thread_manager, 'account_id', None)
-            warmed = await mcp_registry.prewarm_schemas(account_id)
-            if warmed > 0:
-                logger.info(f"⚡ [MCP REGISTRY] Pre-warmed {warmed} schemas from Redis cache")
+            if not mcp_registry._initialized or loader_tool_count > registry_tool_count:
+                from core.agentpress.mcp_registry import init_mcp_registry_from_loader
+                logger.info(f"🔄 [MCP REGISTRY] Syncing registry: loader has {loader_tool_count} tools, registry has {registry_tool_count}")
+                init_mcp_registry_from_loader(mcp_loader)
+                mcp_registry._initialized = True
+                
+                account_id = getattr(self.thread_manager, 'account_id', None)
+                warmed = await mcp_registry.prewarm_schemas(account_id)
+                if warmed > 0:
+                    logger.info(f"⚡ [MCP REGISTRY] Pre-warmed {warmed} schemas from Redis cache")
         
         account_id = getattr(self.thread_manager, 'account_id', None)
         discovery_info = await mcp_registry.get_discovery_info(filter, load_schemas=True, account_id=account_id)
@@ -346,13 +343,19 @@ class ExpandMessageTool(Tool):
         
         mcp_registry = get_mcp_registry()
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
-        if mcp_loader and not mcp_registry._initialized:
-            from core.agentpress.mcp_registry import init_mcp_registry_from_loader
-            init_mcp_registry_from_loader(mcp_loader)
-            mcp_registry._initialized = True
+        if mcp_loader:
+            # Always sync registry with current request's mcp_loader to avoid race conditions
+            loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
+            registry_tool_count = len(mcp_registry._tools)
             
-            account_id = getattr(self.thread_manager, 'account_id', None)
-            await mcp_registry.prewarm_schemas(account_id)
+            if not mcp_registry._initialized or loader_tool_count > registry_tool_count:
+                from core.agentpress.mcp_registry import init_mcp_registry_from_loader
+                logger.info(f"🔄 [MCP REGISTRY] Syncing registry for execute: loader has {loader_tool_count} tools, registry has {registry_tool_count}")
+                init_mcp_registry_from_loader(mcp_loader)
+                mcp_registry._initialized = True
+                
+                account_id = getattr(self.thread_manager, 'account_id', None)
+                await mcp_registry.prewarm_schemas(account_id)
         
         execution_context = MCPExecutionContext(self.thread_manager)
         

@@ -39,13 +39,13 @@ class MCPJITLoader:
         configured_mcps = self.agent_config.get("configured_mcps", [])
         
         mode_str = "cache-only" if cache_only else "full discovery"
-        logger.info(f"⚡ [MCP JIT] Processing {len(custom_mcps)} custom MCPs and {len(configured_mcps)} configured MCPs ({mode_str})")
+        logger.debug(f"⚡ [MCP JIT] Processing {len(custom_mcps)} custom MCPs and {len(configured_mcps)} configured MCPs ({mode_str})")
         
         for i, mcp in enumerate(custom_mcps):
-            logger.info(f"⚡ [MCP JIT] custom_mcp[{i}]: name={mcp.get('name')}, toolkit={mcp.get('toolkit_slug') or mcp.get('config', {}).get('toolkit_name')}")
+            logger.debug(f"⚡ [MCP JIT] custom_mcp[{i}]: name={mcp.get('name')}, toolkit={mcp.get('toolkit_slug') or mcp.get('config', {}).get('toolkit_name')}")
         
         for i, mcp in enumerate(configured_mcps):
-            logger.info(f"⚡ [MCP JIT] configured_mcp[{i}]: name={mcp.get('name')}, toolkit={mcp.get('toolkit_slug')}")
+            logger.debug(f"⚡ [MCP JIT] configured_mcp[{i}]: name={mcp.get('name')}, toolkit={mcp.get('toolkit_slug')}")
         
         process_tasks = []
         for mcp_config in custom_mcps:
