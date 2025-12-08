@@ -4,7 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { AttachmentBar } from '@/components/attachments';
-import { QuickActionBar } from '@/components/quick-actions';
+import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
+import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
 
@@ -116,9 +117,10 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   isAuthenticated,
   isSendingMessage,
   isTranscribing,
-  containerClassName = "mx-3 mb-8",
+  containerClassName = "mx-3 mb-4",
 }, ref) => {
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const chatInputRef = React.useRef<ChatInputRef>(null);
   
   // Memoize gradient colors based on color scheme
@@ -126,6 +128,18 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
     () => colorScheme === 'dark' ? DARK_GRADIENT_COLORS : LIGHT_GRADIENT_COLORS,
     [colorScheme]
   );
+
+  // Find selected action for expanded view
+  const selectedAction = React.useMemo(() => {
+    if (!selectedQuickAction) return null;
+    return QUICK_ACTIONS.find(a => a.id === selectedQuickAction) || null;
+  }, [selectedQuickAction]);
+
+  // Get translated label for the selected action
+  const selectedActionLabel = React.useMemo(() => {
+    if (!selectedAction) return '';
+    return t(`quickActions.${selectedAction.id}`, { defaultValue: selectedAction.label });
+  }, [selectedAction, t]);
 
   // Expose focus method via ref
   React.useImperativeHandle(ref, () => ({
@@ -148,24 +162,24 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         pointerEvents="none"
       />
       
-      {/* Quick Action Bar - Above everything */}
-      {onQuickActionPress && (
-        <View className="pb-2" pointerEvents="box-none">
-          <QuickActionBar 
-            onActionPress={onQuickActionPress}
-            selectedActionId={selectedQuickAction}
-            selectedOptionId={selectedQuickActionOption}
-            onSelectOption={onQuickActionSelectOption}
-            onSelectPrompt={onQuickActionSelectPrompt}
-          />
-        </View>
-      )}
-
-      {/* Attachment Bar - Above Input */}
+      {/* Attachment Bar - Above everything */}
       <AttachmentBar 
         attachments={attachments}
         onRemove={onRemoveAttachment}
       />
+
+      {/* Quick Action Expanded Content - Above Input */}
+      {selectedQuickAction && selectedAction && (
+        <View className="mb-3">
+          <QuickActionExpandedView
+            actionId={selectedQuickAction}
+            actionLabel={selectedActionLabel}
+            onSelectOption={(optionId) => onQuickActionSelectOption?.(optionId)}
+            selectedOptionId={selectedQuickActionOption}
+            onSelectPrompt={onQuickActionSelectPrompt}
+          />
+        </View>
+      )}
       
       {/* Chat Input */}
       <View className={containerClassName}>
@@ -197,6 +211,16 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           isTranscribing={isTranscribing}
         />
       </View>
+
+      {/* Quick Action Bar - Below input (camera-style mode selector) */}
+      {onQuickActionPress && (
+        <View className="pb-8" pointerEvents="box-none">
+          <QuickActionBar 
+            onActionPress={onQuickActionPress}
+            selectedActionId={selectedQuickAction}
+          />
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }));
