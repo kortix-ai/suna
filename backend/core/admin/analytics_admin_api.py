@@ -668,20 +668,31 @@ Rules:
 
 @router.get("/threads/message-distribution")
 async def get_message_distribution(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
     admin: dict = Depends(require_admin)
 ) -> Dict[str, Any]:
-    """Get distribution of threads by user message count for last 24 hours."""
+    """Get distribution of threads by user message count for a specific day."""
     try:
         db = DBConnection()
         client = await db.client
         
-        # Filter to last 24 hours
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        # Parse date or default to today
+        if date:
+            try:
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        else:
+            selected_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Filter to selected day (start of day to end of day)
+        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Single query - user_message_count is now a column on threads table
         threads_result = await client.from_('threads').select(
             'user_message_count'
-        ).gte('created_at', yesterday).limit(50000).execute()
+        ).gte('created_at', start_of_day).lte('created_at', end_of_day).limit(50000).execute()
         threads = threads_result.data or []
         
         if not threads:

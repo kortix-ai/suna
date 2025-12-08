@@ -17,7 +17,7 @@ import {
   MessageSquare,
   TrendingUp,
   Activity,
-  Calendar,
+  Calendar as CalendarIcon,
   RefreshCw,
   ExternalLink,
   Languages,
@@ -27,7 +27,12 @@ import {
   UserCheck,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { format } from 'date-fns';
 import {
   useAnalyticsSummary,
   useDailyStats,
@@ -493,9 +498,14 @@ function RetentionTab() {
 // ============================================================================
 
 export default function AdminAnalyticsPage() {
+  const [distributionDate, setDistributionDate] = useState<Date>(new Date());
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  
+  const dateString = format(distributionDate, 'yyyy-MM-dd');
+  
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
   const { data: dailyStats } = useDailyStats(7);
-  const { data: distribution } = useMessageDistribution();
+  const { data: distribution } = useMessageDistribution(dateString);
   const { refreshAll } = useRefreshAnalytics();
 
   return (
@@ -556,11 +566,60 @@ export default function AdminAnalyticsPage() {
         {/* Message Distribution */}
         {distribution && (
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Thread Distribution (Last 24 Hours)
+                Thread Distribution
               </CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => {
+                    const prev = new Date(distributionDate);
+                    prev.setDate(prev.getDate() - 1);
+                    setDistributionDate(prev);
+                  }}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="min-w-[160px] justify-start text-left font-normal">
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {format(distributionDate, 'MMM d, yyyy')}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                      mode="single"
+                      selected={distributionDate}
+                      onSelect={(date) => {
+                        if (date) {
+                          setDistributionDate(date);
+                          setCalendarOpen(false);
+                        }
+                      }}
+                      disabled={(date) => date > new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  disabled={format(distributionDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')}
+                  onClick={() => {
+                    const next = new Date(distributionDate);
+                    next.setDate(next.getDate() + 1);
+                    setDistributionDate(next);
+                  }}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
