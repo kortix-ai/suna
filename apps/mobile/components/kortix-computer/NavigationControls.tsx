@@ -134,7 +134,7 @@ export function NavigationControls({
             />
           </Button>
           <View className="w-14">
-            <Text className="text-xs font-roobert-semibold tabular-nums text-center text-primary">
+            <Text className="text-sm font-roobert-semibold tabular-nums text-center text-primary">
               {displayIndex + 1}/{displayTotalCalls}
             </Text>
           </View>
