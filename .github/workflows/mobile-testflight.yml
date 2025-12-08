@@ -1,13 +1,6 @@
 name: TestFlight Builds
 
 on:
-  push:
-    branches:
-      - main
-      - production
-    paths:
-      - 'apps/mobile/**'
-      - '.github/workflows/mobile-testflight.yml'
   workflow_dispatch:
     inputs:
       platform:
@@ -46,20 +39,10 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/mobile
-        run: |
-          npm install --package-lock-only || npm install
-
-      - name: Get platform
-        id: platform
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "platform=${{ github.event.inputs.platform }}" >> $GITHUB_OUTPUT
-          else
-            echo "platform=all" >> $GITHUB_OUTPUT
-          fi
+        run: npm install
 
       - name: Build iOS TestFlight
-        if: steps.platform.outputs.platform == 'ios' || steps.platform.outputs.platform == 'all'
+        if: github.event.inputs.platform == 'ios' || github.event.inputs.platform == 'all'
         working-directory: apps/mobile
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
@@ -72,7 +55,7 @@ jobs:
           eas build --profile testflight --platform ios --auto-submit --non-interactive
 
       - name: Build Android TestFlight
-        if: steps.platform.outputs.platform == 'android' || steps.platform.outputs.platform == 'all'
+        if: github.event.inputs.platform == 'android' || github.event.inputs.platform == 'all'
         working-directory: apps/mobile
         env:
           EXPO_PUBLIC_SUPABASE_URL: https://heprlhlltebrxydgtsjs.supabase.co
