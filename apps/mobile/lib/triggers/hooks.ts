@@ -400,8 +400,27 @@ const createComposioEventTrigger = async ({
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Failed to create event trigger: ${response.statusText}`);
+    let errorMessage = `Failed to create event trigger: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      // Handle different error response formats (matching frontend error handling)
+      if (errorData.message) {
+        errorMessage = errorData.message;
+      } else if (errorData.detail) {
+        // detail can be a string or an object
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (errorData.detail.message) {
+          errorMessage = errorData.detail.message;
+        } else {
+          // If detail is an object without message, stringify it
+          errorMessage = JSON.stringify(errorData.detail);
+        }
+      }
+    } catch {
+      // If JSON parsing fails, use default error message
+    }
+    throw new Error(errorMessage);
   }
 
   return response.json();
