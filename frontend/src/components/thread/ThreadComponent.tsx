@@ -190,7 +190,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     if (stored && storedThread === threadId) {
       setOptimisticPrompt(stored);
       setShowOptimisticUI(true);
-      hasDataLoaded.current = true;
       if (!isMobile && !compact) {
         setStorePanelOpen(true);
       }
@@ -199,7 +198,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
-  if ((agentRunId || messages.length > 0 || threadStatus === 'ready') && showOptimisticUI && initialLoadCompleted) {
+  if (isNewThread && agentRunId && !hasDataLoaded.current) {
+    hasDataLoaded.current = true;
+  }
+  
+  const shouldHideOptimisticUI = isNewThread 
+    ? (agentRunId && initialLoadCompleted)
+    : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
+  
+  if (shouldHideOptimisticUI && showOptimisticUI) {
     setShowOptimisticUI(false);
   }
   
