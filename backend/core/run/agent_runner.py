@@ -670,7 +670,7 @@ class AgentRunner:
         custom_mcps = self.config.agent_config.get("custom_mcps", [])
         configured_mcps = self.config.agent_config.get("configured_mcps", [])
         
-        logger.info(f"⚡ [MCP JIT] Loading MCPs: {len(custom_mcps)} custom, {len(configured_mcps)} configured")
+        logger.debug(f"⚡ [MCP JIT] Loading MCPs: {len(custom_mcps)} custom, {len(configured_mcps)} configured")
         for i, mcp in enumerate(custom_mcps):
             logger.debug(f"⚡ [MCP JIT] Custom MCP {i}: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}, type={mcp.get('type')}")
         
