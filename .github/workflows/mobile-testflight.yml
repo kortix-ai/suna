@@ -46,7 +46,8 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/mobile
-        run: npm ci
+        run: |
+          npm install --package-lock-only || npm install
 
       - name: Get platform
         id: platform
