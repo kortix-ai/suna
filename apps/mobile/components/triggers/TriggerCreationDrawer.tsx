@@ -402,7 +402,8 @@ export function TriggerCreationDrawer({
     if (recurringType === 'daily') {
       return `${selectedMinute || '0'} ${selectedHour || '9'} * * *`;
     } else if (recurringType === 'weekly') {
-      const days = selectedWeekdays.length > 0 ? selectedWeekdays.join(',') : '*';
+      // Default to weekdays (Mon-Fri) if no days are selected
+      const days = selectedWeekdays.length > 0 ? selectedWeekdays.join(',') : '1,2,3,4,5';
       return `${selectedMinute || '0'} ${selectedHour || '9'} * * ${days}`;
     } else {
       // monthly
@@ -538,15 +539,30 @@ export function TriggerCreationDrawer({
         return;
       }
 
+      if (!selectedAgentId) {
+        Alert.alert('Error', 'Please select an agent first');
+        return;
+      }
+
+      if (!selectedTrigger) {
+        Alert.alert('Error', 'Please select a trigger');
+        return;
+      }
+
+      if (!selectedApp) {
+        Alert.alert('Error', 'Please select an app');
+        return;
+      }
+
       try {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
         const selectedProfile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
 
         const payload = {
-          agent_id: selectedAgentId!,
-          slug: selectedTrigger!.slug,
-          toolkit_slug: selectedApp!.slug,
+          agent_id: selectedAgentId,
+          slug: selectedTrigger.slug,
+          toolkit_slug: selectedApp.slug,
           profile_id: profileId,
           name: triggerName,
           agent_prompt: agentPrompt,
