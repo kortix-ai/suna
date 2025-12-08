@@ -290,6 +290,8 @@ def create_redis_keys(agent_run_id: str, instance_id: str) -> Dict[str, str]:
     }
 
 
+MAX_PENDING_REDIS_OPS = 500
+
 async def process_agent_responses(
     agent_gen,
     agent_run_id: str,
@@ -304,6 +306,7 @@ async def process_agent_responses(
     complete_tool_called = False
     total_responses = 0
     pending_redis_operations = []
+    redis_streaming_enabled = True
     
     stream_key = redis_keys['response_stream']
     pubsub_channel = redis_keys['response_pubsub']
@@ -324,25 +327,38 @@ async def process_agent_responses(
 
         response_json = json.dumps(response)
         
-        pending_redis_operations.append(
-            asyncio.create_task(redis.publish(pubsub_channel, response_json))
-        )
-        pending_redis_operations.append(
-            asyncio.create_task(redis.xadd(
-                stream_key,
-                {'data': response_json},
-                maxlen=10000,
-                approximate=True
-            ))
-        )
+        if redis_streaming_enabled and redis.is_redis_healthy():
+            pending_redis_operations.append(
+                asyncio.create_task(redis.publish(pubsub_channel, response_json))
+            )
+            pending_redis_operations.append(
+                asyncio.create_task(redis.xadd(
+                    stream_key,
+                    {'data': response_json},
+                    maxlen=10000,
+                    approximate=True
+                ))
+            )
+        
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
 
         if total_responses % 50 == 0:
-            try:
-                await asyncio.wait_for(redis.expire(stream_key, 3600), timeout=2.0)
-            except (asyncio.TimeoutError, Exception):
-                pass
+            pending_redis_operations = [t for t in pending_redis_operations if not t.done()]
+            
+            if len(pending_redis_operations) > MAX_PENDING_REDIS_OPS:
+                if redis_streaming_enabled:
+                    logger.warning(f"⚠️ Redis backpressure: {len(pending_redis_operations)} pending ops, pausing streaming for {agent_run_id}")
+                redis_streaming_enabled = False
+            elif not redis_streaming_enabled and len(pending_redis_operations) < MAX_PENDING_REDIS_OPS // 2:
+                logger.info(f"✅ Redis backpressure cleared, resuming streaming for {agent_run_id}")
+                redis_streaming_enabled = True
+            
+            if redis_streaming_enabled and redis.is_redis_healthy():
+                try:
+                    await asyncio.wait_for(redis.expire(stream_key, 3600), timeout=2.0)
+                except (asyncio.TimeoutError, Exception):
+                    pass
 
         terminating_tool = check_terminating_tool_call(response)
         if terminating_tool == 'complete':
@@ -466,40 +482,52 @@ async def run_agent_background(
     try:
         await initialize()
     except Exception as e:
-        logger.critical(f"Failed to initialize Redis connection: {e}")
+        logger.critical(f"Failed to initialize worker resources (Redis/DB): {e}")
         raise e
     timings['initialize'] = (time.time() - t) * 1000
 
-    client = await db.client
-    lock_acquired = await acquire_run_lock(agent_run_id, instance_id, client)
-    if not lock_acquired:
+    client = None
+    try:
+        client = await db.client
+        lock_acquired = await acquire_run_lock(agent_run_id, instance_id, client)
+        if not lock_acquired:
+            return
+
+        sentry.sentry.set_tag("thread_id", thread_id)
+        
+        timings['lock_acquisition'] = (time.time() - worker_start) * 1000 - timings['initialize']
+        logger.info(f"⏱️ [TIMING] Worker init: {timings['initialize']:.1f}ms | Lock: {timings['lock_acquisition']:.1f}ms")
+        logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
+        
+        from core.ai_models import model_manager
+        effective_model = model_manager.resolve_model_id(model_name)
+        logger.info(f"🚀 Using model: {effective_model}")
+        
+        start_time = datetime.now(timezone.utc)
+        pubsub = None
+        stop_checker = None
+        pending_redis_operations = []
+        cancellation_event = asyncio.Event()
+
+        redis_keys = create_redis_keys(agent_run_id, instance_id)
+        trace = langfuse.trace(
+            name="agent_run",
+            id=agent_run_id,
+            session_id=thread_id,
+            metadata={"project_id": project_id, "instance_id": instance_id}
+        )
+
+        pubsub_available = True
+        
+    except Exception as e:
+        logger.error(f"Critical error during worker setup for {agent_run_id}: {e}", exc_info=True)
+        try:
+            if not client:
+                client = await db.client
+            await update_agent_run_status(client, agent_run_id, "failed", error=f"Worker setup failed: {str(e)}", account_id=account_id)
+        except Exception as inner_e:
+            logger.error(f"Failed to update status after setup error: {inner_e}")
         return
-
-    sentry.sentry.set_tag("thread_id", thread_id)
-    
-    timings['lock_acquisition'] = (time.time() - worker_start) * 1000 - timings['initialize']
-    logger.info(f"⏱️ [TIMING] Worker init: {timings['initialize']:.1f}ms | Lock: {timings['lock_acquisition']:.1f}ms")
-    logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
-    
-    from core.ai_models import model_manager
-    effective_model = model_manager.resolve_model_id(model_name)
-    logger.info(f"🚀 Using model: {effective_model}")
-    
-    start_time = datetime.now(timezone.utc)
-    pubsub = None
-    stop_checker = None
-    pending_redis_operations = []
-    cancellation_event = asyncio.Event()
-
-    redis_keys = create_redis_keys(agent_run_id, instance_id)
-    trace = langfuse.trace(
-        name="agent_run",
-        id=agent_run_id,
-        session_id=thread_id,
-        metadata={"project_id": project_id, "instance_id": instance_id}
-    )
-
-    pubsub_available = True
     try:
         try:
             pubsub = await asyncio.wait_for(redis.create_pubsub(), timeout=5.0)
