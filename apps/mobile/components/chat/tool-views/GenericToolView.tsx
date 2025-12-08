@@ -1,3 +1,11 @@
+/**
+ * Generic Tool View
+ *
+ * Default fallback view for tools without specialized renderers
+ */
+
+import React from 'react';
+import { View, ScrollView } from 'react-native';
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';

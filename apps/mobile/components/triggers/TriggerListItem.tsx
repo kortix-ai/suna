@@ -1,6 +1,6 @@
 /**
  * Trigger List Item Component - Unified trigger item using SelectableListItem
- * 
+ *
  * Uses the unified SelectableListItem with TriggerAvatar
  * Ensures consistent design across all list types
  */
@@ -17,11 +17,7 @@ interface TriggerListItemProps {
   showChevron?: boolean;
 }
 
-export function TriggerListItem({
-  trigger,
-  onPress,
-  showChevron = true,
-}: TriggerListItemProps) {
+export function TriggerListItem({ trigger, onPress, showChevron = true }: TriggerListItemProps) {
   // Get schedule info for display
   const subtitle = React.useMemo(() => {
     const category = getTriggerCategory(trigger.trigger_type);
@@ -36,6 +32,7 @@ export function TriggerListItem({
       avatar={<TriggerAvatar trigger={trigger} size={48} />}
       title={trigger.name}
       subtitle={subtitle}
+      isActive={trigger.is_active}
       showChevron={showChevron}
       onPress={() => onPress?.(trigger)}
       accessibilityLabel={`Open trigger: ${trigger.name}. Status: ${trigger.is_active ? 'Active' : 'Inactive'}`}

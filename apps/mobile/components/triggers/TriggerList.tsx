@@ -1,6 +1,6 @@
 /**
  * Trigger List Component - Unified trigger list
- * 
+ *
  * Uses unified EntityList and SelectableListItem for consistency
  */
 

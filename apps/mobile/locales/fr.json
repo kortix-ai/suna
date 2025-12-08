@@ -573,6 +573,8 @@
     "search": "Rechercher...",
     "searchConversations": "Rechercher chats",
     "searchAgents": "Rechercher workers",
+    "searchWorkers": "Rechercher workers",
+    "searchTriggers": "Rechercher triggers",
     "imageGeneration": "Décris l'image que tu veux créer...",
     "imageWithStyle": "Décris ton image {{style}}...",
     "slidesGeneration": "Quelle présentation tu veux?",

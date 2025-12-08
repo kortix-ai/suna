@@ -559,6 +559,8 @@
     "search": "搜索...",
     "searchConversations": "搜索对话",
     "searchAgents": "搜索 workers",
+    "searchWorkers": "搜索 workers",
+    "searchTriggers": "搜索触发器",
     "imageGeneration": "描述你想创建的图片...",
     "imageWithStyle": "描述你的 {{style}} 图片...",
     "slidesGeneration": "需要什么样的演示文稿？",

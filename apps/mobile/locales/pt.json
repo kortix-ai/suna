@@ -554,6 +554,8 @@
     "search": "Buscar...",
     "searchConversations": "Buscar chats",
     "searchAgents": "Buscar workers",
+    "searchWorkers": "Buscar workers",
+    "searchTriggers": "Buscar triggers",
     "imageGeneration": "Descreve a imagem que você quer criar...",
     "imageWithStyle": "Descreve sua imagem {{style}}...",
     "slidesGeneration": "Que apresentação você precisa?",
