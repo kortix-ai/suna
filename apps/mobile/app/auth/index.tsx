@@ -310,20 +310,22 @@ function WelcomeContent({ onOAuth, onEmail }: WelcomeContentProps) {
         entering={FadeInDown.duration(500).delay(200)}
         style={{ gap: SPACING.betweenButtons }}
       >
-        <Button
-          variant="default"
-          size="lg"
+        {Platform.OS === 'ios' && (
+          <Button
+            variant="default"
+            size="lg"
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onOAuth('apple');
+              onOAuth('apple');
             }}
-          className="bg-[#000000]"
+            className="bg-[#000000]"
           >
             <FontAwesome5 name="apple" size={20} color="white" />
-          <Text className="text-[16px] font-roobert-medium text-white">
+            <Text className="text-[16px] font-roobert-medium text-white">
               {t('auth.continueWithApple')}
             </Text>
-        </Button>
+          </Button>
+        )}
 
         <Button
           variant="outline"

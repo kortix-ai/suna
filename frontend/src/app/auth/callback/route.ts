@@ -3,10 +3,13 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 /**
- * Auth Callback Route - Web Only
+ * Auth Callback Route - Web Handler
  * 
  * Handles authentication callbacks for web browsers.
- * Mobile apps use direct deep links (kortix://auth/callback) and bypass this route.
+ * 
+ * Flow:
+ * - If app is installed: Universal Links intercept HTTPS URLs and open app directly (bypasses this)
+ * - If app is NOT installed: Opens in browser → this route handles auth and redirects to dashboard
  */
 
 export async function GET(request: NextRequest) {
@@ -24,6 +27,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error')
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
+
 
   // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
