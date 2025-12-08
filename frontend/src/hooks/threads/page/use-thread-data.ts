@@ -172,8 +172,12 @@ export function useThreadData(
         if (isMounted) {
           const errorMessage =
             err instanceof Error ? err.message : 'Failed to load thread';
-          setError(errorMessage);
-          toast.error(errorMessage);
+          const is404Error = errorMessage.toLowerCase().includes('404') || 
+                            errorMessage.toLowerCase().includes('not found');
+          if (!is404Error) {
+            setError(errorMessage);
+            toast.error(errorMessage);
+          }
           setIsLoading(false);
         }
       }
