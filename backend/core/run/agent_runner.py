@@ -68,14 +68,13 @@ class AgentRunner:
         else:
             self.account_id = self.config.account_id
         
-        await self._initialize_mcp_jit_loader()
+        await self._initialize_mcp_jit_loader(cache_only=False)
         
         elapsed_ms = (time.time() - setup_start) * 1000
         
         if config.ENABLE_BOOTSTRAP_MODE:
             if elapsed_ms > config.BOOTSTRAP_SLO_CRITICAL_MS:
-                logger.error(f"🚨 [SLO_CRITICAL] Bootstrap exceeded hard timeout: {elapsed_ms:.1f}ms (limit: {config.BOOTSTRAP_SLO_CRITICAL_MS}ms)")
-                raise Exception(f"Bootstrap timeout exceeded: {elapsed_ms:.1f}ms")
+                logger.warning(f"⚠️ [SLO_WARNING] Bootstrap took {elapsed_ms:.1f}ms (limit: {config.BOOTSTRAP_SLO_CRITICAL_MS}ms) - MCP discovery may have been slow")
             elif elapsed_ms > config.BOOTSTRAP_SLO_WARNING_MS:
                 logger.warning(f"⚠️ [SLO_VIOLATION] Bootstrap took {elapsed_ms:.1f}ms (target: ≤500ms, warning: {config.BOOTSTRAP_SLO_WARNING_MS}ms)")
                 if self.config.trace:
@@ -102,6 +101,14 @@ class AgentRunner:
                 project = await self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
                 if project.data:
                     await set_cached_project_metadata(self.config.project_id, project.data[0].get('sandbox', {}))
+            
+            if hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader:
+                if len(self.thread_manager.mcp_loader.tool_map) == 0:
+                    mcp_jit_start = time.time()
+                    await self._initialize_mcp_jit_loader(cache_only=False)
+                    logger.info(f"⏱️ [ENRICHMENT] MCP JIT retry discovery: {(time.time() - mcp_jit_start) * 1000:.1f}ms")
+                else:
+                    logger.debug(f"⚡ [ENRICHMENT] MCP JIT already has {len(self.thread_manager.mcp_loader.tool_map)} tools, skipping")
             
             if self.config.agent_config and (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps")):
                 if not (hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader):
@@ -656,12 +663,16 @@ class AgentRunner:
             except Exception as e:
                 logger.warning(f"Failed to flush Langfuse: {e}")
     
-    async def _initialize_mcp_jit_loader(self) -> None:
+    async def _initialize_mcp_jit_loader(self, cache_only: bool = False) -> None:
         if not self.config.agent_config:
             return
         
         custom_mcps = self.config.agent_config.get("custom_mcps", [])
         configured_mcps = self.config.agent_config.get("configured_mcps", [])
+        
+        logger.info(f"⚡ [MCP JIT] Loading MCPs: {len(custom_mcps)} custom, {len(configured_mcps)} configured")
+        for i, mcp in enumerate(custom_mcps):
+            logger.debug(f"⚡ [MCP JIT] Custom MCP {i}: name={mcp.get('name')}, toolkit_slug={mcp.get('toolkit_slug')}, type={mcp.get('type')}")
         
         if custom_mcps or configured_mcps:
             try:
@@ -673,20 +684,25 @@ class AgentRunner:
                     'account_id': self.config.account_id or self.config.agent_config.get('account_id')
                 }
                 
-                self.thread_manager.mcp_loader = MCPJITLoader(mcp_config)
-                await self.thread_manager.mcp_loader.build_tool_map()
+                if not hasattr(self.thread_manager, 'mcp_loader') or self.thread_manager.mcp_loader is None:
+                    self.thread_manager.mcp_loader = MCPJITLoader(mcp_config)
+                
+                await self.thread_manager.mcp_loader.build_tool_map(cache_only=cache_only)
                 
                 stats = self.thread_manager.mcp_loader.get_activation_stats()
                 toolkits = await self.thread_manager.mcp_loader.get_toolkits()
                 
-                logger.info(f"⚡ [MCP JIT] Initialized: {stats['total_tools']} tools from {len(toolkits)} toolkits (dynamic + cached)")
+                mode_str = "cache-only" if cache_only else "full discovery"
+                logger.info(f"⚡ [MCP JIT] Initialized: {stats['total_tools']} tools from {len(toolkits)} toolkits ({mode_str})")
                 
-                from core.jit.mcp_registry import warm_cache_for_agent_toolkits
-                asyncio.create_task(warm_cache_for_agent_toolkits(mcp_config))
+                if not cache_only:
+                    from core.jit.mcp_registry import warm_cache_for_agent_toolkits
+                    asyncio.create_task(warm_cache_for_agent_toolkits(mcp_config))
                 
             except Exception as e:
                 logger.error(f"❌ [MCP JIT] Initialization failed: {e}")
-                self.thread_manager.mcp_loader = None
+                if not hasattr(self.thread_manager, 'mcp_loader'):
+                    self.thread_manager.mcp_loader = None
     
     def _clean_legacy_mcp_tools(self) -> None:
         tools_before = len(self.thread_manager.tool_registry.tools)

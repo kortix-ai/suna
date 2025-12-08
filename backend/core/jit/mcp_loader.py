@@ -25,20 +25,34 @@ class MCPJITLoader:
         self._initialized = False
         self._tool_map_built = False
     
-    async def build_tool_map(self) -> None:
+    async def build_tool_map(self, cache_only: bool = False, force_rebuild: bool = False) -> None:
+        if self._tool_map_built and not force_rebuild and cache_only:
+            logger.debug("⚡ [MCP JIT] Tool map already built, skipping")
+            return
+        
+        if not cache_only and self._tool_map_built and len(self.tool_map) == 0:
+            logger.info("⚡ [MCP JIT] Rebuilding tool map with full discovery (previous build was cache-only with no results)")
+        
         start_time = time.time()
         
         custom_mcps = self.agent_config.get("custom_mcp", [])
         configured_mcps = self.agent_config.get("configured_mcps", [])
         
-        logger.debug(f"⚡ [MCP JIT] Processing {len(custom_mcps)} custom MCPs and {len(configured_mcps)} configured MCPs")
+        mode_str = "cache-only" if cache_only else "full discovery"
+        logger.info(f"⚡ [MCP JIT] Processing {len(custom_mcps)} custom MCPs and {len(configured_mcps)} configured MCPs ({mode_str})")
+        
+        for i, mcp in enumerate(custom_mcps):
+            logger.info(f"⚡ [MCP JIT] custom_mcp[{i}]: name={mcp.get('name')}, toolkit={mcp.get('toolkit_slug') or mcp.get('config', {}).get('toolkit_name')}")
+        
+        for i, mcp in enumerate(configured_mcps):
+            logger.info(f"⚡ [MCP JIT] configured_mcp[{i}]: name={mcp.get('name')}, toolkit={mcp.get('toolkit_slug')}")
         
         process_tasks = []
         for mcp_config in custom_mcps:
-            process_tasks.append(self._process_mcp_config(mcp_config, "custom"))
+            process_tasks.append(self._process_mcp_config(mcp_config, "custom", cache_only=cache_only))
         
         for mcp_config in configured_mcps:
-            process_tasks.append(self._process_mcp_config(mcp_config, "configured"))
+            process_tasks.append(self._process_mcp_config(mcp_config, "configured", cache_only=cache_only))
         
         if process_tasks:
             await asyncio.gather(*process_tasks, return_exceptions=True)
@@ -46,7 +60,7 @@ class MCPJITLoader:
         elapsed_ms = (time.time() - start_time) * 1000
         
         self._tool_map_built = True
-        logger.info(f"⚡ [MCP JIT] Built tool map: {len(self.tool_map)} tools from {len(custom_mcps + configured_mcps)} servers in {elapsed_ms:.1f}ms")
+        logger.info(f"⚡ [MCP JIT] Built tool map: {len(self.tool_map)} tools from {len(custom_mcps + configured_mcps)} servers in {elapsed_ms:.1f}ms ({mode_str})")
         
         toolkit_counts = {}
         for tool_info in self.tool_map.values():
@@ -56,18 +70,27 @@ class MCPJITLoader:
         for toolkit, count in toolkit_counts.items():
             logger.debug(f"⚡ [MCP JIT] {toolkit}: {count} tools")
     
-    async def _process_mcp_config(self, mcp_config: Dict[str, Any], config_type: str) -> None:
+    async def _process_mcp_config(self, mcp_config: Dict[str, Any], config_type: str, cache_only: bool = False) -> None:
         toolkit_slug = self._extract_toolkit_slug(mcp_config)
         
+        logger.debug(f"⚡ [MCP JIT] Processing {config_type} MCP: {mcp_config.get('name', 'unnamed')} -> toolkit_slug={toolkit_slug}")
+        
         if not toolkit_slug:
-            logger.warning(f"⚠️  [MCP JIT] No toolkit_slug found in {config_type} MCP config")
+            logger.warning(f"⚠️  [MCP JIT] No toolkit_slug found in {config_type} MCP config: {mcp_config}")
             return
 
         account_id = self.agent_config.get('account_id')
-        available_tools = await get_toolkit_tools(toolkit_slug, account_id=account_id)
+        logger.debug(f"⚡ [MCP JIT] Querying tools for {toolkit_slug} (cache_only={cache_only}, account_id={account_id})")
+        
+        available_tools = await get_toolkit_tools(toolkit_slug, account_id=account_id, cache_only=cache_only)
+        
+        logger.debug(f"⚡ [MCP JIT] Got {len(available_tools)} tools for {toolkit_slug}")
         
         if not available_tools:
-            logger.warning(f"⚠️  [MCP JIT] No tools found for toolkit: {toolkit_slug}")
+            if cache_only:
+                logger.debug(f"⚡ [MCP JIT] No cached tools for {toolkit_slug} - will discover in enrichment")
+            else:
+                logger.warning(f"⚠️  [MCP JIT] No tools found for toolkit: {toolkit_slug}")
             return
 
         enabled_tools = mcp_config.get('enabledTools', [])
@@ -95,6 +118,12 @@ class MCPJITLoader:
             qualified_name = mcp_config.get("qualifiedName", "")
             if qualified_name:
                 toolkit_slug = qualified_name.split(".")[-1]
+        
+        if not toolkit_slug:
+            config_obj = mcp_config.get("config", {})
+            if isinstance(config_obj, dict):
+                toolkit_slug = config_obj.get("toolkit_slug") or config_obj.get("toolkit_name")
+        
         return toolkit_slug
     
     async def _ensure_tool_map_built(self) -> None:
@@ -122,6 +151,9 @@ class MCPJITLoader:
     async def is_tool_available(self, tool_name: str) -> bool:
         await self._ensure_tool_map_built()
         return tool_name in self.tool_map
+    
+    def is_tool_available_sync(self, tool_name: str) -> bool:
+        return self._tool_map_built and tool_name in self.tool_map
     
     async def get_tool_info(self, tool_name: str) -> Optional[MCPToolInfo]:
         await self._ensure_tool_map_built()

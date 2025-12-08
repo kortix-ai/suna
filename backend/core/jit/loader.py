@@ -269,19 +269,17 @@ class JITLoader:
         project_id: Optional[str] = None,
         jit_config: Optional[JITConfig] = None
     ) -> BatchActivationResult:
-        """Activate multiple tools including both regular and MCP tools"""
         from .dependencies import get_dependency_resolver
         
         start_time = time.time()
         logger.info(f"⚡ [JIT] Activating {len(tool_names)} tools (regular + MCP with dependency resolution)")
         
-        # Separate regular and MCP tools
         mcp_loader = getattr(thread_manager, 'mcp_loader', None)
         regular_tools = []
         mcp_tools = []
         
         for tool_name in tool_names:
-            if mcp_loader and mcp_loader.is_tool_available(tool_name):
+            if mcp_loader and await mcp_loader.is_tool_available(tool_name):
                 mcp_tools.append(tool_name)
             else:
                 regular_tools.append(tool_name)
@@ -290,8 +288,7 @@ class JITLoader:
         
         successful = []
         failed = []
-        
-        # Activate regular tools with dependency resolution
+
         if regular_tools:
             regular_result = await JITLoader.activate_multiple(
                 regular_tools, thread_manager, project_id, jit_config
@@ -299,7 +296,6 @@ class JITLoader:
             successful.extend(regular_result.successful)
             failed.extend(regular_result.failed)
         
-        # Activate MCP tools in parallel
         if mcp_tools:
             mcp_tasks = [
                 JITLoader.activate_mcp_tool(tool_name, thread_manager, project_id, jit_config)
