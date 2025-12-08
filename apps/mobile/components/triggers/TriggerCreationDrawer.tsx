@@ -36,7 +36,7 @@ import {
 import type { TriggerConfiguration } from '@/api/types';
 import { useComposioProfiles } from '@/hooks/useComposio';
 import type { ComposioApp, ComposioProfile } from '@/hooks/useComposio';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
@@ -56,6 +56,7 @@ interface TriggerCreationDrawerProps {
   onTriggerUpdated?: (triggerId: string) => void;
   isEditMode?: boolean;
   existingTrigger?: TriggerConfiguration | null;
+  agentId?: string; // Optional agentId prop - if not provided, uses selectedAgentId from context
 }
 
 type TriggerStep = 'type' | 'config';
@@ -144,15 +145,21 @@ export function TriggerCreationDrawer({
   onTriggerUpdated,
   isEditMode = false,
   existingTrigger = null,
+  agentId: propAgentId,
 }: TriggerCreationDrawerProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const bottomSheetModalRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
-  const { selectedAgentId } = useAgent();
+  const { selectedAgentId: contextAgentId } = useAgent();
+
+  // Use prop agentId if provided, otherwise fall back to context
+  const agentId = propAgentId || contextAgentId;
 
   const [currentStep, setCurrentStep] = useState<TriggerStep>(isEditMode ? 'config' : 'type');
   const [selectedType, setSelectedType] = useState<'schedule' | 'event' | null>(
     isEditMode && existingTrigger
-      ? existingTrigger.provider_id === 'composio' || existingTrigger.provider_id === 'event'
+      ? existingTrigger.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'event' ||
+        existingTrigger.trigger_type === 'event'
         ? 'event'
         : 'schedule'
       : null
@@ -208,19 +215,36 @@ export function TriggerCreationDrawer({
     refetch: refetchProfiles,
   } = useComposioProfiles();
 
-  const snapPoints = useMemo(() => ['90%'], []);
+  const snapPoints = useMemo(() => ['95%'], []);
 
   // Initialize form from existing trigger in edit mode
   useEffect(() => {
-    if (isEditMode && existingTrigger && visible) {
+    if (isEditMode && existingTrigger) {
       const triggerConfig = existingTrigger.config || {};
+
+      const isComposioTrigger =
+        triggerConfig.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'event' ||
+        existingTrigger.trigger_type === 'event';
+
+      // Set the selected type and step immediately
+      if (isComposioTrigger) {
+        setSelectedType('event');
+        setCurrentStep('config');
+      } else {
+        setSelectedType('schedule');
+        setCurrentStep('config');
+      }
+
+      // Only continue with full initialization when visible
+      if (!visible) return;
+
+      // Set form values
       setTriggerName(existingTrigger.name || '');
       setDescription(existingTrigger.description || '');
       setAgentPrompt(triggerConfig.agent_prompt || '');
       setModel(triggerConfig.model || 'kortix/basic');
-
-      const isComposioTrigger =
-        triggerConfig.provider_id === 'composio' || existingTrigger.provider_id === 'composio';
 
       if (isComposioTrigger) {
         // Event trigger
@@ -304,7 +328,9 @@ export function TriggerCreationDrawer({
       setCurrentStep(isEditMode ? 'config' : 'type');
       setSelectedType(
         isEditMode && existingTrigger
-          ? existingTrigger.provider_id === 'composio' || existingTrigger.provider_id === 'event'
+          ? existingTrigger.provider_id === 'composio' ||
+            existingTrigger.provider_id === 'event' ||
+            existingTrigger.trigger_type === 'event'
             ? 'event'
             : 'schedule'
           : null
@@ -328,19 +354,17 @@ export function TriggerCreationDrawer({
     }
   }, [visible, isEditMode, existingTrigger]);
 
-  // Handle sheet visibility
+  // Handle sheet visibility - use present/dismiss for BottomSheetModal
   useEffect(() => {
     if (visible) {
-      bottomSheetRef.current?.expand();
+      bottomSheetModalRef.current?.present();
     } else {
-      bottomSheetRef.current?.close();
+      bottomSheetModalRef.current?.dismiss();
     }
   }, [visible]);
 
-  const handleSheetChange = (index: number) => {
-    if (index === -1) {
-      onClose();
-    }
+  const handleDismiss = () => {
+    onClose();
   };
 
   const handleTypeSelect = (type: 'schedule' | 'event') => {
@@ -539,7 +563,7 @@ export function TriggerCreationDrawer({
         return;
       }
 
-      if (!selectedAgentId) {
+      if (!agentId) {
         Alert.alert('Error', 'Please select an agent first');
         return;
       }
@@ -560,7 +584,7 @@ export function TriggerCreationDrawer({
         const selectedProfile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
 
         const payload = {
-          agent_id: selectedAgentId,
+          agent_id: agentId,
           slug: selectedTrigger.slug,
           toolkit_slug: selectedApp.slug,
           profile_id: profileId,
@@ -617,13 +641,13 @@ export function TriggerCreationDrawer({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
 
-        if (!selectedAgentId) {
+        if (!agentId) {
           Alert.alert('Error', 'Please select an agent first');
           return;
         }
 
         const result = await createTriggerMutation.mutateAsync({
-          agentId: selectedAgentId,
+          agentId: agentId,
           data: {
             provider_id: 'schedule',
             name: triggerName,
@@ -670,12 +694,11 @@ export function TriggerCreationDrawer({
             : cronExpression.trim());
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
+    <BottomSheetModal
+      ref={bottomSheetModalRef}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onChange={handleSheetChange}
+      onDismiss={handleDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
         backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
@@ -738,15 +761,17 @@ export function TriggerCreationDrawer({
                     : 'Schedule Trigger'}
             </Text>
             <Text className="mt-1 font-roobert text-sm text-muted-foreground">
-              {currentStep === 'type'
-                ? 'Choose a trigger type'
-                : selectedType === 'event'
-                  ? eventStep === 'apps'
-                    ? 'Choose an app to monitor for events and trigger your agent'
-                    : eventStep === 'triggers'
-                      ? 'Choose an event to monitor'
-                      : 'Configure your trigger'
-                  : 'Configure your trigger'}
+              {isEditMode
+                ? 'Update your trigger configuration'
+                : currentStep === 'type'
+                  ? 'Choose a trigger type'
+                  : selectedType === 'event'
+                    ? eventStep === 'apps'
+                      ? 'Choose an app to monitor for events and trigger your agent'
+                      : eventStep === 'triggers'
+                        ? 'Choose an event to monitor'
+                        : 'Configure your trigger'
+                    : 'Configure your trigger'}
             </Text>
           </View>
         </View>
@@ -1295,6 +1320,6 @@ export function TriggerCreationDrawer({
           />
         </View>
       )}
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }

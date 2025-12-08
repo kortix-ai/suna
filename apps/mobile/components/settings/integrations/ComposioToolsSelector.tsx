@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { View, Pressable, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -17,6 +17,8 @@ import {
   type ComposioProfile,
   type ComposioTool
 } from '@/hooks/useComposio';
+import { useAgent, agentKeys } from '@/lib/agents/hooks';
+import { useQueryClient } from '@tanstack/react-query';
 import { ToolkitIcon } from './ToolkitIcon';
 import Animated, {
   useAnimatedStyle,
@@ -45,20 +47,79 @@ export function ComposioToolsContent({
 }: ComposioToolsContentProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
+  const queryClient = useQueryClient();
   const { data: toolsData, isLoading, error, refetch } = useComposioTools(profile.profile_id);
   const { mutate: updateTools, isPending: isSaving } = useUpdateComposioTools();
+  const { data: agent } = useAgent(agentId);
 
   const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set());
 
   const tools = toolsData?.tools || [];
 
-  const handleToolToggle = React.useCallback((toolName: string) => {
+  // Load current enabled tools from agent when component mounts or agent/profile/tools change
+  React.useEffect(() => {
+    if (!agentId || !profile?.profile_id || !agent || isLoading || tools.length === 0) {
+      // Don't try to load if tools aren't ready yet
+      if (!isLoading && tools.length === 0 && agent) {
+        // Tools loaded but empty - reset selection
+        setSelectedTools(new Set());
+      }
+      return;
+    }
+
+    try {
+      // Find the composio MCP with matching profile_id
+      const composioMcps = agent.custom_mcps?.filter((mcp: any) =>
+        mcp.type === 'composio' && mcp.config?.profile_id === profile.profile_id
+      ) || [];
+
+      // Extract enabled tools from all matching MCPs
+      const enabledTools = composioMcps.flatMap((mcp: any) => mcp.enabledTools || []);
+
+      // Backend stores tool slugs in enabledTools
+      // Store slugs directly (like frontend does) for consistency
+      if (enabledTools.length > 0) {
+        // Filter to only include slugs that exist in the available tools
+        const validEnabledTools = enabledTools.filter((enabledToolSlug: string) => {
+          const tool = tools.find((t: ComposioTool) =>
+            t.slug === enabledToolSlug ||
+            t.slug?.toLowerCase() === enabledToolSlug?.toLowerCase() ||
+            t.name === enabledToolSlug ||
+            t.name?.toLowerCase() === enabledToolSlug?.toLowerCase()
+          );
+          return !!tool;
+        });
+
+        // Normalize slugs - use the actual slug from the tool object
+        const normalizedSlugs = new Set(
+          validEnabledTools.map((enabledToolSlug: string) => {
+            const tool = tools.find((t: ComposioTool) =>
+              t.slug === enabledToolSlug ||
+              t.slug?.toLowerCase() === enabledToolSlug?.toLowerCase() ||
+              t.name === enabledToolSlug ||
+              t.name?.toLowerCase() === enabledToolSlug?.toLowerCase()
+            );
+            return tool?.slug || enabledToolSlug;
+          }).filter(Boolean)
+        );
+
+        setSelectedTools(normalizedSlugs);
+      } else {
+        setSelectedTools(new Set());
+      }
+    } catch (error) {
+      console.error('Failed to load current tools:', error);
+      setSelectedTools(new Set());
+    }
+  }, [agentId, profile?.profile_id, agent, tools, isLoading]);
+
+  const handleToolToggle = React.useCallback((toolSlug: string) => {
     setSelectedTools(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(toolName)) {
-        newSet.delete(toolName);
+      if (newSet.has(toolSlug)) {
+        newSet.delete(toolSlug);
       } else {
-        newSet.add(toolName);
+        newSet.add(toolSlug);
       }
       return newSet;
     });
@@ -68,32 +129,37 @@ export function ComposioToolsContent({
     if (selectedTools.size === tools.length) {
       setSelectedTools(new Set());
     } else {
-      setSelectedTools(new Set(tools.map((tool: ComposioTool) => tool.name)));
+      setSelectedTools(new Set(tools.map((tool: ComposioTool) => tool.slug)));
     }
   }, [tools, selectedTools.size]);
 
   const handleSaveTools = React.useCallback(() => {
     if (!agentId) return;
 
+    // selectedTools already contains slugs, use them directly
+    const selectedToolSlugs = Array.from(selectedTools).filter(Boolean);
+
     updateTools({
       agentId,
       profileId: profile.profile_id,
-      selectedTools: Array.from(selectedTools)
+      selectedTools: selectedToolSlugs
     }, {
       onSuccess: (data) => {
-        console.log('✅ Tools saved successfully:', data);
         Alert.alert(t('integrations.connectionSuccess'), t('integrations.toolsSelector.toolsAddedSuccess', { count: selectedTools.size, app: app.name }));
+        // Invalidate agent query to refresh the enabled tools count
+        queryClient.invalidateQueries({ queryKey: agentKeys.detail(agentId) });
+        // Also invalidate the list to ensure consistency
+        queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
         onComplete();
       },
       onError: (error: any) => {
-        console.error('❌ Failed to save tools:', error);
         Alert.alert(t('integrations.connectionError'), error.message || t('integrations.toolsSelector.failedToSaveTools'));
       }
     });
   }, [agentId, profile.profile_id, selectedTools, updateTools, app.name, onComplete, t]);
 
   return (
-    <View className={noPadding ? "pb-6" : "pb-6"}>
+    <View className="flex-1" style={{ flex: 1, position: 'relative' }}>
       {/* Header with back button, title, and description */}
       <View className="flex-row items-center mb-4">
         {onBack && (
@@ -123,71 +189,108 @@ export function ComposioToolsContent({
         </View>
       </View>
 
-      <View className={noPadding ? "" : "px-0"}>
-
-        <View className="flex-row items-center justify-between mb-6">
-          <Text className="text-sm font-roobert-medium text-muted-foreground uppercase tracking-wider">
-            {t('integrations.toolsSelector.selected', { count: selectedTools.size, total: tools.length, plural: selectedTools.size !== 1 ? 's' : '' })}
-          </Text>
-          <Pressable
-            onPress={handleSelectAll}
-            className="px-4 py-2 rounded-full bg-muted/10 active:opacity-70"
-          >
-            <Text className="text-sm font-roobert-semibold text-foreground">
-              {selectedTools.size === tools.length ? t('integrations.toolsSelector.deselectAll') : t('integrations.toolsSelector.selectAll')}
-            </Text>
-          </Pressable>
-        </View>
-        {isLoading ? (
-          <View className="items-center py-8">
-            <ActivityIndicator size="large" className="text-primary" />
-            <Text className="text-sm font-roobert text-muted-foreground mt-2">
-              {t('integrations.toolsSelector.loadingTools')}
-            </Text>
-          </View>
-        ) : error ? (
-          <View className="items-center py-8">
-            <Icon as={AlertCircle} size={48} className="text-destructive/40" />
-            <Text className="text-lg font-roobert-medium text-foreground mt-4">
-              Failed to Load Tools
-            </Text>
-            <Text className="text-sm font-roobert text-muted-foreground text-center mt-2">
-              {error.message}
+      {/* Scrollable content */}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 90 }}
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1 }}>
+        <View className={noPadding ? "" : "px-0"}>
+          <View className="flex-row items-center justify-between mb-6">
+            <Text className="text-sm font-roobert-medium text-muted-foreground uppercase tracking-wider">
+              {t('integrations.toolsSelector.selected', { count: selectedTools.size, total: tools.length, plural: selectedTools.size !== 1 ? 's' : '' })}
             </Text>
             <Pressable
-              onPress={() => refetch()}
-              className="mt-4 px-4 py-2 bg-primary rounded-xl"
+              onPress={handleSelectAll}
+              className="px-4 py-2 rounded-full bg-muted/10 active:opacity-70"
             >
-              <Text className="text-sm font-roobert-medium text-white">
-                Retry
+              <Text className="text-sm font-roobert-semibold text-foreground">
+                {selectedTools.size === tools.length ? t('integrations.toolsSelector.deselectAll') : t('integrations.toolsSelector.selectAll')}
               </Text>
             </Pressable>
           </View>
-        ) : (
-          <View className="space-y-3 mb-6">
+          {isLoading ? (
+            <View className="space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <View
+                  key={i}
+                  className="rounded-2xl border border-border bg-card p-4">
+                  <View className="flex-row items-center gap-3">
+                    <View className="h-12 w-12 rounded-xl bg-muted" />
+                    <View className="flex-1 space-y-2">
+                      <View className="h-4 w-3/4 rounded bg-muted" />
+                      <View className="h-3 w-full rounded bg-muted" />
+                    </View>
+                    <View className="h-6 w-6 rounded-full bg-muted" />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : error ? (
+            <View className="items-center py-8">
+              <Icon as={AlertCircle} size={48} className="text-destructive/40" />
+              <Text className="text-lg font-roobert-medium text-foreground mt-4">
+                Failed to Load Tools
+              </Text>
+              <Text className="text-sm font-roobert text-muted-foreground text-center mt-2">
+                {error.message}
+              </Text>
+              <Pressable
+                onPress={() => refetch()}
+                className="mt-4 px-4 py-2 bg-primary rounded-xl"
+              >
+                <Text className="text-sm font-roobert-medium text-white">
+                  Retry
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View className="space-y-3 mb-6">
             {tools.length > 0 ? (
               tools.map((tool: ComposioTool, index: number) => (
                 <ToolCard
-                  key={tool.name || index}
+                  key={tool.slug || tool.name || index}
                   tool={tool}
-                  selected={selectedTools.has(tool.name)}
-                  onToggle={() => handleToolToggle(tool.name)}
+                  selected={selectedTools.has(tool.slug)}
+                  onToggle={() => handleToolToggle(tool.slug)}
                 />
               ))
-            ) : (
-              <View className="items-center py-12 px-6">
-                <Icon as={Search} size={48} className="text-muted-foreground/40" />
-                <Text className="text-lg font-roobert-medium text-foreground mt-4">
-                  {t('integrations.toolsSelector.noToolsAvailable')}
-                </Text>
-                <Text className="text-sm font-roobert text-muted-foreground text-center">
-                  {t('integrations.toolsSelector.noToolsDescription')}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
+              ) : (
+                <View className="items-center py-12 px-6">
+                  <Icon as={Search} size={48} className="text-muted-foreground/40" />
+                  <Text className="text-lg font-roobert-medium text-foreground mt-4">
+                    {t('integrations.toolsSelector.noToolsAvailable')}
+                  </Text>
+                  <Text className="text-sm font-roobert text-muted-foreground text-center">
+                    {t('integrations.toolsSelector.noToolsDescription')}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </ScrollView>
 
+      {/* Sticky floating button at bottom - positioned absolutely */}
+      <View
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          paddingHorizontal: 16,
+          paddingBottom: 16,
+          paddingTop: 8,
+          backgroundColor: colorScheme === 'dark' ? '#18181B' : '#FFFFFF',
+          borderTopWidth: 1,
+          borderTopColor: colorScheme === 'dark' ? '#27272A' : '#E4E4E7',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
+          elevation: 8,
+          zIndex: 10,
+        }}>
         <ContinueButton
           onPress={handleSaveTools}
           disabled={selectedTools.size === 0 || isSaving}

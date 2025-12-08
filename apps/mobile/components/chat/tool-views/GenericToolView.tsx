@@ -4,8 +4,6 @@
  * Default fallback view for tools without specialized renderers
  */
 
-import React from 'react';
-import { View, ScrollView } from 'react-native';
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -98,8 +96,8 @@ export function GenericToolView({
   const handleCopyOutput = useCallback(async () => {
     if (!toolResult?.output) return;
     setIsCopyingOutput(true);
-    const outputText = typeof toolResult.output === 'string' 
-      ? toolResult.output 
+    const outputText = typeof toolResult.output === 'string'
+      ? toolResult.output
       : JSON.stringify(toolResult.output, null, 2);
     await copyToClipboard(outputText);
     setTimeout(() => setIsCopyingOutput(false), 2000);
