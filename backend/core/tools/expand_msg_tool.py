@@ -5,7 +5,7 @@ import json
 
 @tool_metadata(
     display_name="Internal Utilities",
-    description="Internal tool loading and message expansion",
+    description="Internal tool loading, MCP integration, and message expansion",
     icon="Maximize",
     color="bg-gray-100 dark:bg-gray-800/50",
     weight=100,
@@ -25,12 +25,23 @@ import json
 - Users NEVER see this operation or its output
 - DO NOT mention tool loading in your responses to users
 
-**expand_message() - Message Expansion:**
+**discover_mcp_tools(filter) - MCP Schema Discovery:**
+- Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.)
+- ALWAYS check conversation history first - schemas persist forever
+- Batch discover ALL tools needed in ONE call
+- Example: discover_mcp_tools(filter="GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST")
+
+**execute_mcp_tool(tool_name, args) - MCP Tool Execution:**
+- Execute external integration tools
+- Requires schema in conversation history (discover first if needed)
+- Example: execute_mcp_tool(tool_name="GMAIL_SEND_MESSAGE", args={"to": "user@example.com", ...})
+
+**expand_message(message_id) - Message Expansion:**
 - View full content of truncated messages
 - Use when previous messages were shortened
 - Retrieve complete message history
 
-**Both operations are internal and transparent to users.**
+**Most operations are internal and transparent to users.**
 """
 )
 class ExpandMessageTool(Tool):
@@ -92,40 +103,46 @@ class ExpandMessageTool(Tool):
     @openapi_schema({
         "type": "function", 
         "function": {
-        "name": "execute_tool", 
-        "description": "Execute external MCP tools (Gmail, Twitter, Slack, etc.). MANDATORY WORKFLOW: (1) Check conversation history - if tool schemas already exist, skip to step 3. (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Call tools using discovered schemas. NEVER discover same tools twice!",
+            "name": "discover_mcp_tools", 
+            "description": "Get schemas for external MCP tools (Gmail, Twitter, Slack, etc.). CRITICAL WORKFLOW: (1) Check conversation history FIRST - if tool schemas already exist, skip discovery! (2) If NOT in history: Discover ALL needed tools in ONE batch call. (3) Schemas are cached in conversation forever - NEVER discover same tools twice!",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["discover", "call"], 
-                        "description": "'discover' = Get schemas for ALL tools you'll need in ONE call (never one-by-one). 'call' = Execute tool using schema from conversation. CRITICAL: Check conversation first - if schemas exist, ONLY use 'call'!"
-                    },
-                    "tool_name": {
-                        "type": "string",
-                        "description": "For 'call' ONLY. Exact tool name from discovered schema (e.g., 'GMAIL_SEND_MESSAGE'). Cannot be used without schema in conversation history."
-                    },
-                    "args": {
-                        "type": "object", 
-                        "description": "For 'call' ONLY. Arguments matching discovered schema parameters. Use exact names from schema in conversation history."
-                    },
                     "filter": {
                         "type": "string",
-                        "description": "For 'discover' ONLY. Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times!"
+                        "description": "Comma-separated list of ALL tools needed (e.g., 'GMAIL_SEND_MESSAGE,TWITTER_CREATION_OF_A_POST,SLACK_SEND_MESSAGE') OR toolkit name (e.g., 'gmail'). CRITICAL: List ALL tools in ONE call, never call discover multiple times for the same task!"
                     }
                 },
-                "required": ["action"]
+                "required": ["filter"]
             }
         }
     }) 
-    async def execute_tool(self, action: str, tool_name: str = None, args: dict = None, filter: str = None) -> ToolResult:
-        if action == "discover":
-            return await self._discover_tools(filter)
-        elif action == "call":
-            return await self._call_tool(tool_name, args)
-        else:
-            return self.fail_response(f"Invalid action: {action}. Use 'discover' or 'call'")
+    async def discover_mcp_tools(self, filter: str) -> ToolResult:
+        return await self._discover_tools(filter)
+
+    @openapi_schema({
+        "type": "function", 
+        "function": {
+            "name": "execute_mcp_tool", 
+            "description": "Execute external MCP tool (Gmail, Twitter, Slack, etc.). PREREQUISITE: Tool schema MUST be in conversation history (use discover_mcp_tools first if needed). Use exact tool name and parameters from the discovered schema.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tool_name": {
+                        "type": "string",
+                        "description": "Exact tool name from discovered schema (e.g., 'GMAIL_SEND_MESSAGE', 'TWITTER_CREATION_OF_A_POST'). Must match schema in conversation history."
+                    },
+                    "args": {
+                        "type": "object", 
+                        "description": "Arguments matching discovered schema parameters. Use exact parameter names from schema in conversation history. Use empty object {} if no parameters required."
+                    }
+                },
+                "required": ["tool_name", "args"]
+            }
+        }
+    }) 
+    async def execute_mcp_tool(self, tool_name: str, args: dict) -> ToolResult:
+        return await self._call_tool(tool_name, args)
 
     @openapi_schema({
         "type": "function",
@@ -263,23 +280,26 @@ class ExpandMessageTool(Tool):
         return result
 
     async def _discover_tools(self, filter: str = None) -> ToolResult:
-        """Discover available MCP tools using the isolated MCP registry"""
         from core.agentpress.mcp_registry import get_mcp_registry
         from core.utils.logger import logger
         
         mcp_registry = get_mcp_registry()
         
-        # Initialize MCP registry if needed
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
         if mcp_loader and not mcp_registry._initialized:
             from core.agentpress.mcp_registry import init_mcp_registry_from_loader
             init_mcp_registry_from_loader(mcp_loader)
             mcp_registry._initialized = True
+            
+            account_id = getattr(self.thread_manager, 'account_id', None)
+            warmed = await mcp_registry.prewarm_schemas(account_id)
+            if warmed > 0:
+                logger.info(f"⚡ [MCP REGISTRY] Pre-warmed {warmed} schemas from Redis cache")
         
-        # Get discovery info from isolated MCP registry
-        discovery_info = mcp_registry.get_discovery_info(filter)
+        account_id = getattr(self.thread_manager, 'account_id', None)
+        discovery_info = await mcp_registry.get_discovery_info(filter, load_schemas=True, account_id=account_id)
         
-        logger.debug(f"🔍 [MCP DISCOVERY] Found {discovery_info['total_count']} MCP tools across {len(discovery_info['toolkits'])} toolkits")
+        logger.info(f"🔍 [MCP DISCOVERY] Found {discovery_info['total_count']} MCP tools across {len(discovery_info['toolkits'])} toolkits with full schemas")
         
         return self.success_response(discovery_info)
 
@@ -322,24 +342,20 @@ class ExpandMessageTool(Tool):
                 break
         
         logger.info(f"🔧 [MCP_ACTION] {friendly_status}")
-
-        # Use the isolated, modular MCP registry for execution
         from core.agentpress.mcp_registry import get_mcp_registry, MCPExecutionContext
         
         mcp_registry = get_mcp_registry()
-        
-        # Initialize registry if needed (lazy initialization)
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
         if mcp_loader and not mcp_registry._initialized:
             from core.agentpress.mcp_registry import init_mcp_registry_from_loader
             init_mcp_registry_from_loader(mcp_loader)
             mcp_registry._initialized = True
+            
+            account_id = getattr(self.thread_manager, 'account_id', None)
+            await mcp_registry.prewarm_schemas(account_id)
         
-        # Create execution context with full thread context
         execution_context = MCPExecutionContext(self.thread_manager)
         
-        # Execute through isolated MCP registry (completely separate from native tools)
-        # This ensures MCP tools NEVER appear in the main tool registry that feeds LLM
         return await mcp_registry.execute_tool(tool_name, args, execution_context)
 
 if __name__ == "__main__":

@@ -5,8 +5,8 @@ from .config import JITConfig
 from .dependencies import DependencyResolver, get_dependency_resolver, TOOL_DEPENDENCIES
 from .tool_cache import ToolGuideCache, get_tool_cache
 from .mcp_loader import MCPJITLoader
-from .mcp_dynamic_registry import get_toolkit_tools, get_all_available_tools_from_toolkits
-from .mcp_dynamic_registry import get_dynamic_registry, warm_cache_for_agent_toolkits
+from .mcp_registry import get_toolkit_tools, get_all_available_tools_from_toolkits
+from .mcp_registry import get_dynamic_registry, warm_cache_for_agent_toolkits
 from .result_types import (
     ActivationResult, ActivationSuccess, ActivationError,
     ActivationErrorType, BatchActivationResult,

@@ -77,7 +77,6 @@ export function DashboardContent() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   
-  // Use centralized Suna modes persistence hook
   const {
     selectedMode,
     selectedCharts,
@@ -114,6 +113,9 @@ export function DashboardContent() {
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const pricingModalStore = usePricingModalStore();
+  
+  const prefetchedRouteRef = React.useRef<string | null>(null);
+  const prefetchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({
     limit: 50, // Changed from 100 to 50 to match other components
@@ -468,6 +470,14 @@ export function DashboardContent() {
   }, []);
 
   React.useEffect(() => {
+    const dummyProjectId = 'prefetch-project';
+    const dummyThreadId = 'prefetch-thread';
+    const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+    router.prefetch(routeToPrefetch);
+    prefetchedRouteRef.current = routeToPrefetch;
+  }, [router]);
+
+  React.useEffect(() => {
     if (autoSubmit && inputValue && !isSubmitting && !isRedirecting) {
       const timer = setTimeout(() => {
         handleSubmit(inputValue);
@@ -478,6 +488,31 @@ export function DashboardContent() {
     }
     return undefined;
   }, [autoSubmit, inputValue, isSubmitting, isRedirecting, handleSubmit]);
+
+  React.useEffect(() => {
+    if (inputValue.trim() && !isSubmitting && !isRedirecting) {
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+      }
+
+      prefetchTimeoutRef.current = setTimeout(() => {
+        const dummyProjectId = 'prefetch-project';
+        const dummyThreadId = 'prefetch-thread';
+        const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+        
+        if (prefetchedRouteRef.current !== routeToPrefetch) {
+          router.prefetch(routeToPrefetch);
+          prefetchedRouteRef.current = routeToPrefetch;
+        }
+      }, 300);
+    }
+
+    return () => {
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+      }
+    };
+  }, [inputValue, isSubmitting, isRedirecting, router]);
 
   return (
     <>

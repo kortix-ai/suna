@@ -8,7 +8,7 @@ from core.utils.logger import logger
 from core.services import redis as redis_service
 
 
-class MCPDynamicRegistry:
+class MCPRegistry:
     CACHE_TTL = timedelta(hours=24)
     CACHE_KEY_PREFIX = "mcp_tools:"
     CACHE_VERSION = "v1"
@@ -297,13 +297,13 @@ class MCPDynamicRegistry:
         return stats
 
 
-_dynamic_registry: Optional[MCPDynamicRegistry] = None
+_dynamic_registry: Optional[MCPRegistry] = None
 
 
-async def get_dynamic_registry() -> MCPDynamicRegistry:
+async def get_dynamic_registry() -> MCPRegistry:
     global _dynamic_registry
     if _dynamic_registry is None:
-        _dynamic_registry = MCPDynamicRegistry()
+        _dynamic_registry = MCPRegistry()
     return _dynamic_registry
 
 
@@ -353,19 +353,3 @@ async def warm_cache_for_agent_toolkits(agent_config: Dict) -> None:
         registry = await get_dynamic_registry()
         asyncio.create_task(registry.warm_cache_for_toolkits(toolkit_slugs))
         logger.info(f"🔥 [MCP DYNAMIC] Started background cache warming for: {toolkit_slugs}")
-
-
-async def migrate_from_static_registry() -> Dict[str, int]:
-    from core.jit.mcp_static_registry import MCP_TOOLKIT_TOOLS
-    
-    toolkit_slugs = list(MCP_TOOLKIT_TOOLS.keys())
-    registry = await get_dynamic_registry()
-    
-    warmed = await registry.warm_cache_for_toolkits(toolkit_slugs)
-    
-    logger.info(f"🔄 [MCP DYNAMIC] Migration complete: {warmed}/{len(toolkit_slugs)} toolkits cached")
-    return {
-        'total_toolkits': len(toolkit_slugs),
-        'successfully_cached': warmed,
-        'migration_complete': warmed == len(toolkit_slugs)
-    }

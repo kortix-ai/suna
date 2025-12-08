@@ -17,21 +17,16 @@ class JITConfig:
         self.disabled_tools = set(disabled_tools or [])
         self._enabled_tools: Optional[Set[str]] = None
         
-        logger.debug(f"⚡ [JIT CONFIG] Initialized with agent_config={agent_config is not None}, disabled={len(self.disabled_tools)}")
-    
     def is_tool_allowed(self, tool_name: str) -> bool:
         if tool_name in self.disabled_tools:
-            logger.debug(f"⚡ [JIT CONFIG] Tool '{tool_name}' explicitly disabled")
             return False
 
         if not self.agent_config or self.agent_config.get('is_default'):
-            logger.debug(f"⚡ [JIT CONFIG] Default agent - tool '{tool_name}' allowed")
             return True
         
         agentpress_tools = self.agent_config.get('agentpress_tools', {})
         
         if not agentpress_tools:
-            logger.debug(f"⚡ [JIT CONFIG] No tool config - tool '{tool_name}' allowed")
             return True
         
         tool_config = agentpress_tools.get(tool_name)
@@ -43,7 +38,6 @@ class JITConfig:
         else:
             result = False
         
-        logger.debug(f"⚡ [JIT CONFIG] Tool '{tool_name}' allowed={result} for custom agent")
         return result
     
     def get_allowed_tools(self) -> Set[str]:
@@ -58,7 +52,6 @@ class JITConfig:
                 allowed.add(tool_name)
         
         self._enabled_tools = allowed
-        logger.info(f"⚡ [JIT CONFIG] {len(allowed)} tools allowed for this agent")
         return allowed
     
     def validate_activation_request(self, tool_name: str) -> tuple[bool, Optional[str]]:

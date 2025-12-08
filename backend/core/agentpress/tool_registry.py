@@ -104,7 +104,6 @@ class ToolRegistry:
                 if not is_mcp_tool:
                     schemas.append(tool_info['schema'].schema)
                     native_exposed += 1
-                    logger.debug(f"✅ [EXPOSE] {tool_name} (native)")
                 else:
                     mcp_hidden += 1
                     logger.debug(f"🔒 [HIDE] {tool_name} (MCP)")

@@ -68,6 +68,8 @@ class AgentRunner:
         else:
             self.account_id = self.config.account_id
         
+        await self._initialize_mcp_jit_loader()
+        
         elapsed_ms = (time.time() - setup_start) * 1000
         
         if config.ENABLE_BOOTSTRAP_MODE:
@@ -100,8 +102,6 @@ class AgentRunner:
                 project = await self.client.table('projects').select('project_id, sandbox').eq('project_id', self.config.project_id).execute()
                 if project.data:
                     await set_cached_project_metadata(self.config.project_id, project.data[0].get('sandbox', {}))
-            
-            await self._initialize_mcp_jit_loader()
             
             if self.config.agent_config and (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps")):
                 if not (hasattr(self.thread_manager, 'mcp_loader') and self.thread_manager.mcp_loader):
@@ -433,7 +433,8 @@ class AgentRunner:
             if config.ENABLE_MINIMAL_PROMPT and config.ENABLE_BOOTSTRAP_MODE and not self.enrichment_complete:
                 system_message = await PromptManager.build_minimal_prompt(
                     self.config.agent_config,
-                    tool_registry=self.thread_manager.tool_registry
+                    tool_registry=self.thread_manager.tool_registry,
+                    mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
                 )
                 logger.info(f"⏱️ [TIMING] build_minimal_prompt() in {(time.time() - prompt_start) * 1000:.1f}ms ({len(str(system_message.get('content', '')))} chars) [BOOTSTRAP MODE]")
             else:
@@ -680,7 +681,7 @@ class AgentRunner:
                 
                 logger.info(f"⚡ [MCP JIT] Initialized: {stats['total_tools']} tools from {len(toolkits)} toolkits (dynamic + cached)")
                 
-                from core.jit.mcp_dynamic_registry import warm_cache_for_agent_toolkits
+                from core.jit.mcp_registry import warm_cache_for_agent_toolkits
                 asyncio.create_task(warm_cache_for_agent_toolkits(mcp_config))
                 
             except Exception as e:

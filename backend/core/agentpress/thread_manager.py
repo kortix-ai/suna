@@ -190,6 +190,43 @@ class ThreadManager:
         except Exception as e:
             logger.error(f"Error handling billing: {str(e)}", exc_info=True)
 
+    def _validate_tool_calls_in_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        tool_calls = message.get('tool_calls', [])
+        if not tool_calls:
+            return message
+        
+        valid_tool_calls = []
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                continue
+            
+            func_data = tc.get('function', {})
+            args = func_data.get('arguments', '')
+            
+            if isinstance(args, str):
+                try:
+                    parsed = json.loads(args)
+                    if isinstance(parsed, dict):
+                        valid_tool_calls.append(tc)
+                    else:
+                        logger.warning(f"Removing tool call {tc.get('id')}: arguments not a dict")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Removing tool call {tc.get('id')}: invalid JSON - {str(e)[:50]}")
+            elif isinstance(args, dict):
+                valid_tool_calls.append(tc)
+            else:
+                logger.warning(f"Removing tool call {tc.get('id')}: unexpected arguments type {type(args)}")
+        
+        if len(valid_tool_calls) != len(tool_calls):
+            logger.warning(f"Filtered {len(tool_calls) - len(valid_tool_calls)} invalid tool calls from message")
+            message = message.copy()
+            if valid_tool_calls:
+                message['tool_calls'] = valid_tool_calls
+            else:
+                del message['tool_calls']
+        
+        return message
+
     async def get_llm_messages(self, thread_id: str, lightweight: bool = False) -> List[Dict[str, Any]]:
         """
         Get messages for a thread.
@@ -264,22 +301,19 @@ class ThreadManager:
                         else:
                             logger.error(f"Failed to parse message: {content[:100]}")
                 elif isinstance(content, dict):
-                    # Content is already a dict (e.g., from JSON/JSONB column type)
                     content['message_id'] = item['message_id']
                     
-                    # Skip empty user messages (defensive filter for legacy data)
                     if content.get('role') == 'user':
                         msg_content = content.get('content', '')
                         if isinstance(msg_content, str) and not msg_content.strip():
                             logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
                             continue
                     
-                    # Tool messages: content field is already a JSON string from success_response
-                    # No conversion needed - it's already in the correct format for Bedrock
+                    if content.get('role') == 'assistant' and content.get('tool_calls'):
+                        content = self._validate_tool_calls_in_message(content)
                     
                     messages.append(content)
                 else:
-                    # Fallback for other types
                     logger.warning(f"Unexpected content type: {type(content)}, attempting to use as-is")
                     messages.append({
                         'role': 'user',

@@ -1682,15 +1682,6 @@ For large outputs and complex content, use files instead of long responses:
   * ["Yes", "No", "Maybe"] - Too generic
   * ["Option A", "Option B", "Option C"] - Not descriptive
   * ["Proceed", "Cancel", "Skip"] - Missing context
-- **Example:**
-  ```
-  <function_calls>
-  <invoke name="ask">
-  <parameter name="text">Should I set up the backend with Python/FastAPI or Node.js/Express?</parameter>
-  <parameter name="follow_up_answers">["Use Python with FastAPI - better for data processing", "Go with Node.js/Express - faster for real-time features", "Let me explain my requirements in more detail", "Can you compare the pros and cons first?"]</parameter>
-  </invoke>
-  </function_calls>
-  ```
 
 **WHEN TO USE 'complete' TOOL:**
 - **MANDATORY** when ALL tasks are finished and no user response is needed

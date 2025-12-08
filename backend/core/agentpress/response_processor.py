@@ -253,40 +253,86 @@ class ResponseProcessor:
     def _transform_streaming_execute_tool_call(self, unified_tool_call: Dict[str, Any]) -> Dict[str, Any]:
         try:
             function_name = unified_tool_call.get("function_name", "")
-            if function_name != 'execute_tool':
+            
+            if function_name == 'execute_mcp_tool':
+                arguments = unified_tool_call.get("arguments", {})
+                
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+                
+                tool_name = arguments.get('tool_name')
+                real_args = arguments.get('args', {})
+                
+                if tool_name:
+                    transformed_tc = unified_tool_call.copy()
+                    transformed_tc['function_name'] = tool_name
+                    transformed_tc['arguments'] = real_args
+                    logger.info(f"🎭 [STREAM TRANSFORM] execute_mcp_tool -> {tool_name} (tool_call_id: {unified_tool_call.get('tool_call_id')})")
+                    return transformed_tc
+                
                 return unified_tool_call
             
-            arguments = unified_tool_call.get("arguments", {})
-            
-            if isinstance(arguments, str):
-                try:
-                    import json
-                    arguments = json.loads(arguments)
-                except json.JSONDecodeError:
-                    return unified_tool_call
-            
-            action = arguments.get('action')
-            tool_name = arguments.get('tool_name')
-            filter_val = arguments.get('filter')
-            real_args = arguments.get('args', {})
-            
-            if action == 'call' and tool_name:
-                transformed_tc = unified_tool_call.copy()
-                transformed_tc['function_name'] = tool_name
-                transformed_tc['arguments'] = real_args
-                logger.info(f"🎭 [STREAM TRANSFORM] execute_tool -> {tool_name} (tool_call_id: {unified_tool_call.get('tool_call_id')})")
-                return transformed_tc
-            elif action == 'discover' and filter_val:
+            elif function_name == 'discover_mcp_tools':
+                arguments = unified_tool_call.get("arguments", {})
+                
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+                
+                filter_val = arguments.get('filter', '')
+                
                 transformed_tc = unified_tool_call.copy()
                 if ',' in filter_val:
-                    tool_count = len([t.strip() for t in filter_val.split(',')])
                     transformed_tc['_display_hint'] = f"Discovering schemas"
                 else:
-                    app_name = filter_val.split()[0].title() if filter_val else "MCP"
                     transformed_tc['_display_hint'] = f"Discovering schemas"
                 transformed_tc['_app_filter'] = filter_val
                 logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
                 return transformed_tc
+            
+            elif function_name == 'execute_tool':
+                arguments = unified_tool_call.get("arguments", {})
+                
+                if isinstance(arguments, str):
+                    try:
+                        import json
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        return unified_tool_call
+                
+                action = arguments.get('action')
+                tool_name = arguments.get('tool_name')
+                filter_val = arguments.get('filter')
+                real_args = arguments.get('args', {})
+                
+                if action == 'call' and tool_name:
+                    transformed_tc = unified_tool_call.copy()
+                    transformed_tc['function_name'] = tool_name
+                    transformed_tc['arguments'] = real_args
+                    logger.info(f"🎭 [STREAM TRANSFORM] execute_tool(call) -> {tool_name} (tool_call_id: {unified_tool_call.get('tool_call_id')})")
+                    return transformed_tc
+                elif action == 'discover' and filter_val:
+                    transformed_tc = unified_tool_call.copy()
+                    if ',' in filter_val:
+                        tool_count = len([t.strip() for t in filter_val.split(',')])
+                        transformed_tc['_display_hint'] = f"Discovering schemas"
+                    else:
+                        app_name = filter_val.split()[0].title() if filter_val else "MCP"
+                        transformed_tc['_display_hint'] = f"Discovering schemas"
+                    transformed_tc['_app_filter'] = filter_val
+                    logger.debug(f"🔍 [STREAM TRANSFORM] Added discovery display hint: {transformed_tc['_display_hint']}")
+                    return transformed_tc
+                
+                return unified_tool_call
+            
+            return unified_tool_call
                 
         except Exception as e:
             logger.warning(f"Error transforming streaming execute_tool call: {e}")
@@ -298,34 +344,47 @@ class ResponseProcessor:
             function_info = buffer_entry.get('function', {})
             function_name = function_info.get('name', '')
 
-            if function_name != 'execute_tool':
+            if function_name == 'execute_mcp_tool':
+                arguments_str = function_info.get('arguments', '{}')
+                try:
+                    import json
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    logger.debug(f"🔍 [BUFFER TRANSFORM] Incomplete JSON, skipping: {arguments_str}")
+                    return buffer_entry
+                
+                tool_name = arguments.get('tool_name')
+                real_args = arguments.get('args', {})
+                
+                if tool_name:
+                    transformed_entry = buffer_entry.copy()
+                    transformed_entry['function'] = {
+                        'name': tool_name,
+                        'arguments': json.dumps(real_args) if isinstance(real_args, dict) else str(real_args)
+                    }
+                    logger.info(f"🎭 [BUFFER TRANSFORM] execute_mcp_tool -> {tool_name} in raw buffer")
+                    return transformed_entry
+                
                 return buffer_entry
-
-            arguments_str = function_info.get('arguments', '{}')
-            try:
-                import json
-                arguments = json.loads(arguments_str)
-            except json.JSONDecodeError:
-                logger.debug(f"🔍 [BUFFER TRANSFORM] Incomplete JSON, skipping: {arguments_str}")
-                return buffer_entry
             
-            action = arguments.get('action')
-            tool_name = arguments.get('tool_name')
-            filter_val = arguments.get('filter')
-            real_args = arguments.get('args', {})
-            
-            if action == 'call' and tool_name:
+            elif function_name == 'discover_mcp_tools':
+                arguments_str = function_info.get('arguments', '{}')
+                try:
+                    import json
+                    arguments = json.loads(arguments_str)
+                except json.JSONDecodeError:
+                    logger.debug(f"🔍 [BUFFER TRANSFORM] Incomplete JSON, skipping: {arguments_str}")
+                    return buffer_entry
+                
+                filter_val = arguments.get('filter', '')
+                
                 transformed_entry = buffer_entry.copy()
-                transformed_entry['function'] = {
-                    'name': tool_name,
-                    'arguments': json.dumps(real_args) if isinstance(real_args, dict) else str(real_args)
-                }
-                logger.info(f"🎭 [BUFFER TRANSFORM] execute_tool(call) -> {tool_name} in raw buffer")
-                return transformed_entry
-            
-            elif action == 'discover' and filter_val:
-                transformed_entry = buffer_entry.copy()
-                transformed_entry['_display_hint'] = f"Processing schemas"
+                if ',' in filter_val:
+                    tool_count = len([t.strip() for t in filter_val.split(',')])
+                    transformed_entry['_display_hint'] = f"Processing {tool_count} MCP tool schemas"
+                else:
+                    app_name = filter_val.split()[0].title() if filter_val else "MCP"
+                    transformed_entry['_display_hint'] = f"Processing {app_name} schemas"
                 transformed_entry['_app_filter'] = filter_val
                 logger.debug(f"🔍 [BUFFER TRANSFORM] Added discovery metadata for {filter_val}")
                 return transformed_entry
@@ -1785,16 +1844,15 @@ class ResponseProcessor:
                 is_mcp_tool = any(pattern in function_name for pattern in mcp_patterns)
                 
                 if is_mcp_tool:
-                    logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_tool wrapper")
-                    execute_tool_fn = available_functions.get('execute_tool')
-                    if execute_tool_fn:
+                    logger.info(f"🔀 [AUTO REDIRECT] Redirecting MCP tool '{function_name}' through execute_mcp_tool wrapper")
+                    execute_mcp_tool_fn = available_functions.get('execute_mcp_tool')
+                    if execute_mcp_tool_fn:
                         try:
-                            result = await execute_tool_fn(
-                                action="call",
+                            result = await execute_mcp_tool_fn(
                                 tool_name=function_name, 
                                 args=arguments if isinstance(arguments, dict) else {}
                             )
-                            logger.info(f"✅ [AUTO REDIRECT] Successfully executed {function_name} via execute_tool wrapper")
+                            logger.info(f"✅ [AUTO REDIRECT] Successfully executed {function_name} via execute_mcp_tool wrapper")
                             return result
                         except Exception as e:
                             logger.error(f"❌ [AUTO REDIRECT] Failed to redirect {function_name}: {e}")
@@ -1803,10 +1861,10 @@ class ResponseProcessor:
                                 output=f"Failed to execute MCP tool {function_name}: {str(e)}"
                             )
                     else:
-                        logger.error(f"❌ [AUTO REDIRECT] execute_tool not found in registry for redirection")
+                        logger.error(f"❌ [AUTO REDIRECT] execute_mcp_tool not found in registry for redirection")
                         return ToolResult(
                             success=False, 
-                            output=f"Tool '{function_name}' is an external MCP integration but execute_tool wrapper not available."
+                            output=f"Tool '{function_name}' is an external MCP integration but execute_mcp_tool wrapper not available."
                         )
                 
                 logger.warning(f"⚠️  Native tool function '{function_name}' not found - attempting JIT auto-activation")

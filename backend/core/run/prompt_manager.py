@@ -13,7 +13,7 @@ from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None) -> dict:
+    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None) -> dict:
         import datetime
         
         if agent_config and agent_config.get('system_prompt'):
@@ -38,6 +38,8 @@ If you need specialized tools, they will become available during execution.
 If relevant context seems missing, ask a clarifying question.
 
 """
+        
+        content = await PromptManager._append_jit_mcp_info(content, mcp_loader)
         
         return {"role": "system", "content": content}
     
@@ -214,10 +216,11 @@ If relevant context seems missing, ask a clarifying question.
             if not available_tools:
                 return system_content
             
-            mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS (USE execute_tool WRAPPER) ---\n"
+            mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
             mcp_jit_info += f"🔥 You have {len(available_tools)} external MCP tools from {len(toolkits)} connected services.\n"
-            mcp_jit_info += "⚡ CRITICAL: Use execute_tool wrapper for ALL external MCP tools to preserve cache efficiency!\n"
-            mcp_jit_info += "🎯 USAGE: execute_tool(action=\"call\", tool_name=\"TOOL_NAME\", args={...})\n\n"
+            mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools() → (2) execute_mcp_tool()\n"
+            mcp_jit_info += "🎯 DISCOVERY: discover_mcp_tools(filter=\"TOOL1,TOOL2,TOOL3\")\n"
+            mcp_jit_info += "🎯 EXECUTION: execute_mcp_tool(tool_name=\"TOOL_NAME\", args={...})\n\n"
             
             toolkit_tools = {}
             for tool_name in available_tools:
@@ -241,24 +244,24 @@ If relevant context seems missing, ask a clarifying question.
                     mcp_jit_info += f"**{toolkit} Functions**: {', '.join(tools)}\n"
             
             mcp_jit_info += "\n🎯 **SMART BATCH DISCOVERY:**\n\n"
-            mcp_jit_info += "**BEFORE DISCOVERY - Check conversation history:**\n"
-            mcp_jit_info += "Are the tool schemas already in this conversation? → Just call them!\n"
-            mcp_jit_info += "Not in history? → Discover ALL needed tools in ONE call\n\n"
+            mcp_jit_info += "**STEP 1: Check conversation history**\n"
+            mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
+            mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
             mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
-            mcp_jit_info += "`execute_tool(action=\"discover\", filter=\"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\")`\n"
+            mcp_jit_info += "`discover_mcp_tools(filter=\"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\")`\n"
             mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
-            mcp_jit_info += "→ Now cached in conversation forever\n"
+            mcp_jit_info += "→ Schemas cached in conversation forever\n"
             mcp_jit_info += "→ NEVER discover these tools again!\n\n"
             mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
             mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
-            mcp_jit_info += "**Then call tools:**\n"
-            mcp_jit_info += "`execute_tool(action=\"call\", tool_name=\"NOTION_CREATE_PAGE\", args={...})`\n"
-            mcp_jit_info += "`execute_tool(action=\"call\", tool_name=\"NOTION_APPEND_BLOCK\", args={...})`\n\n"
-            mcp_jit_info += "⛔ **RULES**:\n"
+            mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
+            mcp_jit_info += "`execute_mcp_tool(tool_name=\"NOTION_CREATE_PAGE\", args={\"title\": \"My Page\", ...})`\n"
+            mcp_jit_info += "`execute_mcp_tool(tool_name=\"NOTION_APPEND_BLOCK\", args={\"page_id\": \"...\", ...})`\n\n"
+            mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
             mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
-            mcp_jit_info += "2. NEVER discover one-by-one (batch them!)\n"
-            mcp_jit_info += "3. NEVER re-discover tools in conversation history\n"
-            mcp_jit_info += "4. Check history first - if schemas exist, just call!\n\n"
+            mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
+            mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
+            mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
             
             return system_content + mcp_jit_info
         except Exception as e:

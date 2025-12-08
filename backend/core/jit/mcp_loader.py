@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
 from core.utils.logger import logger
-from core.jit.mcp_dynamic_registry import get_toolkit_tools
+from core.jit.mcp_registry import get_toolkit_tools
 from core.jit.result_types import ActivationResult, ActivationSuccess, ActivationError, ActivationErrorType
 
 @dataclass
@@ -70,8 +70,13 @@ class MCPJITLoader:
             logger.warning(f"⚠️  [MCP JIT] No tools found for toolkit: {toolkit_slug}")
             return
 
-        tools_to_add = available_tools
-        logger.debug(f"⚡ [MCP JIT] {toolkit_slug}: {len(tools_to_add)} tools discovered and available")
+        enabled_tools = mcp_config.get('enabledTools', [])
+        if enabled_tools:
+            tools_to_add = [tool for tool in available_tools if tool in enabled_tools]
+            logger.debug(f"⚡ [MCP JIT] {toolkit_slug}: Filtered to {len(tools_to_add)}/{len(available_tools)} enabled tools")
+        else:
+            tools_to_add = available_tools
+            logger.debug(f"⚡ [MCP JIT] {toolkit_slug}: No enabledTools filter, loading all {len(tools_to_add)} tools")
         
         for tool_name in tools_to_add:
             if tool_name in self.tool_map:

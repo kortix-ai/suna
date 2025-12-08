@@ -1126,7 +1126,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               <ChatInput
                 ref={chatInputRef}
                 onSubmit={showOptimisticUI ? () => {} : handleSubmitMessage}
-                placeholder={showOptimisticUI ? "Analyzing..." : t('describeWhatYouNeed')}
+                placeholder={t('describeWhatYouNeed')}
                 loading={showOptimisticUI ? false : isSending}
                 disabled={showOptimisticUI || isSending}
                 isAgentRunning={
