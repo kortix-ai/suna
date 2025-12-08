@@ -54,8 +54,10 @@ export function useThreadData(
     refetchInterval: enablePolling ? 1000 : false,
   });
   
-  const effectiveProjectId = projectId || threadQuery.data?.project_id || '';
+  const effectiveProjectId = threadQuery.data?.project_id || projectId || '';
+  const hasThreadData = !!threadQuery.data;
   const projectQuery = useProjectQuery(effectiveProjectId, {
+    enabled: hasThreadData && !!effectiveProjectId,
     refetchOnWindowFocus: true,
     refetchInterval: 10000,
   });
