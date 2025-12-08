@@ -35,6 +35,8 @@ export function getToolTitle(toolName: string): string {
   const toolTitles: Record<string, string> = {
     'execute-command': 'Execute Command',
     'check-command-output': 'Check Command Output',
+    'list-commands': 'Running Commands',
+    'list_commands': 'Running Commands',
     'str-replace': 'String Replace',
     'create-file': 'Create File',
     'full-file-rewrite': 'Rewrite File',
@@ -48,6 +50,12 @@ export function getToolTitle(toolName: string): string {
     'browser-extract-content': 'Browser Extract',
     'browser-screenshot': 'Browser Screenshot',
     'load-image': 'Load Image',
+
+
+    'initialize-tools': 'Initializing Tools',
+    'initialize_tools': 'Initializing Tools',
+
+    
     'ask': 'Ask',
     'complete': 'Task Complete',
     'execute-data-provider-call': 'Data Provider Call',
@@ -1091,7 +1099,7 @@ export function getToolComponent(toolName: string): string {
 
     // String operations
     case 'str-replace':
-      return 'StrReplaceToolView';
+      return 'FileOperationToolView';
 
     // Web operations
     case 'web-search':

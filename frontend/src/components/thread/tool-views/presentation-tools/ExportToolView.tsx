@@ -9,10 +9,7 @@ import {
   LucideIcon,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import {
-  getToolTitle,
-  formatTimestamp,
-} from '../utils';
+import { formatTimestamp } from '../utils';
 import { downloadPresentation, DownloadFormat } from '../utils/presentation-utils';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,8 +32,6 @@ interface FormatConfig {
   defaultExtension: string;
   fileProperty: string;
   downloadFormat: DownloadFormat;
-  gradient: string;
-  iconColor: string;
 }
 
 const formatConfigs: Record<ExportFormat, FormatConfig> = {
@@ -47,8 +42,6 @@ const formatConfigs: Record<ExportFormat, FormatConfig> = {
     defaultExtension: '.pdf',
     fileProperty: 'pdf_file',
     downloadFormat: DownloadFormat.PDF,
-    gradient: 'from-red-500 to-red-600',
-    iconColor: 'text-white',
   },
   pptx: {
     icon: Presentation,
@@ -57,8 +50,6 @@ const formatConfigs: Record<ExportFormat, FormatConfig> = {
     defaultExtension: '.pptx',
     fileProperty: 'pptx_file',
     downloadFormat: DownloadFormat.PPTX,
-    gradient: 'from-orange-500 to-orange-600',
-    iconColor: 'text-white',
   },
 };
 
@@ -212,31 +203,31 @@ export function ExportToolView({
     return (
       <Button
         key={format}
+        variant="outline"
         onClick={() => exportData?.download_url ? handleDirectDownload(format) : handleDownload(config.downloadFormat, format)}
         disabled={!!downloadingFormat || !exportData}
         className={cn(
-          "h-auto py-4 px-5 flex items-center gap-4 justify-start w-full",
-          "bg-gradient-to-r hover:opacity-90 transition-opacity",
-          config.gradient,
-          "text-white border-0 shadow-md"
+          "h-auto py-3 px-4 flex items-center gap-3 justify-start w-full",
+          "bg-background hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors",
+          "border border-border"
         )}
       >
-        <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+        <div className="w-9 h-9 rounded-md bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0">
           {isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin text-white" />
+            <Loader2 className="h-4 w-4 animate-spin text-foreground" />
           ) : (
-            <Icon className="h-5 w-5 text-white" />
+            <Icon className="h-4 w-4 text-foreground" />
           )}
         </div>
         <div className="flex-1 text-left">
-          <div className="font-semibold text-base">
+          <div className="font-medium text-sm text-foreground">
             {isLoading ? 'Downloading...' : `Download ${config.label}`}
           </div>
-          <div className="text-xs text-white/80 font-normal">
+          <div className="text-xs text-muted-foreground font-normal">
             {config.description}
           </div>
         </div>
-        <Download className="h-5 w-5 text-white/80 flex-shrink-0" />
+        <Download className="h-4 w-4 text-muted-foreground flex-shrink-0" />
       </Button>
     );
   };
@@ -244,15 +235,15 @@ export function ExportToolView({
   // Streaming state
   if (isStreaming) {
     return (
-      <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col overflow-hidden bg-card">
+      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
           <div className="flex flex-row items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
-                <Presentation className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+              <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+                <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
               </div>
               <CardTitle className="text-base font-medium">
-                {getToolTitle(name)}
+                {presentationName || 'Export Presentation'}
               </CardTitle>
             </div>
             <Badge className="h-6 bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300 border-0">
@@ -261,15 +252,12 @@ export function ExportToolView({
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="p-8">
-          <div className="flex flex-col items-center justify-center py-8">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-blue-100 to-blue-50 dark:from-blue-800/40 dark:to-blue-900/60">
-              <Loader2 className="h-8 w-8 text-blue-500 animate-spin" />
-            </div>
-            <h3 className="text-lg font-semibold mb-1">Exporting Presentation</h3>
-            <p className="text-sm text-muted-foreground">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-center gap-3 py-4">
+            <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+            <span className="text-sm text-muted-foreground">
               {presentationName || 'Processing...'}
-            </p>
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -277,18 +265,16 @@ export function ExportToolView({
   }
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col overflow-hidden bg-card">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
-              <CheckCircle className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
+            <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+              <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
-            <div>
-              <CardTitle className="text-base font-medium">
-                {getToolTitle(name)}
-              </CardTitle>
-            </div>
+            <CardTitle className="text-base font-medium">
+              {presentationName || 'Export Presentation'}
+            </CardTitle>
           </div>
           <Badge
             className={cn(
@@ -303,36 +289,20 @@ export function ExportToolView({
             ) : (
               <AlertTriangle className="h-3 w-3 mr-1" />
             )}
-            {partialSuccess ? 'Partial' : (isSuccess ? 'Ready' : 'Failed')}
+            {partialSuccess ? 'Partial' : (isSuccess ? 'Exported' : 'Failed')}
           </Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="p-6">
-        {/* Presentation info */}
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-border/50">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/10 to-purple-500/10 border border-blue-500/20 flex items-center justify-center">
-            <Presentation className="h-6 w-6 text-blue-500" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground truncate">
-              {presentationName || 'Presentation'}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {totalSlides ? `${totalSlides} slide${totalSlides !== 1 ? 's' : ''}` : 'Export complete'}
-            </p>
-          </div>
-        </div>
-
-        {/* Download buttons */}
-        <div className="space-y-3">
+      <CardContent className="p-4">
+        <div className="space-y-2">
           {hasPdf && renderDownloadButton('pdf')}
           {hasPptx && renderDownloadButton('pptx')}
           
           {!hasPdf && !hasPptx && (
-            <div className="text-center py-8 text-muted-foreground">
-              <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-amber-500" />
-              <p>No exports available</p>
+            <div className="text-center py-6 text-muted-foreground">
+              <AlertTriangle className="h-5 w-5 mx-auto mb-2" />
+              <p className="text-sm">No exports available</p>
             </div>
           )}
         </div>

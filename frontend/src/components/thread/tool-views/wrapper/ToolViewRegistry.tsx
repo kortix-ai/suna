@@ -4,9 +4,10 @@ import { GenericToolView } from '../GenericToolView';
 import { BrowserToolView } from '../BrowserToolView';
 import { CommandToolView } from '../command-tool/CommandToolView';
 import { CheckCommandOutputToolView } from '../command-tool/CheckCommandOutputToolView';
+import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
+import { ListCommandsToolView } from '../command-tool/ListCommandsToolView';
 import { ExposePortToolView } from '../expose-port-tool/ExposePortToolView';
 import { FileOperationToolView } from '../file-operation/FileOperationToolView';
-import { StrReplaceToolView } from '../str-replace/StrReplaceToolView';
 import { WebCrawlToolView } from '../WebCrawlToolView';
 import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
@@ -14,7 +15,6 @@ import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
-import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { WaitToolView } from '../wait-tool/WaitToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
@@ -73,7 +73,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'execute-command': CommandToolView,
   'check-command-output': CheckCommandOutputToolView,
   'terminate-command': TerminateCommandToolView,
-  'list-commands': GenericToolView,
+  'list-commands': ListCommandsToolView,
 
   'create-file': FileOperationToolView,
   'delete-file': FileOperationToolView,
@@ -83,7 +83,7 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'parse-document': DocumentParserToolView,
 
-  'str-replace': StrReplaceToolView,
+  'str-replace': FileOperationToolView,
 
   'web-search': WebSearchToolView,
   'people-search': PeopleSearchToolView,
@@ -296,9 +296,9 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
     };
   }
 
-  // Wrap all tool views in a container with strict CSS containment to prevent overflow
+  // Wrap all tool views in a container with CSS containment to prevent overflow
   return (
-    <div className="h-full w-full max-h-full max-w-full overflow-hidden min-w-0 min-h-0" style={{ contain: 'strict' }}>
+    <div className="h-full w-full max-h-full max-w-full overflow-auto min-w-0 min-h-0" style={{ contain: 'layout style' }}>
       <ToolViewComponent toolCall={toolCall} toolResult={modifiedToolResult} {...props} />
     </div>
   );

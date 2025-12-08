@@ -304,3 +304,84 @@ async def get_connection_info():
         logger.error(f"Error getting WORKER Redis connection info: {e}")
         return {"error": str(e)}
 
+
+# ============================================================================
+# Redis Streams Operations - for efficient real-time streaming
+# ============================================================================
+
+async def xadd(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True) -> str:
+    """Add an entry to a Redis stream with concurrency limiting.
+    
+    Args:
+        stream_key: The stream key name
+        fields: Dictionary of field-value pairs to add
+        maxlen: Optional max length to cap the stream (with ~ for approximate)
+        approximate: If True, use ~ for approximate maxlen (more efficient)
+    
+    Returns:
+        The message ID of the added entry
+    """
+    async def _op():
+        redis_client = await get_client()
+        kwargs = {}
+        if maxlen is not None:
+            kwargs['maxlen'] = maxlen
+            kwargs['approximate'] = approximate
+        return await redis_client.xadd(stream_key, fields, **kwargs)
+    return await _with_concurrency_limit(_op())
+
+
+async def xread(streams: dict, count: int = None, block: int = None) -> list:
+    """Read from one or more streams with concurrency limiting.
+    
+    Args:
+        streams: Dict of {stream_key: last_id} - use '0' for all, '$' for new only
+        count: Maximum number of entries to return per stream
+        block: Milliseconds to block waiting for data (0 = block forever)
+    
+    Returns:
+        List of [stream_key, [(message_id, fields), ...]] tuples
+    """
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xread(streams, count=count, block=block)
+    return await _with_concurrency_limit(_op())
+
+
+async def xrange(stream_key: str, start: str = '-', end: str = '+', count: int = None) -> list:
+    """Read a range of entries from a stream with concurrency limiting.
+    
+    Args:
+        stream_key: The stream key name
+        start: Start ID (use '-' for beginning)
+        end: End ID (use '+' for end)
+        count: Maximum number of entries to return
+    
+    Returns:
+        List of (message_id, fields) tuples
+    """
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xrange(stream_key, start, end, count=count)
+    return await _with_concurrency_limit(_op())
+
+
+async def xlen(stream_key: str) -> int:
+    """Get the number of entries in a stream."""
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xlen(stream_key)
+    return await _with_concurrency_limit(_op())
+
+
+async def xtrim(stream_key: str, maxlen: int, approximate: bool = True) -> int:
+    """Trim a stream to a maximum length.
+    
+    Returns:
+        Number of entries removed
+    """
+    async def _op():
+        redis_client = await get_client()
+        return await redis_client.xtrim(stream_key, maxlen=maxlen, approximate=approximate)
+    return await _with_concurrency_limit(_op())
+

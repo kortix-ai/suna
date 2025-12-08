@@ -112,7 +112,7 @@ const TriggerListItem = ({
         className="flex items-center justify-between p-5"
       >
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 flex-shrink-0">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 shrink-0">
             <Icon className="h-5 w-5 text-foreground" />
           </div>
           <div className="flex-1 min-w-0">
@@ -268,8 +268,17 @@ export function TriggersPage() {
       <div className="container mx-auto max-w-7xl px-4 py-8">
         <TriggersPageHeader />
       </div>
-      <div className="h-screen flex overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="h-screen 2xl:flex overflow-hidden">
+        {/* Backdrop overlay - shows when sidebar is open on screens < 2xl (1536px) */}
+        {selectedTrigger && (
+          <div
+            className="block 2xl:hidden fixed inset-0 bg-black/70 z-30"
+            onClick={handleClosePanel}
+          />
+        )}
+
+        {/* Main Content - Lower z-index so sidebar overlays it */}
+        <div className="h-full flex flex-col overflow-hidden 2xl:flex-1 relative z-0">
           {/* Search Bar and Create Button */}
           <div className="container mx-auto max-w-7xl px-4">
             <div className="flex items-center justify-between pb-4 pt-3">
@@ -341,11 +350,22 @@ export function TriggersPage() {
             </div>
           </div>
         </div>
+
+        {/* Sidebar Panel - Fixed overlay until 2XL breakpoint (1536px) */}
         <div className={cn(
-          "h-screen transition-all duration-300 ease-in-out overflow-hidden border-l",
+          "h-screen transition-all duration-300 ease-in-out bg-background",
+          // Fixed overlay on < 2xl screens, relative positioning on 2xl+
+          "fixed 2xl:relative top-0 right-0",
+          // Z-index: high on mobile/tablet/desktop, auto on 2xl+
+          "z-40 2xl:z-auto",
+          // Overflow handling - allow scrolling when open, hide when closed
+          selectedTrigger ? "overflow-y-auto overflow-x-hidden" : "overflow-hidden",
+          // Border
+          selectedTrigger && "border-l",
+          // Aggressive width breakpoints - wider for better content display
           selectedTrigger
-            ? "w-full sm:w-[440px] xl:w-2xl"
-            : "w-0"
+            ? "w-full min-[400px]:w-[90vw] min-[500px]:w-[85vw] sm:w-[480px] md:w-[540px] lg:w-[600px] xl:w-[640px] 2xl:w-[580px]"
+            : "w-0 border-none"
         )}>
           {selectedTrigger && (
             <SimplifiedTriggerDetailPanel
@@ -354,6 +374,7 @@ export function TriggersPage() {
             />
           )}
         </div>
+
         {/* Trigger Creation Dialog */}
         {triggerDialogType && (
           <TriggerCreationDialog

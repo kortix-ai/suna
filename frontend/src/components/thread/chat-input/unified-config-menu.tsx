@@ -267,7 +267,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     onClick={() => handleAgentClick(agent.agent_id)}
                                 >
                                     <div className={cn(
-                                        "flex items-center justify-center bg-card border-[1.5px] border-border flex-shrink-0",
+                                        "flex items-center justify-center bg-transparent border-[1.5px] border-border flex-shrink-0",
                                         compact ? "w-8 h-8" : "w-10 h-10 sm:w-8 sm:h-8"
                                     )} style={{ borderRadius: '10.4px' }}>
                                         {renderAgentIcon(agent, compact ? 32 : (isMobile ? 40 : 32))}
@@ -292,7 +292,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 size="sm"
                                 variant="ghost"
                                 className={cn(
-                                    "w-full text-sm text-muted-foreground hover:text-foreground rounded-xl sm:rounded-2xl hover:bg-muted/60",
+                                    "w-full text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60",
                                     compact ? "h-8" : "h-10 sm:h-8"
                                 )}
                                 onClick={handleLoadMore}
@@ -385,7 +385,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return (
             <div className={cn(
                 "flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl",
-                compact ? "mx-1" : ""
+                compact ? "" : ""
             )}>
                 {/* Basic Mode */}
                 <button
@@ -435,10 +435,10 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 >
                     <KortixLogo size={compact ? 10 : 12} variant="symbol" />
                     <span className={cn(
-                        "font-semibold tracking-wide uppercase",
-                        compact ? "text-[10px]" : "text-xs",
+                        "font-medium",
+                        compact ? "text-xs" : "text-sm",
                         isPowerSelected ? "text-primary" : canAccessPower ? "text-muted-foreground" : "text-muted-foreground/50"
-                    )}>Power</span>
+                    )}>Advanced</span>
                     {!canAccessPower && (
                         <Lock className={cn(
                             "text-muted-foreground/50",
@@ -456,7 +456,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 <div className="mb-2 sm:mb-3">
                     <span className="text-xs font-medium text-muted-foreground">Worker Settings</span>
                 </div>
-                <div className="flex justify-between items-center gap-2">
+                <div className="flex items-center gap-2">
                     {[
                         { action: 'instructions' as const, icon: Plug, label: 'Instructions' },
                         { action: 'knowledge' as const, icon: Brain, label: 'Knowledge' },
@@ -469,7 +469,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     variant="ghost"
                                     size="icon"
                                     className={cn(
-                                        "flex-1 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-xl sm:rounded-2xl",
+                                        "flex-1 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-2xl",
                                         compact ? "h-8" : "h-11 sm:h-8"
                                     )}
                                     onClick={() => {
@@ -505,7 +505,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
                         <button 
                             onClick={() => setMobileSection('main')}
-                            className="p-2 -ml-2 hover:bg-muted/50 rounded-xl transition-colors"
+                            className="p-2 -ml-2 hover:bg-muted/50 rounded-2xl transition-colors"
                         >
                             <ChevronLeft className="h-5 w-5 text-muted-foreground" />
                         </button>
@@ -556,7 +556,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         <div className="px-4 pb-2">
                             <button
                                 onClick={() => setMobileSection('agents')}
-                                className="w-full flex items-center gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted/50 active:bg-muted/70 transition-colors"
+                                className="w-full flex items-center gap-3 p-3 rounded-2xl border border-border bg-card hover:bg-muted/50 active:bg-muted/70 transition-colors"
                             >
                                 <div className="flex items-center justify-center w-10 h-10 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                     {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 40)}
@@ -571,7 +571,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 )}
                 
                 {/* Mode toggle */}
-                <div className="px-4 pt-2 pb-1">
+                <div className="px-3 pt-2 pb-1">
                     <span className="text-xs font-medium text-muted-foreground">Mode</span>
                 </div>
                 <div className="px-3 pb-3">
@@ -593,13 +593,13 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+            className="h-10 px-2 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
             aria-label="Config menu"
             onClick={() => setIsOpen(true)}
         >
             {onAgentSelect ? (
                 <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
-                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
+                    {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 24)}
                     <span className="truncate text-sm font-medium">
                         {displayAgent?.name || 'Suna'}
                     </span>
@@ -694,7 +694,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             <div className="px-3 pt-2 pb-1">
                                 <span className="text-xs font-medium text-muted-foreground">Mode</span>
                             </div>
-                            <div className="pb-2">
+                            <div className="px-3 pb-2">
                                 <ModeToggle compact={true} />
                             </div>
                             <div className="h-px bg-border/50 -mx-3 my-2" />
@@ -749,7 +749,7 @@ const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(function GuestMenu() {
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 px-2 bg-border border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
+                        className="h-8 px-2 bg-border border-0 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
                         disabled
                     >
                         <div className="flex items-center gap-2 min-w-0 max-w-[180px]">

@@ -46,6 +46,14 @@
     "general": {
       "title": "Paramètres du Profil",
       "description": "Gère les infos de ton compte",
+      "profilePicture": {
+        "title": "Photo de Profil",
+        "upload": "Télécharger l'avatar",
+        "hint": "JPG, PNG ou GIF. Max 5 Mo.",
+        "invalidType": "Veuillez sélectionner un fichier image",
+        "tooLarge": "L'image doit faire moins de 5 Mo",
+        "uploadFailed": "Échec du téléchargement de la photo de profil"
+      },
       "name": "Nom",
       "email": "Email",
       "namePlaceholder": "Entre ton nom",
@@ -237,6 +245,8 @@
   },
   "sidebar": {
     "referAndEarn": "Parrainer et Gagner",
+    "referralShareTitle": "Parrainer des Amis",
+    "referralShareSubtitle": "Gagnez 400 crédits",
     "new": "Nouveau",
     "upgrade": "Améliorer",
     "chats": "Chats",
@@ -303,9 +313,42 @@
     "customWorkers": "Workers Personnalisés",
     "scheduledTriggers": "Triggers Programmées",
     "appTriggers": "Triggers d'App",
-    "limitsExceeded": "Tu as atteint ta limite de chats ({current}/{limit}). Améliore ton plan pour créer plus de chats.",
+    "limitsExceeded": "Tu as atteint ta limite de chats. Améliore ton plan pour créer plus de chats.",
     "agentInitiatedSuccessfully": "Agent démarré avec succès",
-    "aiAssistantReady": "Ton assistant IA est prêt à aider"
+    "aiAssistantReady": "Ton assistant IA est prêt à aider",
+    "greetings": {
+      "morning": [
+        "Bonjour ! Quoi de prévu aujourd'hui ?",
+        "Salut ! Qu'est-ce qu'on construit ?",
+        "Bonjour ! Prêt à être productif ?"
+      ],
+      "afternoon": [
+        "Bon après-midi ! Comment puis-je aider ?",
+        "Ça roule ? Qu'est-ce qu'on fait ?"
+      ],
+      "evening": [
+        "Bonsoir ! On travaille tard ?",
+        "Salut ! Sur quoi on bosse ce soir ?",
+        "Bonsoir ! C'est parti."
+      ],
+      "random": [
+        "Devine qui est de retour !",
+        "Ohé ! Que peut faire Kortix pour toi ?",
+        "Qu'est-ce que tu veux accomplir ?",
+        "Créons quelque chose de génial",
+        "Prêt quand tu l'es !",
+        "Quoi de neuf ?",
+        "À ton service ! C'est quoi la mission ?",
+        "Faisons de la magie",
+        "Quel défi relève-t-on ?",
+        "Tes désirs sont des ordres",
+        "C'est quoi le programme ?",
+        "Attache ta ceinture ! On va où ?",
+        "Un jour de plus, un projet de plus",
+        "Qu'est-ce qui te trotte dans la tête ?",
+        "Allez, on y va !"
+      ]
+    }
   },
   "thread": {
     "integrations": "Intégrations",

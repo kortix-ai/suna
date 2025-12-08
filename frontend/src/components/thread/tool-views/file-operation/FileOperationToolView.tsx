@@ -9,9 +9,11 @@ import {
   File,
   Copy,
   Check,
-  Maximize2,
   Presentation,
   Pencil,
+  FileDiff,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import {
   formatTimestamp,
@@ -37,6 +39,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { FileDownloadButton } from '../shared/FileDownloadButton';
 
 import {
   getLanguageFromFileName,
@@ -50,8 +53,12 @@ import {
   hasLanguageHighlighting,
   splitContentIntoLines,
   generateEmptyLines,
+  generateLineDiff,
+  calculateDiffStats,
   type FileOperation,
   type OperationConfig,
+  type LineDiff,
+  type DiffStats,
 } from './_utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
@@ -59,6 +66,114 @@ import { toast } from 'sonner';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+
+// Improved diff view components for str-replace operations
+const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
+  <div className="font-mono text-[13px] leading-relaxed">
+    {lineDiff.map((line, i) => (
+      <div
+        key={i}
+        className={cn(
+          "flex border-l-2 transition-colors",
+          line.type === 'removed' && "bg-red-50/80 dark:bg-red-950/40 border-l-red-400 dark:border-l-red-500",
+          line.type === 'added' && "bg-emerald-50/80 dark:bg-emerald-950/40 border-l-emerald-400 dark:border-l-emerald-500",
+          line.type === 'unchanged' && "bg-transparent border-l-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/50",
+        )}
+      >
+        <div className="w-12 text-right select-none py-1 pr-3 text-[11px] text-zinc-400 dark:text-zinc-500 flex-shrink-0 tabular-nums">
+          {line.lineNumber}
+        </div>
+        <div className={cn(
+          "w-6 flex items-center justify-center flex-shrink-0",
+          line.type === 'removed' && "text-red-500 dark:text-red-400",
+          line.type === 'added' && "text-emerald-500 dark:text-emerald-400",
+        )}>
+          {line.type === 'removed' && <span className="font-bold">−</span>}
+          {line.type === 'added' && <span className="font-bold">+</span>}
+        </div>
+        <div className="flex-1 py-1 pr-4 min-w-0">
+          <code className={cn(
+            "whitespace-pre-wrap break-words",
+            line.type === 'removed' && "text-red-800 dark:text-red-300",
+            line.type === 'added' && "text-emerald-800 dark:text-emerald-300",
+            line.type === 'unchanged' && "text-zinc-600 dark:text-zinc-400",
+          )}>
+            {line.type === 'removed' ? line.oldLine : line.type === 'added' ? line.newLine : line.oldLine}
+          </code>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const SplitDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
+  <div className="font-mono text-[13px] leading-relaxed grid grid-cols-2 divide-x divide-zinc-200 dark:divide-zinc-800">
+    {/* Left side - Removed */}
+    <div>
+      <div className="px-3 py-2 bg-red-50/50 dark:bg-red-950/20 border-b border-zinc-200 dark:border-zinc-800">
+        <span className="text-[11px] font-medium text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1.5">
+          <Minus className="h-3 w-3" />
+          Before
+        </span>
+      </div>
+      {lineDiff.map((line, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex border-l-2 transition-colors",
+            line.type === 'removed' && "bg-red-50/80 dark:bg-red-950/40 border-l-red-400",
+            line.type !== 'removed' && "border-l-transparent",
+            line.oldLine === null && "opacity-40"
+          )}
+        >
+          <div className="w-10 text-right select-none py-1 pr-2 text-[11px] text-zinc-400 dark:text-zinc-500 flex-shrink-0 tabular-nums">
+            {line.oldLine !== null ? line.lineNumber : ''}
+          </div>
+          <div className="flex-1 py-1 px-2 min-w-0">
+            <code className={cn(
+              "whitespace-pre-wrap break-words text-xs",
+              line.type === 'removed' ? "text-red-800 dark:text-red-300" : "text-zinc-500 dark:text-zinc-500",
+            )}>
+              {line.oldLine || ''}
+            </code>
+          </div>
+        </div>
+      ))}
+    </div>
+    {/* Right side - Added */}
+    <div>
+      <div className="px-3 py-2 bg-emerald-50/50 dark:bg-emerald-950/20 border-b border-zinc-200 dark:border-zinc-800">
+        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+          <Plus className="h-3 w-3" />
+          After
+        </span>
+      </div>
+      {lineDiff.map((line, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex border-l-2 transition-colors",
+            line.type === 'added' && "bg-emerald-50/80 dark:bg-emerald-950/40 border-l-emerald-400",
+            line.type !== 'added' && "border-l-transparent",
+            line.newLine === null && "opacity-40"
+          )}
+        >
+          <div className="w-10 text-right select-none py-1 pr-2 text-[11px] text-zinc-400 dark:text-zinc-500 flex-shrink-0 tabular-nums">
+            {line.newLine !== null ? line.lineNumber : ''}
+          </div>
+          <div className="flex-1 py-1 px-2 min-w-0">
+            <code className={cn(
+              "whitespace-pre-wrap break-words text-xs",
+              line.type === 'added' ? "text-emerald-800 dark:text-emerald-300" : "text-zinc-500 dark:text-zinc-500",
+            )}>
+              {line.newLine || ''}
+            </code>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 // Helper functions for presentation slide detection
 // Helper function to check if a filepath is a presentation slide file
@@ -115,17 +230,27 @@ export function FileOperationToolView({
 
   // Add copy functionality state
   const [isCopyingContent, setIsCopyingContent] = useState(false);
+  const [diffViewMode, setDiffViewMode] = useState<'unified' | 'split'>('unified');
 
   const operation = getOperationType(name, args);
+  const isStrReplace = operation === 'str-replace';
   const configs = getOperationConfigs();
   const config = configs[operation];
   const Icon = config.icon;
 
   let filePath: string | null = null;
   let fileContent: string | null = null;
+  let oldStr: string | null = null;
+  let newStr: string | null = null;
 
   // Extract file path from arguments (from metadata)
   filePath = args.file_path || args.target_file || args.path || null;
+  
+  // Extract str-replace specific arguments
+  if (isStrReplace) {
+    oldStr = args.old_str || args.old_string || null;
+    newStr = args.new_str || args.new_string || null;
+  }
   
   // Also try to get file path from output first (more reliable for completed operations)
   if (output && typeof output === 'object' && output !== null) {
@@ -148,6 +273,13 @@ export function FileOperationToolView({
       } else if (operation === 'edit') {
         if (parsed.code_edit) {
           fileContent = parsed.code_edit;
+        }
+      } else if (isStrReplace) {
+        if (parsed.old_str || parsed.old_string) {
+          oldStr = parsed.old_str || parsed.old_string;
+        }
+        if (parsed.new_str || parsed.new_string) {
+          newStr = parsed.new_str || parsed.new_string;
         }
       }
 
@@ -206,6 +338,37 @@ export function FileOperationToolView({
               .replace(/\\\\/g, '\\');
           }
         }
+      } else if (isStrReplace) {
+        // Extract old_str
+        const oldStrMatch = streamingText.match(/"(?:old_str|old_string)"\s*:\s*"/);
+        if (oldStrMatch) {
+          const startIndex = oldStrMatch.index! + oldStrMatch[0].length;
+          let rawContent = streamingText.substring(startIndex);
+          const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+          if (endQuoteMatch) {
+            rawContent = rawContent.substring(0, endQuoteMatch.index);
+          }
+          try {
+            oldStr = JSON.parse('"' + rawContent + '"');
+          } catch {
+            oldStr = rawContent.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+          }
+        }
+        // Extract new_str
+        const newStrMatch = streamingText.match(/"(?:new_str|new_string)"\s*:\s*"/);
+        if (newStrMatch) {
+          const startIndex = newStrMatch.index! + newStrMatch[0].length;
+          let rawContent = streamingText.substring(startIndex);
+          const endQuoteMatch = rawContent.match(/(?<!\\)"/);
+          if (endQuoteMatch) {
+            rawContent = rawContent.substring(0, endQuoteMatch.index);
+          }
+          try {
+            newStr = JSON.parse('"' + rawContent + '"');
+          } catch {
+            newStr = rawContent.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\r/g, '\r').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+          }
+        }
       }
 
       // Extract file_path from partial JSON
@@ -228,10 +391,29 @@ export function FileOperationToolView({
       if (!filePath && output.file_path) {
         filePath = output.file_path;
       }
+      // Extract str-replace data from output
+      if (isStrReplace) {
+        oldStr = oldStr || output.old_str || output.old_string || null;
+        newStr = newStr || output.new_str || output.new_string || null;
+      }
     } else if (typeof output === 'string' && operation !== 'delete' && operation !== 'create') {
       fileContent = output;
     }
   }
+
+  // For str-replace, we don't override fileContent - we use oldStr and newStr directly for Source/Preview
+
+  // Generate diff data for str-replace and edit operations
+  const lineDiff = React.useMemo(() => {
+    if (oldStr && newStr) {
+      return generateLineDiff(oldStr, newStr);
+    }
+    return [];
+  }, [oldStr, newStr]);
+
+  const diffStats: DiffStats = React.useMemo(() => {
+    return calculateDiffStats(lineDiff);
+  }, [lineDiff]);
 
   const toolTitle = getToolTitle(name || `file-${operation}`);
   const processedFilePath = processFilePath(filePath);
@@ -567,8 +749,136 @@ export function FileOperationToolView({
     ? `${toolTitle} - ${presentationName}${slideNumber ? ` (Slide ${slideNumber})` : ''}`
     : toolTitle;
 
+  // Check if we have diff data available (for edit with original content)
+  const hasDiffData = (operation === 'edit' && oldStr && newStr);
+
+  // =====================================================
+  // STR-REPLACE: Dedicated view without tabs
+  // =====================================================
+  if (isStrReplace) {
+    return (
+      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
+        {/* Header */}
+        <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
+          <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
+              <div className={cn("relative p-2 rounded-lg border flex-shrink-0", `bg-gradient-to-br ${headerGradientBg}`, headerBorderColor)}>
+                <HeaderIcon className={cn("h-5 w-5", headerIconColor)} />
+              </div>
+              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                {displayTitle}
+              </CardTitle>
+              {/* File path badge */}
+              {processedFilePath && (
+                <code className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
+                  {fileName}
+                </code>
+              )}
+            </div>
+            {/* View mode toggle */}
+            {oldStr && newStr && (
+              <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-md p-0.5">
+                <button
+                  onClick={() => setDiffViewMode('unified')}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-medium rounded transition-all",
+                    diffViewMode === 'unified' 
+                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm" 
+                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  )}
+                >
+                  Unified
+                </button>
+                <button
+                  onClick={() => setDiffViewMode('split')}
+                  className={cn(
+                    "px-2.5 py-1 text-xs font-medium rounded transition-all",
+                    diffViewMode === 'split' 
+                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm" 
+                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  )}
+                >
+                  Split
+                </button>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+
+        {/* Content - Direct diff view */}
+        <CardContent className="p-0 h-full flex-1 overflow-hidden relative bg-white dark:bg-zinc-950 flex flex-col min-h-0 max-w-full min-w-0">
+          {isStreaming && (!oldStr || !newStr) ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto bg-gradient-to-b from-violet-100 to-violet-50 dark:from-violet-800/40 dark:to-violet-900/60">
+                  <FileDiff className="h-8 w-8 text-violet-500 dark:text-violet-400" />
+                </div>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">Processing changes...</p>
+              </div>
+            </div>
+          ) : !oldStr || !newStr ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60">
+                  <CheckCircle className="h-8 w-8 text-emerald-500 dark:text-emerald-400" />
+                </div>
+                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Replacement Complete</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{processedFilePath}</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <ScrollArea className="flex-1 min-h-0">
+                <div className="bg-white dark:bg-zinc-950">
+                  {diffViewMode === 'unified' ? (
+                    <UnifiedDiffView lineDiff={lineDiff} fileName={fileName} />
+                  ) : (
+                    <SplitDiffView lineDiff={lineDiff} />
+                  )}
+                </div>
+              </ScrollArea>
+              {/* Streaming indicator */}
+              {isStreaming && (
+                <div className="px-4 py-2 bg-violet-50 dark:bg-violet-950/30 border-t border-violet-200 dark:border-violet-800 flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                  <span className="text-xs text-violet-600 dark:text-violet-400">Streaming changes...</span>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+
+        {/* Footer */}
+        <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
+          <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+            <Badge variant="outline" className="py-0.5 h-6">
+              <FileIcon className="h-3 w-3 mr-1" />
+              {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
+            </Badge>
+            {diffStats.additions + diffStats.deletions > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-emerald-600 dark:text-emerald-400">+{diffStats.additions}</span>
+                <span className="text-red-600 dark:text-red-400">-{diffStats.deletions}</span>
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            {toolTimestamp && !isStreaming
+              ? formatTimestamp(toolTimestamp)
+              : assistantTimestamp
+                ? formatTimestamp(assistantTimestamp)
+                : ''}
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  // =====================================================
+  // OTHER FILE OPERATIONS: Tabs-based view
+  // =====================================================
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
+    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card max-w-full min-w-0">
       <Tabs defaultValue="preview" className="w-full h-full max-w-full min-w-0">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
           <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
@@ -594,6 +904,15 @@ export function FileOperationToolView({
                   <Eye className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Preview</span>
                 </TabsTrigger>
+                {hasDiffData && (
+                  <TabsTrigger
+                    value="changes"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all [&[data-state=active]]:bg-white [&[data-state=active]]:dark:bg-primary/10 [&[data-state=active]]:text-foreground hover:bg-background/50 text-muted-foreground shadow-none"
+                  >
+                    <FileDiff className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Changes</span>
+                  </TabsTrigger>
+                )}
               </TabsList>
             </div>
             <div className='flex items-center gap-1.5 flex-shrink-0'>
@@ -613,7 +932,13 @@ export function FileOperationToolView({
                   )}
                 </Button>
               )}
-              {/* Edit in Files Manager button */}
+              {fileContent && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
+                <FileDownloadButton
+                  content={fileContent}
+                  fileName={fileName}
+                  disabled={isStreaming}
+                />
+              )}
               {processedFilePath && !isStreaming && !isPresentationSlide && operation !== 'delete' && (
                 <Button
                   variant="outline"
@@ -626,7 +951,6 @@ export function FileOperationToolView({
                   <span className="text-xs hidden sm:inline">Edit</span>
                 </Button>
               )}
-              {/* Presentation fullscreen button */}
               {isPresentationSlide && presentationName && project?.sandbox?.sandbox_url && !isStreaming && (
                 <Button
                   variant="ghost"
@@ -689,18 +1013,15 @@ export function FileOperationToolView({
           </TabsContent>
 
           <TabsContent value="preview" className="w-full max-w-full flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-900 flex flex-col min-h-0 min-w-0">
-            {/* Presentation slides have their own loading/streaming state */}
             {isPresentationSlide && presentationName ? (
               <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>
             ) : isHtml && htmlPreviewUrl ? (
-              // For HTML files, render iframe directly without ScrollArea for full viewport
               <div className="w-full max-w-full h-full relative bg-white dark:bg-zinc-900 flex-1 min-h-0 min-w-0 overflow-hidden">
                 {renderFilePreview()}
               </div>
             ) : (
-              // For non-HTML files, use ScrollArea with smooth auto-scroll
               <ScrollArea ref={previewScrollRef} className="h-full w-full max-w-full flex-1 min-h-0 bg-white dark:bg-zinc-900 min-w-0">
                 {!fileContent && !isStreaming ? (
                   <LoadingState
@@ -727,16 +1048,87 @@ export function FileOperationToolView({
               </ScrollArea>
             )}
           </TabsContent>
+
+          {hasDiffData && (
+            <TabsContent value="changes" className="flex-1 h-full mt-0 p-0 overflow-hidden bg-white dark:bg-zinc-950 flex flex-col min-h-0 max-w-full min-w-0">
+              {isStreaming && (!oldStr || !newStr) ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto bg-gradient-to-b from-violet-100 to-violet-50 dark:from-violet-800/40 dark:to-violet-900/60">
+                      <FileDiff className="h-8 w-8 text-violet-500 dark:text-violet-400" />
+                    </div>
+                    <p className="text-sm text-zinc-500 dark:text-zinc-400">Processing changes...</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 text-xs font-medium">
+                        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <Plus className="h-3.5 w-3.5" />
+                          {diffStats.additions} added
+                        </span>
+                        <span className="text-zinc-300 dark:text-zinc-700">·</span>
+                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                          <Minus className="h-3.5 w-3.5" />
+                          {diffStats.deletions} removed
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-md p-0.5">
+                      <button
+                        onClick={() => setDiffViewMode('unified')}
+                        className={cn(
+                          "px-2.5 py-1 text-xs font-medium rounded transition-all",
+                          diffViewMode === 'unified' 
+                            ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm" 
+                            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                        )}
+                      >
+                        Unified
+                      </button>
+                      <button
+                        onClick={() => setDiffViewMode('split')}
+                        className={cn(
+                          "px-2.5 py-1 text-xs font-medium rounded transition-all",
+                          diffViewMode === 'split' 
+                            ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm" 
+                            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                        )}
+                      >
+                        Split
+                      </button>
+                    </div>
+                  </div>
+                  <ScrollArea className="flex-1 min-h-0">
+                    <div className="bg-white dark:bg-zinc-950">
+                      {diffViewMode === 'unified' ? (
+                        <UnifiedDiffView lineDiff={lineDiff} fileName={fileName} />
+                      ) : (
+                        <SplitDiffView lineDiff={lineDiff} />
+                      )}
+                    </div>
+                  </ScrollArea>
+                  {isStreaming && oldStr && newStr && (
+                    <div className="px-4 py-2 bg-violet-50 dark:bg-violet-950/30 border-t border-violet-200 dark:border-violet-800 flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                      <span className="text-xs text-violet-600 dark:text-violet-400">Streaming changes...</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </TabsContent>
+          )}
         </CardContent>
 
         <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
           <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
             <Badge variant="outline" className="py-0.5 h-6">
-              <FileIcon className="h-3 w-3" />
+              <FileIcon className="h-3 w-3 mr-1" />
               {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
             </Badge>
           </div>
-
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
             {toolTimestamp && !isStreaming
               ? formatTimestamp(toolTimestamp)

@@ -188,9 +188,13 @@ export function XlsxRenderer({
           if (!resp.ok) throw new Error(`Fetch failed: ${resp.status}`);
           arrayBuffer = await resp.arrayBuffer();
         } else if (resolvedSandboxId && session?.access_token) {
-          const normalizedPath = xlsxPath.startsWith('/workspace') 
-            ? xlsxPath 
-            : `/workspace/${xlsxPath.startsWith('/') ? xlsxPath.substring(1) : xlsxPath}`;
+          // Handle paths that start with "workspace" (without leading /)
+          let normalizedPath = xlsxPath;
+          if (xlsxPath === 'workspace' || xlsxPath.startsWith('workspace/')) {
+            normalizedPath = '/' + xlsxPath;
+          } else if (!xlsxPath.startsWith('/workspace')) {
+            normalizedPath = `/workspace/${xlsxPath.startsWith('/') ? xlsxPath.substring(1) : xlsxPath}`;
+          }
           
           const url = new URL(`${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${resolvedSandboxId}/files/content`);
           url.searchParams.append('path', normalizedPath);

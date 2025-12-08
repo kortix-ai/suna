@@ -101,6 +101,10 @@ const uploadFiles = async (
       });
 
       if (!response.ok) {
+        // Handle HTTP 431 - Request Header Fields Too Large
+        if (response.status === 431) {
+          throw new Error('Request is too large. Try uploading one file at a time.');
+        }
         throw new Error(`Upload failed: ${response.statusText}`);
       }
 
@@ -208,6 +212,10 @@ const uploadFilesToProject = async (
       });
 
       if (!response.ok) {
+        // Handle HTTP 431 - Request Header Fields Too Large
+        if (response.status === 431) {
+          throw new Error('Request is too large. Try uploading one file at a time.');
+        }
         throw new Error(`Upload failed: ${response.statusText}`);
       }
 
@@ -359,15 +367,15 @@ export const FileUploadHandler = memo(forwardRef<
                 onClick={handleFileUpload}
                 variant="outline"
                 size="sm"
-                className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
                 disabled={
                   !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
                 }
               >
                 {isUploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <Paperclip className="h-4 w-4" />
+                  <Paperclip className="h-5 w-5" />
                 )}
               </Button>
             </span>

@@ -25,7 +25,6 @@ import {
   ChevronRight,
   Search,
   Save,
-  Loader2,
   User,
   Settings,
   Info,
@@ -59,6 +58,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { backendApi } from '@/lib/api-client';
 import { composioApi } from '@/hooks/composio/utils';
 import { ComposioToolsSelector } from './composio-tools-selector';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 interface ComposioConnectorProps {
   app: ComposioToolkit;
@@ -73,7 +73,6 @@ enum Step {
   ProfileSelect = 'profile-select',
   ProfileCreate = 'profile-create',
   Connecting = 'connecting',
-  ToolsSelection = 'tools-selection',
   Success = 'success',
 }
 
@@ -106,12 +105,6 @@ const stepConfigs: StepConfig[] = [
     showInProgress: true,
   },
   {
-    id: Step.ToolsSelection,
-    title: 'Select Tools',
-    icon: <Settings className="h-4 w-4" />,
-    showInProgress: true,
-  },
-  {
     id: Step.Success,
     title: 'Complete',
     description: 'Successfully connected',
@@ -135,8 +128,7 @@ const StepIndicator = ({
   const visibleSteps =
     mode === 'profile-only'
       ? stepConfigs.filter(
-          (step) =>
-            step.id !== Step.ToolsSelection && step.id !== Step.ProfileSelect,
+          (step) => step.id !== Step.ProfileSelect,
         )
       : stepConfigs;
 
@@ -373,7 +365,7 @@ const ToolPreviewCard = ({
 
   return (
     <div
-      className="border rounded-md p-2 hover:bg-muted/30 transition-colors group cursor-pointer"
+      className="border rounded-2xl p-2 hover:bg-muted/30 transition-colors group cursor-pointer"
       title={tool.description} // Show full description on hover
     >
       <div className="flex items-center gap-2">
@@ -430,6 +422,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   >({});
 
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [isSavingTools, setIsSavingTools] = useState(false);
 
   const { mutate: createProfile, isPending: isCreating } =
     useCreateComposioProfile();
@@ -560,29 +553,38 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSaveTools = async () => {
-    if (!selectedProfile || !agentId) return;
+  const handleSaveTools = async (profileId: string, toolsToSave?: string[]) => {
+    if (!agentId) return;
 
-    const mcpConfigResponse = await composioApi.getMcpConfigForProfile(
-      selectedProfile.profile_id,
-    );
-    const response = await backendApi.put(
-      `/agents/${agentId}/custom-mcp-tools`,
-      {
-        custom_mcps: [
-          {
-            ...mcpConfigResponse.mcp_config,
-            enabledTools: selectedTools,
-          },
-        ],
-      },
-    );
-    if (response.data.success) {
-      toast.success(
-        `Added ${selectedTools.length} ${selectedProfile.toolkit_name} tools to your agent!`,
+    setIsSavingTools(true);
+    try {
+      const mcpConfigResponse = await composioApi.getMcpConfigForProfile(profileId);
+      
+      const toolsArray = toolsToSave || selectedTools;
+      
+      const response = await backendApi.put(
+        `/agents/${agentId}/custom-mcp-tools`,
+        {
+          custom_mcps: [
+            {
+              ...mcpConfigResponse.mcp_config,
+              enabledTools: toolsArray,
+            },
+          ],
+        },
       );
-      onComplete(selectedProfile.profile_id, app.name, app.slug);
-      onOpenChange(false);
+      
+      if (response.data.success) {
+        toast.success(
+          `Added ${toolsArray.length} ${app.name} tool${toolsArray.length === 1 ? '' : 's'} to your agent!`,
+        );
+        onComplete(profileId, app.name, app.slug);
+        onOpenChange(false);
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save tools');
+    } finally {
+      setIsSavingTools(false);
     }
   };
 
@@ -599,7 +601,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     setCurrentStep(newStep);
   };
 
-  const handleProfileSelect = () => {
+  const handleProfileSelect = async () => {
     if (selectedProfileId === 'new') {
       navigateToStep(Step.ProfileCreate);
     } else if (selectedProfileId) {
@@ -610,7 +612,15 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
         setSelectedProfile(profile);
         setCreatedProfileId(profile.profile_id);
         if (mode === 'full' && agentId) {
-          navigateToStep(Step.ToolsSelection);
+          setIsSavingTools(true);
+          try {
+            const toolsData = await composioApi.getTools(profile.toolkit_slug, 1000);
+            const allToolSlugs = toolsData.tools?.map((tool) => tool.slug) || [];
+            await handleSaveTools(profile.profile_id, allToolSlugs);
+          } catch (error: any) {
+            setIsSavingTools(false);
+            toast.error(error.message || 'Failed to fetch tools');
+          }
         } else {
           onComplete(profile.profile_id, app.name, app.slug);
           onOpenChange(false);
@@ -657,7 +667,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
         use_custom_auth: useCustomAuth,
       },
       {
-        onSuccess: (response) => {
+        onSuccess: async (response) => {
           setCreatedProfileId(response.profile_id);
           if (response.redirect_url) {
             setRedirectUrl(response.redirect_url);
@@ -669,19 +679,15 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
             );
           } else {
             if (mode === 'full' && agentId) {
-              const newProfile = {
-                profile_id: response.profile_id,
-                profile_name: profileName,
-                toolkit_name: app.name,
-                toolkit_slug: app.slug,
-                is_connected: true,
-                created_at: new Date().toISOString(),
-                mcp_url: response.mcp_url || '',
-                display_name: profileName,
-                is_default: false,
-              };
-              setSelectedProfile(newProfile);
-              navigateToStep(Step.ToolsSelection);
+              setIsSavingTools(true);
+              try {
+                const toolsData = await composioApi.getTools(app.slug, 1000);
+                const allToolSlugs = toolsData.tools?.map((tool) => tool.slug) || [];
+                await handleSaveTools(response.profile_id, allToolSlugs);
+              } catch (error: any) {
+                setIsSavingTools(false);
+                toast.error(error.message || 'Failed to fetch and save tools');
+              }
             } else {
               navigateToStep(Step.Success);
               setTimeout(() => {
@@ -698,23 +704,17 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     );
   };
 
-  const handleAuthComplete = () => {
+  const handleAuthComplete = async () => {
     if (createdProfileId && mode === 'full' && agentId) {
-      const profile = existingProfiles.find(
-        (p) => p.profile_id === createdProfileId,
-      ) || {
-        profile_id: createdProfileId,
-        profile_name: profileName,
-        toolkit_name: app.name,
-        toolkit_slug: app.slug,
-        is_connected: true,
-        created_at: new Date().toISOString(),
-        mcp_url: '',
-        display_name: profileName,
-        is_default: false,
-      };
-      setSelectedProfile(profile);
-      navigateToStep(Step.ToolsSelection);
+      setIsSavingTools(true);
+      try {
+        const toolsData = await composioApi.getTools(app.slug, 1000);
+        const allToolSlugs = toolsData.tools?.map((tool) => tool.slug) || [];
+        await handleSaveTools(createdProfileId, allToolSlugs);
+      } catch (error: any) {
+        setIsSavingTools(false);
+        toast.error(error.message || 'Failed to fetch and save tools');
+      }
     } else if (createdProfileId) {
       navigateToStep(Step.Success);
       setTimeout(() => {
@@ -724,12 +724,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     }
   };
 
-  const handleToolsSave = () => {
-    if (createdProfileId) {
-      onComplete(createdProfileId, app.name, app.slug);
-      onOpenChange(false);
-    }
-  };
 
   const handleBack = () => {
     switch (currentStep) {
@@ -752,9 +746,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       case Step.Connecting:
         navigateToStep(Step.ProfileCreate);
         break;
-      case Step.ToolsSelection:
-        navigateToStep(Step.ProfileSelect);
-        break;
       default:
         break;
     }
@@ -774,20 +765,28 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+        <DialogContent
         hideCloseButton
         className={cn(
           'overflow-hidden gap-0',
-          currentStep === Step.ToolsSelection
-            ? 'max-w-2xl h-[85vh] p-0 flex flex-col'
-            : currentStep === Step.ProfileSelect
-              ? 'max-w-2xl p-0'
-              : 'max-w-lg p-0',
+          currentStep === Step.ProfileSelect
+            ? 'max-w-2xl p-0'
+            : 'max-w-lg p-0',
         )}
       >
         <StepIndicator currentStep={currentStep} mode={mode} />
 
-        {currentStep !== Step.ToolsSelection ? (
+        {isSavingTools ? (
+          <div className="flex flex-col items-center justify-center py-16 px-6">
+            <div className="mb-4">
+              <KortixLoader size="large" />
+            </div>
+            <h3 className="font-semibold text-lg mb-2">Adding Tools...</h3>
+            <p className="text-sm text-muted-foreground text-center">
+              Please wait while we add all {app.name} tools to your agent
+            </p>
+          </div>
+        ) : (
           <>
             <DialogHeader className="px-6 pb-3">
               <div className="flex items-center gap-3">
@@ -1097,11 +1096,17 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                           disabled={
                             !selectedConnectionType ||
                             (selectedConnectionType === 'existing' &&
-                              !selectedProfileId)
+                              !selectedProfileId) ||
+                            isSavingTools
                           }
                           className="px-8 min-w-[120px]"
                         >
-                          {selectedConnectionType === 'new' ? (
+                          {isSavingTools ? (
+                            <>
+                              <KortixLoader customSize={16} />
+                              Adding Tools...
+                            </>
+                          ) : selectedConnectionType === 'new' ? (
                             <>
                               Create Connection
                               <ChevronRight className="h-4 w-4 ml-1" />
@@ -1110,7 +1115,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             selectedProfileId ? (
                             <>
                               {mode === 'full' && agentId
-                                ? 'Configure Tools'
+                                ? 'Add All Tools'
                                 : 'Use Profile'}
                               <ChevronRight className="h-4 w-4 ml-1" />
                             </>
@@ -1153,7 +1158,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                           />
                           <div className="absolute right-2 top-1/2 -translate-y-1/2">
                             {isCheckingName && profileName.length > 0 && (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                              <KortixLoader customSize={14} />
                             )}
                             {!isCheckingName &&
                               nameAvailability &&
@@ -1313,145 +1318,9 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             )}
                           </div>
                         )}
-                      {/* {toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation && (
-                        <div className="space-y-3 border rounded-lg p-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Shield className="h-3.5 w-3.5 text-primary" />
-                              <div>
-                                <Label htmlFor="custom-auth" className="text-sm font-medium cursor-pointer">
-                                  Custom OAuth App
-                                  {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug) && (
-                                    <Badge variant="secondary" className="ml-2 text-xs">Required</Badge>
-                                  )}
-                                </Label>
-                                <p className="text-xs text-muted-foreground">
-                                  {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)
-                                    ? `${app.name} requires your own OAuth credentials`
-                                    : 'Use your own OAuth credentials'
-                                  }
-                                </p>
-                              </div>
-                            </div>
-                            <Switch
-                              id="custom-auth"
-                              checked={useCustomAuth}
-                              disabled={CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)}
-                              onCheckedChange={(checked) => {
-                                if (CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)) return;
-                                setUseCustomAuth(checked);
-                                if (checked && toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.optional) {
-                                  const defaults: Record<string, string> = {};
-                                  for (const field of toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional) {
-                                    if (field.default) {
-                                      defaults[field.name] = field.default;
-                                    }
-                                  }
-                                  setCustomAuthConfig(prev => ({ ...prev, ...defaults }));
-                                }
-                              }}
-                            />
-                          </div>
-                          <AnimatePresence>
-                            {useCustomAuth && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.2 }}
-                                className="overflow-hidden"
-                              >
-                                <div className="space-y-2 pt-2 border-t">
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required?.map((field) => (
-                                      <div key={field.name} className="space-y-1">
-                                        <Label htmlFor={`auth-${field.name}`} className="text-xs">
-                                          {field.displayName}
-                                          <span className="text-destructive ml-1">*</span>
-                                        </Label>
-                                        <Input
-                                          id={`auth-${field.name}`}
-                                          type={field.name.includes('secret') ? 'password' : 'text'}
-                                          value={customAuthConfig[field.name] || ''}
-                                          onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
-                                          placeholder={`Enter ${field.displayName.toLowerCase()}`}
-                                          className={cn(
-                                            "h-8 text-xs",
-                                            customAuthConfigErrors[field.name] && "border-destructive"
-                                          )}
-                                        />
-                                        {customAuthConfigErrors[field.name] && (
-                                          <p className="text-[10px] text-destructive">
-                                            {customAuthConfigErrors[field.name]}
-                                          </p>
-                                        )}
-                                      </div>
-                                    ))}
-                                    {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional
-                                      ?.filter(field => !['bearer_token', 'access_token'].includes(field.name))
-                                      .map((field) => (
-                                        <div key={field.name} className={cn(
-                                          "space-y-1",
-                                          ['oauth_redirect_uri', 'scopes'].includes(field.name) ? 'sm:col-span-2' : ''
-                                        )}>
-                                          <Label htmlFor={`auth-opt-${field.name}`} className="text-xs">
-                                            {field.displayName}
-                                          </Label>
-                                          {field.name === 'oauth_redirect_uri' && field.default ? (
-                                            <div className="flex gap-1">
-                                              <Input
-                                                id={`auth-opt-${field.name}`}
-                                                value={field.default}
-                                                className="h-8 text-[10px] flex-1"
-                                                readOnly
-                                              />
-                                              <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-8 px-2 text-xs"
-                                                onClick={() => {
-                                                  navigator.clipboard.writeText(field.default || '');
-                                                  toast.success('Copied!');
-                                                }}
-                                              >
-                                                Copy
-                                              </Button>
-                                            </div>
-                                          ) : (
-                                            <Input
-                                              id={`auth-opt-${field.name}`}
-                                              type={field.name.includes('secret') ? 'password' : 'text'}
-                                              value={customAuthConfig[field.name] || field.default || ''}
-                                              onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
-                                              placeholder={field.default || `Enter ${field.displayName.toLowerCase()}`}
-                                              className={cn(
-                                                "h-8 text-xs",
-                                                field.name === 'scopes' && "text-[10px]"
-                                              )}
-                                            />
-                                          )}
-                                          {field.description && (
-                                            <p className="text-[10px] text-muted-foreground">
-                                              {field.description}
-                                            </p>
-                                          )}
-                                        </div>
-                                      ))}
-                                  </div>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      )} */}
-
-                      {/* Loading State */}
                       {isLoadingToolkitDetails && (
                         <div className="space-y-3">
                           <Skeleton className="h-4 w-32" />
-                          {/* <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-10 w-full" /> */}
                         </div>
                       )}
                     </div>
@@ -1482,7 +1351,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                       >
                         {isCreating ? (
                           <>
-                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            <KortixLoader customSize={14} className="mr-1" />
                             Creating...
                           </>
                         ) : (
@@ -1527,9 +1396,22 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                       </AlertDescription>
                     </Alert>
                   )}
-                  <Button onClick={handleAuthComplete} className="w-full">
-                    I've Completed Authentication
-                    <ChevronRight className="h-4 w-4" />
+                  <Button 
+                    onClick={handleAuthComplete} 
+                    className="w-full"
+                    disabled={isSavingTools}
+                  >
+                    {isSavingTools ? (
+                      <>
+                        <KortixLoader customSize={16}/>
+                        Adding Tools...
+                      </>
+                    ) : (
+                      <>
+                        I've Completed Authentication
+                        <ChevronRight className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 </div>
               )}
@@ -1551,71 +1433,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                 </div>
               )}
             </div>
-          </>
-        ) : (
-          <>
-            <DialogHeader className="px-8 border-border/50 flex-shrink-0 bg-muted/10">
-              <div className="flex items-center gap-4">
-                {app.logo ? (
-                  <img
-                    src={app.logo}
-                    alt={app.name}
-                    className="w-14 h-14 rounded-xl object-contain bg-muted p-2 border"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary font-semibold shadow-sm">
-                    {app.name.charAt(0) || 'T'}
-                  </div>
-                )}
-                <div className="flex-1">
-                  <DialogTitle className="text-xl font-semibold">
-                    Configure {app.name} Tools
-                  </DialogTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Select tools to add to your agent
-                  </p>
-                </div>
-              </div>
-            </DialogHeader>
-            {currentStep === Step.ToolsSelection && (
-              <div className="flex-1 flex flex-col min-h-0">
-                {selectedProfile && (
-                  <ComposioToolsSelector
-                    profileId={selectedProfile.profile_id}
-                    agentId={agentId}
-                    toolkitName={selectedProfile.toolkit_name || app.name}
-                    toolkitSlug={selectedProfile.toolkit_slug || app.slug}
-                    selectedTools={selectedTools}
-                    onToolsChange={setSelectedTools}
-                    onSave={handleSaveTools}
-                    showSaveButton={false}
-                    className="flex-1 min-h-0"
-                  />
-                )}
-                <div className="px-6 py-4 border-t bg-muted/20 flex-shrink-0">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                      {selectedTools.length > 0
-                        ? `${selectedTools.length} tool${selectedTools.length === 1 ? '' : 's'} will be added to your agent`
-                        : 'No tools selected'}
-                    </div>
-                    <div className="flex gap-3">
-                      <Button variant="outline" onClick={handleBack}>
-                        <ArrowLeft className="h-4 w-4" />
-                        Back
-                      </Button>
-                      <Button
-                        onClick={handleSaveTools}
-                        className="min-w-[80px]"
-                      >
-                        <Save className="h-4 w-4" />
-                        Save Tools
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </>
         )}
       </DialogContent>

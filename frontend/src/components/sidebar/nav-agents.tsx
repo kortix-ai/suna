@@ -15,7 +15,8 @@ import {
   ChevronRight,
   ChevronLeft,
   Zap,
-  Folder
+  Folder,
+  Frown
 } from "lucide-react"
 import { ThreadIcon } from "./thread-icon"
 import { toast } from "sonner"
@@ -182,7 +183,7 @@ const ThreadItem: React.FC<{
                 <DropdownMenuTrigger asChild>
                   <button
                     className={cn(
-                      "absolute top-1/2 right-0 -translate-y-1/2 p-1 rounded-md hover:bg-accent transition-all text-muted-foreground",
+                      "absolute top-1/2 right-0 -translate-y-1/2 p-1 rounded-2xl hover:bg-accent transition-all text-muted-foreground",
                       isHoveringCard ? "opacity-100" : "opacity-0 pointer-events-none"
                     )}
                     onClick={(e) => {
@@ -344,7 +345,7 @@ export function NavAgents() {
     );
   }, [currentThreads]);
 
-  // Group all threads by date (no longer filtering out triggers - they're shown together)
+  // Group threads by date
   const groupedThreads: GroupedThreads = groupThreadsByDate(combinedThreads);
 
   // Pagination helpers
@@ -399,6 +400,7 @@ export function NavAgents() {
   useEffect(() => {
     setLoadingThreadId(null);
   }, [pathname]);
+
 
   useEffect(() => {
     const handleNavigationComplete = () => {
@@ -690,15 +692,7 @@ export function NavAgents() {
                 </Tooltip>
               )}
             </div>
-          ) : (
-            <div className="px-2.5 pt-5 mb-1 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Search</span>
-              <div className="flex items-center gap-1 h-8">
-                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
-                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
-              </div>
-            </div>
-          )}
+          ) : null}
         </>
       )}
 
@@ -793,8 +787,11 @@ export function NavAgents() {
                 )}
               </>
             ) : (
-              <div className="py-2 pl-2.5 text-sm text-muted-foreground">
-                {t('noConversations')}
+              <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                <Frown className="h-12 w-12 text-muted-foreground/40 mb-3" />
+                <p className="text-sm text-muted-foreground">
+                  {t('noConversations')}
+                </p>
               </div>
             )}
           </>

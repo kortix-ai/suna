@@ -15,7 +15,28 @@ from core.utils.logger import logger
     icon="Key",
     color="bg-red-100 dark:bg-red-800/50",
     weight=180,
-    visible=True
+    visible=True,
+    usage_guide="""
+### CREDENTIAL PROFILE MANAGEMENT
+
+**CAPABILITIES:**
+- Create credential profiles for external services
+- Generate authentication links for users
+- List available credential profiles
+- Configure profiles for agents
+
+**CRITICAL AUTHENTICATION PROTOCOL:**
+1. create_credential_profile() - Generates auth link
+2. **SEND LINK TO USER IMMEDIATELY** - Authentication is MANDATORY
+3. **WAIT FOR USER CONFIRMATION** - "Have you completed authentication?"
+4. discover_mcp_tools() - Get actual available tools after auth
+5. configure_profile_for_agent() - Add to agent
+
+**AUTHENTICATION IS NON-NEGOTIABLE:**
+- Without authentication, integration is COMPLETELY INVALID
+- Always explain this to users
+- Never proceed without verified authentication
+"""
 )
 class CredentialProfileTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):

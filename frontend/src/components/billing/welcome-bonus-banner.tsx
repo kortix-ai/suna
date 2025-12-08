@@ -122,7 +122,7 @@ export function WelcomeBonusBanner() {
               {/* Close */}
               <button
                 onClick={handleDismiss}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground/60 hover:text-muted-foreground"
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-2xl hover:bg-muted/50 transition-colors text-muted-foreground/60 hover:text-muted-foreground"
                 aria-label="Dismiss"
               >
                 <X className="h-3.5 w-3.5" />

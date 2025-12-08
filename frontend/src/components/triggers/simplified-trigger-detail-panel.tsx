@@ -106,7 +106,7 @@ const ExecutionItem = ({ execution }: { execution: TriggerExecution }) => {
       href={`/threads/${execution.thread_id}`}
       className="block"
     >
-      <div className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors group">
+      <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-muted/50 transition-colors group">
         <div className="flex items-center gap-3">
           {getStatusIcon(execution.status)}
           <div>
@@ -231,9 +231,9 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
     : null;
 
   return (
-    <div className={"h-full bg-background flex flex-col w-full sm:w-[440px] xl:w-2xl"}>
+    <div className="h-full bg-background flex flex-col w-full">
       {/* Header */}
-      <div className="px-8 py-6 border-b">
+      <div className="px-6 py-6 border-b">
         <div className="flex items-start justify-between mb-6">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
@@ -309,7 +309,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {/* Next Run - Only for scheduled triggers */}
         {isScheduled && trigger.is_active && nextRunDisplay && (
           <div className="border rounded-lg p-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
@@ -424,7 +424,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
             </div>
             <Link
               href={`/agents/config/${trigger.agent_id}`}
-              className="p-2 rounded-lg hover:bg-muted transition-colors"
+              className="p-2 rounded-2xl hover:bg-muted transition-colors"
             >
               <ExternalLink className="h-4 w-4 text-muted-foreground" />
             </Link>
