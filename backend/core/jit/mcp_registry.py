@@ -34,20 +34,29 @@ class MCPRegistry:
     def _make_cache_key(self, toolkit_slug: str) -> str:
         return f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:{toolkit_slug}"
     
-    async def get_toolkit_tools(self, toolkit_slug: str, account_id: Optional[str] = None) -> List[str]:
+    async def get_toolkit_tools(self, toolkit_slug: str, account_id: Optional[str] = None, cache_only: bool = False) -> List[str]:
         cache_key = self._make_cache_key(toolkit_slug)
         
-        if await self._ensure_redis():
+        redis_available = await self._ensure_redis()
+        logger.debug(f"⚡ [MCP DYNAMIC] Redis available: {redis_available} for {toolkit_slug}")
+        
+        if redis_available:
             try:
                 cached_data = await self._redis_client.get(cache_key)
                 if cached_data:
                     tools = json.loads(cached_data)
-                    logger.debug(f"✅ [MCP DYNAMIC] Cache hit: {toolkit_slug} ({len(tools)} tools)")
+                    logger.info(f"✅ [MCP DYNAMIC] Cache hit: {toolkit_slug} ({len(tools)} tools)")
                     return tools
+                else:
+                    logger.debug(f"⚡ [MCP DYNAMIC] No cached data for key: {cache_key}")
             except Exception as e:
                 logger.warning(f"⚠️  [MCP DYNAMIC] Cache read error for {toolkit_slug}: {e}")
         
-        logger.debug(f"❌ [MCP DYNAMIC] Cache miss: {toolkit_slug} - querying Composio API")
+        if cache_only:
+            logger.debug(f"⚡ [MCP DYNAMIC] Cache miss (cache_only mode): {toolkit_slug} - skipping API query")
+            return []
+        
+        logger.info(f"❌ [MCP DYNAMIC] Cache miss: {toolkit_slug} - querying Composio API")
         
         tools = await self._query_composio_toolkit(toolkit_slug, account_id=account_id)
         await self._cache_toolkit_tools(toolkit_slug, tools)
@@ -307,9 +316,9 @@ async def get_dynamic_registry() -> MCPRegistry:
     return _dynamic_registry
 
 
-async def get_toolkit_tools(toolkit_slug: str, account_id: Optional[str] = None) -> List[str]:
+async def get_toolkit_tools(toolkit_slug: str, account_id: Optional[str] = None, cache_only: bool = False) -> List[str]:
     registry = await get_dynamic_registry()
-    return await registry.get_toolkit_tools(toolkit_slug, account_id=account_id)
+    return await registry.get_toolkit_tools(toolkit_slug, account_id=account_id, cache_only=cache_only)
 
 
 async def get_all_available_tools_from_toolkits(toolkit_slugs: List[str]) -> Dict[str, str]:
