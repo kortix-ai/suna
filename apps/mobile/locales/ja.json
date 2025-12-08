@@ -552,6 +552,8 @@
     "search": "検索...",
     "searchConversations": "チャット検索",
     "searchAgents": "Worker検索",
+    "searchWorkers": "Worker検索",
+    "searchTriggers": "トリガー検索",
     "imageGeneration": "作りたい画像を説明して...",
     "imageWithStyle": "{{style}}の画像を説明して...",
     "slidesGeneration": "どんなプレゼンが必要？",

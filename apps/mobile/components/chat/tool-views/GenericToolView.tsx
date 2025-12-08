@@ -1,6 +1,6 @@
 /**
  * Generic Tool View
- * 
+ *
  * Default fallback view for tools without specialized renderers
  */
 
@@ -32,19 +32,21 @@ export function GenericToolView({ toolCall, toolResult, isSuccess = true }: Tool
   const result = toolResult || { success: isSuccess, output: null };
 
   return (
-    <View className="px-6 gap-6">
+    <ScrollView
+      className="flex-1"
+      contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 24, paddingBottom: 100 }}
+      showsVerticalScrollIndicator={true}
+    >
       {/* Parameters */}
       {Object.keys(toolArgs).length > 0 && (
-        <View className="gap-2">
+        <View className="gap-2 mb-6">
           <Text className="text-xs font-roobert-medium text-foreground/50 uppercase tracking-wider">
             Parameters
           </Text>
           <View className="bg-card border border-border rounded-2xl p-4">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <Text className="text-sm font-roobert text-foreground/80" selectable>
-                {JSON.stringify(toolArgs, null, 2)}
-              </Text>
-            </ScrollView>
+            <Text className="text-sm font-roobert text-foreground/80" selectable>
+              {JSON.stringify(toolArgs, null, 2)}
+            </Text>
           </View>
         </View>
       )}
@@ -74,13 +76,11 @@ export function GenericToolView({ toolCall, toolResult, isSuccess = true }: Tool
             : 'bg-primary/5 border-primary/20'
           }`}>
           {result.output ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <Text className="text-sm font-roobert text-foreground/80" selectable>
-                {typeof result.output === 'string'
-                  ? result.output
-                  : JSON.stringify(result.output, null, 2)}
-              </Text>
-            </ScrollView>
+            <Text className="text-sm font-roobert text-foreground/80" selectable>
+              {typeof result.output === 'string'
+                ? result.output
+                : JSON.stringify(result.output, null, 2)}
+            </Text>
           ) : (
             <Text className="text-sm font-roobert text-foreground/40 italic">
               No output
@@ -88,7 +88,7 @@ export function GenericToolView({ toolCall, toolResult, isSuccess = true }: Tool
           )}
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
