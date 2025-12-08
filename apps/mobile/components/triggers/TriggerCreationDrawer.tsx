@@ -864,7 +864,15 @@ export function TriggerCreationDrawer({
 
             {/* Schedule Mode Tabs */}
             <View className="space-y-4" style={{ marginBottom: 16 }}>
-              <Text className="font-roobert-semibold text-sm text-foreground">Schedule *</Text>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  marginBottom: 8,
+                }}>
+                Schedule *
+              </Text>
               <View className="flex-row gap-3">
                 {(['preset', 'recurring', 'advanced'] as const).map((mode) => (
                   <Pressable
@@ -887,7 +895,7 @@ export function TriggerCreationDrawer({
 
               {/* Preset Options */}
               {scheduleMode === 'preset' && (
-                <View className="space-y-3">
+                <View className="mt-4 flex flex-col gap-2 space-y-3">
                   {SCHEDULE_PRESETS.map((preset) => (
                     <Pressable
                       key={preset.id}
@@ -927,7 +935,7 @@ export function TriggerCreationDrawer({
 
               {/* Recurring Options */}
               {scheduleMode === 'recurring' && (
-                <View className="space-y-5">
+                <View className="mt-4 space-y-5">
                   <View className="flex-row gap-3">
                     {(['daily', 'weekly', 'monthly'] as const).map((type) => (
                       <Pressable
@@ -948,7 +956,7 @@ export function TriggerCreationDrawer({
                     ))}
                   </View>
 
-                  <View className="flex-row items-center gap-4">
+                  <View className="mt-4 flex-row items-center gap-4">
                     <TextInput
                       value={selectedHour}
                       onChangeText={setSelectedHour}
@@ -991,7 +999,7 @@ export function TriggerCreationDrawer({
                   </View>
 
                   {recurringType === 'weekly' && (
-                    <View className="flex-row flex-wrap gap-2.5">
+                    <View className="mt-4 flex-row flex-wrap gap-2.5">
                       {WEEKDAYS.map((day) => (
                         <Pressable
                           key={day.value}
@@ -1014,7 +1022,7 @@ export function TriggerCreationDrawer({
                     </View>
                   )}
 
-                  <View className="rounded-xl bg-muted p-4">
+                  <View className="mt-4 rounded-xl bg-muted p-4">
                     <Text className="font-mono text-sm text-muted-foreground">
                       {generateRecurringCron()}
                     </Text>
@@ -1038,6 +1046,7 @@ export function TriggerCreationDrawer({
                     fontSize: 16,
                     color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                     fontFamily: 'monospace',
+                    marginTop: 16,
                   }}
                 />
               )}
