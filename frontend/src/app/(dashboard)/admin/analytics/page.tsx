@@ -329,24 +329,20 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
       </div>
 
       {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-6 space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
-          ) : (
-            <DataTable
-              columns={columns}
-              data={threadsData?.data || []}
-              emptyMessage="No threads found matching your criteria"
-              getItemId={(thread) => thread.thread_id}
-            />
-          )}
-        </CardContent>
-      </Card>
+      {isLoading ? (
+        <div className="p-6 space-y-3 rounded-2xl border">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={threadsData?.data || []}
+          emptyMessage="No threads found matching your criteria"
+          getItemId={(thread) => thread.thread_id}
+        />
+      )}
 
       {/* Pagination */}
       {threadsData?.pagination && (
@@ -737,14 +733,11 @@ export default function AdminAnalyticsPage() {
                   );
                 })}
               </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                {categoryDistribution.total_projects} projects
-                {categoryFilter && (
-                  <span className="ml-2">
-                    • <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear</button>
-                  </span>
-                )}
-              </p>
+              {categoryFilter && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
+                </p>
+              )}
             </CardContent>
           </Card>
         )}
