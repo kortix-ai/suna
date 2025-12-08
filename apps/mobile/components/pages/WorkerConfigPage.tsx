@@ -129,14 +129,15 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
         <View className="flex-1 items-center justify-center p-8">
           <Loading title="Loading worker..." />
         </View>
+      ) : activeView === 'instructions' ? (
+        <View className="flex-1" style={{ padding: 16 }}>
+          <InstructionsScreen agentId={workerId} onUpdate={() => {}} />
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
           className="flex-1">
-          {activeView === 'instructions' && (
-            <InstructionsScreen agentId={workerId} onUpdate={() => {}} />
-          )}
           {activeView === 'tools' && (
             <ToolsScreen agentId={workerId} onUpdate={() => {}} />
           )}
