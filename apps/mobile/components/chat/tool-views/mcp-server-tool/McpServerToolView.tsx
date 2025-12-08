@@ -107,12 +107,7 @@ export function McpServerToolView({ toolCall, toolResult, isStreaming = false, a
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={server ? 'Found' : servers.length > 0 ? `${servers.length} servers` : actualIsSuccess ? 'Success' : 'Failed'}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">

@@ -104,8 +104,8 @@ export function FullScreenPresentationViewer({
 
   const slides = metadata
     ? Object.entries(metadata.slides)
-        .map(([num, slide]) => ({ number: parseInt(num), ...slide }))
-        .sort((a, b) => a.number - b.number)
+      .map(([num, slide]) => ({ number: parseInt(num), ...slide }))
+      .sort((a, b) => a.number - b.number)
     : [];
 
   const totalSlides = slides.length;
@@ -227,7 +227,7 @@ export function FullScreenPresentationViewer({
   // Export PDF/PPTX - POST to sandbox API, download blob, share via native sheet
   const handleExportFile = async (format: 'pdf' | 'pptx') => {
     if (!sandboxUrl || !presentationName) return;
-    
+
     setIsExporting(format);
     setShowExportMenu(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -235,9 +235,9 @@ export function FullScreenPresentationViewer({
     try {
       const presentationPath = `/workspace/presentations/${presentationName}`;
       const exportUrl = `${sandboxUrl}/presentation/convert-to-${format}`;
-      
+
       console.log(`📤 Exporting ${format}:`, exportUrl);
-      
+
       // POST request to sandbox API (matching frontend)
       const response = await fetch(exportUrl, {
         method: 'POST',
@@ -256,32 +256,32 @@ export function FullScreenPresentationViewer({
 
       // Get the blob
       const blob = await response.blob();
-      
+
       // Convert blob to base64 and save to file system
       const reader = new FileReader();
       reader.readAsDataURL(blob);
-      
+
       reader.onloadend = async () => {
         try {
           const base64data = reader.result as string;
           // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
           const base64Content = base64data.split(',')[1];
-          
+
           const fileName = `${presentationName}.${format}`;
           const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
-          
+
           // Write base64 to file
           await FileSystem.writeAsStringAsync(fileUri, base64Content, {
             encoding: FileSystem.EncodingType.Base64,
           });
-          
+
           // Use expo-sharing for native share sheet
           const isSharingAvailable = await Sharing.isAvailableAsync();
-          
+
           if (isSharingAvailable) {
             await Sharing.shareAsync(fileUri, {
-              mimeType: format === 'pdf' 
-                ? 'application/pdf' 
+              mimeType: format === 'pdf'
+                ? 'application/pdf'
                 : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
               dialogTitle: `Save ${fileName}`,
             });
@@ -295,13 +295,13 @@ export function FullScreenPresentationViewer({
           setIsExporting(null);
         }
       };
-      
+
       reader.onerror = () => {
         console.error('Error reading blob');
         Alert.alert('Error', 'Failed to process the file.');
         setIsExporting(null);
       };
-      
+
     } catch (error) {
       console.error(`Error exporting ${format}:`, error);
       Alert.alert('Export Failed', `Could not export as ${format.toUpperCase()}. Please try again.`);
@@ -312,7 +312,7 @@ export function FullScreenPresentationViewer({
   // Export to Google Slides - calls backend API
   const handleExportGoogleSlides = async () => {
     if (!sandboxUrl || !presentationName) return;
-    
+
     setIsExporting('google');
     setShowExportMenu(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -320,9 +320,9 @@ export function FullScreenPresentationViewer({
     try {
       const presentationPath = `/workspace/presentations/${presentationName}`;
       const authHeaders = await getAuthHeaders();
-      
+
       console.log('📤 Exporting to Google Slides via backend API');
-      
+
       const response = await fetch(`${API_URL}/presentation-tools/convert-and-upload-to-slides`, {
         method: 'POST',
         headers: authHeaders,
@@ -333,7 +333,7 @@ export function FullScreenPresentationViewer({
       });
 
       const result = await response.json();
-      
+
       if (!response.ok && response.status !== 200) {
         // Check if it's an auth issue
         if (result.is_api_enabled === false || result.message?.includes('not enabled')) {
@@ -342,7 +342,7 @@ export function FullScreenPresentationViewer({
             method: 'GET',
             headers: authHeaders,
           });
-          
+
           if (authResponse.ok) {
             const authData = await authResponse.json();
             Alert.alert(
@@ -350,9 +350,9 @@ export function FullScreenPresentationViewer({
               'You need to connect your Google account to use this feature. This will open in your browser.',
               [
                 { text: 'Cancel', style: 'cancel' },
-                { 
-                  text: 'Connect Google', 
-                  onPress: () => Linking.openURL(authData.auth_url) 
+                {
+                  text: 'Connect Google',
+                  onPress: () => Linking.openURL(authData.auth_url)
                 },
               ]
             );
@@ -374,7 +374,7 @@ export function FullScreenPresentationViewer({
           method: 'GET',
           headers: authHeaders,
         });
-        
+
         if (authResponse.ok) {
           const authData = await authResponse.json();
           Alert.alert(
@@ -382,9 +382,9 @@ export function FullScreenPresentationViewer({
             'You need to connect your Google account to use this feature. This will open in your browser.',
             [
               { text: 'Cancel', style: 'cancel' },
-              { 
-                text: 'Connect Google', 
-                onPress: () => Linking.openURL(authData.auth_url) 
+              {
+                text: 'Connect Google',
+                onPress: () => Linking.openURL(authData.auth_url)
               },
             ]
           );
@@ -404,9 +404,9 @@ export function FullScreenPresentationViewer({
           'Presentation uploaded to Google Slides.',
           [
             { text: 'Close', style: 'cancel' },
-            { 
-              text: 'Open in Google Slides', 
-              onPress: () => Linking.openURL(result.google_slides_url) 
+            {
+              text: 'Open in Google Slides',
+              onPress: () => Linking.openURL(result.google_slides_url)
             },
           ]
         );
@@ -523,7 +523,7 @@ export function FullScreenPresentationViewer({
                 }}
                 className="p-2.5 rounded-xl"
                 style={{
-                  backgroundColor: showExportMenu 
+                  backgroundColor: showExportMenu
                     ? (isDark ? 'rgba(248, 248, 248, 0.15)' : 'rgba(18, 18, 21, 0.08)')
                     : 'transparent',
                 }}
@@ -616,7 +616,7 @@ export function FullScreenPresentationViewer({
         </View>
 
         {/* Main Content Area */}
-        <View 
+        <View
           className="flex-1 items-center justify-center px-4"
           style={{ backgroundColor: isDark ? '#0a0a0c' : '#f4f4f5' }}
           onLayout={handleContainerLayout}
@@ -664,7 +664,7 @@ export function FullScreenPresentationViewer({
                   javaScriptEnabled={true}
                   domStorageEnabled={true}
                   injectedJavaScript={injectedJS}
-                  onMessage={() => {}}
+                  onMessage={() => { }}
                 />
               </View>
             </View>

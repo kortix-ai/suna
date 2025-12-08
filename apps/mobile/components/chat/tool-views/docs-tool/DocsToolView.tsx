@@ -100,12 +100,7 @@ export function DocsToolView({ toolCall, toolResult, isStreaming = false, assist
           title: toolMetadata.title,
           isSuccess: actualIsSuccess,
           isStreaming: false,
-          rightContent: (
-            <StatusBadge
-              variant={actualIsSuccess ? 'success' : 'error'}
-              label={`${documents.length} document${documents.length !== 1 ? 's' : ''}`}
-            />
-          ),
+          showStatus: true,
         }}
         footer={
           <View className="flex-row items-center justify-between w-full">
@@ -167,12 +162,7 @@ export function DocsToolView({ toolCall, toolResult, isStreaming = false, assist
           title: toolMetadata.title,
           isSuccess: actualIsSuccess,
           isStreaming: false,
-          rightContent: (
-            <StatusBadge
-              variant={actualIsSuccess ? 'success' : 'error'}
-              label={contentLines.length > 0 ? `${contentLines.length} lines` : actualIsSuccess ? 'Loaded' : 'Failed'}
-            />
-          ),
+          showStatus: true,
         }}
         footer={
           <View className="flex-row items-center justify-between w-full">

@@ -71,12 +71,7 @@ export function DocumentParserToolView({ toolCall, toolResult, isStreaming = fal
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={content ? `${lines.length} lines` : actualIsSuccess ? 'Parsed' : 'Failed'}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">

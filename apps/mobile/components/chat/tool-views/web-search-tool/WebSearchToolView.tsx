@@ -134,12 +134,7 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: isStreaming,
-        rightContent: !isStreaming && (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={`${currentResults.length} results`}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">
