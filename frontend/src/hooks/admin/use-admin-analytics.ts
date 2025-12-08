@@ -166,17 +166,21 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
   });
 }
 
-export function useMessageDistribution() {
+export function useMessageDistribution(date?: string) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'message-distribution'],
+    queryKey: ['admin', 'analytics', 'message-distribution', date],
     queryFn: async (): Promise<MessageDistribution> => {
-      const response = await backendApi.get('/admin/analytics/threads/message-distribution');
+      const url = date
+        ? `/admin/analytics/threads/message-distribution?date=${date}`
+        : '/admin/analytics/threads/message-distribution';
+      const response = await backendApi.get(url);
       if (response.error) {
         throw new Error(response.error.message);
       }
       return response.data;
     },
     staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData, // Keep previous data while loading
   });
 }
 
