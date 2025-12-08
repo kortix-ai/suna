@@ -156,7 +156,6 @@ export function ToolCallPanel({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      className="bg-background"
       handleIndicatorStyle={{
         width: 36,
         height: 5,
