@@ -17,6 +17,7 @@ import { Loading } from '../loading/loading';
 import { Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp } from '@/api/types';
+import { SvgUri } from 'react-native-svg';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -50,6 +51,9 @@ function TriggerCard({ trigger, app, onPress }: TriggerCardProps) {
     scale.value = withSpring(1);
   };
 
+  const isSvg = (url: string) =>
+    url.toLowerCase().endsWith('.svg') || url.includes('composio.dev/api');
+
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -62,7 +66,11 @@ function TriggerCard({ trigger, app, onPress }: TriggerCardProps) {
         <View className="flex-row items-start justify-between">
           {app.logo ? (
             <View className="h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
-              <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+              {isSvg(app.logo) ? (
+                <SvgUri uri={app.logo} width={24} height={24} />
+              ) : (
+                <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+              )}
             </View>
           ) : (
             <View className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
@@ -130,13 +138,20 @@ export function TriggerSelectionStep({
     );
   }
 
+  const isSvg = (url: string) =>
+    url.toLowerCase().endsWith('.svg') || url.includes('composio.dev/api');
+
   return (
     <View className="space-y-6">
       {/* Header */}
       <View className="mb-6 flex-row items-center gap-3">
         {app.logo && (
           <View className="h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
-            <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+            {isSvg(app.logo) ? (
+              <SvgUri uri={app.logo} width={24} height={24} />
+            ) : (
+              <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+            )}
           </View>
         )}
         <View className="flex-1">

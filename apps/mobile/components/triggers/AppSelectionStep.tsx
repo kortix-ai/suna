@@ -19,6 +19,7 @@ import { Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { TriggerApp } from '@/api/types';
 import type { ComposioProfile } from '@/hooks/useComposio';
+import { SvgUri } from 'react-native-svg';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -54,6 +55,9 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
     scale.value = withSpring(1);
   };
 
+  const isSvg = (url: string) =>
+    url.toLowerCase().endsWith('.svg') || url.includes('composio.dev/api');
+
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -65,7 +69,15 @@ function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
         {/* App Logo */}
         {app.logo ? (
           <View className="h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
-            <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+            {isSvg(app.logo) ? (
+              <SvgUri uri={app.logo} width={24} height={24} />
+            ) : (
+              <Image
+                source={{ uri: app.logo }}
+                style={{ width: 24, height: 24 }}
+                resizeMode="contain"
+              />
+            )}
           </View>
         ) : (
           <View className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-muted">
@@ -169,7 +181,9 @@ export function AppSelectionStep({
           <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-muted">
             <Icon as={ChevronRight} size={24} className="text-muted-foreground" />
           </View>
-          <Text className="mb-1 font-roobert-semibold text-base text-foreground">No apps found</Text>
+          <Text className="mb-1 font-roobert-semibold text-base text-foreground">
+            No apps found
+          </Text>
           <Text className="text-center text-sm text-muted-foreground">
             {searchQuery ? `No apps match "${searchQuery}"` : 'No apps with triggers available'}
           </Text>
@@ -189,4 +203,3 @@ export function AppSelectionStep({
     </View>
   );
 }
-

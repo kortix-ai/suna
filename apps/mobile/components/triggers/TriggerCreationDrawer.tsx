@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Pressable, TextInput, Alert } from 'react-native';
+import { View, Pressable, TextInput, Alert, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -44,6 +44,7 @@ import { TriggerSelectionStep } from './TriggerSelectionStep';
 import { TriggerConfigStep } from './TriggerConfigStep';
 import { ComposioConnectorContent } from '../settings/integrations/ComposioConnector';
 import type { TriggerApp, ComposioTriggerType } from '@/api/types';
+import { SvgUri } from 'react-native-svg';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -120,6 +121,21 @@ function TypeCard({ icon: IconComponent, title, subtitle, onPress }: TypeCardPro
   );
 }
 
+function AppLogo({ app }: { app: TriggerApp }) {
+  const isSvg = (url: string) =>
+    url.toLowerCase().endsWith('.svg') || url.includes('composio.dev/api');
+
+  return (
+    <View className="h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
+      {isSvg(app.logo) ? (
+        <SvgUri uri={app.logo} width={24} height={24} />
+      ) : (
+        <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+      )}
+    </View>
+  );
+}
+
 export function TriggerCreationDrawer({
   visible,
   onClose,
@@ -172,7 +188,7 @@ export function TriggerCreationDrawer({
   const { data: triggersApps, isLoading: triggersAppsLoading } = useComposioAppsWithTriggers();
   const { data: triggersData, isLoading: loadingTriggers } = useComposioAppTriggers(
     selectedApp?.slug,
-    !!selectedApp
+    visible && !!selectedApp && eventStep === 'triggers'
   );
   const { data: profiles, refetch: refetchProfiles } = useComposioProfiles();
 
@@ -651,11 +667,7 @@ export function TriggerCreationDrawer({
         <View className="flex-row items-center pb-4 pt-6">
           {(currentStep !== 'type' || isEditMode) && (
             <Pressable onPress={handleBack} className="mr-3 active:opacity-70">
-              <Icon
-                as={ArrowLeft}
-                size={20}
-                color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-              />
+              {selectedApp && <AppLogo app={selectedApp} />}
             </Pressable>
           )}
           <View className="flex-1">
