@@ -118,7 +118,7 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('image');
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
