@@ -310,8 +310,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
         showsVerticalScrollIndicator={true}
         contentContainerStyle={{
           flexGrow: 1,
-          paddingTop: insets.top + 60, // Safe area + header height
-          paddingBottom: 100,
+          paddingTop: insets.top + 80, // Safe area + header height
           paddingHorizontal: 24,
         }}
         keyboardShouldPersistTaps="handled"

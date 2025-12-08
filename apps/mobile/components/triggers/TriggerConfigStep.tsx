@@ -26,6 +26,48 @@ import type { ComposioProfile } from '@/hooks/useComposio';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+/**
+ * Normalizes instructions text to proper markdown format
+ * Converts plain text bullet points to markdown lists
+ * Preserves existing markdown formatting (bold, italic, etc.)
+ */
+function normalizeInstructions(instructions: string): string {
+  if (!instructions) return instructions;
+
+  // Split into lines while preserving original structure
+  const lines = instructions.split('\n');
+  const normalized: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const originalLine = lines[i];
+    const trimmed = originalLine.trim();
+
+    // Skip empty lines but preserve them
+    if (trimmed.length === 0) {
+      normalized.push('');
+      continue;
+    }
+
+    // Check if line already starts with markdown list syntax
+    const isMarkdownList = /^[\s]*[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed);
+
+    if (isMarkdownList) {
+      // Already in markdown format, preserve as-is
+      normalized.push(trimmed);
+    } else if (trimmed.startsWith('-')) {
+      // Plain text dash - convert to markdown list item
+      // Remove leading dash and any extra spaces, then add proper markdown format
+      const content = trimmed.replace(/^-\s*/, '').trim();
+      normalized.push(`- ${content}`);
+    } else {
+      // Regular text line - preserve as-is (may contain markdown like **bold**)
+      normalized.push(trimmed);
+    }
+  }
+
+  return normalized.join('\n');
+}
+
 interface TriggerConfigStepProps {
   trigger: ComposioTriggerType | null;
   app: TriggerApp | null;
@@ -73,7 +115,7 @@ function ProfileListItem({ profile, isSelected, onPress }: ProfileListItemProps)
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className={`flex-row items-center rounded-2xl border p-4 mb-3 ${
+      className={`mb-3 flex-row items-center rounded-2xl border p-4 ${
         isSelected ? 'border-primary bg-primary/10' : 'border-border bg-card active:opacity-80'
       }`}>
       <View
@@ -88,7 +130,9 @@ function ProfileListItem({ profile, isSelected, onPress }: ProfileListItemProps)
         />
       </View>
       <View className="ml-3 flex-1">
-        <Text className="font-roobert-medium text-base text-foreground">{profile.profile_name}</Text>
+        <Text className="font-roobert-medium text-base text-foreground">
+          {profile.profile_name}
+        </Text>
         {profile.is_connected && (
           <View className="mt-1 flex-row items-center gap-2">
             <View className="h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -144,7 +188,7 @@ export function TriggerConfigStep({
   };
 
   return (
-    <View className="space-y-6">
+    <View className="space-y-1">
       {/* Instructions */}
       {trigger.instructions && (
         <View
@@ -163,7 +207,7 @@ export function TriggerConfigStep({
                 color: isDark ? '#A1A1AA' : '#71717A',
               },
             }}>
-            {trigger.instructions}
+            {normalizeInstructions(trigger.instructions)}
           </Markdown>
         </View>
       )}
@@ -172,7 +216,9 @@ export function TriggerConfigStep({
       {isLoadingProfiles && (
         <View className="items-center justify-center py-12">
           <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#121215'} />
-          <Text className="mt-4 font-roobert text-sm text-muted-foreground">Loading profiles...</Text>
+          <Text className="mt-4 font-roobert text-sm text-muted-foreground">
+            Loading profiles...
+          </Text>
         </View>
       )}
 
@@ -195,7 +241,7 @@ export function TriggerConfigStep({
       {connectedProfiles.length > 0 && (
         <>
           {/* Trigger Config */}
-          <View className="rounded-2xl border border-border bg-card p-4">
+          <View className="mt-4 rounded-2xl border border-border bg-card p-4">
             <View className="mb-4">
               <Text className="mb-1 font-roobert-semibold text-base text-foreground">
                 {trigger.name}
@@ -204,11 +250,15 @@ export function TriggerConfigStep({
                 Configure this trigger
               </Text>
             </View>
-            <DynamicConfigForm schema={trigger.config as any} value={config} onChange={onConfigChange} />
+            <DynamicConfigForm
+              schema={trigger.config as any}
+              value={config}
+              onChange={onConfigChange}
+            />
           </View>
 
           {/* Execution Settings */}
-          <View className="rounded-2xl border border-border bg-card p-4">
+          <View className="mt-4 rounded-2xl border border-border bg-card p-4">
             <View className="mb-4">
               <Text className="mb-1 font-roobert-semibold text-base text-foreground">
                 Execution Settings
@@ -242,7 +292,12 @@ export function TriggerConfigStep({
                       onPress={onCreateProfile}
                       className="flex-row items-center rounded-2xl border border-dashed border-primary bg-primary/5 p-4 active:opacity-80">
                       <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary">
-                        <Icon as={Plus} size={20} className="text-primary-foreground" strokeWidth={2.5} />
+                        <Icon
+                          as={Plus}
+                          size={20}
+                          className="text-primary-foreground"
+                          strokeWidth={2.5}
+                        />
                       </View>
                       <View className="ml-3 flex-1">
                         <Text className="font-roobert-semibold text-base text-primary">
@@ -312,7 +367,9 @@ export function TriggerConfigStep({
                     minHeight: 120,
                   }}
                 />
-                <Text className="font-roobert text-xs text-muted-foreground" style={{ marginTop: 8 }}>
+                <Text
+                  className="font-roobert text-xs text-muted-foreground"
+                  style={{ marginTop: 8 }}>
                   Use {'{{variable_name}}'} to add variables to the prompt
                 </Text>
               </View>
@@ -339,4 +396,3 @@ export function TriggerConfigStep({
     </View>
   );
 }
-

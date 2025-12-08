@@ -697,13 +697,13 @@ export function TriggerCreationDrawer({
       <BottomSheetScrollView
         contentContainerStyle={{
           paddingHorizontal: 24,
-          paddingTop: 24,
-          paddingBottom: showActionButtons ? 120 : 40,
+          paddingTop: 16,
+          paddingBottom: showActionButtons ? 30 : 40,
         }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled">
         {/* Header */}
-        <View className="flex-row items-center pb-4 pt-6">
+        <View className="flex-row items-center pb-4 pt-4">
           {(currentStep !== 'type' || isEditMode) && (
             <Pressable onPress={handleBack} className="mr-3 active:opacity-70">
               {(() => {
