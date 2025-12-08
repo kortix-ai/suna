@@ -17,7 +17,6 @@ import {
   AlertTriangle,
   X,
 } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -82,12 +81,9 @@ export function FileBrowserView({
   sandboxId,
   project,
 }: FileBrowserViewProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
-  const { 
-    currentPath, 
-    navigateToPath, 
+  const {
+    currentPath,
+    navigateToPath,
     openFile,
     selectedVersion,
     selectedVersionDate,
@@ -165,16 +161,16 @@ export function FileBrowserView({
 
   const isPresentationFolder = useCallback((file: SandboxFile): boolean => {
     if (file.type !== 'directory') return false;
-    
+
     const pathParts = file.path.split('/').filter(Boolean);
-    
+
     if (pathParts.length >= 3) {
       const parentIndex = pathParts.length - 2;
       if (pathParts[parentIndex] === 'presentations') {
         return true;
       }
     }
-    
+
     return false;
   }, []);
 
@@ -236,7 +232,7 @@ export function FileBrowserView({
 
   const handleSelectVersion = async (version: FileVersion | null) => {
     setShowVersionModal(false);
-    
+
     if (!version) {
       clearSelectedVersion();
       refetchFiles();
@@ -290,19 +286,19 @@ export function FileBrowserView({
   const getFileIcon = useCallback((file: SandboxFile) => {
     if (file.type === 'directory') {
       if (isPresentationFolder(file)) {
-        return <Presentation size={36} color={isDark ? '#f97316' : '#ea580c'} />;
+        return <Presentation size={36} className="text-primary" />;
       }
-      return <Folder size={36} color={isDark ? '#60a5fa' : '#2563eb'} />;
+      return <Folder size={36} className="text-primary" />;
     }
-    
+
     const extension = file.name.split('.').pop()?.toLowerCase();
-    
+
     if (['md', 'txt', 'doc'].includes(extension || '')) {
-      return <FileText size={32} color={isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} />;
+      return <FileText size={32} className="text-primary opacity-50" />;
     }
-    
-    return <File size={32} color={isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} />;
-  }, [isDark, isPresentationFolder]);
+
+    return <File size={32} className="text-primary opacity-50" />;
+  }, [isPresentationFolder]);
 
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
   const isComputerStarted = project?.sandbox?.sandbox_url ? true : false;
@@ -316,24 +312,19 @@ export function FileBrowserView({
     return (
       <Pressable
         onPress={() => handleSelectVersion(isCurrent ? null : item)}
-        className="px-4 py-3 active:opacity-70"
-        style={{
-          backgroundColor: isSelected 
-            ? (isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)')
-            : 'transparent',
-        }}
+        className={`px-4 py-3 active:opacity-70 ${isSelected ? 'bg-card' : 'bg-transparent'}`}
       >
         <View className="flex-row items-start justify-between">
           <View className="flex-1 min-w-0 mr-2">
-            <Text className="text-sm font-roobert-medium text-foreground" numberOfLines={1}>
+            <Text className="text-sm font-roobert-medium text-primary" numberOfLines={1}>
               {parts[0]}
             </Text>
             {parts.length > 1 && (
-              <Text className="text-xs text-muted-foreground mt-0.5" numberOfLines={1}>
+              <Text className="text-xs text-primary opacity-50 mt-0.5" numberOfLines={1}>
                 {parts.slice(1).join(':').trim()}
               </Text>
             )}
-            <Text className="text-xs text-muted-foreground mt-1">
+            <Text className="text-xs text-primary opacity-50 mt-1">
               {new Date(item.date).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
@@ -352,14 +343,9 @@ export function FileBrowserView({
                 e.stopPropagation?.();
                 handleOpenRevertModal(item.commit);
               }}
-              className="px-2 py-1 rounded-full active:opacity-70"
-              style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(248, 248, 248, 0.15)' : 'rgba(18, 18, 21, 0.15)',
-              }}
+              className="px-2 py-1 rounded-full bg-card border border-border active:opacity-70"
             >
-              <Text className="text-[11px] font-roobert-medium text-foreground">
+              <Text className="text-[11px] font-roobert-medium text-primary">
                 Restore
               </Text>
             </Pressable>
@@ -385,22 +371,14 @@ export function FileBrowserView({
             <Pressable
               onPress={handleUploadImage}
               disabled={isUploading || !!selectedVersion}
-              className="p-2 rounded-lg active:opacity-70"
-              style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                opacity: selectedVersion ? 0.5 : 1,
-              }}
+              className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${selectedVersion ? 'opacity-50' : ''}`}
             >
-              {isUploading ? (
-                <Icon as={Loader2} size={14} className="text-foreground" />
-              ) : (
-                <Icon
-                  as={Upload}
-                  size={14}
-                  color={isDark ? '#f8f8f8' : '#121215'}
-                  strokeWidth={2}
-                />
-              )}
+              <Icon
+                as={isUploading ? Loader2 : Upload}
+                size={17}
+                className="text-primary"
+                strokeWidth={2}
+              />
             </Pressable>
 
             {/* History Button */}
@@ -410,20 +388,15 @@ export function FileBrowserView({
                 setShowVersionModal(true);
                 refetchVersions();
               }}
-              className="flex-row items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-70"
-              style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-              }}
+              className="flex-row items-center gap-1.5 h-9 px-3 rounded-xl bg-card border border-border active:opacity-70"
             >
               <Icon
                 as={Clock}
-                size={14}
-                color={isDark ? '#f8f8f8' : '#121215'}
+                size={17}
+                className="text-primary"
                 strokeWidth={2}
               />
-              <Text className="text-xs font-roobert-medium text-foreground">
+              <Text className="text-xs font-roobert-medium text-primary">
                 {selectedVersion && selectedVersionDate ? (
                   new Date(selectedVersionDate).toLocaleDateString('en-US', {
                     month: 'short',
@@ -436,7 +409,7 @@ export function FileBrowserView({
               <Icon
                 as={ChevronDown}
                 size={12}
-                color={isDark ? '#f8f8f8' : '#121215'}
+                className="text-primary"
                 strokeWidth={2}
               />
             </Pressable>
@@ -446,7 +419,7 @@ export function FileBrowserView({
 
       {/* Version Banner */}
       {selectedVersion && (
-        <VersionBanner 
+        <VersionBanner
           versionDate={selectedVersionDate || undefined}
           onReturnToCurrent={() => handleSelectVersion(null)}
         />
@@ -466,7 +439,7 @@ export function FileBrowserView({
             <Icon
               as={Folder}
               size={48}
-              color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
+              className="text-primary opacity-50"
               strokeWidth={1.5}
             />
             {!hasSandbox ? (
@@ -504,36 +477,20 @@ export function FileBrowserView({
                 <Pressable
                   key={file.path}
                   onPress={() => handleItemClick(file)}
-                  className="flex-col items-center p-3 rounded-2xl border min-w-[100px] max-w-[120px] active:opacity-70"
-                  style={{
-                    backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-                    borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                  }}
+                  className="flex-col items-center justify-between p-3 rounded-2xl border border-border bg-card active:opacity-70"
+                  style={{ width: 100, height: 100 }}
                 >
                   {isPresentationFolder(file) && (
-                    <View
-                      className="absolute top-1 right-1"
-                      style={{
-                        backgroundColor: isDark ? 'rgba(251, 146, 60, 0.3)' : 'rgba(251, 146, 60, 0.1)',
-                        borderRadius: 6,
-                        paddingHorizontal: 6,
-                        paddingVertical: 2,
-                      }}
-                    >
-                      <Text
-                        className="text-[10px] font-roobert-medium"
-                        style={{
-                          color: isDark ? '#fb923c' : '#c2410c',
-                        }}
-                      >
+                    <View className="absolute top-1 right-1 bg-card border border-border rounded px-1.5 py-0.5">
+                      <Text className="text-[10px] font-roobert-medium text-primary">
                         Presentation
                       </Text>
                     </View>
                   )}
-                  <View className="w-12 h-12 items-center justify-center mb-1">
+                  <View className="w-10 h-10 items-center justify-center">
                     {getFileIcon(file)}
                   </View>
-                  <Text className="text-xs text-center font-roobert-medium truncate max-w-full" numberOfLines={2}>
+                  <Text className="text-xs text-center font-roobert-medium text-primary w-full" numberOfLines={2}>
                     {file.name}
                   </Text>
                 </Pressable>
@@ -543,16 +500,13 @@ export function FileBrowserView({
                 <Pressable
                   key={file.path}
                   onPress={() => handleItemClick(file)}
-                  className="flex-col items-center p-3 rounded-2xl border min-w-[100px] max-w-[120px] active:opacity-70"
-                  style={{
-                    backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-                    borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                  }}
+                  className="flex-col items-center justify-between p-3 rounded-2xl border border-border bg-card active:opacity-70"
+                  style={{ width: 100, height: 100 }}
                 >
-                  <View className="w-12 h-12 items-center justify-center mb-1">
+                  <View className="w-10 h-10 items-center justify-center">
                     {getFileIcon(file)}
                   </View>
-                  <Text className="text-xs text-center font-roobert-medium truncate max-w-full" numberOfLines={2}>
+                  <Text className="text-xs text-center font-roobert-medium text-primary w-full" numberOfLines={2}>
                     {file.name}
                   </Text>
                 </Pressable>
@@ -563,32 +517,16 @@ export function FileBrowserView({
       </View>
 
       {/* Footer */}
-      <View
-        className="px-4 py-2 border-t flex-row items-center justify-between"
-        style={{
-          backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-          borderTopColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-        }}
-      >
+      <View className="px-4 pb-8 pt-2 border-t border-border bg-card flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              borderRadius: 6,
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderWidth: 1,
-              borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-            }}
-          >
-            <Icon as={Folder} size={12} className="mr-1" />
-            <Text className="text-xs">
+          <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+            <Icon as={Folder} size={12} className="text-primary" />
+            <Text className="text-xs font-roobert-medium text-primary">
               {displayFiles.length} {displayFiles.length === 1 ? 'item' : 'items'}
             </Text>
           </View>
         </View>
-        <Text className="text-xs text-muted-foreground truncate max-w-[200px]" numberOfLines={1}>
+        <Text className="text-xs text-primary opacity-50 truncate max-w-[200px]" numberOfLines={1}>
           {currentPath}
         </Text>
       </View>
@@ -600,22 +538,14 @@ export function FileBrowserView({
         presentationStyle="pageSheet"
         onRequestClose={() => setShowVersionModal(false)}
       >
-        <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
-          <View
-            className="px-4 py-3 border-b flex-row items-center justify-between"
-            style={{
-              borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-            }}
-          >
-            <Text className="text-lg font-roobert-semibold">Version History</Text>
+        <View className="flex-1 bg-background">
+          <View className="px-4 py-3 border-b border-border bg-background flex-row items-center justify-between">
+            <Text className="text-lg font-roobert-semibold text-primary">Version History</Text>
             <Pressable
               onPress={() => setShowVersionModal(false)}
-              className="p-2 rounded-lg active:opacity-70"
-              style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-              }}
+              className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
             >
-              <Icon as={X} size={20} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+              <Icon as={X} size={17} className="text-primary" strokeWidth={2} />
             </Pressable>
           </View>
 
@@ -626,8 +556,8 @@ export function FileBrowserView({
             </View>
           ) : versions.length === 0 ? (
             <View className="flex-1 items-center justify-center p-8">
-              <Icon as={Clock} size={48} color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'} />
-              <Text className="text-sm text-muted-foreground mt-4">No history available</Text>
+              <Icon as={Clock} size={48} className="text-primary opacity-50" />
+              <Text className="text-sm text-primary opacity-50 mt-4">No history available</Text>
             </View>
           ) : (
             <FlatList
@@ -635,12 +565,7 @@ export function FileBrowserView({
               renderItem={renderVersionItem}
               keyExtractor={(item) => item.commit}
               ItemSeparatorComponent={() => (
-                <View
-                  style={{
-                    height: 1,
-                    backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
-                  }}
-                />
+                <View className="h-px bg-border" />
               )}
             />
           )}
@@ -654,26 +579,16 @@ export function FileBrowserView({
         transparent
         onRequestClose={() => setShowRevertModal(false)}
       >
-        <View className="flex-1 items-center justify-center px-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-          <View
-            className="w-full max-w-md rounded-2xl p-4"
-            style={{ backgroundColor: isDark ? '#1a1a1d' : '#ffffff' }}
-          >
-            <Text className="text-lg font-roobert-semibold mb-2">Restore Previous Version</Text>
-            <Text className="text-sm text-muted-foreground mb-4">
+        <View className="flex-1 items-center justify-center px-4 bg-background/80">
+          <View className="w-full max-w-md rounded-2xl p-4 bg-card border border-border">
+            <Text className="text-lg font-roobert-semibold mb-2 text-primary">Restore Previous Version</Text>
+            <Text className="text-sm text-primary opacity-50 mb-4">
               This will restore all files from this version snapshot.
             </Text>
 
-            <View
-              className="flex-row items-start gap-2 p-3 rounded-xl mb-4"
-              style={{
-                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.05)',
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)',
-              }}
-            >
-              <Icon as={AlertTriangle} size={16} color="#ef4444" strokeWidth={2} />
-              <Text className="text-xs flex-1" style={{ color: isDark ? '#fca5a5' : '#dc2626' }}>
+            <View className="flex-row items-start gap-2 p-3 rounded-xl mb-4 bg-card border border-border">
+              <Icon as={AlertTriangle} size={16} className="text-primary" strokeWidth={2} />
+              <Text className="text-xs flex-1 text-primary opacity-70">
                 This will replace current files with the selected version snapshot. Your current changes will be overwritten.
               </Text>
             </View>
@@ -696,14 +611,7 @@ export function FileBrowserView({
                 {revertCommitInfo.revert_files && revertCommitInfo.revert_files.length > 0 && (
                   <>
                     <Text className="text-xs text-muted-foreground mb-2">Files that will be affected:</Text>
-                    <View
-                      className="rounded-xl p-2 max-h-40"
-                      style={{
-                        backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.02)',
-                        borderWidth: 1,
-                        borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                      }}
-                    >
+                    <View className="rounded-xl p-2 max-h-40 bg-card border border-border">
                       <ScrollView>
                         {revertCommitInfo.revert_files.slice(0, 10).map((f, i) => (
                           <View key={i} className="flex-row items-center justify-between py-1">
@@ -727,12 +635,9 @@ export function FileBrowserView({
               <Pressable
                 onPress={() => setShowRevertModal(false)}
                 disabled={isReverting}
-                className="flex-1 py-3 rounded-xl items-center active:opacity-70"
-                style={{
-                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                }}
+                className="flex-1 py-3 rounded-xl items-center active:opacity-70 bg-card border border-border"
               >
-                <Text className="text-sm font-roobert-medium text-foreground">Cancel</Text>
+                <Text className="text-sm font-roobert-medium text-primary">Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={handleRevert}
