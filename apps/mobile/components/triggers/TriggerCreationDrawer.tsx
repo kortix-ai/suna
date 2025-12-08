@@ -775,19 +775,35 @@ export function TriggerCreationDrawer({
         {currentStep === 'config' && selectedType === 'schedule' && (
           <View className="space-y-8">
             {/* Name Input */}
-            <View className="space-y-3">
-              <Text className="font-roobert-semibold text-sm text-foreground">Name *</Text>
+            <View style={{ marginBottom: 16 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  marginBottom: 8,
+                }}>
+                Name *
+              </Text>
               <TextInput
                 value={triggerName}
                 onChangeText={setTriggerName}
                 placeholder="Daily report"
-                placeholderTextColor="hsl(var(--muted-foreground))"
-                className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  fontSize: 16,
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                }}
               />
             </View>
 
             {/* Schedule Mode Tabs */}
-            <View className="space-y-4">
+            <View className="space-y-4" style={{ marginBottom: 16 }}>
               <Text className="font-roobert-semibold text-sm text-foreground">Schedule *</Text>
               <View className="flex-row gap-3">
                 {(['preset', 'recurring', 'advanced'] as const).map((mode) => (
@@ -879,8 +895,18 @@ export function TriggerCreationDrawer({
                       placeholder="09"
                       keyboardType="number-pad"
                       maxLength={2}
-                      placeholderTextColor="hsl(var(--muted-foreground))"
-                      className="w-20 rounded-xl border border-border bg-card px-4 py-4 text-center font-roobert text-lg text-foreground"
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      style={{
+                        width: 80,
+                        padding: 12,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                        fontSize: 18,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        textAlign: 'center',
+                      }}
                     />
                     <Text className="text-2xl text-foreground">:</Text>
                     <TextInput
@@ -889,8 +915,18 @@ export function TriggerCreationDrawer({
                       placeholder="00"
                       keyboardType="number-pad"
                       maxLength={2}
-                      placeholderTextColor="hsl(var(--muted-foreground))"
-                      className="w-20 rounded-xl border border-border bg-card px-4 py-4 text-center font-roobert text-lg text-foreground"
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      style={{
+                        width: 80,
+                        padding: 12,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                        fontSize: 18,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        textAlign: 'center',
+                      }}
                     />
                   </View>
 
@@ -932,41 +968,82 @@ export function TriggerCreationDrawer({
                   value={cronExpression}
                   onChangeText={setCronExpression}
                   placeholder="0 9 * * 1-5"
-                  placeholderTextColor="hsl(var(--muted-foreground))"
-                  className="rounded-xl border border-border bg-card px-4 py-4 font-mono text-base text-foreground"
+                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                    fontSize: 16,
+                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    fontFamily: 'monospace',
+                  }}
                 />
               )}
             </View>
 
             {/* Agent Description */}
-            <View className="space-y-3">
-              <Text className="font-roobert-semibold text-sm text-foreground">
+            <View style={{ marginBottom: 16 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  marginBottom: 8,
+                }}>
                 Description (optional)
               </Text>
               <TextInput
                 value={description}
                 onChangeText={setDescription}
                 placeholder="Describe your agent"
-                placeholderTextColor="hsl(var(--muted-foreground))"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                 multiline
                 numberOfLines={3}
-                className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
-                style={{ textAlignVertical: 'top', minHeight: 100 }}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  fontSize: 16,
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  textAlignVertical: 'top',
+                  minHeight: 100,
+                }}
               />
             </View>
 
             {/* Agent Instructions */}
-            <View className="space-y-3">
-              <Text className="font-roobert-semibold text-sm text-foreground">Instructions *</Text>
+            <View style={{ marginBottom: 16 }}>
+              <Text
+                style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  marginBottom: 8,
+                }}>
+                Instructions *
+              </Text>
               <TextInput
                 value={agentPrompt}
                 onChangeText={setAgentPrompt}
                 placeholder="What should your agent do?"
-                placeholderTextColor="hsl(var(--muted-foreground))"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                 multiline
                 numberOfLines={4}
-                className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
-                style={{ textAlignVertical: 'top', minHeight: 120 }}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  fontSize: 16,
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  textAlignVertical: 'top',
+                  minHeight: 120,
+                }}
               />
             </View>
           </View>

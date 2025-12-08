@@ -61,9 +61,15 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
         };
 
         return (
-          <View key={key} className="space-y-2">
-            <Text className="font-roobert-semibold text-sm text-foreground">
-              {label} {isRequired && <Text className="text-red-500">*</Text>}
+          <View key={key} style={{ marginBottom: 16 }}>
+            <Text
+              style={{
+                fontSize: 14,
+                fontWeight: '600',
+                color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                marginBottom: 8,
+              }}>
+              {label} {isRequired && <Text style={{ color: '#EF4444' }}>*</Text>}
             </Text>
 
             {type === 'number' || type === 'integer' ? (
@@ -80,9 +86,17 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                   }
                 }}
                 placeholder={examples[0] ? String(examples[0]) : ''}
-                placeholderTextColor="hsl(var(--muted-foreground))"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                 keyboardType="numeric"
-                className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  fontSize: 16,
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                }}
               />
             ) : type === 'array' ? (
               <TextInput
@@ -92,8 +106,16 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                   handleChange(items);
                 }}
                 placeholder={examples[0] ? String(examples[0]) : 'comma,separated,values'}
-                placeholderTextColor="hsl(var(--muted-foreground))"
-                className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  fontSize: 16,
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                }}
               />
             ) : type === 'boolean' ? (
               <View className="flex-row items-center gap-3">
@@ -112,8 +134,16 @@ export function DynamicConfigForm({ schema, value, onChange }: DynamicConfigForm
                 value={String(current || '')}
                 onChangeText={handleChange}
                 placeholder={examples[0] ? String(examples[0]) : ''}
-                placeholderTextColor="hsl(var(--muted-foreground))"
-                className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                  fontSize: 16,
+                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                }}
               />
             )}
 

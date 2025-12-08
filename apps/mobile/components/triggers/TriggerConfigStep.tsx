@@ -230,33 +230,64 @@ export function TriggerConfigStep({
               </View>
 
               {/* Trigger Name */}
-              <View className="space-y-3">
-                <Text className="font-roobert-semibold text-sm text-foreground">Trigger Name *</Text>
+              <View style={{ marginBottom: 16 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    marginBottom: 8,
+                  }}>
+                  Trigger Name *
+                </Text>
                 <TextInput
                   value={triggerName}
                   onChangeText={onTriggerNameChange}
                   placeholder={`${app.name} → Agent`}
-                  placeholderTextColor="hsl(var(--muted-foreground))"
-                  className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
+                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                    fontSize: 16,
+                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                  }}
                 />
               </View>
 
               {/* Agent Instructions */}
-              <View className="space-y-3">
-                <Text className="font-roobert-semibold text-sm text-foreground">
+              <View style={{ marginBottom: 16 }}>
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: '600',
+                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    marginBottom: 8,
+                  }}>
                   Agent Instructions *
                 </Text>
                 <TextInput
                   value={agentPrompt}
                   onChangeText={onAgentPromptChange}
                   placeholder="What should the agent do when this event occurs?"
-                  placeholderTextColor="hsl(var(--muted-foreground))"
+                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                   multiline
                   numberOfLines={4}
-                  className="rounded-xl border border-border bg-card px-4 py-4 font-roobert text-base text-foreground"
-                  style={{ textAlignVertical: 'top', minHeight: 120 }}
+                  style={{
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                    fontSize: 16,
+                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    textAlignVertical: 'top',
+                    minHeight: 120,
+                  }}
                 />
-                <Text className="font-roobert text-xs text-muted-foreground">
+                <Text className="font-roobert text-xs text-muted-foreground" style={{ marginTop: 8 }}>
                   Use {'{{variable_name}}'} to add variables to the prompt
                 </Text>
               </View>
