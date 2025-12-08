@@ -733,14 +733,11 @@ export default function AdminAnalyticsPage() {
                   );
                 })}
               </div>
-              <p className="text-xs text-muted-foreground mt-3">
-                {categoryDistribution.total_projects} projects
-                {categoryFilter && (
-                  <span className="ml-2">
-                    • <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear</button>
-                  </span>
-                )}
-              </p>
+              {categoryFilter && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
+                </p>
+              )}
             </CardContent>
           </Card>
         )}
