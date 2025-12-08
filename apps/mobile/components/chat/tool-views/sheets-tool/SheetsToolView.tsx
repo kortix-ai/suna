@@ -68,12 +68,7 @@ export function SheetsToolView({ toolCall, toolResult, isStreaming = false, assi
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={rows.length > 0 ? `${rows.length} rows` : actualIsSuccess ? 'Success' : 'Failed'}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">

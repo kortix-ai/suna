@@ -28,7 +28,6 @@ import {
   getLanguageFromFileName,
   hasLanguageHighlighting,
   splitContentIntoLines,
-  generateEmptyLines,
   generateLineDiff,
   calculateDiffStats,
   type LineDiff,
@@ -41,7 +40,6 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import { useColorScheme } from 'nativewind';
 import { PresentationSlideCard } from '../presentation-tool/PresentationSlideCard';
 
 // Helper functions for presentation slide detection
@@ -95,8 +93,6 @@ export function FileOperationToolView({
   project,
   streamingText,
 }: ToolViewProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const { openFileInComputer } = useKortixComputerStore();
   const [isCopyingContent, setIsCopyingContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'changes'>('preview');
@@ -281,7 +277,7 @@ export function FileOperationToolView({
   if (isStrReplace && !fileContent && newStr) {
     fileContent = newStr;
   }
-  
+
   // Debug: Log content extraction
   if (operation === 'create' || operation === 'edit' || operation === 'rewrite' || isStrReplace) {
     console.log('[FileOperationToolView] Content extraction:', {
@@ -374,55 +370,45 @@ export function FileOperationToolView({
     if (!oldStr || !newStr) {
       return (
         <View className="flex-1 items-center justify-center p-8">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
+          <View className="bg-card rounded-2xl items-center justify-center mb-4" style={{ width: 64, height: 64 }}>
             <Icon as={Check} size={32} className="text-primary" />
           </View>
-          <Text className="text-sm font-roobert-medium text-foreground">Replacement Complete</Text>
-          <Text className="text-xs text-muted-foreground mt-1">{processedFilePath}</Text>
+          <Text className="text-sm font-roobert-medium text-primary">Replacement Complete</Text>
+          <Text className="text-xs text-primary opacity-50 mt-1">{processedFilePath}</Text>
         </View>
       );
     }
 
     return (
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
         <View className="p-2">
           {lineDiff.map((line, idx) => {
             if (line.type === 'unchanged') return null;
-            
-            const bgColor = line.type === 'added' 
-              ? (isDark ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.1)')
-              : (isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.1)');
-            const borderColor = line.type === 'added'
-              ? (isDark ? 'rgba(34, 197, 94, 0.3)' : 'rgba(34, 197, 94, 0.3)')
-              : (isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.3)');
 
             return (
               <View
                 key={idx}
-                className="flex-row items-start mb-1 rounded-lg overflow-hidden"
-                style={{ 
-                  backgroundColor: bgColor,
-                  borderLeftWidth: 3,
-                  borderLeftColor: borderColor,
-                }}
+                className={`flex-row items-start mb-1 rounded-lg overflow-hidden bg-card border-l-2 ${line.type === 'added' ? 'border-l-primary' : 'border-l-primary opacity-50'}`}
               >
                 <View className="w-8 items-center justify-center py-2">
                   <Icon
                     as={line.type === 'added' ? Plus : Minus}
                     size={12}
-                    className={line.type === 'added' ? 'text-green-500' : 'text-red-500'}
+                    className="text-primary"
                   />
                 </View>
                 <View className="w-10 items-end justify-center pr-2 py-2">
-                  <Text className="text-[10px] font-roobert-mono text-muted-foreground">
+                  <Text className="text-[10px] font-roobert-mono text-primary opacity-50">
                     {line.lineNumber}
                   </Text>
                 </View>
                 <View className="flex-1 py-2 pr-3">
                   <Text
-                    className={`text-xs font-roobert-mono ${
-                      line.type === 'added' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                    }`}
+                    className="text-xs font-roobert-mono text-primary"
                     selectable
                   >
                     {line.type === 'added' ? line.newLine : line.oldLine}
@@ -441,13 +427,13 @@ export function FileOperationToolView({
       if (isStreaming) {
         return (
           <View className="flex-1 items-center justify-center p-8">
-            <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+            <View className="bg-card rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
               <Icon as={Presentation} size={40} className="text-primary" strokeWidth={2} />
             </View>
-            <Text className="text-lg font-roobert-semibold mb-2 text-foreground">
+            <Text className="text-lg font-roobert-semibold mb-2 text-primary">
               Updating Presentation
             </Text>
-            <Text className="text-sm text-muted-foreground text-center mb-4">
+            <Text className="text-sm text-primary opacity-50 text-center mb-4">
               {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
             </Text>
             <View className="flex-row items-center gap-2">
@@ -471,7 +457,7 @@ export function FileOperationToolView({
                 created_at: '',
               }}
               sandboxUrl={project.sandbox.sandbox_url}
-              onFullScreenClick={() => {}}
+              onFullScreenClick={() => { }}
             />
           </View>
         );
@@ -479,13 +465,13 @@ export function FileOperationToolView({
 
       return (
         <View className="flex-1 items-center justify-center p-8">
-          <View className="bg-primary/10 rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+          <View className="bg-card rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
             <Icon as={Presentation} size={40} className="text-primary" strokeWidth={2} />
           </View>
-          <Text className="text-lg font-roobert-semibold mb-2 text-foreground">
+          <Text className="text-lg font-roobert-semibold mb-2 text-primary">
             Presentation Updated
           </Text>
-          <Text className="text-sm text-muted-foreground text-center">
+          <Text className="text-sm text-primary opacity-50 text-center">
             {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
           </Text>
         </View>
@@ -495,8 +481,8 @@ export function FileOperationToolView({
     if (!fileContent) {
       return (
         <View className="flex-1 items-center justify-center p-12">
-          <Icon as={FileIcon} size={48} className="text-muted-foreground mb-4" />
-          <Text className="text-sm text-muted-foreground">No content to preview</Text>
+          <Icon as={FileIcon} size={48} className="text-primary opacity-50 mb-4" />
+          <Text className="text-sm text-primary opacity-50">No content to preview</Text>
         </View>
       );
     }
@@ -516,19 +502,26 @@ export function FileOperationToolView({
 
     if (isMarkdown) {
       return (
-        <ScrollView ref={previewScrollRef} className="flex-1" showsVerticalScrollIndicator={false}>
-          <View className="p-4">
-            <MarkdownRenderer content={processUnicodeContent(fileContent)} />
-          </View>
+        <ScrollView
+          ref={previewScrollRef}
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+        >
+          <MarkdownRenderer content={fileContent} />
         </ScrollView>
       );
     }
 
     if (isCsv) {
       return (
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+        >
           <View className="p-4">
-            <CsvRenderer content={processUnicodeContent(fileContent)} />
+            <CsvRenderer content={fileContent} />
           </View>
         </ScrollView>
       );
@@ -536,7 +529,11 @@ export function FileOperationToolView({
 
     if (isXlsx) {
       return (
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}
+        >
           <View className="p-4">
             <XlsxRenderer content={fileContent} fileName={fileName} />
           </View>
@@ -546,10 +543,15 @@ export function FileOperationToolView({
 
     // Default: Code preview
     return (
-      <ScrollView ref={previewScrollRef} className="flex-1" showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={previewScrollRef}
+        className="flex-1"
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
         <View className="p-2">
           <CodeRenderer
-            code={processUnicodeContent(fileContent)}
+            code={fileContent}
             language={language}
             showLineNumbers={true}
           />
@@ -562,8 +564,8 @@ export function FileOperationToolView({
     if (!fileContent) {
       return (
         <View className="flex-1 items-center justify-center p-12">
-          <Icon as={FileIcon} size={48} className="text-muted-foreground mb-4" />
-          <Text className="text-sm text-muted-foreground">No source code to display</Text>
+          <Icon as={FileIcon} size={48} className="text-primary opacity-50 mb-4" />
+          <Text className="text-sm text-primary opacity-50">No source code to display</Text>
         </View>
       );
     }
@@ -572,43 +574,37 @@ export function FileOperationToolView({
     if (contentLines.length === 0) {
       return (
         <View className="flex-1 items-center justify-center p-12">
-          <Icon as={FileIcon} size={48} className="text-muted-foreground mb-4" />
-          <Text className="text-sm text-muted-foreground">No content to display</Text>
+          <Icon as={FileIcon} size={48} className="text-primary opacity-50 mb-4" />
+          <Text className="text-sm text-primary opacity-50">No content to display</Text>
         </View>
       );
     }
 
     return (
-      <ScrollView ref={sourceScrollRef} className="flex-1" showsVerticalScrollIndicator={false}>
-        <View 
-          className="p-2"
-          style={{
-            backgroundColor: isDark ? '#1a1a1a' : '#fafafa',
-          }}
-        >
+      <ScrollView
+        ref={sourceScrollRef}
+        className="flex-1"
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        <View className="p-2 bg-card">
           {contentLines.map((line, idx) => (
             <View key={idx} className="flex-row" style={{ minHeight: 22 }}>
-              <View 
-                className="w-10 items-end pr-3 py-0.5"
-                style={{
-                  borderRightWidth: 1,
-                  borderRightColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                }}
+              <View
+                className="w-10 items-end pr-3 py-0.5 border-r border-border"
               >
-                <Text 
-                  className="text-[11px] font-roobert-mono"
-                  style={{ color: isDark ? '#666' : '#999' }}
+                <Text
+                  className="text-[11px] font-roobert-mono text-primary opacity-50"
                 >
                   {idx + 1}
                 </Text>
               </View>
               <View className="flex-1 pl-3 py-0.5">
                 <Text
-                  className="text-[13px] font-roobert-mono leading-5"
-                  style={{ color: isDark ? '#e0e0e0' : '#333' }}
+                  className="text-[13px] font-roobert-mono leading-5 text-primary"
                   selectable
                 >
-                  {line ? processUnicodeContent(line, true) : ' '}
+                  {line || ' '}
                 </Text>
               </View>
             </View>
@@ -627,14 +623,20 @@ export function FileOperationToolView({
 
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
   const hasDiffData = isStrReplace && oldStr && newStr;
-  
+
   // Initialize activeTab for str-replace with diff data (only once)
   useEffect(() => {
-    if (hasDiffData && !tabInitializedRef.current) {
-      setActiveTab('changes');
+    if (!tabInitializedRef.current) {
+      if (hasDiffData) {
+        setActiveTab('changes');
+      } else if (isMarkdown || isHtml || isCsv || isXlsx || isPresentationSlide) {
+        setActiveTab('preview');
+      } else {
+        setActiveTab('code');
+      }
       tabInitializedRef.current = true;
     }
-  }, [hasDiffData]);
+  }, [hasDiffData, isMarkdown, isHtml, isCsv, isXlsx, isPresentationSlide]);
 
   // Loading state
   if (isStreaming && !fileContent && !filePath && !oldStr) {
@@ -686,20 +688,20 @@ export function FileOperationToolView({
         }}
       >
         <View className="flex-1 w-full items-center justify-center py-12 px-6">
-          <View className={`${config.bgColor} rounded-2xl items-center justify-center mb-6`} style={{ width: 80, height: 80 }}>
-            <Icon as={OperationIcon} size={40} className={config.color} strokeWidth={2} />
+          <View className="bg-card rounded-2xl items-center justify-center mb-6" style={{ width: 80, height: 80 }}>
+            <Icon as={OperationIcon} size={40} className="text-primary" strokeWidth={2} />
           </View>
-          <Text className="text-xl font-roobert-semibold mb-6 text-foreground">
+          <Text className="text-xl font-roobert-semibold mb-6 text-primary">
             File Deleted
           </Text>
           {processedFilePath && (
-            <View className="bg-muted border border-border rounded-xl p-4 w-full max-w-md mb-4">
-              <Text className="text-sm font-roobert-mono text-foreground/80 text-center" numberOfLines={3}>
+            <View className="bg-card border border-border rounded-xl p-4 w-full max-w-md mb-4">
+              <Text className="text-sm font-roobert-mono text-primary text-center" numberOfLines={3}>
                 {processedFilePath}
               </Text>
             </View>
           )}
-          <Text className="text-sm text-muted-foreground text-center">
+          <Text className="text-sm text-primary opacity-50 text-center">
             This file has been permanently removed
           </Text>
         </View>
@@ -726,8 +728,38 @@ export function FileOperationToolView({
         title: displayTitle,
         isSuccess: actualIsSuccess,
         isStreaming: isStreaming,
-        rightContent: (
+        showStatus: true,
+      }}
+      footer={
+        <View className="flex-row items-center justify-between w-full">
           <View className="flex-row items-center gap-2">
+            {processedFilePath && (
+              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+                <Icon as={FileText} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary" numberOfLines={1}>
+                  {fileName || 'File'}
+                </Text>
+              </View>
+            )}
+            <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+              <Icon as={FileIcon} size={12} className="text-primary" />
+              <Text className="text-xs font-roobert-medium text-primary">
+                {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
+              </Text>
+            </View>
+          </View>
+          {toolTimestamp && !isStreaming && (
+            <Text className="text-xs text-primary opacity-50">
+              {formatTimestamp(toolTimestamp)}
+            </Text>
+          )}
+        </View>
+      }
+    >
+      {/* Toolbar section for tabs and actions */}
+      {!isStreaming && (tabs.length > 1 || hasDiffData || fileContent || processedFilePath) && (
+        <View className="px-4 py-3 border-b border-border bg-card flex-row items-center justify-between gap-3">
+          <View className="flex-row items-center gap-2 flex-1">
             {tabs.length > 1 && (
               <TabSwitcher
                 tabs={tabs}
@@ -739,86 +771,43 @@ export function FileOperationToolView({
               />
             )}
             {hasDiffData && (
-              <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-lg" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
-                <Icon as={Plus} size={12} className="text-green-500" />
-                <Text className="text-xs font-roobert-medium text-green-500">{diffStats.additions}</Text>
-                <Icon as={Minus} size={12} className="text-red-500" style={{ marginLeft: 4 }} />
-                <Text className="text-xs font-roobert-medium text-red-500">{diffStats.deletions}</Text>
+              <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-full bg-card border border-border">
+                <Icon as={Plus} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary">{diffStats.additions}</Text>
+                <Icon as={Minus} size={12} className="text-primary" />
+                <Text className="text-xs font-roobert-medium text-primary">{diffStats.deletions}</Text>
               </View>
             )}
-            {fileContent && !isStreaming && !isPresentationSlide && (
+          </View>
+          <View className="flex-row items-center gap-2">
+            {fileContent && !isPresentationSlide && (
               <Pressable
                 onPress={handleCopyContent}
                 disabled={isCopyingContent}
-                className="h-8 w-8 items-center justify-center rounded-lg active:opacity-70"
-                style={{ backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)' }}
+                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
               >
                 <Icon
                   as={isCopyingContent ? Check : Copy}
-                  size={16}
-                  className={isCopyingContent ? 'text-primary' : 'text-foreground'}
+                  size={17}
+                  className="text-primary"
                 />
               </Pressable>
             )}
-            {processedFilePath && !isStreaming && !isPresentationSlide && (
+            {processedFilePath && !isPresentationSlide && (
               <Pressable
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   openFileInComputer(processedFilePath);
                 }}
-                className="flex-row items-center gap-1.5 px-2 py-1.5 rounded-lg active:opacity-70"
-                style={{
-                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-                  borderWidth: 1,
-                  borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                }}
+                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
               >
-                <Icon as={Pencil} size={14} className="text-foreground" />
-                <Text className="text-xs font-roobert-medium text-foreground">Edit</Text>
+                <Icon as={Pencil} size={17} className="text-primary" />
               </Pressable>
             )}
-            {!isStreaming && (
-              <StatusBadge
-                variant={actualIsSuccess ? 'success' : 'error'}
-                label={actualIsSuccess ? 'Success' : 'Failed'}
-              />
-            )}
-            {isStreaming && <StatusBadge variant="streaming" label="Processing" />}
           </View>
-        ),
-      }}
-      footer={
-        <View className="flex-row items-center justify-between w-full">
-          <View className="flex-row items-center gap-2">
-            {processedFilePath && (
-              <View
-                className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border"
-                style={{ borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)' }}
-              >
-                <Icon as={FileText} size={12} className="text-foreground" />
-                <Text className="text-xs font-roobert-medium text-foreground" numberOfLines={1}>
-                  {fileName || 'File'}
-                </Text>
-              </View>
-            )}
-            <View
-              className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border"
-              style={{ borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)' }}
-            >
-              <Icon as={FileIcon} size={12} className="text-foreground" />
-              <Text className="text-xs font-roobert-medium text-foreground">
-                {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
-              </Text>
-            </View>
-          </View>
-          {toolTimestamp && !isStreaming && (
-            <Text className="text-xs text-muted-foreground">
-              {formatTimestamp(toolTimestamp)}
-            </Text>
-          )}
         </View>
-      }
-    >
+      )}
+
       <View className="flex-1 w-full">
         {activeTab === 'code' ? (
           renderSourceCode()
