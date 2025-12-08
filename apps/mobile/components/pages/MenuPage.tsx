@@ -47,6 +47,7 @@ import type {
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
+import { cn } from '@/lib/utils';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -247,6 +248,7 @@ function FloatingActionButton({
 }: FloatingActionButtonProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
+  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
 
@@ -306,7 +308,10 @@ function FloatingActionButton({
           elevation: 10,
         },
       ]}
-      className="absolute bottom-44 right-6 items-center justify-center rounded-full"
+      className={cn(
+        'absolute bottom-44 right-6 items-center justify-center rounded-full',
+        advancedFeaturesEnabled ? 'bottom-[230px]' : 'bottom-34'
+      )}
       accessibilityRole="button"
       accessibilityLabel={getAccessibilityLabel()}>
       <Icon as={Plus} size={26} color={iconColor} strokeWidth={2.5} />
