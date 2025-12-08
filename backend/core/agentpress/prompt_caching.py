@@ -525,7 +525,9 @@ def group_messages_by_tool_calls_for_caching(messages: List[Dict[str, Any]]) -> 
         """Extract tool_call IDs from an assistant message."""
         if msg.get('role') != 'assistant':
             return []
-        tool_calls = msg.get('tool_calls', [])
+        tool_calls = msg.get('tool_calls') or []
+        if not isinstance(tool_calls, list):
+            return []
         return [tc.get('id') for tc in tool_calls if isinstance(tc, dict) and tc.get('id')]
     
     def get_tool_call_id(msg: Dict[str, Any]) -> Optional[str]:
