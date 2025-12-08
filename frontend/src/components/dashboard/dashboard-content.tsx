@@ -22,6 +22,7 @@ import { useIsMobile } from '@/hooks/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/dashboard/use-initiate-agent';
+import { optimisticAgentStart } from '@/lib/api/agents';
 import { useAccountState, accountStateSelectors, invalidateAccountState } from '@/hooks/billing';
 import { getPlanName } from '@/components/billing/plan-utils';
 import { useAgents } from '@/hooks/agents/use-agents';
@@ -76,7 +77,6 @@ export function DashboardContent() {
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   
-  // Use centralized Suna modes persistence hook
   const {
     selectedMode,
     selectedCharts,
@@ -113,6 +113,9 @@ export function DashboardContent() {
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const pricingModalStore = usePricingModalStore();
+  
+  const prefetchedRouteRef = React.useRef<string | null>(null);
+  const prefetchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({
     limit: 50, // Changed from 100 to 50 to match other components
@@ -372,14 +375,28 @@ export function DashboardContent() {
         filesCount: files.length,
       });
 
-      const result = await initiateAgentMutation.mutateAsync(formData);
-
-      if (result.thread_id) {
-        setInitiatedThreadId(result.thread_id);
-      } else {
-        throw new Error('Agent initiation did not return a thread_id.');
-      }
+      const threadId = crypto.randomUUID();
+      const projectId = crypto.randomUUID();
+      
       chatInputRef.current?.clearPendingFiles();
+      setIsRedirecting(true);
+      
+      sessionStorage.setItem('optimistic_prompt', trimmedMessage || message);
+      sessionStorage.setItem('optimistic_thread', threadId);
+      
+      router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+      
+      optimisticAgentStart({
+        thread_id: threadId,
+        project_id: projectId,
+        prompt: trimmedMessage || message,
+        files: files,
+        model_name: options?.model_name,
+        agent_id: selectedAgentId || undefined,
+      }).catch((error) => {
+        console.error('Background agent start failed:', error);
+        toast.error('Failed to start conversation');
+      });
     } catch (error: any) {
       console.error('Error during submission process:', error);
       if (error instanceof ProjectLimitError) {
@@ -453,6 +470,14 @@ export function DashboardContent() {
   }, []);
 
   React.useEffect(() => {
+    const dummyProjectId = 'prefetch-project';
+    const dummyThreadId = 'prefetch-thread';
+    const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+    router.prefetch(routeToPrefetch);
+    prefetchedRouteRef.current = routeToPrefetch;
+  }, [router]);
+
+  React.useEffect(() => {
     if (autoSubmit && inputValue && !isSubmitting && !isRedirecting) {
       const timer = setTimeout(() => {
         handleSubmit(inputValue);
@@ -463,6 +488,31 @@ export function DashboardContent() {
     }
     return undefined;
   }, [autoSubmit, inputValue, isSubmitting, isRedirecting, handleSubmit]);
+
+  React.useEffect(() => {
+    if (inputValue.trim() && !isSubmitting && !isRedirecting) {
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+      }
+
+      prefetchTimeoutRef.current = setTimeout(() => {
+        const dummyProjectId = 'prefetch-project';
+        const dummyThreadId = 'prefetch-thread';
+        const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+        
+        if (prefetchedRouteRef.current !== routeToPrefetch) {
+          router.prefetch(routeToPrefetch);
+          prefetchedRouteRef.current = routeToPrefetch;
+        }
+      }, 300);
+    }
+
+    return () => {
+      if (prefetchTimeoutRef.current) {
+        clearTimeout(prefetchTimeoutRef.current);
+      }
+    };
+  }, [inputValue, isSubmitting, isRedirecting, router]);
 
   return (
     <>

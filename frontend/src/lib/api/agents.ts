@@ -26,6 +26,14 @@ export interface UnifiedAgentStartResponse {
   thread_id: string;
   agent_run_id: string;
   status: string;
+  project_id?: string;
+}
+
+export interface OptimisticAgentStartResponse {
+  thread_id: string;
+  project_id: string;
+  agent_run_id: null;
+  status: 'pending';
 }
 
 export interface AgentIconGenerationRequest {
@@ -332,6 +340,151 @@ export const getActiveAgentRuns = async (): Promise<ActiveAgentRun[]> => {
   } catch (error) {
     console.warn('Error fetching active agent runs:', error);
     return [];
+  }
+};
+
+export const optimisticAgentStart = async (options: {
+  thread_id: string;
+  project_id: string;
+  prompt: string;
+  files?: File[];
+  model_name?: string;
+  agent_id?: string;
+}): Promise<OptimisticAgentStartResponse> => {
+  try {
+    if (!API_URL) {
+      throw new Error(
+        'Backend URL is not configured. Set NEXT_PUBLIC_BACKEND_URL in your environment.',
+      );
+    }
+
+    const formData = new FormData();
+    
+    formData.append('thread_id', options.thread_id);
+    formData.append('project_id', options.project_id);
+    
+    const promptValue = typeof options.prompt === 'string' ? options.prompt.trim() : options.prompt;
+    formData.append('prompt', promptValue);
+    
+    if (options.model_name && options.model_name.trim()) {
+      formData.append('model_name', options.model_name.trim());
+    }
+    
+    if (options.agent_id) {
+      formData.append('agent_id', options.agent_id);
+    }
+    
+    if (options.files && options.files.length > 0) {
+      options.files.forEach((file) => {
+        formData.append('files', file);
+      });
+    }
+
+    const response = await backendApi.upload<OptimisticAgentStartResponse>(
+      '/agent/start-optimistic',
+      formData,
+      { showErrors: false, cache: 'no-store' }
+    );
+
+    if (response.error) {
+      const status = response.error.status || 500;
+      
+      if (status === 402) {
+        throw response.error;
+      }
+
+      if (status === 429) {
+        const detail = response.error.details?.detail || { 
+          message: 'Too many agent runs running',
+          running_thread_ids: [],
+          running_count: 0,
+        };
+        throw new AgentRunLimitError(status, detail);
+      }
+
+      if (status === 431 || response.error instanceof RequestTooLargeError) {
+        const filesCount = options.files?.length || 0;
+        throw new RequestTooLargeError(431, {
+          message: `Request is too large (${filesCount} files attached)`,
+          suggestion: filesCount > 1 
+            ? 'Try uploading files one at a time instead of all at once.'
+            : 'The file or request data is too large. Try a smaller file or simplify your message.',
+        });
+      }
+
+      console.error(
+        `[API] Error starting agent optimistically: ${status} ${response.error.message}`,
+      );
+    
+      if (status === 401) {
+        throw new Error('Authentication error: Please sign in again');
+      } else if (status >= 500) {
+        throw new Error('Server error: Please try again later');
+      }
+    
+      throw new Error(
+        `Error starting agent: ${response.error.message} (${status})`,
+      );
+    }
+
+    return response.data!;
+  } catch (error) {
+    if (error instanceof BillingError || error instanceof AgentRunLimitError || error instanceof ProjectLimitError) {
+      throw error;
+    }
+
+    if (error instanceof NoAccessTokenAvailableError) {
+      throw error;
+    }
+
+    if (error instanceof RequestTooLargeError) {
+      throw error;
+    }
+
+    console.error('[API] Failed to start agent optimistically:', error);
+    
+    if (
+      error instanceof TypeError &&
+      error.message.includes('Failed to fetch')
+    ) {
+      const networkError = new Error(
+        `Cannot connect to backend server. Please check your internet connection and make sure the backend is running.`,
+      );
+      handleApiError(networkError, { operation: 'start agent', resource: 'AI assistant' });
+      throw networkError;
+    }
+
+    handleApiError(error, { operation: 'start agent', resource: 'AI assistant' });
+    throw error;
+  }
+};
+
+export const startAgentOnThread = async (
+  threadId: string,
+  options?: {
+    model_name?: string;
+    agent_id?: string;
+  }
+): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
+  try {
+    const response = await backendApi.post<{ thread_id: string; agent_run_id: string; status: string }>(
+      `/thread/${threadId}/start-agent`,
+      {
+        model_name: options?.model_name,
+        agent_id: options?.agent_id,
+      },
+      { showErrors: true, cache: 'no-store' }
+    );
+
+    if (response.error) {
+      throw new Error(`Error starting agent on thread: ${response.error.message}`);
+    }
+
+    return response.data!;
+  } catch (error) {
+    console.error('[API] Failed to start agent on thread:', error);
+    handleApiError(error, { operation: 'start agent on thread', resource: 'AI assistant' });
+    throw error;
   }
 };
 

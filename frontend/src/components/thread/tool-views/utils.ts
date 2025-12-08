@@ -50,6 +50,12 @@ export function getToolTitle(toolName: string): string {
     'browser-extract-content': 'Browser Extract',
     'browser-screenshot': 'Browser Screenshot',
     'load-image': 'Load Image',
+
+
+    'initialize-tools': 'Initializing Tools',
+    'initialize_tools': 'Initializing Tools',
+
+    
     'ask': 'Ask',
     'complete': 'Task Complete',
     'execute-data-provider-call': 'Data Provider Call',

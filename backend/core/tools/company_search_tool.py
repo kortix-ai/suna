@@ -19,7 +19,42 @@ from core.services.supabase import DBConnection
     icon="Building",
     color="bg-slate-100 dark:bg-slate-800/50",
     weight=260,
-    visible=True
+    visible=True,
+    usage_guide="""
+### SPECIALIZED COMPANY SEARCH
+
+**⚠️ COST: $0.54 per search (returns 10 results)**
+
+**🔴 MANDATORY: ALWAYS ASK FOR CONFIRMATION BEFORE USING THIS TOOL**
+
+**WORKFLOW - NO EXCEPTIONS:**
+1. **CLARIFY:** Ask 3-5 specific questions
+   - Industry/sector specifics
+   - Location preferences
+   - Company stage/size
+   - Technology focus
+   - Other criteria
+2. **REFINE:** Build detailed search query
+3. **CONFIRM:** Show query + cost, ask for "yes"
+4. **WAIT:** Wait for confirmation
+5. **EXECUTE:** Only then use company_search
+
+**SEARCH QUERY BEST PRACTICES:**
+- Use natural language to describe company criteria
+- Include industry, location, size, or relevant factors
+- Examples:
+  - "AI startups in San Francisco with Series A funding"
+  - "E-commerce companies in Austin with 50-200 employees"
+  - "Healthcare technology companies in Boston"
+
+**ENRICHMENT:**
+- Results include company information, websites, and details
+
+**NEVER:**
+- Call without clarifying questions first
+- Proceed without explicit confirmation
+- Use vague queries - specificity is critical
+"""
 )
 class CompanySearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):

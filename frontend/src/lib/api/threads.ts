@@ -2,12 +2,18 @@ import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
 
+export type ThreadStatus = 'pending' | 'initializing' | 'ready' | 'error';
+
 export type Thread = {
   thread_id: string;
   project_id?: string | null;
   is_public?: boolean;
   created_at: string;
   updated_at: string;
+  status?: ThreadStatus;
+  initialization_error?: string | null;
+  initialization_started_at?: string | null;
+  initialization_completed_at?: string | null;
   [key: string]: any;
 };
 

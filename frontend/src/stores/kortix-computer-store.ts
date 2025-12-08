@@ -43,6 +43,7 @@ interface KortixComputerState {
   
   // Panel state
   shouldOpenPanel: boolean;
+  isSidePanelOpen: boolean;
   
   // Tool navigation state (for external tool click triggers)
   pendingToolNavIndex: number | null;
@@ -79,6 +80,9 @@ interface KortixComputerState {
   
   // Panel control
   clearShouldOpenPanel: () => void;
+  setIsSidePanelOpen: (open: boolean) => void;
+  openSidePanel: () => void;
+  closeSidePanel: () => void;
   
   // Unsaved content management
   setUnsavedContent: (filePath: string, content: string) => void;
@@ -103,6 +107,7 @@ const initialState = {
   selectedVersion: null as string | null,
   selectedVersionDate: null as string | null,
   shouldOpenPanel: false,
+  isSidePanelOpen: false,
   pendingToolNavIndex: null as number | null,
   unsavedFileContent: {} as Record<string, string>,
   unsavedFileState: {} as Record<string, boolean>,
@@ -252,6 +257,18 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         set({ shouldOpenPanel: false });
       },
       
+      setIsSidePanelOpen: (open: boolean) => {
+        set({ isSidePanelOpen: open });
+      },
+      
+      openSidePanel: () => {
+        set({ isSidePanelOpen: true });
+      },
+      
+      closeSidePanel: () => {
+        set({ isSidePanelOpen: false });
+      },
+      
       setUnsavedContent: (filePath: string, content: string) => {
         const normalizedPath = normalizeWorkspacePath(filePath);
         set((state) => ({
@@ -355,4 +372,11 @@ export const useKortixComputerPendingToolNavIndex = () =>
 
 export const useKortixComputerClearPendingToolNav = () =>
   useKortixComputerStore((state) => state.clearPendingToolNav);
+
+// Side panel state selectors
+export const useIsSidePanelOpen = () =>
+  useKortixComputerStore((state) => state.isSidePanelOpen);
+
+export const useSetIsSidePanelOpen = () =>
+  useKortixComputerStore((state) => state.setIsSidePanelOpen);
 

@@ -14,7 +14,28 @@ from core.agentpress.thread_manager import ThreadManager
     icon="GraduationCap",
     color="bg-emerald-100 dark:bg-emerald-800/50",
     weight=270,
-    visible=True
+    visible=True,
+    usage_guide="""
+### ACADEMIC PAPER SEARCH
+
+**CAPABILITIES:**
+- Search academic papers using Semantic Scholar API
+- Find papers by keywords, authors, topics
+- Get paper metadata: title, abstract, citations, authors, year
+- Access DOI links and full paper information
+
+**BEST PRACTICES:**
+- Use specific academic terms and keywords
+- Include author names when searching for specific researchers
+- Filter by year range for recent research
+- Cross-reference multiple papers for comprehensive understanding
+- Check citation counts for paper impact assessment
+
+**SEARCH STRATEGIES:**
+- Topic-based: "machine learning attention mechanisms"
+- Author-based: "Yoshua Bengio deep learning"
+- Combined: "transformer architecture Vaswani 2017"
+"""
 )
 class PaperSearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):

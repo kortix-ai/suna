@@ -43,10 +43,10 @@ logger.info("✅ Worker process ready, tool cache warmed")
 _initialized = False
 db = DBConnection()
 instance_id = ""
-# Response list TTL: 1 hour after run completes
-# Users can reconnect to stream within 1 hour; after that, data is gone but
-# the run results are persisted in the database anyway
-REDIS_RESPONSE_LIST_TTL = 3600  # 1 hour (was 24h - too long, fills Redis)
+
+REDIS_RESPONSE_LIST_TTL = 3600
+
+_STATIC_CORE_PROMPT = None
 
 
 def check_terminating_tool_call(response: Dict[str, Any]) -> Optional[str]:
@@ -79,7 +79,7 @@ def check_terminating_tool_call(response: Dict[str, Any]) -> Optional[str]:
 
 
 async def initialize():
-    global db, instance_id, _initialized
+    global db, instance_id, _initialized, _STATIC_CORE_PROMPT
 
     if _initialized:
         return
@@ -99,6 +99,14 @@ async def initialize():
         await warm_up_suna_config_cache()
     except Exception as e:
         logger.warning(f"Failed to pre-cache Suna configs (non-fatal): {e}")
+    
+    if not _STATIC_CORE_PROMPT:
+        try:
+            from core.prompts.core_prompt import get_core_system_prompt
+            _STATIC_CORE_PROMPT = get_core_system_prompt()
+            logger.info(f"✅ Cached static core prompt at worker boot ({len(_STATIC_CORE_PROMPT):,} chars)")
+        except Exception as e:
+            logger.warning(f"Failed to cache core prompt (non-fatal): {e}")
 
     _initialized = True
     logger.info(f"✅ Worker async resources initialized successfully (instance: {instance_id})")
@@ -315,10 +323,7 @@ async def create_stop_signal_checker(pubsub, agent_run_id: str, instance_id: str
         except asyncio.CancelledError:
             logger.debug(f"Stop signal checker cancelled for {agent_run_id} (Instance: {instance_id})")
         except Exception as e:
-            # NOTE: Do NOT set stop_signal_received = True on errors - that was a bug!
-            # Errors in the stop signal checker should not terminate the agent run
             logger.error(f"Error in stop signal checker for {agent_run_id}: {e}", exc_info=True)
-            # Continue running - the agent should complete its work, not be stopped due to a pubsub error
     
     return check_for_stop_signal, stop_signal_received
 
@@ -366,9 +371,6 @@ async def process_agent_responses(
 
         response_json = json.dumps(response)
         
-        # PUBLISH first for lowest latency (push-based, instant delivery)
-        # XADD second for persistence (consumers can catch up on reconnect)
-        # Both run concurrently as fire-and-forget for maximum throughput
         pending_redis_operations.append(
             asyncio.create_task(redis.publish(pubsub_channel, response_json))
         )
@@ -382,8 +384,7 @@ async def process_agent_responses(
         )
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
-        
-        # Safety: Set TTL on stream every 50 responses
+
         if total_responses % 50 == 0:
             try:
                 await redis.expire(stream_key, 3600)
@@ -467,6 +468,8 @@ async def cleanup_pubsub(pubsub, agent_run_id: str):
                 pass
     except Exception as e:
         logger.warning(f"Error closing pubsub for {agent_run_id}: {str(e)}")
+
+from core import thread_init_service
 
 @dramatiq.actor
 async def run_agent_background(

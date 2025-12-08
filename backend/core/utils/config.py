@@ -90,6 +90,13 @@ class Configuration:
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
     # ============================================
     
+
+    ENABLE_BOOTSTRAP_MODE: bool = True        # Use two-phase bootstrap+enrichment (faster startup)
+    ENABLE_MINIMAL_PROMPT: bool = True        # Use minimal prompt for first turn (no DB queries)
+    BOOTSTRAP_SLO_WARNING_MS: int = 750       # Emit warning if Phase A exceeds this threshold
+    BOOTSTRAP_SLO_CRITICAL_MS: int = 1500     # Hard timeout for Phase A (fail if exceeded)
+    # =========================================
+    
     # ===== PRESENCE CONFIGURATION =====
     DISABLE_PRESENCE: bool = False  # Disable presence tracking entirely
     # ==================================
@@ -386,7 +393,7 @@ class Configuration:
     # Debug configuration
     # Set to True to save LLM API call inputs and stream outputs to debug_streams/ directory
     # Always False in production, regardless of environment variable
-    _DEBUG_SAVE_LLM_IO: Optional[bool] = False
+    _DEBUG_SAVE_LLM_IO: Optional[bool] = True
     
     @property
     def DEBUG_SAVE_LLM_IO(self) -> bool:

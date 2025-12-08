@@ -17,7 +17,7 @@ import {
     DialogTitle,
     DialogOverlay,
 } from '@/components/ui/dialog';
-import { isLocalMode, config, isStagingMode } from '@/lib/config';
+import { isLocalMode } from '@/lib/config';
 import { toast } from 'sonner';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
@@ -28,9 +28,7 @@ import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
 
-// Lazy load components only needed when dialogs are open
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
-// const GitHubSignIn = lazy(() => import('@/components/GithubSignIn'));
 const PlanSelectionModal = lazy(() => 
     import('@/components/billing/pricing').then(mod => ({ default: mod.PlanSelectionModal }))
 );
@@ -41,15 +39,11 @@ const SunaModesPanel = lazy(() =>
     import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
 
-// Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
     <DialogOverlay className="bg-background/40 backdrop-blur-md" />
 );
 
-// Constant for localStorage key to ensure consistency
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
-
-
 
 export function HeroSection() {
     const t = useTranslations('suna');
@@ -58,7 +52,6 @@ export function HeroSection() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
 
-    // Use centralized agent selection hook with persistence
     const {
         selectedAgentId,
         setSelectedAgent,
@@ -66,7 +59,6 @@ export function HeroSection() {
         getCurrentAgent
     } = useAgentSelection();
 
-    // Use centralized Suna modes persistence hook
     const {
         selectedMode,
         selectedCharts,
@@ -90,7 +82,9 @@ export function HeroSection() {
         runningThreadIds: string[];
     } | null>(null);
 
-    // Fetch agents for selection
+    const prefetchedRouteRef = useRef<string | null>(null);
+    const prefetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
     const { data: agentsResponse } = useQuery({
         queryKey: agentKeys.list({
             limit: 100,
@@ -109,21 +103,17 @@ export function HeroSection() {
 
     const agents = agentsResponse?.agents || [];
 
-    // Initialize agent selection from agents list
     useEffect(() => {
         if (agents.length > 0) {
             initializeFromAgents(agents, undefined, setSelectedAgent);
         }
     }, [agents, initializeFromAgents, setSelectedAgent]);
 
-    // Determine if selected agent is Suna default
-    // For unauthenticated users, assume Suna is the default
     const selectedAgent = selectedAgentId
         ? agents.find(agent => agent.agent_id === selectedAgentId)
         : null;
     const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
 
-    // Auth dialog state
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
     useEffect(() => {
@@ -140,6 +130,14 @@ export function HeroSection() {
     }, [user, isLoading, authDialogOpen, router]);
 
     useEffect(() => {
+        const dummyProjectId = 'prefetch-project';
+        const dummyThreadId = 'prefetch-thread';
+        const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+        router.prefetch(routeToPrefetch);
+        prefetchedRouteRef.current = routeToPrefetch;
+    }, [router]);
+
+    useEffect(() => {
         if (threadQuery.data && initiatedThreadId) {
             const thread = threadQuery.data;
             if (thread.project_id) {
@@ -151,21 +149,42 @@ export function HeroSection() {
         }
     }, [threadQuery.data, initiatedThreadId, router]);
 
-    // Handle ChatInput submission
+    useEffect(() => {
+        if (inputValue.trim() && !isSubmitting) {
+            if (prefetchTimeoutRef.current) {
+                clearTimeout(prefetchTimeoutRef.current);
+            }
+
+            prefetchTimeoutRef.current = setTimeout(() => {
+                const dummyProjectId = 'prefetch-project';
+                const dummyThreadId = 'prefetch-thread';
+                const routeToPrefetch = `/projects/${dummyProjectId}/thread/${dummyThreadId}`;
+                
+                if (prefetchedRouteRef.current !== routeToPrefetch) {
+                    router.prefetch(routeToPrefetch);
+                    prefetchedRouteRef.current = routeToPrefetch;
+                }
+            }, 300);
+        }
+
+        return () => {
+            if (prefetchTimeoutRef.current) {
+                clearTimeout(prefetchTimeoutRef.current);
+            }
+        };
+    }, [inputValue, isSubmitting, router]);
+
     const handleChatInputSubmit = async (
         message: string,
         options?: { model_name?: string; enable_thinking?: boolean }
     ) => {
         if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting) return;
-
-        // If user is not logged in, save prompt and show auth dialog
         if (!user && !isLoading) {
             localStorage.setItem(PENDING_PROMPT_KEY, message.trim());
             setAuthDialogOpen(true);
             return;
         }
 
-        // User is logged in, create the agent with files like dashboard does
         setIsSubmitting(true);
         try {
             const files = chatInputRef.current?.getPendingFiles() || [];
@@ -174,12 +193,10 @@ export function HeroSection() {
             const formData = new FormData();
             formData.append('prompt', message);
 
-            // Add selected agent if one is chosen
             if (selectedAgentId) {
                 formData.append('agent_id', selectedAgentId);
             }
 
-            // Add files if any
             files.forEach((file) => {
                 const normalizedName = normalizeFilenameToNFC(file.name);
                 formData.append('files', file, normalizedName);
@@ -229,7 +246,6 @@ export function HeroSection() {
 
     return (
         <section id="hero" className="w-full relative overflow-hidden">
-            {/* Lazy load payment modal - only needed on interaction */}
             {showPaymentModal && (
                 <Suspense fallback={null}>
                     <PlanSelectionModal
@@ -239,7 +255,6 @@ export function HeroSection() {
                 </Suspense>
             )}
             <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
-                {/* Animated background */}
                 <AnimatedBg
                     variant="hero"
                     sizeMultiplier={isMobile ? 0.7 : 1}
@@ -307,8 +322,6 @@ export function HeroSection() {
                             </div>
                         </div>
                     </div>
-
-                    {/* Modes Panel - Below chat input, visible for Suna agent */}
                     {isSunaAgent && (
                         <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0">
                             <Suspense fallback={<div className="h-24 animate-pulse bg-muted/10 rounded-lg" />}>
@@ -333,7 +346,6 @@ export function HeroSection() {
 
             </div>
 
-            {/* Auth Dialog */}
             <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
                 <BlurredDialogOverlay />
                 <DialogContent className="sm:max-w-md rounded-xl bg-background border border-border">
@@ -342,31 +354,18 @@ export function HeroSection() {
                             <DialogTitle className="text-xl font-medium">
                                 Sign in to continue
                             </DialogTitle>
-                            {/* <button 
-                onClick={() => setAuthDialogOpen(false)}
-                className="rounded-full p-1 hover:bg-muted transition-colors"
-              >
-                <X className="h-4 w-4 text-muted-foreground" />
-              </button> */}
                         </div>
                         <DialogDescription className="text-muted-foreground">
                             Sign in or create an account to talk with Kortix
                         </DialogDescription>
                     </DialogHeader>
 
-                    {/* OAuth Sign In */}
                     <div className="w-full space-y-3 mt-8">
                         <Suspense fallback={<div className="h-12 bg-muted/20 rounded-full animate-pulse" />}>
                             <GoogleSignIn returnUrl="/dashboard" />
                         </Suspense>
-                        {/* GitHub auth commented out
-                        <Suspense fallback={<div className="h-12 bg-muted/20 rounded-full animate-pulse" />}>
-                            <GitHubSignIn returnUrl="/dashboard" />
-                        </Suspense>
-                        */}
                     </div>
 
-                    {/* Divider */}
                     <div className="relative my-2">
                         <div className="absolute inset-0 flex items-center">
                             <div className="w-full border-t border-border"></div>
@@ -378,7 +377,6 @@ export function HeroSection() {
                         </div>
                     </div>
 
-                    {/* Sign in options */}
                     <div className="space-y-3">
                         <Link
                             href={`/auth?returnUrl=${encodeURIComponent('/dashboard')}`}
@@ -417,7 +415,7 @@ export function HeroSection() {
                         onOpenChange={setShowAgentLimitDialog}
                         runningCount={agentLimitData.runningCount}
                         runningThreadIds={agentLimitData.runningThreadIds}
-                        projectId={undefined} // Hero section doesn't have a specific project context
+                        projectId={undefined}
                     />
                 </Suspense>
             )}
