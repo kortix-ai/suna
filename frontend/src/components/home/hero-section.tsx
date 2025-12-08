@@ -2,13 +2,12 @@
 import { siteConfig } from '@/lib/site-config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile } from '@/hooks/utils';
-import { useState, useEffect, useRef, FormEvent, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { AgentRunLimitError, BillingError } from '@/lib/api/errors';
-import { useInitiateAgentMutation } from '@/hooks/dashboard/use-initiate-agent';
-import { useThreadQuery } from '@/hooks/threads/use-threads';
+import { AgentRunLimitError, BillingError, ProjectLimitError, ThreadLimitError } from '@/lib/api/errors';
+import { optimisticAgentStart } from '@/lib/api/agents';
 import {
     Dialog,
     DialogContent,
@@ -27,11 +26,9 @@ import { getAgents } from '@/hooks/agents/utils';
 import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useAgentSelection } from '@/stores/agent-selection-store';
 import { useTranslations } from 'next-intl';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
-const PlanSelectionModal = lazy(() => 
-    import('@/components/billing/pricing').then(mod => ({ default: mod.PlanSelectionModal }))
-);
 const AgentRunLimitDialog = lazy(() => 
     import('@/components/thread/agent-run-limit-dialog').then(mod => ({ default: mod.AgentRunLimitDialog }))
 );
@@ -47,6 +44,7 @@ const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
 export function HeroSection() {
     const t = useTranslations('suna');
+    const tBilling = useTranslations('billing');
     const { hero } = siteConfig;
     const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,10 +69,7 @@ export function HeroSection() {
     } = useSunaModePersistence();
     const router = useRouter();
     const { user, isLoading } = useAuth();
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const initiateAgentMutation = useInitiateAgentMutation();
-    const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
-    const threadQuery = useThreadQuery(initiatedThreadId || '');
+    const pricingModalStore = usePricingModalStore();
     const chatInputRef = useRef<ChatInputHandles>(null);
     const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
     const [agentLimitData, setAgentLimitData] = useState<{
@@ -137,17 +132,6 @@ export function HeroSection() {
         prefetchedRouteRef.current = routeToPrefetch;
     }, [router]);
 
-    useEffect(() => {
-        if (threadQuery.data && initiatedThreadId) {
-            const thread = threadQuery.data;
-            if (thread.project_id) {
-                router.push(`/projects/${thread.project_id}/thread/${initiatedThreadId}`);
-            } else {
-                router.push(`/agents/${initiatedThreadId}`);
-            }
-            setInitiatedThreadId(null);
-        }
-    }, [threadQuery.data, initiatedThreadId, router]);
 
     useEffect(() => {
         if (inputValue.trim() && !isSubmitting) {
@@ -189,55 +173,105 @@ export function HeroSection() {
         try {
             const files = chatInputRef.current?.getPendingFiles() || [];
             localStorage.removeItem(PENDING_PROMPT_KEY);
-
-            const formData = new FormData();
-            formData.append('prompt', message);
-
-            if (selectedAgentId) {
-                formData.append('agent_id', selectedAgentId);
-            }
-
-            files.forEach((file) => {
+            
+            const normalizedFiles = files.map((file) => {
                 const normalizedName = normalizeFilenameToNFC(file.name);
-                formData.append('files', file, normalizedName);
+                return new File([file], normalizedName, { type: file.type });
             });
-
-            if (options?.model_name) formData.append('model_name', options.model_name);
-            formData.append('enable_thinking', String(options?.enable_thinking ?? false));
-            formData.append('reasoning_effort', 'low');
-            formData.append('stream', 'true');
-            formData.append('enable_context_manager', 'false');
-
-            const result = await initiateAgentMutation.mutateAsync(formData);
-
-            if (result.thread_id) {
-                setInitiatedThreadId(result.thread_id);
-            } else {
-                throw new Error('Agent initiation did not return a thread_id.');
-            }
-
+            
+            const threadId = crypto.randomUUID();
+            const projectId = crypto.randomUUID();
+            const trimmedMessage = message.trim();
+            
             chatInputRef.current?.clearPendingFiles();
             setInputValue('');
-        } catch (error: any) {
-            if (error instanceof BillingError) {
-                setShowPaymentModal(true);
-            } else if (error instanceof AgentRunLimitError) {
-                const { running_thread_ids, running_count } = error.detail;
-
-                setAgentLimitData({
-                    runningCount: running_count,
-                    runningThreadIds: running_thread_ids,
-                });
-                setShowAgentLimitDialog(true);
-            } else {
-                const isConnectionError =
-                    error instanceof TypeError &&
-                    error.message.includes('Failed to fetch');
-                if (!isLocalMode() || isConnectionError) {
-                    toast.error(
-                        error.message || 'Failed to create agent. Please try again.',
-                    );
+            
+            sessionStorage.setItem('optimistic_prompt', trimmedMessage);
+            sessionStorage.setItem('optimistic_thread', threadId);
+            
+            router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+            
+            optimisticAgentStart({
+                thread_id: threadId,
+                project_id: projectId,
+                prompt: trimmedMessage,
+                files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
+                model_name: options?.model_name,
+                agent_id: selectedAgentId || undefined,
+            }).catch((error) => {
+                console.error('Background agent start failed:', error);
+                
+                if (error instanceof BillingError || error?.status === 402) {
+                    const errorMessage = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
+                    const originalMessage = error.detail?.message || error.message || '';
+                    const isCreditsExhausted = 
+                        errorMessage.includes('credit') ||
+                        errorMessage.includes('balance') ||
+                        errorMessage.includes('insufficient') ||
+                        errorMessage.includes('out of credits') ||
+                        errorMessage.includes('no credits');
+                    
+                    const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
+                    const balance = balanceMatch ? balanceMatch[1] : null;
+                    
+                    const alertTitle = isCreditsExhausted 
+                        ? 'You ran out of credits'
+                        : 'Pick the plan that works for you';
+                    
+                    const alertSubtitle = balance 
+                        ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
+                        : isCreditsExhausted 
+                            ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
+                            : undefined;
+                    
+                    router.replace('/');
+                    pricingModalStore.openPricingModal({ 
+                        isAlert: true,
+                        alertTitle,
+                        alertSubtitle
+                    });
+                    return;
                 }
+                
+                if (error instanceof AgentRunLimitError) {
+                    const { running_thread_ids, running_count } = error.detail;
+                    router.replace('/');
+                    setAgentLimitData({
+                        runningCount: running_count,
+                        runningThreadIds: running_thread_ids,
+                    });
+                    setShowAgentLimitDialog(true);
+                    return;
+                }
+                
+                if (error instanceof ProjectLimitError) {
+                    router.replace('/');
+                    pricingModalStore.openPricingModal({ 
+                        isAlert: true,
+                        alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+                    });
+                    return;
+                }
+                
+                if (error instanceof ThreadLimitError) {
+                    router.replace('/');
+                    pricingModalStore.openPricingModal({ 
+                        isAlert: true,
+                        alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
+                    });
+                    return;
+                }
+                
+                toast.error('Failed to start conversation');
+            });
+        } catch (error: any) {
+            const isConnectionError =
+                error instanceof TypeError &&
+                error.message.includes('Failed to fetch');
+            if (!isLocalMode() || isConnectionError) {
+                toast.error(
+                    error.message || 'Failed to create agent. Please try again.',
+                );
             }
         } finally {
             setIsSubmitting(false);
@@ -246,14 +280,6 @@ export function HeroSection() {
 
     return (
         <section id="hero" className="w-full relative overflow-hidden">
-            {showPaymentModal && (
-                <Suspense fallback={null}>
-                    <PlanSelectionModal
-                        open={showPaymentModal}
-                        onOpenChange={setShowPaymentModal}
-                    />
-                </Suspense>
-            )}
             <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
                 <AnimatedBg
                     variant="hero"

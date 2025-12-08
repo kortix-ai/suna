@@ -1,8 +1,3 @@
-"""
-Consolidated Admin API
-Handles all administrative operations for user management, system configuration, and agent installations.
-"""
-
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -22,16 +17,6 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def escape_like_pattern(value: str) -> str:
-    """
-    Escape special characters in LIKE/ILIKE patterns to prevent SQL injection.
-    
-    Special characters in LIKE patterns:
-    - % matches any sequence of characters
-    - _ matches any single character
-    - \\ is the escape character
-    
-    This ensures user input is treated as literal text, not pattern matching.
-    """
     if not value:
         return value
     # Escape backslashes first, then % and _
