@@ -13,13 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import {
-  Brain,
-  Wrench,
-  Server,
-  Zap,
-  ChevronLeft,
-} from 'lucide-react-native';
+import { Brain, Wrench, Server, Zap, ChevronLeft } from 'lucide-react-native';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
 import { InstructionsScreen } from '../workers/screens/InstructionsScreen';
@@ -60,7 +54,7 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
       <View
         className="flex-row items-center justify-between border-b border-border px-4"
         style={{ paddingTop: insets.top }}>
-        <View className="flex-row items-center gap-3 flex-1">
+        <View className="flex-1 flex-row items-center gap-3">
           <Pressable
             onPress={handleBack}
             className="h-10 w-10 items-center justify-center rounded-xl active:opacity-80">
@@ -69,14 +63,12 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
           <View className="flex-1">
             {isLoading || !agent ? (
               <>
-                <View className="h-5 w-32 rounded bg-muted animate-pulse" />
-                <View className="h-3 w-24 rounded bg-muted mt-1 animate-pulse" />
+                <View className="h-5 w-32 animate-pulse rounded bg-muted" />
+                <View className="mt-1 h-3 w-24 animate-pulse rounded bg-muted" />
               </>
             ) : (
               <>
-                <Text className="text-lg font-roobert-semibold text-foreground">
-                  {agent.name}
-                </Text>
+                <Text className="font-roobert-semibold text-lg text-foreground">{agent.name}</Text>
                 <Text className="text-xs text-muted-foreground">Worker Configuration</Text>
               </>
             )}
@@ -133,23 +125,21 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
         <View className="flex-1" style={{ padding: 16 }}>
           <InstructionsScreen agentId={workerId} onUpdate={() => {}} />
         </View>
+      ) : activeView === 'tools' ? (
+        <View className="flex-1" style={{ padding: 16 }}>
+          <ToolsScreen agentId={workerId} onUpdate={() => {}} />
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
           className="flex-1">
-          {activeView === 'tools' && (
-            <ToolsScreen agentId={workerId} onUpdate={() => {}} />
-          )}
           {activeView === 'integrations' && (
             <IntegrationsScreen agentId={workerId} onUpdate={() => {}} />
           )}
-          {activeView === 'triggers' && (
-            <TriggersScreen agentId={workerId} onUpdate={() => {}} />
-          )}
+          {activeView === 'triggers' && <TriggersScreen agentId={workerId} onUpdate={() => {}} />}
         </ScrollView>
       )}
     </View>
   );
 }
-

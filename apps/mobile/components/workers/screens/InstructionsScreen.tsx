@@ -109,7 +109,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
       style={{ flex: 1, position: 'relative' }}
       onLayout={handleContainerLayout}>
       {/* Header content */}
-      <View className="mb-4 flex flex-col gap-4" onLayout={handleHeaderLayout}>
+      <View className="mb-4 flex flex-col" onLayout={handleHeaderLayout}>
         <Text className="mb-2 font-roobert-semibold text-base text-foreground">System Prompt</Text>
         <Text className="mb-1 font-roobert text-sm text-muted-foreground">
           Define how your worker should behave and what it should do
@@ -164,17 +164,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
             bottom: 0,
             left: 0,
             right: 0,
-            // paddingHorizontal: 16,
             paddingBottom: 16,
-            // paddingTop: 16,
-            // backgroundColor: colorScheme === 'dark' ? '#18181B' : '#FFFFFF',
-            // borderTopWidth: 1,
-            // borderTopColor: colorScheme === 'dark' ? '#27272A' : '#E4E4E7',
-            // shadowColor: '#000',
-            // shadowOffset: { width: 0, height: -4 },
-            // shadowOpacity: 0.1,
-            // shadowRadius: 8,
-            // elevation: 8,
             zIndex: 10,
           }}>
           <Pressable
