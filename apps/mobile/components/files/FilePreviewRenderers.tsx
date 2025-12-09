@@ -11,8 +11,7 @@ import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
 import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -243,12 +242,9 @@ function MarkdownPreview({ content }: { content: string }) {
       showsVerticalScrollIndicator={true}
       style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
     >
-      <Markdown 
-        style={isDark ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules(isDark)}
-      >
+      <SelectableMarkdownText isDark={isDark}>
         {autoLinkUrls(content)}
-      </Markdown>
+      </SelectableMarkdownText>
     </ScrollView>
   );
 }

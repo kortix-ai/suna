@@ -20,8 +20,7 @@ import {
   shouldSkipStreamingRender,
 } from '@/lib/utils/streaming-utils';
 import { useColorScheme } from 'nativewind';
-import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark, selectableRenderRules } from '@/lib/utils/markdown-styles';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { AgentIdentifier } from '@/components/agents';
 import {
@@ -165,12 +164,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
         if (textBeforeBlock.trim()) {
           contentParts.push(
             <View key={`md-${lastIndex}`}>
-              <Markdown
-                style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules(isDark)}
-              >
+              <SelectableMarkdownText isDark={isDark}>
                 {textBeforeBlock.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-              </Markdown>
+              </SelectableMarkdownText>
             </View>
           );
         }
@@ -193,12 +189,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
 
           contentParts.push(
             <View key={`ask-${match?.index}-${index}`} className="gap-3">
-              <Markdown
-                style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules(isDark)}
-              >
+              <SelectableMarkdownText isDark={isDark}>
                 {autoLinkUrls(askText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-              </Markdown>
+              </SelectableMarkdownText>
 
               <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
                 <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
@@ -240,12 +233,9 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
 
           contentParts.push(
             <View key={`complete-${match?.index}-${index}`} className="gap-3">
-              <Markdown
-                style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                rules={selectableRenderRules(isDark)}
-              >
+              <SelectableMarkdownText isDark={isDark}>
                 {autoLinkUrls(completeText).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-              </Markdown>
+              </SelectableMarkdownText>
 
               <TaskCompletedFeedback
                 taskSummary={completeText}
@@ -294,34 +284,25 @@ const MarkdownContent = React.memo(function MarkdownContent({ content, handleToo
       if (remainingText.trim()) {
         contentParts.push(
           <View key={`md-${lastIndex}`}>
-            <Markdown
-              style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-              rules={selectableRenderRules(isDark)}
-            >
+            <SelectableMarkdownText isDark={isDark}>
               {remainingText.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-            </Markdown>
+            </SelectableMarkdownText>
           </View>
         );
       }
     }
 
     return <View>{contentParts.length > 0 ? contentParts : (
-      <Markdown
-        style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-        rules={selectableRenderRules(isDark)}
-      >
+      <SelectableMarkdownText isDark={isDark}>
         {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-      </Markdown>
+      </SelectableMarkdownText>
     )}</View>;
   }
 
   return (
-    <Markdown
-      style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-      rules={selectableRenderRules(isDark)}
-    >
+    <SelectableMarkdownText isDark={isDark}>
       {processedContent.replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-    </Markdown>
+    </SelectableMarkdownText>
   );
 });
 
@@ -808,18 +789,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
               {cleanContent && (
                 <View className="flex-row justify-end">
                   <View
-                    className="max-w-[85%] bg-card border border-border px-4 pb-0.5 pt-0"
+                    className="max-w-[85%] bg-card border border-border px-4 py-3"
                     style={{
                       borderRadius: 24,
                       borderBottomRightRadius: 8,
                     }}
                   >
-                    <Markdown
-                      style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                      rules={selectableRenderRules(isDark)}
-                    >
+                    <SelectableMarkdownText isDark={isDark}>
                       {autoLinkUrls(cleanContent).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-                    </Markdown>
+                    </SelectableMarkdownText>
                   </View>
                 </View>
               )}
@@ -942,12 +920,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
                       return (
                         <View className="gap-3">
                           {processedTextBeforeTag.trim() && (
-                            <Markdown
-                              style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                              rules={selectableRenderRules(isDark)}
-                            >
+                            <SelectableMarkdownText isDark={isDark}>
                               {autoLinkUrls(processedTextBeforeTag).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-                            </Markdown>
+                            </SelectableMarkdownText>
                           )}
                           {detectedTag && (
                             <StreamingToolCard content={rawContent.substring(tagStartIndex)} />
@@ -996,12 +971,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(({
 
                       return (
                         <View className="mt-2">
-                          <Markdown
-                            style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-                            rules={selectableRenderRules(isDark)}
-                          >
+                          <SelectableMarkdownText isDark={isDark}>
                             {autoLinkUrls(textToShow).replace(/<((https?:\/\/|mailto:)[^>\s]+)>/g, (_: string, url: string) => `[${url}](${url})`)}
-                          </Markdown>
+                          </SelectableMarkdownText>
                         </View>
                       );
                     }

@@ -20,8 +20,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Presentation } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
+import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { WebView } from 'react-native-webview';
 import { getAuthToken } from '@/api/config';
@@ -523,9 +522,9 @@ function DocumentAttachment({
             ) : (
               <ScrollView className="p-4" style={{ height: 400 }} showsVerticalScrollIndicator={true}>
                 {isMarkdown ? (
-                  <Markdown style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}>
+                  <SelectableMarkdownText isDark={colorScheme === 'dark'}>
                     {autoLinkUrls(fileContent)}
-                  </Markdown>
+                  </SelectableMarkdownText>
                 ) : (
                   <Text className="text-xs font-mono text-foreground leading-5" selectable style={{ fontFamily: 'monospace' }}>
                     {fileContent}
