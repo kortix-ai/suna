@@ -72,6 +72,23 @@ export interface CategoryDistribution {
   date: string;
 }
 
+export interface VisitorStats {
+  total_visitors: number;
+  unique_visitors: number;
+  pageviews: number;
+  date: string;
+}
+
+export interface ConversionFunnel {
+  visitors: number;
+  signups: number;
+  subscriptions: number;
+  visitor_to_signup_rate: number;
+  signup_to_subscription_rate: number;
+  overall_conversion_rate: number;
+  date: string;
+}
+
 export interface TranslationResponse {
   original: string;
   translated: string;
@@ -208,6 +225,44 @@ export function useCategoryDistribution(date?: string) {
     },
     staleTime: 300000, // 5 minutes
     placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useVisitorStats(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'visitors', date],
+    queryFn: async (): Promise<VisitorStats> => {
+      const url = date
+        ? `/admin/analytics/visitors?date=${date}`
+        : '/admin/analytics/visitors';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData,
+    retry: 1, // Only retry once since PostHog might not be configured
+  });
+}
+
+export function useConversionFunnel(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'conversion-funnel', date],
+    queryFn: async (): Promise<ConversionFunnel> => {
+      const url = date
+        ? `/admin/analytics/conversion-funnel?date=${date}`
+        : '/admin/analytics/conversion-funnel';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData,
+    retry: 1,
   });
 }
 
