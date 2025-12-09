@@ -165,12 +165,9 @@ export function WorkerConfigDrawer({
     []
   );
 
-  // Always render BottomSheet, but keep it closed if no workerId
-  // This prevents race conditions when workerId is set after visible
-  // Use a combination key to force re-render when switching tabs
+  // Always render BottomSheet - NO key prop as it causes remounts that break the ref
   return (
     <BottomSheet
-      key={`${workerId}-${initialView}`} // Force re-render when workerId or initialView changes
       ref={bottomSheetRef}
       index={-1}
       snapPoints={snapPoints}

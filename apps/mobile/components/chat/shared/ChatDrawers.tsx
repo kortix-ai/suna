@@ -8,6 +8,7 @@ export interface ChatDrawersProps {
   isAgentDrawerVisible: boolean;
   onCloseAgentDrawer: () => void;
   onOpenWorkerConfig?: (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => void;
+  onAgentDrawerDismiss?: () => void;
 
   // Worker config drawer
   isWorkerConfigDrawerVisible: boolean;
@@ -37,6 +38,7 @@ export function ChatDrawers({
   isAgentDrawerVisible,
   onCloseAgentDrawer,
   onOpenWorkerConfig,
+  onAgentDrawerDismiss,
   isWorkerConfigDrawerVisible,
   workerConfigWorkerId,
   workerConfigInitialView,
@@ -55,6 +57,7 @@ export function ChatDrawers({
         visible={isAgentDrawerVisible}
         onClose={onCloseAgentDrawer}
         onOpenWorkerConfig={onOpenWorkerConfig}
+        onDismiss={onAgentDrawerDismiss}
       />
 
       {/* Worker Config Drawer */}

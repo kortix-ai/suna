@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator, FlatList, TextInput } from 'react-native';
+import { View, Pressable, ActivityIndicator, FlatList, TextInput } from 'react-native';
+import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ArrowLeft, Search, CheckCircle2, X } from 'lucide-react-native';
@@ -15,9 +16,10 @@ interface ComposioAppsContentProps {
   onAppSelect?: (app: ComposioApp) => void;
   noPadding?: boolean;
   agentId?: string;
+  useBottomSheetFlatList?: boolean;
 }
 
-export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, agentId }: ComposioAppsContentProps) {
+export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, agentId, useBottomSheetFlatList = false }: ComposioAppsContentProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const { data: appsData, isLoading, error, refetch } = useComposioApps();
@@ -71,8 +73,9 @@ export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, ag
     [onAppSelect, agentId, isAppConnectedToAgent]
   );
 
-  return (
-    <View className="flex-1" style={{ flex: 1, position: 'relative' }}>
+  // Header component for FlatList
+  const renderHeader = () => (
+    <>
       {/* Header with back button, title, and description */}
       <View className="mb-4 flex-row items-center">
         {onBack && (
@@ -122,66 +125,162 @@ export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, ag
           )}
         </View>
       </View>
+    </>
+  );
 
-      {/* Scrollable apps list */}
-      <View className="mb-4 flex-1">
-      {isLoading ? (
-          <View className="items-center justify-center py-12">
-            <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
-            <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-            {t('integrations.loadingIntegrations')}
-          </Text>
+  // Loading component
+  const renderLoading = () => (
+    <View className="items-center justify-center py-12">
+      <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+      <Text className="mt-4 font-roobert text-sm text-muted-foreground">
+        {t('integrations.loadingIntegrations')}
+      </Text>
+    </View>
+  );
+
+  // Error component
+  const renderError = () => (
+    <View className="items-center py-8">
+      <Text className="mb-2 font-roobert-medium text-lg text-foreground">
+        {t('integrations.failedToLoad')}
+      </Text>
+      <Text className="mb-4 font-roobert text-sm text-muted-foreground">
+        {error.message}
+      </Text>
+      <Pressable onPress={() => refetch()} className="rounded-xl bg-primary px-6 py-3">
+        <Text className="font-roobert-medium text-white">{t('integrations.retry')}</Text>
+      </Pressable>
+    </View>
+  );
+
+  // When using BottomSheetFlatList, render it directly without wrapper
+  if (useBottomSheetFlatList) {
+    if (isLoading) {
+      return (
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
+            {renderHeader()}
+          </View>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            {renderLoading()}
+          </View>
         </View>
-      ) : error ? (
-        <View className="items-center py-8">
-            <Text className="mb-2 font-roobert-medium text-lg text-foreground">
-            {t('integrations.failedToLoad')}
-          </Text>
-            <Text className="mb-4 font-roobert text-sm text-muted-foreground">
-            {error.message}
-            </Text>
-            <Pressable onPress={() => refetch()} className="rounded-xl bg-primary px-6 py-3">
-              <Text className="font-roobert-medium text-white">{t('integrations.retry')}</Text>
-          </Pressable>
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={{ flex: 1 }}>
+          <View style={{ paddingHorizontal: 24, paddingTop: 24 }}>
+            {renderHeader()}
+          </View>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            {renderError()}
+          </View>
         </View>
-      ) : (
-          <FlatList
-            data={filteredApps}
-            keyExtractor={(item) => item.slug}
-            renderItem={({ item: app }) => {
-              const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
-              return (
-            <AppCard
-              app={app}
-              onPress={() => handleAppPress(app)}
+      );
+    }
+
+    return (
+      <View style={{ flex: 1 }}>
+        {/* Sticky header and search bar */}
+        <View style={{ paddingHorizontal: 24, paddingTop: 24, paddingBottom: 16, backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF' }}>
+          {renderHeader()}
+        </View>
+
+        {/* Scrollable apps list */}
+        <BottomSheetFlatList
+          data={filteredApps}
+          keyExtractor={(item: ComposioApp) => item.slug}
+          renderItem={({ item: app }: { item: ComposioApp }) => {
+            const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
+            return (
+              <View style={{ paddingHorizontal: 24 }}>
+                <AppCard
+                  app={app}
+                  onPress={() => handleAppPress(app)}
                   isConnected={isConnected}
                   disabled={isConnected}
-            />
-              );
-            }}
-            contentContainerStyle={{ paddingBottom: 16 }}
-            showsVerticalScrollIndicator={false}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
-            updateCellsBatchingPeriod={50}
-            initialNumToRender={20}
-            windowSize={10}
-            ListEmptyComponent={
-              <View className="items-center px-6 py-12">
-                <Icon as={Search} size={48} className="text-muted-foreground/40" />
-                <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                  {searchQuery ? 'No apps found' : 'No apps available'}
-                </Text>
-                <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
-                  {searchQuery
-                    ? 'Try adjusting your search query'
-                    : 'Apps will appear here once available'}
-                </Text>
-        </View>
-            }
-          />
-      )}
+                />
+              </View>
+            );
+          }}
+          contentContainerStyle={{ paddingBottom: 32 }}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          initialNumToRender={20}
+          windowSize={10}
+          ListEmptyComponent={
+            <View className="items-center px-6 py-12">
+              <Icon as={Search} size={48} className="text-muted-foreground/40" />
+              <Text className="mt-4 font-roobert-medium text-lg text-foreground">
+                {searchQuery ? 'No apps found' : 'No apps available'}
+              </Text>
+              <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
+                {searchQuery
+                  ? 'Try adjusting your search query'
+                  : 'Apps will appear here once available'}
+              </Text>
+            </View>
+          }
+        />
       </View>
+    );
+  }
+
+  // Regular FlatList for non-BottomSheet usage
+  return (
+    <View className="flex-1" style={{ flex: 1 }}>
+      {isLoading ? (
+        <View className="flex-1">
+          {renderHeader()}
+          {renderLoading()}
+        </View>
+      ) : error ? (
+        <View className="flex-1">
+          {renderHeader()}
+          {renderError()}
+        </View>
+      ) : (
+        <FlatList
+          data={filteredApps}
+          keyExtractor={(item) => item.slug}
+          renderItem={({ item: app }) => {
+            const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
+            return (
+              <AppCard
+                app={app}
+                onPress={() => handleAppPress(app)}
+                isConnected={isConnected}
+                disabled={isConnected}
+              />
+            );
+          }}
+          ListHeaderComponent={renderHeader}
+          contentContainerStyle={{ paddingBottom: 16 }}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          initialNumToRender={20}
+          windowSize={10}
+          ListEmptyComponent={
+            <View className="items-center px-6 py-12">
+              <Icon as={Search} size={48} className="text-muted-foreground/40" />
+              <Text className="mt-4 font-roobert-medium text-lg text-foreground">
+                {searchQuery ? 'No apps found' : 'No apps available'}
+              </Text>
+              <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
+                {searchQuery
+                  ? 'Try adjusting your search query'
+                  : 'Apps will appear here once available'}
+              </Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
