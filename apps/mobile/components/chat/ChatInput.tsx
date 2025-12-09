@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Loader2, Square } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -62,15 +62,6 @@ const formatDuration = (seconds: number): string => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-// Quick action icon mapping - defined outside component
-const QUICK_ACTION_ICONS: Record<string, typeof Image> = {
-  image: Image,
-  slides: Presentation,
-  data: Table2,
-  docs: FileText,
-  people: Users,
-  research: Search,
-};
 
 /**
  * ChatInput Component
@@ -128,8 +119,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Allow input to be editable during streaming - only disable when sending or transcribing
   const isDisabled = isSendingMessage || isTranscribing;
 
-  // Get quick action icon
-  const QuickActionIcon = selectedQuickAction ? QUICK_ACTION_ICONS[selectedQuickAction] : null;
 
   // Memoized placeholder
   const effectivePlaceholder = React.useMemo(
@@ -302,11 +291,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }
   }, [isAgentRunning, isRecording, hasContent, isAuthenticated, t, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
-  // Clear quick action handler
-  const handleClearQuickAction = React.useCallback(() => {
-    onClearQuickAction?.();
-  }, [onClearQuickAction]);
-
   // Content size change handler - debounced via ref comparison
   const handleContentSizeChange = React.useCallback(
     (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
@@ -377,9 +361,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             onAttachPressIn={handleAttachPressIn}
             onAttachPressOut={handleAttachPressOut}
             onAttachPress={onAttachPress}
-            selectedQuickAction={selectedQuickAction}
-            QuickActionIcon={QuickActionIcon}
-            onClearQuickAction={handleClearQuickAction}
             onAgentPress={onAgentPress}
             sendAnimatedStyle={sendAnimatedStyle}
             rotationAnimatedStyle={rotationAnimatedStyle}
@@ -393,7 +374,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
             isAuthenticated={isAuthenticated}
-            t={t}
           />
         )}
       </View>
@@ -477,9 +457,6 @@ interface NormalModeProps {
   onAttachPressIn: () => void;
   onAttachPressOut: () => void;
   onAttachPress?: () => void;
-  selectedQuickAction?: string | null;
-  QuickActionIcon: typeof Image | null;
-  onClearQuickAction: () => void;
   onAgentPress?: () => void;
   sendAnimatedStyle: any;
   rotationAnimatedStyle: any;
@@ -493,7 +470,6 @@ interface NormalModeProps {
   buttonIconSize: number;
   buttonIconClass: string;
   isAuthenticated: boolean;
-  t: (key: string) => string;
 }
 
 const NormalMode = React.memo(({
@@ -509,9 +485,6 @@ const NormalMode = React.memo(({
   onAttachPressIn,
   onAttachPressOut,
   onAttachPress,
-  selectedQuickAction,
-  QuickActionIcon,
-  onClearQuickAction,
   onAgentPress,
   sendAnimatedStyle,
   rotationAnimatedStyle,
@@ -525,7 +498,6 @@ const NormalMode = React.memo(({
   buttonIconSize,
   buttonIconClass,
   isAuthenticated,
-  t,
 }: NormalModeProps) => (
   <>
     <View className="flex-1 mb-12">
@@ -572,16 +544,6 @@ const NormalMode = React.memo(({
         >
           <Icon as={Paperclip} size={16} className="text-foreground" />
         </AnimatedPressable>
-
-        {selectedQuickAction && QuickActionIcon && (
-          <Pressable
-            onPress={onClearQuickAction}
-            className="bg-primary/5 rounded-full flex-row items-center h-10 px-3 active:opacity-70"
-          >
-            <Icon as={QuickActionIcon} size={16} className="text-primary mr-1.5" strokeWidth={2} />
-            <Icon as={X} size={14} className="text-primary" strokeWidth={2} />
-          </Pressable>
-        )}
       </View>
 
       <View className="flex-row items-center gap-2">
