@@ -123,7 +123,7 @@ async def _load_agent_config(client, agent_id: Optional[str], account_id: str, u
             from core.agent_loader import AgentData
             agent_data = AgentData(
                 agent_id=agent_id,
-                name="Suna",
+                name="Kortix",
                 description=None,
                 account_id=account_id,
                 is_default=True,

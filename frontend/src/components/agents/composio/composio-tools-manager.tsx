@@ -101,7 +101,7 @@ export const ComposioToolsManager: React.FC<ComposioToolsManagerProps> = ({
       if (error.response?.status === 403) {
         toast.error('Access denied. Please check your permissions.');
       } else if (error.response?.status === 404) {
-        toast.error('Agent not found');
+        toast.error('Worker not found');
       } else if (error.response?.data?.detail) {
         toast.error(error.response.data.detail);
       } else {

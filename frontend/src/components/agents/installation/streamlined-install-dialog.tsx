@@ -384,7 +384,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="instance-name">Agent Name</Label>
+                <Label htmlFor="instance-name">Worker Name</Label>
                 <Input
                   id="instance-name"
                   placeholder="Enter a name for this agent"
@@ -502,7 +502,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
               ) : (
                 <>
                   <Download className="h-4 w-4" />
-                  Install Agent
+                  Install Worker
                 </>
               )}
             </Button>
@@ -520,7 +520,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
               ) : (
                 <>
                   <Download className="h-4 w-4" />
-                  Install Agent
+                  Install Worker
                 </>
               )}
             </Button>

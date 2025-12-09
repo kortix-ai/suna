@@ -80,7 +80,7 @@ export function getToolTitle(toolName: string): string {
     'upload-file': 'Upload File',
     
     // Agent Creation Tools
-    'create-new-agent': 'Create New Agent',
+    'create-new-agent': 'Create New Worker',
     'update-agent': 'Update Agent',
     'search-mcp-servers-for-agent': 'Search MCP Servers for Agent',
     'get-mcp-server-details': 'Get MCP Server Details',

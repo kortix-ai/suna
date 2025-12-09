@@ -16,11 +16,11 @@ export function KnowledgeScreen({ agentId }: KnowledgeScreenProps) {
             <div className="px-1 pt-1">
                 <KnowledgeBaseManager
                     agentId={agentId}
-                    agentName={agent?.name || 'this agent'}
+                    agentName={agent?.name || 'this Worker'}
                     showHeader={false}
                     showRecentFiles={false}
                     enableAssignments={true}
-                    emptyStateMessage="No knowledge base content available. Create folders and upload files to provide this agent with searchable knowledge."
+                    emptyStateMessage="No knowledge base content available. Create folders and upload files to provide this Worker with searchable knowledge."
                 />
             </div>
         </div>

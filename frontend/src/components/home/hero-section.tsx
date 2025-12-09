@@ -270,7 +270,7 @@ export function HeroSection() {
                 error.message.includes('Failed to fetch');
             if (!isLocalMode() || isConnectionError) {
                 toast.error(
-                    error.message || 'Failed to create agent. Please try again.',
+                    error.message || 'Failed to create Worker. Please try again.',
                 );
             }
         } finally {

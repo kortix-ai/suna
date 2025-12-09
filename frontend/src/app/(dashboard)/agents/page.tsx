@@ -392,7 +392,7 @@ export default function AgentsPage() {
       console.log('Installation result:', result);
 
       if (result.status === 'installed') {
-        toast.success(`Agent "${instanceName}" installed successfully!`);
+        toast.success(`Worker "${instanceName}" installed successfully!`);
         setShowInstallDialog(false);
         handleTabChange('my-agents');
       } else if (result.status === 'configs_required') {
@@ -460,7 +460,7 @@ export default function AgentsPage() {
       } else if (error.message?.includes('Access denied')) {
         toast.error('You do not have permission to install this agent');
       } else {
-        toast.error(error.message || 'Failed to install agent. Please try again.');
+        toast.error(error.message || 'Failed to install Worker. Please try again.');
       }
     } finally {
       setInstallingItemId(null);

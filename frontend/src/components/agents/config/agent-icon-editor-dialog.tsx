@@ -81,7 +81,7 @@ export function AgentIconEditorDialog({
 
   const handleAutoGenerate = useCallback(() => {
     if (!agentName) {
-      toast.error('Agent name is required for auto-generation');
+      toast.error('Worker name is required for auto-generation');
       return;
     }
 
@@ -95,7 +95,7 @@ export function AgentIconEditorDialog({
           setSelectedIcon(result.icon_name);
           setIconColor(result.icon_color);
           setBackgroundColor(result.icon_background);
-          toast.success('Agent icon auto-generated!');
+          toast.success('Worker icon auto-generated!');
         },
         onError: (error) => {
           console.error('Auto-generation failed:', error);
@@ -317,7 +317,7 @@ export function AgentIconEditorDialog({
         <DialogHeader className="px-4 pt-4 pb-3 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
-Customize Agent Icon
+Customize Worker Icon
           </DialogTitle>
         </DialogHeader>
         <div className="hidden md:flex flex-1 min-h-0 px-4">
