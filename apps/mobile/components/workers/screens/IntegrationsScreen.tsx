@@ -35,6 +35,7 @@ interface ActiveIntegrationCardProps {
   app: ComposioApp | null;
   onManageTools: () => void;
   onDelete: () => void;
+  isDeleting?: boolean;
 }
 
 function ActiveIntegrationCard({
@@ -43,13 +44,27 @@ function ActiveIntegrationCard({
   app,
   onManageTools,
   onDelete,
+  isDeleting = false,
 }: ActiveIntegrationCardProps) {
+  const { colorScheme } = useColorScheme();
   const enabledToolsCount = Array.isArray(mcp.enabledTools) ? mcp.enabledTools.length : 0;
   const isSvg = (url: string) =>
     url.toLowerCase().endsWith('.svg') || url.includes('composio.dev/api');
 
   return (
-    <View className="mb-3 rounded-2xl border border-border bg-card p-4">
+    <View
+      className="mb-3 rounded-2xl border border-border bg-card p-4"
+      style={{ opacity: isDeleting ? 0.6 : 1 }}>
+      {isDeleting && (
+        <View
+          className="absolute inset-0 z-10 items-center justify-center rounded-2xl"
+          style={{
+            backgroundColor:
+              colorScheme === 'dark' ? 'rgba(24, 24, 27, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+          }}>
+          <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        </View>
+      )}
       <View className="flex-row items-center gap-3">
         {/* App Logo */}
         {app?.logo ? (
@@ -96,13 +111,24 @@ function ActiveIntegrationCard({
         <View className="flex-row items-center gap-2">
           <Pressable
             onPress={onManageTools}
-            className="h-10 w-10 items-center justify-center rounded-lg bg-muted active:opacity-80">
+            disabled={isDeleting}
+            className="h-10 w-10 items-center justify-center rounded-lg bg-muted active:opacity-80"
+            style={{ opacity: isDeleting ? 0.5 : 1 }}>
             <Icon as={Settings} size={18} className="text-foreground" />
           </Pressable>
           <Pressable
             onPress={onDelete}
-            className="h-10 w-10 items-center justify-center rounded-lg bg-muted active:opacity-80">
-            <Icon as={Trash2} size={18} className="text-destructive" />
+            disabled={isDeleting}
+            className="h-10 w-10 items-center justify-center rounded-lg bg-muted active:opacity-80"
+            style={{ opacity: isDeleting ? 0.5 : 1 }}>
+            {isDeleting ? (
+              <ActivityIndicator
+                size="small"
+                color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
+              />
+            ) : (
+              <Icon as={Trash2} size={18} className="text-destructive" />
+            )}
           </Pressable>
         </View>
       </View>
@@ -122,18 +148,17 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
   const [showToolsManager, setShowToolsManager] = useState(false);
   const [showBrowseApps, setShowBrowseApps] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
+  const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
   const apps = appsData?.toolkits || [];
 
   // Get active integrations from custom_mcps
+  // Show all composio integrations, even if they have 0 tools enabled (like frontend)
   const activeIntegrations = useMemo(() => {
     if (!agent?.custom_mcps || !Array.isArray(agent.custom_mcps)) return [];
 
     return agent.custom_mcps
-      .filter(
-        (mcp: any) =>
-          mcp.type === 'composio' && Array.isArray(mcp.enabledTools) && mcp.enabledTools.length > 0
-      )
+      .filter((mcp: any) => mcp.type === 'composio' && mcp.config?.profile_id)
       .map((mcp: any) => {
         const profileId = mcp.config?.profile_id;
         const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
@@ -171,14 +196,17 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
           agentId,
           data: {
             custom_mcps: [...customMcps, newMcp],
+            replace_mcps: true,
           },
         },
         {
-          onSuccess: () => {
+          onSuccess: (updatedAgent) => {
             setShowConnector(false);
             setSelectedApp(null);
             onUpdate?.();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            // The agent query is automatically invalidated and updated by useUpdateAgent
+            // The activeIntegrations will automatically update via useMemo when agent data changes
           },
           onError: (error: any) => {
             Alert.alert('Error', error?.message || 'Failed to add integration');
@@ -208,6 +236,9 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
   };
 
   const handleDeleteIntegration = (mcp: any) => {
+    const profileId = mcp.config?.profile_id;
+    if (!profileId) return;
+
     Alert.alert(
       'Remove Integration',
       `Are you sure you want to remove the "${mcp.name}" integration? This will disconnect all associated tools and cannot be undone.`,
@@ -217,13 +248,11 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
           text: 'Remove Integration',
           style: 'destructive',
           onPress: () => {
+            setDeletingProfileId(profileId);
             const customMcps = agent?.custom_mcps || [];
             const updatedMcps = customMcps.filter(
               (existingMcp: any) =>
-                !(
-                  existingMcp.type === 'composio' &&
-                  existingMcp.config?.profile_id === mcp.config?.profile_id
-                )
+                !(existingMcp.type === 'composio' && existingMcp.config?.profile_id === profileId)
             );
 
             updateAgentMutation.mutate(
@@ -231,14 +260,17 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
                 agentId,
                 data: {
                   custom_mcps: updatedMcps,
+                  replace_mcps: true,
                 },
               },
               {
                 onSuccess: () => {
+                  setDeletingProfileId(null);
                   onUpdate?.();
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 },
                 onError: (error: any) => {
+                  setDeletingProfileId(null);
                   Alert.alert('Error', error?.message || 'Failed to remove integration');
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
                 },
@@ -269,55 +301,28 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
 
   if (showConnector && selectedApp) {
     return (
-      <View>
-        <View className="mb-4 flex-row items-center justify-between">
-          <Pressable
-            onPress={() => {
-              setShowConnector(false);
-              setSelectedApp(null);
-            }}
-            className="h-10 w-10 items-center justify-center rounded-xl active:opacity-80">
-            <Icon as={X} size={20} className="text-foreground" />
-          </Pressable>
-          <Text className="flex-1 text-center font-roobert-semibold text-lg text-foreground">
-            Connect {selectedApp.name}
-          </Text>
-          <View className="w-10" />
-        </View>
-        <ComposioConnectorContent
-          app={selectedApp}
-          onBack={() => {
-            setShowConnector(false);
-            setSelectedApp(null);
-          }}
-          onComplete={handleConnectorComplete}
-          agentId={agentId}
-          mode="full"
-        />
-      </View>
+      <ComposioConnectorContent
+        app={selectedApp}
+        onBack={() => {
+          setShowConnector(false);
+          setSelectedApp(null);
+        }}
+        onComplete={handleConnectorComplete}
+        agentId={agentId}
+        mode="full"
+        isSaving={updateAgentMutation.isPending}
+      />
     );
   }
 
   if (showBrowseApps) {
     return (
-      <View className="flex-1">
-        <View className="mb-4 flex-row items-center justify-between">
-          <Pressable
-            onPress={() => setShowBrowseApps(false)}
-            className="h-10 w-10 items-center justify-center rounded-xl active:opacity-80">
-            <Icon as={X} size={20} className="text-foreground" />
-          </Pressable>
-          <Text className="flex-1 text-center font-roobert-semibold text-lg text-foreground">
-            Browse Apps
-          </Text>
-          <View className="w-10" />
-        </View>
-        <ComposioAppsContent
-          onBack={() => setShowBrowseApps(false)}
-          onAppSelect={handleBrowseAppSelect}
-          noPadding={true}
-        />
-      </View>
+      <ComposioAppsContent
+        onBack={() => setShowBrowseApps(false)}
+        onAppSelect={handleBrowseAppSelect}
+        noPadding={true}
+        agentId={agentId}
+      />
     );
   }
 
@@ -385,12 +390,16 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
                 ) || null;
             }
 
+            const profileId = integration.mcp.config?.profile_id;
+            const isDeleting = deletingProfileId === profileId;
+
             return (
               <ActiveIntegrationCard
-                key={`${integration.mcp.config?.profile_id || index}`}
+                key={`${profileId || index}`}
                 mcp={integration.mcp}
                 profile={finalProfile}
                 app={app}
+                isDeleting={isDeleting}
                 onManageTools={() => {
                   if (finalProfile) {
                     // Use app if available, otherwise create from MCP data

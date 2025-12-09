@@ -354,7 +354,7 @@ export function ComposioToolsContent({
             renderItem={({ item: tool }) => {
               const toolIdentifier = tool.slug || tool.name || '';
               return (
-                <View className="mb-3">
+                <View className="mb-1">
                   <ToolCard
                     tool={tool}
                     selected={selectedTools.has(toolIdentifier)}

@@ -767,6 +767,7 @@
       "createFirstConnection": "Create your first connection",
       "useExistingConnection": "Use Existing Connection",
       "profilesConnected": "{{count}} profile{{plural}} already connected",
+      "connecting": "Connecting...",
       "createNewConnection": "Create New Connection",
       "connectNewAccount": "Connect a new {{app}} account",
       "cancel": "Cancel",

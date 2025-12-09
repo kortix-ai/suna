@@ -2,14 +2,7 @@ import * as React from 'react';
 import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import {
-  ArrowLeft,
-  ExternalLink,
-  CheckCircle2,
-  Plus,
-  Check,
-  X,
-} from 'lucide-react-native';
+import { ArrowLeft, ExternalLink, CheckCircle2, Plus, Check, X } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
@@ -20,15 +13,8 @@ import {
   type ComposioApp,
   type ComposioProfile,
 } from '@/hooks/useComposio';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
 import * as WebBrowser from 'expo-web-browser';
 import { ToolkitIcon } from './ToolkitIcon';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface ComposioConnectorProps {
   app: ComposioApp;
@@ -47,18 +33,17 @@ interface ComposioConnectorContentProps {
   mode?: 'full' | 'profile-only';
   agentId?: string;
   noPadding?: boolean;
+  isSaving?: boolean;
 }
 
 enum Step {
   ProfileSelect = 'profile-select',
   ProfileCreate = 'profile-create',
   Connecting = 'connecting',
-  Success = 'success'
+  Success = 'success',
 }
 
-const CUSTOM_OAUTH_REQUIRED_APPS = [
-  'zendesk',
-];
+const CUSTOM_OAUTH_REQUIRED_APPS = ['zendesk'];
 
 export function ComposioConnectorContent({
   app,
@@ -67,7 +52,8 @@ export function ComposioConnectorContent({
   onNavigateToTools,
   mode = 'full',
   agentId,
-  noPadding = false
+  noPadding = false,
+  isSaving = false,
 }: ComposioConnectorContentProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -78,32 +64,39 @@ export function ComposioConnectorContent({
   const [createdProfileId, setCreatedProfileId] = React.useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = React.useState<ComposioProfile | null>(null);
   const [redirectUrl, setRedirectUrl] = React.useState<string | null>(null);
-  const [selectedConnectionType, setSelectedConnectionType] = React.useState<'existing' | 'new' | null>(null);
+  const [selectedConnectionType, setSelectedConnectionType] = React.useState<
+    'existing' | 'new' | null
+  >(null);
 
   const [initiationFields, setInitiationFields] = React.useState<Record<string, string>>({});
-  const [initiationFieldsErrors, setInitiationFieldsErrors] = React.useState<Record<string, string>>({});
+  const [initiationFieldsErrors, setInitiationFieldsErrors] = React.useState<
+    Record<string, string>
+  >({});
 
   const [useCustomAuth, setUseCustomAuth] = React.useState(false);
   const [customAuthConfig, setCustomAuthConfig] = React.useState<Record<string, string>>({});
-  const [customAuthConfigErrors, setCustomAuthConfigErrors] = React.useState<Record<string, string>>({});
+  const [customAuthConfigErrors, setCustomAuthConfigErrors] = React.useState<
+    Record<string, string>
+  >({});
 
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
 
-  const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(app.slug);
+  const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(
+    app.slug
+  );
 
   const { data: nameAvailability, isLoading: isCheckingName } = useCheckProfileNameAvailability(
     app.slug,
     profileName,
     {
       enabled: currentStep === Step.ProfileCreate && profileName.length > 0,
-      debounceMs: 500
+      debounceMs: 500,
     }
   );
 
-  const existingProfiles = profiles?.filter((p: ComposioProfile) =>
-    p.toolkit_slug === app.slug && p.is_connected
-  ) || [];
+  const existingProfiles =
+    profiles?.filter((p: ComposioProfile) => p.toolkit_slug === app.slug && p.is_connected) || [];
 
   React.useEffect(() => {
     const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
@@ -125,7 +118,9 @@ export function ComposioConnectorContent({
     if (selectedConnectionType === 'new') {
       setCurrentStep(Step.ProfileCreate);
     } else if (selectedConnectionType === 'existing' && selectedProfileId) {
-      const profile = existingProfiles.find((p: ComposioProfile) => p.profile_id === selectedProfileId);
+      const profile = existingProfiles.find(
+        (p: ComposioProfile) => p.profile_id === selectedProfileId
+      );
       if (profile) {
         setSelectedProfile(profile);
         setCreatedProfileId(profile.profile_id);
@@ -136,7 +131,16 @@ export function ComposioConnectorContent({
         }
       }
     }
-  }, [selectedConnectionType, selectedProfileId, existingProfiles, mode, agentId, onComplete, app, onNavigateToTools]);
+  }, [
+    selectedConnectionType,
+    selectedProfileId,
+    existingProfiles,
+    mode,
+    agentId,
+    onComplete,
+    app,
+    onNavigateToTools,
+  ]);
 
   const handleCreateProfile = () => {
     if (!profileName.trim()) {
@@ -151,49 +155,53 @@ export function ComposioConnectorContent({
 
     console.log('🚀 Creating profile:', profileName, 'for app:', app.slug);
 
-    createProfile({
-      toolkit_slug: app.slug,
-      profile_name: profileName,
-      initiation_fields: Object.keys(initiationFields).length > 0 ? initiationFields : undefined,
-      custom_auth_config: useCustomAuth && Object.keys(customAuthConfig).length > 0 ? customAuthConfig : undefined,
-      use_custom_auth: useCustomAuth,
-    }, {
-      onSuccess: (response) => {
-        console.log('✅ Profile created successfully:', response);
-        setCreatedProfileId(response.profile_id);
-
-        if (response.redirect_url) {
-          console.log('🌐 Opening OAuth redirect:', response.redirect_url);
-          setRedirectUrl(response.redirect_url);
-          setCurrentStep(Step.Connecting);
-
-          // Open browser for OAuth authentication
-          WebBrowser.openBrowserAsync(response.redirect_url, {
-            presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-            showTitle: true,
-            controlsColor: '#000000',
-            dismissButtonStyle: 'close',
-          }).then((result) => {
-            console.log('🔄 WebBrowser result:', result);
-
-            if (result.type === 'dismiss' || result.type === 'cancel') {
-              // User closed browser, assume auth completed
-              handleAuthComplete();
-            }
-          });
-        } else {
-          // No OAuth required, direct success
-          setCurrentStep(Step.Success);
-          setTimeout(() => {
-            onComplete(response.profile_id, app.name, app.slug);
-          }, 1500);
-        }
+    createProfile(
+      {
+        toolkit_slug: app.slug,
+        profile_name: profileName,
+        initiation_fields: Object.keys(initiationFields).length > 0 ? initiationFields : undefined,
+        custom_auth_config:
+          useCustomAuth && Object.keys(customAuthConfig).length > 0 ? customAuthConfig : undefined,
+        use_custom_auth: useCustomAuth,
       },
-      onError: (error: any) => {
-        console.error('❌ Profile creation failed:', error);
-        Alert.alert('Error', error.message || 'Failed to create profile');
+      {
+        onSuccess: (response) => {
+          console.log('✅ Profile created successfully:', response);
+          setCreatedProfileId(response.profile_id);
+
+          if (response.redirect_url) {
+            console.log('🌐 Opening OAuth redirect:', response.redirect_url);
+            setRedirectUrl(response.redirect_url);
+            setCurrentStep(Step.Connecting);
+
+            // Open browser for OAuth authentication
+            WebBrowser.openBrowserAsync(response.redirect_url, {
+              presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+              showTitle: true,
+              controlsColor: '#000000',
+              dismissButtonStyle: 'close',
+            }).then((result) => {
+              console.log('🔄 WebBrowser result:', result);
+
+              if (result.type === 'dismiss' || result.type === 'cancel') {
+                // User closed browser, assume auth completed
+                handleAuthComplete();
+              }
+            });
+          } else {
+            // No OAuth required, direct success
+            setCurrentStep(Step.Success);
+            setTimeout(() => {
+              onComplete(response.profile_id, app.name, app.slug);
+            }, 1500);
+          }
+        },
+        onError: (error: any) => {
+          console.error('❌ Profile creation failed:', error);
+          Alert.alert('Error', error.message || 'Failed to create profile');
+        },
       }
-    });
+    );
   };
 
   const handleAuthComplete = () => {
@@ -240,85 +248,113 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.ProfileSelect) {
     return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
+      <View className="mb-4 flex-1" style={{ flex: 1, position: 'relative' }}>
         {/* Header with back button, title, and description */}
-        <View className="flex-row items-center mb-4">
+        <View className="mb-4 flex-row items-center">
           {onBack && (
-            <Pressable
-              onPress={onBack}
-              className="flex-row items-center active:opacity-70"
-            >
-              <ArrowLeft
-                size={20}
-                color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-              />
+            <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
+              <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
             </Pressable>
           )}
-          <View className="flex-1 ml-3">
+          <View className="ml-3 flex-1">
             <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
+              className="font-roobert-semibold text-xl">
               {app.name}
             </Text>
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
-              {existingProfiles.length > 0 ? t('integrations.connector.selectConnection') : t('integrations.connector.createFirstConnection')}
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {existingProfiles.length > 0
+                ? t('integrations.connector.selectConnection')
+                : t('integrations.connector.createFirstConnection')}
             </Text>
           </View>
         </View>
 
-        <View className={noPadding ? "" : "px-0"}>
+        <View className={noPadding ? 'mb-4 flex-1' : 'mb-4 flex-1 px-0'}>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View className="space-y-3">
+              {existingProfiles.map((profile: ComposioProfile) => (
+                <ProfileListItem
+                  key={profile.profile_id}
+                  profile={profile}
+                  isSelected={
+                    selectedProfileId === profile.profile_id &&
+                    selectedConnectionType === 'existing'
+                  }
+                  onPress={() => {
+                    setSelectedConnectionType('existing');
+                    setSelectedProfileId(profile.profile_id);
+                  }}
+                />
+              ))}
 
-          <View className="space-y-3 mb-8">
-            {existingProfiles.map((profile: ComposioProfile) => (
-              <ProfileListItem
-                key={profile.profile_id}
-                profile={profile}
-                isSelected={selectedProfileId === profile.profile_id && selectedConnectionType === 'existing'}
+              <Pressable
                 onPress={() => {
-                  setSelectedConnectionType('existing');
-                  setSelectedProfileId(profile.profile_id);
+                  setSelectedConnectionType('new');
+                  setSelectedProfileId('new');
                 }}
-              />
-            ))}
-
-            <Pressable
-              onPress={() => {
-                setSelectedConnectionType('new');
-                setSelectedProfileId('new');
-              }}
-              className={`flex-row items-center p-4 rounded-3xl active:opacity-80 ${selectedConnectionType === 'new'
-                ? 'bg-primary/10'
-                : 'bg-muted/5'
-                }`}
-            >
-              <View className={`w-10 h-10 rounded-xl items-center justify-center ${selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
+                className={`flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+                  selectedConnectionType === 'new' ? 'bg-primary/10' : 'bg-muted/5'
                 }`}>
-                <Icon as={Plus} size={20} className={selectedConnectionType === 'new' ? 'text-primary-foreground' : 'text-muted-foreground'} strokeWidth={2.5} />
-              </View>
-              <View className="flex-1 ml-3">
-                <Text className="text-base font-roobert-semibold text-foreground">
-                  {t('integrations.connector.createNewConnection')}
-                </Text>
-              </View>
-              {selectedConnectionType === 'new' && (
-                <View className="w-5 h-5 rounded-full bg-primary items-center justify-center">
-                  <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
+                <View
+                  className={`h-10 w-10 items-center justify-center rounded-xl ${
+                    selectedConnectionType === 'new' ? 'bg-primary' : 'bg-muted/30'
+                  }`}>
+                  <Icon
+                    as={Plus}
+                    size={20}
+                    className={
+                      selectedConnectionType === 'new'
+                        ? 'text-primary-foreground'
+                        : 'text-muted-foreground'
+                    }
+                    strokeWidth={2.5}
+                  />
                 </View>
-              )}
-            </Pressable>
-          </View>
+                <View className="ml-3 flex-1">
+                  <Text className="font-roobert-semibold text-base text-foreground">
+                    {t('integrations.connector.createNewConnection')}
+                  </Text>
+                </View>
+                {selectedConnectionType === 'new' && (
+                  <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
+                    <Icon
+                      as={Check}
+                      size={14}
+                      className="text-primary-foreground"
+                      strokeWidth={3}
+                    />
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
 
+        {/* Sticky button at bottom */}
+        <View>
           <ContinueButton
             onPress={handleMainAction}
-            disabled={!selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)}
-            label={selectedConnectionType === 'new' ? t('integrations.connector.continue') :
-              selectedConnectionType === 'existing' && selectedProfileId ?
-                t('integrations.connector.continue') :
-                t('integrations.connector.selectAnOption')}
+            disabled={
+              isSaving ||
+              !selectedConnectionType ||
+              (selectedConnectionType === 'existing' && !selectedProfileId)
+            }
+            isLoading={isSaving}
+            label={
+              isSaving
+                ? t('integrations.connector.connecting')
+                : selectedConnectionType === 'new'
+                  ? t('integrations.connector.continue')
+                  : selectedConnectionType === 'existing' && selectedProfileId
+                    ? t('integrations.connector.continue')
+                    : t('integrations.connector.selectAnOption')
+            }
           />
         </View>
       </View>
@@ -327,38 +363,32 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.ProfileCreate) {
     return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
+      <View className="mb-4">
         {/* Header with back button, title, and description */}
-        <View className="flex-row items-center mb-4">
-          <Pressable
-            onPress={handleBack}
-            className="flex-row items-center active:opacity-70"
-          >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+        <View className="mb-4 flex-row items-center">
+          <Pressable onPress={handleBack} className="flex-row items-center active:opacity-70">
+            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
           </Pressable>
-          <View className="flex-1 ml-3">
+          <View className="ml-3 flex-1">
             <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
+              className="font-roobert-semibold text-xl">
               {app.name}
             </Text>
             <Text
-              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-              className="text-sm font-roobert"
-            >
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
               {t('integrations.connector.chooseNameForConnection')}
             </Text>
           </View>
         </View>
 
-        <View className={noPadding ? "" : "px-0"}>
-
+        <View className={noPadding ? '' : 'px-0'}>
           <View className="mb-8">
-            <Text className="text-sm font-roobert-medium text-muted-foreground mb-3 uppercase tracking-wider">
+            <Text className="mb-3 font-roobert-medium text-sm uppercase tracking-wider text-muted-foreground">
               {t('integrations.connector.profileName')}
             </Text>
             <View className="relative">
@@ -366,10 +396,13 @@ export function ComposioConnectorContent({
                 value={profileName}
                 onChangeText={setProfileName}
                 placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
-                className={`bg-muted/5 rounded-2xl px-4 py-4 text-base font-roobert text-foreground pr-12 ${nameAvailability && !nameAvailability.available ? 'border-2 border-red-500/50' :
-                  nameAvailability && nameAvailability.available && profileName.length > 0 ? 'border border-border/40' :
-                    'border border-border/40'
-                  }`}
+                className={`rounded-2xl bg-muted/5 px-4 py-4 pr-12 font-roobert text-base text-foreground ${
+                  nameAvailability && !nameAvailability.available
+                    ? 'border-2 border-red-500/50'
+                    : nameAvailability && nameAvailability.available && profileName.length > 0
+                      ? 'border border-border/40'
+                      : 'border border-border/40'
+                }`}
                 placeholderTextColor="rgba(156, 163, 175, 0.5)"
                 autoFocus
               />
@@ -377,23 +410,24 @@ export function ComposioConnectorContent({
                 {isCheckingName && profileName.length > 0 && (
                   <ActivityIndicator size="small" color="#999" />
                 )}
-                {!isCheckingName && nameAvailability && profileName.length > 0 && (
-                  nameAvailability.available ? (
-                    <View className="w-6 h-6 rounded-full bg-green-500/10 items-center justify-center">
+                {!isCheckingName &&
+                  nameAvailability &&
+                  profileName.length > 0 &&
+                  (nameAvailability.available ? (
+                    <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500/10">
                       <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
                     </View>
                   ) : (
-                    <View className="w-6 h-6 rounded-full bg-red-500/10 items-center justify-center">
+                    <View className="h-6 w-6 items-center justify-center rounded-full bg-red-500/10">
                       <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
                     </View>
-                  )
-                )}
+                  ))}
               </View>
             </View>
 
             {nameAvailability && !nameAvailability.available && (
               <View className="mt-3">
-                <Text className="text-sm font-roobert text-red-600 mb-2">
+                <Text className="mb-2 font-roobert text-sm text-red-600">
                   {t('integrations.connector.nameAlreadyTaken')}
                 </Text>
                 {nameAvailability.suggestions.length > 0 && (
@@ -402,9 +436,8 @@ export function ComposioConnectorContent({
                       <Pressable
                         key={suggestion}
                         onPress={() => setProfileName(suggestion)}
-                        className="px-3 py-1.5 bg-muted/10 border border-border/40 rounded-full active:opacity-70"
-                      >
-                        <Text className="text-xs font-roobert-medium text-foreground">
+                        className="rounded-full border border-border/40 bg-muted/10 px-3 py-1.5 active:opacity-70">
+                        <Text className="font-roobert-medium text-xs text-foreground">
                           {suggestion}
                         </Text>
                       </Pressable>
@@ -425,7 +458,11 @@ export function ComposioConnectorContent({
               (nameAvailability && !nameAvailability.available)
             }
             isLoading={isCreating}
-            label={isCreating ? t('integrations.connector.creating') : t('integrations.connector.continue')}
+            label={
+              isCreating
+                ? t('integrations.connector.creating')
+                : t('integrations.connector.continue')
+            }
             rounded="2xl"
           />
         </View>
@@ -435,24 +472,23 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.Connecting) {
     return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
-        <View className="items-center pt-12 pb-12">
-          <View className="w-20 h-20 rounded-2xl bg-muted/5 border border-border/40 items-center justify-center mb-6">
+      <View className="mb-4">
+        <View className="items-center pb-12 pt-12">
+          <View className="mb-6 h-20 w-20 items-center justify-center rounded-2xl border border-border/40 bg-muted/5">
             <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
           </View>
-          <Text className="text-2xl font-roobert-bold text-foreground mb-2 text-center">
+          <Text className="mb-2 text-center font-roobert-bold text-2xl text-foreground">
             {t('integrations.connector.completeInBrowser')}
           </Text>
-          <Text className="text-base font-roobert text-muted-foreground text-center mb-8 px-8 leading-relaxed">
+          <Text className="mb-8 px-8 text-center font-roobert text-base leading-relaxed text-muted-foreground">
             {t('integrations.connector.authenticateInstructions')}
           </Text>
 
           {redirectUrl && (
             <Pressable
               onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
-              className="mb-6 active:opacity-70"
-            >
-              <Text className="text-sm font-roobert-medium text-foreground underline">
+              className="mb-6 active:opacity-70">
+              <Text className="font-roobert-medium text-sm text-foreground underline">
                 {t('integrations.connector.reopenBrowser')}
               </Text>
             </Pressable>
@@ -463,11 +499,8 @@ export function ComposioConnectorContent({
             label={t('integrations.connector.completedAuthentication')}
           />
 
-          <Pressable
-            onPress={handleBack}
-            className="py-2 mt-4 active:opacity-70"
-          >
-            <Text className="text-sm font-roobert text-muted-foreground">
+          <Pressable onPress={handleBack} className="mt-4 py-2 active:opacity-70">
+            <Text className="font-roobert text-sm text-muted-foreground">
               {t('integrations.connector.goBack')}
             </Text>
           </Pressable>
@@ -478,15 +511,15 @@ export function ComposioConnectorContent({
 
   if (currentStep === Step.Success) {
     return (
-      <View className={noPadding ? "pb-6" : "pb-6"}>
-        <View className="items-center pt-16 pb-12">
-          <View className="w-20 h-20 rounded-full bg-green-500/10 items-center justify-center mb-6">
+      <View className="mb-4">
+        <View className="items-center pb-12 pt-16">
+          <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-green-500/10">
             <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
           </View>
-          <Text className="text-2xl font-roobert-bold text-foreground mb-2">
+          <Text className="mb-2 font-roobert-bold text-2xl text-foreground">
             {t('integrations.connector.allSet')}
           </Text>
-          <Text className="text-base font-roobert text-muted-foreground text-center px-8">
+          <Text className="px-8 text-center font-roobert text-base text-muted-foreground">
             {t('integrations.connector.connectionReady', { app: app.name })}
           </Text>
         </View>
@@ -503,7 +536,7 @@ export function ComposioConnector({
   onClose,
   onComplete,
   mode = 'full',
-  agentId
+  agentId,
 }: ComposioConnectorProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
@@ -514,21 +547,14 @@ export function ComposioConnector({
     <View className="flex-1">
       <View className="px-6 pt-6">
         {/* Header with back button */}
-        <View className="flex-row items-center mb-4">
-          <Pressable
-            onPress={onClose}
-            className="flex-row items-center active:opacity-70"
-          >
-            <ArrowLeft
-              size={20}
-              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
-            />
+        <View className="mb-4 flex-row items-center">
+          <Pressable onPress={onClose} className="flex-row items-center active:opacity-70">
+            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
           </Pressable>
-          <View className="flex-1 ml-3">
+          <View className="ml-3 flex-1">
             <Text
               style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-              className="text-xl font-roobert-semibold"
-            >
+              className="font-roobert-semibold text-xl">
               {t('integrations.connector.connectTo', { app: app.name })}
             </Text>
           </View>
@@ -559,48 +585,27 @@ interface ContinueButtonProps {
   rounded?: 'full' | '2xl';
 }
 
-const ContinueButton = React.memo(({
-  onPress,
-  disabled = false,
-  label,
-  isLoading = false,
-}: ContinueButtonProps) => {
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = React.useCallback(() => {
-    if (!disabled) {
-      scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
-    }
-  }, [scale, disabled]);
-
-  const handlePressOut = React.useCallback(() => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  }, [scale]);
-
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`w-full py-4 items-center rounded-full ${disabled ? 'bg-muted/20' : 'bg-foreground'
-        }`}
-    >
-      <View className="flex-row items-center gap-2">
-        {isLoading && <ActivityIndicator size="small" color="#fff" />}
-        <Text className={`text-base font-roobert-semibold ${disabled ? 'text-muted-foreground' : 'text-background'
-          }`}>
-          {label}
-        </Text>
-      </View>
-    </AnimatedPressable>
-  );
-});
+const ContinueButton = React.memo(
+  ({
+    onPress,
+    disabled = false,
+    label,
+    isLoading = false,
+    rounded = 'full',
+  }: ContinueButtonProps) => {
+    return (
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        className={`flex-row items-center justify-center gap-2 rounded-xl p-4 ${
+          disabled ? 'bg-primary/50 opacity-50' : 'bg-primary active:opacity-80'
+        }`}>
+        {isLoading ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
+        <Text className="font-roobert-semibold text-base text-primary-foreground">{label}</Text>
+      </Pressable>
+    );
+  }
+);
 
 interface ProfileListItemProps {
   profile: ComposioProfile;
@@ -612,22 +617,27 @@ const ProfileListItem = React.memo(({ profile, isSelected, onPress }: ProfileLis
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-row items-center p-4 rounded-3xl active:opacity-80 mb-2 ${isSelected
-        ? 'bg-primary/10'
-        : 'bg-muted/5'
-        }`}
-    >
-      <View className={`w-10 h-10 rounded-xl items-center justify-center ${isSelected ? 'bg-primary' : 'bg-muted/30'
+      className={`mb-2 flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+        isSelected ? 'bg-primary/10' : 'bg-muted/5'
+      }`}>
+      <View
+        className={`h-10 w-10 items-center justify-center rounded-xl ${
+          isSelected ? 'bg-primary' : 'bg-muted/30'
         }`}>
-        <Icon as={CheckCircle2} size={20} className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'} strokeWidth={2.5} />
+        <Icon
+          as={CheckCircle2}
+          size={20}
+          className={isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}
+          strokeWidth={2.5}
+        />
       </View>
-      <View className="flex-1 ml-3">
-        <Text className="text-base font-roobert-semibold text-foreground">
+      <View className="ml-3 flex-1">
+        <Text className="font-roobert-semibold text-base text-foreground">
           {profile.profile_name}
         </Text>
       </View>
       {isSelected && (
-        <View className="w-5 h-5 rounded-full bg-primary items-center justify-center">
+        <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
           <Icon as={Check} size={14} className="text-primary-foreground" strokeWidth={3} />
         </View>
       )}

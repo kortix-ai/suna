@@ -156,6 +156,7 @@ export function useUpdateAgent(
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: agentKeys.detail(data.agent_id) });
       queryClient.setQueryData(agentKeys.detail(data.agent_id), data);
     },
     ...options,
