@@ -45,6 +45,14 @@
         "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
         "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "incoming"
       }
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      },
+      "environment": "development"
     }
   },
   "submit": {
@@ -53,6 +61,9 @@
         "appleId": "mkprivat2005@gmail.com",
         "ascAppId": "6754448524",
         "appleTeamId": "T8G9J33433"
+      },
+      "android": {
+        "track": "internal"
       }
     },
     "testflight": {

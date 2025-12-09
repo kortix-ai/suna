@@ -34,6 +34,7 @@ export interface ThreadAnalytics {
   thread_id: string;
   project_id?: string | null;
   project_name?: string | null;
+  project_category?: string | null;
   account_id: string;
   user_email?: string | null;
   message_count: number;
@@ -63,6 +64,12 @@ export interface MessageDistribution {
     '5_plus_messages': number;
   };
   total_threads: number;
+}
+
+export interface CategoryDistribution {
+  distribution: Record<string, number>;
+  total_projects: number;
+  date: string;
 }
 
 export interface TranslationResponse {
@@ -95,6 +102,7 @@ export interface ThreadBrowseParams {
   min_messages?: number;
   max_messages?: number;
   search_email?: string;
+  category?: string;
   date_from?: string;
   date_to?: string;
   sort_by?: string;
@@ -151,6 +159,7 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
       if (params.min_messages !== undefined) searchParams.append('min_messages', params.min_messages.toString());
       if (params.max_messages !== undefined) searchParams.append('max_messages', params.max_messages.toString());
       if (params.search_email) searchParams.append('search_email', params.search_email);
+      if (params.category) searchParams.append('category', params.category);
       if (params.date_from) searchParams.append('date_from', params.date_from);
       if (params.date_to) searchParams.append('date_to', params.date_to);
       if (params.sort_by) searchParams.append('sort_by', params.sort_by);
@@ -181,6 +190,24 @@ export function useMessageDistribution(date?: string) {
     },
     staleTime: 300000, // 5 minutes
     placeholderData: (previousData) => previousData, // Keep previous data while loading
+  });
+}
+
+export function useCategoryDistribution(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'category-distribution', date],
+    queryFn: async (): Promise<CategoryDistribution> => {
+      const url = date
+        ? `/admin/analytics/projects/category-distribution?date=${date}`
+        : '/admin/analytics/projects/category-distribution';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData,
   });
 }
 

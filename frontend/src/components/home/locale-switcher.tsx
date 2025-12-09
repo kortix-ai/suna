@@ -76,15 +76,24 @@ export function LocaleSwitcher({ variant = 'compact' }: LocaleSwitcherProps) {
       value={locale}
       onValueChange={(value) => setLanguage(value as Locale)}
     >
-      <SelectTrigger className="w-full border-0 bg-transparent hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 shadow-none">
-        <SelectValue>
-          {languageNames[locale as Locale] || locale}
-        </SelectValue>
+      <SelectTrigger 
+        size="sm"
+        className="h-9 w-full min-w-0 border border-border bg-accent/50 hover:bg-accent dark:hover:bg-accent/50 text-muted-foreground hover:text-foreground transition-all duration-200 shadow-none"
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Globe className="size-3.5 shrink-0" />
+          <SelectValue className="truncate">
+            {languageNames[locale as Locale] || locale}
+          </SelectValue>
+        </div>
       </SelectTrigger>
       <SelectContent>
         {availableLanguages.map((lang) => (
           <SelectItem key={lang} value={lang}>
-            {languageNames[lang]}
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{languageCodes[lang]}</span>
+              <span className="text-muted-foreground">{languageNames[lang]}</span>
+            </div>
           </SelectItem>
         ))}
       </SelectContent>

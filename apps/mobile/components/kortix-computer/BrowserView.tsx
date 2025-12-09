@@ -3,7 +3,6 @@ import { View, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Globe, RefreshCw, AlertCircle } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import { WebView } from 'react-native-webview';
 
 interface BrowserViewProps {
@@ -16,8 +15,6 @@ interface BrowserViewProps {
 }
 
 export function BrowserView({ sandbox }: BrowserViewProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const webViewRef = React.useRef<WebView>(null);
   const [isBrowserLoading, setIsBrowserLoading] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -87,29 +84,23 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
       <View className="flex-1">
         {/* Header */}
         <View
-          className="px-4 py-2 border-b flex-row items-center justify-between"
-          style={{
-            backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-          }}
+          className="px-4 py-3 border-b border-border bg-card flex-row items-center justify-between"
+          style={{ height: 64 }}
         >
           <View className="flex-row items-center gap-2">
-            <View className="w-2 h-2 rounded-full bg-green-500" />
-            <Text className="text-sm font-roobert-medium">
+            <View className="w-2 h-2 rounded-full bg-primary" />
+            <Text className="text-base font-roobert-medium text-primary">
               Browser Connected
             </Text>
           </View>
           <View
             onTouchEnd={handleRefresh}
-            className="p-2 rounded-lg active:opacity-70"
-            style={{
-              backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
-            }}
+            className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
           >
             <Icon
               as={RefreshCw}
-              size={16}
-              color={isDark ? '#f8f8f8' : '#121215'}
+              size={17}
+              className="text-primary"
               strokeWidth={2}
             />
           </View>
@@ -136,42 +127,39 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
             onHttpError={handleHttpError}
           />
           {connectionError ? (
-            <View 
+            <View
               className="absolute inset-0 items-center justify-center bg-background/95"
             >
               <View className="items-center space-y-3 px-4">
                 <Icon
                   as={AlertCircle}
                   size={32}
-                  color={isDark ? '#ef4444' : '#dc2626'}
+                  className="text-primary"
                   strokeWidth={2}
                 />
-                <Text className="text-sm font-roobert-semibold text-center text-foreground">
+                <Text className="text-sm font-roobert-semibold text-center text-primary">
                   Connection Failed
                 </Text>
-                <Text className="text-xs text-muted-foreground text-center">
+                <Text className="text-xs text-primary opacity-50 text-center">
                   {connectionError}
                 </Text>
                 <View
                   onTouchEnd={handleRefresh}
-                  className="mt-2 px-4 py-2 rounded-lg active:opacity-70"
-                  style={{
-                    backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-                  }}
+                  className="mt-2 px-4 py-2 rounded-xl bg-card border border-border active:opacity-70"
                 >
-                  <Text className="text-sm font-roobert-medium text-foreground">
+                  <Text className="text-sm font-roobert-medium text-primary">
                     Retry
                   </Text>
                 </View>
               </View>
             </View>
           ) : isBrowserLoading ? (
-            <View 
+            <View
               className="absolute inset-0 items-center justify-center bg-background/95"
             >
               <View className="items-center space-y-3">
-                <ActivityIndicator size="large" color={isDark ? '#F8F8F8' : '#121215'} />
-                <Text className="text-sm font-roobert-medium text-center text-foreground">
+                <ActivityIndicator size="large" className="text-primary" />
+                <Text className="text-sm font-roobert-medium text-center text-primary">
                   Connecting to browser...
                 </Text>
               </View>
@@ -187,16 +175,11 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
     return (
       <View className="flex-1 items-center justify-center p-8">
         <View className="flex-col items-center space-y-4 max-w-sm">
-          <View className="w-16 h-16 rounded-full items-center justify-center border-2"
-            style={{
-              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(220, 38, 38, 0.1)',
-              borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : 'rgba(220, 38, 38, 0.3)',
-            }}
-          >
+          <View className="w-16 h-16 rounded-full items-center justify-center border-2 bg-card border-border">
             <Icon
               as={AlertCircle}
               size={32}
-              color={isDark ? '#ef4444' : '#dc2626'}
+              className="text-primary"
               strokeWidth={2}
             />
           </View>
@@ -216,16 +199,11 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
   return (
     <View className="flex-1 items-center justify-center p-8">
       <View className="flex-col items-center space-y-4 max-w-sm">
-        <View className="w-16 h-16 rounded-full items-center justify-center border-2"
-          style={{
-            backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
-            borderColor: isDark ? 'rgba(248, 248, 248, 0.2)' : 'rgba(18, 18, 21, 0.2)',
-          }}
-        >
+        <View className="w-16 h-16 rounded-full items-center justify-center border-2 bg-card border-border">
           <Icon
             as={Globe}
             size={32}
-            color={isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)'}
+            className="text-primary opacity-50"
             strokeWidth={1.5}
           />
         </View>

@@ -124,12 +124,7 @@ export function WebScrapeToolView({ toolCall, toolResult, isStreaming, assistant
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={`${files.length} file${files.length !== 1 ? 's' : ''}`}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">

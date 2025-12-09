@@ -339,8 +339,8 @@ class ContextManager:
         if not isinstance(msg, dict) or msg.get('role') != 'assistant':
             return []
         
-        tool_calls = msg.get('tool_calls', [])
-        if not tool_calls:
+        tool_calls = msg.get('tool_calls') or []
+        if not tool_calls or not isinstance(tool_calls, list):
             return []
         
         ids = []
@@ -615,11 +615,11 @@ class ContextManager:
                     else:
                         # Some tool_calls are answered - keep only answered ones
                         fixed_msg = msg.copy()
-                        original_tool_calls = fixed_msg.get('tool_calls', [])
+                        original_tool_calls = fixed_msg.get('tool_calls') or []
                         fixed_msg['tool_calls'] = [
                             tc for tc in original_tool_calls 
                             if isinstance(tc, dict) and tc.get('id') in answered_tool_call_ids
-                        ]
+                        ] if isinstance(original_tool_calls, list) else []
                         logger.warning(f"🔧 Removed {len(unanswered)} unanswered tool_calls from assistant message (kept {len(answered)}): {unanswered}")
                         result.append(fixed_msg)
                         fixed_count += 1

@@ -459,9 +459,10 @@ export function CodeEditor({
 
   // Update local content when external content changes (but not if we have unsaved local changes)
   useEffect(() => {
-    // Only update if the external content changed and we don't have local modifications
-    // Also update if localContent is null/empty but content is available
-    const hasNoLocalChanges = localContent === savedContent.current || !localContent;
+    // For read-only mode (preview/streaming), always update when content changes
+    // For editable mode, only update if we don't have local modifications
+    const hasNoLocalChanges = readOnly || localContent === savedContent.current || !localContent;
+    
     if (content !== localContent && hasNoLocalChanges) {
       setLocalContent(content);
       // Also update savedContent when content is first loaded
@@ -471,7 +472,7 @@ export function CodeEditor({
         setIsReady(true);
       }
     }
-  }, [content, localContent, originalContent, isReady]);
+  }, [content, localContent, originalContent, isReady, readOnly]);
 
   // Manual save handler (Cmd/Ctrl + S)
   const handleKeyDown = useCallback(

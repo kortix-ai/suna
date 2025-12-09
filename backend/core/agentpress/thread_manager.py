@@ -191,8 +191,8 @@ class ThreadManager:
             logger.error(f"Error handling billing: {str(e)}", exc_info=True)
 
     def _validate_tool_calls_in_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
-        tool_calls = message.get('tool_calls', [])
-        if not tool_calls:
+        tool_calls = message.get('tool_calls') or []
+        if not tool_calls or not isinstance(tool_calls, list):
             return message
         
         valid_tool_calls = []

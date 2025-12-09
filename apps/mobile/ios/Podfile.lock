@@ -2136,6 +2136,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNCPicker (2.11.1):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNGestureHandler (2.28.0):
     - hermes-engine
     - RCTRequired
@@ -2541,6 +2563,7 @@ DEPENDENCIES:
   - ReactNativeDependencies (from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`)
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - "RNCMaskedView (from `../node_modules/@react-native-masked-view/masked-view`)"
+  - "RNCPicker (from `../node_modules/@react-native-picker/picker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNPaywalls (from `../node_modules/react-native-purchases-ui`)
   - RNPurchases (from `../node_modules/react-native-purchases`)
@@ -2785,6 +2808,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-async-storage/async-storage"
   RNCMaskedView:
     :path: "../node_modules/@react-native-masked-view/masked-view"
+  RNCPicker:
+    :path: "../node_modules/@react-native-picker/picker"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
   RNPaywalls:
@@ -2924,6 +2949,7 @@ SPEC CHECKSUMS:
   RevenueCatUI: 625b2b2f4ee8c052d2e9939c2b906cdaecded253
   RNCAsyncStorage: c8407cc394627a3a4cf56b457d594bfa822b6ab8
   RNCMaskedView: ee2fc4739eb35be50bcf4f95daca19f316b5d50c
+  RNCPicker: e77543f719cf823e13dcf8080336d633101b098e
   RNGestureHandler: c3831b3b1b5014c6afab7fff7e4171394a3419ab
   RNPaywalls: d9f17bc5cab8555a7c0b395f5c0bdc3256b42c2a
   RNPurchases: 5f3cd4fea5ef2b3914c925b2201dd5cecd31922f

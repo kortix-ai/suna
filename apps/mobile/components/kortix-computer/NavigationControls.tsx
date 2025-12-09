@@ -4,7 +4,6 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 
 interface NavigationControlsProps {
@@ -32,8 +31,6 @@ export function NavigationControls({
   onJumpToLive,
   onJumpToLatest,
 }: NavigationControlsProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
 
   const handlePrevious = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -56,39 +53,35 @@ export function NavigationControls({
   };
 
   const renderStatusButton = () => {
-    const baseClasses = "flex-row items-center justify-center gap-1.5 px-3 py-1.5 rounded-full min-w-[116px]";
-    const dotSize = 6;
-    const textClasses = "text-xs font-roobert-medium";
+    const baseClasses = "flex-row items-center justify-center gap-1.5 px-3 h-9 rounded-2xl min-w-[116px] bg-card border border-border";
+    const textClasses = "text-xs font-roobert-medium text-primary";
 
     if (isLiveMode) {
       if (agentStatus === 'running') {
         return (
           <Button
             onPress={handleJumpToLive}
-            variant="default"
+            variant="outline"
             size="sm"
-            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800`}
+            className={baseClasses}
           >
-            <View
-              className="rounded-full bg-green-500"
-              style={{ width: dotSize, height: dotSize }}
-            />
-            <Text className={`${textClasses} text-green-700 dark:text-green-400`}>
+            <Text className={textClasses}>
               Live Updates
             </Text>
           </Button>
         );
       } else {
         return (
-          <View className={`${baseClasses} bg-neutral-50 dark:bg-neutral-900/20 border border-neutral-200 dark:border-neutral-800`}>
-            <View
-              className="rounded-full bg-neutral-500"
-              style={{ width: dotSize, height: dotSize }}
-            />
-            <Text className={`${textClasses} text-neutral-700 dark:text-neutral-400`}>
+          <Button
+            variant="outline"
+            size="sm"
+            className={baseClasses}
+            disabled
+          >
+            <Text className="text-xs font-roobert-medium text-primary opacity-50">
               Latest Tool
             </Text>
-          </View>
+          </Button>
         );
       }
     } else {
@@ -96,15 +89,11 @@ export function NavigationControls({
         return (
           <Button
             onPress={handleJumpToLive}
-            variant="default"
+            variant="outline"
             size="sm"
-            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800`}
+            className={baseClasses}
           >
-            <View
-              className="rounded-full bg-green-500"
-              style={{ width: dotSize, height: dotSize }}
-            />
-            <Text className={`${textClasses} text-green-700 dark:text-green-400`}>
+            <Text className={textClasses}>
               Jump to Live
             </Text>
           </Button>
@@ -113,15 +102,11 @@ export function NavigationControls({
         return (
           <Button
             onPress={handleJumpToLatest}
-            variant="default"
+            variant="outline"
             size="sm"
-            className={`${baseClasses} bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800`}
+            className={baseClasses}
           >
-            <View
-              className="rounded-full bg-blue-500"
-              style={{ width: dotSize, height: dotSize }}
-            />
-            <Text className={`${textClasses} text-blue-700 dark:text-blue-400`}>
+            <Text className={textClasses}>
               Jump to Latest
             </Text>
           </Button>
@@ -131,56 +116,39 @@ export function NavigationControls({
   };
 
   return (
-    <View
-      className="px-4 py-3 border-t border-border bg-muted/50"
-      style={{
-        borderTopColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
-        backgroundColor: isDark ? 'rgba(248, 248, 248, 0.02)' : 'rgba(18, 18, 21, 0.02)',
-      }}
-    >
+    <View className="px-4 pt-4 pb-6 border-t border-border bg-card">
       <View className="flex-row items-center justify-between gap-3">
-        <View className="flex-row items-center gap-1">
+        <View className="flex-row items-center gap-2">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onPress={handlePrevious}
             disabled={displayIndex <= 0}
-            className="h-8 w-8 p-0"
+            className={`h-9 w-9 p-0 bg-card border border-border rounded-xl ${displayIndex <= 0 ? 'opacity-50' : ''}`}
           >
             <Icon
               as={ChevronLeft}
-              size={16}
-              color={displayIndex <= 0
-                ? (isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)')
-                : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)')
-              }
+              size={17}
+              className="text-primary"
               strokeWidth={2}
             />
           </Button>
-          <View className="px-2 min-w-[44px]">
-            <Text
-              className="text-xs font-roobert-semibold tabular-nums text-center"
-              style={{
-                color: isDark ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-            >
+          <View className="w-14">
+            <Text className="text-sm font-roobert-semibold tabular-nums text-center text-primary">
               {displayIndex + 1}/{displayTotalCalls}
             </Text>
           </View>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onPress={handleNext}
             disabled={safeInternalIndex >= latestIndex}
-            className="h-8 w-8 p-0"
+            className={`h-9 w-9 p-0 bg-card border border-border rounded-xl ${safeInternalIndex >= latestIndex ? 'opacity-50' : ''}`}
           >
             <Icon
               as={ChevronRight}
-              size={16}
-              color={safeInternalIndex >= latestIndex
-                ? (isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)')
-                : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)')
-              }
+              size={17}
+              className="text-primary"
               strokeWidth={2}
             />
           </Button>

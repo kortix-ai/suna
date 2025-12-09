@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Icon } from '@/components/ui/icon';
 import { Zap, FolderOpen, Globe } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -20,23 +19,20 @@ interface ViewToggleProps {
 const AnimatedView = Animated.createAnimatedComponent(View);
 
 export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: ViewToggleProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
-  const viewOptions = showFilesTab 
+  const viewOptions = showFilesTab
     ? ['tools', 'files', 'browser'] as const
     : ['tools', 'browser'] as const;
-  
+
   const getViewIndex = (view: ViewType) => {
     if (!showFilesTab && view === 'files') return 0;
     return viewOptions.indexOf(view as any);
   };
-  
+
   const tabWidth = 28; // w-7 = 28px
   const gap = 4; // gap-1 = 4px
-  
+
   const indicatorPosition = useSharedValue(getViewIndex(currentView) * (tabWidth + gap));
-  
+
   React.useEffect(() => {
     indicatorPosition.value = withSpring(getViewIndex(currentView) * (tabWidth + gap), {
       damping: 30,
@@ -54,20 +50,10 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
   };
 
   return (
-    <View className="relative flex-row items-center gap-1 bg-muted rounded-3xl px-1 py-1">
+    <View className="relative flex-row items-center gap-1 bg-card border border-border rounded-full px-1 py-1">
       <AnimatedView
-        className="absolute top-1 left-1 h-7 w-7 rounded-xl"
-        style={[
-          indicatorStyle,
-          {
-            backgroundColor: isDark ? '#27272a' : '#ffffff',
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.1,
-            shadowRadius: 2,
-            elevation: 2,
-          },
-        ]}
+        className="absolute top-1 left-1 h-7 w-7 rounded-xl bg-primary"
+        style={[indicatorStyle]}
       />
 
       <Pressable
@@ -77,10 +63,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
         <Icon
           as={Zap}
           size={14}
-          color={currentView === 'tools'
-            ? (isDark ? '#ffffff' : '#000000')
-            : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)')
-          }
+          className={currentView === 'tools' ? 'text-background' : 'text-primary'}
           strokeWidth={2}
         />
       </Pressable>
@@ -93,10 +76,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
           <Icon
             as={FolderOpen}
             size={14}
-            color={currentView === 'files'
-              ? (isDark ? '#ffffff' : '#000000')
-              : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)')
-            }
+            className={currentView === 'files' ? 'text-background' : 'text-primary'}
             strokeWidth={2}
           />
         </Pressable>
@@ -109,10 +89,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
         <Icon
           as={Globe}
           size={14}
-          color={currentView === 'browser'
-            ? (isDark ? '#ffffff' : '#000000')
-            : (isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)')
-          }
+          className={currentView === 'browser' ? 'text-background' : 'text-primary'}
           strokeWidth={2}
         />
       </Pressable>

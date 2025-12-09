@@ -73,12 +73,7 @@ export function DataProviderToolView({ toolCall, toolResult, isStreaming = false
         title: toolMetadata.title,
         isSuccess: actualIsSuccess,
         isStreaming: false,
-        rightContent: (
-          <StatusBadge
-            variant={actualIsSuccess ? 'success' : 'error'}
-            label={isEndpointsList ? `${endpoints.length} endpoints` : actualIsSuccess ? 'Success' : 'Failed'}
-          />
-        ),
+        showStatus: true,
       }}
       footer={
         <View className="flex-row items-center justify-between w-full">

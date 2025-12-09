@@ -13,7 +13,6 @@ import { TemplatePreviewModal } from './TemplatePreviewModal';
 interface QuickActionExpandedViewProps {
   actionId: string;
   actionLabel: string;
-  onBack: () => void;
   onSelectOption: (optionId: string) => void;
   selectedOptionId?: string | null;
   onSelectPrompt?: (prompt: string) => void;
@@ -22,15 +21,14 @@ interface QuickActionExpandedViewProps {
 /**
  * QuickActionExpandedView Component
  * 
- * Replaces the quick action bar when an action is selected.
- * Shows custom options specific to the selected action.
+ * Displays options/templates for the selected quick action mode.
+ * Shown above the chat input when a mode is selected.
  * For slides: displays templates in 16:9 aspect ratio for better preview.
  * For people & research: shows example prompts for inspiration.
  */
 export function QuickActionExpandedView({ 
   actionId, 
   actionLabel,
-  onBack,
   onSelectOption,
   selectedOptionId,
   onSelectPrompt

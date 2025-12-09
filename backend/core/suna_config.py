@@ -26,7 +26,6 @@ SUNA_CONFIG = {
         "sb_design_tool": True,
         
         # Document and content creation
-        "sb_docs_tool": True,
         "sb_presentation_tool": True,
         "sb_kb_tool": True,
 

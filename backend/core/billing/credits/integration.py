@@ -16,11 +16,16 @@ class BillingIntegration:
             return True, "Local mode", None
         
         try:
+            import asyncio
             from core.services import redis_worker as redis
             today = datetime.now(timezone.utc).date().isoformat()
             cache_key = f"daily_credit_check:{account_id}:{today}"
             
-            cached_check = await redis.get(cache_key)
+            try:
+                cached_check = await asyncio.wait_for(redis.get(cache_key), timeout=3.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"[CREDIT_CACHE] Redis timeout checking cache for {account_id} - proceeding without cache")
+                cached_check = None
             
             if cached_check:
                 logger.debug(f"⚡ [CREDIT_CACHE] Daily refresh already checked for {account_id} today (cached)")
@@ -29,8 +34,11 @@ class BillingIntegration:
                 refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
                 if refreshed and amount > 0:
                     logger.info(f"✅ [DAILY_REFRESH] Granted ${amount} to {account_id}")
-                await redis.set(cache_key, "checked", ex=3600)
-                logger.debug(f"✅ [CREDIT_CACHE] Daily refresh check completed and cached for {account_id} (TTL: 1h)")
+                try:
+                    await asyncio.wait_for(redis.set(cache_key, "checked", ex=3600), timeout=3.0)
+                    logger.debug(f"✅ [CREDIT_CACHE] Daily refresh check completed and cached for {account_id} (TTL: 1h)")
+                except asyncio.TimeoutError:
+                    logger.warning(f"[CREDIT_CACHE] Redis timeout caching check for {account_id} - continuing without")
         except Exception as e:
             logger.warning(f"[DAILY_CREDITS] Failed to check/refresh daily credits for {account_id}: {e}")
         

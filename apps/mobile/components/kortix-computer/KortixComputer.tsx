@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Modal, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, Minimize2 } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
+import { X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -55,8 +54,6 @@ export function KortixComputer({
   streamingText,
   sandboxId,
 }: KortixComputerProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
   const {
@@ -91,8 +88,8 @@ export function KortixComputer({
   }, [pendingToolNavIndex, toolMessages.length, setActiveView, onNavigate, clearPendingToolNav]);
 
   const safeIndex = toolMessages.length > 0 ? Math.min(internalIndex, Math.max(0, toolMessages.length - 1)) : 0;
-  const currentPair = toolMessages.length > 0 && safeIndex >= 0 && safeIndex < toolMessages.length 
-    ? toolMessages[safeIndex] 
+  const currentPair = toolMessages.length > 0 && safeIndex >= 0 && safeIndex < toolMessages.length
+    ? toolMessages[safeIndex]
     : undefined;
   const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
     if (!currentPair?.toolMessage) {
@@ -155,24 +152,22 @@ export function KortixComputer({
       presentationStyle="fullScreen"
       onRequestClose={handleClose}
     >
-      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1 bg-background">
         {/* Header */}
         <View
-          className="px-4 py-3 border-b flex-row items-center justify-between"
+          className="px-4 py-3 border-b border-border bg-background flex-row items-center justify-between"
           style={{
             paddingTop: insets.top + 8,
-            backgroundColor: isDark ? '#121215' : '#ffffff',
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
           }}
         >
           <View className="flex-row items-center gap-3">
-            <Text className="text-lg font-roobert-semibold">
+            <Text className="text-lg font-roobert-semibold text-primary">
               Kortix Computer
             </Text>
             {isStreaming && activeView === 'tools' && (
-              <View className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 flex-row items-center gap-1.5">
-                <View className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                <Text className="text-xs font-roobert-medium text-blue-700 dark:text-blue-400">
+              <View className="px-2.5 py-0.5 rounded-full bg-card border border-border flex-row items-center gap-1.5">
+                <View className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <Text className="text-xs font-roobert-medium text-primary">
                   Running
                 </Text>
               </View>
@@ -187,15 +182,12 @@ export function KortixComputer({
             />
             <Pressable
               onPress={handleClose}
-              className="p-2 rounded-lg active:opacity-70"
-              style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.05)',
-              }}
+              className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
             >
               <Icon
                 as={X}
-                size={20}
-                color={isDark ? '#f8f8f8' : '#121215'}
+                size={17}
+                className="text-primary"
                 strokeWidth={2}
               />
             </Pressable>
@@ -207,7 +199,7 @@ export function KortixComputer({
           {activeView === 'tools' && (
             <ToolsView
               toolCall={toolCall}
-              toolResult={toolResult}
+              toolResult={toolResult || undefined}
               assistantMessage={currentPair?.assistantMessage}
               toolMessage={currentPair?.toolMessage}
               assistantTimestamp={assistantTimestamp}
