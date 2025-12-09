@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard } from 'react-native';
-import Animated, { 
+import Animated, {
   FadeIn,
   runOnJS,
   useSharedValue,
@@ -45,6 +45,9 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   const { creditsExhausted } = usePricingModalStore();
   const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
   const [isCreditsPurchaseOpen, setIsCreditsPurchaseOpen] = React.useState(false);
+  const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
+  const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
+  const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<'instructions' | 'tools' | 'integrations' | 'triggers'>('instructions');
 
   const chatInputRef = React.useRef<ChatInputSectionRef>(null);
   const lastSwipeIndex = React.useRef(-1);
@@ -87,7 +90,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     .failOffsetY([-20, 20])
     .onEnd((event) => {
       const currentIndex = selectedIndex;
-      
+
       if (event.translationX < -SWIPE_THRESHOLD || event.velocityX < -500) {
         // Swipe left - next mode
         runOnJS(switchToMode)(currentIndex + 1);
@@ -167,8 +170,9 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             onMenuPress={onMenuPress}
             onUpgradePress={handleUpgradePress}
             onCreditsPress={handleCreditsPress}
+            visible={!isWorkerConfigDrawerVisible}
           />
-          
+
           {/* Swipeable content area */}
           <GestureDetector gesture={panGesture}>
             <View className="flex-1">
@@ -179,16 +183,16 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
               >
                 {/* Mode Header - Shows current mode icon and name */}
                 {selectedAction && (
-                  <Animated.View 
+                  <Animated.View
                     key={selectedAction.id}
                     entering={FadeIn.duration(150)}
                     className="px-4 pb-4"
                     style={{ marginTop: 127 }}
                   >
                     <View className="flex-row items-center gap-3">
-                      <Icon 
-                        as={selectedAction.icon} 
-                        size={28} 
+                      <Icon
+                        as={selectedAction.icon}
+                        size={28}
                         className="text-foreground"
                         strokeWidth={2}
                       />
@@ -242,6 +246,46 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
         <ChatDrawers
           isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
+          onOpenWorkerConfig={(workerId, view) => {
+            agentManager.closeDrawer(); // Close agent drawer when opening worker config
+
+            // If drawer is already open with a different workerId, close it first
+            const isDifferentWorker = isWorkerConfigDrawerVisible && workerConfigWorkerId !== workerId;
+
+            if (isDifferentWorker) {
+              // Close first, then open with new workerId
+              setIsWorkerConfigDrawerVisible(false);
+              setWorkerConfigWorkerId(null);
+              // Wait for close animation, then open with new settings
+              setTimeout(() => {
+                setWorkerConfigWorkerId(workerId);
+                setWorkerConfigInitialView(view || 'instructions');
+                setTimeout(() => {
+                  setIsWorkerConfigDrawerVisible(true);
+                }, 50);
+              }, 200);
+            } else {
+              // Set all state synchronously in a single batch to avoid race conditions
+              // React 18 batches these updates automatically
+              setWorkerConfigWorkerId(workerId);
+              setWorkerConfigInitialView(view || 'instructions');
+              // Use a small delay to ensure state is set before making visible
+              // This is especially important on first load
+              setTimeout(() => {
+                setIsWorkerConfigDrawerVisible(true);
+              }, 10);
+            }
+          }}
+          isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+          workerConfigWorkerId={workerConfigWorkerId}
+          workerConfigInitialView={workerConfigInitialView}
+          onCloseWorkerConfigDrawer={() => {
+            setIsWorkerConfigDrawerVisible(false);
+            setWorkerConfigWorkerId(null);
+          }}
+          onWorkerUpdated={() => {
+            // Refresh agent data if needed
+          }}
           isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
           onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
           onTakePicture={chat.handleTakePicture}

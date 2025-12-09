@@ -232,7 +232,10 @@ export function ThreadPage({
   const router = useRouter();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
   const [selectedToolData, setSelectedToolData] = React.useState<{ toolMessages: ToolMessagePair[]; initialIndex: number } | null>(null);
-  
+  const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
+  const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
+  const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<'instructions' | 'tools' | 'integrations' | 'triggers'>('instructions');
+
   const { isOpen: isKortixComputerOpen, openPanel, openFileInComputer, openFileBrowser } = useKortixComputerStore();
 
   const deleteThreadMutation = useDeleteThread();
@@ -526,6 +529,46 @@ export function ThreadPage({
       <ChatDrawers
         isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
+        onOpenWorkerConfig={(workerId, view) => {
+          agentManager.closeDrawer(); // Close agent drawer when opening worker config
+
+          // If drawer is already open with a different workerId, close it first
+          const isDifferentWorker = isWorkerConfigDrawerVisible && workerConfigWorkerId !== workerId;
+
+          if (isDifferentWorker) {
+            // Close first, then open with new workerId
+            setIsWorkerConfigDrawerVisible(false);
+            setWorkerConfigWorkerId(null);
+            // Wait for close animation, then open with new settings
+            setTimeout(() => {
+              setWorkerConfigWorkerId(workerId);
+              setWorkerConfigInitialView(view || 'instructions');
+              setTimeout(() => {
+                setIsWorkerConfigDrawerVisible(true);
+              }, 50);
+            }, 200);
+          } else {
+            // Set all state synchronously in a single batch to avoid race conditions
+            // React 18 batches these updates automatically
+            setWorkerConfigWorkerId(workerId);
+            setWorkerConfigInitialView(view || 'instructions');
+            // Use a small delay to ensure state is set before making visible
+            // This is especially important on first load
+            setTimeout(() => {
+              setIsWorkerConfigDrawerVisible(true);
+            }, 10);
+          }
+        }}
+        isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}
+        workerConfigWorkerId={workerConfigWorkerId}
+        workerConfigInitialView={workerConfigInitialView}
+        onCloseWorkerConfigDrawer={() => {
+          setIsWorkerConfigDrawerVisible(false);
+          setWorkerConfigWorkerId(null);
+        }}
+        onWorkerUpdated={() => {
+          // Refresh agent data if needed
+        }}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
         onTakePicture={chat.handleTakePicture}

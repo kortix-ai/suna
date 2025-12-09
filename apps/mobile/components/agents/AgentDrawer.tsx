@@ -21,7 +21,10 @@ import {
   ArrowLeft,
   Crown,
   DollarSign,
-  Plug
+  Plug,
+  Brain,
+  Wrench,
+  Server,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -56,6 +59,7 @@ interface AgentDrawerProps {
   visible: boolean;
   onClose: () => void;
   onCreateAgent?: () => void;
+  onOpenWorkerConfig?: (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -82,7 +86,8 @@ function BackButton({ onPress }: { onPress: () => void }) {
 export function AgentDrawer({
   visible,
   onClose,
-  onCreateAgent
+  onCreateAgent,
+  onOpenWorkerConfig,
 }: AgentDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const { colorScheme } = useColorScheme();
@@ -380,16 +385,21 @@ export function AgentDrawer({
                 Worker Settings
               </Text>
             </View>
-            <View className="flex-row gap-1.5 opacity-75">
+            <View className="flex-row gap-1.5">
               <Pressable
                 style={{
                   borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
                   borderWidth: 1.5,
                 }}
                 className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'instructions');
+                  }
+                }}
               >
-                <Briefcase size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                <Brain size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
               <Pressable
                 style={{
@@ -397,9 +407,14 @@ export function AgentDrawer({
                   borderWidth: 1.5,
                 }}
                 className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'tools');
+                  }
+                }}
               >
-                <FileText size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                <Wrench size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
               <Pressable
                 style={{
@@ -407,9 +422,14 @@ export function AgentDrawer({
                   borderWidth: 1.5,
                 }}
                 className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'integrations');
+                  }
+                }}
               >
-                <BookOpen size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                <Server size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>
 
               <Pressable
@@ -418,7 +438,12 @@ export function AgentDrawer({
                   borderWidth: 1.5,
                 }}
                 className="flex-1 h-12 rounded-2xl items-center justify-center active:opacity-70"
-                onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (selectedAgentId && onOpenWorkerConfig) {
+                    onOpenWorkerConfig(selectedAgentId, 'triggers');
+                  }
+                }}
               >
                 <Zap size={16} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
               </Pressable>

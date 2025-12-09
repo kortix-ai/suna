@@ -22,9 +22,10 @@ interface TopNavProps {
   onMenuPress?: () => void;
   onUpgradePress?: () => void;
   onCreditsPress?: () => void;
+  visible?: boolean;
 }
 
-export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavProps) {
+export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress, visible = true }: TopNavProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { data: subscriptionData } = useSubscription();
@@ -89,6 +90,10 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
   const isFreeTier = currentTier === 'free' || !subscriptionData;
   const buttonWidth = 163;
 
+  if (!visible) {
+    return null;
+  }
+
   return (
     <View className="absolute top-[62px] left-0 right-0 flex-row items-center h-[41px] px-0 z-50">
       <AnimatedPressable
@@ -110,7 +115,7 @@ export function TopNav({ onMenuPress, onUpgradePress, onCreditsPress }: TopNavPr
       >
         <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
-      
+
       <View className="absolute right-6 flex-row items-center gap-2" >
           {isFreeTier && (
             <AnimatedPressable
