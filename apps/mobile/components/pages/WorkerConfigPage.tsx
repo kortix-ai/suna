@@ -52,8 +52,8 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
     <View className="flex-1 bg-background">
       {/* Header */}
       <View
-        className="flex-row items-center justify-between border-b border-border px-4"
-        style={{ paddingTop: insets.top }}>
+        className="flex-row items-center justify-between border-b border-border px-4 pb-3"
+        style={{ paddingTop: insets.top + 8 }}>
         <View className="flex-1 flex-row items-center gap-3">
           <Pressable
             onPress={handleBack}
@@ -64,12 +64,12 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
             {isLoading || !agent ? (
               <>
                 <View className="h-5 w-32 animate-pulse rounded bg-muted" />
-                <View className="mt-1 h-3 w-24 animate-pulse rounded bg-muted" />
+                <View className="mt-1.5 h-3 w-24 animate-pulse rounded bg-muted" />
               </>
             ) : (
               <>
                 <Text className="font-roobert-semibold text-lg text-foreground">{agent.name}</Text>
-                <Text className="text-xs text-muted-foreground">Worker Configuration</Text>
+                <Text className="mt-0.5 text-xs text-muted-foreground">Worker Configuration</Text>
               </>
             )}
           </View>

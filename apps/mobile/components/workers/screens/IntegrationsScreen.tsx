@@ -17,11 +17,12 @@ import {
   type ComposioApp,
   type ComposioProfile,
 } from '@/hooks/useComposio';
-import { Plus, CheckCircle2, Settings, X, Store, Trash2 } from 'lucide-react-native';
+import { Plus, CheckCircle2, Settings, X, Store, Trash2, Server } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
 import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
 import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
+import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
 import { SvgUri } from 'react-native-svg';
 
 interface IntegrationsScreenProps {
@@ -50,6 +51,9 @@ function ActiveIntegrationCard({
   const enabledToolsCount = Array.isArray(mcp.enabledTools) ? mcp.enabledTools.length : 0;
   const isSvg = (url: string) =>
     url.toLowerCase().endsWith('.svg') || url.includes('composio.dev/api');
+
+  // Check if this is a custom MCP (not composio)
+  const isCustomMcp = mcp.type && ['http', 'sse', 'json'].includes(mcp.type);
 
   return (
     <View
@@ -109,13 +113,15 @@ function ActiveIntegrationCard({
 
         {/* Actions */}
         <View className="flex-row items-center gap-2">
-          <Pressable
-            onPress={onManageTools}
-            disabled={isDeleting}
-            className="h-10 w-10 items-center justify-center rounded-lg bg-muted active:opacity-80"
-            style={{ opacity: isDeleting ? 0.5 : 1 }}>
-            <Icon as={Settings} size={18} className="text-foreground" />
-          </Pressable>
+          {!isCustomMcp && (
+            <Pressable
+              onPress={onManageTools}
+              disabled={isDeleting}
+              className="h-10 w-10 items-center justify-center rounded-lg bg-muted active:opacity-80"
+              style={{ opacity: isDeleting ? 0.5 : 1 }}>
+              <Icon as={Settings} size={18} className="text-foreground" />
+            </Pressable>
+          )}
           <Pressable
             onPress={onDelete}
             disabled={isDeleting}
@@ -147,28 +153,44 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
   const [showConnector, setShowConnector] = useState(false);
   const [showToolsManager, setShowToolsManager] = useState(false);
   const [showBrowseApps, setShowBrowseApps] = useState(false);
+  const [showCustomMcp, setShowCustomMcp] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
   const apps = appsData?.toolkits || [];
 
   // Get active integrations from custom_mcps
-  // Show all composio integrations, even if they have 0 tools enabled (like frontend)
+  // Show all composio integrations and custom MCPs, even if they have 0 tools enabled (like frontend)
   const activeIntegrations = useMemo(() => {
     if (!agent?.custom_mcps || !Array.isArray(agent.custom_mcps)) return [];
 
     return agent.custom_mcps
-      .filter((mcp: any) => mcp.type === 'composio' && mcp.config?.profile_id)
+      .filter((mcp: any) => {
+        // Include composio integrations with profile_id
+        if (mcp.type === 'composio' && mcp.config?.profile_id) return true;
+        // Include custom MCPs (http, sse, json types)
+        if (['http', 'sse', 'json'].includes(mcp.type)) return true;
+        return false;
+      })
       .map((mcp: any) => {
-        const profileId = mcp.config?.profile_id;
-        const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
-        const toolkitSlug = mcp.toolkit_slug || mcp.config?.toolkit_slug;
-        const app = apps.find((a: ComposioApp) => a.slug === toolkitSlug);
+        // For composio integrations
+        if (mcp.type === 'composio' && mcp.config?.profile_id) {
+          const profileId = mcp.config?.profile_id;
+          const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+          const toolkitSlug = mcp.toolkit_slug || mcp.config?.toolkit_slug;
+          const app = apps.find((a: ComposioApp) => a.slug === toolkitSlug);
 
+          return {
+            mcp,
+            profile: profile || null,
+            app: app || null,
+          };
+        }
+        // For custom MCPs
         return {
           mcp,
-          profile: profile || null,
-          app: app || null,
+          profile: null,
+          app: null,
         };
       });
   }, [agent?.custom_mcps, profiles, apps]);
@@ -236,8 +258,10 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
   };
 
   const handleDeleteIntegration = (mcp: any) => {
-    const profileId = mcp.config?.profile_id;
-    if (!profileId) return;
+    const isCustomMcp = mcp.type && ['http', 'sse', 'json'].includes(mcp.type);
+    const identifier = isCustomMcp ? mcp.config?.url : mcp.config?.profile_id;
+
+    if (!identifier) return;
 
     Alert.alert(
       'Remove Integration',
@@ -248,12 +272,24 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
           text: 'Remove Integration',
           style: 'destructive',
           onPress: () => {
-            setDeletingProfileId(profileId);
+            setDeletingProfileId(identifier);
             const customMcps = agent?.custom_mcps || [];
-            const updatedMcps = customMcps.filter(
-              (existingMcp: any) =>
-                !(existingMcp.type === 'composio' && existingMcp.config?.profile_id === profileId)
-            );
+            const updatedMcps = customMcps.filter((existingMcp: any) => {
+              if (isCustomMcp) {
+                // For custom MCPs, match by URL
+                return !(
+                  (existingMcp.type === 'http' ||
+                    existingMcp.type === 'sse' ||
+                    existingMcp.type === 'json') &&
+                  existingMcp.config?.url === mcp.config?.url
+                );
+              } else {
+                // For composio, match by profile_id
+                return !(
+                  existingMcp.type === 'composio' && existingMcp.config?.profile_id === identifier
+                );
+              }
+            });
 
             updateAgentMutation.mutate(
               {
@@ -286,6 +322,52 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
     setShowBrowseApps(false);
     setSelectedApp(app);
     setShowConnector(true);
+  };
+
+  const handleCustomMcpSave = (config: any) => {
+    const customMcps = agent?.custom_mcps || [];
+
+    // Create the custom MCP configuration
+    const newMcp = {
+      name: config.serverName,
+      type: config.type || 'sse', // Backend expects 'sse' for HTTP-based MCPs
+      config: {
+        url: config.url,
+      },
+      enabledTools: config.tools || [],
+    };
+
+    // Check if MCP with same URL already exists
+    const existingMcp = customMcps.find(
+      (mcp: any) =>
+        (mcp.type === 'sse' || mcp.type === 'http' || mcp.type === 'json') &&
+        mcp.config?.url === config.url
+    );
+
+    if (!existingMcp) {
+      updateAgentMutation.mutate(
+        {
+          agentId,
+          data: {
+            custom_mcps: [...customMcps, newMcp],
+            replace_mcps: true,
+          },
+        },
+        {
+          onSuccess: () => {
+            setShowCustomMcp(false);
+            onUpdate?.();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+          onError: (error: any) => {
+            Alert.alert('Error', error?.message || 'Failed to add custom MCP');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          },
+        }
+      );
+    } else {
+      setShowCustomMcp(false);
+    }
   };
 
   if (isLoadingAgent || isLoadingApps) {
@@ -326,6 +408,16 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
     );
   }
 
+  if (showCustomMcp) {
+    return (
+      <CustomMcpContent
+        onBack={() => setShowCustomMcp(false)}
+        onSave={handleCustomMcpSave}
+        noPadding={true}
+      />
+    );
+  }
+
   if (showToolsManager && selectedApp && selectedProfile) {
     return (
       <View className="flex-1">
@@ -352,13 +444,19 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
 
   return (
     <View className="space-y-4">
-      {/* Browse Apps Button */}
-      <View className="mb-4">
+      {/* Browse Apps and Custom MCP Buttons */}
+      <View className="mb-4 flex-row gap-3">
         <Pressable
           onPress={() => setShowBrowseApps(true)}
-          className="flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
+          className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
           <Icon as={Store} size={18} className="text-foreground" />
           <Text className="font-roobert-semibold text-base text-foreground">Browse Apps</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setShowCustomMcp(true)}
+          className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
+          <Icon as={Server} size={18} className="text-foreground" />
+          <Text className="font-roobert-semibold text-base text-foreground">Custom MCP</Text>
         </Pressable>
       </View>
 
@@ -390,12 +488,16 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
                 ) || null;
             }
 
-            const profileId = integration.mcp.config?.profile_id;
-            const isDeleting = deletingProfileId === profileId;
+            const isCustomMcp =
+              integration.mcp.type && ['http', 'sse', 'json'].includes(integration.mcp.type);
+            const identifier = isCustomMcp
+              ? integration.mcp.config?.url
+              : integration.mcp.config?.profile_id;
+            const isDeleting = deletingProfileId === identifier;
 
             return (
               <ActiveIntegrationCard
-                key={`${profileId || index}`}
+                key={`${identifier || index}`}
                 mcp={integration.mcp}
                 profile={finalProfile}
                 app={app}

@@ -61,12 +61,12 @@ export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, ag
         return;
       }
 
-      console.log('🎯 App selected:', app.name);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    console.log('🎯 App selected:', app.name);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      if (onAppSelect) {
-        onAppSelect(app);
-      }
+    if (onAppSelect) {
+      onAppSelect(app);
+    }
     },
     [onAppSelect, agentId, isAppConnectedToAgent]
   );
@@ -125,38 +125,38 @@ export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, ag
 
       {/* Scrollable apps list */}
       <View className="mb-4 flex-1">
-        {isLoading ? (
+      {isLoading ? (
           <View className="items-center justify-center py-12">
             <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
             <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-              {t('integrations.loadingIntegrations')}
-            </Text>
-          </View>
-        ) : error ? (
-          <View className="items-center py-8">
+            {t('integrations.loadingIntegrations')}
+          </Text>
+        </View>
+      ) : error ? (
+        <View className="items-center py-8">
             <Text className="mb-2 font-roobert-medium text-lg text-foreground">
-              {t('integrations.failedToLoad')}
-            </Text>
+            {t('integrations.failedToLoad')}
+          </Text>
             <Text className="mb-4 font-roobert text-sm text-muted-foreground">
-              {error.message}
+            {error.message}
             </Text>
             <Pressable onPress={() => refetch()} className="rounded-xl bg-primary px-6 py-3">
               <Text className="font-roobert-medium text-white">{t('integrations.retry')}</Text>
-            </Pressable>
-          </View>
-        ) : (
+          </Pressable>
+        </View>
+      ) : (
           <FlatList
             data={filteredApps}
             keyExtractor={(item) => item.slug}
             renderItem={({ item: app }) => {
               const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
               return (
-                <AppCard
-                  app={app}
-                  onPress={() => handleAppPress(app)}
+            <AppCard
+              app={app}
+              onPress={() => handleAppPress(app)}
                   isConnected={isConnected}
                   disabled={isConnected}
-                />
+            />
               );
             }}
             contentContainerStyle={{ paddingBottom: 16 }}
@@ -177,10 +177,10 @@ export function ComposioAppsContent({ onBack, onAppSelect, noPadding = false, ag
                     ? 'Try adjusting your search query'
                     : 'Apps will appear here once available'}
                 </Text>
-              </View>
+        </View>
             }
           />
-        )}
+      )}
       </View>
     </View>
   );
