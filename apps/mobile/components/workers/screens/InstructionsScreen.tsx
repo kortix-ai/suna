@@ -5,14 +5,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, useWindowDimensions, LayoutChangeEvent } from 'react-native';
+import { View, TextInput } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Save, AlertCircle } from 'lucide-react-native';
 import { Pressable, ActivityIndicator, Alert } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
 interface InstructionsScreenProps {
@@ -26,10 +25,6 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   const updateAgentMutation = useUpdateAgent();
   const [systemPrompt, setSystemPrompt] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
-  const [containerHeight, setContainerHeight] = useState(0);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  const { height: windowHeight } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (agent?.system_prompt !== undefined) {
@@ -89,34 +84,17 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
   const restrictions = agent?.metadata?.restrictions || {};
   const isEditable = restrictions.system_prompt_editable !== false && !isSunaAgent;
 
-  // Calculate available height for TextInput
-  const textInputHeight =
-    containerHeight > 0 && headerHeight > 0
-      ? containerHeight - headerHeight - 100 // 100 for button space
-      : 400; // Fallback height
-
-  const handleContainerLayout = (event: LayoutChangeEvent) => {
-    setContainerHeight(event.nativeEvent.layout.height);
-  };
-
-  const handleHeaderLayout = (event: LayoutChangeEvent) => {
-    setHeaderHeight(event.nativeEvent.layout.height);
-  };
-
   return (
-    <View
-      className="flex-1"
-      style={{ flex: 1, position: 'relative' }}
-      onLayout={handleContainerLayout}>
+    <View className="flex-1" style={{ flex: 1, position: 'relative' }}>
       {/* Header content */}
-      <View className="mb-4 flex flex-col" onLayout={handleHeaderLayout}>
+      <View className="mb-4 flex flex-col">
         <Text className="mb-2 font-roobert-semibold text-base text-foreground">System Prompt</Text>
         <Text className="mb-1 font-roobert text-sm text-muted-foreground">
           Define how your worker should behave and what it should do
         </Text>
 
         {!isEditable && (
-          <View className="mb-6 flex-row items-start gap-2 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+          <View className="flex-row items-start gap-2 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
             <Icon
               as={AlertCircle}
               size={16}
@@ -132,7 +110,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
       </View>
 
       {/* TextInput with fixed height based on available space */}
-      <View style={{ marginBottom: 100 }}>
+      <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
         <TextInput
           value={systemPrompt}
           onChangeText={handleTextChange}
@@ -142,7 +120,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
           scrollEnabled
           editable={isEditable}
           style={{
-            height: textInputHeight,
+            flex: 1,
             padding: 16,
             borderRadius: 16,
             borderWidth: 1.5,
