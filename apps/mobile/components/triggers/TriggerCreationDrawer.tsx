@@ -26,6 +26,7 @@ import {
   Info,
 } from 'lucide-react-native';
 import { useAgent } from '@/contexts/AgentContext';
+import { extractErrorMessage } from '@/lib/utils/error-handler';
 import {
   useCreateTrigger,
   useUpdateTrigger,
@@ -36,7 +37,7 @@ import {
 import type { TriggerConfiguration } from '@/api/types';
 import { useComposioProfiles } from '@/hooks/useComposio';
 import type { ComposioApp, ComposioProfile } from '@/hooks/useComposio';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
@@ -56,6 +57,7 @@ interface TriggerCreationDrawerProps {
   onTriggerUpdated?: (triggerId: string) => void;
   isEditMode?: boolean;
   existingTrigger?: TriggerConfiguration | null;
+  agentId?: string; // Optional agentId prop - if not provided, uses selectedAgentId from context
 }
 
 type TriggerStep = 'type' | 'config';
@@ -144,22 +146,36 @@ export function TriggerCreationDrawer({
   onTriggerUpdated,
   isEditMode = false,
   existingTrigger = null,
+  agentId: propAgentId,
 }: TriggerCreationDrawerProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const bottomSheetModalRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
-  const { selectedAgentId } = useAgent();
+  const { selectedAgentId: contextAgentId } = useAgent();
+
+  // Use prop agentId if provided, otherwise fall back to context
+  const agentId = propAgentId || contextAgentId;
 
   const [currentStep, setCurrentStep] = useState<TriggerStep>(isEditMode ? 'config' : 'type');
   const [selectedType, setSelectedType] = useState<'schedule' | 'event' | null>(
     isEditMode && existingTrigger
-      ? existingTrigger.provider_id === 'composio' || existingTrigger.provider_id === 'event'
+      ? existingTrigger.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'event' ||
+        existingTrigger.trigger_type === 'event'
         ? 'event'
         : 'schedule'
       : null
   );
-  const [eventStep, setEventStep] = useState<EventTriggerStep>(
-    isEditMode && existingTrigger?.provider_id === 'composio' ? 'config' : 'apps'
-  );
+  const [eventStep, setEventStep] = useState<EventTriggerStep>(() => {
+    if (isEditMode && existingTrigger) {
+      const isEventTrigger =
+        existingTrigger.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'event' ||
+        existingTrigger.trigger_type === 'event';
+      // In edit mode, event triggers should go directly to config step
+      return isEventTrigger ? 'config' : 'apps';
+    }
+    return 'apps';
+  });
 
   // Schedule trigger state
   const [triggerName, setTriggerName] = useState('');
@@ -208,19 +224,49 @@ export function TriggerCreationDrawer({
     refetch: refetchProfiles,
   } = useComposioProfiles();
 
-  const snapPoints = useMemo(() => ['90%'], []);
+  // Use dynamic sizing for initial type selection to fit content, fixed height for other steps
+  // In edit mode, always use fixed height since we start at config step
+  const shouldUseDynamicSizing = !isEditMode && currentStep === 'type' && !selectedType;
+
+  const snapPoints = useMemo(() => {
+    // When using dynamic sizing, snapPoints are ignored, but we still need to provide them
+    // For the initial type selection step (create mode only), dynamic sizing will fit content
+    if (shouldUseDynamicSizing) {
+      return ['50%']; // Fallback, but dynamic sizing will override
+    }
+    // For edit mode or other steps, use a larger height
+    return ['90%'];
+  }, [shouldUseDynamicSizing, isEditMode]);
 
   // Initialize form from existing trigger in edit mode
   useEffect(() => {
-    if (isEditMode && existingTrigger && visible) {
+    if (isEditMode && existingTrigger) {
       const triggerConfig = existingTrigger.config || {};
+
+      const isComposioTrigger =
+        triggerConfig.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'event' ||
+        existingTrigger.trigger_type === 'event';
+
+      // Set the selected type and step immediately
+      if (isComposioTrigger) {
+        setSelectedType('event');
+        setCurrentStep('config');
+        setEventStep('config'); // Event triggers should go directly to config step in edit mode
+      } else {
+        setSelectedType('schedule');
+        setCurrentStep('config');
+      }
+
+      // Only continue with full initialization when visible
+      if (!visible) return;
+
+      // Set form values
       setTriggerName(existingTrigger.name || '');
       setDescription(existingTrigger.description || '');
       setAgentPrompt(triggerConfig.agent_prompt || '');
       setModel(triggerConfig.model || 'kortix/basic');
-
-      const isComposioTrigger =
-        triggerConfig.provider_id === 'composio' || existingTrigger.provider_id === 'composio';
 
       if (isComposioTrigger) {
         // Event trigger
@@ -304,12 +350,20 @@ export function TriggerCreationDrawer({
       setCurrentStep(isEditMode ? 'config' : 'type');
       setSelectedType(
         isEditMode && existingTrigger
-          ? existingTrigger.provider_id === 'composio' || existingTrigger.provider_id === 'event'
+          ? existingTrigger.provider_id === 'composio' ||
+            existingTrigger.provider_id === 'event' ||
+            existingTrigger.trigger_type === 'event'
             ? 'event'
             : 'schedule'
           : null
       );
-      setEventStep(isEditMode && existingTrigger?.provider_id === 'composio' ? 'config' : 'apps');
+      const isEventTrigger =
+        isEditMode &&
+        existingTrigger &&
+        (existingTrigger.provider_id === 'composio' ||
+          existingTrigger.provider_id === 'event' ||
+          existingTrigger.trigger_type === 'event');
+      setEventStep(isEventTrigger ? 'config' : 'apps');
       if (!isEditMode) {
         setTriggerName('');
         setDescription('');
@@ -328,19 +382,17 @@ export function TriggerCreationDrawer({
     }
   }, [visible, isEditMode, existingTrigger]);
 
-  // Handle sheet visibility
+  // Handle sheet visibility - use present/dismiss for BottomSheetModal
   useEffect(() => {
     if (visible) {
-      bottomSheetRef.current?.expand();
+      bottomSheetModalRef.current?.present();
     } else {
-      bottomSheetRef.current?.close();
+      bottomSheetModalRef.current?.dismiss();
     }
   }, [visible]);
 
-  const handleSheetChange = (index: number) => {
-    if (index === -1) {
-      onClose();
-    }
+  const handleDismiss = () => {
+    onClose();
   };
 
   const handleTypeSelect = (type: 'schedule' | 'event') => {
@@ -515,7 +567,12 @@ export function TriggerCreationDrawer({
       } catch (error: any) {
         console.error('❌ Error updating trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', error?.message || 'Failed to update trigger. Please try again.');
+
+        // Extract user-friendly error message using utility function
+        const errorMessage =
+          extractErrorMessage(error) || 'Failed to update trigger. Please try again.';
+
+        Alert.alert('Error Updating Trigger', errorMessage);
       }
       return;
     }
@@ -539,7 +596,7 @@ export function TriggerCreationDrawer({
         return;
       }
 
-      if (!selectedAgentId) {
+      if (!agentId) {
         Alert.alert('Error', 'Please select an agent first');
         return;
       }
@@ -560,7 +617,7 @@ export function TriggerCreationDrawer({
         const selectedProfile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
 
         const payload = {
-          agent_id: selectedAgentId,
+          agent_id: agentId,
           slug: selectedTrigger.slug,
           toolkit_slug: selectedApp.slug,
           profile_id: profileId,
@@ -582,7 +639,12 @@ export function TriggerCreationDrawer({
       } catch (error: any) {
         console.error('❌ Error creating event trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', error?.message || 'Failed to create event trigger. Please try again.');
+
+        // Extract user-friendly error message using utility function
+        const errorMessage =
+          extractErrorMessage(error) || 'Failed to create event trigger. Please try again.';
+
+        Alert.alert('Error Creating Trigger', errorMessage);
       }
     } else {
       if (!triggerName.trim()) {
@@ -617,13 +679,13 @@ export function TriggerCreationDrawer({
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
 
-        if (!selectedAgentId) {
+        if (!agentId) {
           Alert.alert('Error', 'Please select an agent first');
           return;
         }
 
         const result = await createTriggerMutation.mutateAsync({
-          agentId: selectedAgentId,
+          agentId: agentId,
           data: {
             provider_id: 'schedule',
             name: triggerName,
@@ -640,7 +702,12 @@ export function TriggerCreationDrawer({
       } catch (error: any) {
         console.error('❌ Error creating trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', error?.message || 'Failed to create trigger. Please try again.');
+
+        // Extract user-friendly error message using utility function
+        const errorMessage =
+          extractErrorMessage(error) || 'Failed to create trigger. Please try again.';
+
+        Alert.alert('Error Creating Trigger', errorMessage);
       }
     }
   };
@@ -670,12 +737,11 @@ export function TriggerCreationDrawer({
             : cronExpression.trim());
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
+    <BottomSheetModal
+      ref={bottomSheetModalRef}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onChange={handleSheetChange}
+      onDismiss={handleDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
         backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
@@ -688,7 +754,7 @@ export function TriggerCreationDrawer({
         marginTop: 8,
         marginBottom: 0,
       }}
-      enableDynamicSizing={false}
+      enableDynamicSizing={shouldUseDynamicSizing}
       style={{
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
@@ -702,568 +768,8 @@ export function TriggerCreationDrawer({
         }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled">
-        {/* Header */}
-        <View className="flex-row items-center pb-4 pt-4">
-          {(currentStep !== 'type' || isEditMode) && (
-            <Pressable onPress={handleBack} className="mr-3 active:opacity-70">
-              {(() => {
-                // Show app logo if available, otherwise show trigger toolkit logo if available
-                if (selectedApp) {
-                  return <AppLogo app={selectedApp} />;
-                }
-                if (selectedTrigger?.toolkit) {
-                  const toolkitApp: TriggerApp = {
-                    slug: selectedTrigger.toolkit.slug,
-                    name: selectedTrigger.toolkit.name,
-                    logo: selectedTrigger.toolkit.logo || '',
-                  };
-                  return <AppLogo app={toolkitApp} />;
-                }
-                return null;
-              })()}
-            </Pressable>
-          )}
-          <View className="flex-1">
-            <Text className="font-roobert-semibold text-xl text-foreground">
-              {isEditMode
-                ? 'Edit Trigger'
-                : currentStep === 'type'
-                  ? 'Create Trigger'
-                  : selectedType === 'event'
-                    ? eventStep === 'apps'
-                      ? 'Select an Application'
-                      : eventStep === 'triggers'
-                        ? `${selectedApp?.name || ''} Triggers`
-                        : 'Configure Trigger'
-                    : 'Schedule Trigger'}
-            </Text>
-            <Text className="mt-1 font-roobert text-sm text-muted-foreground">
-              {currentStep === 'type'
-                ? 'Choose a trigger type'
-                : selectedType === 'event'
-                  ? eventStep === 'apps'
-                    ? 'Choose an app to monitor for events and trigger your agent'
-                    : eventStep === 'triggers'
-                      ? 'Choose an event to monitor'
-                      : 'Configure your trigger'
-                  : 'Configure your trigger'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Progress Stepper for Event Triggers */}
-        {selectedType === 'event' && currentStep !== 'type' && (
-          <View className="-mx-6 mb-6 border-b border-border bg-muted/30 px-6 py-3">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingRight: 24,
-              }}>
-              {[
-                { id: 'apps', name: 'Select App', icon: Link2 },
-                { id: 'triggers', name: 'Choose Trigger', icon: Zap },
-                { id: 'config', name: 'Configure', icon: Sparkles },
-              ].map((step, index) => {
-                const stepIndex = ['apps', 'triggers', 'config'].indexOf(eventStep);
-                const isCompleted = index < stepIndex;
-                const isCurrent = index === stepIndex;
-
-                return (
-                  <React.Fragment key={step.id}>
-                    <View className="flex-row items-center gap-2" style={{ minWidth: 100 }}>
-                      <View
-                        className={`h-6 w-6 items-center justify-center rounded-full ${
-                          isCompleted || isCurrent ? 'bg-primary' : 'bg-muted'
-                        }`}>
-                        {isCompleted ? (
-                          <Icon as={CheckCircle2} size={12} className="text-primary-foreground" />
-                        ) : (
-                          <Text
-                            className={`font-roobert-semibold text-xs ${
-                              isCompleted || isCurrent
-                                ? 'text-primary-foreground'
-                                : 'text-muted-foreground'
-                            }`}>
-                            {index + 1}
-                          </Text>
-                        )}
-                      </View>
-                      <Text
-                        className={`font-roobert-medium text-sm ${
-                          isCompleted || isCurrent ? 'text-foreground' : 'text-muted-foreground'
-                        }`}>
-                        {step.name}
-                      </Text>
-                    </View>
-                    {index < 2 && (
-                      <Icon
-                        as={ChevronRight}
-                        size={16}
-                        className="mx-2 text-muted-foreground"
-                        style={{ opacity: 0.5 }}
-                      />
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Type Selection Step */}
-        {currentStep === 'type' && !isEditMode && (
-          <View className="space-y-3">
-            <TypeCard
-              icon={Clock}
-              title="Schedule Trigger"
-              subtitle="Run on a schedule"
-              onPress={() => handleTypeSelect('schedule')}
-            />
-            <TypeCard
-              icon={Sparkles}
-              title="Event Trigger"
-              subtitle="From external apps"
-              onPress={() => handleTypeSelect('event')}
-            />
-          </View>
-        )}
-
-        {/* Schedule Configuration Step */}
-        {currentStep === 'config' && selectedType === 'schedule' && (
-          <View className="space-y-8">
-            {/* Name Input */}
-            <View style={{ marginBottom: 16 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  marginBottom: 8,
-                }}>
-                Name *
-              </Text>
-              <TextInput
-                value={triggerName}
-                onChangeText={setTriggerName}
-                placeholder="Daily report"
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                  fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                }}
-              />
-            </View>
-
-            {/* Schedule Mode Tabs */}
-            <View className="space-y-4" style={{ marginBottom: 16 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  marginBottom: 8,
-                }}>
-                Schedule *
-              </Text>
-              <View className="flex-row gap-3">
-                {(['preset', 'recurring', 'advanced'] as const).map((mode) => (
-                  <Pressable
-                    key={mode}
-                    onPress={() => setScheduleMode(mode)}
-                    className={`flex-1 rounded-xl border py-3.5 ${
-                      scheduleMode === mode
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border bg-card'
-                    } active:opacity-80`}>
-                    <Text
-                      className={`text-center font-roobert-medium text-sm ${
-                        scheduleMode === mode ? 'text-primary' : 'text-foreground'
-                      }`}>
-                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {/* Preset Options */}
-              {scheduleMode === 'preset' && (
-                <View className="mt-4 flex flex-col gap-2 space-y-3">
-                  {SCHEDULE_PRESETS.map((preset) => (
-                    <Pressable
-                      key={preset.id}
-                      onPress={() => handlePresetSelect(preset.id)}
-                      className={`flex-row items-center rounded-xl border p-4 ${
-                        selectedPreset === preset.id
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border bg-card'
-                      } active:opacity-80`}>
-                      <Icon
-                        as={preset.icon}
-                        size={20}
-                        className={
-                          selectedPreset === preset.id ? 'text-primary' : 'text-foreground'
-                        }
-                      />
-                      <Text
-                        className={`ml-3 flex-1 font-roobert-medium text-base ${
-                          selectedPreset === preset.id ? 'text-primary' : 'text-foreground'
-                        }`}>
-                        {preset.name}
-                      </Text>
-                      {selectedPreset === preset.id && (
-                        <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
-                          <Icon
-                            as={Check}
-                            size={12}
-                            className="text-primary-foreground"
-                            strokeWidth={3}
-                          />
-                        </View>
-                      )}
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-              {/* Recurring Options */}
-              {scheduleMode === 'recurring' && (
-                <View className="mt-4 space-y-5">
-                  <View className="flex-row gap-3">
-                    {(['daily', 'weekly', 'monthly'] as const).map((type) => (
-                      <Pressable
-                        key={type}
-                        onPress={() => setRecurringType(type)}
-                        className={`flex-1 rounded-xl border py-3.5 ${
-                          recurringType === type
-                            ? 'border-primary bg-primary/10'
-                            : 'border-border bg-card'
-                        } active:opacity-80`}>
-                        <Text
-                          className={`text-center font-roobert-medium text-sm ${
-                            recurringType === type ? 'text-primary' : 'text-foreground'
-                          }`}>
-                          {type.charAt(0).toUpperCase() + type.slice(1)}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-
-                  <View className="mt-4 flex-row items-center gap-4">
-                    <TextInput
-                      value={selectedHour}
-                      onChangeText={setSelectedHour}
-                      placeholder="09"
-                      keyboardType="number-pad"
-                      maxLength={2}
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      style={{
-                        width: 80,
-                        padding: 12,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                        fontSize: 18,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                        textAlign: 'center',
-                      }}
-                    />
-                    <Text className="text-2xl text-foreground">:</Text>
-                    <TextInput
-                      value={selectedMinute}
-                      onChangeText={setSelectedMinute}
-                      placeholder="00"
-                      keyboardType="number-pad"
-                      maxLength={2}
-                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                      style={{
-                        width: 80,
-                        padding: 12,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                        fontSize: 18,
-                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                        textAlign: 'center',
-                      }}
-                    />
-                  </View>
-
-                  {recurringType === 'weekly' && (
-                    <View className="mt-4 flex-row flex-wrap gap-2.5">
-                      {WEEKDAYS.map((day) => (
-                        <Pressable
-                          key={day.value}
-                          onPress={() => toggleWeekday(day.value)}
-                          className={`rounded-lg border px-4 py-2.5 ${
-                            selectedWeekdays.includes(day.value)
-                              ? 'border-primary bg-primary/10'
-                              : 'border-border bg-card'
-                          } active:opacity-80`}>
-                          <Text
-                            className={`font-roobert-medium text-xs ${
-                              selectedWeekdays.includes(day.value)
-                                ? 'text-primary'
-                                : 'text-foreground'
-                            }`}>
-                            {day.label}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-
-                  <View className="mt-4 rounded-xl bg-muted p-4">
-                    <Text className="font-mono text-sm text-muted-foreground">
-                      {generateRecurringCron()}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* Advanced Cron Input */}
-              {scheduleMode === 'advanced' && (
-                <TextInput
-                  value={cronExpression}
-                  onChangeText={setCronExpression}
-                  placeholder="0 9 * * 1-5"
-                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                  style={{
-                    padding: 12,
-                    borderRadius: 12,
-                    borderWidth: 1.5,
-                    borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                    backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                    fontSize: 16,
-                    color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                    fontFamily: 'monospace',
-                    marginTop: 16,
-                  }}
-                />
-              )}
-            </View>
-
-            {/* Agent Description */}
-            <View style={{ marginBottom: 16 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  marginBottom: 8,
-                }}>
-                Description (optional)
-              </Text>
-              <TextInput
-                value={description}
-                onChangeText={setDescription}
-                placeholder="Describe your agent"
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                multiline
-                numberOfLines={3}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                  fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  textAlignVertical: 'top',
-                  minHeight: 100,
-                }}
-              />
-            </View>
-
-            {/* Agent Instructions */}
-            <View style={{ marginBottom: 16 }}>
-              <Text
-                style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  marginBottom: 8,
-                }}>
-                Instructions *
-              </Text>
-              <TextInput
-                value={agentPrompt}
-                onChangeText={setAgentPrompt}
-                placeholder="What should your agent do?"
-                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                multiline
-                numberOfLines={4}
-                style={{
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                  fontSize: 16,
-                  color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                  textAlignVertical: 'top',
-                  minHeight: 120,
-                }}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* Event Trigger Steps */}
-        {selectedType === 'event' && (
-          <View className="space-y-4">
-            {/* App Selection Step */}
-            {eventStep === 'apps' && (
-              <AppSelectionStep
-                apps={triggersApps?.items || []}
-                isLoading={triggersAppsLoading}
-                searchQuery={appSearchQuery}
-                onSearchChange={setAppSearchQuery}
-                onAppSelect={(app) => {
-                  const connectionStatus = getAppConnectionStatus(app.slug);
-                  if (connectionStatus.isConnected) {
-                    setSelectedApp(app);
-                    setEventStep('triggers');
-                  } else {
-                    setSelectedApp(app);
-                    setShowComposioConnector(true);
-                  }
-                }}
-                profiles={profiles || []}
-              />
-            )}
-
-            {/* Trigger Selection Step */}
-            {eventStep === 'triggers' && selectedApp && (
-              <TriggerSelectionStep
-                app={selectedApp}
-                triggers={triggersData?.items || []}
-                isLoading={loadingTriggers}
-                onTriggerSelect={(trigger) => {
-                  setSelectedTrigger(trigger);
-                  setEventConfig({});
-                  setTriggerName(`${selectedApp.name} → Agent`);
-                  setEventStep('config');
-                }}
-              />
-            )}
-
-            {/* Config Step */}
-            {eventStep === 'config' && (
-              <>
-                {isEditMode && selectedApp && loadingTriggers && !selectedTrigger ? (
-                  <View className="items-center justify-center py-16">
-                    <Loading title="Loading trigger configuration..." />
-                  </View>
-                ) : isEditMode && selectedApp && triggersError && !selectedTrigger ? (
-                  <View className="items-center justify-center px-8 py-16">
-                    <View
-                      className="mb-4 h-16 w-16 items-center justify-center rounded-2xl"
-                      style={{
-                        backgroundColor:
-                          colorScheme === 'dark'
-                            ? 'rgba(239, 68, 68, 0.1)'
-                            : 'rgba(239, 68, 68, 0.05)',
-                      }}>
-                      <Icon as={Info} size={32} color="#ef4444" strokeWidth={2} />
-                    </View>
-                    <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
-                      Failed to load trigger
-                    </Text>
-                    <Text className="mb-6 text-center text-sm text-muted-foreground">
-                      {triggersError?.message || 'An error occurred while loading trigger data'}
-                    </Text>
-                    <Pressable
-                      onPress={() => refetchTriggers()}
-                      className="rounded-xl bg-primary px-6 py-3 active:opacity-80">
-                      <Text className="font-roobert-semibold text-sm text-primary-foreground">
-                        Retry
-                      </Text>
-                    </Pressable>
-                  </View>
-                ) : selectedTrigger && selectedApp ? (
-                  <TriggerConfigStep
-                    trigger={selectedTrigger}
-                    app={selectedApp}
-                    config={eventConfig}
-                    onConfigChange={setEventConfig}
-                    profileId={profileId}
-                    onProfileChange={setProfileId}
-                    profiles={profiles || []}
-                    isLoadingProfiles={isLoadingProfiles}
-                    onCreateProfile={() => setShowComposioConnector(true)}
-                    triggerName={triggerName}
-                    onTriggerNameChange={setTriggerName}
-                    agentPrompt={agentPrompt}
-                    onAgentPromptChange={setAgentPrompt}
-                    model={model}
-                    onModelChange={setModel}
-                    isConfigValid={isEventConfigValid}
-                  />
-                ) : null}
-              </>
-            )}
-          </View>
-        )}
-
-        {/* Action Buttons - Inside ScrollView at bottom */}
-        {showActionButtons && (
-          <View className="mt-6 border-t border-border pt-4">
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={handleBack}
-                className="flex-1 items-center rounded-xl border border-border bg-card py-4 active:opacity-70">
-                <Text className="font-roobert-semibold text-base text-foreground">Back</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleCreate}
-                disabled={
-                  !isFormValid ||
-                  (isEditMode
-                    ? updateTriggerMutation.isPending
-                    : selectedType === 'event'
-                      ? createEventTriggerMutation.isPending
-                      : createTriggerMutation.isPending)
-                }
-                className={`flex-1 items-center rounded-xl py-4 ${
-                  !isFormValid ||
-                  (selectedType === 'event'
-                    ? createEventTriggerMutation.isPending
-                    : createTriggerMutation.isPending)
-                    ? 'bg-muted opacity-50'
-                    : 'bg-primary active:opacity-80'
-                }`}>
-                <Text className="font-roobert-semibold text-base text-primary-foreground">
-                  {isEditMode
-                    ? updateTriggerMutation.isPending
-                      ? 'Updating...'
-                      : 'Update Trigger'
-                    : selectedType === 'event'
-                      ? createEventTriggerMutation.isPending
-                        ? 'Creating...'
-                        : 'Create Trigger'
-                      : createTriggerMutation.isPending
-                        ? 'Creating...'
-                        : 'Create Trigger'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-      </BottomSheetScrollView>
-
-      {/* Composio Connector Modal */}
-      {selectedApp && showComposioConnector && (
-        <View className="absolute inset-0 bg-background" style={{ zIndex: 1000 }}>
+        {/* Composio Connector - Show instead of other content */}
+        {selectedApp && showComposioConnector ? (
           <ComposioConnectorContent
             app={
               {
@@ -1283,18 +789,586 @@ export function TriggerCreationDrawer({
                 setSelectedApp(null);
               }
             }}
-            onComplete={(createdProfileId) => {
+            onComplete={(createdProfileId, appName, appSlug) => {
               setProfileId(createdProfileId);
               setShowComposioConnector(false);
               refetchProfiles();
+              // After creating profile, move to triggers step if we're still on apps step
               if (eventStep === 'apps') {
                 setEventStep('triggers');
               }
             }}
             mode="profile-only"
+            noPadding={false}
           />
-        </View>
-      )}
-    </BottomSheet>
+        ) : (
+          <>
+            {/* Header */}
+            <View className="flex-row items-center pb-4 pt-4">
+              {(currentStep !== 'type' || isEditMode) && (
+                <Pressable onPress={handleBack} className="mr-3 active:opacity-70">
+                  {(() => {
+                    // Show app logo if available, otherwise show trigger toolkit logo if available
+                    if (selectedApp) {
+                      return <AppLogo app={selectedApp} />;
+                    }
+                    if (selectedTrigger?.toolkit) {
+                      const toolkitApp: TriggerApp = {
+                        slug: selectedTrigger.toolkit.slug,
+                        name: selectedTrigger.toolkit.name,
+                        logo: selectedTrigger.toolkit.logo || '',
+                      };
+                      return <AppLogo app={toolkitApp} />;
+                    }
+                    return null;
+                  })()}
+                </Pressable>
+              )}
+              <View className="flex-1">
+                <Text className="font-roobert-semibold text-xl text-foreground">
+                  {isEditMode
+                    ? 'Edit Trigger'
+                    : currentStep === 'type'
+                      ? 'Create Trigger'
+                      : selectedType === 'event'
+                        ? eventStep === 'apps'
+                          ? 'Select an Application'
+                          : eventStep === 'triggers'
+                            ? `${selectedApp?.name || ''} Triggers`
+                            : 'Configure Trigger'
+                        : 'Schedule Trigger'}
+                </Text>
+                <Text className="mt-1 font-roobert text-sm text-muted-foreground">
+                  {isEditMode
+                    ? 'Update your trigger configuration'
+                    : currentStep === 'type'
+                      ? 'Choose a trigger type'
+                      : selectedType === 'event'
+                        ? eventStep === 'apps'
+                          ? 'Choose an app to monitor for events and trigger your agent'
+                          : eventStep === 'triggers'
+                            ? 'Choose an event to monitor'
+                            : 'Configure your trigger'
+                        : 'Configure your trigger'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Progress Stepper for Event Triggers */}
+            {selectedType === 'event' && currentStep !== 'type' && (
+              <View className="-mx-6 mb-6 border-b border-border bg-muted/30 px-6 py-3">
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingRight: 24,
+                  }}>
+                  {[
+                    { id: 'apps', name: 'Select App', icon: Link2 },
+                    { id: 'triggers', name: 'Choose Trigger', icon: Zap },
+                    { id: 'config', name: 'Configure', icon: Sparkles },
+                  ].map((step, index) => {
+                    const stepIndex = ['apps', 'triggers', 'config'].indexOf(eventStep);
+                    const isCompleted = index < stepIndex;
+                    const isCurrent = index === stepIndex;
+
+                    return (
+                      <React.Fragment key={step.id}>
+                        <View className="flex-row items-center gap-2" style={{ minWidth: 100 }}>
+                          <View
+                            className={`h-6 w-6 items-center justify-center rounded-full ${
+                              isCompleted || isCurrent ? 'bg-primary' : 'bg-muted'
+                            }`}>
+                            {isCompleted ? (
+                              <Icon
+                                as={CheckCircle2}
+                                size={12}
+                                className="text-primary-foreground"
+                              />
+                            ) : (
+                              <Text
+                                className={`font-roobert-semibold text-xs ${
+                                  isCompleted || isCurrent
+                                    ? 'text-primary-foreground'
+                                    : 'text-muted-foreground'
+                                }`}>
+                                {index + 1}
+                              </Text>
+                            )}
+                          </View>
+                          <Text
+                            className={`font-roobert-medium text-sm ${
+                              isCompleted || isCurrent ? 'text-foreground' : 'text-muted-foreground'
+                            }`}>
+                            {step.name}
+                          </Text>
+                        </View>
+                        {index < 2 && (
+                          <Icon
+                            as={ChevronRight}
+                            size={16}
+                            className="mx-2 text-muted-foreground"
+                            style={{ opacity: 0.5 }}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Type Selection Step */}
+            {currentStep === 'type' && !isEditMode && (
+              <View className="space-y-3">
+                <TypeCard
+                  icon={Clock}
+                  title="Schedule Trigger"
+                  subtitle="Run on a schedule"
+                  onPress={() => handleTypeSelect('schedule')}
+                />
+                <TypeCard
+                  icon={Sparkles}
+                  title="Event Trigger"
+                  subtitle="From external apps"
+                  onPress={() => handleTypeSelect('event')}
+                />
+              </View>
+            )}
+
+            {/* Schedule Configuration Step */}
+            {currentStep === 'config' && selectedType === 'schedule' && (
+              <View className="space-y-8">
+                {/* Name Input */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      marginBottom: 8,
+                    }}>
+                    Name *
+                  </Text>
+                  <TextInput
+                    value={triggerName}
+                    onChangeText={setTriggerName}
+                    placeholder="Daily report"
+                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      fontSize: 16,
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                    }}
+                  />
+                </View>
+
+                {/* Schedule Mode Tabs */}
+                <View className="space-y-4" style={{ marginBottom: 16 }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      marginBottom: 8,
+                    }}>
+                    Schedule *
+                  </Text>
+                  <View className="flex-row gap-3">
+                    {(['preset', 'recurring', 'advanced'] as const).map((mode) => (
+                      <Pressable
+                        key={mode}
+                        onPress={() => setScheduleMode(mode)}
+                        className={`flex-1 rounded-xl border py-3.5 ${
+                          scheduleMode === mode
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-card'
+                        } active:opacity-80`}>
+                        <Text
+                          className={`text-center font-roobert-medium text-sm ${
+                            scheduleMode === mode ? 'text-primary' : 'text-foreground'
+                          }`}>
+                          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  {/* Preset Options */}
+                  {scheduleMode === 'preset' && (
+                    <View className="mt-4 flex flex-col gap-2 space-y-3">
+                      {SCHEDULE_PRESETS.map((preset) => (
+                        <Pressable
+                          key={preset.id}
+                          onPress={() => handlePresetSelect(preset.id)}
+                          className={`flex-row items-center rounded-xl border p-4 ${
+                            selectedPreset === preset.id
+                              ? 'border-primary bg-primary/10'
+                              : 'border-border bg-card'
+                          } active:opacity-80`}>
+                          <Icon
+                            as={preset.icon}
+                            size={20}
+                            className={
+                              selectedPreset === preset.id ? 'text-primary' : 'text-foreground'
+                            }
+                          />
+                          <Text
+                            className={`ml-3 flex-1 font-roobert-medium text-base ${
+                              selectedPreset === preset.id ? 'text-primary' : 'text-foreground'
+                            }`}>
+                            {preset.name}
+                          </Text>
+                          {selectedPreset === preset.id && (
+                            <View className="h-5 w-5 items-center justify-center rounded-full bg-primary">
+                              <Icon
+                                as={Check}
+                                size={12}
+                                className="text-primary-foreground"
+                                strokeWidth={3}
+                              />
+                            </View>
+                          )}
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Recurring Options */}
+                  {scheduleMode === 'recurring' && (
+                    <View className="mt-4 space-y-5">
+                      <View className="flex-row gap-3">
+                        {(['daily', 'weekly', 'monthly'] as const).map((type) => (
+                          <Pressable
+                            key={type}
+                            onPress={() => setRecurringType(type)}
+                            className={`flex-1 rounded-xl border py-3.5 ${
+                              recurringType === type
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border bg-card'
+                            } active:opacity-80`}>
+                            <Text
+                              className={`text-center font-roobert-medium text-sm ${
+                                recurringType === type ? 'text-primary' : 'text-foreground'
+                              }`}>
+                              {type.charAt(0).toUpperCase() + type.slice(1)}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+
+                      <View className="mt-4 flex-row items-center gap-4">
+                        <TextInput
+                          value={selectedHour}
+                          onChangeText={setSelectedHour}
+                          placeholder="09"
+                          keyboardType="number-pad"
+                          maxLength={2}
+                          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                          style={{
+                            width: 80,
+                            padding: 12,
+                            borderRadius: 12,
+                            borderWidth: 1.5,
+                            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                            fontSize: 18,
+                            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                            textAlign: 'center',
+                          }}
+                        />
+                        <Text className="text-2xl text-foreground">:</Text>
+                        <TextInput
+                          value={selectedMinute}
+                          onChangeText={setSelectedMinute}
+                          placeholder="00"
+                          keyboardType="number-pad"
+                          maxLength={2}
+                          placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                          style={{
+                            width: 80,
+                            padding: 12,
+                            borderRadius: 12,
+                            borderWidth: 1.5,
+                            borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                            backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                            fontSize: 18,
+                            color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </View>
+
+                      {recurringType === 'weekly' && (
+                        <View className="mt-4 flex-row flex-wrap gap-2.5">
+                          {WEEKDAYS.map((day) => (
+                            <Pressable
+                              key={day.value}
+                              onPress={() => toggleWeekday(day.value)}
+                              className={`rounded-lg border px-4 py-2.5 ${
+                                selectedWeekdays.includes(day.value)
+                                  ? 'border-primary bg-primary/10'
+                                  : 'border-border bg-card'
+                              } active:opacity-80`}>
+                              <Text
+                                className={`font-roobert-medium text-xs ${
+                                  selectedWeekdays.includes(day.value)
+                                    ? 'text-primary'
+                                    : 'text-foreground'
+                                }`}>
+                                {day.label}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+
+                      <View className="mt-4 rounded-xl bg-muted p-4">
+                        <Text className="font-mono text-sm text-muted-foreground">
+                          {generateRecurringCron()}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Advanced Cron Input */}
+                  {scheduleMode === 'advanced' && (
+                    <TextInput
+                      value={cronExpression}
+                      onChangeText={setCronExpression}
+                      placeholder="0 9 * * 1-5"
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      style={{
+                        padding: 12,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                        backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                        fontSize: 16,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        fontFamily: 'monospace',
+                        marginTop: 16,
+                      }}
+                    />
+                  )}
+                </View>
+
+                {/* Agent Description */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      marginBottom: 8,
+                    }}>
+                    Description (optional)
+                  </Text>
+                  <TextInput
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder="Describe your agent"
+                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    multiline
+                    numberOfLines={3}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      fontSize: 16,
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      textAlignVertical: 'top',
+                      minHeight: 100,
+                    }}
+                  />
+                </View>
+
+                {/* Agent Instructions */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      marginBottom: 8,
+                    }}>
+                    Instructions *
+                  </Text>
+                  <TextInput
+                    value={agentPrompt}
+                    onChangeText={setAgentPrompt}
+                    placeholder="What should your agent do?"
+                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                    multiline
+                    numberOfLines={4}
+                    style={{
+                      padding: 12,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      fontSize: 16,
+                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      textAlignVertical: 'top',
+                      minHeight: 120,
+                    }}
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Event Trigger Steps */}
+            {selectedType === 'event' && (
+              <View className="space-y-4">
+                {/* App Selection Step */}
+                {eventStep === 'apps' && (
+                  <AppSelectionStep
+                    apps={triggersApps?.items || []}
+                    isLoading={triggersAppsLoading}
+                    searchQuery={appSearchQuery}
+                    onSearchChange={setAppSearchQuery}
+                    onAppSelect={(app) => {
+                      const connectionStatus = getAppConnectionStatus(app.slug);
+                      if (connectionStatus.isConnected) {
+                        setSelectedApp(app);
+                        setEventStep('triggers');
+                      } else {
+                        setSelectedApp(app);
+                        setShowComposioConnector(true);
+                      }
+                    }}
+                    profiles={profiles || []}
+                  />
+                )}
+
+                {/* Trigger Selection Step */}
+                {eventStep === 'triggers' && selectedApp && (
+                  <TriggerSelectionStep
+                    app={selectedApp}
+                    triggers={triggersData?.items || []}
+                    isLoading={loadingTriggers}
+                    onTriggerSelect={(trigger) => {
+                      setSelectedTrigger(trigger);
+                      setEventConfig({});
+                      setTriggerName(`${selectedApp.name} → Agent`);
+                      setEventStep('config');
+                    }}
+                  />
+                )}
+
+                {/* Config Step */}
+                {eventStep === 'config' && (
+                  <>
+                    {isEditMode && selectedApp && loadingTriggers && !selectedTrigger ? (
+                      <View className="items-center justify-center py-16">
+                        <Loading title="Loading trigger configuration..." />
+                      </View>
+                    ) : isEditMode && selectedApp && triggersError && !selectedTrigger ? (
+                      <View className="items-center justify-center px-8 py-16">
+                        <View
+                          className="mb-4 h-16 w-16 items-center justify-center rounded-2xl"
+                          style={{
+                            backgroundColor:
+                              colorScheme === 'dark'
+                                ? 'rgba(239, 68, 68, 0.1)'
+                                : 'rgba(239, 68, 68, 0.05)',
+                          }}>
+                          <Icon as={Info} size={32} color="#ef4444" strokeWidth={2} />
+                        </View>
+                        <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
+                          Failed to load trigger
+                        </Text>
+                        <Text className="mb-6 text-center text-sm text-muted-foreground">
+                          {triggersError?.message || 'An error occurred while loading trigger data'}
+                        </Text>
+                        <Pressable
+                          onPress={() => refetchTriggers()}
+                          className="rounded-xl bg-primary px-6 py-3 active:opacity-80">
+                          <Text className="font-roobert-semibold text-sm text-primary-foreground">
+                            Retry
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ) : selectedTrigger && selectedApp ? (
+                      <TriggerConfigStep
+                        trigger={selectedTrigger}
+                        app={selectedApp}
+                        config={eventConfig}
+                        onConfigChange={setEventConfig}
+                        profileId={profileId}
+                        onProfileChange={setProfileId}
+                        profiles={profiles || []}
+                        isLoadingProfiles={isLoadingProfiles}
+                        onCreateProfile={() => setShowComposioConnector(true)}
+                        triggerName={triggerName}
+                        onTriggerNameChange={setTriggerName}
+                        agentPrompt={agentPrompt}
+                        onAgentPromptChange={setAgentPrompt}
+                        model={model}
+                        onModelChange={setModel}
+                        isConfigValid={isEventConfigValid}
+                      />
+                    ) : null}
+                  </>
+                )}
+              </View>
+            )}
+
+            {/* Action Buttons - Inside ScrollView at bottom */}
+            {showActionButtons && (
+              <View className="mt-6 border-t border-border pt-4">
+                <View className="flex-row gap-3">
+                  <Pressable
+                    onPress={handleBack}
+                    className="flex-1 items-center rounded-xl border border-border bg-card py-4 active:opacity-70">
+                    <Text className="font-roobert-semibold text-base text-foreground">Back</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleCreate}
+                    disabled={
+                      !isFormValid ||
+                      (isEditMode
+                        ? updateTriggerMutation.isPending
+                        : selectedType === 'event'
+                          ? createEventTriggerMutation.isPending
+                          : createTriggerMutation.isPending)
+                    }
+                    className={`flex-1 items-center rounded-xl py-4 ${
+                      !isFormValid ||
+                      (selectedType === 'event'
+                        ? createEventTriggerMutation.isPending
+                        : createTriggerMutation.isPending)
+                        ? 'bg-muted opacity-50'
+                        : 'bg-primary active:opacity-80'
+                    }`}>
+                    <Text className="font-roobert-semibold text-base text-primary-foreground">
+                      {isEditMode
+                        ? updateTriggerMutation.isPending
+                          ? 'Updating...'
+                          : 'Update Trigger'
+                        : selectedType === 'event'
+                          ? createEventTriggerMutation.isPending
+                            ? 'Creating...'
+                            : 'Create Trigger'
+                          : createTriggerMutation.isPending
+                            ? 'Creating...'
+                            : 'Create Trigger'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+          </>
+        )}
+      </BottomSheetScrollView>
+    </BottomSheetModal>
   );
 }

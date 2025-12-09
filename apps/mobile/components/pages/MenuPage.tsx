@@ -37,6 +37,7 @@ import { useThreads } from '@/lib/chat';
 import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
+import { WorkerCreationDrawer } from '@/components/workers/WorkerCreationDrawer';
 import { useAdvancedFeatures } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type {
@@ -386,6 +387,7 @@ export function MenuPage({
   const profileScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
+  const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
 
   // Debug trigger drawer visibility
   React.useEffect(() => {
@@ -537,6 +539,47 @@ export function MenuPage({
     refetchTriggers();
   };
 
+  /**
+   * Handle worker creation
+   */
+  const handleWorkerCreate = () => {
+    console.log('🤖 Opening worker creation drawer');
+    setIsWorkerCreationDrawerVisible(true);
+  };
+
+  /**
+   * Handle worker creation drawer close
+   */
+  const handleWorkerCreationDrawerClose = () => {
+    setIsWorkerCreationDrawerVisible(false);
+  };
+
+  /**
+   * Handle worker created
+   */
+  const handleWorkerCreated = (workerId: string) => {
+    console.log('🤖 Worker created:', workerId);
+    setIsWorkerCreationDrawerVisible(false);
+    // Navigate to config page for the new worker
+    router.push({
+      pathname: '/worker-config',
+      params: { workerId },
+    });
+  };
+
+  /**
+   * Handle worker press - navigates to config page
+   */
+  const handleWorkerPress = (agent: Agent) => {
+    console.log('🤖 Opening worker config for:', agent.agent_id);
+    router.push({
+      pathname: '/worker-config',
+      params: { workerId: agent.agent_id },
+    });
+    // Keep menu drawer open - don't call onClose
+    // Don't call onAgentPress here - we want to open config, not start a chat
+  };
+
   return (
     <View
       className="flex-1 overflow-hidden rounded-r-[24px] bg-background"
@@ -580,7 +623,7 @@ export function MenuPage({
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 if (activeTab === 'chats') onNewChat?.();
-                else if (activeTab === 'workers') onNewWorker?.();
+                else if (activeTab === 'workers') handleWorkerCreate();
                 else if (activeTab === 'triggers') handleTriggerCreate();
               }}
               onPressIn={() => {
@@ -689,7 +732,7 @@ export function MenuPage({
                         'Create your first worker to get started'
                       }
                       actionLabel={t('agents.newWorker') || 'New Worker'}
-                      onActionPress={onNewWorker}
+                      onActionPress={handleWorkerCreate}
                     />
                   ) : agentResults.length === 0 && workersSearch.isSearching ? (
                     <EmptyState
@@ -704,7 +747,7 @@ export function MenuPage({
                     <AgentList
                       agents={agentResults}
                       selectedAgentId={selectedAgentId}
-                      onAgentPress={onAgentPress}
+                      onAgentPress={handleWorkerPress}
                       showChevron={false}
                       compact={false}
                     />
@@ -858,7 +901,7 @@ export function MenuPage({
         <FloatingActionButton
           activeTab={activeTab}
           onChatPress={onNewChat}
-          onWorkerPress={onNewWorker}
+          onWorkerPress={handleWorkerCreate}
           onTriggerPress={handleTriggerCreate}
         />
       )}
@@ -868,6 +911,13 @@ export function MenuPage({
         visible={isTriggerDrawerVisible}
         onClose={handleTriggerDrawerClose}
         onTriggerCreated={handleTriggerCreated}
+      />
+
+      {/* Worker Creation Drawer */}
+      <WorkerCreationDrawer
+        visible={isWorkerCreationDrawerVisible}
+        onClose={handleWorkerCreationDrawerClose}
+        onWorkerCreated={handleWorkerCreated}
       />
     </View>
   );

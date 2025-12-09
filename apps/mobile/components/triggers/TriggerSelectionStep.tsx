@@ -69,7 +69,11 @@ function TriggerCard({ trigger, app, onPress }: TriggerCardProps) {
               {isSvg(app.logo) ? (
                 <SvgUri uri={app.logo} width={24} height={24} />
               ) : (
-                <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+                <Image
+                  source={{ uri: app.logo }}
+                  style={{ width: 24, height: 24 }}
+                  resizeMode="contain"
+                />
               )}
             </View>
           ) : (
@@ -85,10 +89,12 @@ function TriggerCard({ trigger, app, onPress }: TriggerCardProps) {
         </View>
 
         {/* Trigger name and description */}
-        <View className="space-y-1">
+        <View className="space-y-2">
           <Text className="font-roobert-medium text-base text-foreground">{trigger.name}</Text>
           {trigger.description && (
-            <Text className="text-xs text-muted-foreground" numberOfLines={2}>
+            <Text
+              className="mb-2 mt-1 text-xs leading-relaxed text-muted-foreground"
+              numberOfLines={2}>
               {trigger.description}
             </Text>
           )}
@@ -150,7 +156,11 @@ export function TriggerSelectionStep({
             {isSvg(app.logo) ? (
               <SvgUri uri={app.logo} width={24} height={24} />
             ) : (
-              <Image source={{ uri: app.logo }} style={{ width: 24, height: 24 }} resizeMode="contain" />
+              <Image
+                source={{ uri: app.logo }}
+                style={{ width: 24, height: 24 }}
+                resizeMode="contain"
+              />
             )}
           </View>
         )}
@@ -174,4 +184,3 @@ export function TriggerSelectionStep({
     </View>
   );
 }
-
