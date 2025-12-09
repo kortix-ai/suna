@@ -30,11 +30,22 @@ class PromptManager:
         content += """
 
 ⚠️ BOOTSTRAP MODE - FAST START:
-You are currently in fast-start mode. Core capabilities are ready NOW:
-✅ Available immediately: files, shell, web_search, git operations
-⏳ Loading shortly: advanced tools (browser, presentations, image editing), knowledge base, user context
+You are currently in fast-start mode with all core tools preloaded and ready NOW:
 
-If you need specialized tools, they will become available during execution.
+✅ Ready immediately (no initialize_tools needed):
+   • Files & Shell: sb_files_tool, sb_shell_tool, sb_git_sync
+   • Search: web_search_tool, image_search_tool
+   • Images: sb_vision_tool (view/analyze), sb_image_edit_tool (generate/edit)
+   • Web: browser_tool (interactive browsing)
+   • Deployment: sb_upload_file_tool, sb_expose_tool
+   • Communication: message_tool, task_list_tool, expand_msg_tool
+
+⏳ Advanced tools available via initialize_tools():
+   • Content: sb_presentation_tool, sb_designer_tool
+   • Research: people_search_tool, company_search_tool, paper_search_tool
+   • Data: data_providers_tool, sb_kb_tool
+
+If you need specialized tools, use initialize_tools() to load them.
 If relevant context seems missing, ask a clarifying question.
 
 """

@@ -25,9 +25,15 @@ class JITLoader:
             'message_tool', 
             'task_list_tool', 
             'sb_shell_tool',
+            'sb_files_tool',
             'web_search_tool',
+            'image_search_tool',
+            'sb_vision_tool',
+            'sb_image_edit_tool',
+            'browser_tool',
             'sb_git_sync',
-            'sb_files_tool'
+            'sb_upload_file_tool',
+            'sb_expose_tool'
         ]
     
     @staticmethod
