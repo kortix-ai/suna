@@ -1,7 +1,7 @@
 /**
  * Model Toggle Component
- * 
- * A toggle switcher between Kortix Basic and Power modes
+ *
+ * A toggle switcher between Kortix Basic and Advanced modes
  * Matches the frontend's unified-config-menu ModeToggle design
  */
 
@@ -24,7 +24,7 @@ const COLORS = {
     foreground: '#121215', // Dark text
     mutedForeground: 'rgba(18, 18, 21, 0.6)', // Muted text
     disabledForeground: 'rgba(18, 18, 21, 0.3)', // Very muted text
-    primary: '#121215', // Primary color (for Power text when selected)
+    primary: '#121215', // Primary color (for Advanced text when selected)
   },
   dark: {
     containerBg: 'rgba(248, 248, 248, 0.08)', // Muted background
@@ -32,7 +32,7 @@ const COLORS = {
     foreground: '#f8f8f8', // Light text
     mutedForeground: 'rgba(248, 248, 248, 0.6)', // Muted text
     disabledForeground: 'rgba(248, 248, 248, 0.3)', // Very muted text
-    primary: '#f8f8f8', // Primary color (for Power text when selected)
+    primary: '#f8f8f8', // Primary color (for Advanced text when selected)
   },
 };
 
@@ -57,26 +57,26 @@ export function ModelToggle({
   const isDark = colorScheme === 'dark';
   const colors = isDark ? COLORS.dark : COLORS.light;
 
-  // Find Basic and Power models
+  // Find Basic and Advanced models
   const basicModel = useMemo(() => {
-    return models.find(m => 
-      m.id === 'kortix/basic' || 
-      m.id === 'kortix-basic' || 
+    return models.find(m =>
+      m.id === 'kortix/basic' ||
+      m.id === 'kortix-basic' ||
       m.id.includes('claude-haiku-4-5')
     );
   }, [models]);
 
   const powerModel = useMemo(() => {
-    return models.find(m => 
-      m.id === 'kortix/power' || 
-      m.id === 'kortix-power' || 
+    return models.find(m =>
+      m.id === 'kortix/power' ||
+      m.id === 'kortix-power' ||
       m.id.includes('claude-sonnet-4-5')
     );
   }, [models]);
 
   const canAccessPower = powerModel ? canAccessModel(powerModel) : false;
   const isPowerSelected = powerModel && selectedModelId === powerModel.id;
-  // If neither Basic nor Power is selected, treat Basic as selected by default
+  // If neither Basic nor Advanced is selected, treat Basic as selected by default
   const isBasicSelected = basicModel && (selectedModelId === basicModel.id || (!isPowerSelected && !selectedModelId));
 
   // Auto-select Basic if no model is selected and Basic is available
@@ -110,9 +110,9 @@ export function ModelToggle({
   }
 
   return (
-    <View 
+    <View
       className="flex-row items-center p-1 rounded-xl"
-      style={{ 
+      style={{
         gap: 6,
         backgroundColor: colors.containerBg,
       }}
@@ -144,8 +144,8 @@ export function ModelToggle({
           Basic
         </Text>
       </Pressable>
-      
-      {/* Power Mode */}
+
+      {/* Advanced Mode */}
       <Pressable
         onPress={handlePowerPress}
         className={`flex-1 flex-row items-center justify-center rounded-lg ${
@@ -183,18 +183,18 @@ export function ModelToggle({
             fontSize: compact ? 10 : 12,
             textTransform: 'uppercase',
             letterSpacing: 0.5,
-            color: isPowerSelected 
-              ? colors.primary 
+            color: isPowerSelected
+              ? colors.primary
               : colors.mutedForeground,
           }}
         >
-          Power
+          Advanced
         </Text>
-        {/* Show lock when user cannot access Power (free tier) */}
+        {/* Show lock when user cannot access Advanced (free tier) */}
         {!canAccessPower && (
-          <Lock 
-            size={compact ? 12 : 14} 
-            color={isDark ? colors.mutedForeground : colors.mutedForeground} 
+          <Lock
+            size={compact ? 12 : 14}
+            color={isDark ? colors.mutedForeground : colors.mutedForeground}
           />
         )}
       </Pressable>

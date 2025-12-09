@@ -27,14 +27,14 @@ import Link from 'next/link';
 
 // Helper to render model labels with special styling for Kortix modes
 const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
-    if (label === 'Kortix POWER Mode') {
+    if (label === 'Kortix Advanced Mode') {
         return (
             <span className={cn("flex items-center gap-2", className)}>
                 <span className="font-medium">Kortix</span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full">
                     <KortixLogo size={12} variant="symbol" />
                     <span className="text-[11px] font-semibold tracking-wide uppercase text-primary">
-                        Power
+                        Advanced
                     </span>
                 </span>
             </span>
@@ -73,9 +73,9 @@ export function AgentModelSelector({
   variant = 'default',
   className,
 }: AgentModelSelectorProps) {
-  const { 
-    allModels, 
-    canAccessModel, 
+  const {
+    allModels,
+    canAccessModel,
     subscriptionStatus,
     selectedModel: storeSelectedModel,
     handleModelChange: storeHandleModelChange,
@@ -89,17 +89,17 @@ export function AgentModelSelector({
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  
+
   const openPricingModal = usePricingModalStore((state) => state.openPricingModal);
   const isFreeTier = subscriptionStatus !== 'active';
-  
+
   const [isCustomModelDialogOpen, setIsCustomModelDialogOpen] = useState(false);
   const [dialogInitialData, setDialogInitialData] = useState<CustomModelFormData>({ id: '', label: '' });
   const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add');
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
 
   const customModels = storeCustomModels;
-  
+
   // Use the prop value if provided, otherwise fall back to store value
   const selectedModel = value || storeSelectedModel;
 
@@ -109,7 +109,7 @@ export function AgentModelSelector({
     if (modelsData?.models) {
       modelsData.models.forEach(model => {
         const displayName = model.name || model.id;
-        
+
         modelMap.set(model.id, {
           id: model.id, // Use the actual model ID
           label: displayName,
@@ -155,7 +155,7 @@ export function AgentModelSelector({
 
     return Array.from(modelMap.values());
   }, [modelsData?.models, allModels, customModels]);
-  
+
   const selectedModelDisplay = useMemo(() => {
     const model = enhancedModelOptions.find(m => m.id === selectedModel);
     return model?.label || selectedModel;
@@ -195,13 +195,13 @@ export function AgentModelSelector({
 
   const handleSelect = (modelId: string) => {
     const isCustomModel = customModels.some(model => model.id === modelId);
-    
+
     if (isCustomModel && isLocalMode()) {
       onChange(modelId);
       setIsOpen(false);
       return;
     }
-    
+
     const hasAccess = isLocalMode() || canAccessModel(modelId);
     if (hasAccess) {
       onChange(modelId);
@@ -213,7 +213,7 @@ export function AgentModelSelector({
       const isPowerModel = modelId === 'kortix/power';
       openPricingModal({
         isAlert: true,
-        alertTitle: isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model',
+        alertTitle: isPowerModel ? 'Upgrade to access Kortix Advanced mode' : 'Upgrade to access this model',
       });
     }
   };
@@ -261,7 +261,7 @@ export function AgentModelSelector({
     const modelLabel = formData.label.trim() || formatModelName(modelId);
 
     if (!modelId) return;
-    
+
     if (customModels.some(model =>
       model.id === modelId && (dialogMode === 'add' || model.id !== editingModelId))) {
       console.error('A model with this ID already exists');
@@ -280,7 +280,7 @@ export function AgentModelSelector({
         onChange(modelId);
       }
     }
-    
+
     setIsOpen(false);
   };
 
@@ -295,7 +295,7 @@ export function AgentModelSelector({
     e?.preventDefault();
 
     storeRemoveCustomModel(modelId);
-    
+
     if (selectedModel === modelId) {
       // When deleting the currently selected custom model, let the hook determine the new default
       const firstAvailableModel = allModels.find(m => canAccessModel(m.id));
@@ -306,7 +306,7 @@ export function AgentModelSelector({
   };
 
   const renderModelOption = (model: any, index: number) => {
-    const isCustom = Boolean(model.isCustom) || 
+    const isCustom = Boolean(model.isCustom) ||
       (isLocalMode() && customModels.some(m => m.id === model.id));
     const accessible = isCustom ? true : (isLocalMode() || canAccessModel(model.id));
     const isHighlighted = index === highlightedIndex;
@@ -388,7 +388,7 @@ export function AgentModelSelector({
           </TooltipTrigger>
           {!accessible && !isLocalMode() ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
-              <p>{isPowerModel ? 'Upgrade to access Kortix Power mode' : 'Upgrade to access this model'}</p>
+              <p>{isPowerModel ? 'Upgrade to access Kortix Advanced mode' : 'Upgrade to access this model'}</p>
             </TooltipContent>
           ) : isLowQuality ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
@@ -418,8 +418,8 @@ export function AgentModelSelector({
                     )}
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <ModelProviderIcon 
-                        modelId={selectedModel} 
+                      <ModelProviderIcon
+                        modelId={selectedModel}
                         size={24}
                       />
                       <span className="truncate"><ModelLabel label={selectedModelDisplay} /></span>
@@ -504,7 +504,7 @@ export function AgentModelSelector({
                   />
                 </div>
               </div>
-              
+
               {/* Pricing Header */}
               <div className="px-2 py-2">
                 <div className="flex items-center gap-0 text-xs text-muted-foreground">
@@ -514,14 +514,14 @@ export function AgentModelSelector({
                   <div className="w-8"></div>
                 </div>
               </div>
-              
+
               {shouldDisplayAll ? (
                 <div>
                   <div className="px-3 py-2 text-xs font-medium text-muted-foreground">
                     Available Models
                   </div>
                   {freeModels.map((model, index) => renderModelOption(model, index))}
-                  
+
                   {premiumModels.length > 0 && (
                     <>
                       <div className="mt-4 border-t border-border pt-2">
@@ -542,7 +542,7 @@ export function AgentModelSelector({
                           {(subscriptionStatus === 'active' ? premiumModels : premiumModels.slice(0, 3)).map((model, index) => {
                             const canAccess = isLocalMode() || canAccessModel(model.id);
                             const isRecommended = false; // Remove recommended badges
-                            
+
                             // Format cost display
                             const formatCost = (cost: number | null | undefined) => {
                               if (cost === null || cost === undefined) return null;
@@ -551,7 +551,7 @@ export function AgentModelSelector({
 
                             const inputCost = formatCost(model.inputCostPerMillionTokens);
                             const outputCost = formatCost(model.outputCostPerMillionTokens);
-                            
+
                             return (
                               <Tooltip key={`premium-${model.id}-${index}`}>
                                 <TooltipTrigger asChild>
@@ -582,8 +582,8 @@ export function AgentModelSelector({
                                   </TooltipTrigger>
                                   <TooltipContent side="left" className="text-xs max-w-xs">
                                     <p>
-                                      {canAccess 
-                                        ? 'Premium model' 
+                                      {canAccess
+                                        ? 'Premium model'
                                         : 'Requires subscription to access premium model'
                                       }
                                     </p>
@@ -637,7 +637,7 @@ export function AgentModelSelector({
                 </div>
               )}
             </div>
-            
+
             {/* Pricing Info Footer */}
             <div className="px-4 py-2 border-t border-border bg-muted/30">
               <div className="text-[10px] text-muted-foreground text-center">

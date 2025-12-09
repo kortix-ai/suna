@@ -387,7 +387,7 @@ export function AgentDrawer({
           </Text>
         </View>
 
-        {/* Model Toggle - Basic/Power switcher */}
+        {/* Model Toggle - Basic/Advanced switcher */}
         {modelsLoading ? (
           <View className="items-center py-4">
             <Text
