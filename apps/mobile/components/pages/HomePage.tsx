@@ -353,6 +353,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             onWorkerUpdated={() => {
               // Refresh agent data if needed
             }}
+            onUpgradePress={handleUpgradePress}
             isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
             onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
             onTakePicture={chat.handleTakePicture}

@@ -31,6 +31,8 @@ import {
   Brain,
   Wrench,
   Server,
+  Sparkles,
+  Lock,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -285,6 +287,12 @@ export function AgentDrawer({
     console.log('🔌 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    // Block free tier users from accessing integrations
+    if (hasFreeTier) {
+      handleUpgradeRequired();
+      return;
+    }
+
     if (!selectedAgent) {
       Alert.alert(
         'No Agent Selected',
@@ -295,7 +303,7 @@ export function AgentDrawer({
     }
 
     setCurrentView('integrations');
-  }, [selectedAgent]);
+  }, [selectedAgent, hasFreeTier, handleUpgradeRequired]);
 
   const handleIntegrationsPressIn = React.useCallback(() => {
     integrationsScale.value = withTiming(0.95, { duration: 100 });
@@ -333,15 +341,23 @@ export function AgentDrawer({
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onCreateAgent();
+                if (hasFreeTier) {
+                  handleUpgradeRequired();
+                } else {
+                  onCreateAgent();
+                }
               }}
               className="active:opacity-70">
-              <Plus
-                size={18}
-                color={
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
-                }
-              />
+              {hasFreeTier ? (
+                <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+              ) : (
+                <Plus
+                  size={18}
+                  color={
+                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
+                  }
+                />
+              )}
             </Pressable>
           )}
         </View>
@@ -416,19 +432,41 @@ export function AgentDrawer({
             style={[
               integrationsAnimatedStyle,
               {
-                borderColor: colorScheme === 'dark' ? '#454444' : '#c2c2c2',
-                borderWidth: 1,
-                borderOpacity: 0.5,
+                borderColor: hasFreeTier
+                  ? colorScheme === 'dark'
+                    ? '#22c55e'
+                    : '#16a34a'
+                  : colorScheme === 'dark'
+                    ? '#454444'
+                    : '#c2c2c2',
+                borderWidth: hasFreeTier ? 1.5 : 1,
+                backgroundColor: hasFreeTier
+                  ? colorScheme === 'dark'
+                    ? 'rgba(34, 197, 94, 0.1)'
+                    : 'rgba(22, 163, 74, 0.1)'
+                  : 'transparent',
               },
             ]}
             className="mt-4 h-16 flex-1 flex-row items-center justify-center gap-2 rounded-2xl"
             onPress={handleIntegrationsPress}
             onPressIn={handleIntegrationsPressIn}
             onPressOut={handleIntegrationsPressOut}>
-            <AppBubble />
+            {hasFreeTier ? (
+              <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+            ) : (
+              <AppBubble />
+            )}
             <Text
               className="font-roobert-medium"
-              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}>
+              style={{
+                color: hasFreeTier
+                  ? colorScheme === 'dark'
+                    ? '#22c55e'
+                    : '#16a34a'
+                  : colorScheme === 'dark'
+                    ? '#f8f8f8'
+                    : '#121215',
+              }}>
               {t('integrations.connectApps')}
             </Text>
           </AnimatedPressable>
@@ -559,13 +597,23 @@ export function AgentDrawer({
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onCreateAgent();
+              if (hasFreeTier) {
+                handleUpgradeRequired();
+              } else {
+                onCreateAgent();
+              }
             }}
             className="active:opacity-70">
-            <Plus
-              size={18}
-              color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'}
-            />
+            {hasFreeTier ? (
+              <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+            ) : (
+              <Plus
+                size={18}
+                color={
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
+                }
+              />
+            )}
           </Pressable>
         )}
       </View>
@@ -741,6 +789,7 @@ export function AgentDrawer({
                 onBack={() => setCurrentView('main')}
                 noPadding={true}
                 onNavigate={(view) => setCurrentView(view as ViewState)}
+                onUpgradePress={handleUpgradeRequired}
               />
             </Animated.View>
           )}

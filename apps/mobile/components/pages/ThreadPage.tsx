@@ -234,6 +234,11 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
     toolMessages: ToolMessagePair[];
     initialIndex: number;
   } | null>(null);
+
+  // Handle upgrade press - navigate to plans page
+  const handleUpgradePress = React.useCallback(() => {
+    router.push('/plans');
+  }, [router]);
   const [isWorkerConfigDrawerVisible, setIsWorkerConfigDrawerVisible] = React.useState(false);
   const [workerConfigWorkerId, setWorkerConfigWorkerId] = React.useState<string | null>(null);
   const [workerConfigInitialView, setWorkerConfigInitialView] = React.useState<
@@ -635,6 +640,7 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
         onWorkerUpdated={() => {
           // Refresh agent data if needed
         }}
+        onUpgradePress={handleUpgradePress}
         isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
         onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
         onTakePicture={chat.handleTakePicture}

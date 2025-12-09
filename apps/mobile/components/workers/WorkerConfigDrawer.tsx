@@ -35,6 +35,7 @@ interface WorkerConfigDrawerProps {
   onClose: () => void;
   onWorkerUpdated?: () => void;
   initialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
+  onUpgradePress?: () => void;
 }
 
 type ConfigView = 'instructions' | 'tools' | 'integrations' | 'triggers';
@@ -52,6 +53,7 @@ export function WorkerConfigDrawer({
   onClose,
   onWorkerUpdated,
   initialView = 'instructions',
+  onUpgradePress,
 }: WorkerConfigDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const { colorScheme } = useColorScheme();
@@ -272,10 +274,10 @@ export function WorkerConfigDrawer({
               <ToolsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
             )}
             {activeView === 'integrations' && (
-              <IntegrationsScreen agentId={workerId} onUpdate={onWorkerUpdated} />
+              <IntegrationsScreen agentId={workerId} onUpdate={onWorkerUpdated} onUpgradePress={onUpgradePress} />
             )}
             {activeView === 'triggers' && (
-              <TriggersScreen agentId={workerId} onUpdate={onWorkerUpdated} />
+              <TriggersScreen agentId={workerId} onUpdate={onWorkerUpdated} onUpgradePress={onUpgradePress} />
             )}
           </BottomSheetScrollView>
         )}

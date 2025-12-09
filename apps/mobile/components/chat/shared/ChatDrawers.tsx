@@ -7,7 +7,10 @@ export interface ChatDrawersProps {
   // Agent drawer
   isAgentDrawerVisible: boolean;
   onCloseAgentDrawer: () => void;
-  onOpenWorkerConfig?: (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => void;
+  onOpenWorkerConfig?: (
+    workerId: string,
+    view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
+  ) => void;
   onAgentDrawerDismiss?: () => void;
 
   // Worker config drawer
@@ -16,6 +19,7 @@ export interface ChatDrawersProps {
   workerConfigInitialView?: 'instructions' | 'tools' | 'integrations' | 'triggers';
   onCloseWorkerConfigDrawer: () => void;
   onWorkerUpdated?: () => void;
+  onUpgradePress?: () => void;
 
   // Attachment drawer
   isAttachmentDrawerVisible: boolean;
@@ -44,6 +48,7 @@ export function ChatDrawers({
   workerConfigInitialView,
   onCloseWorkerConfigDrawer,
   onWorkerUpdated,
+  onUpgradePress,
   isAttachmentDrawerVisible,
   onCloseAttachmentDrawer,
   onTakePicture,
@@ -67,6 +72,7 @@ export function ChatDrawers({
         onClose={onCloseWorkerConfigDrawer}
         onWorkerUpdated={onWorkerUpdated}
         initialView={workerConfigInitialView}
+        onUpgradePress={onUpgradePress}
       />
 
       {/* Attachment Drawer */}
@@ -80,4 +86,3 @@ export function ChatDrawers({
     </>
   );
 }
-

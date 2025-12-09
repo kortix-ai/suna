@@ -4,7 +4,7 @@
  * Displays and manages triggers for a specific worker
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -15,12 +15,16 @@ import { TriggerCreationDrawer } from '@/components/triggers/TriggerCreationDraw
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import type { TriggerConfiguration } from '@/api/types';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
+import { useRouter } from 'expo-router';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface TriggersScreenProps {
   agentId: string;
   onUpdate?: () => void;
+  onUpgradePress?: () => void;
 }
 
 interface TriggerCardProps {
@@ -137,17 +141,29 @@ function TriggerCard({
   );
 }
 
-export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
+export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersScreenProps) {
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
   const { data: triggers = [], isLoading, refetch } = useAgentTriggers(agentId);
   const deleteTriggerMutation = useDeleteTrigger();
   const toggleTriggerMutation = useToggleTrigger();
+  const { hasFreeTier } = useBillingContext();
 
   const [isCreateDrawerVisible, setIsCreateDrawerVisible] = useState(false);
   const [editingTrigger, setEditingTrigger] = useState<TriggerConfiguration | null>(null);
   const [deleteDialogTrigger, setDeleteDialogTrigger] = useState<TriggerConfiguration | null>(null);
   const [togglingTriggerId, setTogglingTriggerId] = useState<string | null>(null);
   const [deletingTriggerId, setDeletingTriggerId] = useState<string | null>(null);
+
+  // Handle upgrade press - use provided callback or navigate to plans
+  const handleUpgradePress = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    if (onUpgradePress) {
+      onUpgradePress();
+    } else {
+      router.push('/plans');
+    }
+  }, [onUpgradePress, router]);
 
   const runningTriggers = useMemo(
     () => triggers.filter((trigger) => trigger.is_active),
@@ -239,6 +255,15 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
       <View className="items-center justify-center py-12">
         <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">Loading triggers...</Text>
+      </View>
+    );
+  }
+
+  // Show free tier block if user is on free tier
+  if (hasFreeTier) {
+    return (
+      <View className="flex-1 items-center justify-center px-4 py-8">
+        <FreeTierBlock variant="triggers" onUpgradePress={handleUpgradePress} style="card" />
       </View>
     );
   }
@@ -341,6 +366,7 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
         onTriggerUpdated={handleTriggerUpdated}
         isEditMode={!!editingTrigger}
         existingTrigger={editingTrigger}
+        onUpgradePress={onUpgradePress}
       />
     </View>
   );

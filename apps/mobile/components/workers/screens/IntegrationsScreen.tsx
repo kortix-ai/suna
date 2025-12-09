@@ -5,7 +5,7 @@
  * Shows connected apps and allows adding new ones
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Pressable, ActivityIndicator, Image, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -17,17 +17,21 @@ import {
   type ComposioApp,
   type ComposioProfile,
 } from '@/hooks/useComposio';
-import { Plus, CheckCircle2, Settings, X, Store, Trash2, Server } from 'lucide-react-native';
+import { Plus, CheckCircle2, Settings, X, Store, Trash2, Server, Lock } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
 import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
 import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
 import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
 import { SvgUri } from 'react-native-svg';
+import { useBillingContext } from '@/contexts/BillingContext';
+import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
+import { useRouter } from 'expo-router';
 
 interface IntegrationsScreenProps {
   agentId: string;
   onUpdate?: () => void;
+  onUpgradePress?: () => void;
 }
 
 interface ActiveIntegrationCardProps {
@@ -142,12 +146,14 @@ function ActiveIntegrationCard({
   );
 }
 
-export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProps) {
+export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: IntegrationsScreenProps) {
   const { colorScheme } = useColorScheme();
+  const router = useRouter();
   const { data: agent, isLoading: isLoadingAgent } = useAgent(agentId);
   const { data: appsData, isLoading: isLoadingApps } = useComposioApps();
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
   const updateAgentMutation = useUpdateAgent();
+  const { hasFreeTier } = useBillingContext();
 
   const [selectedApp, setSelectedApp] = useState<ComposioApp | null>(null);
   const [showConnector, setShowConnector] = useState(false);
@@ -156,6 +162,16 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
   const [showCustomMcp, setShowCustomMcp] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
+
+  // Handle upgrade press - use provided callback or navigate to plans
+  const handleUpgradePress = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    if (onUpgradePress) {
+      onUpgradePress();
+    } else {
+      router.push('/plans');
+    }
+  }, [onUpgradePress, router]);
 
   const apps = appsData?.toolkits || [];
 
@@ -438,6 +454,15 @@ export function IntegrationsScreen({ agentId, onUpdate }: IntegrationsScreenProp
           }}
           noPadding={true}
         />
+      </View>
+    );
+  }
+
+  // Show free tier block if user is on free tier
+  if (hasFreeTier) {
+    return (
+      <View className="flex-1 items-center justify-center px-4 py-8">
+        <FreeTierBlock variant="integrations" onUpgradePress={handleUpgradePress} style="card" />
       </View>
     );
   }
