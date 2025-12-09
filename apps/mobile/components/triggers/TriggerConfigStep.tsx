@@ -317,6 +317,7 @@ export function TriggerConfigStep({
                     fontWeight: '600',
                     color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                     marginBottom: 8,
+                    marginTop: 16,
                   }}>
                   Trigger Name *
                 </Text>
