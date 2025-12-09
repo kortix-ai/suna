@@ -1,7 +1,7 @@
 'use client';
 
 import { Mail, Clock, Shield, ChevronDown, UserX } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { AnimatedBg } from '@/components/ui/animated-bg';
@@ -41,7 +41,7 @@ const FAQItem = ({ question, answer }: { question: string; answer: React.ReactNo
   );
 };
 
-export default function SupportPage() {
+function SupportPageContent() {
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const accountDeleteRef = useRef<HTMLElement>(null);
@@ -415,5 +415,21 @@ export default function SupportPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function SupportPage() {
+  return (
+    <Suspense fallback={
+      <main className="flex flex-col items-center justify-center min-h-screen w-full">
+        <div className="w-full">
+          <div className="flex flex-col items-center justify-center min-h-screen">
+            <div className="text-muted-foreground">Loading...</div>
+          </div>
+        </div>
+      </main>
+    }>
+      <SupportPageContent />
+    </Suspense>
   );
 }
