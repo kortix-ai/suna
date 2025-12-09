@@ -5,7 +5,7 @@ import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MessageCircleMore, TextAlignStart } from 'lucide-react-native';
+import { MessageCircleMore, TextAlignStart, ChevronLeft } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -20,6 +20,7 @@ interface ThreadHeaderProps {
   onTitleChange?: (newTitle: string) => void;
   onMenuPress?: () => void;
   onActionsPress?: () => void;
+  onBackPress?: () => void;
   isLoading?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function ThreadHeader({
   onTitleChange,
   onMenuPress,
   onActionsPress,
+  onBackPress,
   isLoading = false,
 }: ThreadHeaderProps) {
   const { t } = useLanguage();
@@ -60,6 +62,12 @@ export function ThreadHeader({
     console.log('🎯 Menu panel pressed (Thread View)');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onMenuPress?.();
+  };
+
+  const handleBackPress = () => {
+    console.log('🎯 Back button pressed (Thread View)');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onBackPress?.();
   };
 
   const handleTitlePress = () => {
@@ -116,14 +124,19 @@ export function ThreadHeader({
           onPressOut={() => {
             menuScale.value = withSpring(1, { damping: 15, stiffness: 400 });
           }}
-          onPress={handleMenuPress}
+          onPress={onBackPress ? handleBackPress : handleMenuPress}
           style={menuAnimatedStyle}
           className="w-8 h-8 items-center justify-center rounded-full"
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="Open menu"
+          accessibilityLabel={onBackPress ? "Go back" : "Open menu"}
         >
-          <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
+          <Icon 
+            as={onBackPress ? ChevronLeft : TextAlignStart} 
+            size={onBackPress ? 24 : 20} 
+            className="text-foreground" 
+            strokeWidth={2} 
+          />
         </AnimatedPressable>
         <View className="flex-1 flex-row items-center">
           {isEditingTitle ? (

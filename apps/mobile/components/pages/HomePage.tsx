@@ -1,25 +1,17 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard } from 'react-native';
-import Animated, { 
-  FadeIn,
-  runOnJS,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { runOnJS } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
-import { QUICK_ACTIONS } from '@/components/quick-actions';
-import { BackgroundLogo, TopNav } from '@/components/home';
+import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
+import { TopNav } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
 import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
 import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
-import { useLanguage } from '@/contexts';
 
 const SWIPE_THRESHOLD = 50;
 
@@ -39,7 +31,6 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   isAuthenticated,
 }, ref) => {
   const router = useRouter();
-  const { t } = useLanguage();
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
   const { creditsExhausted } = usePricingModalStore();
@@ -49,22 +40,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   const chatInputRef = React.useRef<ChatInputSectionRef>(null);
   const lastSwipeIndex = React.useRef(-1);
 
-  // Find current selected index
+  // Find current selected index for swipe gestures
   const selectedIndex = React.useMemo(() => {
     const index = QUICK_ACTIONS.findIndex(a => a.id === chat.selectedQuickAction);
     return index >= 0 ? index : 0;
   }, [chat.selectedQuickAction]);
-
-  // Find selected action for the header
-  const selectedAction = React.useMemo(() => {
-    if (!chat.selectedQuickAction) return QUICK_ACTIONS[0];
-    return QUICK_ACTIONS.find(a => a.id === chat.selectedQuickAction) || QUICK_ACTIONS[0];
-  }, [chat.selectedQuickAction]);
-
-  const selectedActionLabel = React.useMemo(() => {
-    if (!selectedAction) return '';
-    return t(`quickActions.${selectedAction.id}`, { defaultValue: selectedAction.label });
-  }, [selectedAction, t]);
 
   // Switch to a specific mode index
   const switchToMode = React.useCallback((newIndex: number) => {
@@ -154,6 +134,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
     chatInputRef.current?.focusInput();
   }, [chat]);
 
+  const handleQuickActionThreadPress = React.useCallback((threadId: string) => {
+    console.log('🎯 Loading thread from mode history:', threadId);
+    chat.showModeThread(threadId);
+  }, [chat]);
+
   return (
     <View className="flex-1 bg-background">
       <KeyboardAvoidingView
@@ -169,40 +154,13 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             onCreditsPress={handleCreditsPress}
           />
           
-          {/* Swipeable content area */}
+          {/* Swipeable content area - Always show thread list for current mode */}
           <GestureDetector gesture={panGesture}>
             <View className="flex-1">
-              <Pressable
-                className="flex-1"
-                onPress={Keyboard.dismiss}
-                accessible={false}
-              >
-                {/* Mode Header - Shows current mode icon and name */}
-                {selectedAction && (
-                  <Animated.View 
-                    key={selectedAction.id}
-                    entering={FadeIn.duration(150)}
-                    className="px-4 pb-4"
-                    style={{ marginTop: 127 }}
-                  >
-                    <View className="flex-row items-center gap-3">
-                      <Icon 
-                        as={selectedAction.icon} 
-                        size={28} 
-                        className="text-foreground"
-                        strokeWidth={2}
-                      />
-                      <Text className="text-3xl font-roobert-semibold text-foreground">
-                        {selectedActionLabel}
-                      </Text>
-                    </View>
-                  </Animated.View>
-                )}
-
-                <View className="absolute inset-0 -z-10" pointerEvents="none">
-                  <BackgroundLogo />
-                </View>
-              </Pressable>
+              <ModeThreadListView
+                modeId={chat.selectedQuickAction || 'image'}
+                onThreadPress={handleQuickActionThreadPress}
+              />
             </View>
           </GestureDetector>
 
@@ -232,6 +190,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
             onQuickActionPress={chat.handleQuickAction}
             onQuickActionSelectOption={handleQuickActionSelectOption}
             onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
+            onQuickActionThreadPress={handleQuickActionThreadPress}
             isAuthenticated={isAuthenticated}
             isAgentRunning={chat.isAgentRunning}
             isSendingMessage={chat.isSendingMessage}
