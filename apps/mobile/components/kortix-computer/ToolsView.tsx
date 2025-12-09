@@ -3,7 +3,6 @@ import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Computer, CircleDashed } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import { getToolViewComponent } from '@/components/chat/tool-views';
 import { getToolMetadata } from '@/components/chat/tool-views/tool-metadata';
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
@@ -49,9 +48,6 @@ export function ToolsView({
   onFileClick,
   onPromptFill,
 }: ToolsViewProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
   const toolName = useMemo(() => {
     if (!toolCall || !toolCall.function_name) return null;
     return toolCall.function_name.replace(/_/g, '-');
@@ -87,7 +83,7 @@ export function ToolsView({
               <Icon
                 as={Computer}
                 size={32}
-                color={isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)'}
+                className="text-primary opacity-50"
                 strokeWidth={1.5}
               />
             </View>
@@ -114,7 +110,7 @@ export function ToolsView({
               <Icon
                 as={CircleDashed}
                 size={32}
-                color={isDark ? '#60a5fa' : '#3b82f6'}
+                className="text-primary"
                 strokeWidth={1.5}
               />
             </View>
