@@ -968,6 +968,8 @@ async def optimistic_agent_start(
         await _check_billing_and_limits(client, account_id, resolved_model, check_project_limit=True, check_thread_limit=True)
         logger.debug(f"⏱️ [TIMING] Optimistic billing check: {(time.time() - t_billing) * 1000:.1f}ms")
         
+        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
+        
         from core.thread_init_service import create_thread_optimistically
         
         result = await create_thread_optimistically(
