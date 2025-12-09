@@ -116,30 +116,22 @@ export function WorkerConfigPage({ workerId }: WorkerConfigPageProps) {
         </ScrollView>
       </View>
 
-      {/* Content */}
-      {isLoading || !agent ? (
-        <View className="flex-1 items-center justify-center p-8">
-          <Loading title="Loading worker..." />
-        </View>
-      ) : activeView === 'instructions' ? (
-        <View className="flex-1" style={{ padding: 16 }}>
+      <View className="flex-1" style={{ padding: 16 }}>
+        {/* Content */}
+        {isLoading || !agent ? (
+          <View className="flex-1 items-center justify-center p-8">
+            <Loading title="Loading worker..." />
+          </View>
+        ) : activeView === 'instructions' ? (
           <InstructionsScreen agentId={workerId} onUpdate={() => {}} />
-        </View>
-      ) : activeView === 'tools' ? (
-        <View className="flex-1" style={{ padding: 16 }}>
+        ) : activeView === 'tools' ? (
           <ToolsScreen agentId={workerId} onUpdate={() => {}} />
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-          showsVerticalScrollIndicator={false}
-          className="flex-1">
-          {activeView === 'integrations' && (
-            <IntegrationsScreen agentId={workerId} onUpdate={() => {}} />
-          )}
-          {activeView === 'triggers' && <TriggersScreen agentId={workerId} onUpdate={() => {}} />}
-        </ScrollView>
-      )}
+        ) : activeView === 'integrations' ? (
+          <IntegrationsScreen agentId={workerId} onUpdate={() => {}} />
+        ) : (
+          <TriggersScreen agentId={workerId} onUpdate={() => {}} />
+        )}
+      </View>
     </View>
   );
 }
