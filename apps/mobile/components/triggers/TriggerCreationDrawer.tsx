@@ -164,9 +164,17 @@ export function TriggerCreationDrawer({
         : 'schedule'
       : null
   );
-  const [eventStep, setEventStep] = useState<EventTriggerStep>(
-    isEditMode && existingTrigger?.provider_id === 'composio' ? 'config' : 'apps'
-  );
+  const [eventStep, setEventStep] = useState<EventTriggerStep>(() => {
+    if (isEditMode && existingTrigger) {
+      const isEventTrigger =
+        existingTrigger.provider_id === 'composio' ||
+        existingTrigger.provider_id === 'event' ||
+        existingTrigger.trigger_type === 'event';
+      // In edit mode, event triggers should go directly to config step
+      return isEventTrigger ? 'config' : 'apps';
+    }
+    return 'apps';
+  });
 
   // Schedule trigger state
   const [triggerName, setTriggerName] = useState('');
@@ -215,7 +223,19 @@ export function TriggerCreationDrawer({
     refetch: refetchProfiles,
   } = useComposioProfiles();
 
-  const snapPoints = useMemo(() => ['95%'], []);
+  // Use dynamic sizing for initial type selection to fit content, fixed height for other steps
+  // In edit mode, always use fixed height since we start at config step
+  const shouldUseDynamicSizing = !isEditMode && currentStep === 'type' && !selectedType;
+
+  const snapPoints = useMemo(() => {
+    // When using dynamic sizing, snapPoints are ignored, but we still need to provide them
+    // For the initial type selection step (create mode only), dynamic sizing will fit content
+    if (shouldUseDynamicSizing) {
+      return ['50%']; // Fallback, but dynamic sizing will override
+    }
+    // For edit mode or other steps, use a larger height
+    return ['90%'];
+  }, [shouldUseDynamicSizing, isEditMode]);
 
   // Initialize form from existing trigger in edit mode
   useEffect(() => {
@@ -232,6 +252,7 @@ export function TriggerCreationDrawer({
       if (isComposioTrigger) {
         setSelectedType('event');
         setCurrentStep('config');
+        setEventStep('config'); // Event triggers should go directly to config step in edit mode
       } else {
         setSelectedType('schedule');
         setCurrentStep('config');
@@ -335,7 +356,13 @@ export function TriggerCreationDrawer({
             : 'schedule'
           : null
       );
-      setEventStep(isEditMode && existingTrigger?.provider_id === 'composio' ? 'config' : 'apps');
+      const isEventTrigger =
+        isEditMode &&
+        existingTrigger &&
+        (existingTrigger.provider_id === 'composio' ||
+          existingTrigger.provider_id === 'event' ||
+          existingTrigger.trigger_type === 'event');
+      setEventStep(isEventTrigger ? 'config' : 'apps');
       if (!isEditMode) {
         setTriggerName('');
         setDescription('');
@@ -711,7 +738,7 @@ export function TriggerCreationDrawer({
         marginTop: 8,
         marginBottom: 0,
       }}
-      enableDynamicSizing={false}
+      enableDynamicSizing={shouldUseDynamicSizing}
       style={{
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,

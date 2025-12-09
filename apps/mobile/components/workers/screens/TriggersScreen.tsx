@@ -9,21 +9,8 @@ import { View, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import {
-  Zap,
-  Plus,
-  Play,
-  Pause,
-  Settings,
-  Trash2,
-  Clock,
-  Link2,
-} from 'lucide-react-native';
-import {
-  useAgentTriggers,
-  useDeleteTrigger,
-  useToggleTrigger,
-} from '@/lib/triggers';
+import { Zap, Plus, Play, Pause, Settings, Trash2, Clock, Link2 } from 'lucide-react-native';
+import { useAgentTriggers, useDeleteTrigger, useToggleTrigger } from '@/lib/triggers';
 import { TriggerCreationDrawer } from '@/components/triggers/TriggerCreationDrawer';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -41,9 +28,18 @@ interface TriggerCardProps {
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  isToggling?: boolean;
+  isDeleting?: boolean;
 }
 
-function TriggerCard({ trigger, onToggle, onEdit, onDelete }: TriggerCardProps) {
+function TriggerCard({
+  trigger,
+  onToggle,
+  onEdit,
+  onDelete,
+  isToggling = false,
+  isDeleting = false,
+}: TriggerCardProps) {
   const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
 
@@ -60,23 +56,30 @@ function TriggerCard({ trigger, onToggle, onEdit, onDelete }: TriggerCardProps) 
   };
 
   const isSchedule = trigger.provider_id === 'schedule' || trigger.trigger_type === 'schedule';
+  const isLoading = isToggling || isDeleting;
 
   return (
     <AnimatedPressable
-      style={animatedStyle}
+      style={[animatedStyle, { opacity: isLoading ? 0.6 : 1 }]}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       className="mb-3 rounded-2xl border border-border bg-card p-4">
+      {isLoading && (
+        <View
+          className="absolute inset-0 z-10 items-center justify-center rounded-2xl"
+          style={{
+            backgroundColor:
+              colorScheme === 'dark' ? 'rgba(24, 24, 27, 0.8)' : 'rgba(255, 255, 255, 0.8)',
+          }}>
+          <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        </View>
+      )}
       <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center gap-3 flex-1">
-          <View className="h-12 w-12 items-center justify-center rounded-xl bg-card border border-border/50">
-            <Icon
-              as={isSchedule ? Clock : Link2}
-              size={20}
-              className="text-foreground"
-            />
+        <View className="flex-1 flex-row items-center gap-3">
+          <View className="h-12 w-12 items-center justify-center rounded-xl border border-border/50 bg-card">
+            <Icon as={isSchedule ? Clock : Link2} size={20} className="text-foreground" />
           </View>
-          <View className="flex-1 min-w-0">
+          <View className="min-w-0 flex-1">
             <Text className="mb-1 font-roobert-medium text-base text-foreground" numberOfLines={1}>
               {trigger.name}
             </Text>
@@ -86,27 +89,47 @@ function TriggerCard({ trigger, onToggle, onEdit, onDelete }: TriggerCardProps) 
           </View>
         </View>
 
-        <View className="flex-row items-center gap-2 ml-4">
+        <View className="ml-4 flex-row items-center gap-2">
           <Pressable
             onPress={onToggle}
-            className="h-10 w-10 items-center justify-center rounded-xl bg-primary active:opacity-80">
-            <Icon
-              as={trigger.is_active ? Pause : Play}
-              size={18}
-              className="text-primary-foreground"
-            />
+            disabled={isLoading}
+            className="h-10 w-10 items-center justify-center rounded-xl bg-primary active:opacity-80"
+            style={{ opacity: isLoading ? 0.5 : 1 }}>
+            {isToggling ? (
+              <ActivityIndicator
+                size="small"
+                color={colorScheme === 'dark' ? '#FFFFFF' : '#FFFFFF'}
+              />
+            ) : (
+              <Icon
+                as={trigger.is_active ? Pause : Play}
+                size={18}
+                className="text-primary-foreground"
+              />
+            )}
           </Pressable>
 
           <Pressable
             onPress={onEdit}
-            className="h-10 w-10 items-center justify-center rounded-xl border border-border bg-card active:opacity-80">
+            disabled={isLoading}
+            className="h-10 w-10 items-center justify-center rounded-xl border border-border bg-card active:opacity-80"
+            style={{ opacity: isLoading ? 0.5 : 1 }}>
             <Icon as={Settings} size={18} className="text-foreground" />
           </Pressable>
 
           <Pressable
             onPress={onDelete}
-            className="h-10 w-10 items-center justify-center rounded-xl border border-border bg-card active:opacity-80">
-            <Icon as={Trash2} size={18} className="text-muted-foreground" />
+            disabled={isLoading}
+            className="h-10 w-10 items-center justify-center rounded-xl border border-border bg-card active:opacity-80"
+            style={{ opacity: isLoading ? 0.5 : 1 }}>
+            {isDeleting ? (
+              <ActivityIndicator
+                size="small"
+                color={colorScheme === 'dark' ? '#EF4444' : '#DC2626'}
+              />
+            ) : (
+              <Icon as={Trash2} size={18} className="text-muted-foreground" />
+            )}
           </Pressable>
         </View>
       </View>
@@ -123,6 +146,8 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
   const [isCreateDrawerVisible, setIsCreateDrawerVisible] = useState(false);
   const [editingTrigger, setEditingTrigger] = useState<TriggerConfiguration | null>(null);
   const [deleteDialogTrigger, setDeleteDialogTrigger] = useState<TriggerConfiguration | null>(null);
+  const [togglingTriggerId, setTogglingTriggerId] = useState<string | null>(null);
+  const [deletingTriggerId, setDeletingTriggerId] = useState<string | null>(null);
 
   const runningTriggers = useMemo(
     () => triggers.filter((trigger) => trigger.is_active),
@@ -135,6 +160,7 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
   );
 
   const handleToggleTrigger = async (trigger: TriggerConfiguration) => {
+    setTogglingTriggerId(trigger.trigger_id);
     try {
       await toggleTriggerMutation.mutateAsync({
         triggerId: trigger.trigger_id,
@@ -146,6 +172,8 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Failed to toggle trigger');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setTogglingTriggerId(null);
     }
   };
 
@@ -172,6 +200,7 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
   };
 
   const confirmDelete = async (trigger: TriggerConfiguration) => {
+    setDeletingTriggerId(trigger.trigger_id);
     try {
       await deleteTriggerMutation.mutateAsync({
         triggerId: trigger.trigger_id,
@@ -185,6 +214,7 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setDeleteDialogTrigger(null);
+      setDeletingTriggerId(null);
     }
   };
 
@@ -208,20 +238,16 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
     return (
       <View className="items-center justify-center py-12">
         <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
-        <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-          Loading triggers...
-        </Text>
+        <Text className="mt-4 font-roobert text-sm text-muted-foreground">Loading triggers...</Text>
       </View>
     );
   }
 
   return (
     <View className="space-y-4">
-      <View className="flex-row items-center justify-between">
-        <View>
-          <Text className="mb-2 font-roobert-semibold text-base text-foreground">
-            Triggers
-          </Text>
+      <View className="mb-6 flex-row items-center justify-between">
+        <View className="flex-1 pr-3">
+          <Text className="mb-2 font-roobert-semibold text-base text-foreground">Triggers</Text>
           <Text className="font-roobert text-sm text-muted-foreground">
             Automate your worker with scheduled or event-based triggers
           </Text>
@@ -232,7 +258,7 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
             setIsCreateDrawerVisible(true);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }}
-          className="h-10 w-10 items-center justify-center rounded-xl bg-primary active:opacity-80">
+          className="h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary active:opacity-80">
           <Icon as={Plus} size={20} className="text-primary-foreground" />
         </Pressable>
       </View>
@@ -273,6 +299,8 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
                     onToggle={() => handleToggleTrigger(trigger)}
                     onEdit={() => handleEditTrigger(trigger)}
                     onDelete={() => handleDeleteClick(trigger)}
+                    isToggling={togglingTriggerId === trigger.trigger_id}
+                    isDeleting={deletingTriggerId === trigger.trigger_id}
                   />
                 ))}
               </View>
@@ -291,6 +319,8 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
                     onToggle={() => handleToggleTrigger(trigger)}
                     onEdit={() => handleEditTrigger(trigger)}
                     onDelete={() => handleDeleteClick(trigger)}
+                    isToggling={togglingTriggerId === trigger.trigger_id}
+                    isDeleting={deletingTriggerId === trigger.trigger_id}
                   />
                 ))}
               </View>
@@ -315,4 +345,3 @@ export function TriggersScreen({ agentId, onUpdate }: TriggersScreenProps) {
     </View>
   );
 }
-
