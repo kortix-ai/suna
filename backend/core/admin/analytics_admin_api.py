@@ -714,13 +714,13 @@ async def get_message_distribution(
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
-        # Single query - user_message_count is now a column on threads table
-        threads_result = await client.from_('threads').select(
-            'user_message_count'
-        ).gte('created_at', start_of_day).lte('created_at', end_of_day).limit(50000).execute()
-        threads = threads_result.data or []
+        # Use database function for efficient GROUP BY aggregation (bypasses row limits)
+        result = await client.rpc('get_thread_message_distribution', {
+            'start_date': start_of_day,
+            'end_date': end_of_day
+        }).execute()
         
-        if not threads:
+        if not result.data or len(result.data) == 0:
             return {
                 "distribution": {
                     "0_messages": 0,
@@ -731,29 +731,18 @@ async def get_message_distribution(
                 "total_threads": 0
             }
         
-        # Calculate distribution from the column values
+        # Extract the aggregated results from the database function
+        data = result.data[0]
         distribution = {
-            "0_messages": 0,
-            "1_message": 0,
-            "2_3_messages": 0,
-            "5_plus_messages": 0
+            "0_messages": data.get('zero_messages', 0),
+            "1_message": data.get('one_message', 0),
+            "2_3_messages": data.get('two_three_messages', 0),
+            "5_plus_messages": data.get('five_plus_messages', 0)
         }
-        
-        for thread in threads:
-            count = thread.get('user_message_count') or 0
-            if count == 0:
-                distribution["0_messages"] += 1
-            elif count == 1:
-                distribution["1_message"] += 1
-            elif count <= 3:
-                distribution["2_3_messages"] += 1
-            elif count >= 5:
-                distribution["5_plus_messages"] += 1
-            # count == 4 is intentionally not categorized
         
         return {
             "distribution": distribution,
-            "total_threads": len(threads)
+            "total_threads": data.get('total_threads', 0)
         }
         
     except Exception as e:
@@ -784,31 +773,31 @@ async def get_category_distribution(
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
-        # Query projects created on the selected day
-        projects_result = await client.from_('projects').select(
-            'category'
-        ).gte('created_at', start_of_day).lte('created_at', end_of_day).limit(50000).execute()
-        projects = projects_result.data or []
+        # Use database function for efficient GROUP BY aggregation (bypasses row limits)
+        result = await client.rpc('get_project_category_distribution', {
+            'start_date': start_of_day,
+            'end_date': end_of_day
+        }).execute()
         
-        if not projects:
+        if not result.data:
             return {
                 "distribution": {},
                 "total_projects": 0,
                 "date": date or selected_date.strftime("%Y-%m-%d")
             }
         
-        # Calculate distribution
+        # Build distribution from aggregated results
         distribution = {}
-        for project in projects:
-            category = project.get('category') or 'Uncategorized'
-            distribution[category] = distribution.get(category, 0) + 1
-        
-        # Sort by count descending
-        sorted_distribution = dict(sorted(distribution.items(), key=lambda x: x[1], reverse=True))
+        total_projects = 0
+        for row in result.data:
+            category = row.get('category', 'Uncategorized')
+            count = row.get('count', 0)
+            distribution[category] = count
+            total_projects += count
         
         return {
-            "distribution": sorted_distribution,
-            "total_projects": len(projects),
+            "distribution": distribution,
+            "total_projects": total_projects,
             "date": date or selected_date.strftime("%Y-%m-%d")
         }
         
