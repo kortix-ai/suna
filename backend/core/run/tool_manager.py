@@ -62,10 +62,6 @@ class ToolManager:
                 self._register_agent_builder_tools(agent_id, disabled_tools)
                 timings['agent_builder_tools'] = (time.time() - t) * 1000
             
-            t = time.time()
-            self._register_browser_tool(disabled_tools)
-            timings['browser_tool'] = (time.time() - t) * 1000
-            
             if self.account_id:
                 t = time.time()
                 self._register_suna_specific_tools(disabled_tools)
@@ -88,7 +84,29 @@ class ToolManager:
             enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
             self.thread_manager.add_tool(SandboxWebSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
         
-        core_sandbox_tools = ['sb_shell_tool', 'sb_git_sync', 'sb_files_tool']
+        if config.SERPER_API_KEY:
+            enabled_methods = self._get_enabled_methods_for_tool('image_search_tool')
+            self.thread_manager.add_tool(SandboxImageSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
+        
+        from core.tools.browser_tool import BrowserTool
+        enabled_methods = self._get_enabled_methods_for_tool('browser_tool')
+        self.thread_manager.add_tool(
+            BrowserTool, 
+            function_names=enabled_methods, 
+            project_id=self.project_id, 
+            thread_id=self.thread_id, 
+            thread_manager=self.thread_manager
+        )
+        
+        core_sandbox_tools = [
+            'sb_shell_tool', 
+            'sb_git_sync', 
+            'sb_files_tool',
+            'sb_vision_tool',
+            'sb_image_edit_tool',
+            'sb_upload_file_tool',
+            'sb_expose_tool'
+        ]
         tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
         
         for tool_name in core_sandbox_tools:
@@ -110,12 +128,17 @@ class ToolManager:
                     logger.warning(f"❌ Failed to load core tool {tool_name} ({class_name}): {e}")
     
     def _register_sandbox_tools(self, disabled_tools: List[str]):
-        core_tools_already_loaded = ['sb_shell_tool', 'sb_git_sync', 'sb_files_tool', 'web_search_tool']
-        
-        if config.SERPER_API_KEY:
-            if 'image_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('image_search_tool')
-                self.thread_manager.add_tool(SandboxImageSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
+        core_tools_already_loaded = [
+            'sb_shell_tool', 
+            'sb_git_sync', 
+            'sb_files_tool', 
+            'web_search_tool',
+            'image_search_tool',
+            'sb_vision_tool',
+            'sb_image_edit_tool',
+            'sb_upload_file_tool',
+            'sb_expose_tool'
+        ]
         
         from core.tools.tool_registry import SANDBOX_TOOLS, get_tool_class
         
