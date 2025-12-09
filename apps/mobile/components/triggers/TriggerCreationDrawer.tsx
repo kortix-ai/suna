@@ -26,6 +26,7 @@ import {
   Info,
 } from 'lucide-react-native';
 import { useAgent } from '@/contexts/AgentContext';
+import { extractErrorMessage } from '@/lib/utils/error-handler';
 import {
   useCreateTrigger,
   useUpdateTrigger,
@@ -566,7 +567,12 @@ export function TriggerCreationDrawer({
       } catch (error: any) {
         console.error('❌ Error updating trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', error?.message || 'Failed to update trigger. Please try again.');
+
+        // Extract user-friendly error message using utility function
+        const errorMessage =
+          extractErrorMessage(error) || 'Failed to update trigger. Please try again.';
+
+        Alert.alert('Error Updating Trigger', errorMessage);
       }
       return;
     }
@@ -633,7 +639,12 @@ export function TriggerCreationDrawer({
       } catch (error: any) {
         console.error('❌ Error creating event trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', error?.message || 'Failed to create event trigger. Please try again.');
+
+        // Extract user-friendly error message using utility function
+        const errorMessage =
+          extractErrorMessage(error) || 'Failed to create event trigger. Please try again.';
+
+        Alert.alert('Error Creating Trigger', errorMessage);
       }
     } else {
       if (!triggerName.trim()) {
@@ -691,7 +702,12 @@ export function TriggerCreationDrawer({
       } catch (error: any) {
         console.error('❌ Error creating trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Alert.alert('Error', error?.message || 'Failed to create trigger. Please try again.');
+
+        // Extract user-friendly error message using utility function
+        const errorMessage =
+          extractErrorMessage(error) || 'Failed to create trigger. Please try again.';
+
+        Alert.alert('Error Creating Trigger', errorMessage);
       }
     }
   };

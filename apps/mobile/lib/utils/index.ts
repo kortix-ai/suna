@@ -1,6 +1,6 @@
 /**
  * Utility Functions
- * 
+ *
  * General-purpose utility functions and helpers
  */
 
@@ -30,6 +30,7 @@ export * from './tool-data-extractor';
 export * from './thread-utils';
 export * from './trigger-utils';
 export * from './model-provider';
+export * from './error-handler';
 
 // Type definitions
 export * from './auth-types';

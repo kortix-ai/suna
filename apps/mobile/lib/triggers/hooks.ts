@@ -404,7 +404,10 @@ const createComposioEventTrigger = async ({
     try {
       const errorData = await response.json();
       // Handle different error response formats (matching frontend error handling)
-      if (errorData.message) {
+      // Check for nested error structure: { error: { message: ... } }
+      if (errorData.error?.message) {
+        errorMessage = errorData.error.message;
+      } else if (errorData.message) {
         errorMessage = errorData.message;
       } else if (errorData.detail) {
         // detail can be a string or an object
@@ -413,13 +416,16 @@ const createComposioEventTrigger = async ({
         } else if (errorData.detail.message) {
           errorMessage = errorData.detail.message;
         } else {
-          // If detail is an object without message, stringify it
-          errorMessage = JSON.stringify(errorData.detail);
+          // If detail is an object without message, try to extract meaningful info
+          errorMessage = errorData.detail.message || JSON.stringify(errorData.detail);
         }
       }
-    } catch {
+    } catch (parseError) {
       // If JSON parsing fails, use default error message
+      console.error('Failed to parse error response:', parseError);
     }
+
+    // Create error with clean message (not JSON stringified)
     throw new Error(errorMessage);
   }
 
