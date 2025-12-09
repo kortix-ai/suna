@@ -69,7 +69,8 @@
         "appleTeamId": "T8G9J33433"
       },
       "android": {
-        "track": "internal"
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     },
     "testflight": {
@@ -77,6 +78,10 @@
         "appleId": "mkprivat2005@gmail.com",
         "ascAppId": "6754448524",
         "appleTeamId": "T8G9J33433"
+      },
+      "android": {
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }
