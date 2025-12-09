@@ -1482,7 +1482,9 @@ class ResponseProcessor:
                 try:
                     # Check if the last assistant message has tool_calls
                     message_content = last_assistant_message_object.get('content', {})
-                    tool_calls = message_content.get('tool_calls', []) if isinstance(message_content, dict) else []
+                    tool_calls = (message_content.get('tool_calls') or []) if isinstance(message_content, dict) else []
+                    if not isinstance(tool_calls, list):
+                        tool_calls = []
                     
                     if tool_calls:
                         # Check if tool results were saved for these tool calls

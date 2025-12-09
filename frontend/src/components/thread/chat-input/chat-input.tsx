@@ -124,7 +124,20 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
     setValue(e.target.value);
   }, []);
 
+  // Detect if we're on a mobile device
+  const isMobile = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || 
+           (window.innerWidth <= 768 && 'ontouchstart' in window);
+  }, []);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // On mobile, allow Enter to create a new line instead of submitting
+    if (isMobile && e.key === 'Enter' && !e.shiftKey) {
+      // Allow default behavior (new line) on mobile
+      return;
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       const hasContent = value.trim().length > 0;
@@ -137,7 +150,7 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
         onSubmit();
       }
     }
-  }, [value, hasFiles, loading, disabled, isAgentRunning, isUploading, onSubmit]);
+  }, [value, hasFiles, loading, disabled, isAgentRunning, isUploading, onSubmit, isMobile]);
 
   // Expose methods to clear/set value from parent
   useEffect(() => {
@@ -160,7 +173,9 @@ const IsolatedTextarea = memo(forwardRef<HTMLTextAreaElement, IsolatedTextareaPr
         onPaste={onPaste}
         placeholder={placeholder}
         className={cn(
-          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
+          'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[100px] sm:min-h-[72px] max-h-[200px] overflow-y-auto resize-none rounded-[24px]',
+          // Use 16px on mobile to prevent zoom, 15px on desktop
+          isMobile ? '!text-[16px]' : '!text-[15px]',
           isDraggingOver ? 'opacity-40' : '',
         )}
         disabled={disabled && !isAgentRunning}
@@ -377,7 +392,7 @@ const ModeButton = memo(function ModeButton({
   );
 });
 
-// Suna agent modes switcher - isolated from typing state
+// Kortix agent modes switcher - isolated from typing state
 interface SunaAgentModeSwitcherProps {
   enabled: boolean;
   isSunaAgent: boolean;
@@ -691,7 +706,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
     const [mounted, setMounted] = useState(false);
     const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
-    const [isModeDismissing, setIsModeDismissing] = useState(false);    // Suna Agent Modes feature flag
+    const [isModeDismissing, setIsModeDismissing] = useState(false);    // Kortix Agent Modes feature flag
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
@@ -822,12 +837,12 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({}, { enabled: isLoggedIn });
     const agents = agentsResponse?.agents || [];
 
-    // Check if selected agent is Suna based on agent data
-    // While loading, default to Suna (assume Suna is the default agent)
+    // Check if selected agent is Kortix based on agent data
+    // While loading, default to Kortix (assume Kortix is the default agent)
     const selectedAgent = agents.find(agent => agent.agent_id === selectedAgentId);
     const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
     const isSunaAgent = isLoadingAgents 
-        ? true // Show Suna modes while loading
+        ? true // Show Kortix modes while loading
         : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
 
     const { initializeFromAgents } = useAgentSelection();

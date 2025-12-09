@@ -1,8 +1,9 @@
 'use client';
 
-import { Mail, Clock, Shield, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { Mail, Clock, Shield, ChevronDown, UserX } from 'lucide-react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile } from '@/hooks/utils';
 import { Button } from '@/components/ui/button';
@@ -40,8 +41,20 @@ const FAQItem = ({ question, answer }: { question: string; answer: React.ReactNo
   );
 };
 
-export default function SupportPage() {
+function SupportPageContent() {
   const isMobile = useIsMobile();
+  const searchParams = useSearchParams();
+  const accountDeleteRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const section = searchParams.get('section');
+    if (section === 'account-delete' && accountDeleteRef.current) {
+      // Small delay to ensure the page has rendered
+      setTimeout(() => {
+        accountDeleteRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [searchParams]);
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen w-full">
@@ -240,6 +253,76 @@ export default function SupportPage() {
           </div>
         </section>
 
+        <section ref={accountDeleteRef} id="account-delete" className="flex flex-col items-center justify-center w-full relative">
+          <div className="relative w-full px-6">
+            <div className="max-w-6xl mx-auto border-l border-r border-border">
+              <SectionHeader>
+                <h2 className="text-2xl md:text-3xl font-medium tracking-tighter text-center text-balance pb-1">
+                  Account Deletion
+                </h2>
+                <p className="text-sm text-muted-foreground text-center text-balance font-medium">
+                  How to permanently delete your account
+                </p>
+              </SectionHeader>
+
+              <div className="border-t border-border">
+                <div className="p-8 space-y-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <UserX className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="space-y-4 flex-1">
+                      <div>
+                        <h3 className="text-lg font-semibold mb-2">Delete Your Account</h3>
+                        <p className="text-muted-foreground text-sm leading-relaxed">
+                          If you'd like to permanently delete your account, you have two options:
+                        </p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="p-4 rounded-lg border bg-accent/5">
+                          <h4 className="font-medium mb-2 text-sm">Option 1: Contact Support</h4>
+                          <p className="text-muted-foreground text-sm mb-3">
+                            You can request account deletion by contacting our support team. Simply email us at{' '}
+                            <a href="mailto:support@kortix.com" className="text-primary hover:underline font-medium">
+                              support@kortix.com
+                            </a>
+                            {' '}with your account deletion request, and we'll process it for you.
+                          </p>
+                        </div>
+
+                        <div className="p-4 rounded-lg border bg-accent/5">
+                          <h4 className="font-medium mb-2 text-sm">Option 2: Self-Delete (When Logged In)</h4>
+                          <p className="text-muted-foreground text-sm mb-3">
+                            If you're logged into your account, you can delete it yourself through your user settings:
+                          </p>
+                          <ol className="text-muted-foreground text-sm space-y-2 ml-4 list-decimal">
+                            <li>Click on your user avatar/profile picture in the top-right corner of the screen</li>
+                            <li>Select <strong className="text-foreground">Settings</strong> from the dropdown menu</li>
+                            <li>Scroll down to the <strong className="text-foreground">Delete Account</strong> section</li>
+                            <li>Click the <strong className="text-foreground">Delete Account</strong> button</li>
+                            <li>Choose your deletion type:
+                              <ul className="ml-4 mt-1 space-y-1 list-disc">
+                                <li><strong className="text-foreground">30-Day Grace Period:</strong> Your account will be scheduled for deletion in 30 days. You can cancel this request anytime within the grace period.</li>
+                                <li><strong className="text-foreground">Immediate Deletion:</strong> Your account and all data will be permanently deleted immediately. This action cannot be undone.</li>
+                              </ul>
+                            </li>
+                            <li>Type <strong className="text-foreground">delete</strong> in the confirmation field</li>
+                            <li>Click the final <strong className="text-foreground">Delete Account</strong> button to confirm</li>
+                          </ol>
+                          <p className="text-muted-foreground text-xs mt-3 italic">
+                            Note: When you delete your account, all your agents, threads, credentials, subscriptions, and billing data will be permanently removed. This action cannot be undone after the grace period expires (if you chose the 30-day option) or immediately (if you chose immediate deletion).
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="flex flex-col items-center justify-center w-full relative">
           <div className="relative w-full px-6">
             <div className="max-w-6xl mx-auto border-l border-r border-border">
@@ -332,5 +415,21 @@ export default function SupportPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+export default function SupportPage() {
+  return (
+    <Suspense fallback={
+      <main className="flex flex-col items-center justify-center min-h-screen w-full">
+        <div className="w-full">
+          <div className="flex flex-col items-center justify-center min-h-screen">
+            <div className="text-muted-foreground">Loading...</div>
+          </div>
+        </div>
+      </main>
+    }>
+      <SupportPageContent />
+    </Suspense>
   );
 }

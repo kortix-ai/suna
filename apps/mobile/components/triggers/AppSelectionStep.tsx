@@ -166,7 +166,7 @@ export function AppSelectionStep({
   return (
     <View className="space-y-6">
       {/* Search Bar */}
-      <View>
+      <View className="mb-4">
         <SearchBar
           value={searchQuery}
           onChangeText={onSearchChange}

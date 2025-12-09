@@ -114,7 +114,7 @@ def migrate_assistant_message(message: Dict[str, Any]) -> Dict[str, Any]:
     
     # 2. Extract native tool calls (for newer messages that might have native format)
     native_tool_calls = content.get('tool_calls') if isinstance(content, dict) else None
-    if native_tool_calls:
+    if native_tool_calls and isinstance(native_tool_calls, list):
         for idx, tc in enumerate(native_tool_calls):
             if isinstance(tc, dict):
                 # Use existing ID if available
@@ -333,7 +333,9 @@ def migrate_tool_message(message: Dict[str, Any], assistant_messages: Optional[L
         assistant_msg = next((m for m in assistant_messages if m.get('message_id') == assistant_message_id), None)
         if assistant_msg:
             assistant_metadata = safe_json_parse(assistant_msg.get('metadata', '{}'), {})
-            tool_calls = assistant_metadata.get('tool_calls', [])
+            tool_calls = assistant_metadata.get('tool_calls') or []
+            if not isinstance(tool_calls, list):
+                tool_calls = []
             
             # If we don't have tool_call_id yet, try to match by function name
             if not metadata.get('tool_call_id') and function_name and function_name != 'unknown':
@@ -388,7 +390,9 @@ def migrate_tool_message(message: Dict[str, Any], assistant_messages: Optional[L
             assistant_msg = next((m for m in assistant_messages if m.get('message_id') == assistant_message_id), None)
             if assistant_msg:
                 assistant_metadata = safe_json_parse(assistant_msg.get('metadata', '{}'), {})
-                tool_calls = assistant_metadata.get('tool_calls', [])
+                tool_calls = assistant_metadata.get('tool_calls') or []
+                if not isinstance(tool_calls, list):
+                    tool_calls = []
                 # Find index of matching tool call
                 for idx, tc in enumerate(tool_calls):
                     if tc.get('function_name') == function_name or (xml_tag_name and tc.get('xml_tag_name') == xml_tag_name):

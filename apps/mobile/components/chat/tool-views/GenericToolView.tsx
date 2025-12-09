@@ -4,8 +4,8 @@
  * Default fallback view for tools without specialized renderers
  */
 
-import React from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Clock, Wrench } from 'lucide-react-native';
@@ -44,11 +44,11 @@ export function GenericToolView({
           title: 'Tool View Error',
           isSuccess: false,
           isStreaming: false,
-        }}
-      >
+        }}>
         <View className="p-4">
           <Text className="text-sm text-primary opacity-50">
-            This tool view requires structured metadata. Please update the component to use toolCall and toolResult props.
+            This tool view requires structured metadata. Please update the component to use toolCall
+            and toolResult props.
           </Text>
         </View>
       </ToolViewCard>
@@ -80,24 +80,19 @@ export function GenericToolView({
         rightContent: (
           <View className="flex-row items-center gap-2">
             {!isStreaming && (
-              <StatusBadge
-                variant={actualIsSuccess ? 'success' : 'error'}
-                iconOnly={true}
-              />
+              <StatusBadge variant={actualIsSuccess ? 'success' : 'error'} iconOnly={true} />
             )}
             {isStreaming && <StatusBadge variant="streaming" iconOnly={true} />}
           </View>
         ),
       }}
       footer={
-        <View className="flex-row items-center justify-between w-full">
-          <View className="flex-row items-center gap-2 flex-1 min-w-0">
+        <View className="w-full flex-row items-center justify-between">
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
             {!isStreaming && (hasInput || hasOutput) && (
-              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+              <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2 py-0.5">
                 <Icon as={Wrench} size={12} className="text-primary" />
-                <Text className="text-xs font-roobert-medium text-primary">
-                  Tool
-                </Text>
+                <Text className="font-roobert-medium text-xs text-primary">Tool</Text>
               </View>
             )}
           </View>
@@ -112,10 +107,9 @@ export function GenericToolView({
             </Text>
           </View>
         </View>
-      }
-    >
+      }>
       {isStreaming ? (
-        <View className="flex-1 w-full">
+        <View className="w-full flex-1">
           <LoadingState
             icon={Wrench}
             iconColor="text-primary"
@@ -127,18 +121,17 @@ export function GenericToolView({
         </View>
       ) : hasInput || hasOutput ? (
         <ScrollView
-          className="flex-1 w-full"
+          className="w-full flex-1"
           showsVerticalScrollIndicator={true}
-          nestedScrollEnabled={true}
-        >
-          <View className="p-4 gap-4">
+          nestedScrollEnabled={true}>
+          <View className="gap-4 p-4">
             {hasInput && (
               <View className="gap-2">
-                <Text className="text-xs font-roobert-medium text-primary opacity-60 uppercase tracking-wider px-1">
+                <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
                   Input
                 </Text>
-                <View className="bg-card border border-border rounded-xl p-4">
-                  <Text className="text-xs font-roobert-mono text-primary leading-5" selectable>
+                <View className="rounded-xl border border-border bg-card p-4">
+                  <Text className="font-roobert-mono text-xs leading-5 text-primary" selectable>
                     {formatContent(toolCall.arguments)}
                   </Text>
                 </View>
@@ -147,11 +140,11 @@ export function GenericToolView({
 
             {hasOutput && (
               <View className="gap-2">
-                <Text className="text-xs font-roobert-medium text-primary opacity-60 uppercase tracking-wider px-1">
+                <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
                   Output
                 </Text>
-                <View className="bg-card border border-border rounded-xl p-4">
-                  <Text className="text-xs font-roobert-mono text-primary leading-5" selectable>
+                <View className="rounded-xl border border-border bg-card p-4">
+                  <Text className="font-roobert-mono text-xs leading-5 text-primary" selectable>
                     {formatContent(toolResult?.output)}
                   </Text>
                 </View>
@@ -160,14 +153,16 @@ export function GenericToolView({
           </View>
         </ScrollView>
       ) : (
-        <View className="flex-1 items-center justify-center py-12 px-6">
-          <View className="rounded-full items-center justify-center mb-6 bg-card" style={{ width: 80, height: 80 }}>
+        <View className="flex-1 items-center justify-center px-6 py-12">
+          <View
+            className="mb-6 items-center justify-center rounded-full bg-card"
+            style={{ width: 80, height: 80 }}>
             <Icon as={Wrench} size={40} className="text-primary opacity-50" />
           </View>
-          <Text className="text-xl font-roobert-semibold mb-2 text-primary">
+          <Text className="mb-2 font-roobert-semibold text-xl text-primary">
             No Content Available
           </Text>
-          <Text className="text-sm text-primary opacity-50 text-center max-w-md">
+          <Text className="max-w-md text-center text-sm text-primary opacity-50">
             This tool execution did not produce any input or output content to display.
           </Text>
         </View>

@@ -481,7 +481,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['configure-profile-for-agent', 'Adding tools to agent'],
 
 
-  ['create-new-agent', 'Creating New Agent'],
+  ['create-new-agent', 'Creating New Worker'],
   ['search-mcp-servers-for-agent', 'Searching MCP Servers'],
   ['create-credential-profile-for-agent', 'Creating Credential Profile'],
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],

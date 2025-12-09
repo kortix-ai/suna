@@ -252,7 +252,7 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
       toast.success('Agent made private');
       setSelectedAgent(null);
     } catch (error: any) {
-      toast.error('Failed to make agent private');
+      toast.error('Failed to make Worker private');
     } finally {
       setUnpublishingId(null);
     }
@@ -327,7 +327,7 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
                     </AlertDialogTrigger>
                     <AlertDialogContent className="max-w-md">
                       <AlertDialogHeader>
-                        <AlertDialogTitle className="text-xl">Delete Agent</AlertDialogTitle>
+                        <AlertDialogTitle className="text-xl">Delete Worker</AlertDialogTitle>
                         <AlertDialogDescription>
                           Are you sure you want to delete &quot;{agent.name}&quot;? This action cannot be undone.
                           {agent.is_public && (

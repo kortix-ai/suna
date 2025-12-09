@@ -21,6 +21,9 @@
         "simulator": false,
         "autoIncrement": true
       },
+      "android": {
+        "autoIncrement": true
+      },
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://heprlhlltebrxydgtsjs.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA",
@@ -35,6 +38,9 @@
       "ios": {
         "simulator": false,
         "distribution": "store",
+        "autoIncrement": true
+      },
+      "android": {
         "autoIncrement": true
       },
       "env": {

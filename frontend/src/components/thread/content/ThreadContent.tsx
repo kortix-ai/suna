@@ -99,7 +99,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
     sandboxId,
     project,
     isPreviewMode = false,
-    agentName = 'Suna',
+    agentName = 'Kortix',
     agentAvatar = <KortixLogo size={14} />,
     emptyStateComponent,
     threadMetadata,
@@ -165,7 +165,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
             };
         }
         return {
-            name: agentName || 'Suna',
+            name: agentName || 'Kortix',
             avatar: agentAvatar
         };
     }, [threadMetadata, displayMessages, agentName, agentAvatar]);
@@ -256,7 +256,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                     onScroll={handleScroll}
                 >
                     <div ref={contentRef} className="mx-auto max-w-3xl min-w-0 w-full pl-6 pr-6">
-                        <div className="space-y-8 min-w-0">
+                        <div className="space-y-6 min-w-0">
                             {(() => {
 
                                 type MessageGroup = {
@@ -491,7 +491,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
 
                                                     {/* Message content - ALL messages in the group */}
                                                     <div className="flex max-w-[90%] break-words overflow-hidden">
-                                                        <div className="space-y-2 min-w-0 flex-1">
+                                                        <div className="space-y-1.5 min-w-0 flex-1">
                                                             {(() => {
                                                                 const toolResultsMap = new Map<string | null, UnifiedMessage[]>();
                                                                 group.messages.forEach(msg => {
@@ -541,7 +541,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         if (!renderedContent) return;
 
                                                                         elements.push(
-                                                                            <div key={msgKey} className={assistantMessageCount > 0 ? "mt-4" : ""}>
+                                                                            <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
                                                                                 <div className="break-words overflow-hidden">
                                                                                     {renderedContent}
                                                                                 </div>
@@ -557,7 +557,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
 
                                                             {/* Render streaming text content (XML tool calls or regular text) */}
                                                             {groupIndex === finalGroupedMessages.length - 1 && !readOnly && streamingTextContent && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                                                                <div className="mt-2">
+                                                                <div className="mt-1.5">
                                                                     {(() => {
                                                                         // Detect XML tags in streaming content
                                                                         let detectedTag: string | null = null;
@@ -606,10 +606,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         const textBeforeTag = detectedTag ? textToRender.substring(0, tagStartIndex) : textToRender;
                                                                         const isAskOrComplete = detectedTag === 'ask' || detectedTag === 'complete';
 
+                                                                        const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
                                                                         return (
                                                                             <>
                                                                                 {textBeforeTag && (
-                                                                                    <ComposioUrlDetector content={textBeforeTag} />
+                                                                                    <ComposioUrlDetector content={textBeforeTag} isStreaming={isCurrentlyStreaming} />
                                                                                 )}
 
                                                                                 {detectedTag && isAskOrComplete ? (
@@ -619,7 +620,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         const extractedText = extractTextFromStreamingAskComplete(streamingContent, detectedTag as 'ask' | 'complete');
                                                                                         return (
                                                                                             <ComposioUrlDetector 
-                                                                                                content={extractedText} 
+                                                                                                content={extractedText}
+                                                                                                isStreaming={isCurrentlyStreaming}
                                                                                             />
                                                                                         );
                                                                                     })()
@@ -640,7 +642,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
 
                                                             {/* For playback mode, show streaming text and tool calls */}
                                                             {readOnly && groupIndex === finalGroupedMessages.length - 1 && isStreamingText && (
-                                                                <div className="mt-2">
+                                                                <div className="mt-1.5">
                                                                     {(() => {
                                                                         let detectedTag: string | null = null;
                                                                         let tagStartIndex = -1;
@@ -692,10 +694,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         // For ask and complete, render as markdown directly (not as tool stream)
                                                                         const isAskOrComplete = detectedTag === 'ask' || detectedTag === 'complete';
 
+                                                                        const isCurrentlyStreaming = isStreamingText;
                                                                         return (
                                                                             <>
                                                                                 {textBeforeTag && (
-                                                                                            <ComposioUrlDetector content={textBeforeTag} />
+                                                                                            <ComposioUrlDetector content={textBeforeTag} isStreaming={isCurrentlyStreaming} />
                                                                                         )}
 
                                                                                         {detectedTag && isAskOrComplete ? (
@@ -705,7 +708,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                                 const extractedText = extractTextFromStreamingAskComplete(streamingContent, detectedTag as 'ask' | 'complete');
                                                                                                 return (
                                                                                                     <ComposioUrlDetector 
-                                                                                                        content={extractedText} 
+                                                                                                        content={extractedText}
+                                                                                                        isStreaming={isCurrentlyStreaming}
                                                                                                     />
                                                                                                 );
                                                                                             })()
@@ -777,10 +781,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                         const toolName = askOrCompleteTool.function_name?.replace(/_/g, '-').toLowerCase() || '';
                                                                         const textToShow = askCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
                                                                         
+                                                                        const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
                                                                         return (
-                                                                            <div className="mt-2">
+                                                                            <div className="mt-1.5">
                                                                                 <ComposioUrlDetector 
-                                                                                    content={textToShow} 
+                                                                                    content={textToShow}
+                                                                                    isStreaming={isCurrentlyStreaming}
                                                                                 />
                                                                             </div>
                                                                         );
@@ -798,8 +804,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                     }
                                                                     
                                                                     return (
-                                                                        <div className="mt-2">
-                                                                            <div className="my-1">
+                                                                        <div className="mt-1.5">
+                                                                            <div className="my-1.5">
                                                                                 {(() => {
                                                                                     // Extract tool call info from streamingToolCall metadata
                                                                                     if (toolCalls.length > 0) {
@@ -820,7 +826,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                         return (
                                                                                             <button
                                                                                                 onClick={() => handleToolClick(streamingToolCall.message_id || null, toolName)}
-                                                                                                className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                                                                                                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
                                                                                             >
                                                                                                 <AppIcon toolCall={firstToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
                                                                                                 <span className="font-mono text-xs text-foreground">
@@ -840,7 +846,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                                     return (
                                                                                         <button
                                                                                             onClick={() => handleToolClick(streamingToolCall.message_id || null, 'unknown')}
-                                                                                            className="inline-flex items-center gap-1.5 h-8 p-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
+                                                                                            className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
                                                                                         >
                                                                                             <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
                                                                                             <span className="font-mono text-xs text-foreground">Using Tool</span>
@@ -859,7 +865,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(function ThreadC
                                                                 !streamingTextContent && 
                                                                 !streamingToolCall &&
                                                                 (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                                                                <div className="mt-2">
+                                                                <div className="mt-1.5">
                                                                     <AgentLoader />
                                                                 </div>
                                                             )}

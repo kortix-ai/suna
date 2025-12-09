@@ -336,6 +336,7 @@ export default function RootLayout() {
                                   }}
                                 />
                                 <Stack.Screen name="trigger-detail" />
+                                <Stack.Screen name="worker-config" />
                               </Stack>
                             </AuthProtection>
                             <PortalHost />

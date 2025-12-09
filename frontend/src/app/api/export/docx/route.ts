@@ -470,10 +470,10 @@ ${preprocessedHtml}
       },
       title: fileName,
       subject: '',
-      creator: 'Suna',
+      creator: 'Kortix',
       keywords: ['document', 'export'],
-      description: `Document exported from Suna`,
-      lastModifiedBy: 'Suna',
+      description: `Document exported from Kortix`,
+      lastModifiedBy: 'Kortix',
       revision: 1,
       font: 'Calibri',
       fontSize: 22,  // 11pt in half-points

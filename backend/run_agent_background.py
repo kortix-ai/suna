@@ -282,51 +282,15 @@ async def send_failure_notification(client, thread_id: str, error_message: str):
 
 def create_redis_keys(agent_run_id: str, instance_id: str) -> Dict[str, str]:
     return {
-        # Redis Stream for persistence (reconnection/catch-up)
         'response_stream': f"agent_run:{agent_run_id}:stream",
-        # Pub/Sub channel for real-time push (lowest latency)
         'response_pubsub': f"agent_run:{agent_run_id}:pubsub",
-        # Control channels for STOP signals
         'instance_control_channel': f"agent_run:{agent_run_id}:control:{instance_id}",
         'global_control_channel': f"agent_run:{agent_run_id}:control",
         'instance_active': f"active_run:{instance_id}:{agent_run_id}"
     }
 
 
-async def create_stop_signal_checker(pubsub, agent_run_id: str, instance_id: str, instance_active_key: str, cancellation_event: asyncio.Event):
-    stop_signal_received = False
-    total_responses = 0
-    
-    async def check_for_stop_signal():
-        nonlocal stop_signal_received, total_responses
-        if not pubsub:
-            return
-        try:
-            while not stop_signal_received:
-                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.5)
-                if message and message.get("type") == "message":
-                    data = message.get("data")
-                    if isinstance(data, bytes):
-                        data = data.decode('utf-8')
-                    if data == "STOP":
-                        logger.debug(f"Received STOP signal for agent run {agent_run_id} (Instance: {instance_id})")
-                        stop_signal_received = True
-                        cancellation_event.set()
-                        break
-                
-                if total_responses % 50 == 0:
-                    try:
-                        await redis.expire(instance_active_key, redis.REDIS_KEY_TTL)
-                    except Exception as ttl_err:
-                        logger.warning(f"Failed to refresh TTL for {instance_active_key}: {ttl_err}")
-                await asyncio.sleep(0.1)
-        except asyncio.CancelledError:
-            logger.debug(f"Stop signal checker cancelled for {agent_run_id} (Instance: {instance_id})")
-        except Exception as e:
-            logger.error(f"Error in stop signal checker for {agent_run_id}: {e}", exc_info=True)
-    
-    return check_for_stop_signal, stop_signal_received
-
+MAX_PENDING_REDIS_OPS = 500
 
 async def process_agent_responses(
     agent_gen,
@@ -336,21 +300,13 @@ async def process_agent_responses(
     worker_start: float,
     stop_signal_checker_state: Dict[str, Any]
 ) -> Tuple[str, Optional[str], bool, int]:
-    """Process agent responses with minimum latency streaming.
-    
-    Hybrid approach for optimal performance:
-    - PUBLISH: Real-time push to consumers (lowest latency, no polling)
-    - XADD: Persistence for reconnection/catch-up (reliability)
-    
-    Consumers subscribe to pubsub for instant delivery, 
-    fall back to stream for missed messages on reconnect.
-    """
     final_status = "running"
     error_message = None
     first_response_logged = False
     complete_tool_called = False
     total_responses = 0
     pending_redis_operations = []
+    redis_streaming_enabled = True
     
     stream_key = redis_keys['response_stream']
     pubsub_channel = redis_keys['response_pubsub']
@@ -371,25 +327,38 @@ async def process_agent_responses(
 
         response_json = json.dumps(response)
         
-        pending_redis_operations.append(
-            asyncio.create_task(redis.publish(pubsub_channel, response_json))
-        )
-        pending_redis_operations.append(
-            asyncio.create_task(redis.xadd(
-                stream_key,
-                {'data': response_json},
-                maxlen=10000,
-                approximate=True
-            ))
-        )
+        if redis_streaming_enabled and redis.is_redis_healthy():
+            pending_redis_operations.append(
+                asyncio.create_task(redis.publish(pubsub_channel, response_json))
+            )
+            pending_redis_operations.append(
+                asyncio.create_task(redis.xadd(
+                    stream_key,
+                    {'data': response_json},
+                    maxlen=10000,
+                    approximate=True
+                ))
+            )
+        
         total_responses += 1
         stop_signal_checker_state['total_responses'] = total_responses
 
         if total_responses % 50 == 0:
-            try:
-                await redis.expire(stream_key, 3600)
-            except Exception:
-                pass
+            pending_redis_operations = [t for t in pending_redis_operations if not t.done()]
+            
+            if len(pending_redis_operations) > MAX_PENDING_REDIS_OPS:
+                if redis_streaming_enabled:
+                    logger.warning(f"⚠️ Redis backpressure: {len(pending_redis_operations)} pending ops, pausing streaming for {agent_run_id}")
+                redis_streaming_enabled = False
+            elif not redis_streaming_enabled and len(pending_redis_operations) < MAX_PENDING_REDIS_OPS // 2:
+                logger.info(f"✅ Redis backpressure cleared, resuming streaming for {agent_run_id}")
+                redis_streaming_enabled = True
+            
+            if redis_streaming_enabled and redis.is_redis_healthy():
+                try:
+                    await asyncio.wait_for(redis.expire(stream_key, 3600), timeout=2.0)
+                except (asyncio.TimeoutError, Exception):
+                    pass
 
         terminating_tool = check_terminating_tool_call(response)
         if terminating_tool == 'complete':
@@ -425,25 +394,40 @@ async def handle_normal_completion(
     completion_message = {"type": "status", "status": "completed", "message": "Agent run completed successfully"}
     trace.span(name="agent_run_completed").end(status_message="agent_run_completed")
     completion_json = json.dumps(completion_message)
-    # Publish for instant delivery + persist to stream
-    await redis.publish(redis_keys['response_pubsub'], completion_json)
-    await redis.xadd(
-        redis_keys['response_stream'],
-        {'data': completion_json},
-        maxlen=10000,
-        approximate=True
-    )
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(
+                redis.publish(redis_keys['response_pubsub'], completion_json),
+                redis.xadd(
+                    redis_keys['response_stream'],
+                    {'data': completion_json},
+                    maxlen=10000,
+                    approximate=True
+                ),
+                return_exceptions=True
+            ),
+            timeout=5.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout publishing completion message to Redis for {agent_run_id}")
+    except Exception as e:
+        logger.warning(f"Failed to publish completion message for {agent_run_id}: {e}")
     return completion_message
 
 
 async def publish_final_control_signal(final_status: str, global_control_channel: str, stop_reason: Optional[str] = None):
     control_signal = "END_STREAM" if final_status == "completed" else "ERROR" if final_status == "failed" else "STOP"
     try:
-        await redis.publish(global_control_channel, control_signal)
+        await asyncio.wait_for(
+            redis.publish(global_control_channel, control_signal),
+            timeout=3.0
+        )
         if control_signal == "STOP":
             logger.warning(f"🛑 Published final control signal '{control_signal}' to {global_control_channel} (status: {final_status}, reason: {stop_reason or 'unknown'})")
         else:
             logger.debug(f"Published final control signal '{control_signal}' to {global_control_channel} (status: {final_status})")
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout publishing final control signal {control_signal} to {global_control_channel}")
     except Exception as e:
         logger.warning(f"Failed to publish final control signal {control_signal}: {str(e)}")
 
@@ -498,58 +482,79 @@ async def run_agent_background(
     try:
         await initialize()
     except Exception as e:
-        logger.critical(f"Failed to initialize Redis connection: {e}")
+        logger.critical(f"Failed to initialize worker resources (Redis/DB): {e}")
         raise e
     timings['initialize'] = (time.time() - t) * 1000
 
-    client = await db.client
-    lock_acquired = await acquire_run_lock(agent_run_id, instance_id, client)
-    if not lock_acquired:
-        return
-
-    sentry.sentry.set_tag("thread_id", thread_id)
-    
-    timings['lock_acquisition'] = (time.time() - worker_start) * 1000 - timings['initialize']
-    logger.info(f"⏱️ [TIMING] Worker init: {timings['initialize']:.1f}ms | Lock: {timings['lock_acquisition']:.1f}ms")
-    logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
-    
-    from core.ai_models import model_manager
-    effective_model = model_manager.resolve_model_id(model_name)
-    logger.info(f"🚀 Using model: {effective_model}")
-    
-    start_time = datetime.now(timezone.utc)
-    pubsub = None
-    stop_checker = None
-    pending_redis_operations = []
-    cancellation_event = asyncio.Event()
-
-    redis_keys = create_redis_keys(agent_run_id, instance_id)
-    trace = langfuse.trace(
-        name="agent_run",
-        id=agent_run_id,
-        session_id=thread_id,
-        metadata={"project_id": project_id, "instance_id": instance_id}
-    )
-
+    client = None
     try:
-        pubsub = await redis.create_pubsub()
-        try:
-            await retry(lambda: pubsub.subscribe(
-                redis_keys['instance_control_channel'],
-                redis_keys['global_control_channel']
-            ))
-        except Exception as e:
-            logger.error(f"Redis failed to subscribe to control channels: {e}", exc_info=True)
-            raise e
+        client = await db.client
+        lock_acquired = await acquire_run_lock(agent_run_id, instance_id, client)
+        if not lock_acquired:
+            return
 
-        logger.info(f"Subscribed to control channels: {redis_keys['instance_control_channel']}, {redis_keys['global_control_channel']}")
+        sentry.sentry.set_tag("thread_id", thread_id)
+        
+        timings['lock_acquisition'] = (time.time() - worker_start) * 1000 - timings['initialize']
+        logger.info(f"⏱️ [TIMING] Worker init: {timings['initialize']:.1f}ms | Lock: {timings['lock_acquisition']:.1f}ms")
+        logger.info(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (Instance: {instance_id})")
+        
+        from core.ai_models import model_manager
+        effective_model = model_manager.resolve_model_id(model_name)
+        logger.info(f"🚀 Using model: {effective_model}")
+        
+        start_time = datetime.now(timezone.utc)
+        pubsub = None
+        stop_checker = None
+        pending_redis_operations = []
+        cancellation_event = asyncio.Event()
+
+        redis_keys = create_redis_keys(agent_run_id, instance_id)
+        trace = langfuse.trace(
+            name="agent_run",
+            id=agent_run_id,
+            session_id=thread_id,
+            metadata={"project_id": project_id, "instance_id": instance_id}
+        )
+
+        pubsub_available = True
+        
+    except Exception as e:
+        logger.error(f"Critical error during worker setup for {agent_run_id}: {e}", exc_info=True)
+        try:
+            if not client:
+                client = await db.client
+            await update_agent_run_status(client, agent_run_id, "failed", error=f"Worker setup failed: {str(e)}", account_id=account_id)
+        except Exception as inner_e:
+            logger.error(f"Failed to update status after setup error: {inner_e}")
+        return
+    try:
+        try:
+            pubsub = await asyncio.wait_for(redis.create_pubsub(), timeout=5.0)
+            await asyncio.wait_for(
+                pubsub.subscribe(
+                    redis_keys['instance_control_channel'],
+                    redis_keys['global_control_channel']
+                ),
+                timeout=5.0
+            )
+            logger.info(f"Subscribed to control channels: {redis_keys['instance_control_channel']}, {redis_keys['global_control_channel']}")
+        except asyncio.TimeoutError:
+            logger.warning(f"Redis pubsub subscription timeout for {agent_run_id} - stop signals will not work but agent will continue")
+            pubsub = None
+            pubsub_available = False
+        except Exception as e:
+            logger.warning(f"Redis pubsub subscription failed for {agent_run_id}: {e} - stop signals will not work but agent will continue")
+            pubsub = None
+            pubsub_available = False
         
         stop_signal_checker_state = {'stop_signal_received': False, 'total_responses': 0, 'stop_reason': None}
-        check_stop_signal_fn, _ = await create_stop_signal_checker(
-            pubsub, agent_run_id, instance_id, redis_keys['instance_active'], cancellation_event
-        )
         
         async def check_for_stop_signal_wrapper():
+            if not pubsub_available or pubsub is None:
+                logger.info(f"Stop signal checker disabled for {agent_run_id} - pubsub not available")
+                return
+            
             while not stop_signal_checker_state.get('stop_signal_received'):
                 try:
                     message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.5)
@@ -561,7 +566,6 @@ async def run_agent_background(
                         if isinstance(channel, bytes):
                             channel = channel.decode('utf-8')
                         if data == "STOP":
-                            # Determine the source of the stop signal
                             if "control:" in channel and instance_id in channel:
                                 stop_reason = "instance_control_channel"
                             else:
@@ -574,7 +578,12 @@ async def run_agent_background(
                     
                     if stop_signal_checker_state.get('total_responses', 0) % 50 == 0:
                         try:
-                            await redis.expire(redis_keys['instance_active'], redis.REDIS_KEY_TTL)
+                            await asyncio.wait_for(
+                                redis.expire(redis_keys['instance_active'], redis.REDIS_KEY_TTL),
+                                timeout=3.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.debug(f"TTL refresh timeout for {redis_keys['instance_active']} - continuing")
                         except Exception as ttl_err:
                             logger.warning(f"Failed to refresh TTL for {redis_keys['instance_active']}: {ttl_err}")
                     await asyncio.sleep(0.1)
@@ -582,12 +591,19 @@ async def run_agent_background(
                     logger.debug(f"Stop signal checker wrapper cancelled for {agent_run_id}")
                     break
                 except Exception as e:
-                    # Do NOT stop the run due to pubsub errors - just log and continue
                     logger.error(f"Error in stop signal checker wrapper for {agent_run_id}: {e}", exc_info=True)
-                    await asyncio.sleep(1)  # Back off on errors
+                    await asyncio.sleep(1)
         
         stop_checker = asyncio.create_task(check_for_stop_signal_wrapper())
-        await redis.set(redis_keys['instance_active'], "running", ex=redis.REDIS_KEY_TTL)
+        try:
+            await asyncio.wait_for(
+                redis.set(redis_keys['instance_active'], "running", ex=redis.REDIS_KEY_TTL),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"Redis timeout setting instance_active key for {agent_run_id} - continuing without")
+        except Exception as e:
+            logger.warning(f"Redis error setting instance_active key for {agent_run_id}: {e} - continuing without")
 
         agent_config = await load_agent_config(agent_id, account_id)
 
@@ -617,10 +633,6 @@ async def run_agent_background(
             if not complete_tool_called:
                 logger.info(f"Agent run {agent_run_id} completed without explicit complete tool call - skipping notification")
 
-        # Read all responses from stream for logging/debugging (optional)
-        # all_stream_entries = await redis.xrange(redis_keys['response_stream'])
-        # all_responses = [json.loads(entry[1]['data']) for entry in all_stream_entries] if all_stream_entries else []
-
         await update_agent_run_status(client, agent_run_id, final_status, error=error_message, account_id=account_id)
 
         if final_status == "failed" and error_message:
@@ -642,22 +654,34 @@ async def run_agent_background(
         error_response = {"type": "status", "status": "error", "message": error_message}
         try:
             error_json = json.dumps(error_response)
-            # Publish for instant delivery + persist to stream
-            await redis.publish(redis_keys['response_pubsub'], error_json)
-            await redis.xadd(
-                redis_keys['response_stream'],
-                {'data': error_json},
-                maxlen=10000,
-                approximate=True
+            await asyncio.wait_for(
+                asyncio.gather(
+                    redis.publish(redis_keys['response_pubsub'], error_json),
+                    redis.xadd(
+                        redis_keys['response_stream'],
+                        {'data': error_json},
+                        maxlen=10000,
+                        approximate=True
+                    ),
+                    return_exceptions=True
+                ),
+                timeout=5.0
             )
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout publishing error response to Redis for {agent_run_id}")
         except Exception as redis_err:
             logger.error(f"Failed to add error response to Redis for {agent_run_id}: {redis_err}")
 
         await update_agent_run_status(client, agent_run_id, "failed", error=f"{error_message}\n{traceback_str}", account_id=account_id)
 
         try:
-            await redis.publish(redis_keys['global_control_channel'], "ERROR")
+            await asyncio.wait_for(
+                redis.publish(redis_keys['global_control_channel'], "ERROR"),
+                timeout=3.0
+            )
             logger.debug(f"Published ERROR signal to {redis_keys['global_control_channel']}")
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout publishing ERROR signal to {redis_keys['global_control_channel']}")
         except Exception as e:
             logger.warning(f"Failed to publish ERROR signal: {str(e)}")
 

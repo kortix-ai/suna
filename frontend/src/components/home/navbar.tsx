@@ -214,7 +214,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
             />
 
             <motion.div
-              className="fixed inset-x-0 w-[95%] mx-auto bottom-3 bg-background border border-border p-4 rounded-xl shadow-lg"
+              className="fixed inset-x-0 w-[95%] max-w-md mx-auto bottom-3 bg-background border border-border p-4 rounded-xl shadow-lg z-50"
               initial="hidden"
               animate="visible"
               exit="exit"
@@ -223,14 +223,15 @@ export function Navbar({ tabs }: NavbarProps = {}) {
               {/* Mobile menu content */}
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <Link href="/" className="flex items-center gap-3">
-                    <KortixLogo size={120} />
+                  <Link href="/" className="flex items-center gap-3" onClick={() => setIsDrawerOpen(false)}>
+                    <KortixLogo size={20} variant='logomark' />
                   </Link>
                   <button
                     onClick={toggleDrawer}
-                    className="border border-border rounded-md p-1 cursor-pointer"
+                    className="border border-border rounded-lg p-1.5 cursor-pointer hover:bg-accent transition-colors"
+                    aria-label="Close menu"
                   >
-                    <X className="size-5" />
+                    <X className="size-4" />
                   </button>
                 </div>
 
@@ -281,22 +282,8 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                   </AnimatePresence>
                 </motion.ul>
 
-                {/* GitHub link for mobile */}
-                <Link
-                  href="https://github.com/kortix-ai/suna"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full bg-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent/30 transition-all duration-200"
-                  aria-label="GitHub Repository"
-                >
-                  <Github className="size-3.5" />
-                  <span className={`text-xs font-medium transition-opacity duration-200 ${starsLoading ? 'opacity-50' : 'opacity-100'}`}>
-                    ⭐ {formattedStars}
-                  </span>
-                </Link>
-
                 {/* Action buttons */}
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-3">
                   {user ? (
                     <Button
                       asChild
@@ -320,9 +307,33 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                       </Link>
                     </Button>
                   )}
-                  <div className="flex items-center justify-between gap-2">
-                    <LocaleSwitcher variant="full" />
-                    <ThemeToggle />
+                  
+                  {/* GitHub Stars & Language Switcher Row */}
+                  <div className="flex items-center gap-2">
+                    {/* GitHub Stars Link */}
+                    <Link
+                      href="https://github.com/kortix-ai/suna"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-lg bg-accent/50 hover:bg-accent text-muted-foreground hover:text-foreground transition-all duration-200 flex-1 min-w-0"
+                      aria-label="GitHub Repository"
+                      onClick={() => setIsDrawerOpen(false)}
+                    >
+                      <Github className="size-4 shrink-0" />
+                      <span className={`text-xs font-medium transition-opacity duration-200 truncate ${starsLoading ? 'opacity-50' : 'opacity-100'}`}>
+                        {formattedStars}
+                      </span>
+                    </Link>
+                    
+                    {/* Language Switcher */}
+                    <div className="flex-1 min-w-0">
+                      <LocaleSwitcher variant="full" />
+                    </div>
+                    
+                    {/* Theme Toggle */}
+                    <div className="shrink-0">
+                      <ThemeToggle />
+                    </div>
                   </div>
                 </div>
               </div>
