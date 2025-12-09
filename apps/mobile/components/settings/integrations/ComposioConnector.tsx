@@ -1,8 +1,24 @@
 import * as React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator, TextInput, Alert } from 'react-native';
+import {
+  View,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+  TextInput,
+  Alert,
+  Switch,
+} from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowLeft, ExternalLink, CheckCircle2, Plus, Check, X } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  ExternalLink,
+  CheckCircle2,
+  Plus,
+  Check,
+  X,
+  Settings,
+} from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import {
@@ -98,6 +114,85 @@ export function ComposioConnectorContent({
   const existingProfiles =
     profiles?.filter((p: ComposioProfile) => p.toolkit_slug === app.slug && p.is_connected) || [];
 
+  const handleInitiationFieldChange = React.useCallback(
+    (fieldName: string, value: string) => {
+      setInitiationFields((prev) => ({ ...prev, [fieldName]: value }));
+      if (initiationFieldsErrors[fieldName]) {
+        setInitiationFieldsErrors((prev) => ({ ...prev, [fieldName]: '' }));
+      }
+    },
+    [initiationFieldsErrors]
+  );
+
+  const validateInitiationFields = React.useCallback((): boolean => {
+    const newErrors: Record<string, string> = {};
+    const initiationRequirements = toolkitDetails?.toolkit.connected_account_initiation_fields;
+
+    if (initiationRequirements?.required) {
+      for (const field of initiationRequirements.required) {
+        if (field.required) {
+          const value = initiationFields[field.name];
+          const isEmpty = !value || value.trim() === '';
+
+          if (field.type?.toLowerCase() === 'boolean') {
+            continue;
+          }
+
+          if (
+            (field.type?.toLowerCase() === 'number' || field.type?.toLowerCase() === 'double') &&
+            value
+          ) {
+            if (isNaN(Number(value))) {
+              newErrors[field.name] = `${field.displayName} must be a valid number`;
+              continue;
+            }
+          }
+
+          if (isEmpty) {
+            newErrors[field.name] = `${field.displayName} is required`;
+          }
+        }
+      }
+    }
+
+    setInitiationFieldsErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [toolkitDetails, initiationFields]);
+
+  const handleCustomAuthFieldChange = React.useCallback(
+    (fieldName: string, value: string) => {
+      setCustomAuthConfig((prev) => ({ ...prev, [fieldName]: value }));
+      if (customAuthConfigErrors[fieldName]) {
+        setCustomAuthConfigErrors((prev) => ({ ...prev, [fieldName]: '' }));
+      }
+    },
+    [customAuthConfigErrors]
+  );
+
+  const validateCustomAuthFields = React.useCallback((): boolean => {
+    if (!useCustomAuth) return true;
+
+    const newErrors: Record<string, string> = {};
+    const authConfigDetails = toolkitDetails?.toolkit.auth_config_details?.[0];
+    const authConfigFields = authConfigDetails?.fields?.auth_config_creation;
+
+    if (authConfigFields?.required) {
+      for (const field of authConfigFields.required) {
+        if (field.required) {
+          const value = customAuthConfig[field.name];
+          const isEmpty = !value || value.trim() === '';
+
+          if (isEmpty) {
+            newErrors[field.name] = `${field.displayName} is required`;
+          }
+        }
+      }
+    }
+
+    setCustomAuthConfigErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  }, [useCustomAuth, toolkitDetails, customAuthConfig]);
+
   React.useEffect(() => {
     const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
     setCurrentStep(Step.ProfileSelect);
@@ -150,6 +245,16 @@ export function ComposioConnectorContent({
 
     if (nameAvailability && !nameAvailability.available) {
       Alert.alert('Error', 'This profile name is already in use. Please choose a different name.');
+      return;
+    }
+
+    if (!validateCustomAuthFields()) {
+      Alert.alert('Error', 'Please fill in all required OAuth configuration fields');
+      return;
+    }
+
+    if (!validateInitiationFields()) {
+      Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
@@ -447,6 +552,173 @@ export function ComposioConnectorContent({
               </View>
             )}
           </View>
+
+          {/* Initiation Fields */}
+          {!isLoadingToolkitDetails &&
+            toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
+              <View className="mb-8">
+                <View className="mb-4 flex-row items-center">
+                  <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
+                  <Text className="font-roobert-medium text-sm text-foreground">
+                    Connection Details
+                  </Text>
+                </View>
+                <View className="space-y-4">
+                  {toolkitDetails.toolkit.connected_account_initiation_fields.required.map(
+                    (field: any) => {
+                      const fieldType = field.type?.toLowerCase() || 'string';
+                      const isBoolean = fieldType === 'boolean';
+                      const isNumber = fieldType === 'number' || fieldType === 'double';
+
+                      return (
+                        <View key={field.name} className="space-y-1">
+                          <Text className="font-roobert-medium text-xs text-foreground">
+                            {field.displayName}
+                            {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                          </Text>
+
+                          {isBoolean ? (
+                            <View className="flex-row items-center">
+                              <Switch
+                                value={initiationFields[field.name] === 'true'}
+                                onValueChange={(checked) =>
+                                  handleInitiationFieldChange(
+                                    field.name,
+                                    checked ? 'true' : 'false'
+                                  )
+                                }
+                                trackColor={{
+                                  false: '#e5e7eb',
+                                  true: '#3b82f6',
+                                }}
+                                thumbColor="#ffffff"
+                              />
+                              <Text className="ml-3 font-roobert text-xs text-muted-foreground">
+                                {field.description || 'Enable'}
+                              </Text>
+                            </View>
+                          ) : (
+                            <>
+                              <TextInput
+                                value={initiationFields[field.name] || ''}
+                                onChangeText={(value) =>
+                                  handleInitiationFieldChange(field.name, value)
+                                }
+                                placeholder={
+                                  field.default ||
+                                  field.description ||
+                                  `Enter ${field.displayName.toLowerCase()}`
+                                }
+                                className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                                  initiationFieldsErrors[field.name]
+                                    ? 'border-red-500/50'
+                                    : 'border-border/40'
+                                }`}
+                                placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                                secureTextEntry={fieldType === 'password'}
+                                keyboardType={
+                                  fieldType === 'email'
+                                    ? 'email-address'
+                                    : fieldType === 'url'
+                                      ? 'url'
+                                      : isNumber
+                                        ? 'numeric'
+                                        : 'default'
+                                }
+                              />
+                              {field.description && (
+                                <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
+                                  {field.description}
+                                </Text>
+                              )}
+                            </>
+                          )}
+
+                          {initiationFieldsErrors[field.name] && (
+                            <Text className="font-roobert text-[10px] text-red-600">
+                              {initiationFieldsErrors[field.name]}
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    }
+                  )}
+                </View>
+              </View>
+            )}
+
+          {/* Custom Auth Config Fields */}
+          {useCustomAuth &&
+            !isLoadingToolkitDetails &&
+            toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.required
+              ?.length > 0 && (
+              <View className="mb-8">
+                <View className="mb-4 flex-row items-center">
+                  <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
+                  <Text className="font-roobert-medium text-sm text-foreground">
+                    OAuth Configuration
+                  </Text>
+                </View>
+                <View className="space-y-4">
+                  {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required.map(
+                    (field: any) => {
+                      const fieldType = field.type?.toLowerCase() || 'string';
+                      const isNumber = fieldType === 'number' || fieldType === 'double';
+
+                      return (
+                        <View key={field.name} className="space-y-1">
+                          <Text className="font-roobert-medium text-xs text-foreground">
+                            {field.displayName}
+                            {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                          </Text>
+                          <TextInput
+                            value={customAuthConfig[field.name] || ''}
+                            onChangeText={(value) => handleCustomAuthFieldChange(field.name, value)}
+                            placeholder={
+                              field.default ||
+                              field.description ||
+                              `Enter ${field.displayName.toLowerCase()}`
+                            }
+                            className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                              customAuthConfigErrors[field.name]
+                                ? 'border-red-500/50'
+                                : 'border-border/40'
+                            }`}
+                            placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                            secureTextEntry={fieldType === 'password'}
+                            keyboardType={
+                              fieldType === 'email'
+                                ? 'email-address'
+                                : fieldType === 'url'
+                                  ? 'url'
+                                  : isNumber
+                                    ? 'numeric'
+                                    : 'default'
+                            }
+                          />
+                          {field.description && (
+                            <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
+                              {field.description}
+                            </Text>
+                          )}
+                          {customAuthConfigErrors[field.name] && (
+                            <Text className="font-roobert text-[10px] text-red-600">
+                              {customAuthConfigErrors[field.name]}
+                            </Text>
+                          )}
+                        </View>
+                      );
+                    }
+                  )}
+                </View>
+              </View>
+            )}
+
+          {isLoadingToolkitDetails && (
+            <View className="mb-8">
+              <ActivityIndicator size="small" color="#999" />
+            </View>
+          )}
 
           <ContinueButton
             onPress={handleCreateProfile}

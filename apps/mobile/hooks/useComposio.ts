@@ -126,7 +126,7 @@ const useComposioProfiles = () => {
   });
 };
 
-const useComposioToolkitDetails = (slug: string) => {
+const useComposioToolkitDetails = (slug: string, options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: composioKeys.toolkitDetails(slug),
     queryFn: async () => {
@@ -147,6 +147,7 @@ const useComposioToolkitDetails = (slug: string) => {
 
       return response.json();
     },
+    enabled: options?.enabled !== false && !!slug,
     enabled: !!slug,
     staleTime: 10 * 60 * 1000,
   });
