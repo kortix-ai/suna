@@ -119,29 +119,6 @@ export function ComposioAppsContent({
   // Header component for FlatList
   const renderHeader = () => (
     <>
-      {/* Header with back button, title, and description */}
-      <View className="mb-4 flex-row items-center">
-        {onBack && (
-          <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-        )}
-        <View className="ml-3 flex-1">
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="font-roobert-semibold text-xl">
-            {t('integrations.composioApps')}
-          </Text>
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-            }}
-            className="font-roobert text-sm">
-            {t('integrations.composioAppsDescription')}
-          </Text>
-        </View>
-      </View>
-
       {/* Search Bar */}
       <View className="mb-4">
         <View

@@ -632,7 +632,7 @@
     "externalAppsDescription": "Beliebte Apps & Dienste verbinden",
     "customMcpServers": "Benutzerdefinierte MCP-Server",
     "customMcpDescription": "HTTP-basierte Integrationen hinzufügen",
-    "composioApps": "Composio Apps",
+    "composioApps": "App Integrations",
     "composioAppsDescription": "Mit Hunderten von Geschäftsanwendungen verbinden",
     "connected": "Verbunden",
     "connectedToAgent": "Mit diesem Worker verbunden",

@@ -733,7 +733,7 @@
     "externalAppsDescription": "Connect popular apps & services",
     "customMcpServers": "Custom MCP Servers",
     "customMcpDescription": "Add custom HTTP-based integrations",
-    "composioApps": "Composio Apps",
+    "composioApps": "App Integrations",
     "composioAppsDescription": "Connect to hundreds of business applications and services",
     "connected": "Connected",
     "connectedToAgent": "Connected to this agent",
