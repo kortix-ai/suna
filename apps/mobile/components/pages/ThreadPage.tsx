@@ -233,6 +233,12 @@ export function ThreadPage({
   isAuthenticated,
   onOpenWorkerConfig: externalOpenWorkerConfig,
 }: ThreadPageProps) {
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -501,19 +507,21 @@ export function ThreadPage({
                 progressViewOffset={Math.max(insets.top, 16) + 80}
               />
             }>
-            <ThreadContent
-              messages={messages}
-              streamingTextContent={streamingContent}
-              streamingToolCall={streamingToolCall}
-              agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
-              streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
-              sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
-              sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
-              handleToolClick={handleToolClick}
-              onToolPress={handleToolPress}
-              onFilePress={handleFilePress}
-              onPromptFill={chat.setInputValue}
-            />
+            {isMounted && (
+              <ThreadContent
+                messages={messages}
+                streamingTextContent={streamingContent}
+                streamingToolCall={streamingToolCall}
+                agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+                streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
+                sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+                sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
+                handleToolClick={handleToolClick}
+                onToolPress={handleToolPress}
+                onFilePress={handleFilePress}
+                onPromptFill={chat.setInputValue}
+              />
+            )}
           </ScrollView>
         )}
       </View>

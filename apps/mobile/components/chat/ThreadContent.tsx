@@ -591,6 +591,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     agentName = 'Kortix',
     onPromptFill,
   }) => {
+    const [isMounted, setIsMounted] = React.useState(false);
+
+    React.useEffect(() => {
+      setIsMounted(true);
+    }, []);
+
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
 
@@ -843,16 +849,21 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
     const handleToolPressInternal = useCallback(
       (clickedToolMsg: UnifiedMessage) => {
+        if (!isMounted) return;
+
         const clickedIndex = allToolMessages.findIndex(
           (t) => t.toolMessage.message_id === clickedToolMsg.message_id
         );
         if (clickedIndex >= 0) {
           // Call onToolPress first to set selectedToolData, then navigate
           onToolPress?.(allToolMessages, clickedIndex);
-          navigateToToolCall(clickedIndex);
+          // Use setTimeout to ensure state update happens after render
+          setTimeout(() => {
+            navigateToToolCall(clickedIndex);
+          }, 0);
         }
       },
-      [allToolMessages, onToolPress, navigateToToolCall]
+      [allToolMessages, onToolPress, navigateToToolCall, isMounted]
     );
 
     return (
