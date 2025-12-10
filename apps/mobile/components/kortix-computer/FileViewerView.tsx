@@ -487,27 +487,27 @@ export function FileViewerView({
             {canEdit && (
               <>
                 {isEditing ? (
-              <>
-                {hasUnsavedChanges && (
-                  <Pressable
-                    onPress={handleDiscard}
-                    className="h-9 px-3 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
-                  >
-                    <Text className="text-xs font-roobert-medium text-primary">Discard</Text>
-                  </Pressable>
-                )}
-                <Pressable
-                  onPress={handleSave}
-                  disabled={!hasUnsavedChanges || saveStatus === 'saving'}
-                  className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${!hasUnsavedChanges ? 'opacity-50' : ''}`}
-                >
-                  <Icon
-                    as={saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? Check : saveStatus === 'error' ? AlertCircle : Save}
-                    size={17}
-                    className="text-primary"
-                    strokeWidth={2}
-                  />
-                </Pressable>
+                  <>
+                    {hasUnsavedChanges && (
+                      <Pressable
+                        onPress={handleDiscard}
+                        className="h-9 px-3 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+                      >
+                        <Text className="text-xs font-roobert-medium text-primary">Discard</Text>
+                      </Pressable>
+                    )}
+                    <Pressable
+                      onPress={handleSave}
+                      disabled={!hasUnsavedChanges || saveStatus === 'saving'}
+                      className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${!hasUnsavedChanges ? 'opacity-50' : ''}`}
+                    >
+                      <Icon
+                        as={saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? Check : saveStatus === 'error' ? AlertCircle : Save}
+                        size={17}
+                        className="text-primary"
+                        strokeWidth={2}
+                      />
+                    </Pressable>
                   </>
                 ) : (
                   <Pressable
