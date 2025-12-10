@@ -121,30 +121,28 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
       {/* Scrollable text input */}
       <View style={{ flex: 1, marginBottom: isEditable ? 84 : 0 }}>
         <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={true}>
-          <Pressable onPress={() => isEditable && inputRef.current?.focus()}>
-            <TextInput
-              ref={inputRef}
-              value={systemPrompt}
-              onChangeText={handleTextChange}
-              placeholder={t('workers.instructions.placeholder')}
-              placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-              multiline
-              scrollEnabled={false} // prevent keyboard on scroll
-              editable={isEditable}
-              style={{
-                fontSize: 16,
-                color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                textAlignVertical: 'top',
-                minHeight: 300,
-                borderRadius: 16,
-                borderWidth: 1.5,
-                borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
-                backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                opacity: isEditable ? 1 : 0.6,
-                padding: 16,
-              }}
-            />
-          </Pressable>
+          <TextInput
+            ref={inputRef}
+            value={systemPrompt}
+            onChangeText={handleTextChange}
+            placeholder={t('workers.instructions.placeholder')}
+            placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+            multiline
+            scrollEnabled={false}
+            editable={isEditable}
+            style={{
+              fontSize: 16,
+              color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+              textAlignVertical: 'top',
+              minHeight: 300,
+              borderRadius: 16,
+              borderWidth: 1.5,
+              borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+              backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+              opacity: isEditable ? 1 : 0.6,
+              padding: 16,
+            }}
+          />
         </ScrollView>
       </View>
 
