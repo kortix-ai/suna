@@ -8,7 +8,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
-import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import { BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
@@ -370,37 +370,31 @@ export function ComposioConnectorContent({
           <View
             style={{
               paddingHorizontal: 24,
-              paddingTop: 24,
+              paddingTop: 16,
               paddingBottom: 16,
               backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
-            {onBack && (
-              <Pressable onPress={onBack} className="mb-4 flex-row items-center active:opacity-70">
-                <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
-            )}
-            <View className={onBack ? '' : 'mb-4'}>
-              <Text
-                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                className="font-roobert-semibold text-xl">
-                {app.name}
-              </Text>
-              <Text
-                style={{
-                  color:
-                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-                }}
-                className="font-roobert text-sm">
-                {existingProfiles.length > 0
-                  ? t('integrations.connector.selectConnection')
-                  : t('integrations.connector.createFirstConnection')}
-              </Text>
-            </View>
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="mb-1 font-roobert-semibold text-xl">
+              {app.name}
+            </Text>
+            <Text
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {existingProfiles.length > 0
+                ? t('integrations.connector.selectConnection')
+                : t('integrations.connector.createFirstConnection')}
+            </Text>
           </View>
 
           {/* Scrollable list */}
           <BottomSheetFlatList
             data={listData}
+            style={{ flex: 1 }}
             keyExtractor={(item: any, index: number) =>
               item.type === 'new' ? 'new-connection' : item.profile_id || `profile-${index}`
             }
@@ -413,7 +407,7 @@ export function ComposioConnectorContent({
                         setSelectedConnectionType('new');
                         setSelectedProfileId('new');
                       }}
-                      className={`flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+                      className={`flex-row items-center rounded-2xl p-4 active:opacity-80 ${
                         selectedConnectionType === 'new' ? 'bg-primary/10' : 'bg-muted/5'
                       }`}>
                       <View
@@ -466,7 +460,7 @@ export function ComposioConnectorContent({
                 </View>
               );
             }}
-            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16, flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
           />
 
@@ -617,6 +611,302 @@ export function ComposioConnectorContent({
   }
 
   if (currentStep === Step.ProfileCreate) {
+    // Content for profile creation form
+    const profileCreateContent = (
+      <>
+        <View className="mb-8">
+          <Text className="mb-3 font-roobert-medium text-sm uppercase tracking-wider text-muted-foreground">
+            {t('integrations.connector.profileName')}
+          </Text>
+          <View className="relative">
+            <TextInput
+              value={profileName}
+              onChangeText={setProfileName}
+              placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
+              className={`rounded-2xl bg-muted/5 px-4 py-4 pr-12 font-roobert text-base text-foreground ${
+                nameAvailability && !nameAvailability.available
+                  ? 'border-2 border-red-500/50'
+                  : nameAvailability && nameAvailability.available && profileName.length > 0
+                    ? 'border border-border/40'
+                    : 'border border-border/40'
+              }`}
+              placeholderTextColor="rgba(156, 163, 175, 0.5)"
+              autoFocus
+            />
+            <View className="absolute right-4 top-1/2 -translate-y-1/2">
+              {isCheckingName && profileName.length > 0 && (
+                <ActivityIndicator size="small" color="#999" />
+              )}
+              {!isCheckingName &&
+                nameAvailability &&
+                profileName.length > 0 &&
+                (nameAvailability.available ? (
+                  <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500/10">
+                    <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
+                  </View>
+                ) : (
+                  <View className="h-6 w-6 items-center justify-center rounded-full bg-red-500/10">
+                    <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
+                  </View>
+                ))}
+            </View>
+          </View>
+
+          {nameAvailability && !nameAvailability.available && (
+            <View className="mt-3">
+              <Text className="mb-2 font-roobert text-sm text-red-600">
+                {t('integrations.connector.nameAlreadyTaken')}
+              </Text>
+              {nameAvailability.suggestions.length > 0 && (
+                <View className="flex-row flex-wrap gap-2">
+                  {nameAvailability.suggestions.map((suggestion: string) => (
+                    <Pressable
+                      key={suggestion}
+                      onPress={() => setProfileName(suggestion)}
+                      className="rounded-full border border-border/40 bg-muted/10 px-3 py-1.5 active:opacity-70">
+                      <Text className="font-roobert-medium text-xs text-foreground">
+                        {suggestion}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Initiation Fields */}
+        {!isLoadingToolkitDetails &&
+          toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
+            <View className="mb-8">
+              <View className="mb-4 flex-row items-center">
+                <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
+                <Text className="font-roobert-medium text-sm text-foreground">
+                  Connection Details
+                </Text>
+              </View>
+              <View className="space-y-4">
+                {toolkitDetails.toolkit.connected_account_initiation_fields.required.map(
+                  (field: any) => {
+                    const fieldType = field.type?.toLowerCase() || 'string';
+                    const isBoolean = fieldType === 'boolean';
+                    const isNumber = fieldType === 'number' || fieldType === 'double';
+
+                    return (
+                      <View key={field.name} className="space-y-1">
+                        <Text className="font-roobert-medium text-xs text-foreground">
+                          {field.displayName}
+                          {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                        </Text>
+
+                        {isBoolean ? (
+                          <View className="flex-row items-center">
+                            <Switch
+                              value={initiationFields[field.name] === 'true'}
+                              onValueChange={(checked) =>
+                                handleInitiationFieldChange(field.name, checked ? 'true' : 'false')
+                              }
+                              trackColor={{
+                                false: '#e5e7eb',
+                                true: '#3b82f6',
+                              }}
+                              thumbColor="#ffffff"
+                            />
+                            <Text className="ml-3 font-roobert text-xs text-muted-foreground">
+                              {field.description || 'Enable'}
+                            </Text>
+                          </View>
+                        ) : (
+                          <>
+                            <TextInput
+                              value={initiationFields[field.name] || ''}
+                              onChangeText={(value) =>
+                                handleInitiationFieldChange(field.name, value)
+                              }
+                              placeholder={
+                                field.default ||
+                                field.description ||
+                                `Enter ${field.displayName.toLowerCase()}`
+                              }
+                              className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                                initiationFieldsErrors[field.name]
+                                  ? 'border-red-500/50'
+                                  : 'border-border/40'
+                              }`}
+                              placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                              secureTextEntry={fieldType === 'password'}
+                              keyboardType={
+                                fieldType === 'email'
+                                  ? 'email-address'
+                                  : fieldType === 'url'
+                                    ? 'url'
+                                    : isNumber
+                                      ? 'numeric'
+                                      : 'default'
+                              }
+                            />
+                            {field.description && (
+                              <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
+                                {field.description}
+                              </Text>
+                            )}
+                          </>
+                        )}
+
+                        {initiationFieldsErrors[field.name] && (
+                          <Text className="font-roobert text-[10px] text-red-600">
+                            {initiationFieldsErrors[field.name]}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  }
+                )}
+              </View>
+            </View>
+          )}
+
+        {/* Custom Auth Config Fields */}
+        {useCustomAuth &&
+          !isLoadingToolkitDetails &&
+          toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.required
+            ?.length > 0 && (
+            <View className="mb-8">
+              <View className="mb-4 flex-row items-center">
+                <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
+                <Text className="font-roobert-medium text-sm text-foreground">
+                  OAuth Configuration
+                </Text>
+              </View>
+              <View className="space-y-4">
+                {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required.map(
+                  (field: any) => {
+                    const fieldType = field.type?.toLowerCase() || 'string';
+                    const isNumber = fieldType === 'number' || fieldType === 'double';
+
+                    return (
+                      <View key={field.name} className="space-y-1">
+                        <Text className="font-roobert-medium text-xs text-foreground">
+                          {field.displayName}
+                          {field.required && <Text className="ml-1 text-red-500">*</Text>}
+                        </Text>
+                        <TextInput
+                          value={customAuthConfig[field.name] || ''}
+                          onChangeText={(value) => handleCustomAuthFieldChange(field.name, value)}
+                          placeholder={
+                            field.default ||
+                            field.description ||
+                            `Enter ${field.displayName.toLowerCase()}`
+                          }
+                          className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
+                            customAuthConfigErrors[field.name]
+                              ? 'border-red-500/50'
+                              : 'border-border/40'
+                          }`}
+                          placeholderTextColor="rgba(156, 163, 175, 0.5)"
+                          secureTextEntry={fieldType === 'password'}
+                          keyboardType={
+                            fieldType === 'email'
+                              ? 'email-address'
+                              : fieldType === 'url'
+                                ? 'url'
+                                : isNumber
+                                  ? 'numeric'
+                                  : 'default'
+                          }
+                        />
+                        {field.description && (
+                          <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
+                            {field.description}
+                          </Text>
+                        )}
+                        {customAuthConfigErrors[field.name] && (
+                          <Text className="font-roobert text-[10px] text-red-600">
+                            {customAuthConfigErrors[field.name]}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  }
+                )}
+              </View>
+            </View>
+          )}
+
+        {isLoadingToolkitDetails && (
+          <View className="mb-8">
+            <ActivityIndicator size="small" color="#999" />
+          </View>
+        )}
+      </>
+    );
+
+    // When using BottomSheetFlatList, use proper drawer layout
+    if (useBottomSheetFlatList) {
+      return (
+        <View style={{ flex: 1 }}>
+          {/* Fixed Header */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 16,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="mb-1 font-roobert-semibold text-xl">
+              {app.name}
+            </Text>
+            <Text
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {t('integrations.connector.chooseNameForConnection')}
+            </Text>
+          </View>
+
+          {/* Scrollable Content */}
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 16 }}
+            showsVerticalScrollIndicator={false}>
+            {profileCreateContent}
+          </BottomSheetScrollView>
+
+          {/* Fixed Footer Button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <ContinueButton
+              onPress={handleCreateProfile}
+              disabled={
+                isCreating ||
+                isLoadingToolkitDetails ||
+                !profileName.trim() ||
+                isCheckingName ||
+                (nameAvailability && !nameAvailability.available)
+              }
+              isLoading={isCreating}
+              label={
+                isCreating
+                  ? t('integrations.connector.creating')
+                  : t('integrations.connector.continue')
+              }
+              rounded="2xl"
+            />
+          </View>
+        </View>
+      );
+    }
+
+    // Regular layout (non-drawer)
     return (
       <View className="mb-4">
         {/* Header with back button, title, and description */}
@@ -642,233 +932,7 @@ export function ComposioConnectorContent({
         </View>
 
         <View className={noPadding ? '' : 'px-0'}>
-          <View className="mb-8">
-            <Text className="mb-3 font-roobert-medium text-sm uppercase tracking-wider text-muted-foreground">
-              {t('integrations.connector.profileName')}
-            </Text>
-            <View className="relative">
-              <TextInput
-                value={profileName}
-                onChangeText={setProfileName}
-                placeholder={t('integrations.connector.profileNamePlaceholder', { app: app.name })}
-                className={`rounded-2xl bg-muted/5 px-4 py-4 pr-12 font-roobert text-base text-foreground ${
-                  nameAvailability && !nameAvailability.available
-                    ? 'border-2 border-red-500/50'
-                    : nameAvailability && nameAvailability.available && profileName.length > 0
-                      ? 'border border-border/40'
-                      : 'border border-border/40'
-                }`}
-                placeholderTextColor="rgba(156, 163, 175, 0.5)"
-                autoFocus
-              />
-              <View className="absolute right-4 top-1/2 -translate-y-1/2">
-                {isCheckingName && profileName.length > 0 && (
-                  <ActivityIndicator size="small" color="#999" />
-                )}
-                {!isCheckingName &&
-                  nameAvailability &&
-                  profileName.length > 0 &&
-                  (nameAvailability.available ? (
-                    <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500/10">
-                      <Icon as={Check} size={16} className="text-green-600" strokeWidth={2.5} />
-                    </View>
-                  ) : (
-                    <View className="h-6 w-6 items-center justify-center rounded-full bg-red-500/10">
-                      <Icon as={X} size={16} className="text-red-600" strokeWidth={2.5} />
-                    </View>
-                  ))}
-              </View>
-            </View>
-
-            {nameAvailability && !nameAvailability.available && (
-              <View className="mt-3">
-                <Text className="mb-2 font-roobert text-sm text-red-600">
-                  {t('integrations.connector.nameAlreadyTaken')}
-                </Text>
-                {nameAvailability.suggestions.length > 0 && (
-                  <View className="flex-row flex-wrap gap-2">
-                    {nameAvailability.suggestions.map((suggestion: string) => (
-                      <Pressable
-                        key={suggestion}
-                        onPress={() => setProfileName(suggestion)}
-                        className="rounded-full border border-border/40 bg-muted/10 px-3 py-1.5 active:opacity-70">
-                        <Text className="font-roobert-medium text-xs text-foreground">
-                          {suggestion}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-
-          {/* Initiation Fields */}
-          {!isLoadingToolkitDetails &&
-            toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
-              <View className="mb-8">
-                <View className="mb-4 flex-row items-center">
-                  <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
-                  <Text className="font-roobert-medium text-sm text-foreground">
-                    Connection Details
-                  </Text>
-                </View>
-                <View className="space-y-4">
-                  {toolkitDetails.toolkit.connected_account_initiation_fields.required.map(
-                    (field: any) => {
-                      const fieldType = field.type?.toLowerCase() || 'string';
-                      const isBoolean = fieldType === 'boolean';
-                      const isNumber = fieldType === 'number' || fieldType === 'double';
-
-                      return (
-                        <View key={field.name} className="space-y-1">
-                          <Text className="font-roobert-medium text-xs text-foreground">
-                            {field.displayName}
-                            {field.required && <Text className="ml-1 text-red-500">*</Text>}
-                          </Text>
-
-                          {isBoolean ? (
-                            <View className="flex-row items-center">
-                              <Switch
-                                value={initiationFields[field.name] === 'true'}
-                                onValueChange={(checked) =>
-                                  handleInitiationFieldChange(
-                                    field.name,
-                                    checked ? 'true' : 'false'
-                                  )
-                                }
-                                trackColor={{
-                                  false: '#e5e7eb',
-                                  true: '#3b82f6',
-                                }}
-                                thumbColor="#ffffff"
-                              />
-                              <Text className="ml-3 font-roobert text-xs text-muted-foreground">
-                                {field.description || 'Enable'}
-                              </Text>
-                            </View>
-                          ) : (
-                            <>
-                              <TextInput
-                                value={initiationFields[field.name] || ''}
-                                onChangeText={(value) =>
-                                  handleInitiationFieldChange(field.name, value)
-                                }
-                                placeholder={
-                                  field.default ||
-                                  field.description ||
-                                  `Enter ${field.displayName.toLowerCase()}`
-                                }
-                                className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
-                                  initiationFieldsErrors[field.name]
-                                    ? 'border-red-500/50'
-                                    : 'border-border/40'
-                                }`}
-                                placeholderTextColor="rgba(156, 163, 175, 0.5)"
-                                secureTextEntry={fieldType === 'password'}
-                                keyboardType={
-                                  fieldType === 'email'
-                                    ? 'email-address'
-                                    : fieldType === 'url'
-                                      ? 'url'
-                                      : isNumber
-                                        ? 'numeric'
-                                        : 'default'
-                                }
-                              />
-                              {field.description && (
-                                <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
-                                  {field.description}
-                                </Text>
-                              )}
-                            </>
-                          )}
-
-                          {initiationFieldsErrors[field.name] && (
-                            <Text className="font-roobert text-[10px] text-red-600">
-                              {initiationFieldsErrors[field.name]}
-                            </Text>
-                          )}
-                        </View>
-                      );
-                    }
-                  )}
-                </View>
-              </View>
-            )}
-
-          {/* Custom Auth Config Fields */}
-          {useCustomAuth &&
-            !isLoadingToolkitDetails &&
-            toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.required
-              ?.length > 0 && (
-              <View className="mb-8">
-                <View className="mb-4 flex-row items-center">
-                  <Icon as={Settings} size={14} className="mr-1.5 text-muted-foreground" />
-                  <Text className="font-roobert-medium text-sm text-foreground">
-                    OAuth Configuration
-                  </Text>
-                </View>
-                <View className="space-y-4">
-                  {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required.map(
-                    (field: any) => {
-                      const fieldType = field.type?.toLowerCase() || 'string';
-                      const isNumber = fieldType === 'number' || fieldType === 'double';
-
-                      return (
-                        <View key={field.name} className="space-y-1">
-                          <Text className="font-roobert-medium text-xs text-foreground">
-                            {field.displayName}
-                            {field.required && <Text className="ml-1 text-red-500">*</Text>}
-                          </Text>
-                          <TextInput
-                            value={customAuthConfig[field.name] || ''}
-                            onChangeText={(value) => handleCustomAuthFieldChange(field.name, value)}
-                            placeholder={
-                              field.default ||
-                              field.description ||
-                              `Enter ${field.displayName.toLowerCase()}`
-                            }
-                            className={`rounded-2xl border bg-muted/5 px-4 py-4 font-roobert text-base text-foreground ${
-                              customAuthConfigErrors[field.name]
-                                ? 'border-red-500/50'
-                                : 'border-border/40'
-                            }`}
-                            placeholderTextColor="rgba(156, 163, 175, 0.5)"
-                            secureTextEntry={fieldType === 'password'}
-                            keyboardType={
-                              fieldType === 'email'
-                                ? 'email-address'
-                                : fieldType === 'url'
-                                  ? 'url'
-                                  : isNumber
-                                    ? 'numeric'
-                                    : 'default'
-                            }
-                          />
-                          {field.description && (
-                            <Text className="mt-1 font-roobert text-[10px] text-muted-foreground">
-                              {field.description}
-                            </Text>
-                          )}
-                          {customAuthConfigErrors[field.name] && (
-                            <Text className="font-roobert text-[10px] text-red-600">
-                              {customAuthConfigErrors[field.name]}
-                            </Text>
-                          )}
-                        </View>
-                      );
-                    }
-                  )}
-                </View>
-              </View>
-            )}
-
-          {isLoadingToolkitDetails && (
-            <View className="mb-8">
-              <ActivityIndicator size="small" color="#999" />
-            </View>
-          )}
+          {profileCreateContent}
 
           <ContinueButton
             onPress={handleCreateProfile}
@@ -893,29 +957,64 @@ export function ComposioConnectorContent({
   }
 
   if (currentStep === Step.Connecting) {
-    return (
-      <View className="mb-4">
-        <View className="items-center pb-12 pt-12">
-          <View className="mb-6 h-20 w-20 items-center justify-center rounded-2xl border border-border/40 bg-muted/5">
-            <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
-          </View>
-          <Text className="mb-2 text-center font-roobert-bold text-2xl text-foreground">
-            {t('integrations.connector.completeInBrowser')}
-          </Text>
-          <Text className="mb-8 px-8 text-center font-roobert text-base leading-relaxed text-muted-foreground">
-            {t('integrations.connector.authenticateInstructions')}
-          </Text>
+    const connectingContent = (
+      <View
+        className="items-center pb-12 pt-12"
+        style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-2xl border border-border/40 bg-muted/5">
+          <Icon as={ExternalLink} size={40} className="text-foreground" strokeWidth={2} />
+        </View>
+        <Text className="mb-2 text-center font-roobert-bold text-2xl text-foreground">
+          {t('integrations.connector.completeInBrowser')}
+        </Text>
+        <Text className="mb-8 px-8 text-center font-roobert text-base leading-relaxed text-muted-foreground">
+          {t('integrations.connector.authenticateInstructions')}
+        </Text>
 
-          {redirectUrl && (
-            <Pressable
-              onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
-              className="mb-6 active:opacity-70">
-              <Text className="font-roobert-medium text-sm text-foreground underline">
-                {t('integrations.connector.reopenBrowser')}
+        {redirectUrl && (
+          <Pressable
+            onPress={() => redirectUrl && WebBrowser.openBrowserAsync(redirectUrl)}
+            className="mb-6 active:opacity-70">
+            <Text className="font-roobert-medium text-sm text-foreground underline">
+              {t('integrations.connector.reopenBrowser')}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+    );
+
+    if (useBottomSheetFlatList) {
+      return (
+        <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>{connectingContent}</View>
+
+          {/* Fixed Footer Button */}
+          <View
+            style={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: 24,
+              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            }}>
+            <ContinueButton
+              onPress={handleAuthComplete}
+              label={t('integrations.connector.completedAuthentication')}
+            />
+            <Pressable onPress={handleBack} className="mt-4 items-center py-2 active:opacity-70">
+              <Text className="font-roobert text-sm text-muted-foreground">
+                {t('integrations.connector.goBack')}
               </Text>
             </Pressable>
-          )}
+          </View>
+        </View>
+      );
+    }
 
+    return (
+      <View className="mb-4">
+        {connectingContent}
+
+        <View style={{ paddingHorizontal: noPadding ? 0 : 24 }}>
           <ContinueButton
             onPress={handleAuthComplete}
             label={t('integrations.connector.completedAuthentication')}
@@ -932,21 +1031,27 @@ export function ComposioConnectorContent({
   }
 
   if (currentStep === Step.Success) {
-    return (
-      <View className="mb-4">
-        <View className="items-center pb-12 pt-16">
-          <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-green-500/10">
-            <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
-          </View>
-          <Text className="mb-2 font-roobert-bold text-2xl text-foreground">
-            {t('integrations.connector.allSet')}
-          </Text>
-          <Text className="px-8 text-center font-roobert text-base text-muted-foreground">
-            {t('integrations.connector.connectionReady', { app: app.name })}
-          </Text>
+    const successContent = (
+      <View
+        className="items-center pb-12 pt-16"
+        style={{ paddingHorizontal: useBottomSheetFlatList ? 24 : 0 }}>
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-green-500/10">
+          <Icon as={CheckCircle2} size={44} className="text-green-600" strokeWidth={2} />
         </View>
+        <Text className="mb-2 font-roobert-bold text-2xl text-foreground">
+          {t('integrations.connector.allSet')}
+        </Text>
+        <Text className="px-8 text-center font-roobert text-base text-muted-foreground">
+          {t('integrations.connector.connectionReady', { app: app.name })}
+        </Text>
       </View>
     );
+
+    if (useBottomSheetFlatList) {
+      return <View style={{ flex: 1, justifyContent: 'center' }}>{successContent}</View>;
+    }
+
+    return <View className="mb-4">{successContent}</View>;
   }
 
   return null;
@@ -1039,7 +1144,7 @@ const ProfileListItem = React.memo(({ profile, isSelected, onPress }: ProfileLis
   return (
     <Pressable
       onPress={onPress}
-      className={`mb-2 flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+      className={`mb-2 flex-row items-center rounded-2xl p-4 active:opacity-80 ${
         isSelected ? 'bg-primary/10' : 'bg-muted/5'
       }`}>
       <View

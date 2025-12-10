@@ -51,6 +51,7 @@ import { TriggerConfigStep } from './TriggerConfigStep';
 import { ComposioConnectorContent } from '../settings/integrations/ComposioConnector';
 import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -159,6 +160,7 @@ export function TriggerCreationDrawer({
   const router = useRouter();
   const { selectedAgentId: contextAgentId } = useAgent();
   const { hasFreeTier } = useBillingContext();
+  const { t } = useLanguage();
 
   // Handle upgrade press - use provided callback or navigate to plans
   const handleUpgradePress = useCallback(() => {
@@ -785,7 +787,8 @@ export function TriggerCreationDrawer({
           paddingBottom: showActionButtons ? 30 : 40,
         }}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled">
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag">
         {/* Composio Connector - Show instead of other content */}
         {selectedApp && showComposioConnector ? (
           <ComposioConnectorContent
@@ -845,29 +848,29 @@ export function TriggerCreationDrawer({
               <View className="flex-1">
                 <Text className="font-roobert-semibold text-xl text-foreground">
                   {isEditMode
-                    ? 'Edit Trigger'
+                    ? t('triggers.editTrigger')
                     : currentStep === 'type'
-                      ? 'Create Trigger'
+                      ? t('triggers.createTrigger')
                       : selectedType === 'event'
                         ? eventStep === 'apps'
-                          ? 'Select an Application'
+                          ? t('triggers.selectApplication')
                           : eventStep === 'triggers'
-                            ? `${selectedApp?.name || ''} Triggers`
-                            : 'Configure Trigger'
-                        : 'Schedule Trigger'}
+                            ? `${selectedApp?.name || ''} ${t('triggers.triggers')}`
+                            : t('triggers.configureTrigger')
+                        : t('triggers.scheduleTrigger')}
                 </Text>
                 <Text className="mt-1 font-roobert text-sm text-muted-foreground">
                   {isEditMode
-                    ? 'Update your trigger configuration'
+                    ? t('triggers.updateYourConfig')
                     : currentStep === 'type'
-                      ? 'Choose a trigger type'
+                      ? t('triggers.chooseType')
                       : selectedType === 'event'
                         ? eventStep === 'apps'
-                          ? 'Choose an app to monitor for events and trigger your agent'
+                          ? t('triggers.chooseAppToMonitor')
                           : eventStep === 'triggers'
-                            ? 'Choose an event to monitor'
-                            : 'Configure your trigger'
-                        : 'Configure your trigger'}
+                            ? t('triggers.chooseEventToMonitor')
+                            : t('triggers.configureYourTrigger')
+                        : t('triggers.configureYourTrigger')}
                 </Text>
               </View>
             </View>
@@ -884,9 +887,9 @@ export function TriggerCreationDrawer({
                     paddingRight: 24,
                   }}>
                   {[
-                    { id: 'apps', name: 'Select App', icon: Link2 },
-                    { id: 'triggers', name: 'Choose Trigger', icon: Zap },
-                    { id: 'config', name: 'Configure', icon: Sparkles },
+                    { id: 'apps', name: t('triggers.selectApp'), icon: Link2 },
+                    { id: 'triggers', name: t('triggers.chooseTrigger'), icon: Zap },
+                    { id: 'config', name: t('triggers.configure'), icon: Sparkles },
                   ].map((step, index) => {
                     const stepIndex = ['apps', 'triggers', 'config'].indexOf(eventStep);
                     const isCompleted = index < stepIndex;
@@ -951,14 +954,14 @@ export function TriggerCreationDrawer({
                   <>
                     <TypeCard
                       icon={Clock}
-                      title="Schedule Trigger"
-                      subtitle="Run on a schedule"
+                      title={t('triggers.scheduleTrigger')}
+                      subtitle={t('triggers.runOnSchedule')}
                       onPress={() => handleTypeSelect('schedule')}
                     />
                     <TypeCard
                       icon={Sparkles}
-                      title="Event Trigger"
-                      subtitle="From external apps"
+                      title={t('triggers.eventTrigger')}
+                      subtitle={t('triggers.fromExternalApps')}
                       onPress={() => handleTypeSelect('event')}
                     />
                   </>
@@ -978,12 +981,12 @@ export function TriggerCreationDrawer({
                       color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                       marginBottom: 8,
                     }}>
-                    Name *
+                    {t('triggers.nameRequired')}
                   </Text>
                   <TextInput
                     value={triggerName}
                     onChangeText={setTriggerName}
-                    placeholder="Daily report"
+                    placeholder={t('triggers.dailyAt9Am')}
                     placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
                     style={{
                       padding: 12,
@@ -1006,7 +1009,7 @@ export function TriggerCreationDrawer({
                       color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                       marginBottom: 8,
                     }}>
-                    Schedule *
+                    {t('triggers.scheduleRequired')}
                   </Text>
                   <View className="flex-row gap-3">
                     {(['preset', 'recurring', 'advanced'] as const).map((mode) => (
@@ -1196,27 +1199,37 @@ export function TriggerCreationDrawer({
                       color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                       marginBottom: 8,
                     }}>
-                    Description (optional)
+                    {t('triggers.descriptionOptional')}
                   </Text>
-                  <TextInput
-                    value={description}
-                    onChangeText={setDescription}
-                    placeholder="Describe your agent"
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                    multiline
-                    numberOfLines={3}
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                    showsVerticalScrollIndicator={true}
                     style={{
-                      padding: 12,
                       borderRadius: 12,
                       borderWidth: 1.5,
                       borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                       backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                      textAlignVertical: 'top',
-                      minHeight: 100,
+                      maxHeight: 150,
                     }}
-                  />
+                    contentContainerStyle={{
+                      padding: 12,
+                    }}>
+                    <TextInput
+                      value={description}
+                      onChangeText={setDescription}
+                      placeholder={t('triggers.describePlaceholder')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      multiline
+                      scrollEnabled={false}
+                      style={{
+                        minHeight: 100,
+                        fontSize: 16,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        textAlignVertical: 'top',
+                      }}
+                    />
+                  </ScrollView>
                 </View>
 
                 {/* Agent Instructions */}
@@ -1228,27 +1241,37 @@ export function TriggerCreationDrawer({
                       color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
                       marginBottom: 8,
                     }}>
-                    Instructions *
+                    {t('triggers.instructionsRequired')}
                   </Text>
-                  <TextInput
-                    value={agentPrompt}
-                    onChangeText={setAgentPrompt}
-                    placeholder="What should your agent do?"
-                    placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
-                    multiline
-                    numberOfLines={4}
+                  <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="on-drag"
+                    showsVerticalScrollIndicator={true}
                     style={{
-                      padding: 12,
                       borderRadius: 12,
                       borderWidth: 1.5,
                       borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
                       backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                      fontSize: 16,
-                      color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
-                      textAlignVertical: 'top',
-                      minHeight: 120,
+                      maxHeight: 200,
                     }}
-                  />
+                    contentContainerStyle={{
+                      padding: 12,
+                    }}>
+                    <TextInput
+                      value={agentPrompt}
+                      onChangeText={setAgentPrompt}
+                      placeholder={t('triggers.instructionsLabel')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      multiline
+                      scrollEnabled={false}
+                      style={{
+                        minHeight: 120,
+                        fontSize: 16,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                        textAlignVertical: 'top',
+                      }}
+                    />
+                  </ScrollView>
                 </View>
               </View>
             )}
@@ -1297,7 +1320,7 @@ export function TriggerCreationDrawer({
                   <>
                     {isEditMode && selectedApp && loadingTriggers && !selectedTrigger ? (
                       <View className="items-center justify-center py-16">
-                        <Loading title="Loading trigger configuration..." />
+                        <Loading title={t('triggers.loadingTriggerConfig')} />
                       </View>
                     ) : isEditMode && selectedApp && triggersError && !selectedTrigger ? (
                       <View className="items-center justify-center px-8 py-16">
@@ -1312,7 +1335,7 @@ export function TriggerCreationDrawer({
                           <Icon as={Info} size={32} color="#ef4444" strokeWidth={2} />
                         </View>
                         <Text className="mb-2 text-center font-roobert-semibold text-lg text-foreground">
-                          Failed to load trigger
+                          {t('triggers.failedToLoadTrigger')}
                         </Text>
                         <Text className="mb-6 text-center text-sm text-muted-foreground">
                           {triggersError?.message || 'An error occurred while loading trigger data'}
@@ -1321,7 +1344,7 @@ export function TriggerCreationDrawer({
                           onPress={() => refetchTriggers()}
                           className="rounded-xl bg-primary px-6 py-3 active:opacity-80">
                           <Text className="font-roobert-semibold text-sm text-primary-foreground">
-                            Retry
+                            {t('triggers.retry')}
                           </Text>
                         </Pressable>
                       </View>
@@ -1356,8 +1379,10 @@ export function TriggerCreationDrawer({
                 <View className="flex-row gap-3">
                   <Pressable
                     onPress={handleBack}
-                    className="flex-1 items-center rounded-xl border border-border bg-card py-4 active:opacity-70">
-                    <Text className="font-roobert-semibold text-base text-foreground">Back</Text>
+                    className="flex-1 items-center rounded-xl bg-muted py-4 active:opacity-70">
+                    <Text className="font-roobert-semibold text-base text-muted-foreground">
+                      {t('triggers.back')}
+                    </Text>
                   </Pressable>
                   <Pressable
                     onPress={handleCreate}
@@ -1371,24 +1396,36 @@ export function TriggerCreationDrawer({
                     }
                     className={`flex-1 items-center rounded-xl py-4 ${
                       !isFormValid ||
-                      (selectedType === 'event'
-                        ? createEventTriggerMutation.isPending
-                        : createTriggerMutation.isPending)
-                        ? 'bg-muted opacity-50'
-                        : 'bg-primary active:opacity-80'
-                    }`}>
-                    <Text className="font-roobert-semibold text-base text-primary-foreground">
-                      {isEditMode
+                      (isEditMode
                         ? updateTriggerMutation.isPending
-                          ? 'Updating...'
-                          : 'Update Trigger'
                         : selectedType === 'event'
                           ? createEventTriggerMutation.isPending
-                            ? 'Creating...'
-                            : 'Create Trigger'
+                          : createTriggerMutation.isPending)
+                        ? 'bg-muted'
+                        : 'bg-primary active:opacity-80'
+                    }`}>
+                    <Text
+                      className={`font-roobert-semibold text-base ${
+                        !isFormValid ||
+                        (isEditMode
+                          ? updateTriggerMutation.isPending
+                          : selectedType === 'event'
+                            ? createEventTriggerMutation.isPending
+                            : createTriggerMutation.isPending)
+                          ? 'text-muted-foreground'
+                          : 'text-primary-foreground'
+                      }`}>
+                      {isEditMode
+                        ? updateTriggerMutation.isPending
+                          ? t('triggers.updating')
+                          : t('triggers.updateTrigger')
+                        : selectedType === 'event'
+                          ? createEventTriggerMutation.isPending
+                            ? t('triggers.creating')
+                            : t('triggers.createTrigger')
                           : createTriggerMutation.isPending
-                            ? 'Creating...'
-                            : 'Create Trigger'}
+                            ? t('triggers.creating')
+                            : t('triggers.createTrigger')}
                     </Text>
                   </Pressable>
                 </View>

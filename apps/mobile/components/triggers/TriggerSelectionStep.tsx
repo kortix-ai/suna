@@ -18,6 +18,7 @@ import { Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -120,12 +121,14 @@ export function TriggerSelectionStep({
   isLoading,
   onTriggerSelect,
 }: TriggerSelectionStepProps) {
+  const { t } = useLanguage();
+
   if (!app) {
     return null;
   }
 
   if (isLoading) {
-    return <Loading title="Loading triggers..." />;
+    return <Loading title={t('triggers.loadingTriggers')} />;
   }
 
   if (triggers.length === 0) {
@@ -135,10 +138,10 @@ export function TriggerSelectionStep({
           <Icon as={Zap} size={24} className="text-muted-foreground" />
         </View>
         <Text className="mb-1 font-roobert-semibold text-base text-foreground">
-          No triggers available
+          {t('triggers.noTriggersAvailable')}
         </Text>
         <Text className="text-center text-sm text-muted-foreground">
-          This app doesn't have any triggers yet.
+          {t('triggers.noTriggersYet')}
         </Text>
       </View>
     );
@@ -165,8 +168,12 @@ export function TriggerSelectionStep({
           </View>
         )}
         <View className="flex-1">
-          <Text className="font-roobert-semibold text-lg text-foreground">{app.name} Triggers</Text>
-          <Text className="text-sm text-muted-foreground">Choose an event to monitor</Text>
+          <Text className="font-roobert-semibold text-lg text-foreground">
+            {app.name} {t('triggers.triggers')}
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            {t('triggers.chooseEventToMonitor')}
+          </Text>
         </View>
       </View>
 

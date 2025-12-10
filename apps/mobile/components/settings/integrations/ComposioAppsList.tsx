@@ -18,6 +18,7 @@ import { ToolkitIcon } from './ToolkitIcon';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 interface ComposioAppsContentProps {
   onBack?: () => void;
@@ -118,29 +119,6 @@ export function ComposioAppsContent({
   // Header component for FlatList
   const renderHeader = () => (
     <>
-      {/* Header with back button, title, and description */}
-      <View className="mb-4 flex-row items-center">
-        {onBack && (
-          <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-          </Pressable>
-        )}
-        <View className="ml-3 flex-1">
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="font-roobert-semibold text-xl">
-            {t('integrations.composioApps')}
-          </Text>
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-            }}
-            className="font-roobert text-sm">
-            {t('integrations.composioAppsDescription')}
-          </Text>
-        </View>
-      </View>
-
       {/* Search Bar */}
       <View className="mb-4">
         <View
@@ -153,7 +131,7 @@ export function ComposioAppsContent({
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search apps..."
+            placeholder={t('composio.searchApps')}
             placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
             className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
             style={{
@@ -282,16 +260,16 @@ export function ComposioAppsContent({
           initialNumToRender={20}
           windowSize={10}
           ListEmptyComponent={
-            <View className="items-center px-6 py-12">
-              <Icon as={Search} size={48} className="text-muted-foreground/40" />
-              <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                {searchQuery ? 'No apps found' : 'No apps available'}
-              </Text>
-              <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
-                {searchQuery
-                  ? 'Try adjusting your search query'
-                  : 'Apps will appear here once available'}
-              </Text>
+            <View className="px-6 py-8">
+              <EmptyState
+                icon={Search}
+                title={searchQuery ? t('integrations.noAppsFound') : t('integrations.noAppsAvailable')}
+                description={
+                  searchQuery
+                    ? t('integrations.tryDifferentSearch')
+                    : t('integrations.appsAppearHere')
+                }
+              />
             </View>
           }
         />
@@ -361,16 +339,16 @@ export function ComposioAppsContent({
           initialNumToRender={20}
           windowSize={10}
           ListEmptyComponent={
-            <View className="items-center px-6 py-12">
-              <Icon as={Search} size={48} className="text-muted-foreground/40" />
-              <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                {searchQuery ? 'No apps found' : 'No apps available'}
-              </Text>
-              <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
-                {searchQuery
-                  ? 'Try adjusting your search query'
-                  : 'Apps will appear here once available'}
-              </Text>
+            <View className="px-6 py-8">
+              <EmptyState
+                icon={Search}
+                title={searchQuery ? t('integrations.noAppsFound') : t('integrations.noAppsAvailable')}
+                description={
+                  searchQuery
+                    ? t('integrations.tryDifferentSearch')
+                    : t('integrations.appsAppearHere')
+                }
+              />
             </View>
           }
         />

@@ -5,8 +5,17 @@
  * Shows connected apps and allows adding new ones
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
-import { View, Pressable, ActivityIndicator, Image, Alert } from 'react-native';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
+import {
+  View,
+  Pressable,
+  ActivityIndicator,
+  Image,
+  Alert,
+  FlatList,
+  TextInput,
+  ScrollView,
+} from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -17,7 +26,17 @@ import {
   type ComposioApp,
   type ComposioProfile,
 } from '@/hooks/useComposio';
-import { Plus, CheckCircle2, Settings, X, Store, Trash2, Server, Lock } from 'lucide-react-native';
+import {
+  Plus,
+  CheckCircle2,
+  Settings,
+  X,
+  Store,
+  Trash2,
+  Server,
+  Lock,
+  Search,
+} from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
 import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
@@ -27,6 +46,19 @@ import { SvgUri } from 'react-native-svg';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetView,
+  BottomSheetFlatList,
+} from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { ToolkitIcon } from '@/components/settings/integrations/ToolkitIcon';
+import { EmptyState } from '@/components/shared/EmptyState';
+
+// Drawer view states
+type DrawerView = 'apps' | 'connector' | 'tools';
 
 interface IntegrationsScreenProps {
   agentId: string;
@@ -148,6 +180,7 @@ function ActiveIntegrationCard({
 
 export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: IntegrationsScreenProps) {
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const router = useRouter();
   const { data: agent, isLoading: isLoadingAgent } = useAgent(agentId);
   const { data: appsData, isLoading: isLoadingApps } = useComposioApps();
@@ -155,13 +188,27 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const updateAgentMutation = useUpdateAgent();
   const { hasFreeTier } = useBillingContext();
 
+  const browseAppsSheetRef = useRef<BottomSheetModal>(null);
+  const toolsSheetRef = useRef<BottomSheetModal>(null);
+  const [browseAppsSearchQuery, setBrowseAppsSearchQuery] = useState('');
+
   const [selectedApp, setSelectedApp] = useState<ComposioApp | null>(null);
   const [showConnector, setShowConnector] = useState(false);
-  const [showToolsManager, setShowToolsManager] = useState(false);
   const [showBrowseApps, setShowBrowseApps] = useState(false);
   const [showCustomMcp, setShowCustomMcp] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
+
+  // Drawer multi-step state
+  const [drawerView, setDrawerView] = useState<DrawerView>('apps');
+  const [drawerSelectedApp, setDrawerSelectedApp] = useState<ComposioApp | null>(null);
+  const [drawerSelectedProfile, setDrawerSelectedProfile] = useState<ComposioProfile | null>(null);
+  const [isDrawerSaving, setIsDrawerSaving] = useState(false);
+
+  // Tools sheet state
+  const [toolsSheetApp, setToolsSheetApp] = useState<ComposioApp | null>(null);
+  const [toolsSheetProfile, setToolsSheetProfile] = useState<ComposioProfile | null>(null);
+  const [toolsSheetView, setToolsSheetView] = useState<'tools' | 'connector'>('tools');
 
   // Handle upgrade press - use provided callback or navigate to plans
   const handleUpgradePress = useCallback(() => {
@@ -268,9 +315,43 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
       categories: [],
       connected: profile.is_connected,
     };
-    setSelectedApp(finalApp);
-    setSelectedProfile(profile);
-    setShowToolsManager(true);
+    // Open tools in a sheet
+    setToolsSheetApp(finalApp);
+    setToolsSheetProfile(profile);
+    setToolsSheetView('tools');
+    toolsSheetRef.current?.present();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleCloseToolsSheet = () => {
+    toolsSheetRef.current?.dismiss();
+    setToolsSheetApp(null);
+    setToolsSheetProfile(null);
+    setToolsSheetView('tools');
+  };
+
+  const handleToolsSheetComplete = () => {
+    handleCloseToolsSheet();
+    onUpdate?.();
+  };
+
+  const handleToolsSheetEdit = () => {
+    // Switch to connector view within the tools sheet
+    setToolsSheetView('connector');
+  };
+
+  const handleToolsSheetConnectorComplete = (
+    profileId: string,
+    appName: string,
+    appSlug: string
+  ) => {
+    // After editing connection, go back to tools view
+    // Update the profile reference
+    const updatedProfile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+    if (updatedProfile) {
+      setToolsSheetProfile(updatedProfile);
+    }
+    setToolsSheetView('tools');
   };
 
   const handleDeleteIntegration = (mcp: any) => {
@@ -335,10 +416,150 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   };
 
   const handleBrowseAppSelect = (app: ComposioApp) => {
-    setShowBrowseApps(false);
-    setSelectedApp(app);
-    setShowConnector(true);
+    // Stay in the drawer, just change the view to connector
+    setDrawerSelectedApp(app);
+    setDrawerView('connector');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
+
+  const handleOpenBrowseApps = () => {
+    setShowBrowseApps(true);
+    setBrowseAppsSearchQuery('');
+    setDrawerView('apps');
+    setDrawerSelectedApp(null);
+    setDrawerSelectedProfile(null);
+    browseAppsSheetRef.current?.present();
+  };
+
+  const handleCloseBrowseApps = () => {
+    browseAppsSheetRef.current?.dismiss();
+    setShowBrowseApps(false);
+    setBrowseAppsSearchQuery('');
+    setDrawerView('apps');
+    setDrawerSelectedApp(null);
+    setDrawerSelectedProfile(null);
+  };
+
+  // Handle connector completion within drawer
+  const handleDrawerConnectorComplete = (profileId: string, appName: string, appSlug: string) => {
+    // Add the Composio MCP to the agent
+    const customMcps = agent?.custom_mcps || [];
+    const existingMcp = customMcps.find(
+      (mcp: any) => mcp.type === 'composio' && mcp.config?.profile_id === profileId
+    );
+
+    if (!existingMcp) {
+      setIsDrawerSaving(true);
+      const newMcp = {
+        name: appName,
+        type: 'composio' as any,
+        config: {
+          profile_id: profileId,
+          toolkit_slug: appSlug,
+        },
+        enabledTools: [],
+      };
+
+      updateAgentMutation.mutate(
+        {
+          agentId,
+          data: {
+            custom_mcps: [...customMcps, newMcp],
+            replace_mcps: true,
+          },
+        },
+        {
+          onSuccess: () => {
+            setIsDrawerSaving(false);
+            // Find the profile and move to tools view
+            const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+            if (profile) {
+              setDrawerSelectedProfile(profile);
+              setDrawerView('tools');
+            } else {
+              // Close drawer if no profile found
+              handleCloseBrowseApps();
+            }
+            onUpdate?.();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+          onError: (error: any) => {
+            setIsDrawerSaving(false);
+            Alert.alert('Error', error?.message || 'Failed to add integration');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          },
+        }
+      );
+    } else {
+      // Already exists, just move to tools
+      const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+      if (profile) {
+        setDrawerSelectedProfile(profile);
+        setDrawerView('tools');
+      } else {
+        handleCloseBrowseApps();
+      }
+    }
+  };
+
+  // Handle tools completion within drawer
+  const handleDrawerToolsComplete = () => {
+    handleCloseBrowseApps();
+    onUpdate?.();
+  };
+
+  // Handle back navigation within drawer
+  const handleDrawerBack = () => {
+    if (drawerView === 'tools') {
+      // From tools, go back to connector (or close if profile already existed)
+      setDrawerView('connector');
+      setDrawerSelectedProfile(null);
+    } else if (drawerView === 'connector') {
+      // From connector, go back to apps list
+      setDrawerView('apps');
+      setDrawerSelectedApp(null);
+    } else {
+      // From apps, close drawer
+      handleCloseBrowseApps();
+    }
+  };
+
+  // Check if an app is connected to the agent
+  const isAppConnectedToAgent = useCallback(
+    (appSlug: string): boolean => {
+      if (!agent?.custom_mcps || !profiles) return false;
+
+      return agent.custom_mcps.some((mcpConfig: any) => {
+        if (mcpConfig.type === 'composio' && mcpConfig.config?.profile_id) {
+          const profile = profiles.find(
+            (p: ComposioProfile) => p.profile_id === mcpConfig.config.profile_id
+          );
+          return profile?.toolkit_slug === appSlug;
+        }
+        return false;
+      });
+    },
+    [agent, profiles]
+  );
+
+  // Filter apps based on search query
+  const filteredBrowseApps = useMemo(() => {
+    if (!browseAppsSearchQuery.trim()) return apps;
+    const query = browseAppsSearchQuery.toLowerCase();
+    return apps.filter(
+      (app: ComposioApp) =>
+        app.name.toLowerCase().includes(query) ||
+        app.description?.toLowerCase().includes(query) ||
+        app.categories?.some((cat) => cat.toLowerCase().includes(query))
+    );
+  }, [apps, browseAppsSearchQuery]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
+    ),
+    []
+  );
 
   const handleCustomMcpSave = (config: any) => {
     const customMcps = agent?.custom_mcps || [];
@@ -413,17 +634,6 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
     );
   }
 
-  if (showBrowseApps) {
-    return (
-      <ComposioAppsContent
-        onBack={() => setShowBrowseApps(false)}
-        onAppSelect={handleBrowseAppSelect}
-        noPadding={true}
-        agentId={agentId}
-      />
-    );
-  }
-
   if (showCustomMcp) {
     return (
       <CustomMcpContent
@@ -431,30 +641,6 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
         onSave={handleCustomMcpSave}
         noPadding={true}
       />
-    );
-  }
-
-  if (showToolsManager && selectedApp && selectedProfile) {
-    return (
-      <View className="flex-1">
-        <ComposioToolsContent
-          app={selectedApp}
-          profile={selectedProfile}
-          agentId={agentId}
-          onBack={() => {
-            setShowToolsManager(false);
-            setSelectedApp(null);
-            setSelectedProfile(null);
-          }}
-          onComplete={() => {
-            setShowToolsManager(false);
-            setSelectedApp(null);
-            setSelectedProfile(null);
-            onUpdate?.();
-          }}
-          noPadding={true}
-        />
-      </View>
     );
   }
 
@@ -472,7 +658,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
       {/* Browse Apps and Custom MCP Buttons */}
       <View className="mb-4 flex-row gap-3">
         <Pressable
-          onPress={() => setShowBrowseApps(true)}
+          onPress={handleOpenBrowseApps}
           className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 active:opacity-80">
           <Icon as={Store} size={18} className="text-foreground" />
           <Text className="font-roobert-semibold text-base text-foreground">Browse Apps</Text>
@@ -547,6 +733,258 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
           })}
         </View>
       )}
+
+      {/* Browse Apps Drawer */}
+      <BottomSheetModal
+        ref={browseAppsSheetRef}
+        snapPoints={['90%']}
+        enableDynamicSizing={false}
+        enablePanDownToClose
+        onDismiss={handleCloseBrowseApps}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+          marginTop: 8,
+          marginBottom: 0,
+        }}
+        style={{
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          overflow: 'hidden',
+        }}>
+        <View style={{ flex: 1 }}>
+          {/* Apps List View */}
+          {drawerView === 'apps' && (
+            <View style={{ flex: 1, flexDirection: 'column' }}>
+              {/* Sticky Header */}
+              <View
+                style={{
+                  paddingHorizontal: 24,
+                  paddingTop: 16,
+                  paddingBottom: 16,
+                  backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+                }}>
+                <Text className="mb-2 font-roobert-semibold text-xl text-foreground">
+                  {t('integrations.composioApps')}
+                </Text>
+                <Text className="mb-4 font-roobert text-sm text-muted-foreground">
+                  {t('integrations.composioAppsDescription')}
+                </Text>
+
+                {/* Search Bar */}
+                <View>
+                  <View
+                    className="flex-row items-center rounded-2xl border border-border bg-card px-4"
+                    style={{
+                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                    }}>
+                    <Icon as={Search} size={18} className="text-muted-foreground" />
+                    <TextInput
+                      value={browseAppsSearchQuery}
+                      onChangeText={setBrowseAppsSearchQuery}
+                      placeholder={t('composio.searchApps')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                      className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
+                      style={{
+                        color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
+                      }}
+                    />
+                    {browseAppsSearchQuery.length > 0 && (
+                      <Pressable onPress={() => setBrowseAppsSearchQuery('')} className="ml-2">
+                        <Icon as={X} size={18} className="text-muted-foreground" />
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* Scrollable Apps List */}
+              {isLoadingApps ? (
+                <View
+                  className="flex-1 items-center justify-center"
+                  style={{ paddingHorizontal: 24 }}>
+                  <ActivityIndicator
+                    size="small"
+                    color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'}
+                  />
+                  <Text className="mt-4 font-roobert text-sm text-muted-foreground">
+                    {t('integrations.loadingIntegrations')}
+                  </Text>
+                </View>
+              ) : (
+                <BottomSheetFlatList
+                  data={filteredBrowseApps}
+                  keyExtractor={(item: ComposioApp) => item.slug}
+                  style={{ flex: 1 }}
+                  renderItem={({ item: app }: { item: ComposioApp }) => {
+                    const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
+                    return (
+                      <View style={{ paddingHorizontal: 24 }}>
+                        <Pressable
+                          onPress={() => handleBrowseAppSelect(app)}
+                          disabled={isConnected}
+                          className={`mb-3 flex-row items-center gap-4 rounded-2xl p-4 ${
+                            isConnected ? 'bg-muted/5 opacity-50' : 'bg-primary/5 active:opacity-80'
+                          }`}>
+                          <ToolkitIcon slug={app.slug} name={app.name} size="sm" />
+                          <View className="flex-1">
+                            <Text
+                              className={`font-roobert-semibold text-base ${
+                                isConnected ? 'text-muted-foreground' : 'text-foreground'
+                              }`}>
+                              {app.name}
+                            </Text>
+                            <Text
+                              className="font-roobert text-sm text-muted-foreground"
+                              numberOfLines={2}
+                              ellipsizeMode="tail">
+                              {app.description}
+                            </Text>
+                            {isConnected && (
+                              <View className="mt-1 flex-row items-center gap-1">
+                                <Icon
+                                  as={CheckCircle2}
+                                  size={12}
+                                  className="text-green-600 dark:text-green-400"
+                                />
+                                <Text className="text-xs font-medium text-green-600 dark:text-green-400">
+                                  {t('triggers.connected')}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </Pressable>
+                      </View>
+                    );
+                  }}
+                  contentContainerStyle={{ paddingBottom: 60, paddingTop: 8, flexGrow: 1 }}
+                  showsVerticalScrollIndicator={true}
+                  bounces={true}
+                  maxToRenderPerBatch={10}
+                  updateCellsBatchingPeriod={50}
+                  initialNumToRender={20}
+                  windowSize={21}
+                  ListEmptyComponent={
+                    <View style={{ paddingHorizontal: 24, paddingVertical: 32 }}>
+                      <EmptyState
+                        icon={Search}
+                        title={
+                          browseAppsSearchQuery
+                            ? t('integrations.noAppsFound')
+                            : t('integrations.noAppsAvailable')
+                        }
+                        description={
+                          browseAppsSearchQuery
+                            ? t('integrations.tryDifferentSearch')
+                            : t('integrations.appsAppearHere')
+                        }
+                      />
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          )}
+
+          {/* Connector View */}
+          {drawerView === 'connector' && drawerSelectedApp && (
+            <ComposioConnectorContent
+              app={drawerSelectedApp}
+              onBack={handleDrawerBack}
+              onComplete={handleDrawerConnectorComplete}
+              onNavigateToTools={(app, profile) => {
+                setDrawerSelectedApp(app);
+                setDrawerSelectedProfile(profile);
+                setDrawerView('tools');
+              }}
+              agentId={agentId}
+              mode="full"
+              noPadding={false}
+              isSaving={isDrawerSaving}
+              useBottomSheetFlatList={true}
+            />
+          )}
+
+          {/* Tools View */}
+          {drawerView === 'tools' && drawerSelectedApp && drawerSelectedProfile && (
+            <ComposioToolsContent
+              app={drawerSelectedApp}
+              profile={drawerSelectedProfile}
+              agentId={agentId}
+              onBack={handleDrawerBack}
+              onComplete={handleDrawerToolsComplete}
+              noPadding={false}
+              useBottomSheetFlatList={true}
+            />
+          )}
+        </View>
+      </BottomSheetModal>
+
+      {/* Tools Manager Sheet (for editing existing integrations) */}
+      <BottomSheetModal
+        ref={toolsSheetRef}
+        snapPoints={['90%']}
+        enableDynamicSizing={false}
+        enablePanDownToClose
+        onDismiss={handleCloseToolsSheet}
+        backdropComponent={renderBackdrop}
+        backgroundStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+          marginTop: 8,
+          marginBottom: 0,
+        }}
+        style={{
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          overflow: 'hidden',
+        }}>
+        <View style={{ flex: 1 }}>
+          {/* Tools View */}
+          {toolsSheetView === 'tools' && toolsSheetApp && toolsSheetProfile && (
+            <ComposioToolsContent
+              app={toolsSheetApp}
+              profile={toolsSheetProfile}
+              agentId={agentId}
+              onComplete={handleToolsSheetComplete}
+              onEdit={handleToolsSheetEdit}
+              noPadding={false}
+              useBottomSheetFlatList={true}
+            />
+          )}
+
+          {/* Connector View (for editing connection) */}
+          {toolsSheetView === 'connector' && toolsSheetApp && (
+            <ComposioConnectorContent
+              app={toolsSheetApp}
+              onBack={() => setToolsSheetView('tools')}
+              onComplete={handleToolsSheetConnectorComplete}
+              onNavigateToTools={(app, profile) => {
+                setToolsSheetApp(app);
+                setToolsSheetProfile(profile);
+                setToolsSheetView('tools');
+              }}
+              agentId={agentId}
+              mode="full"
+              noPadding={false}
+              isSaving={false}
+              useBottomSheetFlatList={true}
+            />
+          )}
+        </View>
+      </BottomSheetModal>
     </View>
   );
 }

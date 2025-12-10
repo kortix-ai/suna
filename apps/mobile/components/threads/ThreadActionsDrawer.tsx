@@ -10,6 +10,7 @@ import { Pressable, View, Alert } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useRouter } from 'expo-router';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -130,17 +131,18 @@ export function ThreadActionsDrawer({
   const { colorScheme } = useColorScheme();
   const router = useRouter();
   const { hasFreeTier } = useBillingContext();
+  const { t } = useLanguage();
 
   // Handle upgrade prompt for free tier users
   const handleUpgradePrompt = React.useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     Alert.alert(
-      'Upgrade Required',
-      'Sharing threads is available on paid plans. Upgrade to unlock this feature.',
+      t('threadActions.upgradeRequired'),
+      t('threadActions.upgradeRequiredMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Upgrade',
+          text: t('threadActions.upgrade'),
           onPress: () => {
             onClose();
             router.push('/plans');
@@ -148,7 +150,7 @@ export function ThreadActionsDrawer({
         },
       ]
     );
-  }, [onClose, router]);
+  }, [onClose, router, t]);
 
   const handleSheetChange = React.useCallback(
     (index: number) => {
@@ -241,7 +243,7 @@ export function ThreadActionsDrawer({
                   colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
               }}
               className="font-roobert-medium text-sm">
-              Thread Actions
+              {t('threadActions.title')}
             </Text>
           </View>
 
@@ -250,8 +252,8 @@ export function ThreadActionsDrawer({
             {onShare && (
               <ActionItem
                 icon={hasFreeTier ? Lock : Share}
-                label={hasFreeTier ? 'Share Thread (Upgrade)' : 'Share Thread'}
-                subtitle={hasFreeTier ? 'Available on paid plans' : 'Create a public link'}
+                label={hasFreeTier ? t('threadActions.shareThreadUpgrade') : t('threadActions.shareThread')}
+                subtitle={hasFreeTier ? t('threadActions.availableOnPaidPlans') : t('threadActions.createPublicLink')}
                 onPress={() => (hasFreeTier ? handleUpgradePrompt() : handleAction(onShare))}
               />
             )}
@@ -259,8 +261,8 @@ export function ThreadActionsDrawer({
             {onFiles && (
               <ActionItem
                 icon={FolderOpen}
-                label="Manage Files"
-                subtitle="View and manage attachments"
+                label={t('threadActions.manageFiles')}
+                subtitle={t('threadActions.viewManageAttachments')}
                 onPress={() => handleAction(onFiles)}
               />
             )}
@@ -268,8 +270,8 @@ export function ThreadActionsDrawer({
             {onDelete && (
               <ActionItem
                 icon={Trash2}
-                label="Delete Thread"
-                subtitle="Permanently delete this conversation"
+                label={t('threadActions.deleteThread')}
+                subtitle={t('threadActions.permanentlyDelete')}
                 onPress={() => handleAction(onDelete)}
               />
             )}

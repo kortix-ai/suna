@@ -581,11 +581,15 @@ export function FileViewerView({
             </Text>
           </View>
         ) : canEdit && isEditing ? (
-          <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
+          <ScrollView
+            className="flex-1"
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag">
             <TextInput
               value={localContent}
               onChangeText={handleContentChange}
               multiline
+              scrollEnabled={false}
               className="flex-1 px-4 py-4 font-roobert-mono text-sm text-primary"
               style={{
                 backgroundColor: 'transparent',

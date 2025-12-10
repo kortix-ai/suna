@@ -2,28 +2,95 @@
  * Tools Screen Component
  *
  * Allows configuring agentpress tools for a worker
- * Simplified version - full granular tool configuration can be added later
+ * Supports granular tool configuration with expandable capabilities
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Pressable, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Pressable, ActivityIndicator, Alert, ScrollView, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
-import { useToolsMetadata, type ToolMetadata } from '@/hooks/useToolsMetadata';
+import { useToolsMetadata, type ToolMetadata, type ToolMethod } from '@/hooks/useToolsMetadata';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Wrench,
   Save,
   AlertCircle,
   Check,
   ChevronRight,
+  ChevronDown,
   FileText,
   Terminal,
   Folder,
   ListTodo,
+  Image as ImageIcon,
+  Globe,
+  Presentation,
+  Code,
+  File,
+  FileCode,
+  Database,
+  Settings,
+  Zap,
+  Search,
+  Mail,
+  Calendar,
+  Clock,
+  Users,
+  MessageSquare,
+  Video,
+  Music,
+  Camera,
+  Palette,
+  BarChart,
+  PieChart,
+  TrendingUp,
+  ShoppingCart,
+  CreditCard,
+  Map,
+  Navigation,
+  Plane,
+  Car,
+  Home,
+  Building,
+  Briefcase,
+  Book,
+  GraduationCap,
+  Heart,
+  Star,
+  Bell,
+  Lock,
+  Key,
+  Shield,
+  Eye,
+  EyeOff,
+  Download,
+  Upload,
+  Share,
+  Link,
+  Copy,
+  Edit,
+  Trash,
+  Plus,
+  Minus,
+  X,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Info,
+  HelpCircle,
+  ExternalLink,
+  ArrowRight,
+  ArrowLeft,
+  ChevronUp,
+  ChevronDown as ChevronDownIcon,
+  MoreVertical,
+  MoreHorizontal,
 } from 'lucide-react-native';
+import { SvgUri } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 interface ToolsScreenProps {
   agentId: string;
@@ -32,11 +99,13 @@ interface ToolsScreenProps {
 
 export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const { data: agent, isLoading } = useAgent(agentId);
   const { data: toolsMetadata, isLoading: isLoadingMetadata } = useToolsMetadata();
   const updateAgentMutation = useUpdateAgent();
   const [tools, setTools] = useState<Record<string, any>>({});
   const [hasChanges, setHasChanges] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const toolsData = toolsMetadata?.success ? toolsMetadata.tools : undefined;
 
@@ -56,11 +125,27 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
 
     const updatedTools = { ...tools };
     const currentConfig = tools[toolName];
+    const toolGroup = toolsData?.[toolName];
 
     if (typeof currentConfig === 'object' && currentConfig !== null) {
       updatedTools[toolName] = {
         ...currentConfig,
         enabled,
+      };
+    } else if (toolGroup && hasGranularControl(toolName)) {
+      // Convert to granular format when tool has methods
+      updatedTools[toolName] = {
+        enabled,
+        methods:
+          toolGroup.methods?.reduce(
+            (acc, method) => {
+              if (method.visible !== false) {
+                acc[method.name] = method.enabled;
+              }
+              return acc;
+            },
+            {} as Record<string, boolean>
+          ) || {},
       };
     } else {
       updatedTools[toolName] = enabled;
@@ -69,6 +154,90 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
     setTools(updatedTools);
     setHasChanges(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  // Toggle individual method/capability
+  const handleMethodToggle = (toolName: string, methodName: string, enabled: boolean) => {
+    if (!areToolsEditable) return;
+
+    const toolGroup = toolsData?.[toolName];
+    if (!toolGroup) return;
+
+    const updatedTools = { ...tools };
+    const currentConfig = tools[toolName];
+
+    if (typeof currentConfig === 'object' && currentConfig !== null) {
+      updatedTools[toolName] = {
+        ...currentConfig,
+        methods: {
+          ...currentConfig.methods,
+          [methodName]: enabled,
+        },
+      };
+    } else {
+      // Convert to granular format
+      updatedTools[toolName] = {
+        enabled: isToolEnabled(toolName),
+        methods: {
+          ...(toolGroup.methods?.reduce(
+            (acc, method) => {
+              if (method.visible !== false) {
+                acc[method.name] = method.name === methodName ? enabled : method.enabled;
+              }
+              return acc;
+            },
+            {} as Record<string, boolean>
+          ) || {}),
+        },
+      };
+    }
+
+    setTools(updatedTools);
+    setHasChanges(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  // Toggle group expansion
+  const toggleGroupExpansion = (toolName: string) => {
+    const newExpanded = new Set(expandedGroups);
+    if (newExpanded.has(toolName)) {
+      newExpanded.delete(toolName);
+    } else {
+      newExpanded.add(toolName);
+    }
+    setExpandedGroups(newExpanded);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  // Check if tool has granular control (multiple methods)
+  const hasGranularControl = (toolName: string): boolean => {
+    const toolGroup = toolsData?.[toolName];
+    if (!toolGroup) return false;
+    const visibleMethods = toolGroup.methods?.filter((m) => m.visible !== false) || [];
+    return visibleMethods.length > 0;
+  };
+
+  // Check if individual method is enabled
+  const isMethodEnabled = (toolName: string, methodName: string): boolean => {
+    const toolConfig = tools[toolName];
+    if (!isToolEnabled(toolName)) return false;
+
+    if (typeof toolConfig === 'boolean') return toolConfig;
+    if (typeof toolConfig === 'object' && toolConfig !== null) {
+      const methodsConfig = toolConfig.methods || {};
+      const methodConfig = methodsConfig[methodName];
+
+      if (typeof methodConfig === 'boolean') return methodConfig;
+      if (typeof methodConfig === 'object' && methodConfig !== null) {
+        return methodConfig.enabled ?? true;
+      }
+
+      // Default to method's default enabled state from tool group
+      const toolGroup = toolsData?.[toolName];
+      const method = toolGroup?.methods?.find((m) => m.name === methodName);
+      return method?.enabled ?? true;
+    }
+    return false;
   };
 
   const handleSave = async () => {
@@ -80,7 +249,7 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
 
     if (!areToolsEditable) {
       if (isSunaAgent) {
-        Alert.alert('Cannot Edit', "Suna's tools are managed centrally.");
+        Alert.alert(t('workers.cannotEditTools'), t('workers.sunaToolsManagedAlert'));
       }
       return;
     }
@@ -97,27 +266,121 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
       onUpdate?.();
     } catch (error: any) {
       console.error('Failed to update tools:', error);
-      Alert.alert('Error', error?.message || 'Failed to update tools');
+      Alert.alert(t('common.error'), error?.message || t('common.errorOccurred'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   };
 
-  // Get icon component from icon name
-  // Maps icon names from backend to lucide-react-native icons
+  // Get icon component from icon name or URL
+  // Handles both Lucide icon names and SVG/image URLs
   const getIconComponent = (iconName?: string) => {
     if (!iconName) return Wrench;
 
-    // Common icon mappings - can be extended
+    // Check if it's a URL (SVG or image)
+    if (iconName.startsWith('http://') || iconName.startsWith('https://')) {
+      return null; // Will be handled separately as URL
+    }
+
+    // Extended icon mappings - matches common Lucide icon names
     const iconMap: Record<string, any> = {
+      // File & Document icons
       Wrench,
       FileText,
+      File,
+      FileCode,
       Terminal,
       Folder,
       ListTodo,
-      File: FileText,
       FolderOpen: Folder,
       CheckSquare: ListTodo,
       Code: Terminal,
+
+      // Media icons
+      Image: ImageIcon,
+      ImageIcon,
+      Camera,
+      Video,
+      Music,
+
+      // Web & Browser icons
+      Globe,
+      Search,
+      ExternalLink,
+      Link,
+
+      // Presentation & Document icons
+      Presentation,
+      Book,
+
+      // Data & Chart icons
+      Database,
+      BarChart,
+      PieChart,
+      TrendingUp,
+
+      // UI & Settings icons
+      Settings,
+      Zap,
+      Bell,
+      Lock,
+      Key,
+      Shield,
+      Eye,
+      EyeOff,
+
+      // Action icons
+      Download,
+      Upload,
+      Share,
+      Copy,
+      Edit,
+      Trash,
+      Plus,
+      Minus,
+      X,
+
+      // Status icons
+      CheckCircle,
+      XCircle,
+      AlertTriangle,
+      Info,
+      HelpCircle,
+
+      // Navigation icons
+      ArrowRight,
+      ArrowLeft,
+      ChevronUp,
+      ChevronDown: ChevronDownIcon,
+      MoreVertical,
+      MoreHorizontal,
+
+      // Communication icons
+      Mail,
+      MessageSquare,
+      Users,
+
+      // Time & Calendar icons
+      Calendar,
+      Clock,
+
+      // Business icons
+      ShoppingCart,
+      CreditCard,
+      Building,
+      Briefcase,
+      Home,
+
+      // Education icons
+      GraduationCap,
+
+      // Other icons
+      Heart,
+      Star,
+      Map,
+      Navigation,
+      Plane,
+      Car,
+      Palette,
     };
 
     // Try exact match first
@@ -135,6 +398,35 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
 
     // Default fallback
     return Wrench;
+  };
+
+  // Render icon - handles both Lucide icons and URLs
+  const renderIcon = (iconName?: string, size: number = 20) => {
+    if (!iconName) {
+      return <Icon as={Wrench} size={size} className="text-foreground" />;
+    }
+
+    // Check if it's a URL
+    if (iconName.startsWith('http://') || iconName.startsWith('https://')) {
+      const isSvg = iconName.toLowerCase().endsWith('.svg') || iconName.includes('.svg');
+      const isPng = iconName.toLowerCase().endsWith('.png');
+
+      if (isSvg) {
+        return <SvgUri uri={iconName} width={size} height={size} />;
+      } else {
+        return (
+          <Image
+            source={{ uri: iconName }}
+            style={{ width: size, height: size }}
+            resizeMode="contain"
+          />
+        );
+      }
+    }
+
+    // It's a Lucide icon name
+    const IconComponent = getIconComponent(iconName);
+    return <Icon as={IconComponent} size={size} className="text-foreground" />;
   };
 
   // Check if tool is enabled
@@ -206,7 +498,9 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
     return (
       <View className="items-center justify-center py-12">
         <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
-        <Text className="mt-4 font-roobert text-sm text-muted-foreground">Loading tools...</Text>
+        <Text className="mt-4 font-roobert text-sm text-muted-foreground">
+          {t('workers.loadingTools')}
+        </Text>
       </View>
     );
   }
@@ -216,15 +510,18 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
       <View className="flex-row items-center justify-between">
         <View className="flex-1">
           <Text className="mb-2 font-roobert-semibold text-base text-foreground">
-            Tool Configuration
+            {t('workers.toolConfiguration')}
           </Text>
           <Text className="mb-4 font-roobert text-sm text-muted-foreground">
-            Configure tools and their individual capabilities for your agent
+            {t('workers.configureToolsDescription')}
           </Text>
         </View>
         <View className="rounded-full bg-primary/10 px-3 py-1.5">
           <Text className="font-roobert-medium text-xs text-primary">
-            {enabledToolsCount} / {sortedToolGroups.length} enabled
+            {t('workers.toolsEnabled', {
+              enabled: enabledToolsCount,
+              total: sortedToolGroups.length,
+            })}
           </Text>
         </View>
       </View>
@@ -240,97 +537,166 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
                   className="mt-0.5 text-yellow-600 dark:text-yellow-400"
                 />
                 <Text className="flex-1 font-roobert text-sm text-yellow-600 dark:text-yellow-400">
-                  {isSunaAgent
-                    ? "Suna's tools are managed centrally and cannot be edited."
-                    : 'These tools cannot be edited.'}
+                  {isSunaAgent ? t('workers.sunaToolsManaged') : t('workers.toolsNotEditable')}
                 </Text>
               </View>
             )}
 
             {sortedToolGroups.length === 0 ? (
-              <View className="items-center justify-center rounded-2xl border border-border bg-card p-8">
-                <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-muted">
-                  <Icon as={Wrench} size={24} className="text-muted-foreground" />
-                </View>
-                <Text className="mb-1 font-roobert-semibold text-base text-foreground">
-                  No tools available
-                </Text>
-                <Text className="text-center text-sm text-muted-foreground">
-                  Tools will appear here once available
-                </Text>
-              </View>
+              <EmptyState
+                icon={Wrench}
+                title={t('workers.noToolsAvailable')}
+                description={t('workers.toolsWillAppear')}
+              />
             ) : (
               <View className="gap-3">
                 {sortedToolGroups.map((toolGroup) => {
                   const isEnabled = isToolEnabled(toolGroup.name);
                   const enabledMethodsCount = getEnabledMethodsCount(toolGroup.name);
-                  const totalMethodsCount =
-                    toolGroup.methods?.filter((m) => m.visible !== false).length || 0;
-                  const IconComponent = getIconComponent(toolGroup.icon);
+                  const visibleMethods =
+                    toolGroup.methods?.filter((m) => m.visible !== false) || [];
+                  const totalMethodsCount = visibleMethods.length;
                   const hasCapabilities = totalMethodsCount > 0;
+                  const isExpanded = expandedGroups.has(toolGroup.name);
 
                   return (
-                    <Pressable
+                    <View
                       key={toolGroup.name}
-                      onPress={() =>
-                        areToolsEditable && handleToolToggle(toolGroup.name, !isEnabled)
-                      }
-                      disabled={!areToolsEditable}
-                      className="flex-row items-start justify-between rounded-2xl border border-border bg-card p-4 active:opacity-80">
-                      <View className="min-w-0 flex-1 flex-row items-start gap-4">
-                        <View className="h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-border/50 bg-card">
-                          <Icon as={IconComponent} size={20} className="text-foreground" />
-                        </View>
+                      className="overflow-hidden rounded-2xl border border-border bg-card">
+                      {/* Tool Header */}
+                      <View className="flex-row items-start justify-between p-4">
+                        <View className="min-w-0 flex-1 flex-row items-start gap-4">
+                          <View className="h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-border/50 bg-card">
+                            {renderIcon(toolGroup.icon, 20)}
+                          </View>
 
-                        <View className="min-w-0 flex-1">
-                          <View className="mb-1 flex-row flex-wrap items-center gap-2">
-                            <Text className="font-roobert-medium text-base text-foreground">
-                              {toolGroup.display_name || toolGroup.name}
+                          <View className="min-w-0 flex-1">
+                            <View className="mb-1 flex-row flex-wrap items-center gap-2">
+                              <Text className="font-roobert-medium text-base text-foreground">
+                                {toolGroup.display_name || toolGroup.name}
+                              </Text>
+                              {toolGroup.is_core && (
+                                <View className="rounded-full border border-border bg-muted/50 px-2 py-0.5">
+                                  <Text className="font-roobert-medium text-xs text-muted-foreground">
+                                    {t('workers.core')}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text className="mb-1 text-sm text-muted-foreground">
+                              {toolGroup.description}
                             </Text>
-                            {toolGroup.is_core && (
-                              <View className="rounded-full border border-border bg-muted/50 px-2 py-0.5">
-                                <Text className="font-roobert-medium text-xs text-muted-foreground">
-                                  Core
+                            {hasCapabilities && isEnabled && (
+                              <Pressable
+                                onPress={() => toggleGroupExpansion(toolGroup.name)}
+                                className="mt-1 flex-row items-center gap-1 active:opacity-70">
+                                <Text className="text-xs text-muted-foreground">
+                                  {t('workers.capabilitiesEnabled', {
+                                    enabled: enabledMethodsCount,
+                                    total: totalMethodsCount,
+                                  })}
                                 </Text>
-                              </View>
+                                <Icon
+                                  as={isExpanded ? ChevronDown : ChevronRight}
+                                  size={12}
+                                  className="text-muted-foreground"
+                                />
+                              </Pressable>
                             )}
                           </View>
-                          <Text className="mb-1 text-sm text-muted-foreground">
-                            {toolGroup.description}
-                          </Text>
-                          {hasCapabilities && isEnabled && (
-                            <View className="mt-1 flex-row items-center gap-1">
-                              <Text className="text-xs text-muted-foreground">
-                                {enabledMethodsCount} / {totalMethodsCount} capabilities enabled
-                              </Text>
-                              <Icon as={ChevronRight} size={12} className="text-muted-foreground" />
-                            </View>
-                          )}
+                        </View>
+
+                        <View className="ml-4 mt-1 flex-shrink-0">
+                          <Pressable
+                            onPress={() =>
+                              areToolsEditable && handleToolToggle(toolGroup.name, !isEnabled)
+                            }
+                            disabled={!areToolsEditable || updateAgentMutation.isPending}
+                            className={`h-6 w-6 items-center justify-center rounded-full border-2 ${
+                              isEnabled
+                                ? 'border-primary bg-primary'
+                                : 'border-muted-foreground/30 bg-transparent'
+                            }`}>
+                            {isEnabled && (
+                              <Icon
+                                as={Check}
+                                size={14}
+                                className="text-primary-foreground"
+                                strokeWidth={3}
+                              />
+                            )}
+                          </Pressable>
                         </View>
                       </View>
 
-                      <View className="ml-4 mt-1 flex-shrink-0">
-                        <Pressable
-                          onPress={() =>
-                            areToolsEditable && handleToolToggle(toolGroup.name, !isEnabled)
-                          }
-                          disabled={!areToolsEditable || updateAgentMutation.isPending}
-                          className={`h-6 w-6 items-center justify-center rounded-full border-2 ${
-                            isEnabled
-                              ? 'border-primary bg-primary'
-                              : 'border-muted-foreground/30 bg-transparent'
-                          }`}>
-                          {isEnabled && (
-                            <Icon
-                              as={Check}
-                              size={14}
-                              className="text-primary-foreground"
-                              strokeWidth={3}
-                            />
-                          )}
-                        </Pressable>
-                      </View>
-                    </Pressable>
+                      {/* Expanded Methods/Capabilities */}
+                      {hasCapabilities && isEnabled && isExpanded && (
+                        <View className="border-t border-border bg-muted/20 px-4 py-3">
+                          <View className="gap-3">
+                            {visibleMethods.map((method) => {
+                              const isMethodEnabledState = isMethodEnabled(
+                                toolGroup.name,
+                                method.name
+                              );
+
+                              return (
+                                <Pressable
+                                  key={method.name}
+                                  onPress={() =>
+                                    areToolsEditable &&
+                                    handleMethodToggle(
+                                      toolGroup.name,
+                                      method.name,
+                                      !isMethodEnabledState
+                                    )
+                                  }
+                                  disabled={!areToolsEditable || updateAgentMutation.isPending}
+                                  className="flex-row items-start justify-between active:opacity-70">
+                                  <View className="min-w-0 flex-1 pl-16">
+                                    <View className="mb-0.5 flex-row items-center gap-2">
+                                      <Text className="font-roobert-medium text-sm text-foreground">
+                                        {method.display_name || method.name}
+                                      </Text>
+                                      {method.is_core && (
+                                        <View className="rounded-full border border-border bg-muted/50 px-1.5 py-0.5">
+                                          <Text className="font-roobert-medium text-[10px] text-muted-foreground">
+                                            {t('workers.core')}
+                                          </Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                    <Text
+                                      className="text-xs text-muted-foreground"
+                                      numberOfLines={3}
+                                      ellipsizeMode="tail">
+                                      {method.description}
+                                    </Text>
+                                  </View>
+
+                                  <View className="ml-4 mt-0.5 flex-shrink-0">
+                                    <View
+                                      className={`h-5 w-5 items-center justify-center rounded-full border-2 ${
+                                        isMethodEnabledState
+                                          ? 'border-primary bg-primary'
+                                          : 'border-muted-foreground/30 bg-transparent'
+                                      }`}>
+                                      {isMethodEnabledState && (
+                                        <Icon
+                                          as={Check}
+                                          size={12}
+                                          className="text-primary-foreground"
+                                          strokeWidth={3}
+                                        />
+                                      )}
+                                    </View>
+                                  </View>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      )}
+                    </View>
                   );
                 })}
               </View>
@@ -364,7 +730,9 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
                 <Icon as={Save} size={18} className="text-primary-foreground" />
               )}
               <Text className="font-roobert-semibold text-base text-primary-foreground">
-                {updateAgentMutation.isPending ? 'Saving...' : 'Save Changes'}
+                {updateAgentMutation.isPending
+                  ? t('workers.savingChanges')
+                  : t('workers.saveChanges')}
               </Text>
             </Pressable>
           </View>
