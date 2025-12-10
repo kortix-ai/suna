@@ -18,6 +18,8 @@ import type { TriggerConfiguration } from '@/api/types';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -142,6 +144,7 @@ function TriggerCard({
 }
 
 export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersScreenProps) {
+  const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const router = useRouter();
   const { data: triggers = [], isLoading, refetch } = useAgentTriggers(agentId);
@@ -289,27 +292,16 @@ export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersSc
       </View>
 
       {runningTriggers.length === 0 && pausedTriggers.length === 0 ? (
-        <View className="items-center justify-center rounded-2xl border border-border bg-card p-8">
-          <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-muted">
-            <Icon as={Zap} size={24} className="text-muted-foreground" />
-          </View>
-          <Text className="mb-1 font-roobert-semibold text-base text-foreground">
-            No triggers configured
-          </Text>
-          <Text className="mb-4 text-center text-sm text-muted-foreground">
-            Set up triggers to automate this worker
-          </Text>
-          <Pressable
-            onPress={() => {
-              setEditingTrigger(null);
-              setIsCreateDrawerVisible(true);
-            }}
-            className="rounded-xl bg-primary px-4 py-2 active:opacity-80">
-            <Text className="font-roobert-semibold text-sm text-primary-foreground">
-              Create Trigger
-            </Text>
-          </Pressable>
-        </View>
+        <EmptyState
+          icon={Zap}
+          title={t('triggers.noTriggersConfigured')}
+          description={t('triggers.setupTriggersToAutomate')}
+          actionLabel={t('triggers.createTrigger')}
+          onActionPress={() => {
+            setEditingTrigger(null);
+            setIsCreateDrawerVisible(true);
+          }}
+        />
       ) : (
         <>
           {/* Running Section */}

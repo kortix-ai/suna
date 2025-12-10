@@ -18,6 +18,7 @@ import { ToolkitIcon } from './ToolkitIcon';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 interface ComposioAppsContentProps {
   onBack?: () => void;
@@ -153,7 +154,7 @@ export function ComposioAppsContent({
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search apps..."
+            placeholder={t('composio.searchApps')}
             placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
             className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
             style={{
@@ -282,16 +283,16 @@ export function ComposioAppsContent({
           initialNumToRender={20}
           windowSize={10}
           ListEmptyComponent={
-            <View className="items-center px-6 py-12">
-              <Icon as={Search} size={48} className="text-muted-foreground/40" />
-              <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                {searchQuery ? 'No apps found' : 'No apps available'}
-              </Text>
-              <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
-                {searchQuery
-                  ? 'Try adjusting your search query'
-                  : 'Apps will appear here once available'}
-              </Text>
+            <View className="px-6 py-8">
+              <EmptyState
+                icon={Search}
+                title={searchQuery ? t('integrations.noAppsFound') : t('integrations.noAppsAvailable')}
+                description={
+                  searchQuery
+                    ? t('integrations.tryDifferentSearch')
+                    : t('integrations.appsAppearHere')
+                }
+              />
             </View>
           }
         />
@@ -361,16 +362,16 @@ export function ComposioAppsContent({
           initialNumToRender={20}
           windowSize={10}
           ListEmptyComponent={
-            <View className="items-center px-6 py-12">
-              <Icon as={Search} size={48} className="text-muted-foreground/40" />
-              <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                {searchQuery ? 'No apps found' : 'No apps available'}
-              </Text>
-              <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
-                {searchQuery
-                  ? 'Try adjusting your search query'
-                  : 'Apps will appear here once available'}
-              </Text>
+            <View className="px-6 py-8">
+              <EmptyState
+                icon={Search}
+                title={searchQuery ? t('integrations.noAppsFound') : t('integrations.noAppsAvailable')}
+                description={
+                  searchQuery
+                    ? t('integrations.tryDifferentSearch')
+                    : t('integrations.appsAppearHere')
+                }
+              />
             </View>
           }
         />

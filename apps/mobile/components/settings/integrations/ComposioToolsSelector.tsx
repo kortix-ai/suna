@@ -15,6 +15,7 @@ import {
 import { useAgent, agentKeys } from '@/lib/agents/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolkitIcon } from './ToolkitIcon';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 interface ComposioToolsContentProps {
   app: ComposioApp;
@@ -277,7 +278,7 @@ export function ComposioToolsContent({
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search tools..."
+            placeholder={t('composio.searchTools')}
             placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
             className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
             style={{
@@ -338,13 +339,13 @@ export function ComposioToolsContent({
           <View className="items-center py-8">
             <Icon as={AlertCircle} size={48} className="text-destructive/40" />
             <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-              Failed to Load Tools
+              {t('composio.failedToLoadTools')}
             </Text>
             <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
               {error.message}
             </Text>
             <Pressable onPress={() => refetch()} className="mt-4 rounded-xl bg-primary px-4 py-2">
-              <Text className="font-roobert-medium text-sm text-white">Retry</Text>
+              <Text className="font-roobert-medium text-sm text-white">{t('composio.retry')}</Text>
             </Pressable>
           </View>
         ) : (
@@ -370,18 +371,20 @@ export function ComposioToolsContent({
             initialNumToRender={20}
             windowSize={10}
             ListEmptyComponent={
-              <View className="items-center px-6 py-12">
-                <Icon as={Search} size={48} className="text-muted-foreground/40" />
-                <Text className="mt-4 font-roobert-medium text-lg text-foreground">
-                  {searchQuery
-                    ? 'No tools found'
-                    : t('integrations.toolsSelector.noToolsAvailable')}
-                </Text>
-                <Text className="text-center font-roobert text-sm text-muted-foreground">
-                  {searchQuery
-                    ? 'Try adjusting your search query'
-                    : t('integrations.toolsSelector.noToolsDescription')}
-                </Text>
+              <View className="px-6 py-8">
+                <EmptyState
+                  icon={Search}
+                  title={
+                    searchQuery
+                      ? t('integrations.toolsSelector.noToolsFound')
+                      : t('integrations.toolsSelector.noToolsAvailable')
+                  }
+                  description={
+                    searchQuery
+                      ? t('integrations.toolsSelector.tryAdjustingSearch')
+                      : t('integrations.toolsSelector.toolsAppearHere')
+                  }
+                />
               </View>
             }
           />
@@ -405,10 +408,12 @@ export function ComposioToolsContent({
           )}
           <Text className="font-roobert-semibold text-base text-primary-foreground">
             {isSaving
-              ? 'Saving...'
+              ? t('composio.saving')
               : selectedTools.size === 0
-                ? 'Select Tools'
-                : `Save ${selectedTools.size} Tool${selectedTools.size !== 1 ? 's' : ''}`}
+                ? t('composio.selectTools')
+                : selectedTools.size === 1
+                  ? t('composio.saveTools', { count: 1 }).replace('Tools', 'Tool')
+                  : t('composio.saveTools', { count: selectedTools.size })}
           </Text>
         </Pressable>
       </View>
