@@ -745,11 +745,11 @@ const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(function GuestMenu() {
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <span className="inline-flex">
+                <span className="inline-block">
                     <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        className="h-8 px-2 bg-border border-0 rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
+                        className="h-10 px-2 sm:px-3 py-2 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0 animate-in fade-in-0 zoom-in-95"
                         disabled
                     >
                         <div className="flex items-center gap-2 min-w-0 max-w-[180px]">

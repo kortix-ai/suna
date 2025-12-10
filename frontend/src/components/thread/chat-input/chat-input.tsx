@@ -380,7 +380,7 @@ const ModeButton = memo(function ModeButton({
         }
       }}
       className={cn(
-        "h-8 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
+        "h-10 px-2 sm:px-3 py-2 bg-transparent border border-border rounded-2xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all duration-200 flex-shrink-0",
         !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
         isModeDismissing && "animate-out fade-out-0 zoom-out-95"
       )}
@@ -1274,7 +1274,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     ), [renderConfigDropdown, isLoggedIn, handleTranscription, loading, disabled, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount]);
 
     const renderControls = useMemo(() => (
-      <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-2">
+      <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-1.5">
         {leftControls}
         {rightControls}
       </div>
