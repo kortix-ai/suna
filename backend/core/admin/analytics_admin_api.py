@@ -12,6 +12,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import asyncio
+import httpx
 from core.auth import require_admin
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
@@ -83,6 +84,23 @@ class TranslateRequest(BaseModel):
     target_language: str = "English"
 
 
+class VisitorStats(BaseModel):
+    total_visitors: int
+    unique_visitors: int
+    pageviews: int
+    date: str
+
+
+class ConversionFunnel(BaseModel):
+    visitors: int
+    signups: int
+    subscriptions: int
+    visitor_to_signup_rate: float
+    signup_to_subscription_rate: float
+    overall_conversion_rate: float
+    date: str
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -93,6 +111,41 @@ async def get_openai_client():
     if not api_key:
         raise HTTPException(status_code=500, detail="OpenAI API key not configured")
     return openai.AsyncOpenAI(api_key=api_key)
+
+
+async def query_posthog(query: str, date_from: str, date_to: str) -> Dict[str, Any]:
+    """Query PostHog API for analytics data."""
+    api_key = config.POSTHOG_PERSONAL_API_KEY
+    project_id = config.POSTHOG_PROJECT_ID
+    host = config.POSTHOG_HOST or "https://eu.posthog.com"
+    
+    if not api_key or not project_id:
+        raise HTTPException(
+            status_code=500, 
+            detail="PostHog not configured. Set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID."
+        )
+    
+    url = f"{host}/api/projects/{project_id}/query/"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "query": {
+            "kind": "HogQLQuery",
+            "query": query
+        }
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        
+        if response.status_code != 200:
+            logger.error(f"PostHog API error: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=500, detail=f"PostHog API error: {response.status_code}")
+        
+        return response.json()
 
 
 # ============================================================================
@@ -714,13 +767,13 @@ async def get_message_distribution(
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
-        # Single query - user_message_count is now a column on threads table
-        threads_result = await client.from_('threads').select(
-            'user_message_count'
-        ).gte('created_at', start_of_day).lte('created_at', end_of_day).limit(50000).execute()
-        threads = threads_result.data or []
+        # Use database function for efficient GROUP BY aggregation (bypasses row limits)
+        result = await client.rpc('get_thread_message_distribution', {
+            'start_date': start_of_day,
+            'end_date': end_of_day
+        }).execute()
         
-        if not threads:
+        if not result.data or len(result.data) == 0:
             return {
                 "distribution": {
                     "0_messages": 0,
@@ -731,29 +784,18 @@ async def get_message_distribution(
                 "total_threads": 0
             }
         
-        # Calculate distribution from the column values
+        # Extract the aggregated results from the database function
+        data = result.data[0]
         distribution = {
-            "0_messages": 0,
-            "1_message": 0,
-            "2_3_messages": 0,
-            "5_plus_messages": 0
+            "0_messages": data.get('zero_messages', 0),
+            "1_message": data.get('one_message', 0),
+            "2_3_messages": data.get('two_three_messages', 0),
+            "5_plus_messages": data.get('five_plus_messages', 0)
         }
-        
-        for thread in threads:
-            count = thread.get('user_message_count') or 0
-            if count == 0:
-                distribution["0_messages"] += 1
-            elif count == 1:
-                distribution["1_message"] += 1
-            elif count <= 3:
-                distribution["2_3_messages"] += 1
-            elif count >= 5:
-                distribution["5_plus_messages"] += 1
-            # count == 4 is intentionally not categorized
         
         return {
             "distribution": distribution,
-            "total_threads": len(threads)
+            "total_threads": data.get('total_threads', 0)
         }
         
     except Exception as e:
@@ -784,31 +826,31 @@ async def get_category_distribution(
         start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
-        # Query projects created on the selected day
-        projects_result = await client.from_('projects').select(
-            'category'
-        ).gte('created_at', start_of_day).lte('created_at', end_of_day).limit(50000).execute()
-        projects = projects_result.data or []
+        # Use database function for efficient GROUP BY aggregation (bypasses row limits)
+        result = await client.rpc('get_project_category_distribution', {
+            'start_date': start_of_day,
+            'end_date': end_of_day
+        }).execute()
         
-        if not projects:
+        if not result.data:
             return {
                 "distribution": {},
                 "total_projects": 0,
                 "date": date or selected_date.strftime("%Y-%m-%d")
             }
         
-        # Calculate distribution
+        # Build distribution from aggregated results
         distribution = {}
-        for project in projects:
-            category = project.get('category') or 'Uncategorized'
-            distribution[category] = distribution.get(category, 0) + 1
-        
-        # Sort by count descending
-        sorted_distribution = dict(sorted(distribution.items(), key=lambda x: x[1], reverse=True))
+        total_projects = 0
+        for row in result.data:
+            category = row.get('category', 'Uncategorized')
+            count = row.get('count', 0)
+            distribution[category] = count
+            total_projects += count
         
         return {
-            "distribution": sorted_distribution,
-            "total_projects": len(projects),
+            "distribution": distribution,
+            "total_projects": total_projects,
             "date": date or selected_date.strftime("%Y-%m-%d")
         }
         
@@ -817,3 +859,134 @@ async def get_category_distribution(
     except Exception as e:
         logger.error(f"Failed to get category distribution: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get category distribution")
+
+
+@router.get("/visitors")
+async def get_visitor_stats(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: dict = Depends(require_admin)
+) -> VisitorStats:
+    """Get visitor statistics from PostHog for a specific day."""
+    try:
+        # Parse date or default to today
+        if date:
+            try:
+                selected_date = datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        else:
+            selected_date = datetime.now(timezone.utc)
+        
+        date_str = selected_date.strftime("%Y-%m-%d")
+        
+        # Query PostHog for pageview events on the selected date
+        query = f"""
+        SELECT 
+            count() as pageviews,
+            count(DISTINCT distinct_id) as unique_visitors
+        FROM events
+        WHERE event = '$pageview'
+          AND timestamp >= toDateTime('{date_str} 00:00:00')
+          AND timestamp < toDateTime('{date_str} 23:59:59')
+        """
+        
+        result = await query_posthog(query, date_str, date_str)
+        
+        # Extract results
+        data = result.get('results', [[0, 0]])[0]
+        pageviews = data[0] if len(data) > 0 else 0
+        unique_visitors = data[1] if len(data) > 1 else 0
+        
+        return VisitorStats(
+            total_visitors=unique_visitors,
+            unique_visitors=unique_visitors,
+            pageviews=pageviews,
+            date=date_str
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get visitor stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get visitor statistics")
+
+
+@router.get("/conversion-funnel")
+async def get_conversion_funnel(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: dict = Depends(require_admin)
+) -> ConversionFunnel:
+    """Get full conversion funnel: Visitors → Signups → Subscriptions."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Parse date or default to today
+        if date:
+            try:
+                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        else:
+            selected_date = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        date_str = selected_date.strftime("%Y-%m-%d")
+        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+        
+        # Define async functions for parallel execution
+        async def get_visitors():
+            try:
+                query = f"""
+                SELECT count(DISTINCT distinct_id) as unique_visitors
+                FROM events
+                WHERE event = '$pageview'
+                  AND timestamp >= toDateTime('{date_str} 00:00:00')
+                  AND timestamp < toDateTime('{date_str} 23:59:59')
+                """
+                result = await query_posthog(query, date_str, date_str)
+                data = result.get('results', [[0]])[0]
+                return data[0] if len(data) > 0 else 0
+            except Exception as e:
+                logger.warning(f"Failed to get PostHog visitors: {e}")
+                return 0
+        
+        async def get_signups():
+            result = await client.schema('basejump').from_('accounts').select(
+                '*', count='exact'
+            ).gte('created_at', start_of_day).lte('created_at', end_of_day).execute()
+            return result.count or 0
+        
+        async def get_subscriptions():
+            result = await client.schema('basejump').from_('billing_subscriptions').select(
+                '*', count='exact'
+            ).gte('created', start_of_day).lte('created', end_of_day).eq('status', 'active').execute()
+            return result.count or 0
+        
+        # Execute all queries in parallel
+        visitors, signups, subscriptions = await asyncio.gather(
+            get_visitors(),
+            get_signups(),
+            get_subscriptions()
+        )
+        
+        # Calculate conversion rates
+        visitor_to_signup = (signups / visitors * 100) if visitors > 0 else 0
+        signup_to_sub = (subscriptions / signups * 100) if signups > 0 else 0
+        overall = (subscriptions / visitors * 100) if visitors > 0 else 0
+        
+        return ConversionFunnel(
+            visitors=visitors,
+            signups=signups,
+            subscriptions=subscriptions,
+            visitor_to_signup_rate=round(visitor_to_signup, 2),
+            signup_to_subscription_rate=round(signup_to_sub, 2),
+            overall_conversion_rate=round(overall, 2),
+            date=date_str
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get conversion funnel: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get conversion funnel")

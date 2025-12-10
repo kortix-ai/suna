@@ -17,7 +17,7 @@ import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ITEM_WIDTH = 100;
+const ITEM_WIDTH = 85;
 const ITEM_SPACING = 8;
 const TOTAL_ITEM_WIDTH = ITEM_WIDTH + ITEM_SPACING;
 const SWIPE_THRESHOLD = 40;

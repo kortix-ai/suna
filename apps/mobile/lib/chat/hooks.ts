@@ -230,19 +230,20 @@ export function useUnifiedAgentStart(
   options?: UseMutationOptions<
     { thread_id: string; agent_run_id: string; status: string },
     Error,
-    { threadId?: string; prompt?: string; files?: any[]; modelName?: string; agentId?: string }
+    { threadId?: string; prompt?: string; files?: any[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
   >
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ threadId, prompt, files, modelName, agentId }) => {
+    mutationFn: async ({ threadId, prompt, files, modelName, agentId, threadMetadata }) => {
       const formData = new FormData();
       
       if (threadId) formData.append('thread_id', threadId);
       if (prompt) formData.append('prompt', prompt);
       if (modelName) formData.append('model_name', modelName);
       if (agentId) formData.append('agent_id', agentId);
+      if (threadMetadata) formData.append('thread_metadata', JSON.stringify(threadMetadata));
       
       if (files?.length) {
         files.forEach((file) => formData.append('files', file as any));

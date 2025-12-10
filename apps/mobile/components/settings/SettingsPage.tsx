@@ -251,12 +251,18 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               label={t('settings.beta') || 'Beta'}
               onPress={handleBeta}
             />
+            
+            {!isGuest && (
+              <View className="h-px bg-border my-2" />
+            )}
+            
             {!isGuest && (
               <SettingsItem
                 icon={Trash2}
                 label={deletionStatus?.has_pending_deletion ? t('accountDeletion.deletionScheduled') : t('accountDeletion.deleteYourAccount')}
                 onPress={handleAccountDeletion}
                 showBadge={deletionStatus?.has_pending_deletion}
+                destructive
               />
             )}
             {!isGuest && (
@@ -265,6 +271,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
                 label={t('settings.signOut')}
                 onPress={handleSignOut}
                 isLoading={isSigningOut}
+                destructive
               />
             )}
           </View>

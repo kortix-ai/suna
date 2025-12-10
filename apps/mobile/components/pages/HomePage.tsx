@@ -1,10 +1,10 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard } from 'react-native';
-import Animated, { FadeIn, runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Keyboard, KeyboardAvoidingView, Platform, View, Text } from 'react-native';
+import Animated, { FadeIn, runOnJS } from 'react-native-reanimated';
+import { Gesture, GestureDetector, Pressable } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ChatInputSection, ChatDrawers, type ChatInputSectionRef } from '@/components/chat';
-import { QUICK_ACTIONS } from '@/components/quick-actions';
+import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
 import { BackgroundLogo, TopNav } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
@@ -12,9 +12,8 @@ import { CreditsPurchasePage } from '@/components/settings/CreditsPurchasePage';
 import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
-import { Text } from '@/components/ui/text';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Icon } from '@/components/ui/icon';
-import { useLanguage } from '@/contexts';
 
 const SWIPE_THRESHOLD = 50;
 

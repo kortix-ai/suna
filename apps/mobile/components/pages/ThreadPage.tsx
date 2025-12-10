@@ -531,6 +531,7 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
           }
         }}
         onMenuPress={onMenuPress}
+        onBackPress={chat.showModeThreadList}
         onActionsPress={() => setIsThreadActionsVisible(true)}
       />
 
@@ -557,6 +558,7 @@ export function ThreadPage({ onMenuPress, chat, isAuthenticated }: ThreadPagePro
         selectedQuickAction={chat.selectedQuickAction}
         selectedQuickActionOption={chat.selectedQuickActionOption}
         onClearQuickAction={chat.clearQuickAction}
+        onQuickActionPress={chat.handleQuickAction}
         isAuthenticated={isAuthenticated}
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}

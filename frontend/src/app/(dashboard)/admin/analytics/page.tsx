@@ -39,6 +39,7 @@ import {
   useThreadBrowser,
   useMessageDistribution,
   useCategoryDistribution,
+  useConversionFunnel,
   useRetentionData,
   useTranslate,
   useRefreshAnalytics,
@@ -542,6 +543,7 @@ export default function AdminAnalyticsPage() {
   const { data: dailyStats } = useDailyStats(7);
   const { data: distribution } = useMessageDistribution(dateString);
   const { data: categoryDistribution } = useCategoryDistribution(dateString);
+  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateString);
   const { refreshAll } = useRefreshAnalytics();
 
   return (
@@ -599,148 +601,186 @@ export default function AdminAnalyticsPage() {
           )}
         </div>
 
-        {/* Message Distribution */}
-        {distribution && (
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+        {/* Daily Analytics - Unified Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Thread Distribution (UTC)
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => {
-                    const prev = new Date(distributionDate);
-                    prev.setDate(prev.getDate() - 1);
-                    setDistributionDate(prev);
-                  }}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="min-w-[160px] justify-start text-left font-normal">
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {format(distributionDate, 'MMM d, yyyy')}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="end">
-                    <Calendar
-                      mode="single"
-                      selected={distributionDate}
-                      onSelect={(date) => {
-                        if (date) {
-                          setDistributionDate(date);
-                          setCalendarOpen(false);
-                        }
-                      }}
-                      disabled={(date) => date > utcToday}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
-                  onClick={() => {
-                    const next = new Date(distributionDate);
-                    next.setDate(next.getDate() + 1);
-                    setDistributionDate(next);
-                  }}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center p-4 rounded-lg bg-muted/50">
-                  <div className="text-3xl font-bold">
-                    {distribution.distribution['1_message']}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">1 message</p>
-                  <p className="text-xs text-muted-foreground">
-                    ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
-                  </p>
-                </div>
-                <div className="text-center p-4 rounded-lg bg-muted/50">
-                  <div className="text-3xl font-bold">
-                    {distribution.distribution['2_3_messages']}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">2-3 messages</p>
-                  <p className="text-xs text-muted-foreground">
-                    ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
-                  </p>
-                </div>
-                <div className="text-center p-4 rounded-lg bg-muted/50">
-                  <div className="text-3xl font-bold">
-                    {distribution.distribution['5_plus_messages']}
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">5+ messages</p>
-                  <p className="text-xs text-muted-foreground">
-                    ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0.0'}%)
-                  </p>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground mt-4 text-center">
-                Total: <span className="font-semibold text-foreground">{distribution.total_threads}</span> threads on {format(distributionDate, 'MMM d, yyyy')}
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Category Distribution */}
-        {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Category Distribution (UTC)
+                Daily Analytics (UTC)
               </CardTitle>
               <CardDescription>
-                Project categories for {format(distributionDate, 'MMM d, yyyy')}
+                Conversion funnel, threads, and categories
               </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-2">
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
-                  const percentage = categoryDistribution.total_projects > 0 
-                    ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
-                    : '0.0';
-                  const isSelected = categoryFilter === category;
-                  return (
-                    <button
-                      key={category}
-                      onClick={() => setCategoryFilter(isSelected ? null : category)}
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
-                        isSelected 
-                          ? 'bg-primary text-primary-foreground border-primary' 
-                          : 'bg-muted/50 hover:bg-muted border-transparent'
-                      }`}
-                    >
-                      <span className="font-medium truncate max-w-[120px]" title={category}>
-                        {category}
-                      </span>
-                      <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                        {count} ({percentage}%)
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {categoryFilter && (
-                <p className="text-xs text-muted-foreground mt-3">
-                  <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
-                </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => {
+                  const prev = new Date(distributionDate);
+                  prev.setDate(prev.getDate() - 1);
+                  setDistributionDate(prev);
+                }}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[160px] justify-start text-left font-normal">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(distributionDate, 'MMM d, yyyy')}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                  <Calendar
+                    mode="single"
+                    selected={distributionDate}
+                    onSelect={(date) => {
+                      if (date) {
+                        setDistributionDate(date);
+                        setCalendarOpen(false);
+                      }
+                    }}
+                    disabled={(date) => date > utcToday}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={format(distributionDate, 'yyyy-MM-dd') === format(utcToday, 'yyyy-MM-dd')}
+                onClick={() => {
+                  const next = new Date(distributionDate);
+                  next.setDate(next.getDate() + 1);
+                  setDistributionDate(next);
+                }}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Conversion Funnel Section */}
+            <div>
+              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Conversion Funnel
+              </h3>
+              {funnelLoading ? (
+                <div className="grid grid-cols-3 gap-4">
+                  {[...Array(3)].map((_, i) => (
+                    <Skeleton key={i} className="h-20" />
+                  ))}
+                </div>
+              ) : conversionFunnel ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold">{conversionFunnel.visitors.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Visitors</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion
+                  </p>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  <Eye className="h-5 w-5 mx-auto mb-1 opacity-50" />
+                  PostHog not configured
+                </div>
               )}
-            </CardContent>
-          </Card>
-        )}
+            </div>
+
+            {/* Divider */}
+            <div className="border-t" />
+
+            {/* Thread Distribution Section */}
+            {distribution && (
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  Thread Distribution
+                </h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-2xl font-bold">{distribution.distribution['1_message']}</div>
+                    <p className="text-xs text-muted-foreground">1 message ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-2xl font-bold">{distribution.distribution['2_3_messages']}</div>
+                    <p className="text-xs text-muted-foreground">2-3 msgs ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-2xl font-bold">{distribution.distribution['5_plus_messages']}</div>
+                    <p className="text-xs text-muted-foreground">5+ msgs ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Total: <span className="font-medium text-foreground">{distribution.total_threads}</span> threads
+                </p>
+              </div>
+            )}
+
+            {/* Divider */}
+            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+              <div className="border-t" />
+            )}
+
+            {/* Category Distribution Section */}
+            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                  <Filter className="h-4 w-4" />
+                  Category Distribution
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
+                    const percentage = categoryDistribution.total_projects > 0 
+                      ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
+                      : '0.0';
+                    const isSelected = categoryFilter === category;
+                    return (
+                      <button
+                        key={category}
+                        onClick={() => setCategoryFilter(isSelected ? null : category)}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
+                          isSelected 
+                            ? 'bg-primary text-primary-foreground border-primary' 
+                            : 'bg-muted/50 hover:bg-muted border-transparent'
+                        }`}
+                      >
+                        <span className="font-medium truncate max-w-[120px]" title={category}>
+                          {category}
+                        </span>
+                        <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                          {count} ({percentage}%)
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {categoryFilter && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
+                  </p>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Tabs */}
         <Tabs defaultValue="threads" className="space-y-4">
