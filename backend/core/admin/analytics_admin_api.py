@@ -416,43 +416,91 @@ async def _browse_threads_filtered(
     date_from: Optional[str], date_to: Optional[str],
     sort_by: str, sort_order: str
 ) -> PaginatedResponse[ThreadAnalytics]:
-    """Filtered path: fetch threads in date range, filter by message count/email/category."""
+    """Filtered path: fetch threads with optional category/date filtering using JOINs."""
     
-    # Get threads within date range (limited scope)
-    threads_query = client.from_('threads').select(
-        'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
-    )
-    if date_from:
-        threads_query = threads_query.gte('created_at', date_from)
-    if date_to:
-        threads_query = threads_query.lte('created_at', date_to)
+    # When filtering by category with date range, use JOIN to filter by PROJECT creation date
+    # (since category distribution shows projects created on that date)
+    if category and (date_from or date_to):
+        # Use INNER JOIN with projects table - single query instead of two
+        threads_query = client.from_('threads').select(
+            'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count, project:projects!inner(category)'
+        ).eq('project.category', category)
+        
+        # Filter by project creation date
+        if date_from:
+            date_from_start = f"{date_from}T00:00:00Z" if 'T' not in date_from else date_from
+            threads_query = threads_query.gte('project.created_at', date_from_start)
+        if date_to:
+            date_to_end = f"{date_to}T23:59:59.999999Z" if 'T' not in date_to else date_to
+            threads_query = threads_query.lte('project.created_at', date_to_end)
+        
+        if sort_by == 'created_at':
+            threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
+        elif sort_by == 'updated_at':
+            threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+        
+        threads_query = threads_query.limit(1000)
+        threads_result = await threads_query.execute()
+        all_threads = threads_result.data or []
+        
+        logger.debug(f"Category filter with JOIN: category={category}, date_from={date_from}, date_to={date_to}, found {len(all_threads)} threads")
+        
+        # Extract project data from joined result and flatten
+        for thread in all_threads:
+            if 'project' in thread:
+                del thread['project']  # Remove nested project object, we already filtered by it
     
-    if sort_by == 'created_at':
-        threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
-    elif sort_by == 'updated_at':
-        threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+    elif category:
+        # Category filter without date range - use JOIN to filter by category
+        threads_query = client.from_('threads').select(
+            'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count, project:projects!inner(category)'
+        ).eq('project.category', category)
+        
+        # Default to last 7 days for thread creation date
+        if date_from:
+            threads_query = threads_query.gte('created_at', date_from)
+        if date_to:
+            threads_query = threads_query.lte('created_at', date_to)
+        
+        if sort_by == 'created_at':
+            threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
+        elif sort_by == 'updated_at':
+            threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+        
+        threads_query = threads_query.limit(1000)
+        threads_result = await threads_query.execute()
+        all_threads = threads_result.data or []
+        
+        # Remove nested project object
+        for thread in all_threads:
+            if 'project' in thread:
+                del thread['project']
     
-    # Limit to reasonable number for filtering
-    threads_query = threads_query.limit(1000)
-    threads_result = await threads_query.execute()
-    all_threads = threads_result.data or []
+    else:
+        # No category filter - simple thread query
+        threads_query = client.from_('threads').select(
+            'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
+        )
+        if date_from:
+            threads_query = threads_query.gte('created_at', date_from)
+        if date_to:
+            threads_query = threads_query.lte('created_at', date_to)
+        
+        if sort_by == 'created_at':
+            threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
+        elif sort_by == 'updated_at':
+            threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
+        
+        threads_query = threads_query.limit(1000)
+        threads_result = await threads_query.execute()
+        all_threads = threads_result.data or []
     
     if not all_threads:
         return await PaginationService.paginate_with_total_count(
             items=[], total_count=0, params=params
         )
     
-    # Filter by category if specified (fetch project categories first)
-    project_categories = {}
-    if category:
-        project_ids = list(set(t['project_id'] for t in all_threads if t.get('project_id')))
-        if project_ids:
-            projects_result = await client.from_('projects').select(
-                'project_id, category'
-            ).in_('project_id', project_ids).execute()
-            project_categories = {p['project_id']: p.get('category', 'Other') for p in projects_result.data or []}
-    
-    # Filter by message count and category
+    # Filter by message count only (category already filtered via JOIN)
     filtered_threads = []
     for thread in all_threads:
         user_msg_count = thread.get('user_message_count') or 0
@@ -461,12 +509,6 @@ async def _browse_threads_filtered(
             continue
         if max_messages is not None and user_msg_count > max_messages:
             continue
-        
-        # Filter by category
-        if category:
-            thread_category = project_categories.get(thread.get('project_id'), 'Other')
-            if thread_category != category:
-                continue
         
         filtered_threads.append(thread)
     

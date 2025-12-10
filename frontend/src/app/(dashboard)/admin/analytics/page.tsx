@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -95,10 +95,11 @@ function StatCard({ title, value, description, icon, trend, className }: StatCar
 
 interface ThreadBrowserProps {
   categoryFilter?: string | null;
+  filterDate?: string | null;  // Date string in YYYY-MM-DD format for filtering when category is selected
   onClearCategory?: () => void;
 }
 
-function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) {
+function ThreadBrowser({ categoryFilter, filterDate, onClearCategory }: ThreadBrowserProps) {
   const [params, setParams] = useState<ThreadBrowseParams>({
     page: 1,
     page_size: 15,
@@ -109,10 +110,28 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
   const [messageFilter, setMessageFilter] = useState<string>('all');
   const [translations, setTranslations] = useState<Record<string, string>>({});
   
-  // Include category filter in query params
+  // Reset page to 1 when category filter or date changes (date only matters when category is active)
+  const prevCategoryRef = useRef(categoryFilter);
+  const prevDateRef = useRef(filterDate);
+  useEffect(() => {
+    const categoryChanged = prevCategoryRef.current !== categoryFilter;
+    const dateChanged = prevDateRef.current !== filterDate && categoryFilter;
+    
+    if (categoryChanged || dateChanged) {
+      setParams(p => ({ ...p, page: 1 }));
+    }
+    
+    prevCategoryRef.current = categoryFilter;
+    prevDateRef.current = filterDate;
+  }, [categoryFilter, filterDate]);
+  
+  // Include category filter and date filter in query params
+  // When category is selected from distribution, also filter by the selected date
   const queryParams: ThreadBrowseParams = {
     ...params,
     category: categoryFilter || undefined,
+    date_from: categoryFilter && filterDate ? filterDate : undefined,
+    date_to: categoryFilter && filterDate ? filterDate : undefined,
   };
   
   const { data: threadsData, isLoading } = useThreadBrowser(queryParams);
@@ -317,6 +336,11 @@ function ThreadBrowser({ categoryFilter, onClearCategory }: ThreadBrowserProps) 
               <Badge variant="secondary" className="mt-1 flex items-center gap-1 h-10 px-3">
                 <Filter className="h-3 w-3" />
                 {categoryFilter}
+                {filterDate && (
+                  <span className="text-muted-foreground">
+                    ({filterDate})
+                  </span>
+                )}
                 <button
                   onClick={onClearCategory}
                   className="ml-1 hover:text-destructive"
@@ -797,7 +821,8 @@ export default function AdminAnalyticsPage() {
 
           <TabsContent value="threads">
             <ThreadBrowser 
-              categoryFilter={categoryFilter} 
+              categoryFilter={categoryFilter}
+              filterDate={dateString}
               onClearCategory={() => setCategoryFilter(null)} 
             />
           </TabsContent>
