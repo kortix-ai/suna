@@ -57,6 +57,9 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { ToolkitIcon } from '@/components/settings/integrations/ToolkitIcon';
 import { EmptyState } from '@/components/shared/EmptyState';
 
+// Drawer view states
+type DrawerView = 'apps' | 'connector' | 'tools';
+
 interface IntegrationsScreenProps {
   agentId: string;
   onUpdate?: () => void;
@@ -195,6 +198,12 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const [showCustomMcp, setShowCustomMcp] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
+
+  // Drawer multi-step state
+  const [drawerView, setDrawerView] = useState<DrawerView>('apps');
+  const [drawerSelectedApp, setDrawerSelectedApp] = useState<ComposioApp | null>(null);
+  const [drawerSelectedProfile, setDrawerSelectedProfile] = useState<ComposioProfile | null>(null);
+  const [isDrawerSaving, setIsDrawerSaving] = useState(false);
 
   // Handle upgrade press - use provided callback or navigate to plans
   const handleUpgradePress = useCallback(() => {
@@ -368,15 +377,18 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   };
 
   const handleBrowseAppSelect = (app: ComposioApp) => {
-    browseAppsSheetRef.current?.dismiss();
-    setShowBrowseApps(false);
-    setSelectedApp(app);
-    setShowConnector(true);
+    // Stay in the drawer, just change the view to connector
+    setDrawerSelectedApp(app);
+    setDrawerView('connector');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleOpenBrowseApps = () => {
     setShowBrowseApps(true);
     setBrowseAppsSearchQuery('');
+    setDrawerView('apps');
+    setDrawerSelectedApp(null);
+    setDrawerSelectedProfile(null);
     browseAppsSheetRef.current?.present();
   };
 
@@ -384,6 +396,93 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
     browseAppsSheetRef.current?.dismiss();
     setShowBrowseApps(false);
     setBrowseAppsSearchQuery('');
+    setDrawerView('apps');
+    setDrawerSelectedApp(null);
+    setDrawerSelectedProfile(null);
+  };
+
+  // Handle connector completion within drawer
+  const handleDrawerConnectorComplete = (profileId: string, appName: string, appSlug: string) => {
+    // Add the Composio MCP to the agent
+    const customMcps = agent?.custom_mcps || [];
+    const existingMcp = customMcps.find(
+      (mcp: any) => mcp.type === 'composio' && mcp.config?.profile_id === profileId
+    );
+
+    if (!existingMcp) {
+      setIsDrawerSaving(true);
+      const newMcp = {
+        name: appName,
+        type: 'composio' as any,
+        config: {
+          profile_id: profileId,
+          toolkit_slug: appSlug,
+        },
+        enabledTools: [],
+      };
+
+      updateAgentMutation.mutate(
+        {
+          agentId,
+          data: {
+            custom_mcps: [...customMcps, newMcp],
+            replace_mcps: true,
+          },
+        },
+        {
+          onSuccess: () => {
+            setIsDrawerSaving(false);
+            // Find the profile and move to tools view
+            const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+            if (profile) {
+              setDrawerSelectedProfile(profile);
+              setDrawerView('tools');
+            } else {
+              // Close drawer if no profile found
+              handleCloseBrowseApps();
+            }
+            onUpdate?.();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+          onError: (error: any) => {
+            setIsDrawerSaving(false);
+            Alert.alert('Error', error?.message || 'Failed to add integration');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          },
+        }
+      );
+    } else {
+      // Already exists, just move to tools
+      const profile = profiles?.find((p: ComposioProfile) => p.profile_id === profileId);
+      if (profile) {
+        setDrawerSelectedProfile(profile);
+        setDrawerView('tools');
+      } else {
+        handleCloseBrowseApps();
+      }
+    }
+  };
+
+  // Handle tools completion within drawer
+  const handleDrawerToolsComplete = () => {
+    handleCloseBrowseApps();
+    onUpdate?.();
+  };
+
+  // Handle back navigation within drawer
+  const handleDrawerBack = () => {
+    if (drawerView === 'tools') {
+      // From tools, go back to connector (or close if profile already existed)
+      setDrawerView('connector');
+      setDrawerSelectedProfile(null);
+    } else if (drawerView === 'connector') {
+      // From connector, go back to apps list
+      setDrawerView('apps');
+      setDrawerSelectedApp(null);
+    } else {
+      // From apps, close drawer
+      handleCloseBrowseApps();
+    }
   };
 
   // Check if an app is connected to the agent
@@ -644,131 +743,170 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
           borderTopRightRadius: 24,
           overflow: 'hidden',
         }}>
-        <View style={{ flex: 1, flexDirection: 'column' }}>
-          {/* Sticky Header */}
-          <View
-            style={{
-              paddingHorizontal: 24,
-              paddingTop: 16,
-              paddingBottom: 16,
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
-            }}>
-            <Text className="mb-2 font-roobert-semibold text-xl text-foreground">
-              {t('integrations.composioApps')}
-            </Text>
-            <Text className="mb-4 font-roobert text-sm text-muted-foreground">
-              {t('integrations.composioAppsDescription')}
-            </Text>
-
-            {/* Search Bar */}
-            <View>
+        <View style={{ flex: 1 }}>
+          {/* Apps List View */}
+          {drawerView === 'apps' && (
+            <View style={{ flex: 1, flexDirection: 'column' }}>
+              {/* Sticky Header */}
               <View
-                className="flex-row items-center rounded-2xl border border-border bg-card px-4"
                 style={{
-                  backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
-                  borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                  paddingHorizontal: 24,
+                  paddingTop: 16,
+                  paddingBottom: 16,
+                  backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
                 }}>
-                <Icon as={Search} size={18} className="text-muted-foreground" />
-                <TextInput
-                  value={browseAppsSearchQuery}
-                  onChangeText={setBrowseAppsSearchQuery}
-                  placeholder={t('composio.searchApps')}
-                  placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                  className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
-                  style={{
-                    color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
-                  }}
-                />
-                {browseAppsSearchQuery.length > 0 && (
-                  <Pressable onPress={() => setBrowseAppsSearchQuery('')} className="ml-2">
-                    <Icon as={X} size={18} className="text-muted-foreground" />
-                  </Pressable>
-                )}
-              </View>
-            </View>
-          </View>
+                <Text className="mb-2 font-roobert-semibold text-xl text-foreground">
+                  {t('integrations.composioApps')}
+                </Text>
+                <Text className="mb-4 font-roobert text-sm text-muted-foreground">
+                  {t('integrations.composioAppsDescription')}
+                </Text>
 
-          {/* Scrollable Apps List */}
-          {isLoadingApps ? (
-            <View className="flex-1 items-center justify-center" style={{ paddingHorizontal: 24 }}>
-              <ActivityIndicator
-                size="small"
-                color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'}
-              />
-              <Text className="mt-4 font-roobert text-sm text-muted-foreground">
-                {t('integrations.loadingIntegrations')}
-              </Text>
-            </View>
-          ) : (
-            <BottomSheetFlatList
-              data={filteredBrowseApps}
-              keyExtractor={(item: ComposioApp) => item.slug}
-              style={{ flex: 1 }}
-              renderItem={({ item: app }: { item: ComposioApp }) => {
-                const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
-                return (
-                  <View style={{ paddingHorizontal: 24 }}>
-                    <Pressable
-                      onPress={() => handleBrowseAppSelect(app)}
-                      disabled={isConnected}
-                      className={`mb-3 flex-row items-center gap-4 rounded-3xl p-4 ${
-                        isConnected ? 'bg-muted/5 opacity-50' : 'bg-primary/5 active:opacity-80'
-                      }`}>
-                      <ToolkitIcon slug={app.slug} name={app.name} size="sm" />
-                      <View className="flex-1">
-                        <Text
-                          className={`font-roobert-semibold text-base ${
-                            isConnected ? 'text-muted-foreground' : 'text-foreground'
-                          }`}>
-                          {app.name}
-                        </Text>
-                        <Text
-                          className="font-roobert text-sm text-muted-foreground"
-                          numberOfLines={2}
-                          ellipsizeMode="tail">
-                          {app.description}
-                        </Text>
-                        {isConnected && (
-                          <View className="mt-1 flex-row items-center gap-1">
-                            <Icon
-                              as={CheckCircle2}
-                              size={12}
-                              className="text-green-600 dark:text-green-400"
-                            />
-                            <Text className="text-xs font-medium text-green-600 dark:text-green-400">
-                              {t('triggers.connected')}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    </Pressable>
+                {/* Search Bar */}
+                <View>
+                  <View
+                    className="flex-row items-center rounded-2xl border border-border bg-card px-4"
+                    style={{
+                      backgroundColor: colorScheme === 'dark' ? '#27272A' : '#FFFFFF',
+                      borderColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',
+                    }}>
+                    <Icon as={Search} size={18} className="text-muted-foreground" />
+                    <TextInput
+                      value={browseAppsSearchQuery}
+                      onChangeText={setBrowseAppsSearchQuery}
+                      placeholder={t('composio.searchApps')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                      className="ml-3 flex-1 py-3 font-roobert text-base text-foreground"
+                      style={{
+                        color: colorScheme === 'dark' ? '#F8F8F8' : '#121215',
+                      }}
+                    />
+                    {browseAppsSearchQuery.length > 0 && (
+                      <Pressable onPress={() => setBrowseAppsSearchQuery('')} className="ml-2">
+                        <Icon as={X} size={18} className="text-muted-foreground" />
+                      </Pressable>
+                    )}
                   </View>
-                );
-              }}
-              contentContainerStyle={{ paddingBottom: 60, paddingTop: 8, flexGrow: 1 }}
-              showsVerticalScrollIndicator={true}
-              bounces={true}
-              maxToRenderPerBatch={10}
-              updateCellsBatchingPeriod={50}
-              initialNumToRender={20}
-              windowSize={21}
-              ListEmptyComponent={
-                <View style={{ paddingHorizontal: 24, paddingVertical: 32 }}>
-                  <EmptyState
-                    icon={Search}
-                    title={
-                      browseAppsSearchQuery
-                        ? t('integrations.noAppsFound')
-                        : t('integrations.noAppsAvailable')
-                    }
-                    description={
-                      browseAppsSearchQuery
-                        ? t('integrations.tryDifferentSearch')
-                        : t('integrations.appsAppearHere')
-                    }
-                  />
                 </View>
-              }
+              </View>
+
+              {/* Scrollable Apps List */}
+              {isLoadingApps ? (
+                <View
+                  className="flex-1 items-center justify-center"
+                  style={{ paddingHorizontal: 24 }}>
+                  <ActivityIndicator
+                    size="small"
+                    color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'}
+                  />
+                  <Text className="mt-4 font-roobert text-sm text-muted-foreground">
+                    {t('integrations.loadingIntegrations')}
+                  </Text>
+                </View>
+              ) : (
+                <BottomSheetFlatList
+                  data={filteredBrowseApps}
+                  keyExtractor={(item: ComposioApp) => item.slug}
+                  style={{ flex: 1 }}
+                  renderItem={({ item: app }: { item: ComposioApp }) => {
+                    const isConnected = agentId ? isAppConnectedToAgent(app.slug) : false;
+                    return (
+                      <View style={{ paddingHorizontal: 24 }}>
+                        <Pressable
+                          onPress={() => handleBrowseAppSelect(app)}
+                          disabled={isConnected}
+                          className={`mb-3 flex-row items-center gap-4 rounded-3xl p-4 ${
+                            isConnected ? 'bg-muted/5 opacity-50' : 'bg-primary/5 active:opacity-80'
+                          }`}>
+                          <ToolkitIcon slug={app.slug} name={app.name} size="sm" />
+                          <View className="flex-1">
+                            <Text
+                              className={`font-roobert-semibold text-base ${
+                                isConnected ? 'text-muted-foreground' : 'text-foreground'
+                              }`}>
+                              {app.name}
+                            </Text>
+                            <Text
+                              className="font-roobert text-sm text-muted-foreground"
+                              numberOfLines={2}
+                              ellipsizeMode="tail">
+                              {app.description}
+                            </Text>
+                            {isConnected && (
+                              <View className="mt-1 flex-row items-center gap-1">
+                                <Icon
+                                  as={CheckCircle2}
+                                  size={12}
+                                  className="text-green-600 dark:text-green-400"
+                                />
+                                <Text className="text-xs font-medium text-green-600 dark:text-green-400">
+                                  {t('triggers.connected')}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </Pressable>
+                      </View>
+                    );
+                  }}
+                  contentContainerStyle={{ paddingBottom: 60, paddingTop: 8, flexGrow: 1 }}
+                  showsVerticalScrollIndicator={true}
+                  bounces={true}
+                  maxToRenderPerBatch={10}
+                  updateCellsBatchingPeriod={50}
+                  initialNumToRender={20}
+                  windowSize={21}
+                  ListEmptyComponent={
+                    <View style={{ paddingHorizontal: 24, paddingVertical: 32 }}>
+                      <EmptyState
+                        icon={Search}
+                        title={
+                          browseAppsSearchQuery
+                            ? t('integrations.noAppsFound')
+                            : t('integrations.noAppsAvailable')
+                        }
+                        description={
+                          browseAppsSearchQuery
+                            ? t('integrations.tryDifferentSearch')
+                            : t('integrations.appsAppearHere')
+                        }
+                      />
+                    </View>
+                  }
+                />
+              )}
+            </View>
+          )}
+
+          {/* Connector View */}
+          {drawerView === 'connector' && drawerSelectedApp && (
+            <ComposioConnectorContent
+              app={drawerSelectedApp}
+              onBack={handleDrawerBack}
+              onComplete={handleDrawerConnectorComplete}
+              onNavigateToTools={(app, profile) => {
+                setDrawerSelectedApp(app);
+                setDrawerSelectedProfile(profile);
+                setDrawerView('tools');
+              }}
+              agentId={agentId}
+              mode="full"
+              noPadding={false}
+              isSaving={isDrawerSaving}
+              useBottomSheetFlatList={true}
+            />
+          )}
+
+          {/* Tools View */}
+          {drawerView === 'tools' && drawerSelectedApp && drawerSelectedProfile && (
+            <ComposioToolsContent
+              app={drawerSelectedApp}
+              profile={drawerSelectedProfile}
+              agentId={agentId}
+              onBack={handleDrawerBack}
+              onComplete={handleDrawerToolsComplete}
+              noPadding={false}
+              useBottomSheetFlatList={true}
             />
           )}
         </View>

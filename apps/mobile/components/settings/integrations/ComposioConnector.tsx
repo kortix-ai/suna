@@ -370,37 +370,31 @@ export function ComposioConnectorContent({
           <View
             style={{
               paddingHorizontal: 24,
-              paddingTop: 24,
+              paddingTop: 16,
               paddingBottom: 16,
               backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
             }}>
-            {onBack && (
-              <Pressable onPress={onBack} className="mb-4 flex-row items-center active:opacity-70">
-                <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
-              </Pressable>
-            )}
-            <View className={onBack ? '' : 'mb-4'}>
-              <Text
-                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                className="font-roobert-semibold text-xl">
-                {app.name}
-              </Text>
-              <Text
-                style={{
-                  color:
-                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-                }}
-                className="font-roobert text-sm">
-                {existingProfiles.length > 0
-                  ? t('integrations.connector.selectConnection')
-                  : t('integrations.connector.createFirstConnection')}
-              </Text>
-            </View>
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="mb-1 font-roobert-semibold text-xl">
+              {app.name}
+            </Text>
+            <Text
+              style={{
+                color:
+                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
+              }}
+              className="font-roobert text-sm">
+              {existingProfiles.length > 0
+                ? t('integrations.connector.selectConnection')
+                : t('integrations.connector.createFirstConnection')}
+            </Text>
           </View>
 
           {/* Scrollable list */}
           <BottomSheetFlatList
             data={listData}
+            style={{ flex: 1 }}
             keyExtractor={(item: any, index: number) =>
               item.type === 'new' ? 'new-connection' : item.profile_id || `profile-${index}`
             }
@@ -413,7 +407,7 @@ export function ComposioConnectorContent({
                         setSelectedConnectionType('new');
                         setSelectedProfileId('new');
                       }}
-                      className={`flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+                      className={`flex-row items-center rounded-2xl p-4 active:opacity-80 ${
                         selectedConnectionType === 'new' ? 'bg-primary/10' : 'bg-muted/5'
                       }`}>
                       <View
@@ -466,7 +460,7 @@ export function ComposioConnectorContent({
                 </View>
               );
             }}
-            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
+            contentContainerStyle={{ paddingTop: 8, paddingBottom: 16, flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
           />
 
@@ -1039,7 +1033,7 @@ const ProfileListItem = React.memo(({ profile, isSelected, onPress }: ProfileLis
   return (
     <Pressable
       onPress={onPress}
-      className={`mb-2 flex-row items-center rounded-3xl p-4 active:opacity-80 ${
+      className={`mb-2 flex-row items-center rounded-2xl p-4 active:opacity-80 ${
         isSelected ? 'bg-primary/10' : 'bg-muted/5'
       }`}>
       <View
